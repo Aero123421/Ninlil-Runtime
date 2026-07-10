@@ -209,6 +209,37 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_yaml_reason_parser_test ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}
     )
 
+    add_executable(ninlil_hook_registry_tool
+        tools/hook_registry_tool.c
+        tools/hook_registry_schema.c
+    )
+    set_target_properties(ninlil_hook_registry_tool PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_hook_registry_tool)
+
+    add_executable(ninlil_hook_registry_test
+        tools/hook_registry_test.c
+        tools/hook_registry_schema.c
+    )
+    set_target_properties(ninlil_hook_registry_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_hook_registry_test)
+
+    add_test(
+        NAME hook_registry_mirror_check
+        COMMAND ninlil_hook_registry_tool check ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME hook_registry_mirror_negative
+        COMMAND ninlil_hook_registry_test ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
     add_custom_target(ninlil_generate_reason_registry
         COMMAND ninlil_reason_registry_tool
             generate
