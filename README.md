@@ -6,7 +6,19 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 
 ## 現在の状態
 
-**M0 specification baseline complete / M1a implementation-ready (pre-alpha)** です。実装はまだ開始していません。
+**M0 specification baseline complete / Foundation PR1 ABI and contract tooling checkpoint (pre-alpha)** です。実装は開始していますが、現時点の成果はpublic ABI宣言と、その契約差分を検出するtoolingが中心です。
+
+実装済みの範囲:
+
+- `include/ninlil/*.h`のpublic ABI宣言と、C11 / C++17 consumer compile smoke
+- enum、`sizeof`、`offsetof`、reason registry、Operator projection、hook mirror、仕様vector、requirements traceabilityの機械検査
+- public output初期化/nullability、small/future `struct_size`、unsupported値分類に使うinternal pure C11 helper
+
+未実装または未統合の範囲:
+
+- public runtime APIのfunction body、transaction reducer、durable storage、bearer orchestration
+- radio MAC、実RF、ESP-IDF component、Cell Agent
+- `NIN-PR1-OUTPUT-001`、`NIN-PR1-STRUCT-001`、`NIN-PR1-UNSUPPORTED-001`はhelper testまでで、public runtime APIへ未統合のため`partial`
 
 - 公開 API、wire、storage format の互換性はまだ保証しません。
 - 最初に実装する範囲は、[Foundation Release](docs/08-foundation-release.md)で固定するM1a transaction kernelです。
@@ -51,13 +63,35 @@ Application effectのexactly-onceには、absolute/idempotent operation、applic
 7. [Operator Model](docs/11-operator-model.md)
 8. [Glossary](docs/15-glossary.md)
 
+## Buildとtest
+
+必要なのはCMake 3.16以上と、C11 / C++17に対応するC・C++ compilerです。通常buildではstrict warning付きのconsumer smoke、ABI/contract checker、negative testをCTestから実行します。
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+ASan / UBSan対応compiler（GCC、Clang、AppleClang）では、別build directoryで同じsuiteを実行できます。
+
+```sh
+CC=clang CXX=clang++ cmake -S . -B build-sanitize \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DNINLIL_ENABLE_SANITIZERS=ON
+cmake --build build-sanitize --parallel
+ctest --test-dir build-sanitize --output-on-failure
+```
+
+CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。GitHub ActionsでもUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+
 ## Repositoryの位置付け
 
-- `ninlil/`: 次期Ninlil Runtimeの仕様と、今後のportable implementationの正本
-- `linkos/`: 2026-07-10に作成したKGuard向け3台lab slice。互換fixtureとして凍結
-- `productv1/`: KGuard product applicationと既存運用仕様
+- このrepositoryは、Ninlil Runtimeの仕様、public header、portable implementation、contract toolingを収める独立repositoryです。
+- KGuard Product V1、PoC、Legacy LinkOS Labは別projectのconsumerまたは移行元であり、このrepository内に`productv1/`、`poc1/`、`linkos/` directoryが存在することを前提にしません。
+- 文書中のKGuard / LinkOS参照は設計境界と移行文脈を示すもので、build dependencyではありません。
 
-新しいNinlil Coreから`productv1/`または`poc1/`をimportしてはいけません。KGuard integrationは将来`ninlil/integrations/kguard/`から公開APIだけを利用します。
+Ninlil CoreへKGuard、Product V1、PoC、Legacy LinkOSの業務codeをimportしてはいけません。将来のKGuard integrationは、このrepositoryが提供するpublic APIだけをconsumerとして利用します。
 
 ## 名称
 
