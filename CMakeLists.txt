@@ -114,6 +114,37 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     ninlil_apply_strict_warnings(ninlil_abi_manifest_coverage_test)
 
+    add_executable(ninlil_abi_drift_tool
+        tools/abi_drift_tool.c
+        tools/abi_drift_schema.c
+    )
+    set_target_properties(ninlil_abi_drift_tool PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_abi_drift_tool)
+
+    add_executable(ninlil_abi_drift_test
+        tools/abi_drift_test.c
+        tools/abi_drift_schema.c
+    )
+    set_target_properties(ninlil_abi_drift_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_abi_drift_test)
+
+    add_test(
+        NAME abi_drift_check
+        COMMAND ninlil_abi_drift_tool check ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME abi_drift_negative
+        COMMAND ninlil_abi_drift_test ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+    )
+
     add_executable(ninlil_reason_registry_tool
         tools/reason_registry_tool.c
         tools/yaml_reason_schema.c
