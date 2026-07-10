@@ -127,6 +127,55 @@ static int fixture_resolver(
     return -1;
 }
 
+static int long_error_resolver(
+    void *user,
+    const char *source_path,
+    const char *heading,
+    size_t *out_count,
+    size_t *out_first_line,
+    size_t *out_second_line,
+    char *error_out,
+    size_t error_out_size)
+{
+    size_t index;
+
+    (void)user;
+    (void)source_path;
+    (void)heading;
+    *out_count = 0u;
+    *out_first_line = 0u;
+    *out_second_line = 0u;
+    if (error_out != NULL && error_out_size > 0u) {
+        for (index = 0u; index < error_out_size - 1u; ++index) {
+            error_out[index] = 'R';
+        }
+        error_out[error_out_size - 1u] = '\0';
+    }
+    return -1;
+}
+
+static int missing_heading_resolver(
+    void *user,
+    const char *source_path,
+    const char *heading,
+    size_t *out_count,
+    size_t *out_first_line,
+    size_t *out_second_line,
+    char *error_out,
+    size_t error_out_size)
+{
+    (void)user;
+    (void)source_path;
+    (void)heading;
+    *out_count = 0u;
+    *out_first_line = 0u;
+    *out_second_line = 0u;
+    if (error_out != NULL && error_out_size > 0u) {
+        error_out[0] = '\0';
+    }
+    return 0;
+}
+
 static int replace_once(
     const char *input,
     const char *needle,
@@ -382,6 +431,119 @@ static int test_in_memory_checks(void)
     return failures == 0 ? 0 : -1;
 }
 
+static int test_long_link_diagnostics(void)
+{
+    char id[NINLIL_TRACEABILITY_MAX_ID_LEN];
+    char source[NINLIL_TRACEABILITY_MAX_PATH_LEN];
+    char heading[NINLIL_TRACEABILITY_MAX_HEADING_LEN];
+    char manifest[BUFFER_SIZE];
+    char second[BUFFER_SIZE];
+    char third[BUFFER_SIZE];
+    char expected_prefix[NINLIL_TRACEABILITY_MAX_ERROR];
+    char error[NINLIL_TRACEABILITY_MAX_ERROR];
+    ninlil_traceability_result_t result;
+    size_t index;
+    int written;
+
+    memcpy(id, "NIN-PR1-", sizeof("NIN-PR1-") - 1u);
+    for (index = sizeof("NIN-PR1-") - 1u; index < sizeof(id) - 5u; ++index) {
+        id[index] = 'A';
+    }
+    memcpy(id + sizeof(id) - 5u, "-001", sizeof("-001"));
+    if (replace_once(
+            valid_manifest,
+            "NIN-PR1-TEST-001",
+            id,
+            manifest,
+            sizeof(manifest))
+        != 0) {
+        fprintf(stderr, "long source resolution fixture setup failed\n");
+        return -1;
+    }
+
+    memset(error, 'X', sizeof(error));
+    if (ninlil_traceability_check_content(
+            manifest,
+            cmake_fixture,
+            long_error_resolver,
+            NULL,
+            &result,
+            error,
+            sizeof(error))
+        == 0) {
+        fprintf(stderr, "long source resolution failure was accepted\n");
+        return -1;
+    }
+    written = snprintf(
+        expected_prefix,
+        sizeof(expected_prefix),
+        "source resolution failed for %s: ",
+        id);
+    if (written < 0 || (size_t)written >= sizeof(expected_prefix)
+        || error[sizeof(error) - 1u] != '\0'
+        || strncmp(error, expected_prefix, (size_t)written) != 0) {
+        fprintf(stderr, "unsafe or identity-losing source resolution error: %s\n", error);
+        return -1;
+    }
+    if (ninlil_traceability_check_content(
+            manifest,
+            cmake_fixture,
+            long_error_resolver,
+            NULL,
+            &result,
+            NULL,
+            0u)
+        == 0) {
+        fprintf(stderr, "null error destination changed failure status\n");
+        return -1;
+    }
+
+    memcpy(source, "docs/", sizeof("docs/") - 1u);
+    for (index = sizeof("docs/") - 1u; index < sizeof(source) - 4u; ++index) {
+        source[index] = 'a';
+    }
+    memcpy(source + sizeof(source) - 4u, ".md", sizeof(".md"));
+    heading[0] = '#';
+    heading[1] = ' ';
+    for (index = 2u; index < sizeof(heading) - 1u; ++index) {
+        heading[index] = 'H';
+    }
+    heading[sizeof(heading) - 1u] = '\0';
+    if (replace_once(manifest, "docs/test.md", source, second, sizeof(second)) != 0
+        || replace_once(second, "# Test heading", heading, third, sizeof(third)) != 0) {
+        fprintf(stderr, "long heading diagnostic fixture setup failed\n");
+        return -1;
+    }
+
+    memset(error, 'X', sizeof(error));
+    if (ninlil_traceability_check_content(
+            third,
+            cmake_fixture,
+            missing_heading_resolver,
+            NULL,
+            &result,
+            error,
+            sizeof(error))
+        == 0) {
+        fprintf(stderr, "long missing heading failure was accepted\n");
+        return -1;
+    }
+    written = snprintf(
+        expected_prefix,
+        sizeof(expected_prefix),
+        "heading not found for %s in %s: ",
+        id,
+        source);
+    if (written < 0 || (size_t)written >= sizeof(expected_prefix)
+        || error[sizeof(error) - 1u] != '\0'
+        || strncmp(error, expected_prefix, (size_t)written) != 0
+        || strncmp(error + (size_t)written, heading, 8u) != 0) {
+        fprintf(stderr, "unsafe or identity-losing missing heading error: %s\n", error);
+        return -1;
+    }
+    return 0;
+}
+
 static int test_real_repository(const char *repo_root)
 {
     ninlil_traceability_result_t result;
@@ -405,7 +567,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s <repository-root>\n", argv[0]);
         return 2;
     }
-    if (test_in_memory_checks() != 0 || test_real_repository(argv[1]) != 0) {
+    if (test_in_memory_checks() != 0 || test_long_link_diagnostics() != 0
+        || test_real_repository(argv[1]) != 0) {
         return 1;
     }
     puts("traceability negative and repository tests ok");

@@ -91,6 +91,31 @@ static int set_error(char *out, size_t out_size, const char *message)
     return -1;
 }
 
+static int set_error_parts(
+    char *out,
+    size_t out_size,
+    const char *const *parts,
+    size_t part_count)
+{
+    size_t used = 0u;
+    size_t index;
+
+    if (out == NULL || out_size == 0u) {
+        return -1;
+    }
+    out[0] = '\0';
+    for (index = 0u; index < part_count && used < out_size - 1u; ++index) {
+        size_t part_length = strlen(parts[index]);
+        size_t available = out_size - used - 1u;
+        size_t copy_length = part_length < available ? part_length : available;
+
+        memcpy(out + used, parts[index], copy_length);
+        used += copy_length;
+        out[used] = '\0';
+    }
+    return -1;
+}
+
 static int valid_utf8(const char *text, size_t length)
 {
     size_t index = 0u;
@@ -834,14 +859,27 @@ static int validate_links(
         if (resolver(resolver_user, entry->source, entry->heading, &count, &first, &second,
                 resolver_error, sizeof(resolver_error))
             != 0) {
-            snprintf(message, sizeof(message), "source resolution failed for %s: %s", entry->id,
-                resolver_error);
-            return set_error(error_out, error_out_size, message);
+            const char *const parts[] = {
+                "source resolution failed for ", entry->id, ": ", resolver_error};
+            return set_error_parts(
+                error_out,
+                error_out_size,
+                parts,
+                sizeof(parts) / sizeof(parts[0]));
         }
         if (count == 0u) {
-            snprintf(message, sizeof(message), "heading not found for %s in %s: %s", entry->id,
-                entry->source, entry->heading);
-            return set_error(error_out, error_out_size, message);
+            const char *const parts[] = {
+                "heading not found for ",
+                entry->id,
+                " in ",
+                entry->source,
+                ": ",
+                entry->heading};
+            return set_error_parts(
+                error_out,
+                error_out_size,
+                parts,
+                sizeof(parts) / sizeof(parts[0]));
         }
         if (count != 1u) {
             snprintf(message, sizeof(message), "duplicate heading for %s in %s at lines %zu and %zu",
@@ -899,9 +937,12 @@ static char *read_file(const char *path, char *error_out, size_t error_out_size)
     char *content;
     size_t read_size;
     if (file == NULL) {
-        char message[NINLIL_TRACEABILITY_MAX_ERROR];
-        snprintf(message, sizeof(message), "cannot open %s", path);
-        set_error(error_out, error_out_size, message);
+        const char *const parts[] = {"cannot open ", path};
+        (void)set_error_parts(
+            error_out,
+            error_out_size,
+            parts,
+            sizeof(parts) / sizeof(parts[0]));
         return NULL;
     }
     if (fseek(file, 0, SEEK_END) != 0 || (size = ftell(file)) < 0
