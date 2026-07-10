@@ -11,6 +11,22 @@ target_include_directories(ninlil INTERFACE
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     enable_testing()
 
+    option(NINLIL_ENABLE_SANITIZERS "Build with ASan and UBSan" OFF)
+    if(NINLIL_ENABLE_SANITIZERS)
+        set(_ninlil_sanitizer_supported FALSE)
+        if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
+           OR CMAKE_C_COMPILER_ID STREQUAL "Clang"
+           OR CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
+            set(_ninlil_sanitizer_supported TRUE)
+        endif()
+        if(NOT _ninlil_sanitizer_supported)
+            message(FATAL_ERROR
+                "NINLIL_ENABLE_SANITIZERS=ON requires GNU, Clang, or AppleClang")
+        endif()
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address,undefined)
+    endif()
+
     set(NINLIL_STRICT_C_FLAGS
         -Wall
         -Wextra
@@ -80,4 +96,102 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         ninlil_apply_strict_warnings(${_cxx_target})
         add_test(NAME self_contained_${_header}_cxx17 COMMAND ${_cxx_target})
     endforeach()
+
+    add_executable(ninlil_abi_manifest_gen tools/abi_manifest_gen.c)
+    target_link_libraries(ninlil_abi_manifest_gen PRIVATE ninlil)
+    set_target_properties(ninlil_abi_manifest_gen PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_abi_manifest_gen)
+
+    add_executable(ninlil_abi_manifest_coverage_test tools/abi_manifest_coverage_test.c)
+    set_target_properties(ninlil_abi_manifest_coverage_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_abi_manifest_coverage_test)
+
+    add_executable(ninlil_reason_registry_tool
+        tools/reason_registry_tool.c
+        tools/yaml_reason_schema.c
+    )
+    set_target_properties(ninlil_reason_registry_tool PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_reason_registry_tool)
+
+    add_executable(ninlil_yaml_reason_parser_test
+        tools/yaml_reason_parser_test.c
+        tools/yaml_reason_schema.c
+    )
+    set_target_properties(ninlil_yaml_reason_parser_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_yaml_reason_parser_test)
+
+    set(NINLIL_REASON_YAML "${CMAKE_CURRENT_SOURCE_DIR}/schemas/foundation-m1a-reason-codes.yaml")
+    set(NINLIL_REASON_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/include/ninlil/version.h")
+    set(NINLIL_REASON_ARTIFACT "${CMAKE_CURRENT_SOURCE_DIR}/generated/foundation-m1a-reason-registry.txt")
+    set(NINLIL_ABI_GOLDEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/abi/golden")
+
+    add_test(
+        NAME abi_manifest_repeatable
+        COMMAND ${CMAKE_COMMAND}
+            -DGEN=$<TARGET_FILE:ninlil_abi_manifest_gen>
+            -DCMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/abi_manifest_repeatable.cmake
+    )
+    add_test(
+        NAME abi_manifest_golden
+        COMMAND ${CMAKE_COMMAND}
+            -DGEN=$<TARGET_FILE:ninlil_abi_manifest_gen>
+            -DGOLDEN_DIR=${NINLIL_ABI_GOLDEN_DIR}
+            -DCMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/abi_manifest_golden.cmake
+    )
+    add_test(
+        NAME abi_manifest_coverage
+        COMMAND ${CMAKE_COMMAND}
+            -DGEN=$<TARGET_FILE:ninlil_abi_manifest_gen>
+            -DCOVERAGE_TEST=$<TARGET_FILE:ninlil_abi_manifest_coverage_test>
+            -DCMAKE_BINARY_DIR=${CMAKE_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/abi_manifest_coverage.cmake
+    )
+    add_test(
+        NAME reason_registry_check
+        COMMAND ninlil_reason_registry_tool
+            check
+            ${NINLIL_REASON_YAML}
+            ${NINLIL_REASON_HEADER}
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${NINLIL_REASON_ARTIFACT}
+    )
+    add_test(
+        NAME yaml_reason_parser
+        COMMAND ninlil_yaml_reason_parser_test ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}
+    )
+
+    add_custom_target(ninlil_generate_reason_registry
+        COMMAND ninlil_reason_registry_tool
+            generate
+            ${NINLIL_REASON_YAML}
+            ${NINLIL_REASON_HEADER}
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${NINLIL_REASON_ARTIFACT}
+        DEPENDS ninlil_reason_registry_tool
+        COMMENT "Generate foundation reason registry artifact"
+    )
+
+    add_custom_target(ninlil_generate_abi_manifest
+        COMMAND ninlil_abi_manifest_gen
+        DEPENDS ninlil_abi_manifest_gen
+        COMMENT "Print ABI manifest for current toolchain/target"
+    )
 endif()
