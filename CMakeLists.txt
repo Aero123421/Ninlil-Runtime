@@ -240,6 +240,41 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_hook_registry_test ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
+    add_executable(ninlil_vector_inventory_tool
+        tools/vector_inventory_tool.c
+        tools/vector_inventory_schema.c
+    )
+    set_target_properties(ninlil_vector_inventory_tool PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_vector_inventory_tool)
+
+    add_executable(ninlil_vector_inventory_test
+        tools/vector_inventory_test.c
+        tools/vector_inventory_schema.c
+    )
+    set_target_properties(ninlil_vector_inventory_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_vector_inventory_test)
+
+    add_test(
+        NAME vector_inventory_check
+        COMMAND ninlil_vector_inventory_tool check ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(vector_inventory_check PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "vector inventory ok: total=282 table=238 explicit=26 bullet=16 canonical=2"
+    )
+    add_test(
+        NAME vector_inventory_negative
+        COMMAND ninlil_vector_inventory_test ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
     add_custom_target(ninlil_generate_reason_registry
         COMMAND ninlil_reason_registry_tool
             generate
