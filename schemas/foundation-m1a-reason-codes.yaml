@@ -1,0 +1,342 @@
+schema_version: 1
+registry: ninlil-foundation-reason-codes
+integer_type: uint32
+normative_source: ../docs/12-foundation-abi.md#44-reason-code
+operator_projection_contract: ../docs/11-operator-model.md#共通operator-state
+reserved_values:
+  - 67
+m1a_public_generated_zero:
+  - NINLIL_REASON_UNSUPPORTED_FAMILY
+  - NINLIL_REASON_UNSUPPORTED_SELECTOR
+  - NINLIL_REASON_INVALID_CONTENT_DIGEST
+  - NINLIL_REASON_ATTEMPT_RECEIPT_TIMEOUT_INVALID
+  - NINLIL_REASON_MODIFICATION_REQUIRED
+  - NINLIL_REASON_EVENT_RECEIPT_TIMEOUT
+  - NINLIL_REASON_CYCLE_EXHAUSTED_TRANSIENT
+  - NINLIL_REASON_BEARER_UNAVAILABLE
+  - NINLIL_REASON_CAPACITY_UNAVAILABLE
+codes:
+  - symbol: NINLIL_REASON_NONE
+    value: 0
+    milestone: M1a
+    category: success
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: no_error
+  - symbol: NINLIL_REASON_UNSUPPORTED_FAMILY
+    value: 1
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: unsupported_family
+  - symbol: NINLIL_REASON_UNSUPPORTED_SELECTOR
+    value: 2
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: selector_not_supported
+  - symbol: NINLIL_REASON_TARGET_COUNT_UNSUPPORTED
+    value: 3
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: target_count_must_be_one
+  - symbol: NINLIL_REASON_INVALID_SCHEMA
+    value: 4
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: schema_contract_mismatch
+  - symbol: NINLIL_REASON_INVALID_PAYLOAD_LENGTH
+    value: 5
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: payload_length_invalid
+  - symbol: NINLIL_REASON_INVALID_CONTENT_DIGEST
+    value: 6
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: content_binding_invalid
+  - symbol: NINLIL_REASON_DEADLINE_INVALID
+    value: 7
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: deadline_contract_invalid
+  - symbol: NINLIL_REASON_EVENTFACT_DEADLINE_UNSUPPORTED
+    value: 8
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: event_fact_requires_no_deadline
+  - symbol: NINLIL_REASON_ATTEMPT_RECEIPT_TIMEOUT_INVALID
+    value: 9
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: attempt_receipt_timeout_invalid
+  - symbol: NINLIL_REASON_EVIDENCE_UNSUPPORTED
+    value: 10
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: evidence_stage_unsupported
+  - symbol: NINLIL_REASON_CAPACITY_EXHAUSTED
+    value: 11
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: local_capacity_exhausted
+  - symbol: NINLIL_REASON_MODIFICATION_REQUIRED
+    value: 12
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: request_modification_required
+  - symbol: NINLIL_REASON_IDEMPOTENCY_CONFLICT
+    value: 13
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: idempotency_key_content_conflict
+  - symbol: NINLIL_REASON_GRANT_INVALID
+    value: 14
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: origin_grant_invalid
+  - symbol: NINLIL_REASON_GRANT_EXPIRED
+    value: 15
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: origin_grant_expired
+  - symbol: NINLIL_REASON_GRANT_LIMIT_EXCEEDED
+    value: 16
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: origin_grant_limit_exceeded
+  - symbol: NINLIL_REASON_GRANT_PROVIDER_UNAVAILABLE
+    value: 17
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: origin_grant_provider_unavailable
+  - symbol: NINLIL_REASON_STORAGE_IO
+    value: 18
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: storage_io_failure
+  - symbol: NINLIL_REASON_STORAGE_COMMIT_UNKNOWN
+    value: 19
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: storage_commit_outcome_unknown
+  - symbol: NINLIL_REASON_CLOCK_UNCERTAIN
+    value: 20
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: trusted_time_unavailable
+  - symbol: NINLIL_REASON_RATE_EXHAUSTED
+    value: 21
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: admission_rate_exhausted
+  - symbol: NINLIL_REASON_TARGET_UNAUTHORIZED
+    value: 22
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: source_or_target_not_authorized
+  - symbol: NINLIL_REASON_CALLBACK_CONTRACT
+    value: 23
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: application_callback_contract_broken
+  - symbol: NINLIL_REASON_UNSUPPORTED_DIRECTION
+    value: 24
+    milestone: M1a
+    category: admission_validation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: service_direction_unsupported
+  - symbol: NINLIL_REASON_REQUIRED_EVIDENCE_MET
+    value: 64
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: required_evidence_satisfied
+  - symbol: NINLIL_REASON_REQUIRED_EVIDENCE_LATE
+    value: 65
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: required_evidence_arrived_late
+  - symbol: NINLIL_REASON_DEADLINE_ELAPSED_BEFORE_DISPATCH
+    value: 66
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: deadline_elapsed_before_dispatch
+  - symbol: NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING
+    value: 68
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: effect_possible_waiting_for_evidence
+  - symbol: NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_MISSING
+    value: 69
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: effect_possible_evidence_missing
+  - symbol: NINLIL_REASON_RETRY_BUDGET_EXHAUSTED_NO_EFFECT
+    value: 70
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: retry_budget_exhausted_no_effect
+  - symbol: NINLIL_REASON_EVENT_RETRY_CYCLE_PARKED
+    value: 71
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: event_parked_waiting_for_fresh_epoch_or_resume
+  - symbol: NINLIL_REASON_EVENT_RECEIPT_TIMEOUT
+    value: 72
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: event_attempt_receipt_timeout
+  - symbol: NINLIL_REASON_CYCLE_EXHAUSTED_TRANSIENT
+    value: 73
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: retry_cycle_exhausted_transiently
+  - symbol: NINLIL_REASON_BEARER_UNAVAILABLE
+    value: 74
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: bearer_unavailable
+  - symbol: NINLIL_REASON_CAPACITY_UNAVAILABLE
+    value: 75
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: downstream_capacity_unavailable
+  - symbol: NINLIL_REASON_COUNTER_EXHAUSTED
+    value: 76
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: monotonic_counter_exhausted
+  - symbol: NINLIL_REASON_STALE_AVAILABILITY_EPOCH
+    value: 77
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: stale_availability_epoch_ignored
+  - symbol: NINLIL_REASON_RESUME_CONFLICT
+    value: 78
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: resume_operation_conflict
+  - symbol: NINLIL_REASON_STALE_SPOOL_REVISION
+    value: 79
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: stale_event_spool_revision
+  - symbol: NINLIL_REASON_OPERATOR_DISCARDED_WITHOUT_REQUIRED_RECEIPT
+    value: 80
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: event_explicitly_discarded
+  - symbol: NINLIL_REASON_DISCARD_CONFLICT
+    value: 81
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_MODIFIED
+    operator_state_hint: discard_operation_conflict
+  - symbol: NINLIL_REASON_CANCEL_FENCED_BEFORE_DISPATCH
+    value: 82
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: cancel_fenced_before_dispatch
+  - symbol: NINLIL_REASON_CANCEL_AFTER_EFFECT_POSSIBLE
+    value: 83
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: cancel_requested_after_effect_possible
+  - symbol: NINLIL_REASON_EVENT_FACT_IMMUTABLE
+    value: 84
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: event_fact_cannot_be_cancelled
+  - symbol: NINLIL_REASON_TRANSPORT_RETRY
+    value: 85
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: transport_retry_pending
+  - symbol: NINLIL_REASON_CANCEL_PENDING_REMOTE_FENCE
+    value: 86
+    milestone: M1a
+    category: outcome_operation
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: cancel_waiting_for_remote_fence
+  - symbol: NINLIL_REASON_APPLICATION_FAILED
+    value: 128
+    milestone: M1a
+    category: delivery_application
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: application_reported_failure
+  - symbol: NINLIL_REASON_OUTCOME_UNKNOWN
+    value: 129
+    milestone: M1a
+    category: delivery_application
+    default_retry_guidance: NINLIL_RETRY_OPERATOR_ACTION
+    operator_state_hint: application_outcome_unknown
+  - symbol: NINLIL_REASON_RECEIVER_UNAVAILABLE
+    value: 130
+    milestone: M1a
+    category: delivery_application
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: receiver_temporarily_unavailable
+  - symbol: NINLIL_REASON_APPLICATION_COMPLETION_TIMEOUT
+    value: 131
+    milestone: M1a
+    category: delivery_application
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: deferred_application_completion_timed_out
+  - symbol: NINLIL_REASON_RECONCILE_RETRY_LATER
+    value: 132
+    milestone: M1a
+    category: delivery_application
+    default_retry_guidance: NINLIL_RETRY_SAME_AFTER
+    operator_state_hint: application_reconcile_retry_pending
+  - symbol: NINLIL_REASON_M1B_SUPERSEDED_BY_NEW_GENERATION
+    value: 4096
+    milestone: M1b_reserved
+    category: forward_reserved
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: reserved_not_generated_by_m1a
+  - symbol: NINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT
+    value: 4097
+    milestone: M1b_reserved
+    category: forward_reserved
+    default_retry_guidance: NINLIL_RETRY_NEVER
+    operator_state_hint: reserved_not_generated_by_m1a
