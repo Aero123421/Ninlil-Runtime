@@ -275,6 +275,43 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_vector_inventory_test ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
+    add_executable(ninlil_vector_reference_tool
+        tools/vector_reference_tool.c
+        tools/vector_reference_schema.c
+        tools/vector_inventory_schema.c
+    )
+    set_target_properties(ninlil_vector_reference_tool PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_vector_reference_tool)
+
+    add_executable(ninlil_vector_reference_test
+        tools/vector_reference_test.c
+        tools/vector_reference_schema.c
+        tools/vector_inventory_schema.c
+    )
+    set_target_properties(ninlil_vector_reference_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_vector_reference_test)
+
+    add_test(
+        NAME vector_reference_check
+        COMMAND ninlil_vector_reference_tool check ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(vector_reference_check PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "vector references ok: definitions=282 mandatory_unique=255 pr_unique=275 union=282 mandatory_occurrences=259 pr_occurrences=275 mandatory_rows=40 pr_bullets=11 excluded=1"
+    )
+    add_test(
+        NAME vector_reference_negative
+        COMMAND ninlil_vector_reference_test ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
     add_custom_target(ninlil_generate_reason_registry
         COMMAND ninlil_reason_registry_tool
             generate
