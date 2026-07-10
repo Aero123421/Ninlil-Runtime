@@ -9,6 +9,8 @@
 
 Ninlil Coreは日本語文言や業務手順を持ちません。Coreは安定したreason codeとevidenceを返し、product adapterが本章の状態へ射影します。
 
+## Projection contract
+
 Reason code registryの正本は[`foundation-m1a-reason-codes.yaml`](../schemas/foundation-m1a-reason-codes.yaml)です。Registryの`operator_state_hint`はsupport/runbook用の原因keyであり、単独で最終Operator Stateを決めません。Product adapterは、まず下表のtransaction/submission stateとOutcomeを使い、次にreason、effect certainty、Event originかどうかで安全な次操作を絞ります。同じreasonを異なるstateで同じ成功/失敗表示へ潰してはなりません。
 
 | Projection context | Default Operator State |
@@ -19,8 +21,11 @@ Reason code registryの正本は[`foundation-m1a-reason-codes.yaml`](../schemas/
 | submission capacity/rate exhaustion | `OP_REJECTED_CAPACITY` |
 | その他のsemantic rejection | `OP_REJECTED_POLICY` |
 | current endpoint/route observationだけがunavailable | terminal Outcomeへ格上げせず`OP_ENDPOINT_UNAVAILABLE`を補助表示 |
+| group target結果が混在 | `OP_PARTIAL` |
 
 PR 1のgenerated registry検査は、全public reasonにnon-empty `operator_state_hint`があり、このprojection contractへのlinkが一致することを機械検査します。Product固有adapterは全到達可能な`state/outcome/reason/effect certainty`組合せをtestし、未写像をgeneric「失敗」へfallbackしません。
+
+PR 1のmachine checkでは、このsectionの`Default Operator State`にあるbacktick付き`OP_*`参照と、`## 共通Operator State`表の`Operator code`定義をsection境界内だけで照合します。各codeは両表にexactly 1回存在し、重複、欠損、registry外参照、曖昧なheading一致を許しません。これは既存projectionのlink整合を閉じる検査であり、product固有の文言、timeout、到達可能tupleを新たに定義しません。
 
 ## 表示の原則
 

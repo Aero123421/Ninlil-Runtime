@@ -86,10 +86,10 @@ requirements:
   - id: NIN-PR1-OPERATOR-001
     title: "Operator Model projection linkage"
     source: docs/11-operator-model.md
-    heading: "# 11. Operator Model"
+    heading: "## Projection contract"
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
-    status: planned
-    tests: []
-    gap: "Projection links are documented but are not fully machine-checked in PR1."
+    status: verified
+    tests: [operator_projection_check, operator_projection_negative]
+    gap: ""

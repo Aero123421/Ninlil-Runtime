@@ -388,8 +388,8 @@ static int test_real_repository(const char *repo_root)
     if (ninlil_traceability_run_repository_check(repo_root, &result, stderr) != 0) {
         return -1;
     }
-    if (result.entries != 9u || result.verified != 5u || result.partial != 3u
-        || result.planned != 1u || result.test_links != 18u) {
+    if (result.entries != 9u || result.verified != 6u || result.partial != 3u
+        || result.planned != 0u || result.test_links != 20u) {
         fprintf(stderr,
             "unexpected repository counts: entries=%zu verified=%zu partial=%zu planned=%zu "
             "test_links=%zu\n",

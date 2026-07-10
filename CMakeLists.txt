@@ -241,6 +241,43 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_yaml_reason_parser_test ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}
     )
 
+    add_executable(ninlil_operator_projection_tool
+        tools/operator_projection_tool.c
+        tools/operator_projection_schema.c
+        tools/yaml_reason_schema.c
+    )
+    set_target_properties(ninlil_operator_projection_tool PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_operator_projection_tool)
+
+    add_executable(ninlil_operator_projection_test
+        tools/operator_projection_test.c
+        tools/operator_projection_schema.c
+        tools/yaml_reason_schema.c
+    )
+    set_target_properties(ninlil_operator_projection_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_operator_projection_test)
+
+    add_test(
+        NAME operator_projection_check
+        COMMAND ninlil_operator_projection_tool check ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(operator_projection_check PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "operator projection ok: contexts=7 states=15 references=15 reason_hints=54"
+    )
+    add_test(
+        NAME operator_projection_negative
+        COMMAND ninlil_operator_projection_test ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
     add_executable(ninlil_hook_registry_tool
         tools/hook_registry_tool.c
         tools/hook_registry_schema.c
@@ -372,7 +409,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     set_tests_properties(traceability_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "traceability ok: entries=9 verified=5 partial=3 planned=1 test_links=18"
+            "traceability ok: entries=9 verified=6 partial=3 planned=0 test_links=20"
     )
     add_test(
         NAME traceability_negative
