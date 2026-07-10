@@ -60,9 +60,9 @@ requirements:
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
-    status: planned
-    tests: []
-    gap: "Runtime behavior implementation and executable tests are not present in PR1."
+    status: partial
+    tests: [abi_contract_output]
+    gap: "The bounded output initialization helper is tested but is not integrated into public runtime APIs."
   - id: NIN-PR1-STRUCT-001
     title: "Small and future public struct_size behavior"
     source: docs/12-foundation-abi.md
@@ -70,9 +70,9 @@ requirements:
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
-    status: planned
-    tests: []
-    gap: "Runtime behavior implementation and executable tests are not present in PR1."
+    status: partial
+    tests: [abi_contract_header]
+    gap: "The common ABI header helper is tested but is not integrated into public runtime APIs."
   - id: NIN-PR1-UNSUPPORTED-001
     title: "Unsupported feature rejection behavior"
     source: docs/12-foundation-abi.md
@@ -80,9 +80,9 @@ requirements:
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
-    status: planned
-    tests: []
-    gap: "Runtime rejection behavior and executable tests are not present in PR1."
+    status: partial
+    tests: [abi_contract_enum]
+    gap: "The enum classification helper is tested but public runtime rejection paths are not implemented."
   - id: NIN-PR1-OPERATOR-001
     title: "Operator Model projection linkage"
     source: docs/11-operator-model.md

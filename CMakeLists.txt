@@ -49,6 +49,38 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         )
     endfunction()
 
+    add_library(ninlil_contract STATIC
+        src/contract/abi_contract.c
+    )
+    target_include_directories(ninlil_contract PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/contract
+    )
+    target_link_libraries(ninlil_contract PRIVATE ninlil)
+    set_target_properties(ninlil_contract PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_contract)
+
+    add_executable(ninlil_abi_contract_test
+        tests/contract/abi_contract_test.c
+    )
+    target_include_directories(ninlil_abi_contract_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/contract
+    )
+    target_link_libraries(ninlil_abi_contract_test PRIVATE ninlil_contract ninlil)
+    set_target_properties(ninlil_abi_contract_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_abi_contract_test)
+
+    add_test(NAME abi_contract_header COMMAND ninlil_abi_contract_test header)
+    add_test(NAME abi_contract_output COMMAND ninlil_abi_contract_test output)
+    add_test(NAME abi_contract_enum COMMAND ninlil_abi_contract_test enum)
+
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
     target_link_libraries(ninlil_smoke_c11 PRIVATE ninlil)
     set_target_properties(ninlil_smoke_c11 PROPERTIES
@@ -340,7 +372,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     set_tests_properties(traceability_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "traceability ok: entries=9 verified=5 partial=0 planned=4 test_links=15"
+            "traceability ok: entries=9 verified=5 partial=3 planned=1 test_links=18"
     )
     add_test(
         NAME traceability_negative
