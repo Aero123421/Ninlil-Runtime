@@ -458,6 +458,7 @@ static int test_repository_inventory_validation(void)
         "- A1\n";
     ninlil_vector_reference_result_t result;
     char error[NINLIL_VECTOR_REFERENCE_MAX_ERROR];
+    char truncated_error[48];
 
     if (ninlil_vector_reference_check_repository_content(
             content,
@@ -473,6 +474,73 @@ static int test_repository_inventory_validation(void)
             "vector inventory validation error: vector definition count mismatch: expected 282, got 1")
         == NULL) {
         fprintf(stderr, "unexpected repository inventory validation error: %s\n", error);
+        return 1;
+    }
+    memset(truncated_error, 'X', sizeof(truncated_error));
+    if (ninlil_vector_reference_check_repository_content(
+            content,
+            &result,
+            truncated_error,
+            sizeof(truncated_error))
+        == 0) {
+        fprintf(stderr, "expected truncated repository inventory validation failure\n");
+        return 1;
+    }
+    if (truncated_error[sizeof(truncated_error) - 1u] != '\0'
+        || strncmp(
+               truncated_error,
+               "vector inventory validation error: ",
+               sizeof("vector inventory validation error: ") - 1u)
+            != 0) {
+        fprintf(
+            stderr,
+            "unsafe or prefix-losing validation error: %s\n",
+            truncated_error);
+        return 1;
+    }
+    return 0;
+}
+
+static int test_repository_error_detail_truncation(void)
+{
+    static const char prefix[] = "vector inventory parse error: ";
+    char id[NINLIL_VECTOR_INVENTORY_MAX_ID_LEN];
+    char content[256];
+    char error[64];
+    ninlil_vector_reference_result_t result;
+    size_t index;
+    int written;
+
+    id[0] = 'A';
+    id[1] = '1';
+    for (index = 2u; index < sizeof(id) - 1u; ++index) {
+        id[index] = 'a';
+    }
+    id[sizeof(id) - 1u] = '\0';
+    written = snprintf(
+        content,
+        sizeof(content),
+        "| Vector | Setup |\n| --- | --- |\n| `%s` | x |\n",
+        id);
+    if (written < 0 || (size_t)written >= sizeof(content)) {
+        fprintf(stderr, "long inventory error fixture truncated\n");
+        return 1;
+    }
+
+    memset(error, 'X', sizeof(error));
+    if (ninlil_vector_reference_check_repository_content(
+            content,
+            &result,
+            error,
+            sizeof(error))
+        == 0) {
+        fprintf(stderr, "expected long repository inventory parse failure\n");
+        return 1;
+    }
+    if (error[sizeof(error) - 1u] != '\0'
+        || strncmp(error, prefix, sizeof(prefix) - 1u) != 0
+        || strstr(error, "malformed vector ID at line 3:") == NULL) {
+        fprintf(stderr, "unsafe or prefix-losing truncated error: %s\n", error);
         return 1;
     }
     return 0;
@@ -515,6 +583,7 @@ int main(int argc, char **argv)
         || test_next_section_not_borrowed() != 0
         || test_mandatory_table_not_borrowed() != 0 || test_overlong_line() != 0
         || test_overlong_token() != 0 || test_repository_inventory_validation() != 0
+        || test_repository_error_detail_truncation() != 0
         || test_real_repository(argv[1]) != 0) {
         return 1;
     }

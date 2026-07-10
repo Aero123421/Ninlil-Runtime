@@ -713,9 +713,10 @@ int ninlil_parse_reason_registry_yaml_content_ex(
     }
     if (load_lines_from_content(content, &parser) != 0) {
         report_parse_error(parser.error, error_out, error_out_size);
-        return -1;
+        result = -1;
+    } else {
+        result = parse_registry_document(&parser, out_registry, error_out, error_out_size);
     }
-    result = parse_registry_document(&parser, out_registry, error_out, error_out_size);
     free_lines(&parser);
     return result;
 }
@@ -737,9 +738,10 @@ int ninlil_parse_reason_registry_yaml(
     memset(&parser, 0, sizeof(parser));
     if (load_lines_from_file(path, &parser) != 0) {
         report_parse_error(parser.error, NULL, 0u);
-        return -1;
+        result = -1;
+    } else {
+        result = parse_registry_document(&parser, out_registry, NULL, 0u);
     }
-    result = parse_registry_document(&parser, out_registry, NULL, 0u);
     free_lines(&parser);
     return result;
 }

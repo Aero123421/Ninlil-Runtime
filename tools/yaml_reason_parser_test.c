@@ -108,6 +108,7 @@ static int test_valid_yaml(const char *repo_root)
 static int test_reject_tabs(const char *work_dir)
 {
     char path[512];
+    size_t attempt;
     const char *content =
         "schema_version: 1\n"
         "registry:\tninlil-foundation-reason-codes\n";
@@ -115,9 +116,11 @@ static int test_reject_tabs(const char *work_dir)
     if (write_workdir_fixture(work_dir, "tabs", content, path, sizeof(path)) != 0) {
         return 1;
     }
-    if (expect_parse_file_fail(path) != 0) {
-        unlink(path);
-        return 1;
+    for (attempt = 0u; attempt < 3u; ++attempt) {
+        if (expect_parse_file_fail(path) != 0) {
+            unlink(path);
+            return 1;
+        }
     }
     unlink(path);
     return 0;

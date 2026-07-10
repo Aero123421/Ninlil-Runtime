@@ -77,6 +77,39 @@ static int set_error(char *error_out, size_t error_out_size, const char *message
     return -1;
 }
 
+static int set_prefixed_error(
+    char *destination,
+    size_t destination_size,
+    const char *prefix,
+    const char *detail)
+{
+    size_t prefix_length;
+    size_t detail_length;
+    size_t copy_length;
+
+    if (destination == NULL || destination_size == 0u) {
+        return -1;
+    }
+
+    prefix_length = strlen(prefix);
+    copy_length = prefix_length < destination_size - 1u
+        ? prefix_length
+        : destination_size - 1u;
+    memcpy(destination, prefix, copy_length);
+    destination[copy_length] = '\0';
+    if (copy_length != prefix_length) {
+        return -1;
+    }
+
+    detail_length = strlen(detail);
+    copy_length = detail_length < destination_size - prefix_length - 1u
+        ? detail_length
+        : destination_size - prefix_length - 1u;
+    memcpy(destination + prefix_length, detail, copy_length);
+    destination[prefix_length + copy_length] = '\0';
+    return -1;
+}
+
 static line_view_t trim_both(line_view_t view)
 {
     size_t leading = 0u;
@@ -1101,7 +1134,6 @@ int ninlil_vector_reference_check_repository_content(
 {
     ninlil_vector_inventory_t inventory;
     char inventory_error[NINLIL_VECTOR_REFERENCE_MAX_ERROR];
-    char message[NINLIL_VECTOR_REFERENCE_MAX_ERROR];
 
     if (out_result != NULL) {
         memset(out_result, 0, sizeof(*out_result));
@@ -1115,24 +1147,22 @@ int ninlil_vector_reference_check_repository_content(
             inventory_error,
             sizeof(inventory_error))
         != 0) {
-        snprintf(
-            message,
-            sizeof(message),
-            "vector inventory parse error: %s",
+        return set_prefixed_error(
+            error_out,
+            error_out_size,
+            "vector inventory parse error: ",
             inventory_error);
-        return set_error(error_out, error_out_size, message);
     }
     if (ninlil_vector_inventory_validate(
             &inventory,
             inventory_error,
             sizeof(inventory_error))
         != 0) {
-        snprintf(
-            message,
-            sizeof(message),
-            "vector inventory validation error: %s",
+        return set_prefixed_error(
+            error_out,
+            error_out_size,
+            "vector inventory validation error: ",
             inventory_error);
-        return set_error(error_out, error_out_size, message);
     }
     return ninlil_vector_reference_check_content(
         content,
