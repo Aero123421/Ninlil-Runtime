@@ -312,6 +312,41 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_vector_reference_test ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
+    add_executable(ninlil_traceability_tool
+        tools/traceability_tool.c
+        tools/traceability_schema.c
+    )
+    set_target_properties(ninlil_traceability_tool PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_traceability_tool)
+
+    add_executable(ninlil_traceability_test
+        tools/traceability_test.c
+        tools/traceability_schema.c
+    )
+    set_target_properties(ninlil_traceability_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_traceability_test)
+
+    add_test(
+        NAME traceability_check
+        COMMAND ninlil_traceability_tool check ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(traceability_check PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "traceability ok: entries=9 verified=5 partial=0 planned=4 test_links=15"
+    )
+    add_test(
+        NAME traceability_negative
+        COMMAND ninlil_traceability_test ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
     add_custom_target(ninlil_generate_reason_registry
         COMMAND ninlil_reason_registry_tool
             generate

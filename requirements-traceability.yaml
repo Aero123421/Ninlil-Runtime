@@ -1,0 +1,95 @@
+format: NINLIL_TRACEABILITY_V1
+schema_version: 1
+scope: PR1
+completion_target: PR3
+requirements:
+  - id: NIN-PR1-ABI-001
+    title: "Public ABI headers and ABI manifest"
+    source: docs/12-foundation-abi.md
+    heading: "# 12. Foundation M1a C ABI"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: verified
+    tests: [smoke_c11, smoke_cxx17, abi_drift_check, abi_drift_negative, abi_manifest_repeatable, abi_manifest_golden, abi_manifest_coverage]
+    gap: ""
+  - id: NIN-PR1-REASON-001
+    title: "Reason registry generation and validation"
+    source: docs/12-foundation-abi.md
+    heading: "### 4.4 Reason code"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: verified
+    tests: [reason_registry_check, yaml_reason_parser]
+    gap: ""
+  - id: NIN-PR1-HOOK-001
+    title: "Named fault hook ordered mirror"
+    source: docs/12-foundation-abi.md
+    heading: "## 17. Named fault hook registry"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: verified
+    tests: [hook_registry_mirror_check, hook_registry_mirror_negative]
+    gap: ""
+  - id: NIN-PR1-VECTOR-001
+    title: "Conformance vector definition inventory"
+    source: docs/14-foundation-ports-and-simulator.md
+    heading: "# 14. Foundation Ports and Deterministic Simulator"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: verified
+    tests: [vector_inventory_check, vector_inventory_negative]
+    gap: ""
+  - id: NIN-PR1-TRACE-001
+    title: "Mandatory suite and PR gate vector references"
+    source: docs/14-foundation-ports-and-simulator.md
+    heading: "### M1a mandatory suites"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: verified
+    tests: [vector_reference_check, vector_reference_negative]
+    gap: ""
+  - id: NIN-PR1-OUTPUT-001
+    title: "Public output initialization and nullability behavior"
+    source: docs/12-foundation-abi.md
+    heading: "## 13. Functionごとのownership、thread、出力"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: planned
+    tests: []
+    gap: "Runtime behavior implementation and executable tests are not present in PR1."
+  - id: NIN-PR1-STRUCT-001
+    title: "Small and future public struct_size behavior"
+    source: docs/12-foundation-abi.md
+    heading: "### 3.3 ABI struct validation"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: planned
+    tests: []
+    gap: "Runtime behavior implementation and executable tests are not present in PR1."
+  - id: NIN-PR1-UNSUPPORTED-001
+    title: "Unsupported feature rejection behavior"
+    source: docs/12-foundation-abi.md
+    heading: "## 14. M1a unsupported behavior"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: planned
+    tests: []
+    gap: "Runtime rejection behavior and executable tests are not present in PR1."
+  - id: NIN-PR1-OPERATOR-001
+    title: "Operator Model projection linkage"
+    source: docs/11-operator-model.md
+    heading: "# 11. Operator Model"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: planned
+    tests: []
+    gap: "Projection links are documented but are not fully machine-checked in PR1."
