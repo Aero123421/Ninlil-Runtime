@@ -81,6 +81,42 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_test(NAME abi_contract_output COMMAND ninlil_abi_contract_test output)
     add_test(NAME abi_contract_enum COMMAND ninlil_abi_contract_test enum)
 
+    add_library(ninlil_scheduler_model STATIC
+        src/model/scheduler_candidate.c
+    )
+    target_include_directories(ninlil_scheduler_model PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_scheduler_model PRIVATE ninlil)
+    set_target_properties(ninlil_scheduler_model PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_scheduler_model)
+
+    add_executable(ninlil_scheduler_candidate_test
+        tests/model/scheduler_candidate_test.c
+    )
+    target_include_directories(ninlil_scheduler_candidate_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_scheduler_candidate_test PRIVATE
+        ninlil_scheduler_model
+        ninlil
+    )
+    set_target_properties(ninlil_scheduler_candidate_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_scheduler_candidate_test)
+
+    add_test(
+        NAME scheduler_candidate_model
+        COMMAND ninlil_scheduler_candidate_test
+    )
+
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
     target_link_libraries(ninlil_smoke_c11 PRIVATE ninlil)
     set_target_properties(ninlil_smoke_c11 PROPERTIES
