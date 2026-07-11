@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a + D1-B3b slices.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a + D1-B3b + D1-B3c.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -19,6 +19,7 @@ extern "C" {
  *          (SERVICE, SERVICE_QUOTA, TRANSACTION_*, RESERVATION, maps)
  *   D1-B3a: family 6 26 SCHEDULER_OWNER only
  *   D1-B3b: family 6 27 ORDERED_INGRESS + pure message_semantic_digest helper
+ *   D1-B3c: family 6 30 BLOB manifest (flags=1) + chunk (flags=2) pure body
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -61,8 +62,14 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_EVENT_ID_MAP_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_BODY_SCHEDULER_OWNER_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_BODY_ORDERED_INGRESS_MAX ((uint32_t)1536u)
+#define NINLIL_MODEL_DOMAIN_BODY_BLOB_MAX ((uint32_t)3264u)
 #define NINLIL_MODEL_DOMAIN_RAW16_SUBJECT_KEY_MAX ((uint32_t)255u)
 #define NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX ((uint32_t)128u)
+
+/* BLOB owner_key_raw exact content lengths (docs17 §8.3). */
+#define NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_TX_BYTES ((uint16_t)16u)
+#define NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_INGRESS_BYTES ((uint16_t)8u)
+#define NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_DELIVERY_BYTES ((uint16_t)80u)
 
 /* Closed body enums (docs17 section 7.1). */
 #define NINLIL_MODEL_DOMAIN_INDEX_STATE_BASELINE ((uint16_t)1u)
@@ -97,6 +104,22 @@ extern "C" {
 
 /* ORDERED_INGRESS ingress_state (docs17 §8.3): PENDING only in v1 body. */
 #define NINLIL_MODEL_DOMAIN_INGRESS_STATE_PENDING ((uint32_t)1u)
+
+/*
+ * BLOB blob_owner_kind (docs17 §8.3) — private BLOB enums only.
+ * Distinct from reservation owner (SERVICE=1..) and scheduler owner
+ * (TRANSACTION=1, DELIVERY=2, INGRESS=3).
+ */
+#define NINLIL_MODEL_DOMAIN_BLOB_OWNER_TRANSACTION ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_BLOB_OWNER_INGRESS ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY ((uint16_t)3u)
+
+/* BLOB blob_kind (docs17 §7.1 / §8.3). */
+#define NINLIL_MODEL_DOMAIN_BLOB_KIND_COMMAND_PAYLOAD ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_BLOB_KIND_EVENT_PAYLOAD ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_BLOB_KIND_INGRESS_PAYLOAD ((uint16_t)3u)
+#define NINLIL_MODEL_DOMAIN_BLOB_KIND_EVIDENCE ((uint16_t)4u)
+#define NINLIL_MODEL_DOMAIN_BLOB_KIND_REPLY ((uint16_t)5u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -411,6 +434,39 @@ typedef struct ninlil_model_domain_body_ordered_ingress {
 } ninlil_model_domain_body_ordered_ingress_t;
 
 /*
+ * BLOB manifest (0x30, flags=1). owner_key_raw borrows encoded body on decode.
+ * blob_id / owner_primary_key_digest / length-count rules are same-record
+ * validated; live owner get and multi-chunk stream are D3.
+ */
+typedef struct ninlil_model_domain_body_blob_manifest {
+    uint8_t blob_id_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint16_t blob_owner_kind;
+    uint16_t blob_kind;
+    uint16_t owner_key_raw_length;
+    const uint8_t *owner_key_raw;
+    uint8_t owner_primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t total_length;
+    uint32_t chunk_count;
+    uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_blob_manifest_t;
+
+/*
+ * BLOB chunk (0x30, flags=2). chunk_bytes borrows encoded body on decode.
+ * Zero chunk_length is always corrupt. Single-chunk content_digest is
+ * recomputed same-record; multi-chunk stream digest is D3.
+ */
+typedef struct ninlil_model_domain_body_blob_chunk {
+    uint8_t blob_id_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t manifest_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t chunk_index;
+    uint32_t chunk_count;
+    uint64_t total_length;
+    uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t chunk_length;
+    const uint8_t *chunk_bytes;
+} ninlil_model_domain_body_blob_chunk_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -507,6 +563,8 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_event_id_map_t event_id_map;
         ninlil_model_domain_body_scheduler_owner_t scheduler_owner;
         ninlil_model_domain_body_ordered_ingress_t ordered_ingress;
+        ninlil_model_domain_body_blob_manifest_t blob_manifest;
+        ninlil_model_domain_body_blob_chunk_t blob_chunk;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -766,6 +824,71 @@ ninlil_status_t ninlil_model_domain_decode_body_ordered_ingress(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_ordered_ingress_t *out_body);
 
+/* --- BLOB (0x30) manifest + chunk --- */
+
+/*
+ * blob_id_digest = SHA-256("NINLIL-DOMAIN-BLOB-ID-V1" ||
+ *   blob_owner_kind:u16 || owner_key_raw:RAW16 || blob_kind:u16 ||
+ *   content_digest[32] || total_length:u64)
+ * owner_key_raw is contents only (RAW16 length prefix is applied here).
+ * content_digest must be non-zero. Alias / address failures leave every
+ * participating range unchanged; other INVALID zeros *out_digest.
+ */
+ninlil_status_t ninlil_model_domain_blob_id_digest(
+    uint16_t blob_owner_kind,
+    uint16_t owner_key_raw_length,
+    const uint8_t *owner_key_raw,
+    uint16_t blob_kind,
+    const uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES],
+    uint64_t total_length,
+    ninlil_model_domain_digest_t *out_digest);
+
+/*
+ * Checked ceil(total_length / 3072) as u32. total_length=0 → chunk_count=0.
+ * Address-validates *out_chunk_count before any write. Overflow of the ceil
+ * result past u32 is INVALID_ARGUMENT with *out=0 (when the out range is
+ * address-valid). UINT32_MAX*3072 → OK/UINT32_MAX; that total + 1 → INVALID.
+ */
+ninlil_status_t ninlil_model_domain_blob_chunk_count_for_total(
+    uint64_t total_length,
+    uint32_t *out_chunk_count);
+
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_blob_manifest_encoded_length(
+    const ninlil_model_domain_body_blob_manifest_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_blob_manifest(
+    const ninlil_model_domain_body_blob_manifest_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows owner_key_raw from encoded. Valid only while encoded lives.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_blob_manifest(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_blob_manifest_t *out_body);
+
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_blob_chunk_encoded_length(
+    const ninlil_model_domain_body_blob_chunk_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_blob_chunk(
+    const ninlil_model_domain_body_blob_chunk_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows chunk_bytes from encoded. Valid only while encoded lives.
+ * Zero-length chunk field is always CORRUPT (generic D1-A 0..3072 bound is
+ * not sufficient validity for a stored chunk row).
+ */
+ninlil_status_t ninlil_model_domain_decode_body_blob_chunk(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_blob_chunk_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -811,7 +934,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a + D1-B3b subtypes.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a + D1-B3b + D1-B3c.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -823,7 +946,10 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       ingress→delivery owner transfer; ORDERED_INGRESS live owner /
  *       SCHEDULER / RESERVATION / BLOB 0/1 cardinality and BLOB stream
  *       semantic recompute when digests non-zero; SERVICE supported-mask
- *       vs receipt_stage
+ *       vs receipt_stage; BLOB live owner/manifest get, primary value digest
+ *       equality, chunk 0..count-1 enumeration, multi-chunk stream digest,
+ *       owner semantic content match, same-owner/kind/content manifest alias,
+ *       lifecycle erase / capacity accounting
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

@@ -309,7 +309,8 @@ static int known_op(const char *op)
         || strcmp(op, "body_decode") == 0
         || strcmp(op, "body_roundtrip") == 0
         || strcmp(op, "typed_record") == 0
-        || strcmp(op, "message_semantic_digest") == 0;
+        || strcmp(op, "message_semantic_digest") == 0
+        || strcmp(op, "blob_chunk_count") == 0;
 }
 
 static int has_str(const ninlil_dv_vector_t *v, uint64_t bit)
@@ -500,6 +501,12 @@ static int validate_op_fields(
         if (ok) {
             NEED_STR(NINLIL_DV_STR_DIGEST);
         }
+    } else if (strcmp(op, "blob_chunk_count") == 0) {
+        /* sha_bit_length carries total_length (u64); chunk_count is expected. */
+        NEED_NUM(NINLIL_DV_NUM_FAMILY);
+        NEED_NUM(NINLIL_DV_NUM_SUBTYPE);
+        NEED_NUM(NINLIL_DV_NUM_SHA_BIT);
+        NEED_NUM(NINLIL_DV_NUM_CHUNK_COUNT);
     } else {
         set_err(err, err_cap, "unknown op");
         return -1;
@@ -978,6 +985,8 @@ static int parse_catalog(parse_ctx *c, ninlil_dv_file_t *file)
         CAT("dsb3_total_negative", dsb3_total_negative, NINLIL_DV_CAT_DSB3_NEG)
         CAT("dsb3_subtype_27_positive", dsb3_subtype_27_positive,
             NINLIL_DV_CAT_DSB3_27)
+        CAT("dsb3_subtype_30_positive", dsb3_subtype_30_positive,
+            NINLIL_DV_CAT_DSB3_30)
 #undef CAT
         {
             set_err(c->err, c->err_cap, "unknown catalog key");
