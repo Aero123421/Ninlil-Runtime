@@ -14,9 +14,9 @@
 
 /*
  * High catalog presence bits (not wire/JSON fields) for future headroom.
- * Bit 34 is real D1-B3e (subtype 34); bit 35 is real D1-B3f (subtype 33).
- * Synthetic missing/truncation arithmetic uses unused bit40. Bit63 remains
- * a storage-width proof.
+ * Bit 34 is real D1-B3e (subtype 34); bit 35 is real D1-B3f (subtype 33);
+ * bit 36 is real D1-B3g (subtype 32). Synthetic missing/truncation arithmetic
+ * uses unused bit40. Bit63 remains a storage-width proof.
  */
 #define NINLIL_DV_CAT_TEST_BIT40 NINLIL_DV_CAT_BIT(40)
 #define NINLIL_DV_CAT_TEST_BIT63 NINLIL_DV_CAT_BIT(63)
@@ -35,6 +35,8 @@ _Static_assert(NINLIL_DV_CAT_DSB3_34 == NINLIL_DV_CAT_BIT(34),
     "D1-B3e subtype 34 catalog bit is bit 34 (no shift of 0..33)");
 _Static_assert(NINLIL_DV_CAT_DSB3_33 == NINLIL_DV_CAT_BIT(35),
     "D1-B3f subtype 33 catalog bit is bit 35 (no shift of 0..34)");
+_Static_assert(NINLIL_DV_CAT_DSB3_32 == NINLIL_DV_CAT_BIT(36),
+    "D1-B3g subtype 32 catalog bit is bit 36 (no shift of 0..35)");
 _Static_assert(NINLIL_DV_CAT_DSB3_NEG == NINLIL_DV_CAT_BIT(30),
     "pre-B3b highest wire catalog bit stays bit 30");
 _Static_assert(NINLIL_DV_CAT_TEST_BIT40 == (UINT64_C(1) << 40),
@@ -61,6 +63,9 @@ _Static_assert(
     (NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_DSB3_33) != 0u,
     "B3f catalog bit 35 is part of the required mask");
 _Static_assert(
+    (NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_DSB3_32) != 0u,
+    "B3g catalog bit 36 is part of the required mask");
+_Static_assert(
     (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_DSB3_30)
         != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
             | NINLIL_DV_CAT_DSB3_30),
@@ -80,6 +85,11 @@ _Static_assert(
         != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
             | NINLIL_DV_CAT_DSB3_33),
     "uint32 storage would truncate catalog presence bit 35");
+_Static_assert(
+    (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_DSB3_32)
+        != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
+            | NINLIL_DV_CAT_DSB3_32),
+    "uint32 storage would truncate catalog presence bit 36");
 
 static const char *full_catalog =
     "\"catalog\":{"
@@ -100,7 +110,8 @@ static const char *full_catalog =
     "\"dsb3_subtype_26_positive\":0,\"dsb3_total_positive\":0,"
     "\"dsb3_total_negative\":0,\"dsb3_subtype_27_positive\":0,"
     "\"dsb3_subtype_30_positive\":0,\"dsb3_subtype_31_positive\":0,"
-    "\"dsb3_subtype_34_positive\":0,\"dsb3_subtype_33_positive\":0}";
+    "\"dsb3_subtype_34_positive\":0,\"dsb3_subtype_33_positive\":0,"
+    "\"dsb3_subtype_32_positive\":0}";
 
 static const char *ws_def =
     "\"required_workspace_bytes_definition\":"
@@ -108,14 +119,14 @@ static const char *ws_def =
     "and state/context objects.\"";
 
 static const char *top_ok_prefix =
-    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3f\","
+    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3g\","
     "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
     "(10/11/20-25 service+txn admission) + D1-B3a body "
     "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
     "message_semantic_digest helper + D1-B3c body (30 BLOB "
     "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
-    "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE); "
-    "not full D1 catalog\",";
+    "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE) + "
+    "D1-B3g body (32 EVIDENCE_CELL); not full D1 catalog\",";
 
 static int expect_fail(const char *text)
 {
@@ -285,7 +296,7 @@ int main(void)
         (void)snprintf(ok, sizeof(ok),
             "{\n"
             "  \"version\": 1,\n"
-            "  \"format\": \"ninlil-domain-store-v1-d1b3f-r1\",\n"
+            "  \"format\": \"ninlil-domain-store-v1-d1b3g\",\n"
             "  \"scope\": \"%s\",\n"
             "  %s,\n"
             "  %s,\n"
@@ -313,9 +324,10 @@ int main(void)
 
     /*
      * Catalog presence scalability: high bits and required-mask checks must
-     * not truncate. Bits 34/35 are real/required (subtypes 34/33); synthetic
-     * future-missing/truncation arithmetic uses unused bit40. Bit63 proves
-     * uint64 storage width. No new JSON catalog keys for synthetic bits.
+     * not truncate. Bits 34/35/36 are real/required (subtypes 34/33/32);
+     * synthetic future-missing/truncation arithmetic uses unused bit40.
+     * Bit63 proves uint64 storage width. No new JSON catalog keys for
+     * synthetic bits.
      */
     {
         uint64_t present;
