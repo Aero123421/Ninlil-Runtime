@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2 vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2 are
-hand-written here and intentionally do not import or link production C.
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a
+are hand-written here and intentionally do not import or link production C.
 
 Usage:
   python3 tools/domain_store_vector_gen.py generate <path>
@@ -309,6 +309,31 @@ def reservation_primary_key_digest(owner_kind: int, owner_raw_contents: bytes) -
         return complete_key_digest_composite(
             0x40, owner_raw_contents[: 2 + dlen])
     raise ValueError("bad owner kind")
+
+
+def scheduler_primary_key_digest(owner_kind: int, subject_raw: bytes) -> bytes:
+    """
+    KEY_DIGEST of SCHEDULER referenced primary (docs17 §5.1 / §8.3).
+    owner_kind is scheduler enum: 1 TRANSACTION, 2 DELIVERY, 3 INGRESS.
+    """
+    if owner_kind == 1:  # TRANSACTION → TRANSACTION_ANCHOR ID128
+        return complete_key_digest_id128(0x20, subject_raw)
+    if owner_kind == 2:  # DELIVERY composite(delivery_key_raw:RAW16)
+        return complete_key_digest_composite(0x40, raw16(subject_raw))
+    if owner_kind == 3:  # INGRESS → ORDERED_INGRESS u64
+        return complete_key_digest_u64(0x27, subject_raw)
+    raise ValueError("bad scheduler owner kind")
+
+
+def scheduler_primary_id(owner_kind: int, subject_raw: bytes) -> bytes:
+    """Common primary_id form for SCHEDULER secondary (not owner_sequence)."""
+    if owner_kind == 1:
+        return subject_raw  # transaction_id
+    if owner_kind == 2:
+        return primary_id_from_composite_subtype(0x40, raw16(subject_raw))
+    if owner_kind == 3:
+        return primary_id_from_identity(3, subject_raw)
+    raise ValueError("bad scheduler owner kind")
 
 
 def enc_env_full(rtype, st, flags, rev, primary_id, head, pvd, body: bytes) -> bytes:
@@ -2071,6 +2096,254 @@ def build_document():
         assert b2_cov[st]["negative"] >= 3
         assert b2_cov[st]["roundtrip"] >= 1
 
+    # --- D1-B3a: SCHEDULER_OWNER (0x26) only ---
+    b3_cov = {}
+    s_pos = s_neg = s_mut = s_rt = 0
+    owner_seq_tx = 1
+    owner_seq_dlv = 2
+    owner_seq_ing = 3
+    logical_epoch = bytes([0xC1]) + bytes([0xC2] * 15)
+    wake_epoch = bytes([0xD1]) + bytes([0xD2] * 15)
+    assert len(logical_epoch) == 16 and len(wake_epoch) == 16
+    assert logical_epoch != bytes(16) and wake_epoch != bytes(16)
+    # dlv_raw already built for RESERVATION: 80 bytes five non-zero IDs
+    assert len(dlv_raw) == 80
+    ingress_seq8 = be64(7)
+
+    def enc_sched_body(
+        owner_seq, owner_kind, subject, work_class=1, state_rev=1,
+        ready=0, wake_ep=None, wake_ms=0, logical_ms=0, pkd=None,
+    ):
+        if wake_ep is None:
+            wake_ep = bytes(16)
+        if pkd is None:
+            pkd = scheduler_primary_key_digest(owner_kind, subject)
+        return (
+            be64(owner_seq) + be16(owner_kind) + be16(work_class)
+            + raw16(subject) + pkd + be64(state_rev)
+            + logical_epoch + be64(logical_ms)
+            + wake_ep + be64(wake_ms) + be32(ready)
+        )
+
+    def sched_typed(owner_seq, owner_kind, subject, body, rev=3, state_rev=None):
+        """rev is common record_revision; intentionally may differ from state_rev."""
+        primary = scheduler_primary_id(owner_kind, subject)
+        key = bkey(6, 0x26, 3, be64(owner_seq))
+        # Self-key form would be left-pad owner_seq; must differ for non-matching cases
+        assert primary != primary_id_from_identity(3, be64(owner_seq)) or owner_kind == 3
+        val = enc_env_full(
+            6, 0x26, 0, rev, primary, F["head_nz"], F["pvd_nz"], body)
+        return key, val, primary
+
+    # TRANSACTION: ready=0, no wake; state_revision != common revision
+    body_stx = enc_sched_body(
+        owner_seq_tx, 1, txn, work_class=1, state_rev=5, ready=0, logical_ms=0)
+    assert len(body_stx) == 122
+    assert scheduler_primary_key_digest(1, txn) == complete_key_digest_id128(0x20, txn)
+    # identity-digest confusion: sha256(txn) != KEY_DIGEST(complete key)
+    assert scheduler_primary_key_digest(1, txn) != sha256(txn)
+    stx_key, val_stx, stx_primary = sched_typed(
+        owner_seq_tx, 1, txn, body_stx, rev=3)
+    assert stx_primary == txn
+    add(id="DSB3_SCHED_TX_POSITIVE", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x26, body_length=len(body_stx),
+        body_hex=hx(body_stx))
+    s_pos += 1; s_rt += 1
+    add(id="DSB3_SCHED_TX_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x26, key_hex=hx(stx_key),
+        value_hex=hx(val_stx), body_hex=hx(body_stx), digest_hex=hx(sha256(val_stx)),
+        crc_hex=f"{crc32c(val_stx[:-4]):08x}", notes="common_rev=3 state_rev=5")
+    s_pos += 1
+    add(id="DSB3_SCHED_READY0_NO_WAKE", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x26, body_length=len(body_stx),
+        body_hex=hx(body_stx), notes="ready=0 next_wake both zero")
+    s_pos += 1; s_rt += 1
+
+    # DELIVERY: ready=1 + future wake positive
+    body_sdl = enc_sched_body(
+        owner_seq_dlv, 2, dlv_raw, work_class=2, state_rev=2, ready=1,
+        wake_ep=wake_epoch, wake_ms=9999, logical_ms=100)
+    assert len(body_sdl) == 186
+    sdl_key, val_sdl, sdl_primary = sched_typed(
+        owner_seq_dlv, 2, dlv_raw, body_sdl, rev=7)
+    assert sdl_primary != primary_id_from_identity(3, be64(owner_seq_dlv))
+    add(id="DSB3_SCHED_DLV_POSITIVE", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x26, body_length=len(body_sdl),
+        body_hex=hx(body_sdl))
+    s_pos += 1; s_rt += 1
+    add(id="DSB3_SCHED_DLV_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x26, key_hex=hx(sdl_key),
+        value_hex=hx(val_sdl), body_hex=hx(body_sdl), digest_hex=hx(sha256(val_sdl)),
+        crc_hex=f"{crc32c(val_sdl[:-4]):08x}")
+    s_pos += 1
+    add(id="DSB3_SCHED_READY1_FUTURE_WAKE", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x26, body_length=len(body_sdl),
+        body_hex=hx(body_sdl), notes="ready=1 + future wake coexist")
+    s_pos += 1; s_rt += 1
+
+    # INGRESS: ready=1 + future wake; common rev != state_rev
+    body_sin = enc_sched_body(
+        owner_seq_ing, 3, ingress_seq8, work_class=3, state_rev=9, ready=1,
+        wake_ep=wake_epoch, wake_ms=42, logical_ms=0)
+    assert len(body_sin) == 114
+    sin_key, val_sin, sin_primary = sched_typed(
+        owner_seq_ing, 3, ingress_seq8, body_sin, rev=4)
+    # For INGRESS, primary_id is left-pad ordered_seq — may equal self-key form
+    # when owner_sequence happens to equal ordered_seq; here 3 vs 7 so different.
+    assert sin_primary == primary_id_from_identity(3, ingress_seq8)
+    assert sin_primary != primary_id_from_identity(3, be64(owner_seq_ing))
+    add(id="DSB3_SCHED_ING_POSITIVE", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x26, body_length=len(body_sin),
+        body_hex=hx(body_sin))
+    s_pos += 1; s_rt += 1
+    add(id="DSB3_SCHED_ING_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x26, key_hex=hx(sin_key),
+        value_hex=hx(val_sin), body_hex=hx(body_sin), digest_hex=hx(sha256(val_sin)),
+        crc_hex=f"{crc32c(val_sin[:-4]):08x}", notes="common_rev=4 state_rev=9")
+    s_pos += 1
+    add(id="DSB3_SCHED_REV_NE_STATE", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x26, key_hex=hx(sin_key),
+        value_hex=hx(val_sin), body_hex=hx(body_sin),
+        notes="common record_revision != state_revision valid")
+    s_pos += 1
+
+    # --- negatives ---
+    dummy_pkd = bytes([0xAB] * 32)
+    add(id="DSB3_SCHED_OWNER0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 0, txn, pkd=dummy_pkd)))
+    s_neg += 1
+    add(id="DSB3_SCHED_OWNER4", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 4, txn, pkd=dummy_pkd)))
+    s_neg += 1
+    add(id="DSB3_SCHED_WORK0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 1, txn, work_class=0)))
+    s_neg += 1
+    add(id="DSB3_SCHED_WORK7", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 1, txn, work_class=7)))
+    s_neg += 1
+    add(id="DSB3_SCHED_SUBJECT_LEN", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 1, txn[:15], pkd=dummy_pkd)))
+    s_neg += 1
+    add(id="DSB3_SCHED_SUBJECT_ZERO_TX", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 1, bytes(16), pkd=dummy_pkd)))
+    s_neg += 1
+    add(id="DSB3_SCHED_SUBJECT_ZERO_ING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(3, 3, be64(0), pkd=dummy_pkd)))
+    s_neg += 1
+    # primary_key_digest mutation
+    mut_pkd = bytearray(body_stx)
+    # after owner_seq(8)+kind(2)+work(2)+raw16(2+16)=30, digest at offset 30
+    off_pkd = 8 + 2 + 2 + 2 + 16
+    mut_pkd[off_pkd:off_pkd + 32] = bytes([0xB0] * 32)
+    add(id="DSB3_SCHED_BAD_PRIMARY_KD", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(bytes(mut_pkd)))
+    s_neg += 1; s_mut += 1
+    # complete-key vs identity-digest confusion
+    body_id_dig = enc_sched_body(
+        1, 1, txn, pkd=sha256(txn))  # bare identity digest, not KEY_DIGEST
+    add(id="DSB3_SCHED_IDENTITY_DIGEST_CONFUSION", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(body_id_dig),
+        notes="primary_key_digest must be KEY_DIGEST(complete key), not sha256(id)")
+    s_neg += 1
+    # owner key sequence mismatch: key has seq 99, body has seq 1
+    bad_seq_key = bkey(6, 0x26, 3, be64(99))
+    add(id="DSB3_SCHED_SEQ_MISMATCH", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x26, key_hex=hx(bad_seq_key),
+        value_hex=hx(val_stx))
+    s_neg += 1
+    # wrong common primary_id using scheduler self-key (left-pad owner_sequence)
+    self_pid = primary_id_from_identity(3, be64(owner_seq_tx))
+    assert self_pid != txn
+    val_self = enc_env_full(
+        6, 0x26, 0, 3, self_pid, F["head_nz"], F["pvd_nz"], body_stx)
+    add(id="DSB3_SCHED_SELF_PRIMARY", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x26, key_hex=hx(stx_key),
+        value_hex=hx(val_self),
+        notes="primary_id must be referenced primary, not scheduler self-key")
+    s_neg += 1
+    # zero head
+    val_zh = enc_env_full(
+        6, 0x26, 0, 3, stx_primary, bytes(32), F["pvd_nz"], body_stx)
+    add(id="DSB3_SCHED_ZERO_HEAD", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x26, key_hex=hx(stx_key),
+        value_hex=hx(val_zh))
+    s_neg += 1
+    # zero pvd
+    val_zp = enc_env_full(
+        6, 0x26, 0, 3, stx_primary, F["head_nz"], bytes(32), body_stx)
+    add(id="DSB3_SCHED_ZERO_PVD", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x26, key_hex=hx(stx_key),
+        value_hex=hx(val_zp))
+    s_neg += 1
+    # flags non-zero
+    val_fl = enc_env_full(
+        6, 0x26, 1, 3, stx_primary, F["head_nz"], F["pvd_nz"], body_stx)
+    add(id="DSB3_SCHED_FLAGS", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x26, key_hex=hx(stx_key),
+        value_hex=hx(val_fl))
+    s_neg += 1
+    # state_revision 0
+    add(id="DSB3_SCHED_STATE_REV0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 1, txn, state_rev=0)))
+    s_neg += 1
+    # logical epoch zero
+    body_le0 = (
+        be64(1) + be16(1) + be16(1) + raw16(txn)
+        + scheduler_primary_key_digest(1, txn) + be64(1)
+        + bytes(16) + be64(0) + bytes(16) + be64(0) + be32(0)
+    )
+    add(id="DSB3_SCHED_LOGICAL_EPOCH0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26, body_hex=hx(body_le0))
+    s_neg += 1
+    # ready=2
+    add(id="DSB3_SCHED_READY2", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(1, 1, txn, ready=2)))
+    s_neg += 1
+    # wake mismatch: epoch non-zero, time zero
+    add(id="DSB3_SCHED_WAKE_EPOCH_ONLY", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(
+            1, 1, txn, wake_ep=wake_epoch, wake_ms=0)))
+    s_neg += 1
+    # wake mismatch: epoch zero, time non-zero
+    add(id="DSB3_SCHED_WAKE_TIME_ONLY", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(
+            1, 1, txn, wake_ep=bytes(16), wake_ms=5)))
+    s_neg += 1
+    # owner_sequence 0
+    add(id="DSB3_SCHED_SEQ0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(enc_sched_body(0, 1, txn)))
+    s_neg += 1
+    add(id="DSB3_SCHED_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(body_stx[:-1]))
+    s_neg += 1
+    add(id="DSB3_SCHED_TRAILING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x26,
+        body_hex=hx(body_stx + b"\x00"))
+    s_neg += 1
+    add(id="DSB3_SCHED_BUFFER_TOO_SMALL", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x26,
+        body_length=len(body_stx), body_hex=hx(body_stx), key_length=0)
+    s_neg += 1
+
+    b3_cov["26"] = add_body_suite("SCHEDULER_OWNER", 6, 0x26, s_pos, s_neg, s_mut, s_rt)
+    assert b3_cov["26"]["positive"] >= 6
+    assert b3_cov["26"]["negative"] >= 15
+    assert b3_cov["26"]["roundtrip"] >= 3
 
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
@@ -2088,6 +2361,10 @@ def build_document():
     dsb2_pos = sum(1 for v in vectors if v["suite"] == "DSB2"
                    and v["expected_status"] == "OK")
     dsb2_neg = sum(1 for v in vectors if v["suite"] == "DSB2"
+                   and v["expected_status"] != "OK")
+    dsb3_pos = sum(1 for v in vectors if v["suite"] == "DSB3"
+                   and v["expected_status"] == "OK")
+    dsb3_neg = sum(1 for v in vectors if v["suite"] == "DSB3"
                    and v["expected_status"] != "OK")
     catalog = {
         "dsk1_positive_keys": 30,
@@ -2118,6 +2395,9 @@ def build_document():
         "dsb2_subtype_25_positive": b2_cov["25"]["positive"],
         "dsb2_total_positive": dsb2_pos,
         "dsb2_total_negative": dsb2_neg,
+        "dsb3_subtype_26_positive": b3_cov["26"]["positive"],
+        "dsb3_total_positive": dsb3_pos,
+        "dsb3_total_negative": dsb3_neg,
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -2142,20 +2422,24 @@ def build_document():
         assert catalog[f"dsb2_subtype_{st}_positive"] > 0
     assert catalog["dsb2_total_positive"] > 0
     assert catalog["dsb2_total_negative"] > 0
+    assert catalog["dsb3_subtype_26_positive"] > 0
+    assert catalog["dsb3_total_positive"] > 0
+    assert catalog["dsb3_total_negative"] > 0
 
     for v in vectors:
         assert v["required_workspace_bytes"] == 0
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b2",
+        "format": "ninlil-domain-store-v1-d1b3a",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
-            "(10/11/20-25 service+txn admission); not full D1 catalog"
+            "(10/11/20-25 service+txn admission) + D1-B3a body "
+            "(26 SCHEDULER_OWNER); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
-            "and state/context objects. Current D1-A/D1-B1/D1-B2 APIs have no "
+            "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a APIs have no "
             "workspace parameter; value is 0."
         ),
         "catalog": catalog,

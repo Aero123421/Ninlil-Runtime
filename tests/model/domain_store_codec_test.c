@@ -78,6 +78,7 @@ typedef struct body_any {
     ninlil_model_domain_body_reservation_t reservation;
     ninlil_model_domain_body_idempotency_map_t idempotency_map;
     ninlil_model_domain_body_event_id_map_t event_id_map;
+    ninlil_model_domain_body_scheduler_owner_t scheduler_owner;
 } body_any_t;
 
 static ninlil_status_t decode_body_any(
@@ -136,6 +137,10 @@ static ninlil_status_t decode_body_any(
     if (family == 6u && subtype == 0x25u) {
         return ninlil_model_domain_decode_body_event_id_map(
             body, &any->event_id_map);
+    }
+    if (family == 6u && subtype == 0x26u) {
+        return ninlil_model_domain_decode_body_scheduler_owner(
+            body, &any->scheduler_owner);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -199,6 +204,10 @@ static ninlil_status_t encode_body_any(
     if (family == 6u && subtype == 0x25u) {
         return ninlil_model_domain_encode_body_event_id_map(
             &any->event_id_map, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x26u) {
+        return ninlil_model_domain_encode_body_scheduler_owner(
+            &any->scheduler_owner, out, capacity, out_len);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -947,6 +956,8 @@ static int test_catalog_and_replay(const char *path)
     uint32_t dsb1_neg = 0u;
     uint32_t dsb2_pos = 0u;
     uint32_t dsb2_neg = 0u;
+    uint32_t dsb3_pos = 0u;
+    uint32_t dsb3_neg = 0u;
     uint32_t cov01 = 0u;
     uint32_t cov60 = 0u;
     uint32_t cov62 = 0u;
@@ -960,6 +971,7 @@ static int test_catalog_and_replay(const char *path)
     uint32_t cov23 = 0u;
     uint32_t cov24 = 0u;
     uint32_t cov25 = 0u;
+    uint32_t cov26 = 0u;
     uint32_t unimplemented = 0u;
 
     if (ninlil_dv_load_file(path, &file, err, sizeof(err)) != 0) {
@@ -1060,6 +1072,16 @@ static int test_catalog_and_replay(const char *path)
                 dsb2_neg++;
             }
         }
+        if (strcmp(v->suite, "DSB3") == 0) {
+            if (strcmp(v->expected_status, "OK") == 0) {
+                dsb3_pos++;
+                if (v->subtype == 0x26u) {
+                    cov26++;
+                }
+            } else {
+                dsb3_neg++;
+            }
+        }
         if (replay(v) != 0) {
             (void)fprintf(stderr, "replay failed %s\n", v->id);
             ninlil_dv_free(&file);
@@ -1092,23 +1114,26 @@ static int test_catalog_and_replay(const char *path)
     REQUIRE(cov23 == file.catalog.dsb2_subtype_23_positive);
     REQUIRE(cov24 == file.catalog.dsb2_subtype_24_positive);
     REQUIRE(cov25 == file.catalog.dsb2_subtype_25_positive);
-    /* D1-B1 + D1-B2 subtype coverage: every target subtype has positives. */
+    REQUIRE(dsb3_pos == file.catalog.dsb3_total_positive);
+    REQUIRE(dsb3_neg == file.catalog.dsb3_total_negative);
+    REQUIRE(cov26 == file.catalog.dsb3_subtype_26_positive);
+    /* D1-B1 + D1-B2 + D1-B3a subtype coverage: every target subtype has positives. */
     if (cov01 == 0u || cov60 == 0u || cov62 == 0u || cov64 == 0u
         || cov7d == 0u || cov10 == 0u || cov11 == 0u || cov20 == 0u
         || cov21 == 0u || cov22 == 0u || cov23 == 0u || cov24 == 0u
-        || cov25 == 0u) {
+        || cov25 == 0u || cov26 == 0u) {
         unimplemented = 1u;
     }
     REQUIRE(unimplemented == 0u);
     (void)fprintf(stdout,
         "production replayed vectors=%zu dsb1_pos=%u dsb1_neg=%u "
-        "dsb2_pos=%u dsb2_neg=%u "
+        "dsb2_pos=%u dsb2_neg=%u dsb3_pos=%u dsb3_neg=%u "
         "cov01=%u cov60=%u cov62=%u cov64=%u cov7d=%u "
         "cov10=%u cov11=%u cov20=%u cov21=%u cov22=%u cov23=%u cov24=%u "
-        "cov25=%u sizeof(ninlil_dv_vector_t)=%zu\n",
-        file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, cov01,
-        cov60, cov62, cov64, cov7d, cov10, cov11, cov20, cov21, cov22, cov23,
-        cov24, cov25, sizeof(ninlil_dv_vector_t));
+        "cov25=%u cov26=%u sizeof(ninlil_dv_vector_t)=%zu\n",
+        file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, dsb3_pos,
+        dsb3_neg, cov01, cov60, cov62, cov64, cov7d, cov10, cov11, cov20,
+        cov21, cov22, cov23, cov24, cov25, cov26, sizeof(ninlil_dv_vector_t));
     ninlil_dv_free(&file);
     return 0;
 }
@@ -2295,9 +2320,28 @@ static int test_body_alias_and_overflow(const char *vector_path)
         ninlil_model_domain_body_event_id_map_t,
         ninlil_model_domain_decode_body_event_id_map);
 
+    /* --- D1-B3a SCHEDULER_OWNER variable RAW16 body --- */
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_scheduler_owner_t,
+        ninlil_model_domain_encode_body_scheduler_owner);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_scheduler_owner_t,
+        ninlil_model_domain_encode_body_scheduler_owner);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_scheduler_owner_t,
+        ninlil_model_domain_encode_body_scheduler_owner,
+        subject_key_raw, subject_key_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_scheduler_owner_t,
+        ninlil_model_domain_encode_body_scheduler_owner,
+        subject_key_raw, subject_key_raw_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_scheduler_owner_t,
+        ninlil_model_domain_decode_body_scheduler_owner);
+
     /*
      * BUFFER_TOO_SMALL exact required length + untouched short buffer for each
-     * variable body. Golden positives from the checked-in DSB2 catalog.
+     * variable body. Golden positives from the checked-in DSB2/DSB3 catalog.
      */
     {
         /* Load positives via the same vector path used by main/replay. */
@@ -2318,14 +2362,16 @@ static int test_body_alias_and_overflow(const char *vector_path)
             uint32_t short_len = 0u;
             body_any_t any;
             ninlil_status_t got;
-            if (strcmp(v->suite, "DSB2") != 0
+            if ((strcmp(v->suite, "DSB2") != 0
+                    && strcmp(v->suite, "DSB3") != 0)
                 || strcmp(v->expected_status, "OK") != 0
                 || strcmp(v->op, "body_roundtrip") != 0) {
                 continue;
             }
             if (v->subtype != 0x10u && v->subtype != 0x11u
                 && v->subtype != 0x20u && v->subtype != 0x23u
-                && v->subtype != 0x24u && v->subtype != 0x25u) {
+                && v->subtype != 0x24u && v->subtype != 0x25u
+                && v->subtype != 0x26u) {
                 continue;
             }
             REQUIRE(hex_to(ninlil_dv_str(v->body_hex), enc, sizeof(enc), &hn)
@@ -2352,8 +2398,8 @@ static int test_body_alias_and_overflow(const char *vector_path)
             REQUIRE(memcmp(short_buf, short_before, sizeof(short_buf)) == 0);
             bts_seen++;
         }
-        /* At least one positive body_roundtrip per six variable subtypes. */
-        REQUIRE(bts_seen >= 6u);
+        /* At least one positive body_roundtrip per seven variable subtypes. */
+        REQUIRE(bts_seen >= 7u);
         ninlil_dv_free(&file);
     }
 
@@ -2397,12 +2443,12 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b2\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3a\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
-            "\"format\": \"ninlil-domain-store-v1-d1aX\"",
-            strlen("\"format\": \"ninlil-domain-store-v1-d1aX\""));
+            "\"format\": \"ninlil-domain-store-v1-d1bXX\"",
+            strlen("\"format\": \"ninlil-domain-store-v1-d1bXX\""));
         REQUIRE(ninlil_dv_parse_text(mut, strlen(mut), &file, err, sizeof(err))
             != 0);
         ninlil_dv_free(&file);

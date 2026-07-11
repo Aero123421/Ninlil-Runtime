@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 slices.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a slices.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -17,6 +17,7 @@ extern "C" {
  *   D1-B1: family 5 01; family 6 60/62/64/7d
  *   D1-B2: family 6 10/11/20/21/22/23/24/25
  *          (SERVICE, SERVICE_QUOTA, TRANSACTION_*, RESERVATION, maps)
+ *   D1-B3a: family 6 26 SCHEDULER_OWNER only
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -57,6 +58,8 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_RESERVATION_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_BODY_IDEMPOTENCY_MAP_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVENT_ID_MAP_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_BODY_SCHEDULER_OWNER_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_RAW16_SUBJECT_KEY_MAX ((uint32_t)255u)
 
 /* Closed body enums (docs17 section 7.1). */
 #define NINLIL_MODEL_DOMAIN_INDEX_STATE_BASELINE ((uint16_t)1u)
@@ -72,6 +75,17 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_RESERVATION_RELEASED_MASK_KNOWN ((uint32_t)0x000007ffu)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_KIND_COUNT ((uint32_t)11u)
 #define NINLIL_MODEL_DOMAIN_DELIVERY_KEY_CONTENTS_BYTES ((uint32_t)80u)
+
+/* scheduler owner_kind / work_class (docs17 §7.1) — distinct from reservation. */
+#define NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_TRANSACTION ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_DELIVERY ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_INGRESS ((uint16_t)3u)
+#define NINLIL_MODEL_DOMAIN_WORK_CLASS_REDUCE ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_WORK_CLASS_DISPATCH ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_WORK_CLASS_TIMER ((uint16_t)3u)
+#define NINLIL_MODEL_DOMAIN_WORK_CLASS_CALLBACK ((uint16_t)4u)
+#define NINLIL_MODEL_DOMAIN_WORK_CLASS_CLEANUP ((uint16_t)5u)
+#define NINLIL_MODEL_DOMAIN_WORK_CLASS_RECOVERY ((uint16_t)6u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -324,6 +338,25 @@ typedef struct ninlil_model_domain_body_event_id_map {
 } ninlil_model_domain_body_event_id_map_t;
 
 /*
+ * SCHEDULER_OWNER (0x26). subject_key_raw borrows encoded body on decode.
+ * state_revision is independent of common record_revision (docs17 §8.3).
+ */
+typedef struct ninlil_model_domain_body_scheduler_owner {
+    uint64_t owner_sequence;
+    uint16_t owner_kind;
+    uint16_t work_class;
+    uint16_t subject_key_raw_length;
+    const uint8_t *subject_key_raw;
+    uint8_t primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t state_revision;
+    uint8_t logical_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t logical_at_ms;
+    uint8_t next_wake_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t next_wake_at_ms;
+    uint32_t ready; /* exact 0/1 */
+} ninlil_model_domain_body_scheduler_owner_t;
+
+/*
  * Same-record typed view produced by validate_typed_record.
  * body is an anonymous union (stack-bounded); only the matching subtype
  * field is populated. envelope.body and RAW16/member_key borrows remain
@@ -349,6 +382,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_reservation_t reservation;
         ninlil_model_domain_body_idempotency_map_t idempotency_map;
         ninlil_model_domain_body_event_id_map_t event_id_map;
+        ninlil_model_domain_body_scheduler_owner_t scheduler_owner;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -574,15 +608,36 @@ ninlil_status_t ninlil_model_domain_decode_body_event_id_map(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_event_id_map_t *out_body);
 
+/* --- SCHEDULER_OWNER (0x26) --- */
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_scheduler_owner_encoded_length(
+    const ninlil_model_domain_body_scheduler_owner_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_scheduler_owner(
+    const ninlil_model_domain_body_scheduler_owner_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
 /*
- * Same-record typed validation for D1-B1 + D1-B2 subtypes.
+ * Decode borrows subject_key_raw from encoded. Valid only while encoded
+ * remains alive.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_scheduler_owner(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_scheduler_owner_t *out_body);
+
+/*
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a subtypes.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
  * Not implemented here (deferred with boundary comments in .c):
  * - D2: domain scan / multi-row presence
  * - D3: cross-row primary/index/backlink, fence plan counts, head chains,
- *       live quota recompute from reservations, primary value digest get
+ *       live quota recompute from reservations, primary value digest get,
+ *       SCHEDULER 1:1 cardinality / counter upper bound / ready semantics /
+ *       ingress→delivery owner transfer
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

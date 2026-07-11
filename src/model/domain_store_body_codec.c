@@ -5,13 +5,15 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
  *   family 3/4 capacity/counter mutual recompute, live SERVICE_QUOTA active
  *   counts from TRANSACTION RESERVATION contributions, primary_value_digest
- *   exact get of live primary complete value.
+ *   exact get of live primary complete value; SCHEDULER_OWNER 1:1 cardinality,
+ *   counter/cursor upper bound, ready semantics, ingress→delivery owner
+ *   transfer (same-record codec alone does not prove these).
  * - D4: COMMIT_UNKNOWN old/new complete-value digest convergence.
  */
 
@@ -1557,6 +1559,126 @@ static int event_id_map_fields_ok(
             <= NINLIL_MODEL_DOMAIN_RAW16_IDEMPOTENCY_KEY_MAX
         && body->idempotency_key != NULL
         && digest_is_nonzero(body->anchor_value_digest);
+}
+
+/*
+ * Scheduler subject raw reuses reservation owner raw formulas for the three
+ * overlapping owner kinds (docs17 §7.1 / §8.3). Enum values differ:
+ * scheduler TRANSACTION=1/DELIVERY=2/INGRESS=3 vs reservation 2/4/3.
+ */
+static int scheduler_subject_raw_is_valid(
+    uint16_t owner_kind, uint16_t len, const uint8_t *raw)
+{
+    switch (owner_kind) {
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_TRANSACTION:
+        return reservation_owner_raw_is_valid(
+            NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_TRANSACTION, len, raw);
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_DELIVERY:
+        return reservation_owner_raw_is_valid(
+            NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_DELIVERY, len, raw);
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_INGRESS:
+        return reservation_owner_raw_is_valid(
+            NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_INGRESS, len, raw);
+    default:
+        return 0;
+    }
+}
+
+/*
+ * primary_key_digest = KEY_DIGEST of referenced primary complete key
+ * (TRANSACTION_ANCHOR / DELIVERY / ORDERED_INGRESS). Not identity digest.
+ */
+static int scheduler_primary_key_digest_ok(
+    const ninlil_model_domain_body_scheduler_owner_t *body)
+{
+    uint8_t raw16[257];
+    ninlil_bytes_view_t components;
+    uint32_t raw16_len = 0u;
+
+    if (body == NULL || body->subject_key_raw == NULL) {
+        return 0;
+    }
+    switch (body->owner_kind) {
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_TRANSACTION:
+        if (body->subject_key_raw_length != 16u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            body->primary_key_digest,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_TRANSACTION_ANCHOR,
+            NINLIL_MODEL_DOMAIN_ID_KIND_ID128,
+            body->subject_key_raw,
+            16u);
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_DELIVERY:
+        if (!encode_raw16_into(
+                body->subject_key_raw_length,
+                body->subject_key_raw,
+                raw16,
+                sizeof(raw16),
+                &raw16_len)) {
+            return 0;
+        }
+        components.data = raw16;
+        components.length = raw16_len;
+        return digest_eq_composite_key(
+            body->primary_key_digest,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+            components);
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_INGRESS:
+        if (body->subject_key_raw_length != 8u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            body->primary_key_digest,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_ORDERED_INGRESS,
+            NINLIL_MODEL_DOMAIN_ID_KIND_U64,
+            body->subject_key_raw,
+            8u);
+    default:
+        return 0;
+    }
+}
+
+/* Next wake: both zero OR epoch non-zero and time non-zero (docs17 §8.3). */
+static int scheduler_next_wake_pair_ok(
+    const uint8_t epoch[NINLIL_MODEL_DOMAIN_ID_BYTES], uint64_t at_ms)
+{
+    if (epoch == NULL) {
+        return 0;
+    }
+    if (id_is_zero(epoch)) {
+        return at_ms == 0u;
+    }
+    return at_ms != 0u;
+}
+
+static int scheduler_owner_fields_ok(
+    const ninlil_model_domain_body_scheduler_owner_t *body)
+{
+    if (body == NULL || body->owner_sequence == 0u
+        || body->owner_kind < NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_TRANSACTION
+        || body->owner_kind > NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_INGRESS
+        || body->work_class < NINLIL_MODEL_DOMAIN_WORK_CLASS_REDUCE
+        || body->work_class > NINLIL_MODEL_DOMAIN_WORK_CLASS_RECOVERY
+        || body->subject_key_raw_length == 0u
+        || body->subject_key_raw_length
+            > NINLIL_MODEL_DOMAIN_RAW16_SUBJECT_KEY_MAX
+        || body->subject_key_raw == NULL
+        || !scheduler_subject_raw_is_valid(
+            body->owner_kind,
+            body->subject_key_raw_length,
+            body->subject_key_raw)
+        || !scheduler_primary_key_digest_ok(body)
+        || body->state_revision == 0u
+        || id_is_zero(body->logical_clock_epoch)
+        || !scheduler_next_wake_pair_ok(
+            body->next_wake_clock_epoch, body->next_wake_at_ms)
+        || body->ready > 1u) {
+        return 0;
+    }
+    return 1;
 }
 
 /* --- INTERNAL_INVARIANT --- */
@@ -3382,6 +3504,152 @@ ninlil_status_t ninlil_model_domain_decode_body_event_id_map(
     return NINLIL_OK;
 }
 
+/* --- SCHEDULER_OWNER --- */
+
+uint32_t ninlil_model_domain_body_scheduler_owner_encoded_length(
+    const ninlil_model_domain_body_scheduler_owner_t *body)
+{
+    uint32_t n;
+    if (body == NULL || !scheduler_owner_fields_ok(body)) {
+        return 0u;
+    }
+    /* u64+u16+u16 + RAW16 + dig32 + u64 + id16 + u64 + id16 + u64 + u32 */
+    n = 8u + 2u + 2u + 2u + (uint32_t)body->subject_key_raw_length + 32u
+        + 8u + 16u + 8u + 16u + 8u + 4u;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_SCHEDULER_OWNER_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_scheduler_owner(
+    const ninlil_model_domain_body_scheduler_owner_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->subject_key_raw != NULL && body->subject_key_raw_length != 0u) {
+            ptrs[n] = body->subject_key_raw;
+            lens[n] = body->subject_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_scheduler_owner_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    ninlil_model_domain_encode_u64_be(&out_bytes[0], body->owner_sequence);
+    ninlil_model_domain_encode_u16_be(&out_bytes[8], body->owner_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[10], body->work_class);
+    o = 12u;
+    o += encode_raw16(
+        &out_bytes[o], body->subject_key_raw_length, body->subject_key_raw);
+    (void)memcpy(&out_bytes[o], body->primary_key_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->state_revision);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->logical_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->logical_at_ms);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->next_wake_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->next_wake_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->ready);
+    o += 4u;
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_scheduler_owner(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_scheduler_owner_t *out_body)
+{
+    ninlil_model_domain_body_scheduler_owner_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 12u + 2u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_SCHEDULER_OWNER_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    tmp.owner_sequence = ninlil_model_domain_decode_u64_be(&encoded.data[0]);
+    tmp.owner_kind = ninlil_model_domain_decode_u16_be(&encoded.data[8]);
+    tmp.work_class = ninlil_model_domain_decode_u16_be(&encoded.data[10]);
+    o = 12u;
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o,
+            (uint16_t)NINLIL_MODEL_DOMAIN_RAW16_SUBJECT_KEY_MAX,
+            &tmp.subject_key_raw_length, &tmp.subject_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    /* dig32 + u64 + id16 + u64 + id16 + u64 + u32 = 92 */
+    if (encoded.length - o < 92u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.primary_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.state_revision = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.logical_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.logical_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.next_wake_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.next_wake_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.ready = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    if (o != encoded.length || !scheduler_owner_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 
 /* --- typed record validation --- */
 
@@ -3407,6 +3675,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RESERVATION:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_IDEMPOTENCY_MAP:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_ID_MAP:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_SCHEDULER_OWNER:
         return 1;
     default:
         return 0;
@@ -3571,6 +3840,44 @@ static ninlil_status_t reservation_expected_primary_id(
         return primary_id_from_composite_components(
             NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY, components, out_primary_id);
     }
+    default:
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+}
+
+/*
+ * SCHEDULER common primary_id is the referenced primary identity (docs17 §4/§9):
+ * TRANSACTION → transaction_id
+ * DELIVERY → DELIVERY composite(delivery_key_raw:RAW16) first 16
+ * INGRESS → ordered_sequence u64 left-zero-padded
+ * Not the SCHEDULER key's owner_sequence when different.
+ */
+static ninlil_status_t scheduler_expected_primary_id(
+    const ninlil_model_domain_body_scheduler_owner_t *body,
+    uint8_t out_primary_id[NINLIL_MODEL_DOMAIN_ID_BYTES])
+{
+    switch (body->owner_kind) {
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_TRANSACTION:
+        if (body->subject_key_raw_length != 16u
+            || body->subject_key_raw == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        (void)memcpy(out_primary_id, body->subject_key_raw, 16u);
+        return NINLIL_OK;
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_DELIVERY:
+        return primary_id_from_raw_contents_as_raw16(
+            NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+            body->subject_key_raw_length,
+            body->subject_key_raw,
+            out_primary_id);
+    case NINLIL_MODEL_DOMAIN_SCHEDULER_OWNER_INGRESS:
+        if (body->subject_key_raw_length != 8u
+            || body->subject_key_raw == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        (void)memset(out_primary_id, 0, NINLIL_MODEL_DOMAIN_ID_BYTES);
+        (void)memcpy(&out_primary_id[8], body->subject_key_raw, 8u);
+        return NINLIL_OK;
     default:
         return NINLIL_E_STORAGE_CORRUPT;
     }
@@ -4040,6 +4347,39 @@ static ninlil_status_t validate_header_body_local(
         }
         /* primary_id = body transaction_id (anchor), not map composite. */
         if (!header_primary_id_eq(env, out->event_id_map.transaction_id)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_SCHEDULER_OWNER) {
+        uint8_t seq_be[8];
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+
+        status = ninlil_model_domain_decode_body_scheduler_owner(
+            env->body, &out->scheduler_owner);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        /*
+         * Same-record: key u64 identity == owner_sequence BE8.
+         * primary_id = referenced primary identity, not scheduler self-key.
+         * D3 deferred (not proven here): live primary get / value digest,
+         * exact 1:1 cardinality, family-3 counter/cursor upper bound,
+         * ready semantics vs step cut, ingress→delivery owner transfer.
+         */
+        if (key->identity_kind != NINLIL_MODEL_DOMAIN_ID_KIND_U64
+            || key->identity_length != 8u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        ninlil_model_domain_encode_u64_be(
+            seq_be, out->scheduler_owner.owner_sequence);
+        if (memcmp(key->identity, seq_be, 8u) != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (scheduler_expected_primary_id(&out->scheduler_owner, expect_pid)
+                != NINLIL_OK
+            || !header_primary_id_eq(env, expect_pid)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;
