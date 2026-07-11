@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..m.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..n.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -37,6 +37,8 @@ extern "C" {
  *          (live ANCHOR PVD / cross-row fold/cardinality are D3)
  *   D1-B3m: family 6 52 MANAGEMENT_LEDGER pure body + same-record kind matrix
  *          (live SPOOL/STATE/RESERVATION counters / sequence upper bound are D3)
+ *   D1-B3n: family 6 61 RETENTION_BASIS pure body + same-record state matrix
+ *          (live now/profile window/plan generation/primary PVD are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -111,6 +113,14 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES ((uint32_t)128u)
 #define NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_RESUME ((uint16_t)15u)
 #define NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_DISCARD ((uint16_t)16u)
+/* RETENTION_BASIS (0x61): 90+N fixed after RAW16; TX106 / DLV170; max 512. */
+#define NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_FIXED ((uint32_t)90u)
+#define NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_TX_BYTES ((uint32_t)106u)
+#define NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_DELIVERY_BYTES ((uint32_t)170u)
+#define NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_RAW16_RETENTION_SUBJECT_KEY_MAX ((uint32_t)255u)
+#define NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_KEY_TX_BYTES ((uint16_t)16u)
+#define NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_KEY_DELIVERY_BYTES ((uint16_t)80u)
 /* Content digest algorithm closed set (docs17 §8.6; 0 NONE / 1 SHA-256). */
 #define NINLIL_MODEL_DOMAIN_CONTENT_DIGEST_NONE ((uint16_t)0u)
 #define NINLIL_MODEL_DOMAIN_CONTENT_DIGEST_SHA256 ((uint16_t)1u)
@@ -238,6 +248,18 @@ extern "C" {
  */
 #define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_TRANSACTION ((uint16_t)1u)
 #define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_DELIVERY ((uint16_t)2u)
+
+/*
+ * RETENTION_BASIS subject_kind / retention_state (docs17 §7.1 / §8.6 D1-B3n).
+ * Distinct from CANCEL (1/2) and reservation (1..5) owner enums: legal are
+ * only 2 TRANSACTION and 3 DELIVERY (1 SERVICE / 4 EVENT corrupt).
+ */
+#define NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_TRANSACTION ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_DELIVERY ((uint16_t)3u)
+
+#define NINLIL_MODEL_DOMAIN_RETENTION_STATE_ACTIVE ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_RETENTION_STATE_ELIGIBLE ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_RETENTION_STATE_CLEANUP_COMMITTED ((uint32_t)3u)
 
 #define NINLIL_MODEL_DOMAIN_CANCEL_STATE_NONE ((uint32_t)1u)
 #define NINLIL_MODEL_DOMAIN_CANCEL_STATE_PENDING_REMOTE_FENCE ((uint32_t)2u)
@@ -995,6 +1017,29 @@ typedef struct ninlil_model_domain_body_management_ledger {
 } ninlil_model_domain_body_management_ledger_t;
 
 /*
+ * RETENTION_BASIS (0x61). Body length 90+N (docs17 §8.6 D1-B3n).
+ * subject_key_raw borrows encoded body on decode. Legal N: TRANSACTION 16
+ * (body 106) or DELIVERY 80 (body 170). Key COMPOSITE(61, subject_kind:u16 ||
+ * subject_key_raw:RAW16). subject_primary_key_digest = KEY_DIGEST of complete
+ * primary key (TX ID128 subtype20 / DLV COMPOSITE(40, RAW16 raw80)); bare
+ * composite digest store/compare is forbidden. Live now/profile/plan/PVD are D3.
+ */
+typedef struct ninlil_model_domain_body_retention_basis {
+    uint16_t subject_kind;
+    uint16_t reserved;
+    uint16_t subject_key_raw_length;
+    const uint8_t *subject_key_raw;
+    uint8_t subject_primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t basis_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t basis_at_ms;
+    uint64_t exclusive_cleanup_at_ms;
+    uint64_t required_window_ms;
+    uint32_t retention_state;
+    uint32_t basis_pending;
+    uint32_t retention_overflow;
+} ninlil_model_domain_body_retention_basis_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -1103,6 +1148,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_event_spool_t event_spool;
         ninlil_model_domain_body_retry_summary_t retry_summary;
         ninlil_model_domain_body_management_ledger_t management_ledger;
+        ninlil_model_domain_body_retention_basis_t retention_basis;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1596,6 +1642,21 @@ ninlil_status_t ninlil_model_domain_decode_body_management_ledger(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_management_ledger_t *out_body);
 
+/* --- RETENTION_BASIS (0x61) --- */
+/* Returns 90+N (106 or 170), or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_retention_basis_encoded_length(
+    const ninlil_model_domain_body_retention_basis_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_retention_basis(
+    const ninlil_model_domain_body_retention_basis_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_retention_basis(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_retention_basis_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1641,7 +1702,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..m.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..n.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1704,7 +1765,10 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       uniqueness (B3l proves same-record body/key/kind-slot-fold/bools only);
  *       MANAGEMENT_LEDGER live SPOOL/STATE/RESERVATION counters / family 3
  *       sequence upper bound / writer E2E (B3m proves same-record body/key/
- *       kind15-16 matrix / canonical digest recompute / rev1 only)
+ *       kind15-16 matrix / canonical digest recompute / rev1 only);
+ *       RETENTION_BASIS live trusted now / profile window match / plan
+ *       generation / live primary PVD (B3n proves same-record body/key/
+ *       kind+raw / KEY_DIGEST / pending-trusted-eligible matrix only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and
