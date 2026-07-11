@@ -123,6 +123,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         src/model/desired_target_snapshot_internal.c
         src/model/required_receipt_transition.c
         src/model/resource_ledger.c
+        src/model/resource_ledger_batch.c
     )
     target_include_directories(ninlil_reducer_model PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
@@ -221,6 +222,28 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_test(
         NAME resource_ledger_model
         COMMAND ninlil_resource_ledger_test
+    )
+
+    add_executable(ninlil_resource_ledger_batch_test
+        tests/model/resource_ledger_batch_test.c
+    )
+    target_include_directories(ninlil_resource_ledger_batch_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_resource_ledger_batch_test PRIVATE
+        ninlil_reducer_model
+        ninlil
+    )
+    set_target_properties(ninlil_resource_ledger_batch_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_resource_ledger_batch_test)
+
+    add_test(
+        NAME resource_ledger_batch_model
+        COMMAND ninlil_resource_ledger_batch_test
     )
 
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
