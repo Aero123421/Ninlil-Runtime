@@ -27,7 +27,8 @@ extern "C" {
  *   D1-B3g: family 6 32 EVIDENCE_CELL pure body + same-record matrix
  *          (not D2/D3/D4; live L/cardinality/primary PVD/target match are D3)
  *   D1-B3h: family 6 40 DELIVERY pure body + same-record matrix
- *          (RESULT_CACHE 0x41 is next slice; live secondaries are D3)
+ *   D1-B3i: family 6 41 RESULT_CACHE pure body + same-record A–G matrix
+ *          (live DELIVERY PVD / reply_count / ATTEMPT cardinality are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -70,6 +71,10 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_DELIVERY_MIN ((uint32_t)552u)
 #define NINLIL_MODEL_DOMAIN_BODY_DELIVERY_MAX_CANONICAL ((uint32_t)738u)
 #define NINLIL_MODEL_DOMAIN_BODY_DELIVERY_MAX ((uint32_t)1024u)
+/* RESULT_CACHE (0x41): fixed 296 + RAW16(raw80)=82 → exact body 378; max 1024. */
+#define NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_FIXED ((uint32_t)296u)
+#define NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_BYTES ((uint32_t)378u)
+#define NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_MAX ((uint32_t)1024u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_SERVICE_SLOT_BYTES ((uint32_t)240u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
@@ -226,6 +231,28 @@ extern "C" {
 /* DELIVERY creation_kind (docs17 §7.1 / §8.5). */
 #define NINLIL_MODEL_DOMAIN_DELIVERY_CREATION_APPLICATION_FIRST ((uint16_t)1u)
 #define NINLIL_MODEL_DOMAIN_DELIVERY_CREATION_CANCEL_FIRST ((uint16_t)2u)
+
+/* RESULT_CACHE private enums (docs17 §7.1 / §8.5 D1-B3i). */
+#define NINLIL_MODEL_DOMAIN_DELIVERY_STATE_INBOX_COMMITTED ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_DELIVERY_STATE_DELIVERY_STARTED ((uint32_t)2u)
+/* numeric 3 DEFERRED_WAIT is V1 reserved/illegal on storage. */
+#define NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RESULT_COMMITTED ((uint32_t)4u)
+#define NINLIL_MODEL_DOMAIN_DELIVERY_STATE_DISPOSITION_COMMITTED ((uint32_t)5u)
+#define NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RECOVERY_REQUIRED ((uint32_t)6u)
+#define NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RECONCILE_WAIT ((uint32_t)7u)
+#define NINLIL_MODEL_DOMAIN_DELIVERY_STATE_CANCEL_TOMBSTONE_ONLY ((uint32_t)8u)
+
+#define NINLIL_MODEL_DOMAIN_TOKEN_STATE_NONE ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_TOKEN_STATE_ACTIVE ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_TOKEN_STATE_CONSUMED ((uint32_t)3u)
+#define NINLIL_MODEL_DOMAIN_TOKEN_STATE_EXPIRED ((uint32_t)4u)
+#define NINLIL_MODEL_DOMAIN_TOKEN_STATE_RECOVERY_REQUIRED_TOMBSTONE ((uint32_t)5u)
+
+/* Operation kind 9/10 phases (docs17 §10) — closed u16 for identity. */
+#define NINLIL_MODEL_DOMAIN_OP9_PHASE_DELIVERY_START_SUCCESS ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_OP9_PHASE_DELIVERY_START_COUNTER_EXHAUSTED ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_OP10_PHASE_APPLICATION_RESULT_OR_DELIVERY_COMPLETE ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_OP10_PHASE_TOKEN_TIMEOUT ((uint16_t)2u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -730,6 +757,47 @@ typedef struct ninlil_model_domain_body_delivery {
 } ninlil_model_domain_body_delivery_t;
 
 /*
+ * RESULT_CACHE (0x41). delivery_key_raw borrows encoded body on decode.
+ * Same-record body/key/digest/A–G matrix (docs17 §8.5 D1-B3i).
+ * Live DELIVERY PVD / reply cardinality / ATTEMPT counts are D3.
+ */
+typedef struct ninlil_model_domain_body_result_cache {
+    uint16_t delivery_key_raw_length;
+    const uint8_t *delivery_key_raw;
+    uint8_t delivery_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t delivery_count;
+    uint32_t application_seen;
+    uint32_t application_attempt_count;
+    uint32_t delivery_state;
+    uint32_t reply_count;
+    uint8_t token_context_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t token_generation;
+    uint8_t token_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t token_expires_at_ms;
+    uint8_t delivery_started_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t delivery_started_at_ms;
+    uint64_t completion_expires_at_ms;
+    uint64_t callback_invocations;
+    uint64_t reconcile_invocation_count;
+    uint64_t reconcile_retry_generation;
+    uint8_t reconcile_not_before_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t reconcile_not_before_ms;
+    uint32_t application_result_kind;
+    uint32_t evidence_stage;
+    uint32_t disposition;
+    uint32_t reason;
+    uint32_t effect_certainty;
+    uint32_t retry_guidance;
+    uint64_t retry_delay_ms;
+    uint8_t evidence_cell_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t token_state;
+    uint32_t cancel_result_kind;
+    uint8_t completed_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t completed_at_ms;
+} ninlil_model_domain_body_result_cache_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -833,6 +901,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_cancel_state_t cancel_state;
         ninlil_model_domain_body_evidence_cell_t evidence_cell;
         ninlil_model_domain_body_delivery_t delivery;
+        ninlil_model_domain_body_result_cache_t result_cache;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1244,6 +1313,24 @@ ninlil_status_t ninlil_model_domain_decode_body_delivery(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_delivery_t *out_body);
 
+/* --- RESULT_CACHE (0x41) --- */
+/* Returns exact 378, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_result_cache_encoded_length(
+    const ninlil_model_domain_body_result_cache_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_result_cache(
+    const ninlil_model_domain_body_result_cache_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows delivery_key_raw from encoded. Valid only while encoded lives.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_result_cache(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_result_cache_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1289,7 +1376,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..h.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..i.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1332,8 +1419,12 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       public ABSENT projection / supported evidence mask / evidence grace
  *       live SERVICE max / deadline proof / retention cleanup (B3h proves
  *       same-record body/key/family matrix/payload presence/result and
- *       reservation KEY_DIGEST/primary binding only; RESULT_CACHE body is
- *       next slice)
+ *       reservation KEY_DIGEST/primary binding only);
+ *       RESULT_CACHE live DELIVERY PVD exact match / reply_count live
+ *       REVERSE_REPLY cardinality / application_attempt_count live ATTEMPT
+ *       count / CANCEL_STATE live kind / EVIDENCE_CELL live presence (B3i
+ *       proves same-record body/key/A–G matrix/delivery_key_digest/
+ *       evidence_cell_key_digest formula/primary binding only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

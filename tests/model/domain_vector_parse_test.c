@@ -111,7 +111,8 @@ static const char *full_catalog =
     "\"dsb3_total_negative\":0,\"dsb3_subtype_27_positive\":0,"
     "\"dsb3_subtype_30_positive\":0,\"dsb3_subtype_31_positive\":0,"
     "\"dsb3_subtype_34_positive\":0,\"dsb3_subtype_33_positive\":0,"
-    "\"dsb3_subtype_32_positive\":0,\"dsb3_subtype_40_positive\":0}";
+    "\"dsb3_subtype_32_positive\":0,\"dsb3_subtype_40_positive\":0,"
+    "\"dsb3_subtype_41_positive\":0}";
 
 static const char *ws_def =
     "\"required_workspace_bytes_definition\":"
@@ -119,14 +120,8 @@ static const char *ws_def =
     "and state/context objects.\"";
 
 static const char *top_ok_prefix =
-    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3h\","
-    "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
-    "(10/11/20-25 service+txn admission) + D1-B3a body "
-    "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
-    "message_semantic_digest helper + D1-B3c body (30 BLOB "
-    "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
-    "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE) + "
-    "D1-B3g body (32 EVIDENCE_CELL) + D1-B3h body (40 DELIVERY); not full D1 catalog\",";
+    "{\"version\":1,\"format\":\"" NINLIL_DV_FORMAT_REQUIRED "\","
+    "\"scope\":\"" NINLIL_DV_SCOPE_REQUIRED "\",";
 
 static int expect_fail(const char *text)
 {
@@ -296,7 +291,7 @@ int main(void)
         (void)snprintf(ok, sizeof(ok),
             "{\n"
             "  \"version\": 1,\n"
-            "  \"format\": \"ninlil-domain-store-v1-d1b3h\",\n"
+            "  \"format\": \"ninlil-domain-store-v1-d1b3i\",\n"
             "  \"scope\": \"%s\",\n"
             "  %s,\n"
             "  %s,\n"

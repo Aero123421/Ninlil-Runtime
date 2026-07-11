@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a..h vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..i vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..g
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..i
 are hand-written here and intentionally do not import or link production C.
+
+D1 pre-alpha operation identity correction: kind 9/10 identities are exact 42
+bytes (digest[32] || token_generation:u64 || phase:u16). Legacy 40-byte form is
+rejected. Within the historical 1032-vector prefix, only the seven kind9/10
+fixture IDs listed in KIND910_REFIXED_IDS are re-pinned; all other prefix
+vectors remain byte-for-byte immutable.
 
 Usage:
   python3 tools/domain_store_vector_gen.py generate <path>
@@ -612,11 +618,16 @@ def build_document():
         fence_kind=1, identity_hex=hx(id32[:31]))
 
     def op_id(k):
-        L = {1: 32, 2: 16, 3: 16, 4: 8, 5: 32, 6: 40, 7: 8, 8: 8, 9: 40, 10: 40, 11: 50,
+        # kind 9/10: 42 = digest[32] || token_generation:u64 || phase:u16
+        # (D1 pre-alpha operation identity correction; legacy 40 not accepted)
+        L = {1: 32, 2: 16, 3: 16, 4: 8, 5: 32, 6: 40, 7: 8, 8: 8, 9: 42, 10: 42, 11: 50,
              12: 42, 13: 8, 14: 42, 15: 32, 16: 32, 17: 14, 18: 42, 19: 24, 20: 8, 21: 66}[k]
         b = bytearray([(0x20 + (i & 0x1F)) for i in range(L)])
-        if k in (6, 9, 10):
+        if k == 6:
             b[32:40] = be64(1)
+        if k in (9, 10):
+            b[32:40] = be64(1)
+            b[40:42] = be16(1)  # phase 1 default
         if k == 11:
             b[32:40] = be64(1); b[40:48] = be64(1); b[48:50] = be16(1)
         if k == 12:
@@ -3877,8 +3888,9 @@ def build_document():
         ).hexdigest()
 
     # Pre-r1 non-B3b-wire objects in the pre-B3d prefix (BLOB end inclusive).
+    # Re-pinned at D1-B3i: kind9/10 operation identity phase correction (42-byte).
     PRE_B3D_NON_B3B_WIRE_FINGERPRINT = (
-        "721ee13410be427aee1c4616db61fe60fa8e61a03faa403c167c04b8b1182a78"
+        "ec62271a8ff15b172795f10b1dd1235e0b3837ac2ce321c5b76360678586cd30"
     )
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_BLOB_CHK_BLOB_ID_ZERO"
@@ -4487,8 +4499,9 @@ def build_document():
     # =====================================================================
     # D1-B3e ATTEMPT_ID_INDEX (0x34) — after ATTEMPT (B3b r1 may shift count)
     # =====================================================================
+    # Re-pinned at D1-B3i: kind9/10 42-byte identity correction.
     PRE_B3E_NON_B3B_WIRE_FINGERPRINT = (
-        "47756913b78663abef3f213878d04bb12dc2b1e01ba24748394a8f81d646cfa0"
+        "09e7094f166ac698ba921f3a6da1ae2852782898717b40b5cf810320109f83ee"
     )
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_ATT_REV0"
@@ -4777,8 +4790,9 @@ def build_document():
     # =====================================================================
     # D1-B3f CANCEL_STATE (0x33) — after AII (B3b r1 may shift count)
     # =====================================================================
+    # Re-pinned at D1-B3i: kind9/10 42-byte identity correction.
     PRE_B3F_NON_B3B_WIRE_FINGERPRINT = (
-        "85e98216752899b82ed869e2fa3deecaebc3933816752e7717ac3ca2d29efd76"
+        "3221010f0c35d58e4eff9232d508e667b41a8cded9e6e9e59f7e2dd388748c46"
     )
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_AII_REV2"
@@ -5422,8 +5436,9 @@ def build_document():
         ).hexdigest()
 
     PRE_B3G_VECTOR_COUNT = 898
+    # Re-pinned at D1-B3i: kind9/10 42-byte identity correction.
     PRE_B3G_FULL_FINGERPRINT = (
-        "e3b5e7172f703750271fccf4253652333743cb130cc096b47e867d55845c9740"
+        "5239009b9dc4bd270e735af8a85fb152cb0690a6ab590277468412491d448d3e"
     )
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_CS_REV0"
@@ -6169,8 +6184,9 @@ def build_document():
     # D1-B3h DELIVERY (0x40) — after EVIDENCE_CELL; preserve first 970
     # =====================================================================
     PRE_B3H_VECTOR_COUNT = 970
+    # Re-pinned at D1-B3i: kind9/10 42-byte identity correction.
     PRE_B3H_FULL_FINGERPRINT = (
-        "b4b1ed964d95a64091f5e10f761c4ee6209959bddecaba2d7b6697f93f23e688"
+        "68620e825ed9d26c9e1874b65f0408038784a28e77a9dde92a1f03ca03c5f0e6"
     )
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_EV_SLOT_KEY_MISMATCH"
@@ -6613,8 +6629,9 @@ def build_document():
     # Freeze the original B3h core (970 pre + first 53 DSB3_DLV_*). Later
     # coverage appends only; object identity of this prefix must not drift.
     PRE_B3H_CORE_VECTOR_COUNT = 1023
+    # Re-pinned at D1-B3i: kind9/10 42-byte identity correction.
     PRE_B3H_CORE_FULL_FINGERPRINT = (
-        "98687d446136440d3a66a63ad38b9969e6d920071b8a273ebbe9dd1dd97ff75f"
+        "0bc465e425192504fab105cc4f7967044c063f1dabc298aed2079c9099d004a7"
     )
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[969]["id"] == "DSB3_EV_SLOT_KEY_MISMATCH"
@@ -6777,6 +6794,811 @@ def build_document():
     assert b3_cov["40"]["negative"] >= 40
     assert b3_cov["40"]["roundtrip"] >= 6
 
+    # =====================================================================
+    # D1-B3i RESULT_CACHE (0x41) — after DELIVERY; preserve first 1032
+    # except KIND910_REFIXED_IDS (D1 pre-alpha kind9/10 phase correction).
+    # =====================================================================
+    KIND910_REFIXED_IDS = (
+        "DSO2_KIND_09",
+        "DSO2_KIND_10",
+        "DSO2_KIND09_ZERO_TOKEN",
+        "DSW1_HDR_K09_ACTIVE",
+        "DSO2_CANON_K09",
+        "DSW1_HDR_K10_ACTIVE",
+        "DSO2_CANON_K10",
+    )
+    PRE_B3I_VECTOR_COUNT = 1032
+    # Fingerprint of vectors[0:1032] after kind9/10 42-byte re-pin (computed
+    # below once identities are stable). Non-KIND910 entries must match the
+    # historical hex; KIND910_REFIXED_IDS are intentionally re-fixed.
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_DLV_TARGET_SHAPE"
+    assert len(vectors) == PRE_B3I_VECTOR_COUNT
+    for vid in KIND910_REFIXED_IDS:
+        assert any(v["id"] == vid for v in vectors), vid
+    PRE_B3I_VECTOR_COUNT_SNAPSHOT = len(vectors)
+    # Non-refixed prefix invariant: 1025 vectors excluding KIND910_REFIXED_IDS.
+    # D1 pre-alpha operation identity correction re-pins only those seven IDs.
+    KIND910_REFIXED_SET = set(KIND910_REFIXED_IDS)
+    _pre_b3i_stable = [v for v in vectors if v["id"] not in KIND910_REFIXED_SET]
+    assert len(_pre_b3i_stable) == PRE_B3I_VECTOR_COUNT - len(KIND910_REFIXED_IDS)
+    PRE_B3I_STABLE_FINGERPRINT = vectors_fingerprint(_pre_b3i_stable)
+    PRE_B3I_STABLE_FINGERPRINT_PIN = (
+        "0717fd3014df8156700486b2a3e4ce031770112f540655e1462585fe71c45b7b"
+    )
+    assert PRE_B3I_STABLE_FINGERPRINT == PRE_B3I_STABLE_FINGERPRINT_PIN, (
+        f"pre-B3i stable (non-KIND910) fingerprint drift: "
+        f"got {PRE_B3I_STABLE_FINGERPRINT}"
+    )
+    PRE_B3I_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    PRE_B3I_FULL_FINGERPRINT_PIN = (
+        "1202822afd993ce18bdb504a190aac52363da6f4e3bf6ab92463f4789b3c4e6f"
+    )
+    assert PRE_B3I_FULL_FINGERPRINT == PRE_B3I_FULL_FINGERPRINT_PIN, (
+        f"pre-B3i full fingerprint drift: got {PRE_B3I_FULL_FINGERPRINT}"
+    )
+
+    # RESULT_CACHE private enums / ABI mirrors (independent of C headers).
+    ST_INBOX = 1
+    ST_STARTED = 2
+    ST_RESULT = 4
+    ST_DISP = 5
+    ST_RECOVERY = 6
+    ST_WAIT = 7
+    ST_CANCEL = 8
+    TS_NONE = 1
+    TS_ACTIVE = 2
+    TS_CONSUMED = 3
+    TS_EXPIRED = 4
+    TS_REC_TOMB = 5
+    APP_POS = 1
+    APP_DISP = 2
+    EV_RECV = 1
+    DISP_INVALID = 2
+    DISP_OUTCOME = 10
+    EFF_NO = 1
+    EFF_POSS = 2
+    RG_NEVER = 0
+    RG_SAME = 1
+    RG_MOD = 2
+    RG_OP = 3
+    F_NONE = 0
+    F_FENCED = 1
+    F_LATE = 3
+    U64_MAX = (1 << 64) - 1
+    # Public ABI reason mirrors (include/ninlil/version.h) — no C linkage.
+    R_CALLBACK = 23
+    R_COUNTER = 76
+    R_APP_FAIL = 128
+    R_OUTCOME = 129
+    R_TIMEOUT = 131
+    rc_head = bytes([0xC1] * 32)
+    rc_pvd = bytes([0xC2] * 32)  # secondary: non-zero PVD
+
+    def make_rc_raw(src_rt=None, src_app=None, txn_id=None, trt=None, tapp=None):
+        if src_rt is None:
+            src_rt = F["rt"]
+        if src_app is None:
+            src_app = F["app"]
+        if txn_id is None:
+            txn_id = txn
+        if trt is None:
+            trt = F["trt"]
+        if tapp is None:
+            tapp = F["tapp"]
+        raw = src_rt + src_app + txn_id + trt + tapp
+        assert len(raw) == 80
+        return raw
+
+    def rc_delivery_kd(raw80: bytes) -> bytes:
+        return complete_key_digest_composite(0x40, raw16(raw80))
+
+    def rc_evidence_kd(raw80: bytes) -> bytes:
+        return complete_key_digest_composite(
+            0x32, be16(2) + raw16(raw80) + be32(0))
+
+    def rc_key(raw80: bytes) -> bytes:
+        return bkey(6, 0x41, 5, composite(0x41, raw16(raw80)))
+
+    def rc_primary_id(raw80: bytes) -> bytes:
+        return primary_id_from_composite_subtype(0x40, raw16(raw80))
+
+    def op910_ident(kind, dig32, token_gen, phase):
+        assert kind in (9, 10)
+        assert len(dig32) == 32
+        return dig32 + be64(token_gen) + be16(phase)
+
+    def enc_result_cache_body(
+        raw80=None,
+        n=0,
+        app_seen=1,
+        app_attempt=1,
+        state=ST_INBOX,
+        reply=0,
+        token_ctx=None,
+        token_gen=None,
+        tok_epoch=None,
+        tok_exp=0,
+        started_epoch=None,
+        started_at=0,
+        completion_exp=0,
+        callback=None,
+        rec_i=0,
+        rec_g=0,
+        rec_nb_epoch=None,
+        rec_nb_ms=0,
+        app_kind=0,
+        ev_stage=0,
+        disp=0,
+        reason=0,
+        effect=0,
+        guidance=0,
+        delay=0,
+        evidence_kd=None,
+        token_state=TS_NONE,
+        cancel_kind=0,
+        completed_epoch=None,
+        completed_at=0,
+        delivery_kd=None,
+        txn_id=None,
+    ) -> bytes:
+        if raw80 is None:
+            raw80 = make_rc_raw()
+        if txn_id is None:
+            txn_id = raw80[32:48]
+        if token_gen is None:
+            token_gen = n
+        if callback is None:
+            callback = n
+        if delivery_kd is None:
+            delivery_kd = rc_delivery_kd(raw80)
+        if token_ctx is None:
+            token_ctx = bytes(16) if token_state == TS_NONE else txn_id
+        if tok_epoch is None:
+            tok_epoch = bytes(16)
+        if started_epoch is None:
+            started_epoch = bytes(16)
+        if rec_nb_epoch is None:
+            rec_nb_epoch = bytes(16)
+        if completed_epoch is None:
+            completed_epoch = bytes(16)
+        if evidence_kd is None:
+            if app_seen == 1:
+                evidence_kd = rc_evidence_kd(raw80)
+            else:
+                evidence_kd = bytes(32)
+        out = bytearray()
+        out += raw16(raw80)
+        out += delivery_kd
+        out += txn_id
+        out += be64(n)
+        out += be32(app_seen)
+        out += be32(app_attempt)
+        out += be32(state)
+        out += be32(reply)
+        out += token_ctx
+        out += be64(token_gen)
+        out += tok_epoch
+        out += be64(tok_exp)
+        out += started_epoch
+        out += be64(started_at)
+        out += be64(completion_exp)
+        out += be64(callback)
+        out += be64(rec_i)
+        out += be64(rec_g)
+        out += rec_nb_epoch
+        out += be64(rec_nb_ms)
+        out += be32(app_kind)
+        out += be32(ev_stage)
+        out += be32(disp)
+        out += be32(reason)
+        out += be32(effect)
+        out += be32(guidance)
+        out += be64(delay)
+        out += evidence_kd
+        out += be32(token_state)
+        out += be32(cancel_kind)
+        out += completed_epoch
+        out += be64(completed_at)
+        assert len(out) == 378, len(out)
+        return bytes(out)
+
+    def timer_active(started_at=0, exp=1000, epoch=None):
+        if epoch is None:
+            epoch = F["epoch"]
+        return dict(
+            tok_epoch=epoch, tok_exp=exp,
+            started_epoch=epoch, started_at=started_at,
+            completion_exp=exp)
+
+    def completed_nz(at=5000, epoch=None):
+        if epoch is None:
+            epoch = F["epoch"]
+        return dict(completed_epoch=epoch, completed_at=at)
+
+    def e_zero():
+        return dict(app_kind=0, ev_stage=0, disp=0, reason=0,
+                    effect=0, guidance=RG_NEVER, delay=0,
+                    completed_epoch=bytes(16), completed_at=0)
+
+    def e_pos(stage=EV_RECV):
+        d = completed_nz()
+        d.update(app_kind=APP_POS, ev_stage=stage, disp=0, reason=0,
+                 effect=0, guidance=RG_NEVER, delay=0)
+        return d
+
+    def e_disp(disposition=DISP_INVALID, reason=R_APP_FAIL, effect=EFF_NO,
+               guidance=RG_MOD, delay=0):
+        d = completed_nz()
+        d.update(app_kind=APP_DISP, ev_stage=0, disp=disposition,
+                 reason=reason, effect=effect, guidance=guidance, delay=delay)
+        return d
+
+    def e_rec(reason, guidance, token_state, n=1, started_at=0):
+        # E_REC shape + matching token tombstone fields
+        t = timer_active(started_at=started_at)
+        d = dict(
+            app_kind=0, ev_stage=0, disp=0, reason=reason,
+            effect=EFF_POSS, guidance=guidance, delay=0,
+            completed_epoch=bytes(16), completed_at=0,
+            n=n, token_state=token_state, token_gen=n, callback=n,
+            **t)
+        return d
+
+    def d_idle():
+        return dict(rec_g=0, rec_i=0, rec_nb_epoch=bytes(16), rec_nb_ms=0)
+
+    def d_open(g=1, i=0):
+        return dict(rec_g=g, rec_i=i, rec_nb_epoch=bytes(16), rec_nb_ms=0)
+
+    def d_wait(g=1, i=1, epoch=None, ms=999):
+        if epoch is None:
+            epoch = F["epoch"]
+        return dict(rec_g=g, rec_i=i, rec_nb_epoch=epoch, rec_nb_ms=ms)
+
+    def d_held(g=1, i=1):
+        return dict(rec_g=g, rec_i=i, rec_nb_epoch=bytes(16), rec_nb_ms=0)
+
+    def result_typed(body=None, rev=1, flags=0, primary_id=None, head=None, pvd=None):
+        if body is None:
+            body = enc_result_cache_body()
+        raw_len = int.from_bytes(body[0:2], "big")
+        raw80 = body[2:2 + raw_len]
+        if primary_id is None:
+            primary_id = rc_primary_id(raw80)
+        if head is None:
+            head = rc_head
+        if pvd is None:
+            pvd = rc_pvd
+        key = rc_key(raw80)
+        val = enc_env_full(6, 0x41, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    rc_pos = 0
+    rc_neg = 0
+    rc_mut = 0
+    rc_rt = 0
+
+    def add_rc_pos(vid, body, notes=""):
+        nonlocal rc_pos, rc_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x41, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        rc_pos += 1
+        rc_rt += 1
+
+    def add_rc_pos_typed(vid, body, notes=""):
+        nonlocal rc_pos
+        key, val, _ = result_typed(body=body)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x41, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        rc_pos += 1
+
+    def add_rc_neg(vid, body, notes=""):
+        nonlocal rc_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x41, body_hex=hx(body), notes=notes)
+        rc_neg += 1
+
+    def add_rc_neg_typed(vid, key, val, notes=""):
+        nonlocal rc_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x41, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        rc_neg += 1
+
+    # --- positives: closed matrix shapes ---
+    raw_rc = make_rc_raw()
+    # 1 virgin inbox
+    b_inbox = enc_result_cache_body(
+        raw80=raw_rc, n=0, state=ST_INBOX, token_state=TS_NONE,
+        app_seen=1, app_attempt=1, cancel_kind=F_NONE, **e_zero(), **d_idle())
+    add_rc_pos("DSB3_RC_INBOX_VIRGIN", b_inbox, "state1 N=0 NONE D_IDLE E_ZERO")
+    add_rc_pos_typed("DSB3_RC_INBOX_VIRGIN_TYPED", b_inbox)
+
+    # started_at=0 positive ACTIVE
+    t0 = timer_active(started_at=0, exp=1000)
+    b_start0 = enc_result_cache_body(
+        raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+        app_seen=1, app_attempt=1, cancel_kind=F_NONE, **e_zero(), **d_idle(), **t0)
+    add_rc_pos("DSB3_RC_STARTED_AT0", b_start0, "started_at_ms=0 legal ACTIVE")
+    add_rc_pos_typed("DSB3_RC_STARTED_AT0_TYPED", b_start0)
+
+    # RESULT_COMMITTED E_POS
+    b_res = enc_result_cache_body(
+        raw80=raw_rc, n=1, state=ST_RESULT, token_state=TS_CONSUMED,
+        app_seen=1, app_attempt=1, cancel_kind=F_NONE, **e_pos(), **d_idle(), **t0)
+    add_rc_pos("DSB3_RC_RESULT_POS", b_res, "state4 CONSUMED E_POS")
+    add_rc_pos_typed("DSB3_RC_RESULT_POS_TYPED", b_res)
+
+    # DISPOSITION pre-callback N=0
+    b_disp0 = enc_result_cache_body(
+        raw80=raw_rc, n=0, state=ST_DISP, token_state=TS_NONE,
+        app_seen=1, app_attempt=1, cancel_kind=F_NONE,
+        **e_disp(), **d_idle())
+    add_rc_pos("DSB3_RC_DISP_PRE", b_disp0, "state5 pre N=0 F_NONE E_DISP")
+    add_rc_pos_typed("DSB3_RC_DISP_PRE_TYPED", b_disp0)
+
+    # DISPOSITION post CONSUMED
+    b_disp1 = enc_result_cache_body(
+        raw80=raw_rc, n=2, state=ST_DISP, token_state=TS_CONSUMED,
+        app_seen=1, app_attempt=2, cancel_kind=F_NONE,
+        **e_disp(), **d_held(g=1, i=1), **t0)
+    add_rc_pos("DSB3_RC_DISP_POST", b_disp1, "state5 post CONSUMED D_HELD")
+
+    # OUTCOME_UNKNOWN terminal (E_DISP disposition OUTCOME_UNKNOWN) vs recovery
+    b_disp_ou = enc_result_cache_body(
+        raw80=raw_rc, n=1, state=ST_DISP, token_state=TS_CONSUMED,
+        app_seen=1, app_attempt=1, cancel_kind=F_NONE,
+        **e_disp(disposition=DISP_OUTCOME, reason=R_OUTCOME, effect=EFF_POSS,
+                 guidance=RG_OP, delay=0), **d_idle(), **t0)
+    add_rc_pos("DSB3_RC_OUTCOME_TERM", b_disp_ou,
+               "OUTCOME_UNKNOWN terminal E_DISP state5")
+
+    # CANCEL_TOMBSTONE_ONLY
+    b_cancel = enc_result_cache_body(
+        raw80=raw_rc, n=0, state=ST_CANCEL, token_state=TS_NONE,
+        app_seen=0, app_attempt=0, cancel_kind=F_FENCED,
+        evidence_kd=bytes(32), **e_zero(), **d_idle())
+    add_rc_pos("DSB3_RC_CANCEL_FIRST", b_cancel, "state8 A_CANCEL F_FENCED")
+    add_rc_pos_typed("DSB3_RC_CANCEL_FIRST_TYPED", b_cancel)
+
+    # REDELIVER inbox N>=1 tombstone D_HELD
+    b_redel = enc_result_cache_body(
+        raw80=raw_rc, n=3, state=ST_INBOX, token_state=TS_CONSUMED,
+        app_seen=1, app_attempt=2, cancel_kind=F_NONE,
+        **e_zero(), **d_held(g=2, i=2), **t0)
+    add_rc_pos("DSB3_RC_INBOX_REDELIVER", b_redel, "state1 redeliver D_HELD")
+
+    # F_FENCED on inbox virgin
+    b_fenced = enc_result_cache_body(
+        raw80=raw_rc, n=0, state=ST_INBOX, token_state=TS_NONE,
+        app_seen=1, app_attempt=1, cancel_kind=F_FENCED, **e_zero(), **d_idle())
+    add_rc_pos("DSB3_RC_INBOX_FENCED", b_fenced, "state1 F_FENCED never-started")
+
+    # F_LATE on started
+    b_late = enc_result_cache_body(
+        raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+        app_seen=1, app_attempt=1, cancel_kind=F_LATE, **e_zero(), **d_idle(), **t0)
+    add_rc_pos("DSB3_RC_STARTED_FLATE", b_late, "state2 F_LATE N>=1")
+
+    # reconcile G=I+1, I=G, I>G positives on recovery
+    def rec_body(reason, guidance, ts, n=1, g=1, i=0, state=ST_RECOVERY, **extra):
+        er = e_rec(reason, guidance, ts, n=n)
+        er.update(d_open(g=g, i=i) if state == ST_RECOVERY else d_wait(g=g, i=i))
+        er.update(extra)
+        return enc_result_cache_body(
+            raw80=raw_rc, state=state, app_seen=1, app_attempt=1,
+            cancel_kind=F_NONE, **er)
+
+    b_g_ip1 = rec_body(R_TIMEOUT, RG_SAME, TS_EXPIRED, n=1, g=1, i=0)
+    add_rc_pos("DSB3_RC_REC_G_IS_I_P1", b_g_ip1, "G=I+1 D_OPEN timeout EXPIRED")
+    add_rc_pos_typed("DSB3_RC_REC_G_IS_I_P1_TYPED", b_g_ip1)
+
+    b_g_eq_i = rec_body(R_TIMEOUT, RG_SAME, TS_EXPIRED, n=1, g=2, i=2)
+    add_rc_pos("DSB3_RC_REC_G_EQ_I", b_g_eq_i, "G=I D_OPEN after claim")
+
+    b_i_gt_g = rec_body(R_TIMEOUT, RG_SAME, TS_EXPIRED, n=1, g=1, i=3)
+    add_rc_pos("DSB3_RC_REC_I_GT_G", b_i_gt_g, "I>G legal after re-claim")
+
+    # E_REC reason × token positives state6
+    add_rc_pos("DSB3_RC_REC_TIMEOUT_EXPIRED",
+               rec_body(R_TIMEOUT, RG_SAME, TS_EXPIRED),
+               "APPLICATION_COMPLETION_TIMEOUT => EXPIRED")
+    add_rc_pos("DSB3_RC_REC_FATAL_TOMB",
+               rec_body(R_APP_FAIL, RG_OP, TS_REC_TOMB),
+               "APPLICATION_FAILED => RECOVERY_REQUIRED_TOMBSTONE")
+    add_rc_pos("DSB3_RC_REC_CONTRACT_TOMB",
+               rec_body(R_CALLBACK, RG_OP, TS_REC_TOMB),
+               "CALLBACK_CONTRACT => RECOVERY_REQUIRED_TOMBSTONE")
+    add_rc_pos("DSB3_RC_REC_OUTCOME_EXPIRED",
+               rec_body(R_OUTCOME, RG_OP, TS_EXPIRED),
+               "OUTCOME_UNKNOWN recovery EXPIRED")
+    add_rc_pos("DSB3_RC_REC_OUTCOME_TOMB",
+               rec_body(R_OUTCOME, RG_OP, TS_REC_TOMB),
+               "OUTCOME_UNKNOWN recovery RECOVERY_REQUIRED_TOMBSTONE")
+    add_rc_pos("DSB3_RC_REC_COUNTER_CONSUMED",
+               rec_body(R_COUNTER, RG_OP, TS_CONSUMED, n=U64_MAX, g=1, i=0),
+               "COUNTER_EXHAUSTED N=MAX retained CONSUMED")
+    add_rc_pos("DSB3_RC_REC_COUNTER_EXPIRED",
+               rec_body(R_COUNTER, RG_OP, TS_EXPIRED, n=U64_MAX, g=1, i=0),
+               "COUNTER_EXHAUSTED N=MAX retained EXPIRED")
+
+    # state7 D_WAIT with legal pairs
+    add_rc_pos("DSB3_RC_WAIT_TIMEOUT",
+               rec_body(R_TIMEOUT, RG_SAME, TS_EXPIRED, n=1, g=2, i=1,
+                        state=ST_WAIT),
+               "state7 timeout EXPIRED D_WAIT")
+    add_rc_pos("DSB3_RC_WAIT_CONTRACT",
+               rec_body(R_CALLBACK, RG_OP, TS_REC_TOMB, n=1, g=2, i=1,
+                        state=ST_WAIT),
+               "state7 CALLBACK_CONTRACT tomb D_WAIT")
+    add_rc_pos("DSB3_RC_WAIT_COUNTER",
+               rec_body(R_COUNTER, RG_OP, TS_CONSUMED, n=U64_MAX, g=2, i=1,
+                        state=ST_WAIT),
+               "state7 COUNTER_EXHAUSTED CONSUMED D_WAIT")
+
+    # START with D_HELD prior episode
+    b_start_held = enc_result_cache_body(
+        raw80=raw_rc, n=4, state=ST_STARTED, token_state=TS_ACTIVE,
+        app_seen=1, app_attempt=3, cancel_kind=F_NONE,
+        **e_zero(), **d_held(g=1, i=2), **timer_active(started_at=10, exp=2000))
+    add_rc_pos("DSB3_RC_STARTED_DHELD", b_start_held, "state2 ACTIVE D_HELD")
+
+    # --- negatives ---
+    # expiry=0 negative (ACTIVE shape with zero expiry)
+    bad = enc_result_cache_body(
+        raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+        app_seen=1, app_attempt=1, **e_zero(), **d_idle(),
+        tok_epoch=F["epoch"], tok_exp=0, started_epoch=F["epoch"],
+        started_at=1, completion_exp=0)
+    # force corrupt by manual mutate after legal-looking base
+    bb = bytearray(b_start0)
+    # token_expires and completion at fixed offsets after raw82
+    # layout: 82 + 32 dig + 16 txn + 8 n + 4*4 + 16 ctx + 8 gen + 16 epoch + 8 exp
+    # exp offset = 82+32+16+8+16+16+8+16 = 194? let me compute carefully:
+    # 0: raw16 82
+    # 82: dig 32 -> 114
+    # 114: txn 16 -> 130
+    # 130: n 8 -> 138
+    # 138: seen 4 -> 142
+    # 142: attempt 4 -> 146
+    # 146: state 4 -> 150
+    # 150: reply 4 -> 154
+    # 154: ctx 16 -> 170
+    # 170: gen 8 -> 178
+    # 178: tok_epoch 16 -> 194
+    # 194: tok_exp 8 -> 202
+    # 202: started_epoch 16 -> 218
+    # 218: started_at 8 -> 226
+    # 226: completion_exp 8 -> 234
+    bb[194:202] = be64(0)
+    bb[226:234] = be64(0)
+    add_rc_neg("DSB3_RC_EXPIRY0", bytes(bb), "token/completion expiry=0 invalid")
+
+    # G > I+1
+    add_rc_neg("DSB3_RC_G_GT_I_P1",
+               rec_body(R_TIMEOUT, RG_SAME, TS_EXPIRED, n=1, g=5, i=2),
+               "G>I+1 corrupt")
+
+    # delivery_state=3
+    bb = bytearray(b_inbox)
+    bb[146:150] = be32(3)
+    add_rc_neg("DSB3_RC_STATE3", bytes(bb), "delivery_state=3 illegal")
+
+    # N=0 + tombstone
+    add_rc_neg("DSB3_RC_N0_TOMB",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=0, state=ST_INBOX, token_state=TS_CONSUMED,
+                   app_seen=1, app_attempt=1, **e_zero(), **d_idle(),
+                   token_ctx=raw_rc[32:48], token_gen=0, callback=0,
+                   **timer_active()),
+               "N=0 + tombstone invalid")
+
+    # N>0 + NONE
+    add_rc_neg("DSB3_RC_N_POS_NONE",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=2, state=ST_STARTED, token_state=TS_NONE,
+                   app_seen=1, app_attempt=1, **e_zero(), **d_idle()),
+               "N>0 + NONE invalid")
+
+    # state5 pre F_FENCED
+    add_rc_neg("DSB3_RC_DISP_PRE_FENCED",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=0, state=ST_DISP, token_state=TS_NONE,
+                   app_seen=1, app_attempt=1, cancel_kind=F_FENCED,
+                   **e_disp(), **d_idle()),
+               "state5 pre F_FENCED invalid")
+
+    # E_REC wrong token pairs (CALLBACK_CONTRACT+EXPIRED is legal — see re-fix below)
+    add_rc_neg("DSB3_RC_TIMEOUT_TOMB",
+               rec_body(R_TIMEOUT, RG_SAME, TS_REC_TOMB),
+               "TIMEOUT cannot pair RECOVERY_REQUIRED_TOMBSTONE")
+    add_rc_neg("DSB3_RC_FATAL_EXPIRED",
+               rec_body(R_APP_FAIL, RG_OP, TS_EXPIRED),
+               "APPLICATION_FAILED cannot pair EXPIRED")
+    # DSB3_RC_CONTRACT_EXPIRED: re-fixed positive (unknown reconcile retains EXPIRED)
+    add_rc_pos("DSB3_RC_CONTRACT_EXPIRED",
+               rec_body(R_CALLBACK, RG_OP, TS_EXPIRED),
+               "CALLBACK_CONTRACT + EXPIRED legal (retained prior timeout tomb)")
+    add_rc_neg("DSB3_RC_OUTCOME_CONSUMED",
+               rec_body(R_OUTCOME, RG_OP, TS_CONSUMED),
+               "OUTCOME_UNKNOWN cannot pair CONSUMED on recovery")
+    add_rc_neg("DSB3_RC_COUNTER_N_NOT_MAX",
+               rec_body(R_COUNTER, RG_OP, TS_CONSUMED, n=5, g=1, i=0),
+               "COUNTER_EXHAUSTED requires N=MAX")
+    add_rc_neg("DSB3_RC_COUNTER_ACTIVE",
+               rec_body(R_COUNTER, RG_OP, TS_ACTIVE, n=U64_MAX, g=1, i=0),
+               "COUNTER_EXHAUSTED cannot be ACTIVE")
+    # state7 illegal pair
+    add_rc_neg("DSB3_RC_WAIT_FATAL_EXPIRED",
+               rec_body(R_APP_FAIL, RG_OP, TS_EXPIRED, n=1, g=2, i=1,
+                        state=ST_WAIT),
+               "state7 APPLICATION_FAILED cannot pair EXPIRED")
+
+    # raw80 component zero
+    zraw = bytearray(make_rc_raw())
+    zraw[0:16] = bytes(16)
+    add_rc_neg("DSB3_RC_RAW_ZERO_COMP",
+               enc_result_cache_body(raw80=bytes(zraw), n=0, state=ST_INBOX,
+                   token_state=TS_NONE, **e_zero(), **d_idle()),
+               "raw80 component zero")
+
+    # body transaction mismatch
+    bad_txn = bytes([0xEE] * 16)
+    add_rc_neg("DSB3_RC_TXN_MISMATCH",
+               enc_result_cache_body(
+                   raw80=raw_rc, txn_id=bad_txn, n=0, state=ST_INBOX,
+                   token_state=TS_NONE, **e_zero(), **d_idle()),
+               "body transaction mismatch raw[32:48]")
+
+    # body length 377/379
+    add_rc_neg("DSB3_RC_LEN377", b_inbox[:-1], "body 377 trailing short")
+    add_rc_neg("DSB3_RC_LEN379", b_inbox + b"\x00", "body 379 trailing byte")
+
+    # typed: PVD zero, head zero, primary mismatch, rev0
+    k_ok, v_ok, _ = result_typed(body=b_inbox)
+    # PVD zero
+    raw80 = raw_rc
+    v_pvd0 = enc_env_full(6, 0x41, 0, 1, rc_primary_id(raw80), rc_head, bytes(32), b_inbox)
+    add_rc_neg_typed("DSB3_RC_PVD_ZERO", rc_key(raw80), v_pvd0, "secondary PVD zero")
+    v_head0 = enc_env_full(6, 0x41, 0, 1, rc_primary_id(raw80), bytes(32), rc_pvd, b_inbox)
+    add_rc_neg_typed("DSB3_RC_HEAD_ZERO", rc_key(raw80), v_head0, "head zero")
+    v_pm = enc_env_full(6, 0x41, 0, 1, bytes([0x11] * 16), rc_head, rc_pvd, b_inbox)
+    add_rc_neg_typed("DSB3_RC_PRIMARY_MISMATCH", rc_key(raw80), v_pm,
+                     "primary_id mismatch")
+    v_rev0 = enc_env_full(6, 0x41, 0, 0, rc_primary_id(raw80), rc_head, rc_pvd, b_inbox)
+    add_rc_neg_typed("DSB3_RC_REV0", rc_key(raw80), v_rev0, "revision 0")
+
+    # wrong key digest in body
+    bb = bytearray(b_inbox)
+    bb[82:114] = bytes([0xFF] * 32)
+    add_rc_neg("DSB3_RC_DLV_KD_BAD", bytes(bb), "delivery_key_digest mismatch")
+
+    # mutation: flip state on positive
+    bb = bytearray(b_inbox)
+    bb[146:150] = be32(99)
+    add(id="DSB3_RC_MUT_STATE", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x41,
+        body_hex=hx(bytes(bb)), notes="mutation unknown state")
+    rc_mut += 1
+
+    # --- kind 9/10 operation identity (42-byte, phase collision) ---
+    # docs17 §10: delivery_complete_key_digest[32] || token_generation || phase
+    dig_dlv = rc_delivery_kd(raw_rc)
+    for kind, phase, vid in (
+        (9, 1, "DSB3_RC_OP9_PHASE1"),
+        (9, 2, "DSB3_RC_OP9_PHASE2"),
+        (10, 1, "DSB3_RC_OP10_PHASE1"),
+        (10, 2, "DSB3_RC_OP10_PHASE2"),
+    ):
+        gen = 1 if phase == 1 else U64_MAX if kind == 9 else 1
+        ident = op910_ident(kind, dig_dlv, gen, phase)
+        add(id=vid, suite="DSB3", op="witness_identity_digest",
+            expected_status="OK", family=6, subtype=0x41, operation_kind=kind,
+            identity_hex=hx(ident),
+            digest_hex=hx(composite(0x7F, be16(kind) + be16(42) + ident)),
+            notes=f"kind{kind} phase{phase} 42-byte identity")
+        rc_pos += 1
+    # phase collision: same digest+gen, different phase => different witness dig
+    id_p1 = op910_ident(9, dig_dlv, 1, 1)
+    id_p2 = op910_ident(9, dig_dlv, 1, 2)
+    assert id_p1 != id_p2
+    d1 = composite(0x7F, be16(9) + be16(42) + id_p1)
+    d2 = composite(0x7F, be16(9) + be16(42) + id_p2)
+    assert d1 != d2
+    add(id="DSB3_RC_OP9_PHASE_COLLISION", suite="DSB3",
+        op="witness_identity_digest", expected_status="OK",
+        family=6, subtype=0x41, operation_kind=9,
+        identity_hex=hx(id_p1), digest_hex=hx(d1),
+        digest2_hex=hx(d2),
+        notes="phase1 vs phase2 different identity; phase2 identity in body_hex",
+        body_hex=hx(id_p2),
+        )
+    rc_pos += 1
+    # invalid phase 0/3
+    for phase, tag in ((0, "P0"), (3, "P3")):
+        for kind, kn in ((9, "9"), (10, "10")):
+            ident = op910_ident(kind, dig_dlv, 1, phase)
+            add(id=f"DSB3_RC_OP{kn}_PHASE_{tag}", suite="DSB3",
+                op="witness_identity_digest", expected_status="INVALID_ARGUMENT",
+                family=6, subtype=0x41, operation_kind=kind,
+                identity_hex=hx(ident),
+                notes=f"kind{kind} phase={phase} invalid")
+            rc_neg += 1
+    # legacy 40-byte invalid
+    legacy40 = dig_dlv + be64(1)
+    assert len(legacy40) == 40
+    add(id="DSB3_RC_OP9_LEGACY40", suite="DSB3", op="witness_identity_digest",
+        expected_status="INVALID_ARGUMENT", family=6, subtype=0x41,
+        operation_kind=9, identity_hex=hx(legacy40),
+        notes="legacy 40-byte kind9 rejected")
+    add(id="DSB3_RC_OP10_LEGACY40", suite="DSB3", op="witness_identity_digest",
+        expected_status="INVALID_ARGUMENT", family=6, subtype=0x41,
+        operation_kind=10, identity_hex=hx(legacy40),
+        notes="legacy 40-byte kind10 rejected")
+    rc_neg += 2
+    # zero token_generation
+    zgen = op910_ident(9, dig_dlv, 0, 1)
+    add(id="DSB3_RC_OP9_ZERO_GEN", suite="DSB3", op="witness_identity_digest",
+        expected_status="INVALID_ARGUMENT", family=6, subtype=0x41,
+        operation_kind=9, identity_hex=hx(zgen),
+        notes="token_generation=0 invalid")
+    rc_neg += 1
+
+    # =====================================================================
+    # D1-B3i QA append (after first 1097 base): timer strict, CALLBACK_CONTRACT
+    # retained tombstones, independent coverage negatives. Prefer append;
+    # only DSB3_RC_CONTRACT_EXPIRED was re-fixed in-place above.
+    # =====================================================================
+    # CALLBACK_CONTRACT + retained tombstones (state6/7)
+    add_rc_pos("DSB3_RC_CONTRACT_TOMB_S6",
+               rec_body(R_CALLBACK, RG_OP, TS_REC_TOMB),
+               "state6 CALLBACK_CONTRACT + RECOVERY_TOMB (direct invalid)")
+    add_rc_pos("DSB3_RC_CONTRACT_CONSUMED_S6",
+               rec_body(R_CALLBACK, RG_OP, TS_CONSUMED),
+               "state6 CALLBACK_CONTRACT + CONSUMED (prior counter path)")
+    add_rc_pos("DSB3_RC_CONTRACT_EXPIRED_S7",
+               rec_body(R_CALLBACK, RG_OP, TS_EXPIRED, n=1, g=2, i=1,
+                        state=ST_WAIT),
+               "state7 CALLBACK_CONTRACT + EXPIRED retained")
+    add_rc_pos("DSB3_RC_CONTRACT_TOMB_S7",
+               rec_body(R_CALLBACK, RG_OP, TS_REC_TOMB, n=1, g=2, i=1,
+                        state=ST_WAIT),
+               "state7 CALLBACK_CONTRACT + RECOVERY_TOMB")
+    add_rc_pos("DSB3_RC_CONTRACT_CONSUMED_S7",
+               rec_body(R_CALLBACK, RG_OP, TS_CONSUMED, n=1, g=2, i=1,
+                        state=ST_WAIT),
+               "state7 CALLBACK_CONTRACT + CONSUMED retained")
+
+    # timer: expiry == started / expiry < started
+    t_eq = timer_active(started_at=1000, exp=1000)
+    add_rc_neg("DSB3_RC_EXPIRY_EQ_STARTED",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+                   app_seen=1, app_attempt=1, **e_zero(), **d_idle(), **t_eq),
+               "completion_expires == started_at corrupt")
+    t_lt = timer_active(started_at=2000, exp=1000)
+    add_rc_neg("DSB3_RC_EXPIRY_LT_STARTED",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+                   app_seen=1, app_attempt=1, **e_zero(), **d_idle(), **t_lt),
+               "completion_expires < started_at corrupt")
+    # started=0 expiry>0 already positive as DSB3_RC_STARTED_AT0
+
+    # timer epochs zero / mismatch
+    add_rc_neg("DSB3_RC_TOK_EPOCH_ZERO",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+                   app_seen=1, app_attempt=1, **e_zero(), **d_idle(),
+                   tok_epoch=bytes(16), tok_exp=1000,
+                   started_epoch=F["epoch"], started_at=0, completion_exp=1000),
+               "token_clock_epoch zero with ACTIVE")
+    add_rc_neg("DSB3_RC_EPOCH_MISMATCH",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+                   app_seen=1, app_attempt=1, **e_zero(), **d_idle(),
+                   tok_epoch=F["epoch"], tok_exp=1000,
+                   started_epoch=bytes([0xBB] * 16), started_at=0,
+                   completion_exp=1000),
+               "token_epoch != delivery_started_epoch")
+
+    # token_context mismatch (not txn)
+    add_rc_neg("DSB3_RC_TOKEN_CTX_MISMATCH",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=1, state=ST_STARTED, token_state=TS_ACTIVE,
+                   app_seen=1, app_attempt=1, token_ctx=bytes([0xCC] * 16),
+                   **e_zero(), **d_idle(), **timer_active()),
+               "token_context_id != transaction_id")
+
+    # callback_invocations / token_generation != N
+    b_n = enc_result_cache_body(
+        raw80=raw_rc, n=3, state=ST_STARTED, token_state=TS_ACTIVE,
+        app_seen=1, app_attempt=1, **e_zero(), **d_idle(), **timer_active())
+    bb = bytearray(b_n)
+    # callback_invocations at offset 234 (after completion_exp)
+    # 82+32+16+8+16+16+8+16+8+16+8+8 = 234 for callback start
+    # layout after raw82: dig32,txn16,n8,seen4,att4,st4,rep4,ctx16,gen8,
+    # tok_ep16,tok_exp8,st_ep16,st_at8,comp8,cb8,...
+    # 82+32=114, +16=130, +8=138, +4*4=154, +16=170, +8=178, +16=194,
+    # +8=202, +16=218, +8=226, +8=234 callback, +8=242 rec_i
+    # token_generation is at 170
+    bb[234:242] = be64(9)  # callback != N
+    add_rc_neg("DSB3_RC_CB_NE_N", bytes(bb), "callback_invocations != N")
+    bb = bytearray(b_n)
+    bb[170:178] = be64(9)  # token_generation != N
+    add_rc_neg("DSB3_RC_GEN_NE_N", bytes(bb), "token_generation != N")
+
+    # reconcile mixed not-before (epoch nz, ms 0)
+    add_rc_neg("DSB3_RC_NB_MIXED",
+               rec_body(R_TIMEOUT, RG_SAME, TS_EXPIRED, n=1, g=1, i=0,
+                        rec_nb_epoch=F["epoch"], rec_nb_ms=0),
+               "reconcile not-before mixed zero/nonzero")
+    # D_HELD I<G on redeliver inbox
+    add_rc_neg("DSB3_RC_DHELD_I_LT_G",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=2, state=ST_INBOX, token_state=TS_CONSUMED,
+                   app_seen=1, app_attempt=1, **e_zero(),
+                   rec_g=3, rec_i=1, rec_nb_epoch=bytes(16), rec_nb_ms=0,
+                   **timer_active()),
+               "D_HELD requires I>=G")
+
+    # reply_count=5
+    add_rc_neg("DSB3_RC_REPLY5",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=0, state=ST_INBOX, token_state=TS_NONE,
+                   app_seen=1, app_attempt=1, reply=5, **e_zero(), **d_idle()),
+               "reply_count=5 out of 0..4")
+
+    # A_APP attempts=0 / evidence zero / wrong
+    add_rc_neg("DSB3_RC_AAPP_ATT0",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=0, state=ST_INBOX, token_state=TS_NONE,
+                   app_seen=1, app_attempt=0, **e_zero(), **d_idle()),
+               "A_APP requires attempt_count>=1")
+    add_rc_neg("DSB3_RC_EV_DIGEST_ZERO",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=0, state=ST_INBOX, token_state=TS_NONE,
+                   app_seen=1, app_attempt=1, evidence_kd=bytes(32),
+                   **e_zero(), **d_idle()),
+               "A_APP evidence_cell_key_digest zero")
+    add_rc_neg("DSB3_RC_EV_DIGEST_WRONG",
+               enc_result_cache_body(
+                   raw80=raw_rc, n=0, state=ST_INBOX, token_state=TS_NONE,
+                   app_seen=1, app_attempt=1, evidence_kd=bytes([0xEE] * 32),
+                   **e_zero(), **d_idle()),
+               "A_APP evidence_cell_key_digest formula mismatch")
+
+    # RESULT_CACHE key composite mismatch (typed): wrong key identity
+    wrong_key = bkey(6, 0x41, 5, composite(0x41, raw16(bytes([0x11] * 80))))
+    k_ok2, v_ok2, _ = result_typed(body=b_inbox)
+    add_rc_neg_typed("DSB3_RC_KEY_COMPOSITE_MISMATCH", wrong_key, v_ok2,
+                     "RESULT_CACHE key composite != body raw")
+
+    # completed epoch/time half-zero (E_POS shape)
+    b_half = enc_result_cache_body(
+        raw80=raw_rc, n=1, state=ST_RESULT, token_state=TS_CONSUMED,
+        app_seen=1, app_attempt=1, **e_pos(), **d_idle(), **timer_active())
+    bb = bytearray(b_half)
+    # completed_clock_epoch is last 16 before completed_at 8: total 378
+    # completed_at at 370:378, epoch at 354:370
+    bb[354:370] = bytes(16)  # epoch zero, time remains nz
+    add_rc_neg("DSB3_RC_COMPLETED_EPOCH_ZERO", bytes(bb),
+               "completed epoch zero with completed_at nonzero")
+    bb = bytearray(b_half)
+    bb[370:378] = be64(0)  # time zero, epoch remains nz
+    add_rc_neg("DSB3_RC_COMPLETED_AT_ZERO", bytes(bb),
+               "completed_at zero with completed epoch nonzero")
+
+    b3_cov["41"] = add_body_suite(
+        "RESULT_CACHE", 6, 0x41, rc_pos, rc_neg, rc_mut, rc_rt)
+    assert b3_cov["41"]["positive"] >= 20
+    assert b3_cov["41"]["negative"] >= 20
+    assert b3_cov["41"]["roundtrip"] >= 6
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -6837,6 +7659,7 @@ def build_document():
         "dsb3_subtype_33_positive": b3_cov["33"]["positive"],
         "dsb3_subtype_32_positive": b3_cov["32"]["positive"],
         "dsb3_subtype_40_positive": b3_cov["40"]["positive"],
+        "dsb3_subtype_41_positive": b3_cov["41"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -6869,9 +7692,14 @@ def build_document():
     assert catalog["dsb3_subtype_33_positive"] > 0
     assert catalog["dsb3_subtype_32_positive"] > 0
     assert catalog["dsb3_subtype_40_positive"] > 0
+    assert catalog["dsb3_subtype_41_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
-    # Structural: CS/AII/ATT/EV only after their pre-slice.
+    # Structural: CS/AII/ATT/EV/RC only after their pre-slice.
+    assert all(
+        not v["id"].startswith("DSB3_RC_")
+        for v in vectors[:PRE_B3I_VECTOR_COUNT_SNAPSHOT]
+    )
     assert all(
         not v["id"].startswith("DSB3_DLV_")
         for v in vectors[:PRE_B3H_VECTOR_COUNT_SNAPSHOT]
@@ -6891,6 +7719,19 @@ def build_document():
     assert all(
         not v["id"].startswith("DSB3_ATT_")
         for v in vectors[:PRE_B3D_VECTOR_COUNT]
+    )
+    # Kind9/10 42-byte re-pin changes early DSO2/DSW1 vectors inside pre-B3h.
+    # Full prefix fingerprint is re-pinned at B3i cutover; stable 1025 checked above.
+    _pre_b3i_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3I_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3i_fp_final == PRE_B3I_FULL_FINGERPRINT, (
+        f"post-append pre-B3i full fingerprint drift: got {_pre_b3i_fp_final}"
+    )
+    _pre_b3i_stable_final = vectors_fingerprint(
+        [v for v in vectors[:PRE_B3I_VECTOR_COUNT_SNAPSHOT]
+         if v["id"] not in KIND910_REFIXED_SET])
+    assert _pre_b3i_stable_final == PRE_B3I_STABLE_FINGERPRINT, (
+        f"post-append pre-B3i stable fingerprint drift: got {_pre_b3i_stable_final}"
     )
     _pre_b3h_fp_final = vectors_fingerprint(
         vectors[:PRE_B3H_VECTOR_COUNT_SNAPSHOT])
@@ -6938,7 +7779,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3h",
+        "format": "ninlil-domain-store-v1-d1b3i",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -6946,13 +7787,15 @@ def build_document():
             "r1) + message_semantic_digest helper + D1-B3c body (30 BLOB "
             "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
             "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE) + "
-            "D1-B3g body (32 EVIDENCE_CELL) + D1-B3h body (40 DELIVERY); not full D1 catalog"
+            "D1-B3g body (32 EVIDENCE_CELL) + D1-B3h body (40 DELIVERY) + "
+            "D1-B3i body (41 RESULT_CACHE; D1 pre-alpha operation identity "
+            "correction kind9/10 phase); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h APIs have no workspace parameter; "
-            "value is 0."
+            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i APIs have no "
+            "workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,
