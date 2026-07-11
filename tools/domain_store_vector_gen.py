@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/D1-B3c vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/D1-B3c/D1-B3d vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b/B3c
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b/B3c/B3d
 are hand-written here and intentionally do not import or link production C.
 
 Usage:
@@ -3505,6 +3505,623 @@ def build_document():
     assert b3_cov["30"]["negative"] >= 25
     assert b3_cov["30"]["roundtrip"] >= 8
 
+    # =====================================================================
+    # D1-B3d ATTEMPT (0x31) — append-only after first 696 (pre-B3d) objects
+    # =====================================================================
+    # Durable exact-bytes gate for the pre-B3d catalog (not mere id-prefix).
+    # Canonical form: json.dumps(vectors[:696], sort_keys=True,
+    # separators=(",", ":")).encode("utf-8") then SHA-256 hex.
+    PRE_B3D_VECTORS_FINGERPRINT = (
+        "d1636a7db92e0fd31ee914e897420d37dd429b346f1ea38aca139056d7385267"
+    )
+    assert len(vectors) == 696, f"pre-B3d length {len(vectors)} != 696"
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_BLOB_CHK_BLOB_ID_ZERO"
+    _pre_b3d_fp = hashlib.sha256(
+        json.dumps(vectors, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    assert _pre_b3d_fp == PRE_B3D_VECTORS_FINGERPRINT, (
+        f"pre-B3d fingerprint drift: got {_pre_b3d_fp}"
+    )
+
+    # Private ATTEMPT enums (distinct from reservation/scheduler/BLOB/reply).
+    ATT_TX = 1
+    ATT_DLV = 2
+    AK_CMD = 1
+    AK_EVT = 2
+    AK_CAN = 3
+    AS_PREP = 1
+    AS_OBS = 2
+    AS_RES = 3
+    AS_REC = 4
+    SS_PREP = 1
+    SS_RETRY = 2
+    SS_SENT = 3
+    SS_DENIED = 4
+    SS_REC = 5
+    U64_MAX = (1 << 64) - 1
+    att_id = bytes([0xA1 + i for i in range(16)])
+    att_id2 = bytes([0xB1 + i for i in range(16)])
+    prep_ep = bytes([0xC0 + (i % 16) for i in range(16)])
+    timeout_ep = bytes([0xD0 + (i % 16) for i in range(16)])
+    target_dg = bytes([0xE0 + (i % 16) for i in range(32)])
+    semantic_dg = bytes([0xF0 + (i % 16) for i in range(32)])
+    head_nz = F["head_nz"]
+    pvd_nz = bytes([0x11 + (i % 200) for i in range(32)])
+    assert not all(b == 0 for b in target_dg)
+    assert not all(b == 0 for b in semantic_dg)
+    assert not all(b == 0 for b in prep_ep)
+    # Reuse txn / dlv_raw from B2/B3 fixtures (exact identity material).
+    assert len(txn) == 16 and len(dlv_raw) == 80
+    assert dlv_raw[32:48] == txn
+
+    def attempt_primary_key_digest(owner_kind: int, owner_raw: bytes) -> bytes:
+        if owner_kind == ATT_TX:
+            return complete_key_digest_id128(0x20, owner_raw)
+        if owner_kind == ATT_DLV:
+            return complete_key_digest_composite(0x40, raw16(owner_raw))
+        raise ValueError("bad attempt owner")
+
+    def attempt_primary_id(owner_kind: int, owner_raw: bytes, transaction_id: bytes) -> bytes:
+        if owner_kind == ATT_TX:
+            return transaction_id
+        if owner_kind == ATT_DLV:
+            return primary_id_from_composite_subtype(0x40, raw16(owner_raw))
+        raise ValueError("bad attempt owner")
+
+    def attempt_key_components(owner_kind: int, owner_raw: bytes, attempt_id: bytes) -> bytes:
+        return be16(owner_kind) + raw16(owner_raw) + attempt_id
+
+    def attempt_key(owner_kind: int, owner_raw: bytes, attempt_id: bytes) -> bytes:
+        return bkey(6, 0x31, 5, composite(0x31, attempt_key_components(
+            owner_kind, owner_raw, attempt_id)))
+
+    def enc_attempt_body(
+        owner_kind=ATT_TX,
+        owner_raw=None,
+        attempt_id=None,
+        transaction_id=None,
+        attempt_kind=AK_CMD,
+        attempt_state=AS_PREP,
+        send_state=SS_PREP,
+        retry_cycle_id=0,
+        attempt_in_cycle=0,
+        cumulative_attempts=1,
+        gen=0,
+        inv=0,
+        exhausted=0,
+        avail=0,
+        prepared_epoch=None,
+        prepared_at=0,
+        timeout_epoch=None,
+        timeout_at=0,
+        target=None,
+        semantic=None,
+        primary_kd=None,
+        reserved0=0,
+        reserved1=0,
+    ) -> bytes:
+        if owner_raw is None:
+            owner_raw = txn if owner_kind == ATT_TX else dlv_raw
+        if attempt_id is None:
+            attempt_id = att_id
+        if transaction_id is None:
+            if owner_kind == ATT_DLV and len(owner_raw) >= 48:
+                transaction_id = owner_raw[32:48]
+            else:
+                transaction_id = txn
+        if prepared_epoch is None:
+            prepared_epoch = prep_ep
+        if timeout_epoch is None:
+            timeout_epoch = bytes(16)
+        if target is None:
+            target = target_dg
+        if semantic is None:
+            semantic = semantic_dg
+        if primary_kd is None:
+            primary_kd = attempt_primary_key_digest(owner_kind, owner_raw)
+        out = bytearray()
+        out += attempt_id
+        out += be16(owner_kind)
+        out += be16(reserved0)
+        out += raw16(owner_raw)
+        out += primary_kd
+        out += transaction_id
+        out += target
+        out += be16(attempt_kind)
+        out += be16(attempt_state)
+        out += be64(retry_cycle_id)
+        out += be32(attempt_in_cycle)
+        out += be64(cumulative_attempts)
+        out += be64(gen)
+        out += be64(inv)
+        out += be32(exhausted)
+        out += be32(reserved1)
+        out += semantic
+        out += prepared_epoch
+        out += be64(prepared_at)
+        out += be32(send_state)
+        out += be64(avail)
+        out += timeout_epoch
+        out += be64(timeout_at)
+        assert len(out) == 242 + len(owner_raw)
+        return bytes(out)
+
+    def attempt_typed(
+        owner_kind=ATT_TX,
+        owner_raw=None,
+        attempt_id=None,
+        transaction_id=None,
+        attempt_kind=AK_CMD,
+        attempt_state=AS_PREP,
+        send_state=SS_PREP,
+        retry_cycle_id=0,
+        attempt_in_cycle=0,
+        cumulative_attempts=1,
+        gen=0,
+        inv=0,
+        exhausted=0,
+        avail=0,
+        prepared_epoch=None,
+        prepared_at=0,
+        timeout_epoch=None,
+        timeout_at=0,
+        rev=1,
+        head=None,
+        pvd=None,
+        primary=None,
+        body=None,
+        **kwargs,
+    ):
+        if owner_raw is None:
+            owner_raw = txn if owner_kind == ATT_TX else dlv_raw
+        if attempt_id is None:
+            attempt_id = att_id
+        if transaction_id is None:
+            transaction_id = txn if owner_kind == ATT_TX else owner_raw[32:48]
+        if head is None:
+            head = head_nz
+        if pvd is None:
+            pvd = pvd_nz
+        if body is None:
+            body = enc_attempt_body(
+                owner_kind=owner_kind, owner_raw=owner_raw,
+                attempt_id=attempt_id, transaction_id=transaction_id,
+                attempt_kind=attempt_kind, attempt_state=attempt_state,
+                send_state=send_state, retry_cycle_id=retry_cycle_id,
+                attempt_in_cycle=attempt_in_cycle,
+                cumulative_attempts=cumulative_attempts, gen=gen, inv=inv,
+                exhausted=exhausted, avail=avail,
+                prepared_epoch=prepared_epoch, prepared_at=prepared_at,
+                timeout_epoch=timeout_epoch, timeout_at=timeout_at, **kwargs)
+        if primary is None:
+            primary = attempt_primary_id(owner_kind, owner_raw, transaction_id)
+        key = attempt_key(owner_kind, owner_raw, attempt_id)
+        val = enc_env_full(6, 0x31, 0, rev, primary, head, pvd, body)
+        return key, val, body
+
+    a_pos = 0
+    a_neg = 0
+    a_mut = 0
+    a_rt = 0
+
+    def add_att_pos(vid, body, notes=""):
+        nonlocal a_pos, a_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x31, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        a_pos += 1
+        a_rt += 1
+
+    def add_att_typed(vid, key, val, body, notes=""):
+        nonlocal a_pos
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x31, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        a_pos += 1
+
+    def add_att_neg_body(vid, body, notes=""):
+        nonlocal a_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x31, body_hex=hx(body), notes=notes)
+        a_neg += 1
+
+    def add_att_neg_typed(vid, key, val, notes=""):
+        nonlocal a_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x31, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        a_neg += 1
+
+    # --- Local TX COMMAND matrix rows ---
+    # PREPARED/PREPARED
+    body_cmd_prep = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_PREP, send_state=SS_PREP,
+        cumulative_attempts=1, gen=0, inv=0, exhausted=0, avail=0)
+    add_att_pos("DSB3_ATT_TX_CMD_PREP", body_cmd_prep, "local TX COMMAND PREPARED")
+    k, v, b = attempt_typed(body=body_cmd_prep)
+    add_att_typed("DSB3_ATT_TX_CMD_PREP_TYPED", k, v, b)
+    # prepared_at=0 allowed
+    body_prep0 = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_PREP, send_state=SS_PREP,
+        cumulative_attempts=3, prepared_at=0)
+    add_att_pos("DSB3_ATT_TX_CMD_PREP_AT0", body_prep0, "prepared_at_ms=0 valid")
+
+    # RESOLVED/RETRYABLE TxGate (inv=0, avail=0) vs Bearer (inv>=1, avail!=0)
+    body_cmd_retry_txg = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_RETRY,
+        cumulative_attempts=2, gen=3, inv=0, exhausted=0, avail=0)
+    add_att_pos("DSB3_ATT_TX_CMD_RETRY_TXGATE", body_cmd_retry_txg,
+                "TxGate TEMPORARY path inv0/avail0")
+    body_cmd_retry_br = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_RETRY,
+        cumulative_attempts=2, gen=3, inv=2, exhausted=0, avail=7)
+    add_att_pos("DSB3_ATT_TX_CMD_RETRY_BEARER", body_cmd_retry_br,
+                "Bearer WOULD_BLOCK path inv>=1/avail!=0")
+
+    # RESOLVED/CLOSED_DENIED TxGate vs Bearer
+    body_cmd_den_txg = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_DENIED,
+        cumulative_attempts=1, gen=1, inv=0, exhausted=0, avail=0)
+    add_att_pos("DSB3_ATT_TX_CMD_DENIED_TXGATE", body_cmd_den_txg)
+    body_cmd_den_br = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_DENIED,
+        cumulative_attempts=1, gen=2, inv=1, exhausted=0, avail=9)
+    add_att_pos("DSB3_ATT_TX_CMD_DENIED_BEARER", body_cmd_den_br)
+
+    # OBSERVED_SENT/SENT_POSSIBLE with active timeout and cleared
+    body_cmd_obs_to = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_OBS, send_state=SS_SENT,
+        cumulative_attempts=4, gen=2, inv=1, exhausted=0, avail=1,
+        timeout_epoch=timeout_ep, timeout_at=5000)
+    add_att_pos("DSB3_ATT_TX_CMD_OBS_TIMEOUT", body_cmd_obs_to,
+                "OBSERVED_SENT active timeout pair")
+    body_cmd_obs_clr = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_OBS, send_state=SS_SENT,
+        cumulative_attempts=4, gen=2, inv=2, exhausted=0, avail=3)
+    add_att_pos("DSB3_ATT_TX_CMD_OBS_CLEARED", body_cmd_obs_clr,
+                "OBSERVED_SENT timeout cleared")
+
+    # RESOLVED/SENT_POSSIBLE
+    body_cmd_sent = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+        cumulative_attempts=5, gen=4, inv=3, exhausted=0, avail=2)
+    add_att_pos("DSB3_ATT_TX_CMD_SENT", body_cmd_sent)
+    k, v, b = attempt_typed(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+        cumulative_attempts=5, gen=4, inv=3, exhausted=0, avail=2,
+        body=body_cmd_sent)
+    add_att_typed("DSB3_ATT_TX_CMD_SENT_TYPED", k, v, b)
+
+    # RECOVERY_REQUIRED pair (frozen counters, avail any, timeout 2-form)
+    body_cmd_rec = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_REC, send_state=SS_REC,
+        cumulative_attempts=2, gen=5, inv=2, exhausted=0, avail=0,
+        timeout_epoch=timeout_ep, timeout_at=1)
+    add_att_pos("DSB3_ATT_TX_CMD_RECOVERY", body_cmd_rec)
+
+    # MAX exhausted edges (gen==MAX or inv==MAX with exhausted=1)
+    body_cmd_ex_gen = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+        cumulative_attempts=1, gen=U64_MAX, inv=1, exhausted=1, avail=1)
+    add_att_pos("DSB3_ATT_TX_CMD_EXH_GEN_MAX", body_cmd_ex_gen,
+                "exhausted iff gen==UINT64_MAX")
+    body_cmd_ex_inv = enc_attempt_body(
+        attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+        cumulative_attempts=1, gen=U64_MAX, inv=U64_MAX, exhausted=1, avail=1)
+    add_att_pos("DSB3_ATT_TX_CMD_EXH_INV_MAX", body_cmd_ex_inv,
+                "exhausted with inv==gen==UINT64_MAX")
+
+    # --- Local TX EVENT matrix (cycle rules) ---
+    body_evt_prep = enc_attempt_body(
+        attempt_kind=AK_EVT, attempt_state=AS_PREP, send_state=SS_PREP,
+        retry_cycle_id=1, attempt_in_cycle=1, cumulative_attempts=1)
+    add_att_pos("DSB3_ATT_TX_EVT_PREP", body_evt_prep, "EVENT cycle>=1 in_cycle 1..8")
+    body_evt_edge = enc_attempt_body(
+        attempt_kind=AK_EVT, attempt_state=AS_RES, send_state=SS_SENT,
+        retry_cycle_id=9, attempt_in_cycle=8, cumulative_attempts=8,
+        gen=1, inv=1, avail=4)
+    add_att_pos("DSB3_ATT_TX_EVT_IN8", body_evt_edge, "attempt_in_cycle=8 max")
+    body_evt_retry_br = enc_attempt_body(
+        attempt_kind=AK_EVT, attempt_state=AS_RES, send_state=SS_RETRY,
+        retry_cycle_id=2, attempt_in_cycle=3, cumulative_attempts=10,
+        gen=4, inv=1, avail=11)
+    add_att_pos("DSB3_ATT_TX_EVT_RETRY_BEARER", body_evt_retry_br)
+    body_evt_den_txg = enc_attempt_body(
+        attempt_kind=AK_EVT, attempt_state=AS_RES, send_state=SS_DENIED,
+        retry_cycle_id=1, attempt_in_cycle=1, cumulative_attempts=1,
+        gen=1, inv=0, avail=0)
+    add_att_pos("DSB3_ATT_TX_EVT_DENIED_TXGATE", body_evt_den_txg)
+    body_evt_obs = enc_attempt_body(
+        attempt_kind=AK_EVT, attempt_state=AS_OBS, send_state=SS_SENT,
+        retry_cycle_id=3, attempt_in_cycle=2, cumulative_attempts=5,
+        gen=2, inv=1, avail=6)
+    add_att_pos("DSB3_ATT_TX_EVT_OBS", body_evt_obs)
+    body_evt_rec = enc_attempt_body(
+        attempt_kind=AK_EVT, attempt_state=AS_REC, send_state=SS_REC,
+        retry_cycle_id=1, attempt_in_cycle=1, cumulative_attempts=2,
+        gen=3, inv=3, avail=0)
+    add_att_pos("DSB3_ATT_TX_EVT_RECOVERY", body_evt_rec)
+    k, v, b = attempt_typed(
+        attempt_kind=AK_EVT, attempt_state=AS_PREP, send_state=SS_PREP,
+        retry_cycle_id=1, attempt_in_cycle=1, cumulative_attempts=1,
+        body=body_evt_prep)
+    add_att_typed("DSB3_ATT_TX_EVT_PREP_TYPED", k, v, b)
+
+    # --- Local TX CANCEL matrix (counters always 0, cycle zero) ---
+    body_can_prep = enc_attempt_body(
+        attempt_kind=AK_CAN, attempt_state=AS_PREP, send_state=SS_PREP,
+        cumulative_attempts=0, gen=0, inv=0, exhausted=0, avail=0)
+    add_att_pos("DSB3_ATT_TX_CAN_PREP", body_can_prep)
+    body_can_retry = enc_attempt_body(
+        attempt_kind=AK_CAN, attempt_state=AS_PREP, send_state=SS_RETRY,
+        cumulative_attempts=0, gen=0, inv=0, exhausted=0, avail=5)
+    add_att_pos("DSB3_ATT_TX_CAN_RETRY", body_can_retry,
+                "CANCEL PREPARED/RETRYABLE avail non-zero")
+    body_can_sent = enc_attempt_body(
+        attempt_kind=AK_CAN, attempt_state=AS_RES, send_state=SS_SENT,
+        cumulative_attempts=0, gen=0, inv=0, exhausted=0, avail=2)
+    add_att_pos("DSB3_ATT_TX_CAN_SENT", body_can_sent)
+    body_can_den0 = enc_attempt_body(
+        attempt_kind=AK_CAN, attempt_state=AS_RES, send_state=SS_DENIED,
+        cumulative_attempts=0, gen=0, inv=0, exhausted=0, avail=0)
+    add_att_pos("DSB3_ATT_TX_CAN_DENIED_TXGATE", body_can_den0)
+    body_can_den1 = enc_attempt_body(
+        attempt_kind=AK_CAN, attempt_state=AS_RES, send_state=SS_DENIED,
+        cumulative_attempts=0, gen=0, inv=0, exhausted=0, avail=8)
+    add_att_pos("DSB3_ATT_TX_CAN_DENIED_BEARER", body_can_den1)
+    body_can_rec = enc_attempt_body(
+        attempt_kind=AK_CAN, attempt_state=AS_REC, send_state=SS_REC,
+        cumulative_attempts=0, gen=0, inv=0, exhausted=0, avail=0)
+    add_att_pos("DSB3_ATT_TX_CAN_RECOVERY", body_can_rec)
+    k, v, b = attempt_typed(
+        attempt_kind=AK_CAN, attempt_state=AS_PREP, send_state=SS_PREP,
+        cumulative_attempts=0, body=body_can_prep)
+    add_att_typed("DSB3_ATT_TX_CAN_PREP_TYPED", k, v, b)
+
+    # revision >= 1 (replacement rev 2 ok for ATTEMPT)
+    k2, v2, b2 = attempt_typed(
+        attempt_kind=AK_CMD, attempt_state=AS_PREP, send_state=SS_PREP,
+        cumulative_attempts=1, rev=2, body=body_cmd_prep)
+    add_att_typed("DSB3_ATT_TX_REV2", k2, v2, b2, "record_revision>=1 allowed")
+
+    # --- DELIVERY remote canonical (all kinds) ---
+    for kind, tag in ((AK_CMD, "CMD"), (AK_EVT, "EVT"), (AK_CAN, "CAN")):
+        body_r = enc_attempt_body(
+            owner_kind=ATT_DLV, owner_raw=dlv_raw, attempt_kind=kind,
+            attempt_state=AS_RES, send_state=SS_SENT,
+            retry_cycle_id=0, attempt_in_cycle=0, cumulative_attempts=0,
+            gen=0, inv=0, exhausted=0, avail=0, prepared_at=0)
+        add_att_pos(f"DSB3_ATT_DLV_{tag}_REMOTE", body_r,
+                    f"DELIVERY remote {tag} RESOLVED/SENT_POSSIBLE")
+        k, v, b = attempt_typed(
+            owner_kind=ATT_DLV, owner_raw=dlv_raw, attempt_kind=kind,
+            attempt_state=AS_RES, send_state=SS_SENT,
+            cumulative_attempts=0, body=body_r)
+        add_att_typed(f"DSB3_ATT_DLV_{tag}_REMOTE_TYPED", k, v, b)
+
+    # --- negatives: crossed inv/availability, illegal pairs, cycle, etc. ---
+    # crossed: RESOLVED/RETRYABLE with inv=0 and avail non-zero
+    add_att_neg_body(
+        "DSB3_ATT_TX_CMD_CROSS_INV0_AVAIL",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_RETRY,
+            cumulative_attempts=1, gen=2, inv=0, avail=1),
+        "crossed TxGate/Bearer path")
+    a_mut += 1
+    # crossed: inv>=1 and avail=0
+    add_att_neg_body(
+        "DSB3_ATT_TX_CMD_CROSS_INV1_AVAIL0",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_RETRY,
+            cumulative_attempts=1, gen=2, inv=1, avail=0))
+    # illegal state/send pair: PREPARED/SENT_POSSIBLE
+    add_att_neg_body(
+        "DSB3_ATT_TX_CMD_BAD_PAIR_PREP_SENT",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_PREP, send_state=SS_SENT,
+            cumulative_attempts=1, gen=1, inv=1, avail=1))
+    # OBSERVED_SENT with avail=0
+    add_att_neg_body(
+        "DSB3_ATT_TX_CMD_OBS_AVAIL0",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_OBS, send_state=SS_SENT,
+            cumulative_attempts=1, gen=1, inv=1, avail=0))
+    # RESOLVED/SENT with timeout still set
+    add_att_neg_body(
+        "DSB3_ATT_TX_CMD_SENT_TIMEOUT_NZ",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+            cumulative_attempts=1, gen=1, inv=1, avail=1,
+            timeout_epoch=timeout_ep, timeout_at=1))
+    # COMMAND cycle wrong
+    add_att_neg_body(
+        "DSB3_ATT_TX_CMD_CYCLE_NZ",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_PREP, send_state=SS_PREP,
+            retry_cycle_id=1, attempt_in_cycle=0, cumulative_attempts=1))
+    add_att_neg_body(
+        "DSB3_ATT_TX_CMD_CUM0",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_PREP, send_state=SS_PREP,
+            cumulative_attempts=0))
+    # EVENT cycle wrong: in_cycle 0, 9, cycle 0, cum < in_cycle
+    add_att_neg_body(
+        "DSB3_ATT_TX_EVT_IN0",
+        enc_attempt_body(
+            attempt_kind=AK_EVT, attempt_state=AS_PREP, send_state=SS_PREP,
+            retry_cycle_id=1, attempt_in_cycle=0, cumulative_attempts=1))
+    add_att_neg_body(
+        "DSB3_ATT_TX_EVT_IN9",
+        enc_attempt_body(
+            attempt_kind=AK_EVT, attempt_state=AS_PREP, send_state=SS_PREP,
+            retry_cycle_id=1, attempt_in_cycle=9, cumulative_attempts=9))
+    add_att_neg_body(
+        "DSB3_ATT_TX_EVT_CYCLE0",
+        enc_attempt_body(
+            attempt_kind=AK_EVT, attempt_state=AS_PREP, send_state=SS_PREP,
+            retry_cycle_id=0, attempt_in_cycle=1, cumulative_attempts=1))
+    add_att_neg_body(
+        "DSB3_ATT_TX_EVT_CUM_LT_IN",
+        enc_attempt_body(
+            attempt_kind=AK_EVT, attempt_state=AS_PREP, send_state=SS_PREP,
+            retry_cycle_id=1, attempt_in_cycle=3, cumulative_attempts=2))
+    # CANCEL counters non-zero / cycle non-zero
+    add_att_neg_body(
+        "DSB3_ATT_TX_CAN_GEN_NZ",
+        enc_attempt_body(
+            attempt_kind=AK_CAN, attempt_state=AS_PREP, send_state=SS_PREP,
+            cumulative_attempts=0, gen=1, inv=0, exhausted=0, avail=0))
+    add_att_neg_body(
+        "DSB3_ATT_TX_CAN_CYCLE_NZ",
+        enc_attempt_body(
+            attempt_kind=AK_CAN, attempt_state=AS_PREP, send_state=SS_PREP,
+            retry_cycle_id=1, attempt_in_cycle=0, cumulative_attempts=0))
+    # inv > gen
+    add_att_neg_body(
+        "DSB3_ATT_TX_INV_GT_GEN",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+            cumulative_attempts=1, gen=1, inv=2, avail=1))
+    # exhausted=1 without MAX
+    add_att_neg_body(
+        "DSB3_ATT_TX_EXH_WITHOUT_MAX",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+            cumulative_attempts=1, gen=5, inv=3, exhausted=1, avail=1))
+    # MAX without exhausted
+    add_att_neg_body(
+        "DSB3_ATT_TX_MAX_WITHOUT_EXH",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+            cumulative_attempts=1, gen=U64_MAX, inv=1, exhausted=0, avail=1))
+    # half timeout
+    add_att_neg_body(
+        "DSB3_ATT_TX_TIMEOUT_HALF_EP",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_OBS, send_state=SS_SENT,
+            cumulative_attempts=1, gen=1, inv=1, avail=1,
+            timeout_epoch=timeout_ep, timeout_at=0))
+    add_att_neg_body(
+        "DSB3_ATT_TX_TIMEOUT_HALF_AT",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_OBS, send_state=SS_SENT,
+            cumulative_attempts=1, gen=1, inv=1, avail=1,
+            timeout_epoch=bytes(16), timeout_at=9))
+    # prepared epoch zero
+    add_att_neg_body(
+        "DSB3_ATT_TX_PREP_EPOCH0",
+        enc_attempt_body(
+            attempt_kind=AK_CMD, attempt_state=AS_PREP, send_state=SS_PREP,
+            cumulative_attempts=1, prepared_epoch=bytes(16)))
+    # owner raw / tx component
+    add_att_neg_body(
+        "DSB3_ATT_TX_RAW_NE_TXN",
+        enc_attempt_body(
+            owner_raw=bytes([0x99] * 16), transaction_id=txn,
+            primary_kd=bytes([0xAB] * 32)))
+    add_att_neg_body(
+        "DSB3_ATT_TX_RAW_LEN15",
+        enc_attempt_body(owner_raw=txn[:15], primary_kd=bytes([0xAB] * 32)))
+    bad_dlv = bytearray(dlv_raw)
+    bad_dlv[32:48] = bytes([0x55] * 16)
+    add_att_neg_body(
+        "DSB3_ATT_DLV_TXN_COMPONENT",
+        enc_attempt_body(
+            owner_kind=ATT_DLV, owner_raw=bytes(bad_dlv), transaction_id=txn,
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+            cumulative_attempts=0, primary_kd=bytes([0xAB] * 32)),
+        "DELIVERY raw [32,48) must equal transaction_id")
+    add_att_neg_body(
+        "DSB3_ATT_DLV_RAW_LEN79",
+        enc_attempt_body(
+            owner_kind=ATT_DLV, owner_raw=dlv_raw[:79],
+            attempt_kind=AK_CMD, attempt_state=AS_RES, send_state=SS_SENT,
+            cumulative_attempts=0, primary_kd=bytes([0xAB] * 32)))
+    # remote with non-zero counters / wrong state
+    add_att_neg_body(
+        "DSB3_ATT_DLV_GEN_NZ",
+        enc_attempt_body(
+            owner_kind=ATT_DLV, attempt_kind=AK_CMD, attempt_state=AS_RES,
+            send_state=SS_SENT, cumulative_attempts=0, gen=1, inv=0, avail=0))
+    add_att_neg_body(
+        "DSB3_ATT_DLV_BAD_STATE",
+        enc_attempt_body(
+            owner_kind=ATT_DLV, attempt_kind=AK_CMD, attempt_state=AS_PREP,
+            send_state=SS_PREP, cumulative_attempts=0))
+    add_att_neg_body(
+        "DSB3_ATT_DLV_AVAIL_NZ",
+        enc_attempt_body(
+            owner_kind=ATT_DLV, attempt_kind=AK_CMD, attempt_state=AS_RES,
+            send_state=SS_SENT, cumulative_attempts=0, avail=1))
+    # key / primary / digests / reserved
+    mut_pkd = bytearray(body_cmd_prep)
+    # offset of primary_key_digest: 16+2+2+2+16 = 38
+    mut_pkd[38:70] = bytes([0xB0] * 32)
+    add_att_neg_body("DSB3_ATT_BAD_PRIMARY_KD", bytes(mut_pkd))
+    a_mut += 1
+    add_att_neg_body(
+        "DSB3_ATT_ZERO_ATTEMPT_ID",
+        enc_attempt_body(attempt_id=bytes(16)))
+    add_att_neg_body(
+        "DSB3_ATT_ZERO_TARGET",
+        enc_attempt_body(target=bytes(32)))
+    add_att_neg_body(
+        "DSB3_ATT_ZERO_SEMANTIC",
+        enc_attempt_body(semantic=bytes(32)))
+    add_att_neg_body(
+        "DSB3_ATT_RESERVED0_NZ",
+        enc_attempt_body(reserved0=1))
+    add_att_neg_body(
+        "DSB3_ATT_RESERVED1_NZ",
+        enc_attempt_body(reserved1=1))
+    add_att_neg_body(
+        "DSB3_ATT_OWNER0",
+        enc_attempt_body(owner_kind=0, owner_raw=txn, primary_kd=bytes(32)))
+    add_att_neg_body(
+        "DSB3_ATT_OWNER3",
+        enc_attempt_body(owner_kind=3, owner_raw=txn, primary_kd=bytes(32)))
+    add_att_neg_body(
+        "DSB3_ATT_KIND0",
+        enc_attempt_body(attempt_kind=0))
+    add_att_neg_body(
+        "DSB3_ATT_STATE0",
+        enc_attempt_body(attempt_state=0))
+    add_att_neg_body(
+        "DSB3_ATT_SEND0",
+        enc_attempt_body(send_state=0))
+    # short / trailing / BTS
+    add_att_neg_body("DSB3_ATT_SHORT", body_cmd_prep[:-1])
+    add_att_neg_body("DSB3_ATT_TRAILING", body_cmd_prep + b"\x00")
+    add(id="DSB3_ATT_BUFFER_TOO_SMALL", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x31,
+        body_length=len(body_cmd_prep), body_hex=hx(body_cmd_prep),
+        key_length=0)
+    a_neg += 1
+    # typed: bad key composite, zero head/pvd, bad primary_id, flags
+    bad_key = bkey(6, 0x31, 5, bytes([0x55] * 32))
+    _, val_ok, _ = attempt_typed(body=body_cmd_prep)
+    add_att_neg_typed("DSB3_ATT_BAD_KEY", bad_key, val_ok)
+    k_zh, v_zh, _ = attempt_typed(body=body_cmd_prep, head=bytes(32))
+    add_att_neg_typed("DSB3_ATT_ZERO_HEAD", k_zh, v_zh)
+    k_zp, v_zp, _ = attempt_typed(body=body_cmd_prep, pvd=bytes(32))
+    add_att_neg_typed("DSB3_ATT_ZERO_PVD", k_zp, v_zp)
+    k_bp, v_bp, _ = attempt_typed(body=body_cmd_prep, primary=bytes(16))
+    add_att_neg_typed("DSB3_ATT_BAD_PRIMARY_ID", k_bp, v_bp)
+    k_fl = attempt_key(ATT_TX, txn, att_id)
+    v_fl = enc_env_full(6, 0x31, 1, 1, txn, head_nz, pvd_nz, body_cmd_prep)
+    add_att_neg_typed("DSB3_ATT_FLAGS_NZ", k_fl, v_fl, "flags must be 0")
+    k_r0, v_r0, _ = attempt_typed(body=body_cmd_prep, rev=0)
+    add_att_neg_typed("DSB3_ATT_REV0", k_r0, v_r0)
+
+    b3_cov["31"] = add_body_suite("ATTEMPT", 6, 0x31, a_pos, a_neg, a_mut, a_rt)
+    assert b3_cov["31"]["positive"] >= 20
+    assert b3_cov["31"]["negative"] >= 25
+    assert b3_cov["31"]["roundtrip"] >= 8
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -3560,6 +4177,7 @@ def build_document():
         "dsb3_total_negative": dsb3_neg,
         "dsb3_subtype_27_positive": b3_cov["27"]["positive"],
         "dsb3_subtype_30_positive": b3_cov["30"]["positive"],
+        "dsb3_subtype_31_positive": b3_cov["31"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -3587,29 +4205,40 @@ def build_document():
     assert catalog["dsb3_subtype_26_positive"] > 0
     assert catalog["dsb3_subtype_27_positive"] > 0
     assert catalog["dsb3_subtype_30_positive"] > 0
+    assert catalog["dsb3_subtype_31_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
-    # First 617 vector objects must remain the pre-B3c catalog (append-only).
-    pre_b3c = [v for v in vectors if not v["id"].startswith("DSB3_BLOB_")]
-    assert len(pre_b3c) == 617
+    # First 696 vector objects must remain the pre-B3d catalog (append-only).
+    # Exact gate is PRE_B3D_VECTORS_FINGERPRINT (canonical SHA-256); id-prefix
+    # is only a secondary structural check, not an exact-bytes claim.
+    assert len(vectors) > 696
+    assert all(not v["id"].startswith("DSB3_ATT_") for v in vectors[:696])
+    _pre_b3d_fp_final = hashlib.sha256(
+        json.dumps(vectors[:696], sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    assert _pre_b3d_fp_final == PRE_B3D_VECTORS_FINGERPRINT, (
+        f"post-append pre-B3d fingerprint drift: got {_pre_b3d_fp_final}"
+    )
 
     for v in vectors:
         assert v["required_workspace_bytes"] == 0
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3c",
+        "format": "ninlil-domain-store-v1-d1b3d",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
             "message_semantic_digest helper + D1-B3c body (30 BLOB "
-            "manifest/chunk); not full D1 catalog"
+            "manifest/chunk) + D1-B3d body (31 ATTEMPT); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c APIs have no workspace parameter; value is 0."
+            "D1-B3c/D1-B3d APIs have no workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,

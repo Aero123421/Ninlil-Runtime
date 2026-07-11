@@ -12,8 +12,11 @@
         }                                                                      \
     } while (0)
 
-/* High catalog presence bits (not wire/JSON fields) for B3b headroom proofs. */
-#define NINLIL_DV_CAT_TEST_BIT33 NINLIL_DV_CAT_BIT(33)
+/*
+ * High catalog presence bits (not wire/JSON fields) for future headroom.
+ * Bit 33 is now real D1-B3d (subtype 31); synthetic missing/truncation
+ * arithmetic uses unused bit40. Bit63 remains a storage-width proof.
+ */
 #define NINLIL_DV_CAT_TEST_BIT40 NINLIL_DV_CAT_BIT(40)
 #define NINLIL_DV_CAT_TEST_BIT63 NINLIL_DV_CAT_BIT(63)
 
@@ -25,27 +28,37 @@ _Static_assert(NINLIL_DV_CAT_DSB3_27 == NINLIL_DV_CAT_BIT(31),
     "D1-B3b subtype 27 catalog bit is bit 31 (no shift of 0..30)");
 _Static_assert(NINLIL_DV_CAT_DSB3_30 == NINLIL_DV_CAT_BIT(32),
     "D1-B3c subtype 30 catalog bit is bit 32 (no shift of 0..31)");
+_Static_assert(NINLIL_DV_CAT_DSB3_31 == NINLIL_DV_CAT_BIT(33),
+    "D1-B3d subtype 31 catalog bit is bit 33 (no shift of 0..32)");
 _Static_assert(NINLIL_DV_CAT_DSB3_NEG == NINLIL_DV_CAT_BIT(30),
     "pre-B3b highest wire catalog bit stays bit 30");
-_Static_assert(NINLIL_DV_CAT_TEST_BIT33 == (UINT64_C(1) << 33),
-    "bit 33 must be expressible via UINT64_C(1) shift");
+_Static_assert(NINLIL_DV_CAT_TEST_BIT40 == (UINT64_C(1) << 40),
+    "bit 40 must be expressible via UINT64_C(1) shift");
 _Static_assert(NINLIL_DV_CAT_TEST_BIT63 == (UINT64_C(1) << 63),
     "bit 63 must be expressible via UINT64_C(1) shift");
-_Static_assert((NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_TEST_BIT33) == 0u,
+_Static_assert((NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_TEST_BIT40) == 0u,
     "test high bits are not part of the current required mask");
 _Static_assert(
-    (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_TEST_BIT33)
+    (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_TEST_BIT40)
         != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
-            | NINLIL_DV_CAT_TEST_BIT33),
-    "uint32 storage would truncate catalog presence bit 33");
+            | NINLIL_DV_CAT_TEST_BIT40),
+    "uint32 storage would truncate catalog presence bit 40");
 _Static_assert(
     (NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_DSB3_30) != 0u,
     "B3c catalog bit 32 is part of the required mask");
+_Static_assert(
+    (NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_DSB3_31) != 0u,
+    "B3d catalog bit 33 is part of the required mask");
 _Static_assert(
     (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_DSB3_30)
         != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
             | NINLIL_DV_CAT_DSB3_30),
     "uint32 storage would truncate catalog presence bit 32");
+_Static_assert(
+    (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_DSB3_31)
+        != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
+            | NINLIL_DV_CAT_DSB3_31),
+    "uint32 storage would truncate catalog presence bit 33");
 
 static const char *full_catalog =
     "\"catalog\":{"
@@ -65,7 +78,7 @@ static const char *full_catalog =
     "\"dsb2_total_positive\":0,\"dsb2_total_negative\":0,"
     "\"dsb3_subtype_26_positive\":0,\"dsb3_total_positive\":0,"
     "\"dsb3_total_negative\":0,\"dsb3_subtype_27_positive\":0,"
-    "\"dsb3_subtype_30_positive\":0}";
+    "\"dsb3_subtype_30_positive\":0,\"dsb3_subtype_31_positive\":0}";
 
 static const char *ws_def =
     "\"required_workspace_bytes_definition\":"
@@ -73,12 +86,12 @@ static const char *ws_def =
     "and state/context objects.\"";
 
 static const char *top_ok_prefix =
-    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3c\","
+    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3d\","
     "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
     "(10/11/20-25 service+txn admission) + D1-B3a body "
     "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
     "message_semantic_digest helper + D1-B3c body (30 BLOB "
-    "manifest/chunk); not full D1 catalog\",";
+    "manifest/chunk) + D1-B3d body (31 ATTEMPT); not full D1 catalog\",";
 
 static int expect_fail(const char *text)
 {
@@ -248,7 +261,7 @@ int main(void)
         (void)snprintf(ok, sizeof(ok),
             "{\n"
             "  \"version\": 1,\n"
-            "  \"format\": \"ninlil-domain-store-v1-d1b3c\",\n"
+            "  \"format\": \"ninlil-domain-store-v1-d1b3d\",\n"
             "  \"scope\": \"%s\",\n"
             "  %s,\n"
             "  %s,\n"
@@ -276,7 +289,9 @@ int main(void)
 
     /*
      * Catalog presence scalability: high bits and required-mask checks must
-     * not truncate. No new JSON catalog keys — pure mask arithmetic.
+     * not truncate. Bit 33 is real/required (subtype 31); synthetic
+     * future-missing/truncation arithmetic uses unused bit40. Bit63 proves
+     * uint64 storage width. No new JSON catalog keys for synthetic bits.
      */
     {
         uint64_t present;
@@ -284,11 +299,11 @@ int main(void)
         uint32_t present32;
         uint32_t future32;
 
-        present = NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_TEST_BIT33
-            | NINLIL_DV_CAT_TEST_BIT40 | NINLIL_DV_CAT_TEST_BIT63;
+        present = NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_TEST_BIT40
+            | NINLIL_DV_CAT_TEST_BIT63;
         REQUIRE((present & NINLIL_DV_CAT_REQUIRED_MASK)
             == NINLIL_DV_CAT_REQUIRED_MASK);
-        REQUIRE((present & NINLIL_DV_CAT_TEST_BIT33) != 0u);
+        REQUIRE((present & NINLIL_DV_CAT_DSB3_31) != 0u);
         REQUIRE((present & NINLIL_DV_CAT_TEST_BIT40) != 0u);
         REQUIRE((present & NINLIL_DV_CAT_TEST_BIT63) != 0u);
         /* Same values stored in catalog_bits retain high bits. */
@@ -299,23 +314,25 @@ int main(void)
             REQUIRE(f.catalog_bits == present);
             REQUIRE((f.catalog_bits & NINLIL_DV_CAT_REQUIRED_MASK)
                 == NINLIL_DV_CAT_REQUIRED_MASK);
-            REQUIRE((f.catalog_bits & NINLIL_DV_CAT_TEST_BIT33)
-                == NINLIL_DV_CAT_TEST_BIT33);
+            REQUIRE((f.catalog_bits & NINLIL_DV_CAT_DSB3_31)
+                == NINLIL_DV_CAT_DSB3_31);
+            REQUIRE((f.catalog_bits & NINLIL_DV_CAT_TEST_BIT63)
+                == NINLIL_DV_CAT_TEST_BIT63);
         }
 
         /*
-         * Simulated B3b required bit 33: omitting it fails completeness;
+         * Future unused bit40 required: omitting it fails completeness;
          * uint32 truncation would incorrectly treat the future bit as absent
          * from both sides and spuriously pass.
          */
         future_required =
-            NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_TEST_BIT33;
+            NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_TEST_BIT40;
         present = NINLIL_DV_CAT_REQUIRED_MASK;
         REQUIRE((present & future_required) != future_required);
         present32 = (uint32_t)present;
         future32 = (uint32_t)future_required;
         REQUIRE((present32 & future32) == future32);
-        present |= NINLIL_DV_CAT_TEST_BIT33;
+        present |= NINLIL_DV_CAT_TEST_BIT40;
         REQUIRE((present & future_required) == future_required);
     }
 
