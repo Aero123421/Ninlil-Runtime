@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..m body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..n body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -9831,6 +9831,327 @@ ninlil_status_t ninlil_model_domain_decode_body_management_ledger(
     return NINLIL_OK;
 }
 
+/* --- RETENTION_BASIS (0x61) docs17 §8.6 D1-B3n --- */
+
+static int retention_subject_kind_is_known(uint16_t subject_kind)
+{
+    return subject_kind
+            == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_TRANSACTION
+        || subject_kind
+            == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_DELIVERY;
+}
+
+static int retention_subject_raw_is_valid(
+    uint16_t subject_kind, uint16_t len, const uint8_t *raw)
+{
+    if (raw == NULL && len != 0u) {
+        return 0;
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_TRANSACTION) {
+        return len == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_KEY_TX_BYTES
+            && raw != NULL && !id_is_zero(raw);
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_DELIVERY) {
+        return reservation_owner_raw_is_valid(
+            NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_DELIVERY, len, raw);
+    }
+    return 0;
+}
+
+/*
+ * subject_primary_key_digest = KEY_DIGEST(complete primary key).
+ * TX: family6 subtype 0x20 ID128 identity = raw exact 16.
+ * DELIVERY: family6 subtype 0x40 COMPOSITE(40, delivery_key_raw:RAW16).
+ * Bare composite digest is not stored or compared.
+ */
+static int retention_primary_key_digest_ok(
+    uint16_t subject_kind,
+    uint16_t subject_key_raw_length,
+    const uint8_t *subject_key_raw,
+    const uint8_t actual[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    uint8_t raw16[2u + NINLIL_MODEL_DOMAIN_RAW16_RETENTION_SUBJECT_KEY_MAX];
+    ninlil_bytes_view_t components;
+    uint32_t raw16_len = 0u;
+
+    if (actual == NULL || subject_key_raw == NULL) {
+        return 0;
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_TRANSACTION) {
+        if (subject_key_raw_length != 16u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            actual,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_TRANSACTION_ANCHOR,
+            NINLIL_MODEL_DOMAIN_ID_KIND_ID128,
+            subject_key_raw,
+            16u);
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_DELIVERY) {
+        if (!encode_raw16_into(
+                subject_key_raw_length, subject_key_raw, raw16,
+                sizeof(raw16), &raw16_len)) {
+            return 0;
+        }
+        components.data = raw16;
+        components.length = raw16_len;
+        return digest_eq_composite_key(
+            actual, NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY, components);
+    }
+    return 0;
+}
+
+/*
+ * Closed retention field matrix (docs17 §8.6):
+ * ACTIVE pending: pending1 overflow0 window>0 epoch/time/delete all-zero
+ * ACTIVE overflow: pending0 overflow1 window>0 epoch NZ, basis_at 0 ok, delete0
+ * ACTIVE trusted / ELIGIBLE / CLEANUP_COMMITTED: pending0 overflow0,
+ *   epoch NZ, window>0, delete=checked(basis_at+window); basis_at 0 legal.
+ * bool flags exact 0/1; addition overflow invalid.
+ */
+static int retention_basis_matrix_ok(
+    const ninlil_model_domain_body_retention_basis_t *body)
+{
+    int epoch_zero;
+    int epoch_nz;
+    uint64_t sum;
+
+    if (body == NULL) {
+        return 0;
+    }
+    if (body->basis_pending > 1u || body->retention_overflow > 1u) {
+        return 0;
+    }
+    if (body->required_window_ms == 0u) {
+        return 0;
+    }
+    epoch_zero = id_is_zero(body->basis_clock_epoch);
+    epoch_nz = !epoch_zero;
+
+    if (body->retention_state
+        == NINLIL_MODEL_DOMAIN_RETENTION_STATE_ACTIVE) {
+        if (body->basis_pending == 1u && body->retention_overflow == 0u) {
+            return epoch_zero && body->basis_at_ms == 0u
+                && body->exclusive_cleanup_at_ms == 0u;
+        }
+        if (body->basis_pending == 0u && body->retention_overflow == 1u) {
+            return epoch_nz && body->exclusive_cleanup_at_ms == 0u;
+        }
+        if (body->basis_pending == 0u && body->retention_overflow == 0u) {
+            if (!epoch_nz) {
+                return 0;
+            }
+            /* checked basis_at + window; overflow invalid. */
+            if (body->basis_at_ms
+                > UINT64_MAX - body->required_window_ms) {
+                return 0;
+            }
+            sum = body->basis_at_ms + body->required_window_ms;
+            return body->exclusive_cleanup_at_ms == sum;
+        }
+        return 0;
+    }
+    if (body->retention_state
+            == NINLIL_MODEL_DOMAIN_RETENTION_STATE_ELIGIBLE
+        || body->retention_state
+            == NINLIL_MODEL_DOMAIN_RETENTION_STATE_CLEANUP_COMMITTED) {
+        if (body->basis_pending != 0u || body->retention_overflow != 0u
+            || !epoch_nz) {
+            return 0;
+        }
+        if (body->basis_at_ms
+            > UINT64_MAX - body->required_window_ms) {
+            return 0;
+        }
+        sum = body->basis_at_ms + body->required_window_ms;
+        return body->exclusive_cleanup_at_ms == sum;
+    }
+    return 0;
+}
+
+static int retention_basis_fields_ok(
+    const ninlil_model_domain_body_retention_basis_t *body)
+{
+    if (body == NULL || body->reserved != 0u
+        || !retention_subject_kind_is_known(body->subject_kind)
+        || !retention_subject_raw_is_valid(
+               body->subject_kind, body->subject_key_raw_length,
+               body->subject_key_raw)
+        || !retention_primary_key_digest_ok(
+               body->subject_kind, body->subject_key_raw_length,
+               body->subject_key_raw, body->subject_primary_key_digest)) {
+        return 0;
+    }
+    return retention_basis_matrix_ok(body);
+}
+
+uint32_t ninlil_model_domain_body_retention_basis_encoded_length(
+    const ninlil_model_domain_body_retention_basis_t *body)
+{
+    uint32_t n;
+
+    if (body == NULL || !retention_basis_fields_ok(body)) {
+        return 0u;
+    }
+    /* fixed 90 includes RAW16 length prefix; contents add N. */
+    n = NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_FIXED
+        + (uint32_t)body->subject_key_raw_length;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_retention_basis(
+    const ninlil_model_domain_body_retention_basis_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->subject_key_raw != NULL
+            && body->subject_key_raw_length != 0u) {
+            ptrs[n] = body->subject_key_raw;
+            lens[n] = body->subject_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_retention_basis_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    ninlil_model_domain_encode_u16_be(&out_bytes[0], body->subject_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[2], body->reserved);
+    o = 4u;
+    o += encode_raw16(
+        &out_bytes[o], body->subject_key_raw_length, body->subject_key_raw);
+    (void)memcpy(&out_bytes[o], body->subject_primary_key_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->basis_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->basis_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->exclusive_cleanup_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->required_window_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->retention_state);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->basis_pending);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->retention_overflow);
+    o += 4u;
+    if (o != required) {
+        *out_length = 0u;
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_retention_basis(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_retention_basis_t *out_body)
+{
+    ninlil_model_domain_body_retention_basis_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 4u + 2u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    tmp.subject_kind = ninlil_model_domain_decode_u16_be(&encoded.data[0]);
+    tmp.reserved = ninlil_model_domain_decode_u16_be(&encoded.data[2]);
+    o = 4u;
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o,
+            (uint16_t)NINLIL_MODEL_DOMAIN_RAW16_RETENTION_SUBJECT_KEY_MAX,
+            &tmp.subject_key_raw_length, &tmp.subject_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    /* After RAW16: 32+16+8+8+8+4+4+4 = 84 */
+    if (encoded.length - o < 84u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.subject_primary_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.basis_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.basis_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.exclusive_cleanup_at_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.required_window_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.retention_state =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.basis_pending =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.retention_overflow =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    if (o != encoded.length || !retention_basis_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -9868,6 +10189,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_SPOOL:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RETRY_SUMMARY:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_MANAGEMENT_LEDGER:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_RETENTION_BASIS:
         return 1;
     default:
         return 0;
@@ -11245,6 +11567,75 @@ static ninlil_status_t validate_header_body_local(
                 key->identity, key->identity_length)
             || !header_primary_id_eq(
                    env, out->management_ledger.transaction_id)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_RETENTION_BASIS) {
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+        /* kind:u16 + RAW16(max255) = 2 + 2 + 255 */
+        uint8_t components[2u + 2u + 255u];
+        ninlil_bytes_view_t cv;
+        uint32_t o;
+
+        /*
+         * RETENTION_BASIS same-record (docs17 §8.6 D1-B3n):
+         * - family 6 secondary: flags 0, revision >= 1, head NZ, PVD NZ
+         * - key COMPOSITE(61, subject_kind:u16 || subject_key_raw:RAW16)
+         * - primary_id: TX raw16 / DELIVERY COMPOSITE(40,RAW16 raw80) first 16
+         * - body matrix + KEY_DIGEST recompute above
+         * D3: live now / profile window / plan / live primary PVD.
+         */
+        if (env->header.record_revision < 1u
+            || env->header.flags != 0u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_retention_basis(
+            env->body, &out->retention_basis);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        ninlil_model_domain_encode_u16_be(
+            components, out->retention_basis.subject_kind);
+        o = 2u;
+        o += encode_raw16(
+            &components[o], out->retention_basis.subject_key_raw_length,
+            out->retention_basis.subject_key_raw);
+        cv.data = components;
+        cv.length = o;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_RETENTION_BASIS, cv,
+                key->identity, key->identity_length)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (out->retention_basis.subject_kind
+            == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_TRANSACTION) {
+            if (out->retention_basis.subject_key_raw_length != 16u
+                || out->retention_basis.subject_key_raw == NULL) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            (void)memcpy(
+                expect_pid, out->retention_basis.subject_key_raw, 16u);
+        } else if (
+            out->retention_basis.subject_kind
+            == NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_DELIVERY) {
+            if (primary_id_from_raw_contents_as_raw16(
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+                    out->retention_basis.subject_key_raw_length,
+                    out->retention_basis.subject_key_raw, expect_pid)
+                != NINLIL_OK) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+        } else {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (!header_primary_id_eq(env, expect_pid)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;

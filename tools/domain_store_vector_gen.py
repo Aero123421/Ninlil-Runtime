@@ -9543,6 +9543,587 @@ def build_document():
     assert b3_cov["52"]["mutation"] >= 1
     assert b3_cov["52"]["roundtrip"] >= 12
 
+    # =====================================================================
+    # D1-B3n RETENTION_BASIS (0x61) — after MANAGEMENT_LEDGER; preserve 1391.
+    # =====================================================================
+    PRE_B3N_VECTOR_COUNT = len(vectors)
+    PRE_B3N_VECTOR_COUNT_SNAPSHOT = PRE_B3N_VECTOR_COUNT
+    assert PRE_B3N_VECTOR_COUNT == 1391, PRE_B3N_VECTOR_COUNT
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_ML_KEY_COMP_SUBTYPE"
+    assert all(not v["id"].startswith("DSB3_RB_") for v in vectors)
+    PRE_B3N_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    PRE_B3N_FULL_FINGERPRINT_PIN = (
+        "44c809f186530d2d0a9ff5360aa949c926ae712a4e6a1f193145bc9428ab3315"
+    )
+    assert PRE_B3N_FULL_FINGERPRINT == PRE_B3N_FULL_FINGERPRINT_PIN, (
+        f"pre-B3n full fingerprint drift: got {PRE_B3N_FULL_FINGERPRINT}"
+    )
+
+    RB_SK_TX = 2
+    RB_SK_DLV = 3
+    RB_ST_ACTIVE = 1
+    RB_ST_ELIGIBLE = 2
+    RB_ST_CLEANUP = 3
+    rb_head = bytes([0xE3] * 32)
+    rb_pvd = bytes([0xE4] * 32)
+    rb_txn = txn
+    rb_dlv = dlv_raw
+    assert len(rb_txn) == 16 and len(rb_dlv) == 80
+    rb_epoch = bytes([0xB1] + [0] * 14 + [0xB2])
+    rb_window = 3600
+
+    def rb_subject_primary_digest(kind: int, raw: bytes) -> bytes:
+        if kind == RB_SK_TX:
+            return complete_key_digest_id128(0x20, raw)
+        if kind == RB_SK_DLV:
+            return complete_key_digest_composite(0x40, raw16(raw))
+        raise ValueError("bad retention subject kind")
+
+    def rb_primary_id(kind: int, raw: bytes) -> bytes:
+        if kind == RB_SK_TX:
+            return raw
+        if kind == RB_SK_DLV:
+            return primary_id_from_composite_subtype(0x40, raw16(raw))
+        raise ValueError("bad retention subject kind")
+
+    def rb_key(kind: int, raw: bytes) -> bytes:
+        return bkey(6, 0x61, 5, composite(0x61, be16(kind) + raw16(raw)))
+
+    def enc_rb(
+        kind=RB_SK_TX,
+        reserved=0,
+        raw=None,
+        primary_dig=None,
+        epoch=None,
+        basis_at=None,
+        delete_at=None,
+        window=None,
+        state=RB_ST_ACTIVE,
+        pending=None,
+        overflow=None,
+        recompute_digest=True,
+    ) -> bytes:
+        if raw is None:
+            raw = rb_txn if kind == RB_SK_TX else rb_dlv
+        if recompute_digest or primary_dig is None:
+            primary_dig = rb_subject_primary_digest(kind, raw)
+        # Default matrix: ACTIVE trusted unless flags force pending/overflow.
+        if pending is None and overflow is None:
+            if state == RB_ST_ACTIVE:
+                pending = 0
+                overflow = 0
+            else:
+                pending = 0
+                overflow = 0
+        if pending is None:
+            pending = 0
+        if overflow is None:
+            overflow = 0
+        if window is None:
+            window = rb_window
+        if state == RB_ST_ACTIVE and pending == 1 and overflow == 0:
+            if epoch is None:
+                epoch = bytes(16)
+            if basis_at is None:
+                basis_at = 0
+            if delete_at is None:
+                delete_at = 0
+        elif state == RB_ST_ACTIVE and pending == 0 and overflow == 1:
+            if epoch is None:
+                epoch = rb_epoch
+            if basis_at is None:
+                basis_at = 0
+            if delete_at is None:
+                delete_at = 0
+        else:
+            # trusted arithmetic for ACTIVE trusted / ELIGIBLE / CLEANUP
+            if epoch is None:
+                epoch = rb_epoch
+            if basis_at is None:
+                basis_at = 1000
+            if delete_at is None:
+                delete_at = basis_at + window
+        out = bytearray()
+        out += be16(kind)
+        out += be16(reserved)
+        out += raw16(raw)
+        out += primary_dig
+        out += epoch
+        out += be64(basis_at)
+        out += be64(delete_at)
+        out += be64(window)
+        out += be32(state)
+        out += be32(pending)
+        out += be32(overflow)
+        expect = 90 + len(raw)
+        assert len(out) == expect, (len(out), expect)
+        return bytes(out)
+
+    def retention_typed(body=None, rev=1, flags=0, primary_id=None,
+                        head=None, pvd=None, key=None):
+        if body is None:
+            body = enc_rb()
+        kind = int.from_bytes(body[0:2], "big")
+        raw_len = int.from_bytes(body[4:6], "big")
+        raw = body[6:6 + raw_len]
+        if primary_id is None:
+            primary_id = rb_primary_id(kind, raw)
+        if head is None:
+            head = rb_head
+        if pvd is None:
+            pvd = rb_pvd
+        if key is None:
+            key = rb_key(kind, raw)
+        val = enc_env_full(6, 0x61, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    rb_pos = 0
+    rb_neg = 0
+    rb_mut = 0
+    rb_rt = 0
+
+    def add_rb_pos(vid, body, notes=""):
+        nonlocal rb_pos, rb_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x61, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        rb_pos += 1
+        rb_rt += 1
+
+    def add_rb_pos_typed(vid, body, notes="", rev=1):
+        nonlocal rb_pos
+        key, val, _ = retention_typed(body=body, rev=rev)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x61, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        rb_pos += 1
+
+    def add_rb_neg_body(vid, body, notes=""):
+        nonlocal rb_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x61, body_hex=hx(body), notes=notes)
+        rb_neg += 1
+
+    def add_rb_neg_typed(vid, key, val, notes=""):
+        nonlocal rb_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x61, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        rb_neg += 1
+
+    # --- positives: both kinds, 106/170, full state matrix ---
+    b_tx_pending = enc_rb(kind=RB_SK_TX, state=RB_ST_ACTIVE, pending=1,
+                          overflow=0)
+    add_rb_pos("DSB3_RB_TX_ACTIVE_PENDING", b_tx_pending,
+               "TX ACTIVE pending matrix")
+    add_rb_pos_typed("DSB3_RB_TX_ACTIVE_PENDING_TYPED", b_tx_pending)
+
+    b_tx_overflow = enc_rb(kind=RB_SK_TX, state=RB_ST_ACTIVE, pending=0,
+                           overflow=1, basis_at=0)
+    add_rb_pos("DSB3_RB_TX_ACTIVE_OVERFLOW_BASIS0", b_tx_overflow,
+               "TX ACTIVE overflow basis_at=0 legal")
+    add_rb_pos_typed("DSB3_RB_TX_ACTIVE_OVERFLOW_TYPED", b_tx_overflow)
+
+    b_tx_overflow_nz = enc_rb(kind=RB_SK_TX, state=RB_ST_ACTIVE, pending=0,
+                              overflow=1, basis_at=42)
+    add_rb_pos("DSB3_RB_TX_ACTIVE_OVERFLOW_BASIS_NZ", b_tx_overflow_nz)
+
+    b_tx_trusted = enc_rb(kind=RB_SK_TX, state=RB_ST_ACTIVE, pending=0,
+                          overflow=0, basis_at=1000, window=rb_window)
+    add_rb_pos("DSB3_RB_TX_ACTIVE_TRUSTED", b_tx_trusted)
+    add_rb_pos_typed("DSB3_RB_TX_ACTIVE_TRUSTED_TYPED", b_tx_trusted)
+
+    b_tx_trusted_basis0 = enc_rb(
+        kind=RB_SK_TX, state=RB_ST_ACTIVE, pending=0, overflow=0,
+        basis_at=0, window=rb_window)
+    add_rb_pos("DSB3_RB_TX_ACTIVE_TRUSTED_BASIS0", b_tx_trusted_basis0,
+               "basis_at=0 legal for trusted")
+
+    b_tx_window1 = enc_rb(
+        kind=RB_SK_TX, state=RB_ST_ACTIVE, pending=0, overflow=0,
+        basis_at=0, window=1)
+    add_rb_pos("DSB3_RB_TX_WINDOW1", b_tx_window1, "window=1 legal")
+
+    b_tx_maxsum = enc_rb(
+        kind=RB_SK_TX, state=RB_ST_ACTIVE, pending=0, overflow=0,
+        basis_at=(1 << 64) - 2, window=1)
+    add_rb_pos("DSB3_RB_TX_MAXSUM", b_tx_maxsum,
+               "basis MAX-1 + window1 = MAX legal")
+
+    b_tx_eligible = enc_rb(kind=RB_SK_TX, state=RB_ST_ELIGIBLE, basis_at=50,
+                           window=10)
+    add_rb_pos("DSB3_RB_TX_ELIGIBLE", b_tx_eligible)
+    add_rb_pos_typed("DSB3_RB_TX_ELIGIBLE_TYPED", b_tx_eligible)
+
+    b_tx_cleanup = enc_rb(kind=RB_SK_TX, state=RB_ST_CLEANUP, basis_at=0,
+                          window=99)
+    add_rb_pos("DSB3_RB_TX_CLEANUP", b_tx_cleanup)
+    add_rb_pos_typed("DSB3_RB_TX_CLEANUP_TYPED", b_tx_cleanup, rev=3)
+
+    b_dlv_pending = enc_rb(kind=RB_SK_DLV, state=RB_ST_ACTIVE, pending=1,
+                           overflow=0)
+    add_rb_pos("DSB3_RB_DLV_ACTIVE_PENDING", b_dlv_pending)
+    add_rb_pos_typed("DSB3_RB_DLV_ACTIVE_PENDING_TYPED", b_dlv_pending)
+
+    b_dlv_overflow = enc_rb(kind=RB_SK_DLV, state=RB_ST_ACTIVE, pending=0,
+                            overflow=1, basis_at=0)
+    add_rb_pos("DSB3_RB_DLV_ACTIVE_OVERFLOW", b_dlv_overflow)
+
+    b_dlv_trusted = enc_rb(kind=RB_SK_DLV, state=RB_ST_ACTIVE, pending=0,
+                           overflow=0, basis_at=7, window=rb_window)
+    add_rb_pos("DSB3_RB_DLV_ACTIVE_TRUSTED", b_dlv_trusted)
+    add_rb_pos_typed("DSB3_RB_DLV_ACTIVE_TRUSTED_TYPED", b_dlv_trusted)
+
+    b_dlv_eligible = enc_rb(kind=RB_SK_DLV, state=RB_ST_ELIGIBLE,
+                            basis_at=0, window=5)
+    add_rb_pos("DSB3_RB_DLV_ELIGIBLE", b_dlv_eligible)
+
+    b_dlv_cleanup = enc_rb(kind=RB_SK_DLV, state=RB_ST_CLEANUP,
+                           basis_at=1, window=1)
+    add_rb_pos("DSB3_RB_DLV_CLEANUP", b_dlv_cleanup)
+    add_rb_pos_typed("DSB3_RB_DLV_CLEANUP_TYPED", b_dlv_cleanup)
+
+    # mutation: flip reserved on valid body
+    mut_body = bytearray(b_tx_trusted)
+    mut_body[3] = 0x01  # reserved high byte
+    add(id="DSB3_RB_MUT_RESERVED", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x61,
+        body_hex=hx(bytes(mut_body)), notes="reserved flip mutation")
+    rb_mut += 1
+    rb_neg += 1
+
+    # --- body negatives: sizes, kinds, states, matrix, digests ---
+    # length: TX raw15 / raw17 / trailing / short fixed tail
+    bad15 = enc_rb(kind=RB_SK_TX)
+    # craft N=15 by rewriting length and truncating raw
+    bad15 = (
+        be16(RB_SK_TX) + be16(0) + be16(15) + rb_txn[:15]
+        + rb_subject_primary_digest(RB_SK_TX, rb_txn)
+        + rb_epoch + be64(1000) + be64(1000 + rb_window) + be64(rb_window)
+        + be32(RB_ST_ACTIVE) + be32(0) + be32(0)
+    )
+    add_rb_neg_body("DSB3_RB_RAW15", bad15, "TX raw contents 15")
+
+    bad17 = (
+        be16(RB_SK_TX) + be16(0) + be16(17) + (rb_txn + b"\x00")
+        + rb_subject_primary_digest(RB_SK_TX, rb_txn)
+        + rb_epoch + be64(1000) + be64(1000 + rb_window) + be64(rb_window)
+        + be32(RB_ST_ACTIVE) + be32(0) + be32(0)
+    )
+    add_rb_neg_body("DSB3_RB_RAW17", bad17, "TX raw contents 17")
+
+    bad79 = (
+        be16(RB_SK_DLV) + be16(0) + be16(79) + rb_dlv[:79]
+        + rb_subject_primary_digest(RB_SK_DLV, rb_dlv)
+        + rb_epoch + be64(1000) + be64(1000 + rb_window) + be64(rb_window)
+        + be32(RB_ST_ACTIVE) + be32(0) + be32(0)
+    )
+    add_rb_neg_body("DSB3_RB_RAW79", bad79, "DLV raw contents 79")
+
+    bad81 = (
+        be16(RB_SK_DLV) + be16(0) + be16(81) + (rb_dlv + b"\x00")
+        + rb_subject_primary_digest(RB_SK_DLV, rb_dlv)
+        + rb_epoch + be64(1000) + be64(1000 + rb_window) + be64(rb_window)
+        + be32(RB_ST_ACTIVE) + be32(0) + be32(0)
+    )
+    add_rb_neg_body("DSB3_RB_RAW81", bad81, "DLV raw contents 81")
+
+    add_rb_neg_body("DSB3_RB_TRAILING", b_tx_trusted + b"\x00",
+                    "trailing byte after exact body")
+    add_rb_neg_body("DSB3_RB_LEN105", b_tx_trusted[:-1],
+                    "TX body short by 1")
+    add_rb_neg_body("DSB3_RB_LEN169", b_dlv_trusted[:-1],
+                    "DLV body short by 1")
+
+    add_rb_neg_body(
+        "DSB3_RB_RESERVED",
+        enc_rb(kind=RB_SK_TX, reserved=1), "reserved nonzero")
+    add_rb_neg_body(
+        "DSB3_RB_KIND1",
+        enc_rb(kind=1, raw=rb_txn, primary_dig=rb_subject_primary_digest(
+            RB_SK_TX, rb_txn), recompute_digest=False),
+        "subject_kind SERVICE=1 corrupt")
+    add_rb_neg_body(
+        "DSB3_RB_KIND4",
+        enc_rb(kind=4, raw=rb_txn, primary_dig=rb_subject_primary_digest(
+            RB_SK_TX, rb_txn), recompute_digest=False),
+        "subject_kind EVENT=4 corrupt")
+    add_rb_neg_body(
+        "DSB3_RB_UNKNOWN_STATE",
+        enc_rb(state=4), "retention_state 4 unknown")
+    add_rb_neg_body(
+        "DSB3_RB_STATE0",
+        enc_rb(state=0), "retention_state 0 unknown")
+    add_rb_neg_body(
+        "DSB3_RB_BOOL2_PENDING",
+        enc_rb(pending=2, overflow=0, state=RB_ST_ACTIVE),
+        "basis_pending=2")
+    add_rb_neg_body(
+        "DSB3_RB_BOOL2_OVERFLOW",
+        enc_rb(pending=0, overflow=2, state=RB_ST_ACTIVE, epoch=rb_epoch,
+               basis_at=0, delete_at=0),
+        "retention_overflow=2")
+
+    # matrix contradictions
+    add_rb_neg_body(
+        "DSB3_RB_PEND_OVERFLOW_BOTH",
+        enc_rb(pending=1, overflow=1, state=RB_ST_ACTIVE, epoch=bytes(16),
+               basis_at=0, delete_at=0),
+        "pending and overflow both 1")
+    add_rb_neg_body(
+        "DSB3_RB_PEND_EPOCH_NZ",
+        enc_rb(pending=1, overflow=0, state=RB_ST_ACTIVE, epoch=rb_epoch,
+               basis_at=0, delete_at=0),
+        "ACTIVE pending with epoch nonzero")
+    add_rb_neg_body(
+        "DSB3_RB_PEND_BASIS_NZ",
+        enc_rb(pending=1, overflow=0, state=RB_ST_ACTIVE, epoch=bytes(16),
+               basis_at=1, delete_at=0),
+        "ACTIVE pending with basis_at nonzero")
+    add_rb_neg_body(
+        "DSB3_RB_PEND_DELETE_NZ",
+        enc_rb(pending=1, overflow=0, state=RB_ST_ACTIVE, epoch=bytes(16),
+               basis_at=0, delete_at=1),
+        "ACTIVE pending with delete nonzero")
+    add_rb_neg_body(
+        "DSB3_RB_OVF_EPOCH_ZERO",
+        enc_rb(pending=0, overflow=1, state=RB_ST_ACTIVE, epoch=bytes(16),
+               basis_at=0, delete_at=0),
+        "ACTIVE overflow epoch zero")
+    add_rb_neg_body(
+        "DSB3_RB_OVF_DELETE_NZ",
+        enc_rb(pending=0, overflow=1, state=RB_ST_ACTIVE, epoch=rb_epoch,
+               basis_at=0, delete_at=1),
+        "ACTIVE overflow delete nonzero")
+    add_rb_neg_body(
+        "DSB3_RB_TRUST_EPOCH_ZERO",
+        enc_rb(pending=0, overflow=0, state=RB_ST_ACTIVE, epoch=bytes(16),
+               basis_at=0, window=10, delete_at=10),
+        "ACTIVE trusted epoch zero")
+    add_rb_neg_body(
+        "DSB3_RB_TRUST_DELETE_WRONG",
+        enc_rb(pending=0, overflow=0, state=RB_ST_ACTIVE, basis_at=100,
+               window=10, delete_at=111),
+        "delete != basis+window")
+    add_rb_neg_body(
+        "DSB3_RB_WINDOW0",
+        enc_rb(pending=0, overflow=0, state=RB_ST_ACTIVE, window=0,
+               basis_at=1, delete_at=1),
+        "required_window_ms=0")
+    # addition overflow: basis_at = MAX, window = 1
+    add_rb_neg_body(
+        "DSB3_RB_ADD_OVERFLOW",
+        enc_rb(pending=0, overflow=0, state=RB_ST_ACTIVE,
+               basis_at=(1 << 64) - 1, window=1,
+               delete_at=0),  # cannot form legal delete
+        "basis_at+window overflow")
+    add_rb_neg_body(
+        "DSB3_RB_ELIG_PENDING",
+        enc_rb(state=RB_ST_ELIGIBLE, pending=1, overflow=0, epoch=bytes(16),
+               basis_at=0, delete_at=0, window=10),
+        "ELIGIBLE with pending")
+    add_rb_neg_body(
+        "DSB3_RB_ELIG_OVERFLOW",
+        enc_rb(state=RB_ST_ELIGIBLE, pending=0, overflow=1, epoch=rb_epoch,
+               basis_at=0, delete_at=0, window=10),
+        "ELIGIBLE with overflow")
+    add_rb_neg_body(
+        "DSB3_RB_CLEAN_PENDING",
+        enc_rb(state=RB_ST_CLEANUP, pending=1, overflow=0, epoch=bytes(16),
+               basis_at=0, delete_at=0, window=10),
+        "CLEANUP with pending")
+
+    # wrong primary digest: bare composite for DELIVERY
+    bare_comp = composite(0x40, raw16(rb_dlv))
+    add_rb_neg_body(
+        "DSB3_RB_DLV_BARE_COMPOSITE_DIGEST",
+        enc_rb(kind=RB_SK_DLV, primary_dig=bare_comp, recompute_digest=False),
+        "bare composite digest instead of KEY_DIGEST")
+    # wrong TX digest (hash of raw only)
+    add_rb_neg_body(
+        "DSB3_RB_TX_WRONG_DIGEST",
+        enc_rb(kind=RB_SK_TX, primary_dig=sha256(rb_txn),
+               recompute_digest=False),
+        "TX digest not complete key KEY_DIGEST")
+    # kind/raw mismatch: DLV kind with TX raw
+    add_rb_neg_body(
+        "DSB3_RB_KIND_RAW_MISMATCH",
+        enc_rb(kind=RB_SK_DLV, raw=rb_txn,
+               primary_dig=rb_subject_primary_digest(RB_SK_TX, rb_txn),
+               recompute_digest=False),
+        "DELIVERY kind with TX-length raw")
+    # zero TX id
+    add_rb_neg_body(
+        "DSB3_RB_TX_RAW_ZERO",
+        enc_rb(kind=RB_SK_TX, raw=bytes(16),
+               primary_dig=complete_key_digest_id128(0x20, bytes(16)),
+               recompute_digest=False),
+        "TX raw all-zero")
+
+    # --- typed negatives ---
+    k_ok, v_ok, _ = retention_typed(body=b_tx_trusted)
+    add_rb_neg_typed(
+        "DSB3_RB_REV0",
+        *retention_typed(body=b_tx_trusted, rev=0)[:2],
+        notes="record_revision 0")
+    add_rb_neg_typed(
+        "DSB3_RB_FLAGS",
+        *retention_typed(body=b_tx_trusted, flags=1)[:2],
+        notes="flags nonzero")
+    v_pvd0 = enc_env_full(6, 0x61, 0, 1, rb_txn, rb_head, bytes(32),
+                          b_tx_trusted)
+    add_rb_neg_typed("DSB3_RB_PVD0", rb_key(RB_SK_TX, rb_txn), v_pvd0,
+                     "primary_value_digest zero")
+    v_head0 = enc_env_full(6, 0x61, 0, 1, rb_txn, bytes(32), rb_pvd,
+                           b_tx_trusted)
+    add_rb_neg_typed("DSB3_RB_HEAD0", rb_key(RB_SK_TX, rb_txn), v_head0,
+                     "head_witness_digest zero")
+    v_pid_bad = enc_env_full(6, 0x61, 0, 1, bytes([0x11] * 16), rb_head,
+                             rb_pvd, b_tx_trusted)
+    add_rb_neg_typed("DSB3_RB_PRIMARY_ID_MISMATCH",
+                     rb_key(RB_SK_TX, rb_txn), v_pid_bad,
+                     "primary_id != TX raw")
+    # DLV primary_id mismatch
+    k_dlv, v_dlv, _ = retention_typed(body=b_dlv_trusted)
+    bad_dlv_pid = enc_env_full(
+        6, 0x61, 0, 1, rb_txn, rb_head, rb_pvd, b_dlv_trusted)
+    add_rb_neg_typed("DSB3_RB_DLV_PRIMARY_ID_MISMATCH", k_dlv, bad_dlv_pid,
+                     "DELIVERY primary_id is TX not composite prefix")
+    # key identity kind / component mismatch
+    id128_kind_key = bkey(6, 0x61, 2, rb_txn)
+    add_rb_neg_typed("DSB3_RB_KEY_ID128_KIND", id128_kind_key, v_ok,
+                     "key must be SHA256_COMPOSITE not ID128")
+    # key with different subject kind than body
+    wrong_kind_key = rb_key(RB_SK_DLV, rb_dlv)
+    add_rb_neg_typed("DSB3_RB_KEY_KIND_MISMATCH", wrong_kind_key, v_ok,
+                     "key subject_kind != body")
+    wrong_raw_key = rb_key(RB_SK_TX, bytes([0xEE] * 16))
+    add_rb_neg_typed("DSB3_RB_KEY_RAW_MISMATCH", wrong_raw_key, v_ok,
+                     "key raw != body subject_key_raw")
+    wrong_sub_key = bkey(
+        6, 0x61, 5, composite(0x52, be16(RB_SK_TX) + raw16(rb_txn)))
+    add_rb_neg_typed("DSB3_RB_KEY_COMP_SUBTYPE", wrong_sub_key, v_ok,
+                     "composite subtype tag mismatch")
+
+    # alias-style: body in typed path with valid production shapes only
+    # (alias is unit-tested separately; include one corrupt empty body)
+    add_rb_neg_body("DSB3_RB_EMPTY", b"", "empty body")
+
+    # Freeze first 1456 vectors (pre-coverage-append B3n base). Later
+    # coverage appends only; object identity of this prefix must not drift.
+    PRE_B3N_BASE_VECTOR_COUNT = 1456
+    PRE_B3N_BASE_FINGERPRINT_PIN = (
+        "2928fae7d7a285484ca4d6cef8b0c79081bc19a3e206da1be1767ce9f6936ec7"
+    )
+    assert len(vectors) == PRE_B3N_BASE_VECTOR_COUNT, len(vectors)
+    assert vectors[-1]["id"] == "DSB3_RB_EMPTY"
+    PRE_B3N_BASE_FINGERPRINT = vectors_fingerprint(vectors)
+    assert PRE_B3N_BASE_FINGERPRINT == PRE_B3N_BASE_FINGERPRINT_PIN, (
+        f"pre-B3n-base full fingerprint drift: got {PRE_B3N_BASE_FINGERPRINT}"
+    )
+    PRE_B3N_BASE_VECTOR_COUNT_SNAPSHOT = len(vectors)
+
+    # --- coverage append: CLEANUP matrix loci + DLV single-segment zero ---
+    # Generators assert the intended wire locus before adding so each
+    # negative is rejected solely for the named reason (correct KEY_DIGEST,
+    # legal window arithmetic, etc. on all other fields).
+
+    # 1) CLEANUP_COMMITTED + epoch all-zero (pending/overflow 0, delete exact)
+    b_clean_epoch0 = enc_rb(
+        state=RB_ST_CLEANUP, pending=0, overflow=0, epoch=bytes(16),
+        basis_at=1000, window=10, delete_at=1010)
+    assert b_clean_epoch0[6 + 16 + 32:6 + 16 + 32 + 16] == bytes(16)
+    assert int.from_bytes(b_clean_epoch0[-12:-8], "big") == RB_ST_CLEANUP
+    assert int.from_bytes(b_clean_epoch0[-8:-4], "big") == 0
+    assert int.from_bytes(b_clean_epoch0[-4:], "big") == 0
+    add_rb_neg_body(
+        "DSB3_RB_CLEAN_EPOCH_ZERO", b_clean_epoch0,
+        "CLEANUP_COMMITTED epoch zero")
+
+    # 2) CLEANUP_COMMITTED + delete_at != basis_at + window
+    b_clean_del_wrong = enc_rb(
+        state=RB_ST_CLEANUP, pending=0, overflow=0, epoch=rb_epoch,
+        basis_at=1000, window=10, delete_at=1000)
+    assert int.from_bytes(b_clean_del_wrong[6 + 16 + 32 + 16:6 + 16 + 32 + 16 + 8],
+                          "big") == 1000
+    assert int.from_bytes(
+        b_clean_del_wrong[6 + 16 + 32 + 16 + 8:6 + 16 + 32 + 16 + 16],
+        "big") == 1000  # delete
+    assert int.from_bytes(
+        b_clean_del_wrong[6 + 16 + 32 + 16 + 16:6 + 16 + 32 + 16 + 24],
+        "big") == 10  # window
+    add_rb_neg_body(
+        "DSB3_RB_CLEAN_DELETE_WRONG", b_clean_del_wrong,
+        "CLEANUP_COMMITTED delete_at != basis+window")
+
+    # 3) CLEANUP_COMMITTED + retention_overflow=1 (pending0, epoch NZ, delete OK)
+    b_clean_ovf = enc_rb(
+        state=RB_ST_CLEANUP, pending=0, overflow=1, epoch=rb_epoch,
+        basis_at=1000, window=10, delete_at=1010)
+    assert int.from_bytes(b_clean_ovf[-4:], "big") == 1
+    assert int.from_bytes(b_clean_ovf[-8:-4], "big") == 0
+    assert b_clean_ovf[6 + 16 + 32:6 + 16 + 32 + 16] == rb_epoch
+    add_rb_neg_body(
+        "DSB3_RB_CLEAN_OVERFLOW", b_clean_ovf,
+        "CLEANUP_COMMITTED retention_overflow=1")
+
+    # 4) DELIVERY raw exact80 with exactly one of five 16-byte ID segments
+    # all-zero; subject_primary_key_digest is KEY_DIGEST(complete primary)
+    # recomputed for that raw so only the zero segment rejects.
+    def assert_rb_dlv_single_zero(raw80: bytes, off: int, label: str):
+        assert len(raw80) == 80, label
+        assert raw80[off:off + 16] == bytes(16), label
+        for o in (0, 16, 32, 48, 64):
+            if o == off:
+                continue
+            assert raw80[o:o + 16] != bytes(16), f"{label}: zero at {o}"
+
+    dlv_one_zero = bytearray(rb_dlv)
+    # zero source.application [16,32); other four components stay non-zero
+    dlv_one_zero[16:32] = bytes(16)
+    assert_rb_dlv_single_zero(bytes(dlv_one_zero), 16, "RB_DLV_ZERO_SEG")
+    dig_one_zero = rb_subject_primary_digest(RB_SK_DLV, bytes(dlv_one_zero))
+    assert dig_one_zero == complete_key_digest_composite(
+        0x40, raw16(bytes(dlv_one_zero)))
+    assert dig_one_zero != rb_subject_primary_digest(RB_SK_DLV, rb_dlv)
+    b_dlv_zero_seg = enc_rb(
+        kind=RB_SK_DLV, raw=bytes(dlv_one_zero), primary_dig=dig_one_zero,
+        recompute_digest=False, state=RB_ST_ACTIVE, pending=0, overflow=0,
+        basis_at=1000, window=rb_window, delete_at=1000 + rb_window,
+        epoch=rb_epoch)
+    # wire: kind3 + reserved + RAW16(80) + digest32 ...
+    assert len(b_dlv_zero_seg) == 170
+    assert b_dlv_zero_seg[0:2] == be16(RB_SK_DLV)
+    assert b_dlv_zero_seg[4:6] == be16(80)
+    assert b_dlv_zero_seg[6:86] == bytes(dlv_one_zero)
+    assert b_dlv_zero_seg[86:118] == dig_one_zero
+    add_rb_neg_body(
+        "DSB3_RB_DLV_ZERO_SEG_SRC_APP", b_dlv_zero_seg,
+        "DELIVERY raw exact80 one all-zero ID segment (src.app); "
+        "KEY_DIGEST complete primary correct")
+
+    assert len(vectors) == PRE_B3N_BASE_VECTOR_COUNT_SNAPSHOT + 4
+    assert all(
+        v["id"].startswith("DSB3_RB_")
+        for v in vectors[PRE_B3N_BASE_VECTOR_COUNT_SNAPSHOT:]
+    )
+    _pre_b3n_base_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3N_BASE_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3n_base_fp_final == PRE_B3N_BASE_FINGERPRINT_PIN, (
+        f"post-append pre-B3n-base fingerprint drift: "
+        f"got {_pre_b3n_base_fp_final}"
+    )
+
+    b3_cov["61"] = add_body_suite(
+        "RETENTION_BASIS", 6, 0x61, rb_pos, rb_neg, rb_mut, rb_rt)
+    assert b3_cov["61"]["positive"] >= 20
+    assert b3_cov["61"]["negative"] >= 39
+    assert b3_cov["61"]["mutation"] >= 1
+    assert b3_cov["61"]["roundtrip"] >= 12
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -9608,6 +10189,7 @@ def build_document():
         "dsb3_subtype_50_positive": b3_cov["50"]["positive"],
         "dsb3_subtype_51_positive": b3_cov["51"]["positive"],
         "dsb3_subtype_52_positive": b3_cov["52"]["positive"],
+        "dsb3_subtype_61_positive": b3_cov["61"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -9645,6 +10227,7 @@ def build_document():
     assert catalog["dsb3_subtype_50_positive"] > 0
     assert catalog["dsb3_subtype_51_positive"] > 0
     assert catalog["dsb3_subtype_52_positive"] > 0
+    assert catalog["dsb3_subtype_61_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
     # Structural: CS/AII/ATT/EV/RC only after their pre-slice.
@@ -9669,6 +10252,10 @@ def build_document():
         for v in vectors[:PRE_B3M_VECTOR_COUNT_SNAPSHOT]
     )
     assert all(
+        not v["id"].startswith("DSB3_RB_")
+        for v in vectors[:PRE_B3N_VECTOR_COUNT_SNAPSHOT]
+    )
+    assert all(
         not v["id"].startswith("DSB3_DLV_")
         for v in vectors[:PRE_B3H_VECTOR_COUNT_SNAPSHOT]
     )
@@ -9690,6 +10277,11 @@ def build_document():
     )
     # Kind9/10 42-byte re-pin changes early DSO2/DSW1 vectors inside pre-B3h.
     # Full prefix fingerprint is re-pinned at B3i cutover; stable 1025 checked above.
+    _pre_b3n_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3N_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3n_fp_final == PRE_B3N_FULL_FINGERPRINT_PIN, (
+        f"post-append pre-B3n full fingerprint drift: got {_pre_b3n_fp_final}"
+    )
     _pre_b3m_fp_final = vectors_fingerprint(
         vectors[:PRE_B3M_VECTOR_COUNT_SNAPSHOT])
     assert _pre_b3m_fp_final == PRE_B3M_FULL_FINGERPRINT_PIN, (
@@ -9767,7 +10359,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3m",
+        "format": "ninlil-domain-store-v1-d1b3n",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -9781,13 +10373,14 @@ def build_document():
             "exact330/state matrix) + D1-B3k body (50 EVENT_SPOOL "
             "exact300/state-cause matrix) + D1-B3l body (51 RETRY_SUMMARY "
             "CUMULATIVE84/RECENT80 kind-slot-fold) + D1-B3m body "
-            "(52 MANAGEMENT_LEDGER exact364/kind15-16 matrix); not full D1 catalog"
+            "(52 MANAGEMENT_LEDGER exact364/kind15-16 matrix) + D1-B3n body "
+            "(61 RETENTION_BASIS 90+N/106|170 state matrix); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
             "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j/D1-B3k/"
-            "D1-B3l/D1-B3m APIs "
+            "D1-B3l/D1-B3m/D1-B3n APIs "
             "have no workspace parameter; value is 0."
         ),
         "catalog": catalog,
