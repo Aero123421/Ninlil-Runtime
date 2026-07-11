@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..d.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..e.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -21,7 +21,8 @@ extern "C" {
  *   D1-B3b: family 6 27 ORDERED_INGRESS + pure message_semantic_digest helper
  *   D1-B3c: family 6 30 BLOB manifest (flags=1) + chunk (flags=2) pure body
  *   D1-B3d: family 6 31 ATTEMPT pure body + same-record matrix validation
- *          (not ATTEMPT_ID_INDEX 0x34, not CANCEL_STATE 0x33)
+ *   D1-B3e: family 6 34 ATTEMPT_ID_INDEX pure body + same-record binding
+ *          (not CANCEL_STATE 0x33; not D2/D3/D4)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -47,6 +48,8 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_WITNESS_HEAD_INDEX_BYTES ((uint32_t)114u)
 #define NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_SEQUENCE_INDEX_BYTES ((uint32_t)56u)
 #define NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_STATE_BYTES ((uint32_t)224u)
+/* ATTEMPT_ID_INDEX (0x34) exact fixed body length (docs17 §8.4). */
+#define NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES ((uint32_t)100u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
 #define NINLIL_MODEL_DOMAIN_TARGET_BYTES ((uint32_t)100u)
@@ -530,6 +533,24 @@ typedef struct ninlil_model_domain_body_attempt {
 } ninlil_model_domain_body_attempt_t;
 
 /*
+ * ATTEMPT_ID_INDEX (0x34). Exact fixed body 100 (docs17 §8.4).
+ * attempt_record_key_digest = KEY_DIGEST(complete TRANSACTION-owned ATTEMPT
+ * key); bare composite digest must not be stored or compared.
+ * Create-once immutable; ATTEMPT replacement never updates creation digest.
+ * Live anchor PVD / live ATTEMPT / CREATE-manifest equality / cardinality /
+ * DELIVERY-remote no-index / fenced pair cleanup are D3. CANCEL_STATE is
+ * out of B3e scope.
+ */
+typedef struct ninlil_model_domain_body_attempt_id_index {
+    uint8_t attempt_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint16_t attempt_kind;
+    uint16_t reserved;
+    uint8_t attempt_record_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t attempt_creation_value_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_attempt_id_index_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -629,6 +650,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_blob_manifest_t blob_manifest;
         ninlil_model_domain_body_blob_chunk_t blob_chunk;
         ninlil_model_domain_body_attempt_t attempt;
+        ninlil_model_domain_body_attempt_id_index_t attempt_id_index;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -971,6 +993,19 @@ ninlil_status_t ninlil_model_domain_decode_body_attempt(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_attempt_t *out_body);
 
+/* --- ATTEMPT_ID_INDEX (0x34) --- */
+uint32_t ninlil_model_domain_body_attempt_id_index_encoded_length(void);
+
+ninlil_status_t ninlil_model_domain_encode_body_attempt_id_index(
+    const ninlil_model_domain_body_attempt_id_index_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_attempt_id_index(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_attempt_id_index_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1016,7 +1051,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..d.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..e.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1032,11 +1067,16 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       equality, chunk 0..count-1 enumeration, multi-chunk stream digest,
  *       owner semantic content match, same-owner/kind/content manifest alias,
  *       lifecycle erase / capacity accounting; ATTEMPT live owner /
- *       ATTEMPT_ID_INDEX 0 / CANCEL_STATE gate / family COMMAND/EVENT kind /
- *       current/stale attempt / primary value digest / target/semantic digest
- *       recompute / SEND_COUNTER health/cardinality (B3d proves same-record
- *       body/key/matrix only; does not implement ATTEMPT_ID_INDEX or
- *       CANCEL_STATE)
+ *       ATTEMPT_ID_INDEX cardinality / CANCEL_STATE gate / family COMMAND/
+ *       EVENT kind / current/stale attempt / primary value digest /
+ *       target/semantic digest recompute / SEND_COUNTER health/cardinality;
+ *       ATTEMPT_ID_INDEX live anchor PVD / live-current ATTEMPT binding /
+ *       CREATE manifest new digest equality / local ATTEMPT-index
+ *       cardinality / DELIVERY-remote no-index / reverse reply no-index /
+ *       co-create witness / fenced pair cleanup/fence counts / family-kind
+ *       and CANCEL_STATE cross proofs (B3e proves same-record body/key/
+ *       record-key-digest/primary binding only; does not implement
+ *       CANCEL_STATE 0x33)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

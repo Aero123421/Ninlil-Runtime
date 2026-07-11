@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/D1-B3c/D1-B3d vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/D1-B3c/D1-B3d/D1-B3e vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b/B3c/B3d
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b/B3c/B3d/B3e
 are hand-written here and intentionally do not import or link production C.
 
 Usage:
@@ -4122,6 +4122,303 @@ def build_document():
     assert b3_cov["31"]["negative"] >= 25
     assert b3_cov["31"]["roundtrip"] >= 8
 
+    # =====================================================================
+    # D1-B3e ATTEMPT_ID_INDEX (0x34) — append-only after first 777 (pre-B3e)
+    # =====================================================================
+    # Durable exact-bytes gate for the pre-B3e catalog (not mere id-prefix).
+    # Canonical form: json.dumps(vectors[:777], sort_keys=True,
+    # separators=(",", ":")).encode("utf-8") then SHA-256 hex.
+    PRE_B3E_VECTORS_FINGERPRINT = (
+        "8f367eb7bf88220cf72bdfbe7fecced031db06d7226cf1926a56afeabd79b2dd"
+    )
+    assert len(vectors) == 777, f"pre-B3e length {len(vectors)} != 777"
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_ATT_REV0"
+    _pre_b3e_fp = hashlib.sha256(
+        json.dumps(vectors, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    assert _pre_b3e_fp == PRE_B3E_VECTORS_FINGERPRINT, (
+        f"pre-B3e fingerprint drift: got {_pre_b3e_fp}"
+    )
+
+    # Distinct attempt IDs for COMMAND / EVENT / CANCEL positives.
+    aii_id_cmd = bytes([0xA1 + i for i in range(16)])
+    aii_id_evt = bytes([0xB1 + i for i in range(16)])
+    aii_id_can = bytes([0xC1 + i for i in range(16)])
+    aii_txn = txn  # local-origin TRANSACTION_ANCHOR identity
+    aii_creation = bytes([0x51 + (i % 200) for i in range(32)])
+    aii_head = F["head_nz"]
+    aii_pvd = bytes([0x61 + (i % 180) for i in range(32)])
+    assert not all(b == 0 for b in aii_creation)
+    assert not all(b == 0 for b in aii_pvd)
+    assert len(aii_txn) == 16 and not all(b == 0 for b in aii_txn)
+
+    def attempt_id_index_record_key_digest(
+        attempt_id: bytes, transaction_id: bytes
+    ) -> bytes:
+        """KEY_DIGEST(complete TX-owned ATTEMPT key); never bare composite."""
+        comps = (
+            be16(ATT_TX)
+            + raw16(transaction_id)
+            + attempt_id
+        )
+        return complete_key_digest_composite(0x31, comps)
+
+    def attempt_id_index_bare_composite(
+        attempt_id: bytes, transaction_id: bytes
+    ) -> bytes:
+        """Bare COMPOSITE digest alone — must not pass as record key digest."""
+        comps = be16(ATT_TX) + raw16(transaction_id) + attempt_id
+        return composite(0x31, comps)
+
+    def enc_attempt_id_index_body(
+        attempt_id=None,
+        transaction_id=None,
+        attempt_kind=AK_CMD,
+        reserved=0,
+        record_kd=None,
+        creation=None,
+    ) -> bytes:
+        if attempt_id is None:
+            attempt_id = aii_id_cmd
+        if transaction_id is None:
+            transaction_id = aii_txn
+        if creation is None:
+            creation = aii_creation
+        if record_kd is None:
+            record_kd = attempt_id_index_record_key_digest(
+                attempt_id, transaction_id
+            )
+        out = bytearray()
+        out += attempt_id
+        out += transaction_id
+        out += be16(attempt_kind)
+        out += be16(reserved)
+        out += record_kd
+        out += creation
+        assert len(out) == 100
+        return bytes(out)
+
+    def attempt_id_index_key(attempt_id: bytes) -> bytes:
+        return bkey(6, 0x34, 2, attempt_id)
+
+    def attempt_id_index_typed(
+        attempt_id=None,
+        transaction_id=None,
+        attempt_kind=AK_CMD,
+        rev=1,
+        head=None,
+        pvd=None,
+        primary=None,
+        body=None,
+        **kwargs,
+    ):
+        if attempt_id is None:
+            attempt_id = aii_id_cmd
+        if transaction_id is None:
+            transaction_id = aii_txn
+        if head is None:
+            head = aii_head
+        if pvd is None:
+            pvd = aii_pvd
+        if body is None:
+            body = enc_attempt_id_index_body(
+                attempt_id=attempt_id,
+                transaction_id=transaction_id,
+                attempt_kind=attempt_kind,
+                **kwargs,
+            )
+        if primary is None:
+            primary = transaction_id
+        key = attempt_id_index_key(attempt_id)
+        val = enc_env_full(6, 0x34, 0, rev, primary, head, pvd, body)
+        return key, val, body
+
+    i_pos = 0
+    i_neg = 0
+    i_mut = 0
+    i_rt = 0
+
+    def add_aii_pos(vid, body, notes=""):
+        nonlocal i_pos, i_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x34, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        i_pos += 1
+        i_rt += 1
+
+    def add_aii_typed(vid, key, val, body, notes=""):
+        nonlocal i_pos
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x34, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        i_pos += 1
+
+    def add_aii_neg_body(vid, body, notes=""):
+        nonlocal i_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x34, body_hex=hx(body), notes=notes)
+        i_neg += 1
+
+    def add_aii_neg_typed(vid, key, val, notes=""):
+        nonlocal i_neg
+        add(id=vid, suite="DSB3", op="typed_record",
+            expected_status="CORRUPT", family=6, subtype=0x34,
+            key_hex=hx(key), value_hex=hx(val), notes=notes)
+        i_neg += 1
+
+    # --- positives: COMMAND / EVENT / CANCEL body + typed ---
+    body_aii_cmd = enc_attempt_id_index_body(
+        attempt_id=aii_id_cmd, attempt_kind=AK_CMD)
+    body_aii_evt = enc_attempt_id_index_body(
+        attempt_id=aii_id_evt, attempt_kind=AK_EVT)
+    body_aii_can = enc_attempt_id_index_body(
+        attempt_id=aii_id_can, attempt_kind=AK_CAN)
+    add_aii_pos("DSB3_AII_CMD_BODY", body_aii_cmd, "COMMAND body roundtrip")
+    add_aii_pos("DSB3_AII_EVT_BODY", body_aii_evt, "EVENT body roundtrip")
+    add_aii_pos("DSB3_AII_CAN_BODY", body_aii_can, "CANCEL body roundtrip")
+    k_cmd, v_cmd, _ = attempt_id_index_typed(
+        attempt_id=aii_id_cmd, attempt_kind=AK_CMD, body=body_aii_cmd)
+    k_evt, v_evt, _ = attempt_id_index_typed(
+        attempt_id=aii_id_evt, attempt_kind=AK_EVT, body=body_aii_evt)
+    k_can, v_can, _ = attempt_id_index_typed(
+        attempt_id=aii_id_can, attempt_kind=AK_CAN, body=body_aii_can)
+    add_aii_typed("DSB3_AII_CMD_TYPED", k_cmd, v_cmd, body_aii_cmd)
+    add_aii_typed("DSB3_AII_EVT_TYPED", k_evt, v_evt, body_aii_evt)
+    add_aii_typed("DSB3_AII_CAN_TYPED", k_can, v_can, body_aii_can)
+
+    # mutation: flip reserved in positive body → corrupt
+    mut_body = bytearray(body_aii_cmd)
+    mut_body[34] ^= 0x01
+    add(id="DSB3_AII_MUT_RESERVED", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x34,
+        body_hex=hx(bytes(mut_body)), notes="reserved flip")
+    i_mut += 1
+    i_neg += 1
+
+    # --- body negatives ---
+    add_aii_neg_body(
+        "DSB3_AII_ZERO_ATTEMPT_ID",
+        enc_attempt_id_index_body(attempt_id=bytes(16)),
+        "attempt_id must be non-zero")
+    add_aii_neg_body(
+        "DSB3_AII_ZERO_TXN_ID",
+        enc_attempt_id_index_body(transaction_id=bytes(16)),
+        "transaction_id must be non-zero")
+    add_aii_neg_body(
+        "DSB3_AII_KIND0",
+        enc_attempt_id_index_body(attempt_kind=0),
+        "attempt_kind 0 unknown")
+    add_aii_neg_body(
+        "DSB3_AII_KIND4",
+        enc_attempt_id_index_body(attempt_kind=4),
+        "attempt_kind 4 unknown")
+    add_aii_neg_body(
+        "DSB3_AII_RESERVED_NZ",
+        enc_attempt_id_index_body(reserved=1),
+        "reserved must be 0")
+    add_aii_neg_body(
+        "DSB3_AII_CREATION_ZERO",
+        enc_attempt_id_index_body(creation=bytes(32)),
+        "attempt_creation_value_digest must be non-zero")
+    add_aii_neg_body(
+        "DSB3_AII_RKD_ZERO",
+        enc_attempt_id_index_body(record_kd=bytes(32)),
+        "attempt_record_key_digest must be non-zero complete-key KEY_DIGEST")
+    add_aii_neg_body(
+        "DSB3_AII_RKD_BARE_COMPOSITE",
+        enc_attempt_id_index_body(
+            record_kd=attempt_id_index_bare_composite(aii_id_cmd, aii_txn)),
+        "bare composite digest is not KEY_DIGEST(complete ATTEMPT key)")
+    add_aii_neg_body(
+        "DSB3_AII_RKD_BARE_ATTEMPT_HASH",
+        enc_attempt_id_index_body(record_kd=sha256(aii_id_cmd)),
+        "sha256(attempt_id) alone is not KEY_DIGEST(complete ATTEMPT key)")
+    add_aii_neg_body(
+        "DSB3_AII_RKD_WRONG_TXN",
+        enc_attempt_id_index_body(
+            record_kd=attempt_id_index_record_key_digest(
+                aii_id_cmd, bytes([0xEE] * 16))),
+        "record key digest derived from wrong transaction_id")
+    add_aii_neg_body(
+        "DSB3_AII_RKD_WRONG_ATTEMPT",
+        enc_attempt_id_index_body(
+            record_kd=attempt_id_index_record_key_digest(
+                aii_id_evt, aii_txn)),
+        "record key digest derived from wrong attempt_id")
+    # DELIVERY-shaped derivation: COMPOSITE(31, DELIVERY owner || RAW16(80) || aid)
+    dlv_comps = be16(ATT_DLV) + raw16(dlv_raw) + aii_id_cmd
+    dlv_shaped_rkd = complete_key_digest_composite(0x31, dlv_comps)
+    add_aii_neg_body(
+        "DSB3_AII_RKD_DELIVERY_SHAPED",
+        enc_attempt_id_index_body(record_kd=dlv_shaped_rkd),
+        "DELIVERY-owned ATTEMPT complete-key digest is not valid for index")
+    # short / trailing / BTS
+    add(id="DSB3_AII_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x34,
+        body_hex=hx(body_aii_cmd[:-1]), notes="short body")
+    i_neg += 1
+    add(id="DSB3_AII_TRAILING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x34,
+        body_hex=hx(body_aii_cmd + b"\x00"), notes="trailing byte")
+    i_neg += 1
+    add(id="DSB3_AII_BTS", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x34,
+        body_length=len(body_aii_cmd), body_hex=hx(body_aii_cmd),
+        key_length=0)
+    i_neg += 1
+
+    # --- typed negatives ---
+    # key ID128 mismatch
+    bad_key = attempt_id_index_key(aii_id_evt)
+    _, val_ok, _ = attempt_id_index_typed(body=body_aii_cmd)
+    add_aii_neg_typed(
+        "DSB3_AII_KEY_MISMATCH", bad_key, val_ok,
+        "key ID128 must equal body attempt_id")
+    # wrong key kind (composite instead of ID128)
+    wrong_kind_key = bkey(6, 0x34, 5, bytes([0x55] * 32))
+    add_aii_neg_typed(
+        "DSB3_AII_WRONG_KIND", wrong_kind_key, val_ok,
+        "key must be direct ID128")
+    # self-key primary_id (attempt_id instead of transaction_id)
+    k_sk, v_sk, _ = attempt_id_index_typed(
+        body=body_aii_cmd, primary=aii_id_cmd)
+    add_aii_neg_typed(
+        "DSB3_AII_SELF_KEY_PRIMARY", k_sk, v_sk,
+        "primary_id must be transaction_id not attempt_id")
+    k_wp, v_wp, _ = attempt_id_index_typed(
+        body=body_aii_cmd, primary=bytes([0xDD] * 16))
+    add_aii_neg_typed(
+        "DSB3_AII_BAD_PRIMARY", k_wp, v_wp, "wrong primary_id")
+    k_zp, v_zp, _ = attempt_id_index_typed(
+        body=body_aii_cmd, primary=bytes(16))
+    add_aii_neg_typed(
+        "DSB3_AII_ZERO_PRIMARY", k_zp, v_zp, "zero primary_id")
+    k_zh, v_zh, _ = attempt_id_index_typed(
+        body=body_aii_cmd, head=bytes(32))
+    add_aii_neg_typed("DSB3_AII_ZERO_HEAD", k_zh, v_zh)
+    k_zv, v_zv, _ = attempt_id_index_typed(
+        body=body_aii_cmd, pvd=bytes(32))
+    add_aii_neg_typed("DSB3_AII_ZERO_PVD", k_zv, v_zv)
+    k_fl = attempt_id_index_key(aii_id_cmd)
+    v_fl = enc_env_full(
+        6, 0x34, 1, 1, aii_txn, aii_head, aii_pvd, body_aii_cmd)
+    add_aii_neg_typed(
+        "DSB3_AII_FLAGS_NZ", k_fl, v_fl, "flags must be 0")
+    k_r0, v_r0, _ = attempt_id_index_typed(body=body_aii_cmd, rev=0)
+    add_aii_neg_typed("DSB3_AII_REV0", k_r0, v_r0, "revision must be 1")
+    k_r2, v_r2, _ = attempt_id_index_typed(body=body_aii_cmd, rev=2)
+    add_aii_neg_typed("DSB3_AII_REV2", k_r2, v_r2, "revision must be exact 1")
+
+    b3_cov["34"] = add_body_suite(
+        "ATTEMPT_ID_INDEX", 6, 0x34, i_pos, i_neg, i_mut, i_rt)
+    assert b3_cov["34"]["positive"] >= 6
+    assert b3_cov["34"]["negative"] >= 15
+    assert b3_cov["34"]["roundtrip"] >= 3
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -4178,6 +4475,7 @@ def build_document():
         "dsb3_subtype_27_positive": b3_cov["27"]["positive"],
         "dsb3_subtype_30_positive": b3_cov["30"]["positive"],
         "dsb3_subtype_31_positive": b3_cov["31"]["positive"],
+        "dsb3_subtype_34_positive": b3_cov["34"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -4206,12 +4504,23 @@ def build_document():
     assert catalog["dsb3_subtype_27_positive"] > 0
     assert catalog["dsb3_subtype_30_positive"] > 0
     assert catalog["dsb3_subtype_31_positive"] > 0
+    assert catalog["dsb3_subtype_34_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
-    # First 696 vector objects must remain the pre-B3d catalog (append-only).
-    # Exact gate is PRE_B3D_VECTORS_FINGERPRINT (canonical SHA-256); id-prefix
+    # First 777 vector objects must remain the pre-B3e catalog (append-only).
+    # Exact gate is PRE_B3E_VECTORS_FINGERPRINT (canonical SHA-256); id-prefix
     # is only a secondary structural check, not an exact-bytes claim.
-    assert len(vectors) > 696
+    assert len(vectors) > 777
+    assert all(not v["id"].startswith("DSB3_AII_") for v in vectors[:777])
+    _pre_b3e_fp_final = hashlib.sha256(
+        json.dumps(vectors[:777], sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    assert _pre_b3e_fp_final == PRE_B3E_VECTORS_FINGERPRINT, (
+        f"post-append pre-B3e fingerprint drift: got {_pre_b3e_fp_final}"
+    )
+    # Keep pre-B3d durable gate too (nested prefix of first 777).
     assert all(not v["id"].startswith("DSB3_ATT_") for v in vectors[:696])
     _pre_b3d_fp_final = hashlib.sha256(
         json.dumps(vectors[:696], sort_keys=True, separators=(",", ":")).encode(
@@ -4227,18 +4536,19 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3d",
+        "format": "ninlil-domain-store-v1-d1b3e",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
             "message_semantic_digest helper + D1-B3c body (30 BLOB "
-            "manifest/chunk) + D1-B3d body (31 ATTEMPT); not full D1 catalog"
+            "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
+            "(34 ATTEMPT_ID_INDEX); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d APIs have no workspace parameter; value is 0."
+            "D1-B3c/D1-B3d/D1-B3e APIs have no workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,
