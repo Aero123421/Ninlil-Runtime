@@ -1584,9 +1584,12 @@ ninlil_test_bearer_t *ninlil_test_bearer_create(
     if (config.max_permits == 0u) {
         config.max_permits = NINLIL_TEST_BEARER_DEFAULT_MAX_PERMITS;
     }
-    if ((size_t)config.max_permits > SIZE_MAX / sizeof(permit_record_t)) {
+#if SIZE_MAX <= UINT32_MAX
+    if (config.max_permits
+        > (uint32_t)(SIZE_MAX / sizeof(permit_record_t))) {
         return NULL;
     }
+#endif
     bearer = (ninlil_test_bearer_t *)calloc(1u, sizeof(*bearer));
     if (bearer == NULL) {
         return NULL;
