@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a slices.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a + D1-B3b slices.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -18,6 +18,7 @@ extern "C" {
  *   D1-B2: family 6 10/11/20/21/22/23/24/25
  *          (SERVICE, SERVICE_QUOTA, TRANSACTION_*, RESERVATION, maps)
  *   D1-B3a: family 6 26 SCHEDULER_OWNER only
+ *   D1-B3b: family 6 27 ORDERED_INGRESS + pure message_semantic_digest helper
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -59,7 +60,9 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_IDEMPOTENCY_MAP_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVENT_ID_MAP_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_BODY_SCHEDULER_OWNER_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_BODY_ORDERED_INGRESS_MAX ((uint32_t)1536u)
 #define NINLIL_MODEL_DOMAIN_RAW16_SUBJECT_KEY_MAX ((uint32_t)255u)
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX ((uint32_t)128u)
 
 /* Closed body enums (docs17 section 7.1). */
 #define NINLIL_MODEL_DOMAIN_INDEX_STATE_BASELINE ((uint16_t)1u)
@@ -86,6 +89,14 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_WORK_CLASS_CALLBACK ((uint16_t)4u)
 #define NINLIL_MODEL_DOMAIN_WORK_CLASS_CLEANUP ((uint16_t)5u)
 #define NINLIL_MODEL_DOMAIN_WORK_CLASS_RECOVERY ((uint16_t)6u)
+
+/* ORDERED_INGRESS owner_binding_kind (docs17 §7.1). */
+#define NINLIL_MODEL_DOMAIN_INGRESS_BINDING_EXISTING_TRANSACTION ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_INGRESS_BINDING_EXISTING_DELIVERY ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_INGRESS_BINDING_NEW_DELIVERY ((uint16_t)3u)
+
+/* ORDERED_INGRESS ingress_state (docs17 §8.3): PENDING only in v1 body. */
+#define NINLIL_MODEL_DOMAIN_INGRESS_STATE_PENDING ((uint32_t)1u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -357,6 +368,118 @@ typedef struct ninlil_model_domain_body_scheduler_owner {
 } ninlil_model_domain_body_scheduler_owner_t;
 
 /*
+ * ORDERED_INGRESS (0x27). All nested identity fields are value-owned (no
+ * RAW16 body borrow). message_semantic_digest is recomputed same-record only
+ * when both BLOB key digests are zero (empty payload/evidence streams).
+ * Non-zero BLOB digests: D1 proves digest non-zero + kind presence only;
+ * BLOB key material and stream recompute are D3 (do not guess keys here).
+ */
+typedef struct ninlil_model_domain_body_ordered_ingress {
+    uint64_t ordered_sequence;
+    uint64_t owner_sequence;
+    uint16_t owner_binding_kind;
+    uint16_t reserved0;
+    uint32_t message_kind;
+    uint32_t message_flags;
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t attempt_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    ninlil_model_domain_party_t source;
+    ninlil_model_domain_target_t target;
+    ninlil_model_domain_service_identity_t service;
+    uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t generation;
+    uint8_t deadline_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t absolute_effect_deadline_ms;
+    uint64_t evidence_grace_ms;
+    uint32_t required_evidence;
+    uint32_t receipt_stage;
+    uint32_t disposition;
+    uint32_t effect_certainty;
+    uint32_t retry_guidance;
+    uint32_t cancel_kind;
+    uint64_t retry_delay_ms;
+    uint8_t evidence_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t evidence_now_ms;
+    uint32_t evidence_trust;
+    uint32_t reserved1;
+    uint8_t message_semantic_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t payload_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t evidence_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t ingress_state;
+    uint8_t reservation_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_ordered_ingress_t;
+
+/*
+ * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
+ * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
+ * reserved, or padding. payload_length is the declared length (hashed as u32
+ * before any payload data bytes).
+ */
+typedef struct ninlil_model_domain_message_semantic_prefix {
+    uint32_t kind;
+    uint32_t flags;
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t attempt_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    ninlil_model_domain_party_t source;
+    ninlil_model_domain_target_t target;
+    ninlil_model_domain_service_identity_t service;
+    uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t generation;
+    uint8_t deadline_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t absolute_effect_deadline_ms;
+    uint64_t evidence_grace_ms;
+    uint32_t required_evidence;
+    uint32_t receipt_stage;
+    uint32_t disposition;
+    uint32_t effect_certainty;
+    uint32_t retry_guidance;
+    uint32_t cancel_kind;
+    uint64_t retry_delay_ms;
+    uint8_t evidence_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t evidence_now_ms;
+    uint32_t evidence_trust;
+    uint32_t payload_length;
+} ninlil_model_domain_message_semantic_prefix_t;
+
+/*
+ * Streaming semantic digest state machine (no heap, no VLA, no concatenation
+ * buffer). Phases: prefix (init) → payload stream → evidence_length →
+ * evidence stream → final. Declared lengths must match bytes absorbed.
+ * Hashes data bytes only — never BLOB framing or ABI memory.
+ *
+ * Alias / address / failure contract (module-wide rules apply):
+ * - Full object/byte ranges of every participating argument are address-
+ *   validated and pairwise-disjoint before any write. Alias/address failure
+ *   returns INVALID_ARGUMENT with every participating range untouched
+ *   (including no FAILED transition).
+ * - After those gates, non-alias failures that involve a writable ctx set
+ *   phase=FAILED. Wrong-phase misuse is a non-alias failure and transitions
+ *   FAILED. init also zeros the full ctx on non-alias prefix/nested failure.
+ * - final zeros out_digest on non-alias failure after range gates pass;
+ *   alias/address failure leaves out_digest and ctx both untouched.
+ * - received > declared is rejected before any remaining-length subtraction;
+ *   declared evidence > max and incoherent counters are rejected before
+ *   underflow/bypass. Underlying SHA context validation still applies.
+ */
+typedef struct ninlil_model_domain_message_semantic_digest_ctx {
+    ninlil_model_domain_sha256_ctx_t sha;
+    uint32_t phase;
+    uint32_t declared_payload_length;
+    uint32_t declared_evidence_length;
+    uint32_t received_payload_length;
+    uint32_t received_evidence_length;
+} ninlil_model_domain_message_semantic_digest_ctx_t;
+
+/* Opaque phase tags for the semantic digest state machine. */
+#define NINLIL_MODEL_DOMAIN_MSD_PHASE_PAYLOAD ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_MSD_PHASE_EVIDENCE_LEN ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_MSD_PHASE_EVIDENCE ((uint32_t)3u)
+#define NINLIL_MODEL_DOMAIN_MSD_PHASE_DONE ((uint32_t)4u)
+#define NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED ((uint32_t)5u)
+
+/*
  * Same-record typed view produced by validate_typed_record.
  * body is an anonymous union (stack-bounded); only the matching subtype
  * field is populated. envelope.body and RAW16/member_key borrows remain
@@ -383,6 +506,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_idempotency_map_t idempotency_map;
         ninlil_model_domain_body_event_id_map_t event_id_map;
         ninlil_model_domain_body_scheduler_owner_t scheduler_owner;
+        ninlil_model_domain_body_ordered_ingress_t ordered_ingress;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -627,8 +751,67 @@ ninlil_status_t ninlil_model_domain_decode_body_scheduler_owner(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_scheduler_owner_t *out_body);
 
+/* --- ORDERED_INGRESS (0x27) --- */
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_ordered_ingress_encoded_length(
+    const ninlil_model_domain_body_ordered_ingress_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_ordered_ingress(
+    const ninlil_model_domain_body_ordered_ingress_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_ordered_ingress(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_ordered_ingress_t *out_body);
+
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a subtypes.
+ * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
+ * no heap, no VLA, no payload||evidence concatenation buffer.
+ * init hashes ASCII prefix + fixed fields through payload_length:u32.
+ * update_payload absorbs payload data only (zero-length: no data update).
+ * begin_evidence commits evidence_length:u32 after payload complete.
+ * update_evidence absorbs evidence data only.
+ * final requires both declared lengths exact; zeros out_digest on non-alias
+ * failure. Alias/address failures never write ctx/prefix/data/out.
+ */
+ninlil_status_t ninlil_model_domain_message_semantic_digest_init(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const ninlil_model_domain_message_semantic_prefix_t *prefix);
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_update_payload(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const uint8_t *data,
+    uint32_t length);
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_begin_evidence(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    uint32_t evidence_length);
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_update_evidence(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const uint8_t *data,
+    uint32_t length);
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_final(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    ninlil_model_domain_digest_t *out_digest);
+
+/*
+ * One-shot wrapper over the same streaming state machine. Does not allocate
+ * or concatenate payload and evidence into a temporary buffer. Address/alias
+ * gates across prefix/payload/evidence/out run before any out write; alias
+ * leaves out_digest untouched; non-alias failures zero out_digest.
+ */
+ninlil_status_t ninlil_model_domain_message_semantic_digest(
+    const ninlil_model_domain_message_semantic_prefix_t *prefix,
+    ninlil_bytes_view_t payload,
+    ninlil_bytes_view_t evidence,
+    ninlil_model_domain_digest_t *out_digest);
+
+/*
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a + D1-B3b subtypes.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -637,7 +820,10 @@ ninlil_status_t ninlil_model_domain_decode_body_scheduler_owner(
  * - D3: cross-row primary/index/backlink, fence plan counts, head chains,
  *       live quota recompute from reservations, primary value digest get,
  *       SCHEDULER 1:1 cardinality / counter upper bound / ready semantics /
- *       ingress→delivery owner transfer
+ *       ingress→delivery owner transfer; ORDERED_INGRESS live owner /
+ *       SCHEDULER / RESERVATION / BLOB 0/1 cardinality and BLOB stream
+ *       semantic recompute when digests non-zero; SERVICE supported-mask
+ *       vs receipt_stage
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

@@ -150,6 +150,7 @@ typedef struct ninlil_dv_catalog {
     uint32_t dsb3_subtype_26_positive;
     uint32_t dsb3_total_positive;
     uint32_t dsb3_total_negative;
+    uint32_t dsb3_subtype_27_positive;
 } ninlil_dv_catalog_t;
 
 /*
@@ -190,6 +191,8 @@ typedef struct ninlil_dv_catalog {
 #define NINLIL_DV_CAT_DSB3_26 NINLIL_DV_CAT_BIT(28)
 #define NINLIL_DV_CAT_DSB3_POS NINLIL_DV_CAT_BIT(29)
 #define NINLIL_DV_CAT_DSB3_NEG NINLIL_DV_CAT_BIT(30)
+/* D1-B3b additions start at bit 31 — do not shift 0..30. */
+#define NINLIL_DV_CAT_DSB3_27 NINLIL_DV_CAT_BIT(31)
 
 #define NINLIL_DV_CAT_REQUIRED_MASK                                            \
     (NINLIL_DV_CAT_DSK1_KEYS | NINLIL_DV_CAT_DSV1_EXACT                         \
@@ -207,7 +210,7 @@ typedef struct ninlil_dv_catalog {
         | NINLIL_DV_CAT_DSB2_24 | NINLIL_DV_CAT_DSB2_25                          \
         | NINLIL_DV_CAT_DSB2_POS | NINLIL_DV_CAT_DSB2_NEG                        \
         | NINLIL_DV_CAT_DSB3_26 | NINLIL_DV_CAT_DSB3_POS                        \
-        | NINLIL_DV_CAT_DSB3_NEG)
+        | NINLIL_DV_CAT_DSB3_NEG | NINLIL_DV_CAT_DSB3_27)
 
 enum {
     NINLIL_DV_TOP_VERSION = 1u << 0,
@@ -222,11 +225,12 @@ enum {
     (NINLIL_DV_TOP_VERSION | NINLIL_DV_TOP_FORMAT | NINLIL_DV_TOP_SCOPE         \
         | NINLIL_DV_TOP_WS_DEF | NINLIL_DV_TOP_CATALOG | NINLIL_DV_TOP_VECTORS)
 
-#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3a"
+#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3b"
 #define NINLIL_DV_SCOPE_REQUIRED                                               \
     "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "              \
     "(10/11/20-25 service+txn admission) + D1-B3a body "                        \
-    "(26 SCHEDULER_OWNER); not full D1 catalog"
+    "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "                \
+    "message_semantic_digest helper; not full D1 catalog"
 
 typedef struct ninlil_dv_file {
     uint32_t version;

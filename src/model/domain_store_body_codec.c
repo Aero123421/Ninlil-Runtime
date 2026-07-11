@@ -5,7 +5,8 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a + D1-B3b body codec. Boundary notes for later
+ * milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -13,7 +14,12 @@
  *   counts from TRANSACTION RESERVATION contributions, primary_value_digest
  *   exact get of live primary complete value; SCHEDULER_OWNER 1:1 cardinality,
  *   counter/cursor upper bound, ready semantics, ingress→delivery owner
- *   transfer (same-record codec alone does not prove these).
+ *   transfer; ORDERED_INGRESS live owner/SCHEDULER/RESERVATION/BLOB 0/1
+ *   cardinality, BLOB manifest/chunk length/content/key digest, non-zero
+ *   BLOB stream recompute of message_semantic_digest, SERVICE supported
+ *   evidence mask vs receipt_stage, namespace counter upper bound, reduction
+ *   erase (same-record codec alone does not prove these — B3b must not guess
+ *   BLOB keys from body fields alone).
  * - D4: COMMIT_UNKNOWN old/new complete-value digest convergence.
  */
 
@@ -1676,6 +1682,349 @@ static int scheduler_owner_fields_ok(
         || !scheduler_next_wake_pair_ok(
             body->next_wake_clock_epoch, body->next_wake_at_ms)
         || body->ready > 1u) {
+        return 0;
+    }
+    return 1;
+}
+
+/* --- ORDERED_INGRESS helpers (D1-B3b) --- */
+
+static int bearer_message_kind_is_known(uint32_t kind)
+{
+    return kind >= NINLIL_BEARER_MESSAGE_APPLICATION
+        && kind <= NINLIL_BEARER_MESSAGE_CANCEL_RESULT;
+}
+
+static int clock_trust_is_known(uint32_t trust)
+{
+    return trust == NINLIL_CLOCK_TRUSTED || trust == NINLIL_CLOCK_UNCERTAIN;
+}
+
+/*
+ * docs12 §7.2 Disposition / effect_certainty / retry_guidance / retry_delay
+ * closed combination table (Bearer DISPOSITION and APP_RESULT_DISPOSITION).
+ */
+static int disposition_tuple_is_valid(
+    uint32_t disposition,
+    uint32_t effect_certainty,
+    uint32_t retry_guidance,
+    uint64_t retry_delay_ms)
+{
+    switch (disposition) {
+    case NINLIL_DISPOSITION_RETRY_LATER:
+        return effect_certainty == NINLIL_EFFECT_CERTAINTY_NO_EFFECT_PROVEN
+            && retry_guidance == NINLIL_RETRY_SAME_AFTER
+            && retry_delay_ms <= NINLIL_M1A_MAX_RETRY_DELAY_MS;
+    case NINLIL_DISPOSITION_INVALID_PAYLOAD:
+    case NINLIL_DISPOSITION_UNSUPPORTED_SCHEMA:
+        return effect_certainty == NINLIL_EFFECT_CERTAINTY_NO_EFFECT_PROVEN
+            && retry_guidance == NINLIL_RETRY_MODIFIED
+            && retry_delay_ms == 0u;
+    case NINLIL_DISPOSITION_UNAUTHORIZED_SERVICE:
+        return effect_certainty == NINLIL_EFFECT_CERTAINTY_NO_EFFECT_PROVEN
+            && retry_guidance == NINLIL_RETRY_MODIFIED
+            && retry_delay_ms == 0u;
+    case NINLIL_DISPOSITION_STALE_NOT_APPLIED:
+        return effect_certainty == NINLIL_EFFECT_CERTAINTY_NO_EFFECT_PROVEN
+            && retry_guidance == NINLIL_RETRY_NEVER
+            && retry_delay_ms == 0u;
+    case NINLIL_DISPOSITION_APPLICATION_BUSY:
+    case NINLIL_DISPOSITION_CAPACITY_EXHAUSTED:
+        return effect_certainty == NINLIL_EFFECT_CERTAINTY_NO_EFFECT_PROVEN
+            && retry_guidance == NINLIL_RETRY_SAME_AFTER
+            && retry_delay_ms <= NINLIL_M1A_MAX_RETRY_DELAY_MS;
+    case NINLIL_DISPOSITION_APPLY_FAILED:
+        if (effect_certainty == NINLIL_EFFECT_CERTAINTY_NO_EFFECT_PROVEN
+            && retry_guidance == NINLIL_RETRY_SAME_AFTER
+            && retry_delay_ms <= NINLIL_M1A_MAX_RETRY_DELAY_MS) {
+            return 1;
+        }
+        return effect_certainty == NINLIL_EFFECT_CERTAINTY_POSSIBLE
+            && retry_guidance == NINLIL_RETRY_OPERATOR_ACTION
+            && retry_delay_ms == 0u;
+    case NINLIL_DISPOSITION_VERIFY_FAILED:
+    case NINLIL_DISPOSITION_OUTCOME_UNKNOWN:
+        return effect_certainty == NINLIL_EFFECT_CERTAINTY_POSSIBLE
+            && retry_guidance == NINLIL_RETRY_OPERATOR_ACTION
+            && retry_delay_ms == 0u;
+    default:
+        return 0;
+    }
+}
+
+static int zero_disposition_tuple_ok(
+    uint32_t disposition,
+    uint32_t effect_certainty,
+    uint32_t retry_guidance,
+    uint64_t retry_delay_ms)
+{
+    return disposition == NINLIL_DISPOSITION_NONE
+        && effect_certainty == NINLIL_EFFECT_CERTAINTY_NONE
+        && retry_guidance == NINLIL_RETRY_NEVER
+        && retry_delay_ms == 0u;
+}
+
+static int ingress_binding_ok_for_kind(
+    uint32_t message_kind, uint16_t binding)
+{
+    switch (message_kind) {
+    case NINLIL_BEARER_MESSAGE_APPLICATION:
+    case NINLIL_BEARER_MESSAGE_CANCEL_REQUEST:
+        return binding == NINLIL_MODEL_DOMAIN_INGRESS_BINDING_EXISTING_DELIVERY
+            || binding == NINLIL_MODEL_DOMAIN_INGRESS_BINDING_NEW_DELIVERY;
+    case NINLIL_BEARER_MESSAGE_RECEIPT:
+    case NINLIL_BEARER_MESSAGE_DISPOSITION:
+    case NINLIL_BEARER_MESSAGE_CUSTODY_ACCEPTED:
+    case NINLIL_BEARER_MESSAGE_CANCEL_RESULT:
+        return binding
+            == NINLIL_MODEL_DOMAIN_INGRESS_BINDING_EXISTING_TRANSACTION;
+    default:
+        return 0;
+    }
+}
+
+static int ordered_ingress_reservation_digest_ok(
+    const ninlil_model_domain_body_ordered_ingress_t *body)
+{
+    uint8_t seq_be[8];
+    uint8_t comp[2u + 2u + 8u];
+    ninlil_bytes_view_t components;
+
+    if (body == NULL) {
+        return 0;
+    }
+    ninlil_model_domain_encode_u64_be(seq_be, body->ordered_sequence);
+    ninlil_model_domain_encode_u16_be(
+        comp, NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_INGRESS);
+    ninlil_model_domain_encode_u16_be(&comp[2], 8u);
+    (void)memcpy(&comp[4], seq_be, 8u);
+    components.data = comp;
+    components.length = 12u;
+    return digest_eq_composite_key(
+        body->reservation_key_digest,
+        NINLIL_MODEL_DOMAIN_SUBTYPE_RESERVATION,
+        components);
+}
+
+static int ordered_ingress_semantic_empty_ok(
+    const ninlil_model_domain_body_ordered_ingress_t *body)
+{
+    ninlil_model_domain_message_semantic_prefix_t prefix;
+    ninlil_model_domain_digest_t dig;
+    ninlil_bytes_view_t empty;
+
+    (void)memset(&prefix, 0, sizeof(prefix));
+    prefix.kind = body->message_kind;
+    prefix.flags = body->message_flags;
+    (void)memcpy(prefix.transaction_id, body->transaction_id, 16u);
+    (void)memcpy(prefix.attempt_id, body->attempt_id, 16u);
+    (void)memcpy(prefix.event_id, body->event_id, 16u);
+    prefix.source = body->source;
+    prefix.target = body->target;
+    prefix.service = body->service;
+    (void)memcpy(prefix.content_digest, body->content_digest, 32u);
+    prefix.generation = body->generation;
+    (void)memcpy(prefix.deadline_clock_epoch, body->deadline_clock_epoch, 16u);
+    prefix.absolute_effect_deadline_ms = body->absolute_effect_deadline_ms;
+    prefix.evidence_grace_ms = body->evidence_grace_ms;
+    prefix.required_evidence = body->required_evidence;
+    prefix.receipt_stage = body->receipt_stage;
+    prefix.disposition = body->disposition;
+    prefix.effect_certainty = body->effect_certainty;
+    prefix.retry_guidance = body->retry_guidance;
+    prefix.cancel_kind = body->cancel_kind;
+    prefix.retry_delay_ms = body->retry_delay_ms;
+    (void)memcpy(prefix.evidence_clock_epoch, body->evidence_clock_epoch, 16u);
+    prefix.evidence_now_ms = body->evidence_now_ms;
+    prefix.evidence_trust = body->evidence_trust;
+    prefix.payload_length = 0u;
+    empty.data = NULL;
+    empty.length = 0u;
+    if (ninlil_model_domain_message_semantic_digest(
+            &prefix, empty, empty, &dig)
+        != NINLIL_OK) {
+        return 0;
+    }
+    return memcmp(body->message_semantic_digest, dig.bytes, 32u) == 0;
+}
+
+/*
+ * Same-record ORDERED_INGRESS field contract (docs17 §8.3 + docs12 §5.4/7.2).
+ * Does not look up BLOB rows or guess blob_id / complete BLOB keys.
+ */
+static int ordered_ingress_fields_ok(
+    const ninlil_model_domain_body_ordered_ingress_t *body)
+{
+    int is_event;
+    int is_app;
+    int is_receipt;
+    int is_disp;
+    int is_cancel_req;
+    int is_cancel_res;
+    int payload_present;
+    int evidence_present;
+    ninlil_model_domain_digest_t empty_content;
+
+    if (body == NULL || body->ordered_sequence == 0u
+        || body->owner_sequence == 0u
+        || body->reserved0 != 0u
+        || body->reserved1 != 0u
+        || body->message_flags != 0u
+        || !bearer_message_kind_is_known(body->message_kind)
+        || !ingress_binding_ok_for_kind(
+            body->message_kind, body->owner_binding_kind)
+        || id_is_zero(body->transaction_id)
+        || id_is_zero(body->attempt_id)
+        || !ninlil_model_domain_party_is_valid(&body->source)
+        || !ninlil_model_domain_target_is_valid(&body->target)
+        || !ninlil_model_domain_service_identity_is_valid(&body->service)
+        || digest_is_zero(body->content_digest)
+        || !evidence_stage_is_known(body->required_evidence)
+        || body->required_evidence == NINLIL_EVIDENCE_NONE
+        || body->ingress_state != NINLIL_MODEL_DOMAIN_INGRESS_STATE_PENDING
+        || !ordered_ingress_reservation_digest_ok(body)) {
+        return 0;
+    }
+
+    is_event = body->service.family == NINLIL_FAMILY_EVENT_FACT;
+    if (!is_event && body->service.family != NINLIL_FAMILY_DESIRED_STATE) {
+        return 0;
+    }
+    if (is_event) {
+        if (id_is_zero(body->event_id) || body->generation != 0u
+            || !id_is_zero(body->deadline_clock_epoch)
+            || body->absolute_effect_deadline_ms != NINLIL_NO_DEADLINE
+            || body->evidence_grace_ms != 0u) {
+            return 0;
+        }
+    } else {
+        if (!id_is_zero(body->event_id) || body->generation == 0u
+            || id_is_zero(body->deadline_clock_epoch)
+            || body->absolute_effect_deadline_ms == NINLIL_NO_DEADLINE) {
+            return 0;
+        }
+    }
+
+    is_app = body->message_kind == NINLIL_BEARER_MESSAGE_APPLICATION;
+    is_receipt = body->message_kind == NINLIL_BEARER_MESSAGE_RECEIPT;
+    is_disp = body->message_kind == NINLIL_BEARER_MESSAGE_DISPOSITION;
+    is_cancel_req = body->message_kind == NINLIL_BEARER_MESSAGE_CANCEL_REQUEST;
+    is_cancel_res = body->message_kind == NINLIL_BEARER_MESSAGE_CANCEL_RESULT;
+
+    /* CANCEL_REQUEST / CANCEL_RESULT are DesiredState only (docs12 §5.4). */
+    if ((is_cancel_req || is_cancel_res) && is_event) {
+        return 0;
+    }
+
+    /* Kind-specific enum / zero tuples (docs12 §5.4 table). */
+    if (is_app) {
+        if (body->receipt_stage != NINLIL_EVIDENCE_NONE
+            || !zero_disposition_tuple_ok(
+                body->disposition,
+                body->effect_certainty,
+                body->retry_guidance,
+                body->retry_delay_ms)
+            || body->cancel_kind != 0u
+            || !id_is_zero(body->evidence_clock_epoch)
+            || body->evidence_now_ms != 0u
+            || body->evidence_trust != 0u) {
+            return 0;
+        }
+    } else if (is_receipt) {
+        /*
+         * receipt_stage: known non-zero only. SERVICE supported-mask match
+         * is D3 (requires live SERVICE row); not proven here.
+         */
+        if (body->receipt_stage == NINLIL_EVIDENCE_NONE
+            || !evidence_stage_is_known(body->receipt_stage)
+            || !zero_disposition_tuple_ok(
+                body->disposition,
+                body->effect_certainty,
+                body->retry_guidance,
+                body->retry_delay_ms)
+            || body->cancel_kind != 0u
+            || id_is_zero(body->evidence_clock_epoch)
+            || !clock_trust_is_known(body->evidence_trust)) {
+            /* evidence_now_ms == 0 is a valid monotonic sample (docs17). */
+            return 0;
+        }
+    } else if (is_disp) {
+        if (body->receipt_stage != NINLIL_EVIDENCE_NONE
+            || !disposition_tuple_is_valid(
+                body->disposition,
+                body->effect_certainty,
+                body->retry_guidance,
+                body->retry_delay_ms)
+            || body->cancel_kind != 0u
+            || !id_is_zero(body->evidence_clock_epoch)
+            || body->evidence_now_ms != 0u
+            || body->evidence_trust != 0u) {
+            return 0;
+        }
+    } else if (is_cancel_res) {
+        if (body->receipt_stage != NINLIL_EVIDENCE_NONE
+            || !zero_disposition_tuple_ok(
+                body->disposition,
+                body->effect_certainty,
+                body->retry_guidance,
+                body->retry_delay_ms)
+            || (body->cancel_kind != NINLIL_CANCEL_FENCED_BEFORE_DISPATCH
+                && body->cancel_kind != NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE)
+            || !id_is_zero(body->evidence_clock_epoch)
+            || body->evidence_now_ms != 0u
+            || body->evidence_trust != 0u) {
+            return 0;
+        }
+    } else {
+        /* CANCEL_REQUEST or CUSTODY_ACCEPTED: all disposition/evidence zero. */
+        if (body->receipt_stage != NINLIL_EVIDENCE_NONE
+            || !zero_disposition_tuple_ok(
+                body->disposition,
+                body->effect_certainty,
+                body->retry_guidance,
+                body->retry_delay_ms)
+            || body->cancel_kind != 0u
+            || !id_is_zero(body->evidence_clock_epoch)
+            || body->evidence_now_ms != 0u
+            || body->evidence_trust != 0u) {
+            return 0;
+        }
+    }
+
+    /*
+     * BLOB key digest presence (docs17 §8.3): APPLICATION payload 0/1,
+     * RECEIPT evidence 0/1; opposite and other kinds must be zero.
+     * D3 validates live BLOB 0/1 cardinality and content; D1 must not invent
+     * blob_id or complete BLOB keys from body alone.
+     */
+    payload_present = !digest_is_zero(body->payload_blob_key_digest);
+    evidence_present = !digest_is_zero(body->evidence_blob_key_digest);
+    if (is_app) {
+        if (evidence_present) {
+            return 0;
+        }
+    } else if (is_receipt) {
+        if (payload_present) {
+            return 0;
+        }
+    } else if (payload_present || evidence_present) {
+        return 0;
+    }
+
+    /* APPLICATION + empty payload: content_digest = SHA-256(empty). */
+    if (is_app && !payload_present) {
+        if (ninlil_model_domain_sha256(NULL, 0u, &empty_content) != NINLIL_OK
+            || memcmp(body->content_digest, empty_content.bytes, 32u) != 0) {
+            return 0;
+        }
+    }
+
+    if (!payload_present && !evidence_present) {
+        if (!ordered_ingress_semantic_empty_ok(body)) {
+            return 0;
+        }
+    } else if (digest_is_zero(body->message_semantic_digest)) {
+        /* Non-zero BLOB path: semantic digest must be non-zero; recompute D3. */
         return 0;
     }
     return 1;
@@ -3650,6 +3999,714 @@ ninlil_status_t ninlil_model_domain_decode_body_scheduler_owner(
     return NINLIL_OK;
 }
 
+/* --- message_semantic_digest streaming helper (docs17 §5.1) --- */
+
+static const char PREIMAGE_BEARER_MESSAGE[] = "NINLIL-BEARER-MESSAGE-V1";
+
+/*
+ * Failure / alias policy for the MSD state machine:
+ * - Alias / address-overflow failures never write any participating range
+ *   (ctx, prefix, data, out_digest). They return INVALID_ARGUMENT only.
+ * - After address + pairwise-disjoint gates pass, non-alias failures that
+ *   involve a writable ctx transition phase to FAILED (wrong phase, length
+ *   overflow, counter incoherence, SHA structural failure). init also zeros
+ *   the full ctx object on non-alias prefix/nested failure.
+ * - final zeros out_digest on non-alias failure after range gates pass.
+ * - Wrong-phase misuse is treated as a non-alias semantic failure and
+ *   transitions FAILED (once ctx address range is known-valid).
+ */
+
+static void msd_fail(ninlil_model_domain_message_semantic_digest_ctx_t *ctx)
+{
+    ctx->phase = NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED;
+}
+
+static ninlil_status_t msd_sha_update(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const uint8_t *data,
+    uint32_t length)
+{
+    ninlil_status_t status;
+
+    status = ninlil_model_domain_sha256_update(&ctx->sha, data, length);
+    if (status != NINLIL_OK) {
+        msd_fail(ctx);
+    }
+    return status;
+}
+
+/* Reject caller-mutated counters that would underflow remaining math. */
+static int msd_payload_counters_ok(
+    const ninlil_model_domain_message_semantic_digest_ctx_t *ctx)
+{
+    return ctx->received_payload_length <= ctx->declared_payload_length;
+}
+
+static int msd_evidence_counters_ok(
+    const ninlil_model_domain_message_semantic_digest_ctx_t *ctx)
+{
+    return ctx->received_evidence_length <= ctx->declared_evidence_length
+        && ctx->declared_evidence_length
+            <= NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX;
+}
+
+static ninlil_status_t msd_hash_prefix_fields(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const ninlil_model_domain_message_semantic_prefix_t *prefix)
+{
+    uint8_t scratch[100];
+    uint8_t be[8];
+    uint32_t o;
+    ninlil_status_t status;
+
+    status = msd_sha_update(
+        ctx,
+        (const uint8_t *)PREIMAGE_BEARER_MESSAGE,
+        (uint32_t)(sizeof(PREIMAGE_BEARER_MESSAGE) - 1u));
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->kind);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->flags);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = msd_sha_update(ctx, prefix->transaction_id, 16u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = msd_sha_update(ctx, prefix->attempt_id, 16u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = msd_sha_update(ctx, prefix->event_id, 16u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    /* Domain PARTY encoding (100 bytes) — not public ABI party layout. */
+    encode_party(scratch, &prefix->source);
+    status = msd_sha_update(ctx, scratch, NINLIL_MODEL_DOMAIN_PARTY_BYTES);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    encode_target(scratch, &prefix->target);
+    status = msd_sha_update(ctx, scratch, NINLIL_MODEL_DOMAIN_TARGET_BYTES);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    /* SERVICE_IDENTITY: stream TEXT_IDs + fixed tail without full-body scratch. */
+    o = encode_text_id(scratch, &prefix->service.namespace_id);
+    status = msd_sha_update(ctx, scratch, o);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    o = encode_text_id(scratch, &prefix->service.service_id);
+    status = msd_sha_update(ctx, scratch, o);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    o = encode_text_id(scratch, &prefix->service.schema_id);
+    status = msd_sha_update(ctx, scratch, o);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u64_be(be, prefix->service.descriptor_revision);
+    status = msd_sha_update(ctx, be, 8u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = msd_sha_update(ctx, prefix->service.descriptor_digest, 32u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u16_be(be, prefix->service.schema_major);
+    status = msd_sha_update(ctx, be, 2u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u16_be(be, prefix->service.schema_minor);
+    status = msd_sha_update(ctx, be, 2u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->service.family);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = msd_sha_update(ctx, prefix->content_digest, 32u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u64_be(be, prefix->generation);
+    status = msd_sha_update(ctx, be, 8u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = msd_sha_update(ctx, prefix->deadline_clock_epoch, 16u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u64_be(be, prefix->absolute_effect_deadline_ms);
+    status = msd_sha_update(ctx, be, 8u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u64_be(be, prefix->evidence_grace_ms);
+    status = msd_sha_update(ctx, be, 8u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->required_evidence);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->receipt_stage);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->disposition);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->effect_certainty);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->retry_guidance);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->cancel_kind);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u64_be(be, prefix->retry_delay_ms);
+    status = msd_sha_update(ctx, be, 8u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = msd_sha_update(ctx, prefix->evidence_clock_epoch, 16u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u64_be(be, prefix->evidence_now_ms);
+    status = msd_sha_update(ctx, be, 8u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ninlil_model_domain_encode_u32_be(be, prefix->evidence_trust);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    /* Declared payload_length before any payload data bytes. */
+    ninlil_model_domain_encode_u32_be(be, prefix->payload_length);
+    return msd_sha_update(ctx, be, 4u);
+}
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_init(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const ninlil_model_domain_message_semantic_prefix_t *prefix)
+{
+    ninlil_status_t status;
+
+    /* Address + pairwise-disjoint gates before any write. */
+    if (ctx == NULL || !range_address_is_valid(ctx, sizeof(*ctx))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (prefix != NULL) {
+        if (!range_address_is_valid(prefix, sizeof(*prefix))
+            || !ninlil_model_domain_ranges_are_disjoint(
+                ctx, sizeof(*ctx), prefix, sizeof(*prefix))) {
+            /* Alias/address: leave ctx and prefix untouched. */
+            return NINLIL_E_INVALID_ARGUMENT;
+        }
+    }
+    /*
+     * Non-alias path: missing/invalid nested prefix zeros and fails ctx.
+     * Nested service TEXT_ID / PARTY / TARGET must be shape-valid first.
+     */
+    if (prefix == NULL
+        || !ninlil_model_domain_service_identity_is_valid(&prefix->service)
+        || !ninlil_model_domain_party_is_valid(&prefix->source)
+        || !ninlil_model_domain_target_is_valid(&prefix->target)) {
+        (void)memset(ctx, 0, sizeof(*ctx));
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(ctx, 0, sizeof(*ctx));
+    ninlil_model_domain_sha256_init(&ctx->sha);
+    ctx->declared_payload_length = prefix->payload_length;
+    ctx->phase = NINLIL_MODEL_DOMAIN_MSD_PHASE_PAYLOAD;
+    status = msd_hash_prefix_fields(ctx, prefix);
+    if (status != NINLIL_OK) {
+        (void)memset(ctx, 0, sizeof(*ctx));
+        msd_fail(ctx);
+        return status;
+    }
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_update_payload(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const uint8_t *data,
+    uint32_t length)
+{
+    uint32_t remaining;
+    ninlil_status_t status;
+
+    if (ctx == NULL || !range_address_is_valid(ctx, sizeof(*ctx))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    /* Data range + alias gates before any ctx field write (or phase read path
+     * that can fail the machine). length 0 has no data range to validate. */
+    if (length != 0u) {
+        if (data == NULL
+            || !range_address_is_valid(data, length)
+            || !ninlil_model_domain_ranges_are_disjoint(
+                data, length, ctx, sizeof(*ctx))) {
+            /* Alias/address: leave ctx and data untouched (no FAILED). */
+            return NINLIL_E_INVALID_ARGUMENT;
+        }
+    }
+    /* Non-alias semantic gates may transition FAILED. */
+    if (ctx->phase != NINLIL_MODEL_DOMAIN_MSD_PHASE_PAYLOAD) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    /* Reject received > declared before any subtraction (no underflow). */
+    if (!msd_payload_counters_ok(ctx)) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    remaining = ctx->declared_payload_length - ctx->received_payload_length;
+    if (length > remaining) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (length == 0u) {
+        return NINLIL_OK;
+    }
+    status = msd_sha_update(ctx, data, length);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ctx->received_payload_length += length;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_begin_evidence(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    uint32_t evidence_length)
+{
+    uint8_t be[4];
+    ninlil_status_t status;
+
+    if (ctx == NULL || !range_address_is_valid(ctx, sizeof(*ctx))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (ctx->phase != NINLIL_MODEL_DOMAIN_MSD_PHASE_PAYLOAD) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!msd_payload_counters_ok(ctx)
+        || ctx->received_payload_length != ctx->declared_payload_length) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (evidence_length > NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    ninlil_model_domain_encode_u32_be(be, evidence_length);
+    status = msd_sha_update(ctx, be, 4u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ctx->declared_evidence_length = evidence_length;
+    ctx->received_evidence_length = 0u;
+    ctx->phase = NINLIL_MODEL_DOMAIN_MSD_PHASE_EVIDENCE;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_update_evidence(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    const uint8_t *data,
+    uint32_t length)
+{
+    uint32_t remaining;
+    ninlil_status_t status;
+
+    if (ctx == NULL || !range_address_is_valid(ctx, sizeof(*ctx))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (length != 0u) {
+        if (data == NULL
+            || !range_address_is_valid(data, length)
+            || !ninlil_model_domain_ranges_are_disjoint(
+                data, length, ctx, sizeof(*ctx))) {
+            /* Alias/address: leave ctx and data untouched (no FAILED). */
+            return NINLIL_E_INVALID_ARGUMENT;
+        }
+    }
+    if (ctx->phase != NINLIL_MODEL_DOMAIN_MSD_PHASE_EVIDENCE) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    /* Reject received > declared / declared > max before subtraction. */
+    if (!msd_evidence_counters_ok(ctx)) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    remaining = ctx->declared_evidence_length - ctx->received_evidence_length;
+    if (length > remaining) {
+        msd_fail(ctx);
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (length == 0u) {
+        return NINLIL_OK;
+    }
+    status = msd_sha_update(ctx, data, length);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    ctx->received_evidence_length += length;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest_final(
+    ninlil_model_domain_message_semantic_digest_ctx_t *ctx,
+    ninlil_model_domain_digest_t *out_digest)
+{
+    ninlil_status_t status;
+
+    if (out_digest == NULL
+        || !range_address_is_valid(out_digest, sizeof(*out_digest))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    /*
+     * Full address + disjoint gates before zeroing out or reading ctx.
+     * Alias/address failure leaves both ranges untouched.
+     */
+    if (ctx != NULL) {
+        if (!range_address_is_valid(ctx, sizeof(*ctx))
+            || !ninlil_model_domain_ranges_are_disjoint(
+                ctx, sizeof(*ctx), out_digest, sizeof(*out_digest))) {
+            return NINLIL_E_INVALID_ARGUMENT;
+        }
+    }
+    (void)memset(out_digest, 0, sizeof(*out_digest));
+    if (ctx == NULL || ctx->phase != NINLIL_MODEL_DOMAIN_MSD_PHASE_EVIDENCE
+        || !msd_evidence_counters_ok(ctx)
+        || !msd_payload_counters_ok(ctx)
+        || ctx->received_evidence_length != ctx->declared_evidence_length
+        || ctx->received_payload_length != ctx->declared_payload_length) {
+        if (ctx != NULL) {
+            msd_fail(ctx);
+        }
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    status = ninlil_model_domain_sha256_final(&ctx->sha, out_digest);
+    if (status != NINLIL_OK) {
+        msd_fail(ctx);
+        (void)memset(out_digest, 0, sizeof(*out_digest));
+        return status;
+    }
+    ctx->phase = NINLIL_MODEL_DOMAIN_MSD_PHASE_DONE;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_message_semantic_digest(
+    const ninlil_model_domain_message_semantic_prefix_t *prefix,
+    ninlil_bytes_view_t payload,
+    ninlil_bytes_view_t evidence,
+    ninlil_model_domain_digest_t *out_digest)
+{
+    ninlil_model_domain_message_semantic_digest_ctx_t ctx;
+    ninlil_status_t status;
+    size_t n = 0u;
+    const void *ptrs[5];
+    size_t lens[5];
+
+    if (out_digest == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    /*
+     * Address + pairwise-disjoint gates across every present participating
+     * range BEFORE any write to out_digest (or any other range).
+     * Overlap with out is rejected with out left untouched.
+     */
+    if (prefix != NULL) {
+        ptrs[n] = prefix;
+        lens[n] = sizeof(*prefix);
+        n++;
+    }
+    if (payload.data != NULL && payload.length != 0u) {
+        ptrs[n] = payload.data;
+        lens[n] = payload.length;
+        n++;
+    }
+    if (evidence.data != NULL && evidence.length != 0u) {
+        ptrs[n] = evidence.data;
+        lens[n] = evidence.length;
+        n++;
+    }
+    ptrs[n] = out_digest;
+    lens[n] = sizeof(*out_digest);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    /* Non-alias path may zero out_digest. */
+    (void)memset(out_digest, 0, sizeof(*out_digest));
+    if (prefix == NULL
+        || !ninlil_model_domain_bytes_view_shape_is_valid(payload)
+        || !ninlil_model_domain_bytes_view_shape_is_valid(evidence)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (payload.length != prefix->payload_length) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (evidence.length > NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    status = ninlil_model_domain_message_semantic_digest_init(&ctx, prefix);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (payload.length != 0u) {
+        status = ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, payload.data, payload.length);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+    }
+    status = ninlil_model_domain_message_semantic_digest_begin_evidence(
+        &ctx, evidence.length);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (evidence.length != 0u) {
+        status = ninlil_model_domain_message_semantic_digest_update_evidence(
+            &ctx, evidence.data, evidence.length);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+    }
+    return ninlil_model_domain_message_semantic_digest_final(&ctx, out_digest);
+}
+
+/* --- ORDERED_INGRESS --- */
+
+uint32_t ninlil_model_domain_body_ordered_ingress_encoded_length(
+    const ninlil_model_domain_body_ordered_ingress_t *body)
+{
+    uint32_t n;
+    uint32_t svc;
+
+    if (body == NULL || !ordered_ingress_fields_ok(body)) {
+        return 0u;
+    }
+    svc = ninlil_model_domain_service_identity_encoded_length(&body->service);
+    if (svc == 0u) {
+        return 0u;
+    }
+    /* fixed before service = 276; after service = 268 (docs17 §8.3 layout). */
+    n = 276u + svc + 268u;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_ORDERED_INGRESS_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_ordered_ingress(
+    const ninlil_model_domain_body_ordered_ingress_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    uint32_t o;
+    uint32_t svc_len;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_alias_ok(body, sizeof(*body), out_bytes, capacity, out_length)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_ordered_ingress_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    ninlil_model_domain_encode_u64_be(&out_bytes[0], body->ordered_sequence);
+    ninlil_model_domain_encode_u64_be(&out_bytes[8], body->owner_sequence);
+    ninlil_model_domain_encode_u16_be(&out_bytes[16], body->owner_binding_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[18], body->reserved0);
+    ninlil_model_domain_encode_u32_be(&out_bytes[20], body->message_kind);
+    ninlil_model_domain_encode_u32_be(&out_bytes[24], body->message_flags);
+    (void)memcpy(&out_bytes[28], body->transaction_id, 16u);
+    (void)memcpy(&out_bytes[44], body->attempt_id, 16u);
+    (void)memcpy(&out_bytes[60], body->event_id, 16u);
+    encode_party(&out_bytes[76], &body->source);
+    encode_target(&out_bytes[176], &body->target);
+    o = 276u;
+    svc_len = encode_service_identity(&out_bytes[o], &body->service);
+    o += svc_len;
+    (void)memcpy(&out_bytes[o], body->content_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->generation);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->deadline_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->absolute_effect_deadline_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->evidence_grace_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->required_evidence);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->receipt_stage);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->disposition);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->effect_certainty);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->retry_guidance);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->cancel_kind);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->retry_delay_ms);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->evidence_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->evidence_now_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->evidence_trust);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reserved1);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->message_semantic_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->payload_blob_key_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->evidence_blob_key_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->ingress_state);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->reservation_key_digest, 32u);
+    o += 32u;
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_ordered_ingress(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_ordered_ingress_t *out_body)
+{
+    ninlil_model_domain_body_ordered_ingress_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 276u + 54u + 268u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_ORDERED_INGRESS_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    tmp.ordered_sequence = ninlil_model_domain_decode_u64_be(&encoded.data[0]);
+    tmp.owner_sequence = ninlil_model_domain_decode_u64_be(&encoded.data[8]);
+    tmp.owner_binding_kind =
+        ninlil_model_domain_decode_u16_be(&encoded.data[16]);
+    tmp.reserved0 = ninlil_model_domain_decode_u16_be(&encoded.data[18]);
+    tmp.message_kind = ninlil_model_domain_decode_u32_be(&encoded.data[20]);
+    tmp.message_flags = ninlil_model_domain_decode_u32_be(&encoded.data[24]);
+    (void)memcpy(tmp.transaction_id, &encoded.data[28], 16u);
+    (void)memcpy(tmp.attempt_id, &encoded.data[44], 16u);
+    (void)memcpy(tmp.event_id, &encoded.data[60], 16u);
+    decode_party(&encoded.data[76], &tmp.source);
+    decode_target(&encoded.data[176], &tmp.target);
+    o = 276u;
+    if (!decode_service_identity(
+            encoded.data + o, encoded.length - o, &tmp.service, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    if (encoded.length - o < 268u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.content_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.generation = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.deadline_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.absolute_effect_deadline_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.evidence_grace_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.required_evidence = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.receipt_stage = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.disposition = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.effect_certainty = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.retry_guidance = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.cancel_kind = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.retry_delay_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.evidence_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.evidence_now_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.evidence_trust = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reserved1 = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.message_semantic_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.payload_blob_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.evidence_blob_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.ingress_state = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.reservation_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    if (o != encoded.length || !ordered_ingress_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
 
 /* --- typed record validation --- */
 
@@ -3676,6 +4733,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_IDEMPOTENCY_MAP:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_ID_MAP:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_SCHEDULER_OWNER:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_ORDERED_INGRESS:
         return 1;
     default:
         return 0;
@@ -4380,6 +5438,46 @@ static ninlil_status_t validate_header_body_local(
         if (scheduler_expected_primary_id(&out->scheduler_owner, expect_pid)
                 != NINLIL_OK
             || !header_primary_id_eq(env, expect_pid)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_ORDERED_INGRESS) {
+        uint8_t seq_be[8];
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+
+        status = ninlil_model_domain_decode_body_ordered_ingress(
+            env->body, &out->ordered_ingress);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        /*
+         * Immutable primary (docs17 §8.3 / §9):
+         * - key u64 identity == ordered_sequence BE8
+         * - common primary_id = left-zero-pad(BE8)
+         * - revision 1, flags 0, PVD zero, head non-zero
+         * D3 deferred (not proven here): live owner/SCHEDULER/RESERVATION/BLOB
+         * presence and 0/1 cardinality, BLOB stream recompute when digests
+         * non-zero, owner transfer, reduction erase, namespace counters,
+         * SERVICE supported-mask vs receipt_stage. B3b does not invent BLOB
+         * keys from body fields alone.
+         */
+        if (env->header.record_revision != 1u
+            || key->identity_kind != NINLIL_MODEL_DOMAIN_ID_KIND_U64
+            || key->identity_length != 8u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        ninlil_model_domain_encode_u64_be(
+            seq_be, out->ordered_ingress.ordered_sequence);
+        if (memcmp(key->identity, seq_be, 8u) != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        (void)memset(expect_pid, 0, NINLIL_MODEL_DOMAIN_ID_BYTES);
+        (void)memcpy(&expect_pid[8], seq_be, 8u);
+        if (!header_primary_id_eq(env, expect_pid)
+            || digest_is_zero(env->header.head_witness_digest)
+            || !digest_is_zero(env->header.primary_value_digest)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;

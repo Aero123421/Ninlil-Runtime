@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b
 are hand-written here and intentionally do not import or link production C.
 
 Usage:
@@ -2345,6 +2345,559 @@ def build_document():
     assert b3_cov["26"]["negative"] >= 15
     assert b3_cov["26"]["roundtrip"] >= 3
 
+    # --- D1-B3b: ORDERED_INGRESS (0x27) + message_semantic_digest helper ---
+    # Append-only after the 530 D1-B3a vectors; do not mutate prior objects.
+    i_pos = i_neg = i_mut = i_rt = 0
+    EMPTY_SHA = sha256(b"")
+    NO_DEADLINE = (1 << 64) - 1
+    MAX_RETRY_DELAY = 600000
+    EVIDENCE_MAX = 128
+
+    def svc_id(ns, svc, schema, rev, dig, major, minor, family):
+        return service_identity(ns, svc, schema, rev, dig, major, minor, family)
+
+    SVC_DS = svc_id(F["ns"], F["svc"], F["schema"], 1, F["dig"], 1, 0, 2)
+    SVC_EF = svc_id(F["ns"], F["svc"], F["schema"], 1, F["dig"], 1, 0, 1)
+    # max TEXT_ID (63) for namespace/service/schema
+    max_tid = b"a" + b"b" * 62
+    SVC_MAX = svc_id(max_tid, max_tid, max_tid, 1, F["dig"], 1, 0, 2)
+    assert len(SVC_MAX) == 1 + 63 + 1 + 63 + 1 + 63 + 8 + 32 + 2 + 2 + 4
+
+    def ingress_res_kd(ordered_seq):
+        seq8 = be64(ordered_seq)
+        return complete_key_digest_composite(0x23, be16(3) + raw16(seq8))
+
+    def message_semantic_digest(
+        kind, flags, txn, attempt, event, src, tgt, svc, content,
+        generation, dl_ep, abs_dl, grace, req_ev, receipt, disp, cert,
+        guidance, cancel_kind, retry_delay, ev_ep, ev_now, ev_trust,
+        payload=b"", evidence=b"",
+    ):
+        """Exact docs17 §5.1 preimage; independent of production C."""
+        pre = b"NINLIL-BEARER-MESSAGE-V1"
+        pre += be32(kind) + be32(flags) + txn + attempt + event
+        pre += src + tgt + svc + content
+        pre += be64(generation) + dl_ep + be64(abs_dl) + be64(grace)
+        pre += be32(req_ev) + be32(receipt) + be32(disp) + be32(cert)
+        pre += be32(guidance) + be32(cancel_kind) + be64(retry_delay)
+        pre += ev_ep + be64(ev_now) + be32(ev_trust)
+        pre += be32(len(payload)) + payload + be32(len(evidence)) + evidence
+        return sha256(pre)
+
+    def enc_ingress_body(
+        ordered_seq=1, owner_seq=1, binding=3, kind=1, flags=0,
+        txn=None, attempt=None, event=None, src=None, tgt=None, svc=None,
+        content=None, generation=1, dl_ep=None, abs_dl=5000, grace=100,
+        req_ev=3, receipt=0, disp=0, cert=0, guidance=0, cancel_kind=0,
+        retry_delay=0, ev_ep=None, ev_now=0, ev_trust=0, reserved1=0,
+        semantic=None, payload_blob=None, evidence_blob=None,
+        ingress_state=1, res_kd=None, payload=b"", evidence=b"",
+    ):
+        txn = txn if txn is not None else bytes([0x71] + [0] * 14 + [0x01])
+        attempt = attempt if attempt is not None else bytes([0x72] + [0] * 14 + [0x02])
+        event = event if event is not None else bytes(16)
+        src = src if src is not None else PARTY
+        tgt = tgt if tgt is not None else TARGET
+        svc = svc if svc is not None else SVC_DS
+        content = content if content is not None else F["content"]
+        dl_ep = dl_ep if dl_ep is not None else F["epoch"]
+        ev_ep = ev_ep if ev_ep is not None else bytes(16)
+        payload_blob = payload_blob if payload_blob is not None else bytes(32)
+        evidence_blob = evidence_blob if evidence_blob is not None else bytes(32)
+        if semantic is None:
+            semantic = message_semantic_digest(
+                kind, flags, txn, attempt, event, src, tgt, svc, content,
+                generation, dl_ep, abs_dl, grace, req_ev, receipt, disp, cert,
+                guidance, cancel_kind, retry_delay, ev_ep, ev_now, ev_trust,
+                payload=payload, evidence=evidence,
+            )
+        if res_kd is None:
+            res_kd = ingress_res_kd(ordered_seq)
+        return (
+            be64(ordered_seq) + be64(owner_seq) + be16(binding) + be16(0)
+            + be32(kind) + be32(flags) + txn + attempt + event
+            + src + tgt + svc + content + be64(generation) + dl_ep
+            + be64(abs_dl) + be64(grace) + be32(req_ev) + be32(receipt)
+            + be32(disp) + be32(cert) + be32(guidance) + be32(cancel_kind)
+            + be64(retry_delay) + ev_ep + be64(ev_now) + be32(ev_trust)
+            + be32(reserved1) + semantic + payload_blob + evidence_blob
+            + be32(ingress_state) + res_kd
+        )
+
+    def ingress_typed(ordered_seq, body, head=None):
+        key = ordered_ingress_key(be64(ordered_seq))
+        pid = primary_id_from_identity(3, be64(ordered_seq))
+        head = head if head is not None else F["head_nz"]
+        val = enc_env_full(6, 0x27, 0, 1, pid, head, bytes(32), body)
+        return key, pid, val
+
+    # Shared IDs
+    txn1 = bytes([0x71] + [0] * 14 + [0x01])
+    att1 = bytes([0x72] + [0] * 14 + [0x02])
+    att2 = bytes([0x73] + [0] * 14 + [0x03])
+    ev_id = bytes([0x81] + [0] * 14 + [0x11])
+    ev_clock = bytes([0x91] + [0] * 14 + [0x22])
+    nz_blob = bytes([0xAB] * 32)
+    nz_blob2 = bytes([0xCD] * 32)
+
+    # --- positives: all 6 message kinds ---
+    # APPLICATION DesiredState empty payload (content = SHA256 empty)
+    body_app_ds = enc_ingress_body(
+        ordered_seq=1, owner_seq=9, binding=3, kind=1,
+        content=EMPTY_SHA, generation=1, abs_dl=5000, grace=50, req_ev=3,
+        payload=b"", evidence=b"",
+    )
+    key_app, pid_app, val_app = ingress_typed(1, body_app_ds)
+    add(id="DSB3_ING_APP_DS_EMPTY", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_app_ds), body_hex=hx(body_app_ds))
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_APP_DS_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_app),
+        value_hex=hx(val_app), body_hex=hx(body_app_ds),
+        digest_hex=hx(sha256(val_app)), crc_hex=f"{crc32c(val_app[:-4]):08x}")
+    i_pos += 1
+
+    # APPLICATION EventFact empty
+    body_app_ef = enc_ingress_body(
+        ordered_seq=2, owner_seq=1, binding=2, kind=1, event=ev_id,
+        content=EMPTY_SHA, generation=0, dl_ep=bytes(16), abs_dl=NO_DEADLINE,
+        grace=0, req_ev=2, svc=SVC_EF, payload=b"", evidence=b"",
+    )
+    key_ef, _, val_ef = ingress_typed(2, body_app_ef)
+    add(id="DSB3_ING_APP_EF_EMPTY", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_app_ef), body_hex=hx(body_app_ef))
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_APP_EF_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_ef),
+        value_hex=hx(val_ef), body_hex=hx(body_app_ef))
+    i_pos += 1
+
+    # APPLICATION with non-zero payload blob digest (semantic non-zero, no recompute path)
+    body_app_nz = enc_ingress_body(
+        ordered_seq=3, owner_seq=2, binding=3, kind=1, content=F["content"],
+        generation=2, abs_dl=9000, grace=10, req_ev=4,
+        payload_blob=nz_blob, semantic=bytes([0x11] * 32),
+    )
+    key_nz, _, val_nz = ingress_typed(3, body_app_nz)
+    add(id="DSB3_ING_APP_PAYLOAD_BLOB_NZ", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_app_nz), body_hex=hx(body_app_nz),
+        notes="non-zero payload_blob_key_digest; semantic non-zero; BLOB recompute D3")
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_APP_PAYLOAD_BLOB_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_nz),
+        value_hex=hx(val_nz))
+    i_pos += 1
+
+    # RECEIPT empty evidence, now=0 trusted
+    body_rcpt0 = enc_ingress_body(
+        ordered_seq=4, owner_seq=5, binding=1, kind=2, generation=3,
+        abs_dl=7000, grace=20, req_ev=3, receipt=3, ev_ep=ev_clock,
+        ev_now=0, ev_trust=1, payload=b"", evidence=b"",
+    )
+    key_r0, _, val_r0 = ingress_typed(4, body_rcpt0)
+    add(id="DSB3_ING_RECEIPT_NOW0", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_rcpt0), body_hex=hx(body_rcpt0),
+        notes="evidence_now_ms==0 valid monotonic sample")
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_RECEIPT_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_r0),
+        value_hex=hx(val_r0))
+    i_pos += 1
+
+    # RECEIPT with evidence blob nz + uncertain trust
+    body_rcpt_nz = enc_ingress_body(
+        ordered_seq=5, owner_seq=6, binding=1, kind=2, generation=4,
+        abs_dl=8000, grace=0, req_ev=4, receipt=4, ev_ep=ev_clock,
+        ev_now=100, ev_trust=2, evidence_blob=nz_blob2,
+        semantic=bytes([0x22] * 32),
+    )
+    add(id="DSB3_ING_RECEIPT_EVIDENCE_BLOB_NZ", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_rcpt_nz), body_hex=hx(body_rcpt_nz))
+    i_pos += 1; i_rt += 1
+
+    # DISPOSITION tuples — all legal rows
+    DISP_TUPLES = [
+        (1, 1, 1, 0, "RETRY_LATER_0"),
+        (1, 1, 1, MAX_RETRY_DELAY, "RETRY_LATER_MAX"),
+        (2, 1, 2, 0, "INVALID_PAYLOAD"),
+        (3, 1, 2, 0, "UNSUPPORTED_SCHEMA"),
+        (4, 1, 2, 0, "UNAUTHORIZED"),
+        (5, 1, 0, 0, "STALE"),
+        (6, 1, 1, 0, "BUSY_0"),
+        (6, 1, 1, MAX_RETRY_DELAY, "BUSY_MAX"),
+        (7, 1, 1, 100, "APPLY_NO_EFFECT"),
+        (7, 2, 3, 0, "APPLY_POSSIBLE"),
+        (8, 2, 3, 0, "VERIFY_FAILED"),
+        (9, 1, 1, 50, "CAPACITY"),
+        (10, 2, 3, 0, "OUTCOME_UNKNOWN"),
+    ]
+    seq = 10
+    for disp, cert, guid, delay, tag in DISP_TUPLES:
+        body_d = enc_ingress_body(
+            ordered_seq=seq, owner_seq=1, binding=1, kind=3, generation=1,
+            abs_dl=1000, grace=0, req_ev=1, disp=disp, cert=cert,
+            guidance=guid, retry_delay=delay,
+        )
+        key_d, _, val_d = ingress_typed(seq, body_d)
+        add(id=f"DSB3_ING_DISP_{tag}", suite="DSB3", op="body_roundtrip",
+            expected_status="OK", family=6, subtype=0x27,
+            body_length=len(body_d), body_hex=hx(body_d))
+        i_pos += 1; i_rt += 1
+        add(id=f"DSB3_ING_DISP_{tag}_TYPED", suite="DSB3", op="typed_record",
+            expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_d),
+            value_hex=hx(val_d))
+        i_pos += 1
+        seq += 1
+
+    # CANCEL_REQUEST DesiredState
+    body_crq = enc_ingress_body(
+        ordered_seq=seq, owner_seq=2, binding=3, kind=4, generation=5,
+        abs_dl=2000, grace=0, req_ev=2, attempt=att2,
+    )
+    key_crq, _, val_crq = ingress_typed(seq, body_crq)
+    add(id="DSB3_ING_CANCEL_REQ", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_crq), body_hex=hx(body_crq))
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_CANCEL_REQ_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_crq),
+        value_hex=hx(val_crq))
+    i_pos += 1
+    seq += 1
+
+    # CUSTODY_ACCEPTED
+    body_cust = enc_ingress_body(
+        ordered_seq=seq, owner_seq=3, binding=1, kind=5, generation=6,
+        abs_dl=3000, grace=0, req_ev=3,
+    )
+    key_cu, _, val_cu = ingress_typed(seq, body_cust)
+    add(id="DSB3_ING_CUSTODY", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_cust), body_hex=hx(body_cust))
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_CUSTODY_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_cu),
+        value_hex=hx(val_cu))
+    i_pos += 1
+    seq += 1
+
+    # CANCEL_RESULT both cancel kinds
+    for ck, tag in ((1, "FENCED"), (3, "TOO_LATE")):
+        body_crs = enc_ingress_body(
+            ordered_seq=seq, owner_seq=4, binding=1, kind=6, generation=7,
+            abs_dl=4000, grace=0, req_ev=3, cancel_kind=ck, attempt=att2,
+        )
+        key_crs, _, val_crs = ingress_typed(seq, body_crs)
+        add(id=f"DSB3_ING_CANCEL_RES_{tag}", suite="DSB3", op="body_roundtrip",
+            expected_status="OK", family=6, subtype=0x27,
+            body_length=len(body_crs), body_hex=hx(body_crs))
+        i_pos += 1; i_rt += 1
+        add(id=f"DSB3_ING_CANCEL_RES_{tag}_TYPED", suite="DSB3", op="typed_record",
+            expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_crs),
+            value_hex=hx(val_crs))
+        i_pos += 1
+        seq += 1
+
+    # max TEXT_ID body
+    body_max = enc_ingress_body(
+        ordered_seq=seq, owner_seq=1, binding=3, kind=1, content=EMPTY_SHA,
+        generation=1, abs_dl=1000, grace=0, req_ev=1, svc=SVC_MAX,
+    )
+    key_max, _, val_max = ingress_typed(seq, body_max)
+    add(id="DSB3_ING_MAX_TEXT_ID", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_max), body_hex=hx(body_max),
+        notes="namespace/service/schema TEXT_ID length 63")
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_MAX_TEXT_ID_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x27, key_hex=hx(key_max),
+        value_hex=hx(val_max))
+    i_pos += 1
+    seq += 1
+
+    # EXISTING_DELIVERY binding on APPLICATION
+    body_exd = enc_ingress_body(
+        ordered_seq=seq, owner_seq=8, binding=2, kind=1, content=EMPTY_SHA,
+        generation=2, abs_dl=1500, grace=0, req_ev=2,
+    )
+    add(id="DSB3_ING_BINDING_EXISTING_DELIVERY", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_exd), body_hex=hx(body_exd))
+    i_pos += 1; i_rt += 1
+    seq += 1
+
+    # helper: body_hex = ORDERED_INGRESS body supplying prefix fields;
+    # subject_hex = payload bytes; retention_hex = evidence bytes (optional).
+    # payload_length in prefix is taken from subject length (not body blob).
+    sem_app = message_semantic_digest(
+        1, 0, txn1, att1, bytes(16), PARTY, TARGET, SVC_DS, EMPTY_SHA,
+        1, F["epoch"], 5000, 50, 3, 0, 0, 0, 0, 0, 0, bytes(16), 0, 0,
+        payload=b"", evidence=b"",
+    )
+    add(id="DSB3_MSD_ONESHOT_EMPTY", suite="DSB3", op="message_semantic_digest",
+        expected_status="OK", family=6, subtype=0x27,
+        body_hex=hx(body_app_ds), digest_hex=hx(sem_app),
+        notes="one-shot empty payload/evidence from body prefix")
+    i_pos += 1
+    pay = b"payload-bytes-01"
+    evi = b"ev" * 8  # 16 bytes
+    content_pay = sha256(pay)
+    # Non-zero payload blob path so body may carry content_pay without empty-sha rule.
+    body_stream_src = enc_ingress_body(
+        ordered_seq=90, owner_seq=1, binding=3, kind=1, content=content_pay,
+        generation=1, abs_dl=5000, grace=0, req_ev=3, payload_blob=nz_blob,
+        semantic=bytes([0x33] * 32),
+    )
+    sem_stream = message_semantic_digest(
+        1, 0, txn1, att1, bytes(16), PARTY, TARGET, SVC_DS, content_pay,
+        1, F["epoch"], 5000, 0, 3, 0, 0, 0, 0, 0, 0, bytes(16), 0, 0,
+        payload=pay, evidence=evi,
+    )
+    add(id="DSB3_MSD_STREAM_NONEMPTY", suite="DSB3", op="message_semantic_digest",
+        expected_status="OK", family=6, subtype=0x27,
+        body_hex=hx(body_stream_src), digest_hex=hx(sem_stream),
+        subject_hex=hx(pay), retention_hex=hx(evi),
+        notes="streaming multi-chunk payload+evidence")
+    i_pos += 1
+    evi128 = bytes([0xEE] * EVIDENCE_MAX)
+    body_evi_src = enc_ingress_body(
+        ordered_seq=91, owner_seq=1, binding=1, kind=2, generation=1,
+        abs_dl=5000, grace=0, req_ev=3, receipt=3, ev_ep=ev_clock,
+        ev_now=0, ev_trust=1, evidence_blob=nz_blob,
+        semantic=bytes([0x44] * 32),
+    )
+    sem_evi = message_semantic_digest(
+        2, 0, txn1, att1, bytes(16), PARTY, TARGET, SVC_DS, F["content"],
+        1, F["epoch"], 5000, 0, 3, 3, 0, 0, 0, 0, 0, ev_clock, 0, 1,
+        payload=b"", evidence=evi128,
+    )
+    add(id="DSB3_MSD_EVIDENCE_MAX", suite="DSB3", op="message_semantic_digest",
+        expected_status="OK", family=6, subtype=0x27,
+        body_hex=hx(body_evi_src), digest_hex=hx(sem_evi),
+        retention_hex=hx(evi128), notes="evidence length 128 streaming")
+    i_pos += 1
+
+    # --- negatives ---
+    add(id="DSB3_ING_SEQ0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(ordered_seq=0, content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_OWNER_SEQ0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(owner_seq=0, content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_BAD_BINDING_APP_TX", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(binding=1, kind=1, content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_BAD_BINDING_RCPT_NEW", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            binding=3, kind=2, generation=1, abs_dl=1000, receipt=2,
+            ev_ep=ev_clock, ev_trust=1)))
+    i_neg += 1
+    add(id="DSB3_ING_KIND0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(kind=0, content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_KIND7", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(kind=7, content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_FLAGS_NZ", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(flags=1, content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_TXN_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(txn=bytes(16), content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_ATTEMPT_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(attempt=bytes(16), content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_CONTENT_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(content=bytes(32))))
+    i_neg += 1
+    add(id="DSB3_ING_REQ_EV_NONE", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(req_ev=0, content=EMPTY_SHA)))
+    i_neg += 1
+    add(id="DSB3_ING_CANCEL_ON_EF", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=4, event=ev_id, generation=0, dl_ep=bytes(16),
+            abs_dl=NO_DEADLINE, grace=0, svc=SVC_EF)))
+    i_neg += 1
+    add(id="DSB3_ING_EF_FINITE_DEADLINE", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=1, event=ev_id, generation=0, content=EMPTY_SHA,
+            abs_dl=1000, grace=0, svc=SVC_EF, dl_ep=F["epoch"])))
+    i_neg += 1
+    add(id="DSB3_ING_DS_NO_DEADLINE", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=1, content=EMPTY_SHA, abs_dl=NO_DEADLINE, generation=1)))
+    i_neg += 1
+    add(id="DSB3_ING_APP_EMPTY_BAD_CONTENT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(content=F["content"])))  # not empty sha
+    i_neg += 1
+    # disposition illegal: RETRY_LATER with delay over max
+    add(id="DSB3_ING_DISP_DELAY_OVER", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=3, generation=1, abs_dl=1000, disp=1, cert=1, guidance=1,
+            retry_delay=MAX_RETRY_DELAY + 1)))
+    i_neg += 1
+    # disposition illegal combo
+    add(id="DSB3_ING_DISP_BAD_TUPLE", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=3, generation=1, abs_dl=1000, disp=1, cert=2, guidance=1,
+            retry_delay=0)))
+    i_neg += 1
+    # receipt stage zero
+    add(id="DSB3_ING_RECEIPT_STAGE0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=0, ev_ep=ev_clock,
+            ev_trust=1)))
+    i_neg += 1
+    # receipt evidence epoch zero
+    add(id="DSB3_ING_RECEIPT_EPOCH0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=bytes(16),
+            ev_trust=1)))
+    i_neg += 1
+    # payload blob on non-APPLICATION
+    add(id="DSB3_ING_PAYLOAD_BLOB_ON_RCPT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=ev_clock,
+            ev_trust=1, payload_blob=nz_blob, semantic=bytes([1] * 32))))
+    i_neg += 1
+    # evidence blob on APPLICATION
+    add(id="DSB3_ING_EVIDENCE_BLOB_ON_APP", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            content=EMPTY_SHA, evidence_blob=nz_blob, semantic=bytes([1] * 32))))
+    i_neg += 1
+    # non-zero blob path with zero semantic
+    add(id="DSB3_ING_BLOB_NZ_SEMANTIC_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            content=F["content"], payload_blob=nz_blob, semantic=bytes(32))))
+    i_neg += 1
+    # wrong reservation key digest
+    bad_res = enc_ingress_body(content=EMPTY_SHA, res_kd=bytes([0xFF] * 32))
+    add(id="DSB3_ING_BAD_RES_KD", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27, body_hex=hx(bad_res))
+    i_neg += 1
+    # wrong semantic recompute (empty path)
+    bad_sem = enc_ingress_body(content=EMPTY_SHA, semantic=bytes([0x5A] * 32))
+    add(id="DSB3_ING_BAD_SEMANTIC", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27, body_hex=hx(bad_sem))
+    i_neg += 1; i_mut += 1
+    # short / trailing
+    add(id="DSB3_ING_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(body_app_ds[:-1]))
+    i_neg += 1
+    add(id="DSB3_ING_TRAILING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(body_app_ds + b"\x00"))
+    i_neg += 1
+    # BTS
+    add(id="DSB3_ING_BUFFER_TOO_SMALL", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x27,
+        body_length=len(body_app_ds), body_hex=hx(body_app_ds), key_length=0)
+    i_neg += 1
+    # typed: key sequence mismatch
+    bad_key = ordered_ingress_key(be64(99))
+    add(id="DSB3_ING_SEQ_MISMATCH", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x27, key_hex=hx(bad_key),
+        value_hex=hx(val_app))
+    i_neg += 1
+    # typed: wrong primary_id
+    bad_pid_val = enc_env_full(
+        6, 0x27, 0, 1, bytes([0xFF] * 16), F["head_nz"], bytes(32), body_app_ds)
+    add(id="DSB3_ING_BAD_PRIMARY", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x27, key_hex=hx(key_app),
+        value_hex=hx(bad_pid_val))
+    i_neg += 1
+    # typed: revision != 1
+    bad_rev = enc_env_full(
+        6, 0x27, 0, 2, pid_app, F["head_nz"], bytes(32), body_app_ds)
+    add(id="DSB3_ING_REV_NE1", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x27, key_hex=hx(key_app),
+        value_hex=hx(bad_rev))
+    i_neg += 1
+    # typed: zero head
+    bad_head = enc_env_full(
+        6, 0x27, 0, 1, pid_app, bytes(32), bytes(32), body_app_ds)
+    add(id="DSB3_ING_ZERO_HEAD", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x27, key_hex=hx(key_app),
+        value_hex=hx(bad_head))
+    i_neg += 1
+    # typed: non-zero PVD
+    bad_pvd = enc_env_full(
+        6, 0x27, 0, 1, pid_app, F["head_nz"], F["pvd_nz"], body_app_ds)
+    add(id="DSB3_ING_NZ_PVD", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x27, key_hex=hx(key_app),
+        value_hex=hx(bad_pvd))
+    i_neg += 1
+    # typed: flags non-zero
+    bad_fl = enc_env_full(
+        6, 0x27, 1, 1, pid_app, F["head_nz"], bytes(32), body_app_ds)
+    add(id="DSB3_ING_HEADER_FLAGS", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x27, key_hex=hx(key_app),
+        value_hex=hx(bad_fl))
+    i_neg += 1
+    # ingress_state != 1
+    add(id="DSB3_ING_STATE_NE1", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(content=EMPTY_SHA, ingress_state=2)))
+    i_neg += 1
+    # reserved1 non-zero
+    add(id="DSB3_ING_RESERVED1", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(content=EMPTY_SHA, reserved1=1)))
+    i_neg += 1
+    # cancel result bad kind 2
+    add(id="DSB3_ING_CANCEL_RES_KIND2", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=6, generation=1, abs_dl=1000, cancel_kind=2)))
+    i_neg += 1
+    # party invalid: zero runtime
+    bad_party = party(bytes(16), F["app"], LI)
+    add(id="DSB3_ING_BAD_PARTY", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(content=EMPTY_SHA, src=bad_party)))
+    i_neg += 1
+    # MSD: evidence over max (129 bytes) — one-shot rejects
+    add(id="DSB3_MSD_EVIDENCE_OVERMAX", suite="DSB3",
+        op="message_semantic_digest", expected_status="INVALID_ARGUMENT",
+        family=6, subtype=0x27, body_hex=hx(body_app_ds),
+        retention_hex=hx(bytes(129)), digest_hex=hx(bytes(32)),
+        notes="evidence length 129 > 128")
+    i_neg += 1
+
+    b3_cov["27"] = add_body_suite(
+        "ORDERED_INGRESS", 6, 0x27, i_pos, i_neg, i_mut, i_rt)
+    assert b3_cov["27"]["positive"] >= 20
+    assert b3_cov["27"]["negative"] >= 25
+    assert b3_cov["27"]["roundtrip"] >= 6
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -2398,6 +2951,7 @@ def build_document():
         "dsb3_subtype_26_positive": b3_cov["26"]["positive"],
         "dsb3_total_positive": dsb3_pos,
         "dsb3_total_negative": dsb3_neg,
+        "dsb3_subtype_27_positive": b3_cov["27"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -2423,24 +2977,29 @@ def build_document():
     assert catalog["dsb2_total_positive"] > 0
     assert catalog["dsb2_total_negative"] > 0
     assert catalog["dsb3_subtype_26_positive"] > 0
+    assert catalog["dsb3_subtype_27_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
+    # First 530 vector objects must remain the pre-B3b catalog (append-only).
+    assert len([v for v in vectors if not v["id"].startswith("DSB3_ING_")
+                and not v["id"].startswith("DSB3_MSD_")]) == 530
 
     for v in vectors:
         assert v["required_workspace_bytes"] == 0
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3a",
+        "format": "ninlil-domain-store-v1-d1b3b",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25 service+txn admission) + D1-B3a body "
-            "(26 SCHEDULER_OWNER); not full D1 catalog"
+            "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
+            "message_semantic_digest helper; not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
-            "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a APIs have no "
-            "workspace parameter; value is 0."
+            "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b "
+            "APIs have no workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,
