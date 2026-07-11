@@ -97,6 +97,8 @@ Gate:
 - 全named commit/crash boundaryでall-or-none。
 - partial group、unknown schema、corruptionをsuccessへfallbackしない。
 
+PR 4の実装前に[17章](17-foundation-domain-store.md)のD0〜D3を独立境界として完了します。D0はNormative inventory、D1はpure codec/catalog、D2はbounded read-only scanner、D3はcounter/capacity/index/health相互validationです。D4 operation別convergence以降をSQLite writerと接続し、bootstrap-only orchestrationやempty scanをPR 4完了の代用にしません。
+
 ### PR 5: Reliable Command path
 
 成果物:

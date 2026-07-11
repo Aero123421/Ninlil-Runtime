@@ -319,7 +319,7 @@ Simulatorの`storage_commit_unknown` faultは、hidden ground truthとして`com
 Private key/value codec、17-record inventory、CRC32C、presence classificationの正本は12章6.2です。L2を次の独立release boundaryへ分けます。
 
 - L2a codec/bootstrap modelはPort call 0のpure C11です。Exact key golden、全record round-trip、big-endian boundary、CRC golden/1-bit mutation、short/long/trailing value、key/type mismatch、unknown version、17/17・0/17・各1-record missing/extra、profile各field mutation、identity exact/conflict/forward、counter/capacity local invariantを検査します。
-- L2b Storage orchestrationはL2aを唯一のbyte codecとして使用し、public ABIを追加しません。Generic business operation journal、transaction/Delivery/cycle codec、Clock durable baselineはL2b bootstrapへ混ぜません。
+- L2b Storage orchestrationはL2aを唯一のbootstrap byte codecとして使用し、public ABIを追加しません。Generic business operation journal、transaction/Delivery/cycle codec、Clock durable baselineはbootstrap groupへ混ぜず、[17章](17-foundation-domain-store.md)のD1以降で別familyとして実装します。
 
 L2b create Stage 5は次のexact orderです。
 
@@ -327,7 +327,7 @@ L2b create Stage 5は次のexact orderです。
 2. 1つのREAD_ONLY transaction snapshotで17 exact keysをunsigned-byte lexicographic順に`get`します。0/17の場合だけ0-byte prefix iteratorでnamespace全体がemptyか確認します。Iteratorをcloseし、rollback OKでtransactionをconsumeするまでloaded resultを採用しません。
 3. NewならREAD_WRITE transactionへ17 valuesを同じkey順でputし、HC13 before → `commit(FULL)` → OK時だけHC13 afterです。Identityを同じatomic groupへ含め、HC14 occurrenceは0です。Definite failureは全record non-commit、COMMIT_UNKNOWNはafter 0、transaction consumed、Storage close/fence、public `NINLIL_E_STORAGE_COMMIT_UNKNOWN`です。
 4. Existingなら17-record structural/integrity検査後にprofileをtyped exact比較します。Mismatchは`NINLIL_E_UNSUPPORTED`、write、identity rotation、domain recovery mutation、Bearer/Clock/Entropy call 0です。
-5. Exact profileだけがoperation journal/domain recovery scanへ進みます。4 counter/cursorとowner/index、11 capacity recordとdomain-derived used/reserved、durable health source markerを同じrecovered truthに対して検査します。Partial group、orphan、underflow/overflow、checksum/digest conflictはfail closedです。このdomain key inventoryとoperation-specific family 6 witnessは後続仕様が必要で、L2a successだけでStage 5全体をcompleteにしません。
+5. Exact profileだけが[17章](17-foundation-domain-store.md)のoperation witness/domain recovery scanへ進みます。4 counter/cursorとowner/index、11 capacity recordとdomain-derived used/reserved、durable health sourceを同じsnapshotで検査します。Partial group、orphan、underflow/overflow、checksum/digest conflictはfail closedです。D1 codec、D2 scanner、D3相互validation成功前はL2a/L2b1 successだけでStage 5全体をcompleteにしません。
 6. Recovery完了後にcurrent identityを比較します。Exactはwrite/hook 0、device anchor mismatchまたはchanged tupleのequal/regressive epochは`NINLIL_E_CONFLICT`、valid forward rotationはType 2だけを1 READ_WRITE/FULL transactionとHC14 pairで置換します。Rotation COMMIT_UNKNOWN後はold/new recordのauthoritative truthが決まるまでBearerをopenしません。
 7. Stage 5 durable markerだけからhealth referenceを再構成し、Storage priority 1/2がzeroの場合だけStage 9 publish gateへ渡します。Clock/provider/entropy/Bearerのinstance-local causeをcopyしません。
 
@@ -343,7 +343,7 @@ L2bはcompact L2a planからcaller-owned scratchへ1 recordずつencodeして`pu
 
 17 exact valueのencoded bytes、view、validated typed snapshot、bootstrap record scratchはcaller-owned bounded workspaceに置き、orchestratorの関数stackへaggregateを置きません。WorkspaceはRuntime instanceのallocator/arenaから確保し、同じinstanceのcreate中だけ単独利用します。Outputはworkspaceとaliasせず、failure時はoutcomeをnoneへ戻します。
 
-0/17時の0-byte prefix scanはnamespace全rowを終端まで分類します。Storage ABIの`iter_next`はkey/value atomic pairなので、固定scratchに対する`BUFFER_TOO_SMALL`ではkeyだけを採用してはなりません。CoreはPortが返したrequired key/value lengthがkey 1〜255 byte、value 0〜`NINLIL_M1A_MAX_STORAGE_VALUE_BYTES`内であることを検査し、必要なvalue bytesだけをRuntime Allocatorから一時確保して同じiterator rowを再読します。一時領域はrow分類直後にexact size/alignmentで解放し、常設workspaceやESP32 task stackへ最大value bufferを持ちません。Required shape違反、再読OK時のexact length変化、同じcapacityでの再度`BUFFER_TOO_SMALL`、再読`NOT_FOUND`、unknown statusまたはinvalid output shapeはcorruptです。再読のBUSY、NO_SPACE、IO、UNSUPPORTED_SCHEMA、COMMIT_UNKNOWNはclosed mappingを維持します。Allocator failureは`NINLIL_E_CAPACITY_EXHAUSTED`であり、loaded resultは採用しません。全rowがrecognizable futureだけならunsupported、current/unknown extraが1件でもあればcorrupt、futureとそれ以外の混在もcorruptです。Iteratorの各keyはstrict unsigned-byte lexicographic昇順かつ重複0をCoreでも検査し、0/17 get後にcurrent exact keyがiteratorへ現れる、duplicate/out-of-order、key length範囲外はcorruptです。
+0/17時の0-byte prefix scanはnamespace全rowを終端まで分類します。Storage ABIの`iter_next`はkey/value atomic pairなので、caller-owned key 255/value 4096-byte workspaceへの`BUFFER_TOO_SMALL`ではkeyだけを採用しません。Private namespaceはfuture rootを含めsingle value 4096 bytes以下がcontractで、required key>255またはvalue>4096はbytesを再読/推測せずcorruptです。65,536-byte temporary allocationは行いません。Unknown status/invalid output shapeはcorrupt、BUSY/NO_SPACE/IO/UNSUPPORTED_SCHEMA/COMMIT_UNKNOWNはclosed mappingを維持します。全rowがrecognizable futureだけならunsupported、current/unknown extraが1件でもあればcorrupt、futureとそれ以外の混在もcorruptです。Iteratorの各keyはstrict unsigned-byte lexicographic昇順かつ重複0をCoreでも検査し、0/17 get後にcurrent exact keyがiteratorへ現れる、duplicate/out-of-order、key length範囲外はcorruptです。
 
 READ_ONLY transactionはiterator明示close後の`rollback: OK`まで結果を採用しません。途中のprimary failure後もlive iteratorをcloseしてrollbackし、rollback failureはprimary statusを上書きせずcleanup diagnosticを残してhandleをclose/fenceします。Primaryなしのrollback failureはそのStorage statusをclosed mappingで返します。`commit`は全statusでtransactionをconsumeするためcommit後rollbackは0回です。`COMMIT_UNKNOWN`、rollback failure、out-handle shape violationではorchestratorがin/out Storage handleをcloseしてNULL化し、上位へreopen requiredを返します。
 
@@ -1169,8 +1169,8 @@ Retention vectors:
 | `RET2_PENDING_CLOCK` | retention-starting business commit時Clock uncertain、後にepoch A/t=500 trusted | Business stateはcommit、basis pending/cleanup wake0。t=500からfull durationをFULL設定後だけwake/cleanup |
 | `RET3_EPOCH_REBASE` | epoch A/delete=1000を保持中、epoch B/t=20へchange | A数値と比較せずB/t=20+full durationへ延長。Rebase commit失敗/unknownでdelete0、record保持 |
 | `RET4_OVERFLOW` | trusted now=UINT64_MAX-5、duration=10 | overflow flag、delete/wake0、record保持、health COUNTER_EXHAUSTED。Wrap/即時cleanup0 |
-| `RET5_ATOMIC_RELEASE` | terminal transactionにmapping/evidence/quota/resource、result cache、blocked flagを持たせcleanup | 対象retention groupごと1 FULL commit、partial delete0。Capacity improvementが該当すれば同commitでepoch+1/blocked clear |
-| `RET6_ATTEMPT_INDEX_BOUNDARY` | Application/cancel attemptを生成しterminal化、retention end前/at end、cleanup COMMIT_UNKNOWN両truth、同じscripted candidateを再draw | Terminal前/retention中/cleanup OK前はcollision。Unused cancel reservationとremote echoはindex 0。Cleanupはparent/全attempt index all-or-none、OK後だけsame 128-bit candidate再利用可。Unknown解決前はfence、orphan/early reuse/double delete 0 |
+| `RET5_ATOMIC_RELEASE` | terminal transactionにmapping/evidence/quota/resource、result cache、blocked flagを持たせcleanup | CLEANUP_PLAN batch中はportable resource維持、FINALIZE 1 FULLでmapping/evidence/primary/resource releaseとepoch+1/blocked clear。Planなしpartial delete 0 |
+| `RET6_ATTEMPT_INDEX_BOUNDARY` | Application/cancel attemptを生成しterminal化、retention end前/at end、各cleanup batch COMMIT_UNKNOWN両truth、同じscripted candidateを再draw | Terminal/plan前はcollision。Detail bounded delete後、index phaseはreuse fenceでnew attempt allocation 0。全index+FINALIZE authoritative OK後だけsame candidate再利用可。Orphan/early reuse/double delete 0 |
 
 ### Crashとrestart
 

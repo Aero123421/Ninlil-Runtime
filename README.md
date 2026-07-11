@@ -21,6 +21,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Stage1 successだけが発行するheader/pointer-free accepted-config projectionからcanonical binding/identity、17-record presence/integrity、profile/identity decision、compact lazy bootstrap planを作るRuntime Store L2a2 pure model
 - Lifecycle/Runtime Store Coreをpublic `ninlil`とTEST fixtureから分離し、subprojectでも単独buildできる非export `ninlil_runtime_private` STATIC target
 - 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
+- Domain Store v1のfamily 5/6 catalog、4KiB record/3KiB chunk上限、最大256-member atomic witness、backlink/capacity/health/recovery順を固定したNormative D0仕様
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
@@ -34,6 +35,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
 - restart-safe SQLite portとproduction durable storage
 - Runtime Storeのdomain journal recovery、counter/capacity相互検証、identity rotationとpublic Runtime bodyへの統合
+- Domain Store D1 pure codec、D2 bounded scanner、D3相互validation、D4 operation別commit-unknown convergence
 - end-to-endのReliable Command / Durable Event path
 - ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
 - Display node / Leak nodeを使う実機end-to-end検証
@@ -112,7 +114,7 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは50件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは51件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
 
 ## Portabilityとversioning
 

@@ -1,6 +1,6 @@
 # Ninlil Documentation
 
-状態: M0 specification baseline complete / M1a implementation-ready (pre-alpha)<br>
+状態: M0 public baseline complete / M1a Domain Store D0 fixed, D1+ pre-alpha<br>
 対象release: Foundation / pre-alpha
 
 ## 正本と優先順位
@@ -50,10 +50,11 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 14 | [Foundation Ports and Simulator](14-foundation-ports-and-simulator.md) | storage/bearer/clock、fixture、canonical encoding |
 | 15 | [Glossary](15-glossary.md) | 仕様・実装・UIで共有する語彙と誤解しやすい境界 |
 | 16 | [Foundation Implementation Plan](16-foundation-implementation-plan.md) | M1aを検証可能な連続PRへ分ける実装順 |
+| 17 | [Foundation Domain Store v1](17-foundation-domain-store.md) | private domain record、atomic witness、recovery、capacity再計算 |
 
 ## 実装開始条件
 
-Foundation実装は、次を満たしてから開始します。2026-07-10 baselineでは全項目を満たしており、[16章](16-foundation-implementation-plan.md)のPR 1から開始できます。
+Foundation実装は次を満たしてから各sliceを開始します。Public ABI/reducer/bootstrap sliceは開始済みですが、Stage 5 domain recovery以降は[17章](17-foundation-domain-store.md)のD0 gateを先に満たします。
 
 - 00〜14の重大な矛盾がない。
 - Foundationで固定するpublic type、state transition、error、resource limit、storage transactionが明記されている。
