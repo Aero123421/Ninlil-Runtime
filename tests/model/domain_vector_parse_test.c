@@ -285,7 +285,7 @@ int main(void)
         (void)snprintf(ok, sizeof(ok),
             "{\n"
             "  \"version\": 1,\n"
-            "  \"format\": \"ninlil-domain-store-v1-d1b3f\",\n"
+            "  \"format\": \"ninlil-domain-store-v1-d1b3f-r1\",\n"
             "  \"scope\": \"%s\",\n"
             "  %s,\n"
             "  %s,\n"

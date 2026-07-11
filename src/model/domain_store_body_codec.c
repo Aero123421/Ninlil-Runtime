@@ -1886,6 +1886,7 @@ static int ordered_ingress_fields_ok(
         || body->owner_sequence == 0u
         || body->reserved0 != 0u
         || body->reserved1 != 0u
+        || body->controller_ingress_reserved != 0u
         || body->message_flags != 0u
         || !bearer_message_kind_is_known(body->message_kind)
         || !ingress_binding_ok_for_kind(
@@ -1944,13 +1945,18 @@ static int ordered_ingress_fields_ok(
             || body->cancel_kind != 0u
             || !id_is_zero(body->evidence_clock_epoch)
             || body->evidence_now_ms != 0u
-            || body->evidence_trust != 0u) {
+            || body->evidence_trust != 0u
+            || !id_is_zero(body->controller_ingress_clock_epoch)
+            || body->controller_ingress_at_ms != 0u
+            || body->controller_ingress_trust != 0u) {
             return 0;
         }
     } else if (is_receipt) {
         /*
          * receipt_stage: known non-zero only. SERVICE supported-mask match
          * is D3 (requires live SERVICE row); not proven here.
+         * controller_ingress_*: local durable-copy sample (docs17 §8.3);
+         * epoch non-zero, trust TRUSTED/UNCERTAIN, at_ms 0 valid.
          */
         if (body->receipt_stage == NINLIL_EVIDENCE_NONE
             || !evidence_stage_is_known(body->receipt_stage)
@@ -1961,8 +1967,10 @@ static int ordered_ingress_fields_ok(
                 body->retry_delay_ms)
             || body->cancel_kind != 0u
             || id_is_zero(body->evidence_clock_epoch)
-            || !clock_trust_is_known(body->evidence_trust)) {
-            /* evidence_now_ms == 0 is a valid monotonic sample (docs17). */
+            || !clock_trust_is_known(body->evidence_trust)
+            || id_is_zero(body->controller_ingress_clock_epoch)
+            || !clock_trust_is_known(body->controller_ingress_trust)) {
+            /* evidence_now_ms / controller_ingress_at_ms == 0 valid. */
             return 0;
         }
     } else if (is_disp) {
@@ -1975,7 +1983,10 @@ static int ordered_ingress_fields_ok(
             || body->cancel_kind != 0u
             || !id_is_zero(body->evidence_clock_epoch)
             || body->evidence_now_ms != 0u
-            || body->evidence_trust != 0u) {
+            || body->evidence_trust != 0u
+            || !id_is_zero(body->controller_ingress_clock_epoch)
+            || body->controller_ingress_at_ms != 0u
+            || body->controller_ingress_trust != 0u) {
             return 0;
         }
     } else if (is_cancel_res) {
@@ -1989,7 +2000,10 @@ static int ordered_ingress_fields_ok(
                 && body->cancel_kind != NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE)
             || !id_is_zero(body->evidence_clock_epoch)
             || body->evidence_now_ms != 0u
-            || body->evidence_trust != 0u) {
+            || body->evidence_trust != 0u
+            || !id_is_zero(body->controller_ingress_clock_epoch)
+            || body->controller_ingress_at_ms != 0u
+            || body->controller_ingress_trust != 0u) {
             return 0;
         }
     } else {
@@ -2003,7 +2017,10 @@ static int ordered_ingress_fields_ok(
             || body->cancel_kind != 0u
             || !id_is_zero(body->evidence_clock_epoch)
             || body->evidence_now_ms != 0u
-            || body->evidence_trust != 0u) {
+            || body->evidence_trust != 0u
+            || !id_is_zero(body->controller_ingress_clock_epoch)
+            || body->controller_ingress_at_ms != 0u
+            || body->controller_ingress_trust != 0u) {
             return 0;
         }
     }
@@ -4540,8 +4557,11 @@ uint32_t ninlil_model_domain_body_ordered_ingress_encoded_length(
     if (svc == 0u) {
         return 0u;
     }
-    /* fixed before service = 276; after service = 268 (docs17 §8.3 layout). */
-    n = 276u + svc + 268u;
+    /*
+     * fixed before service = 276; after service = 300 (docs17 §8.3 layout
+     * with controller_ingress_* 32-byte block after reserved1).
+     */
+    n = 276u + svc + 300u;
     if (n > NINLIL_MODEL_DOMAIN_BODY_ORDERED_INGRESS_MAX) {
         return 0u;
     }
@@ -4622,6 +4642,17 @@ ninlil_status_t ninlil_model_domain_encode_body_ordered_ingress(
     o += 4u;
     ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reserved1);
     o += 4u;
+    (void)memcpy(&out_bytes[o], body->controller_ingress_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->controller_ingress_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->controller_ingress_trust);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->controller_ingress_reserved);
+    o += 4u;
     (void)memcpy(&out_bytes[o], body->message_semantic_digest, 32u);
     o += 32u;
     (void)memcpy(&out_bytes[o], body->payload_blob_key_digest, 32u);
@@ -4649,7 +4680,7 @@ ninlil_status_t ninlil_model_domain_decode_body_ordered_ingress(
     }
     (void)memset(out_body, 0, sizeof(*out_body));
     if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
-        || encoded.length < 276u + 54u + 268u
+        || encoded.length < 276u + 54u + 300u
         || encoded.length > NINLIL_MODEL_DOMAIN_BODY_ORDERED_INGRESS_MAX) {
         return NINLIL_E_STORAGE_CORRUPT;
     }
@@ -4672,7 +4703,7 @@ ninlil_status_t ninlil_model_domain_decode_body_ordered_ingress(
         return NINLIL_E_STORAGE_CORRUPT;
     }
     o += c;
-    if (encoded.length - o < 268u) {
+    if (encoded.length - o < 300u) {
         return NINLIL_E_STORAGE_CORRUPT;
     }
     (void)memcpy(tmp.content_digest, &encoded.data[o], 32u);
@@ -4707,6 +4738,17 @@ ninlil_status_t ninlil_model_domain_decode_body_ordered_ingress(
     tmp.evidence_trust = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
     o += 4u;
     tmp.reserved1 = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.controller_ingress_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.controller_ingress_at_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.controller_ingress_trust =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.controller_ingress_reserved =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
     o += 4u;
     (void)memcpy(tmp.message_semantic_digest, &encoded.data[o], 32u);
     o += 32u;
