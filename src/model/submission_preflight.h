@@ -113,6 +113,7 @@ typedef struct ninlil_model_origin_grant_snapshot {
     uint64_t evaluated_at_ms;
     uint64_t valid_from_ms;
     uint64_t expires_at_ms;
+    uint64_t retry_delay_ms;
     uint32_t max_payload_bytes;
     uint32_t max_active_spool_count;
     uint64_t max_active_spool_bytes;
