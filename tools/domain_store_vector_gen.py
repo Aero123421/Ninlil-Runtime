@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a..i vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..k vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..i
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..k
 are hand-written here and intentionally do not import or link production C.
 
 D1 pre-alpha operation identity correction: kind 9/10 identities are exact 42
@@ -8098,6 +8098,351 @@ def build_document():
     # silence unused if any
     _ = (b_max_i_only,)
 
+    # =====================================================================
+    # D1-B3k EVENT_SPOOL (0x50) — after REVERSE_REPLY; preserve pre-B3k.
+    # =====================================================================
+    PRE_B3K_VECTOR_COUNT = len(vectors)
+    PRE_B3K_VECTOR_COUNT_SNAPSHOT = PRE_B3K_VECTOR_COUNT
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_RR_DLV_LEN79"
+    assert all(
+        not v["id"].startswith("DSB3_ES_")
+        for v in vectors
+    )
+    PRE_B3K_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    # Pin of vectors[0:PRE_B3K] at B3k cutover (full pre-B3k catalog incl. B3j).
+    PRE_B3K_FULL_FINGERPRINT_PIN = (
+        "3565484fdc9461d1a112c4ba833625fcada4706f1ae6ebf7e7ca86130adf1c06"
+    )
+    assert PRE_B3K_FULL_FINGERPRINT == PRE_B3K_FULL_FINGERPRINT_PIN, (
+        f"pre-B3k full fingerprint drift: got {PRE_B3K_FULL_FINGERPRINT}"
+    )
+
+    # EVENT_SPOOL private enums (docs17 §8.6 D1-B3k).
+    SS_ACTIVE = 1
+    SS_PARKED = 2
+    SS_RELEASED = 3
+    SS_DISCARDED = 4
+    PC_NONE = 0
+    PC_CYCLE = 1
+    PC_BEARER = 2
+    PC_CAPACITY = 3
+    PC_APP = 4
+    PC_COUNTER = 5
+    es_head = bytes([0xE1] * 32)
+    es_pvd = bytes([0xE2] * 32)  # secondary: non-zero PVD
+    es_payload = bytes([0xE3] * 32)
+    es_decision = bytes([0xE4] * 32)
+    es_event = bytes([0xB1] + [0] * 14 + [0xB2])
+    es_provider = bytes([0xC1] + [0] * 14 + [0xC2])
+    es_grant = bytes([0xD1] + [0] * 14 + [0xD2])
+    es_epoch = bytes([0xF1] + [0] * 14 + [0xF2])
+    es_txn = txn  # shared fixture transaction id
+
+    def es_reservation_digest(tx: bytes) -> bytes:
+        assert len(tx) == 16
+        # KEY_DIGEST(complete RESERVATION key): owner_kind=2 || RAW16(tx)
+        return complete_key_digest_composite(0x23, be16(2) + raw16(tx))
+
+    def es_key(tx: bytes) -> bytes:
+        return bkey(6, 0x50, 2, tx)
+
+    def enc_event_spool_body(
+        tx=None,
+        event=None,
+        rev=1,
+        state=SS_ACTIVE,
+        cause=PC_NONE,
+        retry_cycle=1,
+        payload=None,
+        provider=None,
+        provider_rev=1,
+        decision=None,
+        grant=None,
+        grant_rev=1,
+        clock_epoch=None,
+        evaluated_at=0,
+        valid_from=0,
+        expires_at=0,
+        retry_delay=0,
+        limit_payload=0,
+        limit_count=0,
+        limit_bytes=0,
+        window_ms=0,
+        max_adm=0,
+        attempts=0,
+        last_seen=0,
+        last_consumed=0,
+        resume=0,
+        discard=0,
+        res_dig=None,
+    ) -> bytes:
+        if tx is None:
+            tx = es_txn
+        if event is None:
+            event = es_event
+        if payload is None:
+            payload = es_payload
+        if provider is None:
+            provider = es_provider
+        if decision is None:
+            decision = es_decision
+        if grant is None:
+            grant = es_grant
+        if clock_epoch is None:
+            clock_epoch = es_epoch
+        if res_dig is None:
+            res_dig = es_reservation_digest(tx)
+        out = bytearray()
+        out += tx
+        out += event
+        out += be64(rev)
+        out += be32(state)
+        out += be32(cause)
+        out += be64(retry_cycle)
+        out += payload
+        out += provider
+        out += be64(provider_rev)
+        out += decision
+        out += grant
+        out += be64(grant_rev)
+        out += clock_epoch
+        out += be64(evaluated_at)
+        out += be64(valid_from)
+        out += be64(expires_at)
+        out += be64(retry_delay)
+        out += be32(limit_payload)
+        out += be32(limit_count)
+        out += be64(limit_bytes)
+        out += be32(window_ms)
+        out += be32(max_adm)
+        out += be32(attempts)
+        out += be64(last_seen)
+        out += be64(last_consumed)
+        out += be32(resume)
+        out += be32(discard)
+        out += res_dig
+        assert len(out) == 300, len(out)
+        return bytes(out)
+
+    def event_spool_typed(body=None, rev=None, flags=0, primary_id=None,
+                          head=None, pvd=None, key=None):
+        if body is None:
+            body = enc_event_spool_body()
+        body_tx = body[0:16]
+        body_rev = struct.unpack(">Q", body[32:40])[0]
+        if rev is None:
+            rev = body_rev
+        if primary_id is None:
+            primary_id = body_tx
+        if head is None:
+            head = es_head
+        if pvd is None:
+            pvd = es_pvd
+        if key is None:
+            key = es_key(body_tx)
+        val = enc_env_full(6, 0x50, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    es_pos = 0
+    es_neg = 0
+    es_mut = 0
+    es_rt = 0
+
+    def add_es_pos(vid, body, notes=""):
+        nonlocal es_pos, es_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x50, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        es_pos += 1
+        es_rt += 1
+
+    def add_es_pos_typed(vid, body, notes="", rev=None):
+        nonlocal es_pos
+        key, val, _ = event_spool_typed(body=body, rev=rev)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x50, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        es_pos += 1
+
+    def add_es_neg(vid, body, notes=""):
+        nonlocal es_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x50, body_hex=hx(body), notes=notes)
+        es_neg += 1
+
+    def add_es_neg_typed(vid, key, val, notes=""):
+        nonlocal es_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x50, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        es_neg += 1
+
+    # --- positives: ACTIVE / PARKED (each cause) / RELEASED / DISCARDED ---
+    b_active = enc_event_spool_body(
+        state=SS_ACTIVE, cause=PC_NONE, resume=0, discard=0)
+    add_es_pos("DSB3_ES_ACTIVE", b_active, "state ACTIVE cause NONE resume0")
+    add_es_pos_typed("DSB3_ES_ACTIVE_TYPED", b_active)
+
+    for cause, tag in (
+        (PC_CYCLE, "CYCLE"),
+        (PC_BEARER, "BEARER"),
+        (PC_CAPACITY, "CAPACITY"),
+        (PC_APP, "APP"),
+        (PC_COUNTER, "COUNTER"),
+    ):
+        b = enc_event_spool_body(
+            state=SS_PARKED, cause=cause, resume=1, discard=0)
+        add_es_pos(f"DSB3_ES_PARKED_{tag}", b,
+                   f"PARKED_RETRY cause {cause}")
+        if cause == PC_CYCLE:
+            add_es_pos_typed("DSB3_ES_PARKED_CYCLE_TYPED", b)
+
+    b_released = enc_event_spool_body(
+        state=SS_RELEASED, cause=PC_NONE, resume=3, discard=0)
+    add_es_pos("DSB3_ES_RELEASED", b_released, "RELEASED cause NONE")
+    add_es_pos_typed("DSB3_ES_RELEASED_TYPED", b_released)
+
+    b_discarded = enc_event_spool_body(
+        state=SS_DISCARDED, cause=PC_NONE, resume=2, discard=1)
+    add_es_pos("DSB3_ES_DISCARDED", b_discarded, "DISCARDED discard=1")
+    add_es_pos_typed("DSB3_ES_DISCARDED_TYPED", b_discarded)
+
+    # resume 0 already covered; resume 8 boundary
+    b_resume8 = enc_event_spool_body(
+        state=SS_ACTIVE, cause=PC_NONE, resume=8, discard=0)
+    add_es_pos("DSB3_ES_RESUME8", b_resume8, "successful_resume_count=8")
+    add_es_pos_typed("DSB3_ES_RESUME8_TYPED", b_resume8)
+
+    # revision relation: common rev == spool_revision (incl. large)
+    b_rev7 = enc_event_spool_body(rev=7, state=SS_ACTIVE, cause=PC_NONE)
+    add_es_pos("DSB3_ES_REV7", b_rev7, "spool_revision=7")
+    add_es_pos_typed("DSB3_ES_REV7_TYPED", b_rev7, rev=7)
+
+    # --- negatives: length 299 / 301 / trailing ---
+    add_es_neg("DSB3_ES_LEN299", b_active[:-1], "body 299 short")
+    add_es_neg("DSB3_ES_LEN301", b_active + b"\x00", "body 301 trailing byte")
+
+    # zero transaction / event
+    add_es_neg("DSB3_ES_TX_ZERO",
+               enc_event_spool_body(tx=bytes(16)), "transaction_id zero")
+    add_es_neg("DSB3_ES_EVENT_ZERO",
+               enc_event_spool_body(event=bytes(16)), "event_id zero")
+
+    # unknown state / cause
+    add_es_neg("DSB3_ES_STATE0",
+               enc_event_spool_body(state=0, cause=PC_NONE), "unknown state 0")
+    add_es_neg("DSB3_ES_STATE5",
+               enc_event_spool_body(state=5, cause=PC_NONE), "unknown state 5")
+    add_es_neg("DSB3_ES_CAUSE6",
+               enc_event_spool_body(state=SS_PARKED, cause=6),
+               "unknown park_cause 6")
+
+    # illegal state-cause matrix
+    add_es_neg("DSB3_ES_ACTIVE_CAUSE1",
+               enc_event_spool_body(state=SS_ACTIVE, cause=PC_CYCLE),
+               "ACTIVE requires cause NONE")
+    add_es_neg("DSB3_ES_RELEASED_CAUSE2",
+               enc_event_spool_body(state=SS_RELEASED, cause=PC_BEARER),
+               "RELEASED requires cause NONE")
+    add_es_neg("DSB3_ES_DISCARDED_CAUSE3",
+               enc_event_spool_body(
+                   state=SS_DISCARDED, cause=PC_CAPACITY, discard=1),
+               "DISCARDED requires cause NONE")
+    add_es_neg("DSB3_ES_PARKED_CAUSE0",
+               enc_event_spool_body(state=SS_PARKED, cause=PC_NONE),
+               "PARKED_RETRY requires cause 1..5")
+
+    # retry_cycle 0
+    add_es_neg("DSB3_ES_RETRY0",
+               enc_event_spool_body(retry_cycle=0), "retry_cycle_id 0")
+
+    # payload digest zero
+    add_es_neg("DSB3_ES_PAYLOAD_ZERO",
+               enc_event_spool_body(payload=bytes(32)),
+               "payload_blob_key_digest zero")
+
+    # resume 9
+    add_es_neg("DSB3_ES_RESUME9",
+               enc_event_spool_body(resume=9), "successful_resume_count 9")
+
+    # discard invalid / iff mismatch
+    add_es_neg("DSB3_ES_DISCARD2",
+               enc_event_spool_body(discard=2), "discard_committed 2")
+    add_es_neg("DSB3_ES_DISCARD1_ACTIVE",
+               enc_event_spool_body(
+                   state=SS_ACTIVE, cause=PC_NONE, discard=1),
+               "discard=1 requires DISCARDED")
+    add_es_neg("DSB3_ES_DISCARD0_DISCARDED",
+               enc_event_spool_body(
+                   state=SS_DISCARDED, cause=PC_NONE, discard=0),
+               "DISCARDED requires discard=1")
+
+    # wrong reservation digest (arbitrary non-matching 32 bytes)
+    add_es_neg("DSB3_ES_RES_DIGEST_WRONG",
+               enc_event_spool_body(res_dig=bytes([0xAA] * 32)),
+               "reservation_key_digest not KEY_DIGEST(RESERVATION)")
+    # independent oracle negative: bare COMPOSITE(RESERVATION, owner||RAW16)
+    # is not KEY_DIGEST(complete RESERVATION key)
+    bare_res = composite(0x23, be16(2) + raw16(es_txn))
+    assert bare_res != es_reservation_digest(es_txn)
+    assert len(bare_res) == 32
+    add_es_neg(
+        "DSB3_ES_RES_DIGEST_BARE_COMPOSITE",
+        enc_event_spool_body(res_dig=bare_res),
+        "bare COMPOSITE(RESERVATION, owner_kind=2||RAW16(tx)) "
+        "is not KEY_DIGEST(complete key)")
+
+    # spool_revision 0 (body-local)
+    add_es_neg("DSB3_ES_SPOOL_REV0",
+               enc_event_spool_body(rev=0), "spool_revision 0")
+
+    # mutation: valid ACTIVE body → unknown state at exact spool_state locus
+    # wire: tx16 + event16 + rev8 = offset 40; spool_state is u32 BE
+    bb_mut = bytearray(b_active)
+    assert len(bb_mut) == 300
+    assert bb_mut[40:44] == be32(SS_ACTIVE), "locus: spool_state @40"
+    bb_mut[40:44] = be32(99)
+    assert bb_mut[40:44] == be32(99)
+    add(id="DSB3_ES_MUT_STATE", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x50,
+        body_hex=hx(bytes(bb_mut)),
+        notes="mutation unknown state at spool_state locus")
+    es_mut += 1
+
+    # typed common header negatives
+    k_ok, v_ok, _ = event_spool_typed(body=b_active)
+    v_pvd0 = enc_env_full(6, 0x50, 0, 1, es_txn, es_head, bytes(32), b_active)
+    add_es_neg_typed("DSB3_ES_PVD_ZERO", es_key(es_txn), v_pvd0,
+                     "secondary PVD zero")
+    v_head0 = enc_env_full(6, 0x50, 0, 1, es_txn, bytes(32), es_pvd, b_active)
+    add_es_neg_typed("DSB3_ES_HEAD_ZERO", es_key(es_txn), v_head0, "head zero")
+    v_pm = enc_env_full(6, 0x50, 0, 1, bytes([0x11] * 16), es_head, es_pvd,
+                        b_active)
+    add_es_neg_typed("DSB3_ES_PRIMARY_MISMATCH", es_key(es_txn), v_pm,
+                     "primary_id mismatch")
+    # revision relation: header rev != spool_revision
+    v_rev_mismatch = enc_env_full(
+        6, 0x50, 0, 2, es_txn, es_head, es_pvd, b_active)  # body rev=1
+    add_es_neg_typed("DSB3_ES_REV_MISMATCH", es_key(es_txn), v_rev_mismatch,
+                     "record_revision != spool_revision")
+    v_flags = enc_env_full(6, 0x50, 1, 1, es_txn, es_head, es_pvd, b_active)
+    add_es_neg_typed("DSB3_ES_FLAGS_NZ", es_key(es_txn), v_flags,
+                     "common flags nonzero")
+    # key ID128 != body transaction
+    wrong_key = es_key(bytes([0xEE] * 16))
+    add_es_neg_typed("DSB3_ES_KEY_TX_MISMATCH", wrong_key, v_ok,
+                     "key ID128 != body transaction_id")
+
+    b3_cov["50"] = add_body_suite(
+        "EVENT_SPOOL", 6, 0x50, es_pos, es_neg, es_mut, es_rt)
+    assert b3_cov["50"]["positive"] >= 12
+    assert b3_cov["50"]["negative"] >= 20
+    assert b3_cov["50"]["mutation"] >= 1
+    assert b3_cov["50"]["roundtrip"] >= 6
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -8160,6 +8505,7 @@ def build_document():
         "dsb3_subtype_40_positive": b3_cov["40"]["positive"],
         "dsb3_subtype_41_positive": b3_cov["41"]["positive"],
         "dsb3_subtype_42_positive": b3_cov["42"]["positive"],
+        "dsb3_subtype_50_positive": b3_cov["50"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -8194,6 +8540,7 @@ def build_document():
     assert catalog["dsb3_subtype_40_positive"] > 0
     assert catalog["dsb3_subtype_41_positive"] > 0
     assert catalog["dsb3_subtype_42_positive"] > 0
+    assert catalog["dsb3_subtype_50_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
     # Structural: CS/AII/ATT/EV/RC only after their pre-slice.
@@ -8204,6 +8551,10 @@ def build_document():
     assert all(
         not v["id"].startswith("DSB3_RR_")
         for v in vectors[:PRE_B3J_VECTOR_COUNT_SNAPSHOT]
+    )
+    assert all(
+        not v["id"].startswith("DSB3_ES_")
+        for v in vectors[:PRE_B3K_VECTOR_COUNT_SNAPSHOT]
     )
     assert all(
         not v["id"].startswith("DSB3_DLV_")
@@ -8227,6 +8578,11 @@ def build_document():
     )
     # Kind9/10 42-byte re-pin changes early DSO2/DSW1 vectors inside pre-B3h.
     # Full prefix fingerprint is re-pinned at B3i cutover; stable 1025 checked above.
+    _pre_b3k_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3K_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3k_fp_final == PRE_B3K_FULL_FINGERPRINT_PIN, (
+        f"post-append pre-B3k full fingerprint drift: got {_pre_b3k_fp_final}"
+    )
     _pre_b3j_fp_final = vectors_fingerprint(
         vectors[:PRE_B3J_VECTOR_COUNT_SNAPSHOT])
     assert _pre_b3j_fp_final == PRE_B3J_FULL_FINGERPRINT_PIN, (
@@ -8289,7 +8645,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3j",
+        "format": "ninlil-domain-store-v1-d1b3k",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -8300,13 +8656,14 @@ def build_document():
             "D1-B3g body (32 EVIDENCE_CELL) + D1-B3h body (40 DELIVERY) + "
             "D1-B3i body (41 RESULT_CACHE; D1 pre-alpha operation identity "
             "correction kind9/10 phase) + D1-B3j body (42 REVERSE_REPLY "
-            "exact330/state matrix); not full D1 catalog"
+            "exact330/state matrix) + D1-B3k body (50 EVENT_SPOOL "
+            "exact300/state-cause matrix); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j APIs have no "
-            "workspace parameter; value is 0."
+            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j/D1-B3k APIs "
+            "have no workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,

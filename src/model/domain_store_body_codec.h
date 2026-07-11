@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..h.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..k.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -31,6 +31,8 @@ extern "C" {
  *          (live DELIVERY PVD / reply_count / ATTEMPT cardinality are D3)
  *   D1-B3j: family 6 42 REVERSE_REPLY pure body + same-record state matrix
  *          (live DELIVERY/BLOB/semantic recompute/reply_count are D3)
+ *   D1-B3k: family 6 50 EVENT_SPOOL pure body + same-record state×cause
+ *          (live ANCHOR PVD / grant re-verify / BLOB cardinality are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -84,6 +86,10 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_REPLY_KEY_CONTENTS_BYTES ((uint16_t)86u)
 #define NINLIL_MODEL_DOMAIN_RAW16_REPLY_KEY_MAX ((uint32_t)192u)
 #define NINLIL_MODEL_DOMAIN_RAW16_DELIVERY_KEY_MAX ((uint32_t)128u)
+/* EVENT_SPOOL (0x50): exact fixed 300; subtype max 1536 (docs17 §8.6 D1-B3k). */
+#define NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_BYTES ((uint32_t)300u)
+#define NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_MAX ((uint32_t)1536u)
+#define NINLIL_MODEL_DOMAIN_EVENT_SPOOL_RESUME_MAX ((uint32_t)8u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_SERVICE_SLOT_BYTES ((uint32_t)240u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
@@ -274,6 +280,12 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_SENT_OR_UNKNOWN ((uint32_t)3u)
 #define NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_DENIED ((uint32_t)4u)
 #define NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_COUNTER_EXHAUSTED ((uint32_t)5u)
+
+/* EVENT_SPOOL private enums (docs17 §7.1 / §8.6 D1-B3k). */
+#define NINLIL_MODEL_DOMAIN_SPOOL_STATE_ACTIVE ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_SPOOL_STATE_PARKED_RETRY ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_SPOOL_STATE_RELEASED ((uint32_t)3u)
+#define NINLIL_MODEL_DOMAIN_SPOOL_STATE_DISCARDED ((uint32_t)4u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -844,6 +856,43 @@ typedef struct ninlil_model_domain_body_reverse_reply {
 } ninlil_model_domain_body_reverse_reply_t;
 
 /*
+ * EVENT_SPOOL (0x50). Exact 300-byte fixed body (docs17 §8.6 D1-B3k).
+ * reservation_key_digest = KEY_DIGEST(complete RESERVATION key with
+ * owner_kind=TRANSACTION(2) || owner_key_raw:RAW16(tx exact 16)).
+ * Live ANCHOR PVD / grant re-verify / payload BLOB cardinality are D3.
+ */
+typedef struct ninlil_model_domain_body_event_spool {
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t spool_revision;
+    uint32_t spool_state;
+    uint32_t park_cause;
+    uint64_t retry_cycle_id;
+    uint8_t payload_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t provider_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t provider_revision;
+    uint8_t decision_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t grant_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t grant_revision;
+    uint8_t decision_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t evaluated_at_ms;
+    uint64_t valid_from_ms;
+    uint64_t expires_at_ms;
+    uint64_t provider_retry_delay_ms;
+    uint32_t grant_limit_payload;
+    uint32_t grant_limit_active_count;
+    uint64_t grant_limit_active_bytes;
+    uint32_t grant_window_ms;
+    uint32_t grant_max_admissions_per_window;
+    uint32_t grant_attempts_per_cycle;
+    uint64_t last_seen_availability_epoch;
+    uint64_t last_consumed_availability_epoch;
+    uint32_t successful_resume_count;
+    uint32_t discard_committed;
+    uint8_t reservation_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_event_spool_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -949,6 +998,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_delivery_t delivery;
         ninlil_model_domain_body_result_cache_t result_cache;
         ninlil_model_domain_body_reverse_reply_t reverse_reply;
+        ninlil_model_domain_body_event_spool_t event_spool;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1397,6 +1447,21 @@ ninlil_status_t ninlil_model_domain_decode_body_reverse_reply(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_reverse_reply_t *out_body);
 
+/* --- EVENT_SPOOL (0x50) --- */
+/* Returns exact 300, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_event_spool_encoded_length(
+    const ninlil_model_domain_body_event_spool_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_event_spool(
+    const ninlil_model_domain_body_event_spool_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_event_spool(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_event_spool_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1442,7 +1507,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..j.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..k.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1494,7 +1559,11 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       REVERSE_REPLY live DELIVERY PVD / REPLY BLOB manifest/chunks/content /
  *       semantic digest recompute / RESULT_CACHE.reply_count / kind exact1 /
  *       attempt/RESULT/CANCEL binding / kind6 witness member-set / reopen
- *       E2E / retention (B3j proves same-record body/key/state matrix only)
+ *       E2E / retention (B3j proves same-record body/key/state matrix only);
+ *       EVENT_SPOOL live TRANSACTION_ANCHOR PVD / grant decision re-verify /
+ *       availability resume path / STATE/RETRY/MANAGEMENT cardinality /
+ *       payload BLOB live 0/1 / retention/cleanup (B3k proves same-record
+ *       body/key/header/state×cause/resume-discard/reservation KEY_DIGEST only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and
