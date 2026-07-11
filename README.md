@@ -23,7 +23,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
 - Domain Store v1のfamily 5/6 catalog、4KiB record/3KiB chunk上限、最大256-member atomic witness、backlink/capacity/health/recovery順を固定したNormative D0仕様
 - Domain Store D1-Aのkey/envelope/digest/witness primitiveと、D1-B1のINTERNAL_INVARIANT / BEARER_STATE / CLOCK_BASELINE / ATTEMPT_REUSE_FENCE / WITNESS_HEAD_INDEX exact body codec・同一record検証・独立golden vector
-- Domain Store D1-B2 / D1-B3a..g body codec（SCHEDULER_OWNER / ORDERED_INGRESS / BLOB / ATTEMPT / ATTEMPT_ID_INDEX / CANCEL_STATE / EVIDENCE_CELL）。**D1-B3b controller-ingress retrofit implemented**（ORDERED_INGRESS `controller_ingress_*` 32-byte local durable-copy block）。**D1-B3g EVIDENCE_CELL production implemented**（vector format `ninlil-domain-store-v1-d1b3g`）
+- Domain Store D1-B2 / D1-B3a..h body codec（SCHEDULER_OWNER / ORDERED_INGRESS / BLOB / ATTEMPT / ATTEMPT_ID_INDEX / CANCEL_STATE / EVIDENCE_CELL / DELIVERY）。**D1-B3b controller-ingress retrofit implemented**（ORDERED_INGRESS `controller_ingress_*` 32-byte local durable-copy block）。**D1-B3g EVIDENCE_CELL production implemented**。**D1-B3h DELIVERY production implemented**（vector format `ninlil-domain-store-v1-d1b3h`）
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a..g vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..h vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
 Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..g
@@ -6164,6 +6164,619 @@ def build_document():
     assert b3_cov["32"]["negative"] >= 30
     assert b3_cov["32"]["roundtrip"] >= 6
 
+
+    # =====================================================================
+    # D1-B3h DELIVERY (0x40) — after EVIDENCE_CELL; preserve first 970
+    # =====================================================================
+    PRE_B3H_VECTOR_COUNT = 970
+    PRE_B3H_FULL_FINGERPRINT = (
+        "b4b1ed964d95a64091f5e10f761c4ee6209959bddecaba2d7b6697f93f23e688"
+    )
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_EV_SLOT_KEY_MISMATCH"
+    assert len(vectors) == PRE_B3H_VECTOR_COUNT
+    _pre_b3h_fp = vectors_fingerprint(vectors)
+    assert _pre_b3h_fp == PRE_B3H_FULL_FINGERPRINT, (
+        f"pre-B3h full fingerprint drift: got {_pre_b3h_fp}"
+    )
+    PRE_B3H_VECTOR_COUNT_SNAPSHOT = len(vectors)
+
+    # Private DELIVERY constants (docs17 §7.1 / §8.5).
+    DLV_APP = 1
+    DLV_CANCEL = 2
+    FAM_EF = 1
+    FAM_DS = 2
+    STAGE_RECV = 1
+    STAGE_DUR = 2
+    STAGE_APP = 3
+    STAGE_VER = 4
+    NO_DEADLINE = (1 << 64) - 1
+    dlv_head = bytes([0xD1] * 32)
+    dlv_pvd = bytes(32)  # primary: zero PVD
+
+    def delivery_result_kd(raw80: bytes) -> bytes:
+        return complete_key_digest_composite(0x41, raw16(raw80))
+
+    def delivery_reservation_kd(raw80: bytes) -> bytes:
+        return complete_key_digest_composite(
+            0x23, be16(4) + raw16(raw80))
+
+    def delivery_key(raw80: bytes) -> bytes:
+        return bkey(6, 0x40, 5, composite(0x40, raw16(raw80)))
+
+    def delivery_primary_id(raw80: bytes) -> bytes:
+        return primary_id_from_composite_subtype(0x40, raw16(raw80))
+
+    def make_party_src(rt=None, app=None):
+        if rt is None:
+            rt = F["rt"]
+        if app is None:
+            app = F["app"]
+        return party(rt, app, LI)
+
+    def make_target_lt(trt=None, tapp=None):
+        if trt is None:
+            trt = F["trt"]
+        if tapp is None:
+            tapp = F["tapp"]
+        return target(0x5, trt, tapp, F["dev"], bytes(16), F["site"], 1, 2)
+
+    def make_svc(family, ns=b"n", svc=b"s", schema=b"c"):
+        return service_identity(
+            ns, svc, schema, 1, F["dig"], 1, 0, family)
+
+    def make_dlv_raw(src_rt=None, src_app=None, txn_id=None, trt=None, tapp=None):
+        if src_rt is None:
+            src_rt = F["rt"]
+        if src_app is None:
+            src_app = F["app"]
+        if txn_id is None:
+            txn_id = txn
+        if trt is None:
+            trt = F["trt"]
+        if tapp is None:
+            tapp = F["tapp"]
+        raw = src_rt + src_app + txn_id + trt + tapp
+        assert len(raw) == 80
+        return raw
+
+    def enc_delivery_body(
+        creation=DLV_APP,
+        raw80=None,
+        reserved=0,
+        sched_seq=1,
+        txn_id=None,
+        event_id=None,
+        src_party=None,
+        lt_target=None,
+        svc_wire=None,
+        content=None,
+        generation=None,
+        deadline_epoch=None,
+        deadline_ms=None,
+        grace=None,
+        required=STAGE_RECV,
+        payload_kd=None,
+        result_kd=None,
+        reservation_kd=None,
+        family=None,
+    ) -> bytes:
+        if raw80 is None:
+            raw80 = make_dlv_raw()
+        if txn_id is None:
+            txn_id = raw80[32:48]
+        if src_party is None:
+            src_party = make_party_src(raw80[0:16], raw80[16:32])
+        if lt_target is None:
+            lt_target = make_target_lt(raw80[48:64], raw80[64:80])
+        if family is None:
+            if creation == DLV_CANCEL:
+                family = FAM_DS
+            else:
+                family = FAM_EF
+        if svc_wire is None:
+            svc_wire = make_svc(family)
+        if content is None:
+            content = F["content"]
+        if event_id is None:
+            event_id = ev_id if family == FAM_EF else bytes(16)
+        if generation is None:
+            generation = 0 if family == FAM_EF else 1
+        if deadline_epoch is None:
+            deadline_epoch = bytes(16) if family == FAM_EF else F["epoch"]
+        if deadline_ms is None:
+            deadline_ms = NO_DEADLINE if family == FAM_EF else 1000
+        if grace is None:
+            grace = 0 if family == FAM_EF else 0
+        if payload_kd is None:
+            payload_kd = bytes(32) if creation == DLV_CANCEL else F["dig"]
+        if result_kd is None:
+            result_kd = delivery_result_kd(raw80)
+        if reservation_kd is None:
+            reservation_kd = delivery_reservation_kd(raw80)
+        out = bytearray()
+        out += raw16(raw80)
+        out += be16(creation)
+        out += be16(reserved)
+        out += be64(sched_seq)
+        out += txn_id
+        out += event_id
+        out += src_party
+        out += lt_target
+        out += svc_wire
+        out += content
+        out += be64(generation)
+        out += deadline_epoch
+        out += be64(deadline_ms)
+        out += be64(grace)
+        out += be32(required)
+        out += payload_kd
+        out += result_kd
+        out += reservation_kd
+        assert 552 <= len(out) <= 738, len(out)
+        return bytes(out)
+
+    def delivery_typed(body=None, rev=1, flags=0, primary_id=None, head=None, pvd=None):
+        if body is None:
+            body = enc_delivery_body()
+        raw_len = int.from_bytes(body[0:2], "big")
+        raw80 = body[2:2 + raw_len]
+        if primary_id is None:
+            primary_id = delivery_primary_id(raw80)
+        if head is None:
+            head = dlv_head
+        if pvd is None:
+            pvd = dlv_pvd
+        key = delivery_key(raw80)
+        val = enc_env_full(6, 0x40, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    d_pos = 0
+    d_neg = 0
+    d_mut = 0
+    d_rt = 0
+
+    def add_dlv_pos(vid, body, notes=""):
+        nonlocal d_pos, d_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x40, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        d_pos += 1
+        d_rt += 1
+
+    def add_dlv_pos_typed(vid, body, notes=""):
+        nonlocal d_pos
+        key, val, _ = delivery_typed(body=body)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x40, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        d_pos += 1
+
+    def add_dlv_neg(vid, body, notes=""):
+        nonlocal d_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x40, body_hex=hx(body), notes=notes)
+        d_neg += 1
+
+    def add_dlv_neg_typed(vid, key, val, notes=""):
+        nonlocal d_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x40, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        d_neg += 1
+
+    # --- positives ---
+    body_app_ef = enc_delivery_body(creation=DLV_APP, family=FAM_EF)
+    add_dlv_pos("DSB3_DLV_APP_EF", body_app_ef, "APPLICATION_FIRST EventFact")
+    add_dlv_pos_typed("DSB3_DLV_APP_EF_TYPED", body_app_ef)
+
+    body_app_ds = enc_delivery_body(creation=DLV_APP, family=FAM_DS)
+    add_dlv_pos("DSB3_DLV_APP_DS", body_app_ds, "APPLICATION_FIRST DesiredState")
+    add_dlv_pos_typed("DSB3_DLV_APP_DS_TYPED", body_app_ds)
+
+    body_cancel = enc_delivery_body(creation=DLV_CANCEL, family=FAM_DS)
+    add_dlv_pos("DSB3_DLV_CANCEL_FIRST", body_cancel, "CANCEL_FIRST DesiredState")
+    add_dlv_pos_typed("DSB3_DLV_CANCEL_FIRST_TYPED", body_cancel)
+
+    body_svc_min = enc_delivery_body(
+        creation=DLV_APP, family=FAM_EF,
+        svc_wire=make_svc(FAM_EF, ns=b"a", svc=b"b", schema=b"c"))
+    add_dlv_pos("DSB3_DLV_SVC_MIN", body_svc_min, "SERVICE_IDENTITY min 54")
+
+    ns_max = bytes([0x61] * 63)
+    svc_max = bytes([0x62] * 63)
+    sch_max = bytes([0x63] * 63)
+    body_svc_max = enc_delivery_body(
+        creation=DLV_APP, family=FAM_DS,
+        svc_wire=make_svc(FAM_DS, ns=ns_max, svc=svc_max, schema=sch_max))
+    assert len(body_svc_max) == 738
+    add_dlv_pos("DSB3_DLV_SVC_MAX", body_svc_max, "SERVICE_IDENTITY max 240 body 738")
+    add_dlv_pos_typed("DSB3_DLV_SVC_MAX_TYPED", body_svc_max)
+
+    # empty payload still non-zero digest (APPLICATION_FIRST)
+    empty_nz = bytes([0xAB] * 32)
+    body_empty_payload = enc_delivery_body(
+        creation=DLV_APP, family=FAM_EF, payload_kd=empty_nz)
+    add_dlv_pos(
+        "DSB3_DLV_EMPTY_PAYLOAD_NZ", body_empty_payload,
+        "APP_FIRST empty payload still nonzero payload key digest")
+    add_dlv_pos_typed("DSB3_DLV_EMPTY_PAYLOAD_NZ_TYPED", body_empty_payload)
+
+    body_grace_ds = enc_delivery_body(
+        creation=DLV_APP, family=FAM_DS, grace=999)
+    add_dlv_pos(
+        "DSB3_DLV_DS_GRACE_ANY", body_grace_ds,
+        "DS evidence_grace unrestricted in D1 same-record")
+
+    # --- negatives: raw / bijection ---
+    b = bytearray(body_app_ef)
+    # force raw length 79 (truncate contents)
+    short_raw = make_dlv_raw()[:79]
+    add_dlv_neg(
+        "DSB3_DLV_RAW_LEN79",
+        enc_delivery_body(raw80=short_raw) if False else (
+            # manually build invalid: length 79 then rest of valid body with 80-based layout fails
+            be16(79) + make_dlv_raw()[:79] + body_app_ef[82:]
+        ),
+        "delivery_key_raw length must be exact 80")
+    # simpler: mutate length prefix to 79 keeping 80 content bytes → overlong tail
+    b = bytearray(body_app_ef)
+    b[0:2] = be16(79)
+    add_dlv_neg("DSB3_DLV_RAW_LEN_PREFIX79", bytes(b), "raw length prefix 79 corrupt")
+
+    b = bytearray(body_app_ef)
+    b[0:2] = be16(81)
+    # need extra byte; append one before service section end - actually body has exact 80 content
+    # prefix 81 will claim 81 content bytes of which only 80 exist before creation_kind
+    add_dlv_neg("DSB3_DLV_RAW_LEN_PREFIX81", bytes(b) + b"\x00", "raw length prefix 81")
+
+    zero_comp = bytearray(make_dlv_raw())
+    zero_comp[0:16] = bytes(16)
+    add_dlv_neg(
+        "DSB3_DLV_RAW_ZERO_SRC_RT",
+        enc_delivery_body(
+            raw80=bytes(zero_comp),
+            src_party=make_party_src(bytes(16), F["app"])),
+        "source runtime component zero")
+
+    # raw/body bijection: txn mismatch
+    bad_txn = bytes([0xEE] * 16)
+    add_dlv_neg(
+        "DSB3_DLV_TXN_RAW_MISMATCH",
+        enc_delivery_body(raw80=make_dlv_raw(), txn_id=bad_txn),
+        "transaction_id must match raw[32,48)")
+
+    # creation / reserved / scheduler
+    add_dlv_neg(
+        "DSB3_DLV_KIND0",
+        enc_delivery_body(creation=0),
+        "creation_kind 0 unknown")
+    add_dlv_neg(
+        "DSB3_DLV_KIND3",
+        enc_delivery_body(creation=3),
+        "creation_kind 3 unknown")
+    add_dlv_neg(
+        "DSB3_DLV_RESERVED_NZ",
+        enc_delivery_body(reserved=1),
+        "reserved must be 0")
+    add_dlv_neg(
+        "DSB3_DLV_SCHED0",
+        enc_delivery_body(sched_seq=0),
+        "scheduler_owner_sequence must be >=1")
+    add_dlv_neg(
+        "DSB3_DLV_ZERO_TXN",
+        enc_delivery_body(raw80=make_dlv_raw(txn_id=bytes(16)), txn_id=bytes(16)),
+        "transaction_id zero")
+    add_dlv_neg(
+        "DSB3_DLV_ZERO_CONTENT",
+        enc_delivery_body(content=bytes(32)),
+        "content_digest zero")
+
+    # family / event / gen / deadline / grace
+    add_dlv_neg(
+        "DSB3_DLV_EF_FINITE_DEADLINE",
+        enc_delivery_body(family=FAM_EF, deadline_ms=100, deadline_epoch=F["epoch"]),
+        "EventFact must use NO_DEADLINE")
+    add_dlv_neg(
+        "DSB3_DLV_EF_GEN_NZ",
+        enc_delivery_body(family=FAM_EF, generation=1),
+        "EventFact generation must be 0")
+    add_dlv_neg(
+        "DSB3_DLV_EF_EVENT_ZERO",
+        enc_delivery_body(family=FAM_EF, event_id=bytes(16)),
+        "EventFact event_id non-zero")
+    add_dlv_neg(
+        "DSB3_DLV_EF_GRACE_NZ",
+        enc_delivery_body(family=FAM_EF, grace=1),
+        "EventFact evidence_grace must be 0")
+    add_dlv_neg(
+        "DSB3_DLV_DS_NO_DEADLINE",
+        enc_delivery_body(family=FAM_DS, deadline_ms=NO_DEADLINE),
+        "DesiredState deadline must not be NO_DEADLINE")
+    add_dlv_neg(
+        "DSB3_DLV_DS_EVENT_NZ",
+        enc_delivery_body(family=FAM_DS, event_id=ev_id),
+        "DesiredState event_id zero")
+    add_dlv_neg(
+        "DSB3_DLV_DS_GEN0",
+        enc_delivery_body(family=FAM_DS, generation=0),
+        "DesiredState generation >=1")
+    add_dlv_neg(
+        "DSB3_DLV_DS_EPOCH0",
+        enc_delivery_body(family=FAM_DS, deadline_epoch=bytes(16)),
+        "DesiredState deadline epoch non-zero")
+    add_dlv_neg(
+        "DSB3_DLV_CANCEL_EF",
+        enc_delivery_body(creation=DLV_CANCEL, family=FAM_EF),
+        "CANCEL_FIRST EventFact corrupt")
+
+    # payload policy
+    add_dlv_neg(
+        "DSB3_DLV_APP_PAYLOAD_ZERO",
+        enc_delivery_body(creation=DLV_APP, family=FAM_EF, payload_kd=bytes(32)),
+        "APPLICATION_FIRST payload digest must be non-zero")
+    add_dlv_neg(
+        "DSB3_DLV_CANCEL_PAYLOAD_NZ",
+        enc_delivery_body(creation=DLV_CANCEL, family=FAM_DS, payload_kd=F["dig"]),
+        "CANCEL_FIRST payload digest must be zero")
+
+    # result / reservation digests
+    add_dlv_neg(
+        "DSB3_DLV_RESULT_ZERO",
+        enc_delivery_body(result_kd=bytes(32)),
+        "result_cache_key_digest zero")
+    add_dlv_neg(
+        "DSB3_DLV_RESULT_WRONG",
+        enc_delivery_body(result_kd=F["dig"]),
+        "result_cache_key_digest wrong")
+    bare_comp = composite(0x41, raw16(make_dlv_raw()))
+    add_dlv_neg(
+        "DSB3_DLV_RESULT_BARE_COMPOSITE",
+        enc_delivery_body(result_kd=bare_comp),
+        "bare composite is not KEY_DIGEST(complete RESULT_CACHE key)")
+    add_dlv_neg(
+        "DSB3_DLV_RES_ZERO",
+        enc_delivery_body(reservation_kd=bytes(32)),
+        "reservation_key_digest zero")
+    add_dlv_neg(
+        "DSB3_DLV_RES_WRONG",
+        enc_delivery_body(reservation_kd=F["dig"]),
+        "reservation_key_digest wrong")
+    bare_res = composite(0x23, be16(4) + raw16(make_dlv_raw()))
+    add_dlv_neg(
+        "DSB3_DLV_RES_BARE_COMPOSITE",
+        enc_delivery_body(reservation_kd=bare_res),
+        "bare composite is not KEY_DIGEST(complete RESERVATION key)")
+
+    # required evidence
+    add_dlv_neg(
+        "DSB3_DLV_REQ_EV_NONE",
+        enc_delivery_body(required=0),
+        "required_evidence known non-zero")
+    add_dlv_neg(
+        "DSB3_DLV_REQ_EV_UNKNOWN",
+        enc_delivery_body(required=99),
+        "required_evidence unknown stage")
+
+    # short / trailing / BTS
+    add_dlv_neg(
+        "DSB3_DLV_SHORT",
+        body_app_ef[:-1],
+        "short body")
+    add_dlv_neg(
+        "DSB3_DLV_TRAILING",
+        body_app_ef + b"\x00",
+        "trailing byte")
+    add(id="DSB3_DLV_BTS", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x40,
+        body_length=len(body_app_ef), body_hex=hx(body_app_ef),
+        notes="encode with capacity 0 returns BTS with required length")
+    d_neg += 1
+
+    # invalid nested shape: zero source runtime via party (and matching raw)
+    # already covered ZERO_SRC. Add invalid TEXT_ID empty via force:
+    # service with empty ns cannot be built by make_svc; craft by mutating
+    b = bytearray(body_app_ef)
+    # service starts after raw82 + 4 + 8 + 32 + 100 + 100 = 326
+    # first TEXT_ID length at offset 326
+    assert b[326] >= 1
+    b[326] = 0  # invalid empty TEXT_ID length
+    add_dlv_neg("DSB3_DLV_SVC_EMPTY_NS", bytes(b), "SERVICE_IDENTITY empty namespace")
+
+    # common / key / primary typed negatives
+    k_ok, v_ok, body_ok = delivery_typed(body=body_app_ef)
+    k_bad = bkey(6, 0x40, 5, composite(0x40, raw16(make_dlv_raw(txn_id=bytes([1]*16)))))
+    # wrong key identity
+    add_dlv_neg_typed(
+        "DSB3_DLV_KEY_MISMATCH", k_bad, v_ok,
+        "key composite must match body delivery_key_raw")
+    # wrong primary_id
+    bad_pid = bytes([0xFF] * 16)
+    v_bad_pid = enc_env_full(6, 0x40, 0, 1, bad_pid, dlv_head, dlv_pvd, body_ok)
+    add_dlv_neg_typed(
+        "DSB3_DLV_PRIMARY_ID_WRONG", k_ok, v_bad_pid,
+        "primary_id must be composite first 16")
+    # rev 2 illegal for immutable
+    k_r2, v_r2, _ = delivery_typed(body=body_ok, rev=2)
+    add_dlv_neg_typed("DSB3_DLV_REV2", k_r2, v_r2, "immutable revision must be 1")
+    k_r0, v_r0, _ = delivery_typed(body=body_ok, rev=0)
+    add_dlv_neg_typed("DSB3_DLV_REV0", k_r0, v_r0, "revision 0 corrupt")
+    k_fl, v_fl, _ = delivery_typed(body=body_ok, flags=1)
+    add_dlv_neg_typed("DSB3_DLV_FLAGS_NZ", k_fl, v_fl, "flags must be 0")
+    k_zh, v_zh, _ = delivery_typed(body=body_ok, head=bytes(32))
+    add_dlv_neg_typed("DSB3_DLV_ZERO_HEAD", k_zh, v_zh, "head must be non-zero")
+    k_pvd, v_pvd, _ = delivery_typed(body=body_ok, pvd=bytes([1] * 32))
+    add_dlv_neg_typed("DSB3_DLV_PVD_NZ", k_pvd, v_pvd, "primary PVD must be zero")
+
+    # Freeze the original B3h core (970 pre + first 53 DSB3_DLV_*). Later
+    # coverage appends only; object identity of this prefix must not drift.
+    PRE_B3H_CORE_VECTOR_COUNT = 1023
+    PRE_B3H_CORE_FULL_FINGERPRINT = (
+        "98687d446136440d3a66a63ad38b9969e6d920071b8a273ebbe9dd1dd97ff75f"
+    )
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[969]["id"] == "DSB3_EV_SLOT_KEY_MISMATCH"
+    assert vectors[970]["id"] == "DSB3_DLV_APP_EF"
+    assert vectors[-1]["id"] == "DSB3_DLV_PVD_NZ"
+    assert len(vectors) == PRE_B3H_CORE_VECTOR_COUNT
+    _pre_b3h_core_fp = vectors_fingerprint(vectors)
+    assert _pre_b3h_core_fp == PRE_B3H_CORE_FULL_FINGERPRINT, (
+        f"pre-B3h-core full fingerprint drift: got {_pre_b3h_core_fp}"
+    )
+    PRE_B3H_CORE_VECTOR_COUNT_SNAPSHOT = len(vectors)
+    assert sum(
+        1 for v in vectors[PRE_B3H_VECTOR_COUNT_SNAPSHOT:]
+        if v["id"].startswith("DSB3_DLV_")
+    ) == 53
+
+    # --- coverage append: raw 5-component zero + bijection + nested shape ---
+    # Generators assert the intended wire/mutation locus before adding.
+
+    def assert_raw_slice_zero(raw80: bytes, off: int, label: str):
+        assert len(raw80) == 80
+        assert raw80[off:off + 16] == bytes(16), label
+        # other 16-byte components remain non-zero
+        for o in (0, 16, 32, 48, 64):
+            if o == off:
+                continue
+            assert raw80[o:o + 16] != bytes(16), f"{label}: unexpected zero at {o}"
+
+    def assert_body_party_rt_app(body: bytes, rt: bytes, app: bytes):
+        # after RAW16(80)=82 + creation/reserved 4 + sched 8 + txn 16 + event 16
+        # = 126; then PARTY runtime/app at 126..158
+        assert body[126:142] == rt
+        assert body[142:158] == app
+
+    def assert_body_target_rt_app(body: bytes, trt: bytes, tapp: bytes):
+        # PARTY ends at 126+100=226; TARGET: flags4 + trt16 + tapp16
+        assert body[230:246] == trt
+        assert body[246:262] == tapp
+
+    base_raw = make_dlv_raw()
+    assert base_raw[0:16] == F["rt"] and base_raw[16:32] == F["app"]
+    assert base_raw[48:64] == F["trt"] and base_raw[64:80] == F["tapp"]
+
+    # raw source.application zero (+ matching body app zero)
+    z_app = bytearray(base_raw)
+    z_app[16:32] = bytes(16)
+    assert_raw_slice_zero(bytes(z_app), 16, "RAW_ZERO_SRC_APP")
+    body_z_app = enc_delivery_body(
+        raw80=bytes(z_app),
+        src_party=make_party_src(F["rt"], bytes(16)))
+    assert body_z_app[2:82] == bytes(z_app)
+    assert_body_party_rt_app(body_z_app, F["rt"], bytes(16))
+    add_dlv_neg(
+        "DSB3_DLV_RAW_ZERO_SRC_APP", body_z_app,
+        "source application component zero")
+
+    # raw local_target.runtime zero
+    z_trt = bytearray(base_raw)
+    z_trt[48:64] = bytes(16)
+    assert_raw_slice_zero(bytes(z_trt), 48, "RAW_ZERO_TGT_RT")
+    body_z_trt = enc_delivery_body(
+        raw80=bytes(z_trt),
+        lt_target=make_target_lt(bytes(16), F["tapp"]))
+    assert body_z_trt[2:82] == bytes(z_trt)
+    assert_body_target_rt_app(body_z_trt, bytes(16), F["tapp"])
+    add_dlv_neg(
+        "DSB3_DLV_RAW_ZERO_TGT_RT", body_z_trt,
+        "local_target runtime component zero")
+
+    # raw local_target.application zero
+    z_tapp = bytearray(base_raw)
+    z_tapp[64:80] = bytes(16)
+    assert_raw_slice_zero(bytes(z_tapp), 64, "RAW_ZERO_TGT_APP")
+    body_z_tapp = enc_delivery_body(
+        raw80=bytes(z_tapp),
+        lt_target=make_target_lt(F["trt"], bytes(16)))
+    assert body_z_tapp[2:82] == bytes(z_tapp)
+    assert_body_target_rt_app(body_z_tapp, F["trt"], bytes(16))
+    add_dlv_neg(
+        "DSB3_DLV_RAW_ZERO_TGT_APP", body_z_tapp,
+        "local_target application component zero")
+
+    # bijection: raw remains valid; body field alone differs
+    alt_rt = bytes([0x91] + [0] * 14 + [0xA1])
+    alt_app = bytes([0x92] + [0] * 14 + [0xA2])
+    alt_trt = bytes([0x93] + [0] * 14 + [0xA3])
+    alt_tapp = bytes([0x94] + [0] * 14 + [0xA4])
+    assert alt_rt != F["rt"] and alt_app != F["app"]
+    assert alt_trt != F["trt"] and alt_tapp != F["tapp"]
+
+    body_mis_rt = enc_delivery_body(
+        raw80=base_raw, src_party=make_party_src(alt_rt, F["app"]))
+    assert body_mis_rt[2:82] == base_raw
+    assert_body_party_rt_app(body_mis_rt, alt_rt, F["app"])
+    assert body_mis_rt[126:142] != body_mis_rt[2:18]
+    add_dlv_neg(
+        "DSB3_DLV_BIJ_SRC_RT", body_mis_rt,
+        "body source.runtime must match raw[0,16)")
+
+    body_mis_app = enc_delivery_body(
+        raw80=base_raw, src_party=make_party_src(F["rt"], alt_app))
+    assert body_mis_app[2:82] == base_raw
+    assert_body_party_rt_app(body_mis_app, F["rt"], alt_app)
+    assert body_mis_app[142:158] != body_mis_app[18:34]
+    add_dlv_neg(
+        "DSB3_DLV_BIJ_SRC_APP", body_mis_app,
+        "body source.application must match raw[16,32)")
+
+    body_mis_trt = enc_delivery_body(
+        raw80=base_raw, lt_target=make_target_lt(alt_trt, F["tapp"]))
+    assert body_mis_trt[2:82] == base_raw
+    assert_body_target_rt_app(body_mis_trt, alt_trt, F["tapp"])
+    assert body_mis_trt[230:246] != body_mis_trt[50:66]
+    add_dlv_neg(
+        "DSB3_DLV_BIJ_TGT_RT", body_mis_trt,
+        "body local_target.runtime must match raw[48,64)")
+
+    body_mis_tapp = enc_delivery_body(
+        raw80=base_raw, lt_target=make_target_lt(F["trt"], alt_tapp))
+    assert body_mis_tapp[2:82] == base_raw
+    assert_body_target_rt_app(body_mis_tapp, F["trt"], alt_tapp)
+    assert body_mis_tapp[246:262] != body_mis_tapp[66:82]
+    add_dlv_neg(
+        "DSB3_DLV_BIJ_TGT_APP", body_mis_tapp,
+        "body local_target.application must match raw[64,80)")
+
+    # PARTY invalid shape: flags=0 but device ID non-zero; raw/runtime/app match.
+    bad_party_li = local_identity(0, F["dev"], bytes(16), bytes(16), 0, 0)
+    assert bad_party_li[0:4] == be32(0)
+    assert bad_party_li[4:20] == F["dev"] and F["dev"] != bytes(16)
+    body_bad_party = enc_delivery_body(
+        raw80=base_raw,
+        src_party=party(F["rt"], F["app"], bad_party_li))
+    assert body_bad_party[2:82] == base_raw
+    assert_body_party_rt_app(body_bad_party, F["rt"], F["app"])
+    # local_identity starts at party offset + 32 = 158
+    assert body_bad_party[158:162] == be32(0)
+    assert body_bad_party[162:178] == F["dev"]
+    add_dlv_neg(
+        "DSB3_DLV_PARTY_SHAPE", body_bad_party,
+        "PARTY local_identity presence invalid (device without flag)")
+
+    # TARGET invalid shape: flags=0 but device non-zero; raw target ids match.
+    body_bad_tgt = enc_delivery_body(
+        raw80=base_raw,
+        lt_target=target(
+            0, F["trt"], F["tapp"], F["dev"], bytes(16), bytes(16), 0, 0))
+    assert body_bad_tgt[2:82] == base_raw
+    assert_body_target_rt_app(body_bad_tgt, F["trt"], F["tapp"])
+    # TARGET starts at 226: flags then device at 226+4+32=262
+    assert body_bad_tgt[226:230] == be32(0)
+    assert body_bad_tgt[262:278] == F["dev"]
+    add_dlv_neg(
+        "DSB3_DLV_TARGET_SHAPE", body_bad_tgt,
+        "TARGET presence invalid (device without flag)")
+
+    b3_cov["40"] = add_body_suite(
+        "DELIVERY", 6, 0x40, d_pos, d_neg, d_mut, d_rt)
+    assert b3_cov["40"]["positive"] >= 10
+    assert b3_cov["40"]["negative"] >= 40
+    assert b3_cov["40"]["roundtrip"] >= 6
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -6223,6 +6836,7 @@ def build_document():
         "dsb3_subtype_34_positive": b3_cov["34"]["positive"],
         "dsb3_subtype_33_positive": b3_cov["33"]["positive"],
         "dsb3_subtype_32_positive": b3_cov["32"]["positive"],
+        "dsb3_subtype_40_positive": b3_cov["40"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -6254,9 +6868,14 @@ def build_document():
     assert catalog["dsb3_subtype_34_positive"] > 0
     assert catalog["dsb3_subtype_33_positive"] > 0
     assert catalog["dsb3_subtype_32_positive"] > 0
+    assert catalog["dsb3_subtype_40_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
     # Structural: CS/AII/ATT/EV only after their pre-slice.
+    assert all(
+        not v["id"].startswith("DSB3_DLV_")
+        for v in vectors[:PRE_B3H_VECTOR_COUNT_SNAPSHOT]
+    )
     assert all(
         not v["id"].startswith("DSB3_EV_")
         for v in vectors[:PRE_B3G_VECTOR_COUNT_SNAPSHOT]
@@ -6272,6 +6891,24 @@ def build_document():
     assert all(
         not v["id"].startswith("DSB3_ATT_")
         for v in vectors[:PRE_B3D_VECTOR_COUNT]
+    )
+    _pre_b3h_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3H_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3h_fp_final == PRE_B3H_FULL_FINGERPRINT, (
+        f"post-append pre-B3h full fingerprint drift: got {_pre_b3h_fp_final}"
+    )
+    _pre_b3h_core_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3H_CORE_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3h_core_fp_final == PRE_B3H_CORE_FULL_FINGERPRINT, (
+        f"post-append pre-B3h-core full fingerprint drift: "
+        f"got {_pre_b3h_core_fp_final}"
+    )
+    assert all(
+        not v["id"].startswith("DSB3_DLV_RAW_ZERO_SRC_APP")
+        and not v["id"].startswith("DSB3_DLV_BIJ_")
+        and not v["id"].startswith("DSB3_DLV_PARTY_SHAPE")
+        and not v["id"].startswith("DSB3_DLV_TARGET_SHAPE")
+        for v in vectors[:PRE_B3H_CORE_VECTOR_COUNT_SNAPSHOT]
     )
     _pre_b3g_fp_final = vectors_fingerprint(
         vectors[:PRE_B3G_VECTOR_COUNT_SNAPSHOT])
@@ -6301,7 +6938,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3g",
+        "format": "ninlil-domain-store-v1-d1b3h",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -6309,12 +6946,12 @@ def build_document():
             "r1) + message_semantic_digest helper + D1-B3c body (30 BLOB "
             "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
             "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE) + "
-            "D1-B3g body (32 EVIDENCE_CELL); not full D1 catalog"
+            "D1-B3g body (32 EVIDENCE_CELL) + D1-B3h body (40 DELIVERY); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g APIs have no workspace parameter; "
+            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h APIs have no workspace parameter; "
             "value is 0."
         ),
         "catalog": catalog,
