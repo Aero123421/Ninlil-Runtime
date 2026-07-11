@@ -98,6 +98,8 @@ Project運用文書:
 
 必要なのはCMake 3.16以上と、C11 / C++17に対応するC・C++ compilerです。通常buildではstrict warning付きのconsumer smoke、ABI/contract checker、negative testをCTestから実行します。
 
+**Test / oracle 前提**: Domain Store D1-A の vector 生成・検査（`domain_store_vector_oracle` CTest）には **Python 3** interpreter が必要です（`find_package(Python3 COMPONENTS Interpreter REQUIRED)`）。production runtime 自体は Python に依存しません。
+
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
