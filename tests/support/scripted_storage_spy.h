@@ -47,7 +47,21 @@ typedef enum ninlil_spy_shape {
     NINLIL_SPY_SHAPE_BTS_LENGTHS = 3,
     NINLIL_SPY_SHAPE_NOT_FOUND_POISON = 4,
     NINLIL_SPY_SHAPE_OK_BAD_LENGTH = 5,
-    NINLIL_SPY_SHAPE_NON_OK_NONEMPTY_LENGTH = 6
+    NINLIL_SPY_SHAPE_NON_OK_NONEMPTY_LENGTH = 6,
+    /* Provider rewrites inout data pointer away from caller slot (get/iter). */
+    NINLIL_SPY_SHAPE_REWRITE_DATA_PTR = 7,
+    /* Provider rewrites inout capacity (get/iter). */
+    NINLIL_SPY_SHAPE_REWRITE_CAPACITY = 8,
+    /*
+     * iter_next only: same-snapshot inconsistency — return natural key with
+     * value bytes that differ from the retained get path (last byte flipped).
+     */
+    NINLIL_SPY_SHAPE_VALUE_MISMATCH = 9,
+    /*
+     * iter_next only: clean terminal NOT_FOUND (both lengths 0) even when
+     * further natural rows remain (omits remaining catalog keys).
+     */
+    NINLIL_SPY_SHAPE_EARLY_END = 10
 } ninlil_spy_shape_t;
 
 typedef struct ninlil_spy_row {
@@ -67,6 +81,12 @@ typedef struct ninlil_spy_fault {
     uint32_t used;
 } ninlil_spy_fault_t;
 
+/*
+ * Trace retains exact get key bytes (no domain semantics). Capacity covers
+ * Storage key bound 255; catalog keys are 9/10 bytes.
+ */
+#define NINLIL_SPY_TRACE_KEY_BYTES ((uint32_t)255u)
+
 typedef struct ninlil_spy_trace {
     ninlil_spy_op_t op;
     ninlil_storage_status_t status;
@@ -77,6 +97,9 @@ typedef struct ninlil_spy_trace {
     uint32_t key_length;
     uint32_t value_length;
     uint32_t produced_handle; /* 1 if out handle/iter was non-NULL */
+    /* Populated for GET only: exact key bytes presented to the Port. */
+    uint8_t key_bytes[NINLIL_SPY_TRACE_KEY_BYTES];
+    uint32_t key_bytes_length;
 } ninlil_spy_trace_t;
 
 typedef struct ninlil_scripted_storage_spy {

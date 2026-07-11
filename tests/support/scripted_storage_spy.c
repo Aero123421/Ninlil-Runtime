@@ -30,6 +30,34 @@ static void trace_push(
     entry->key_length = key_length;
     entry->value_length = value_length;
     entry->produced_handle = produced_handle;
+    entry->key_bytes_length = 0u;
+    (void)memset(entry->key_bytes, 0, sizeof(entry->key_bytes));
+}
+
+/* Record exact get key bytes into the most recent GET trace entry. */
+static void trace_set_get_key(
+    ninlil_scripted_storage_spy_t *spy,
+    const uint8_t *key_data,
+    uint32_t key_length)
+{
+    ninlil_spy_trace_t *entry;
+
+    if (spy->trace_count == 0u) {
+        return;
+    }
+    entry = &spy->trace[spy->trace_count - 1u];
+    if (entry->op != NINLIL_SPY_OP_GET) {
+        return;
+    }
+    entry->key_bytes_length = 0u;
+    if (key_data == NULL || key_length == 0u) {
+        return;
+    }
+    if (key_length > NINLIL_SPY_TRACE_KEY_BYTES) {
+        key_length = NINLIL_SPY_TRACE_KEY_BYTES;
+    }
+    (void)memcpy(entry->key_bytes, key_data, key_length);
+    entry->key_bytes_length = key_length;
 }
 
 static ninlil_spy_fault_t *find_fault(
@@ -161,18 +189,152 @@ static ninlil_storage_status_t spy_get(
     ninlil_mut_bytes_t *inout_value)
 {
     ninlil_scripted_storage_spy_t *spy = (ninlil_scripted_storage_spy_t *)user;
+    ninlil_spy_fault_t *fault;
+    ninlil_storage_status_t status = NINLIL_STORAGE_NOT_FOUND;
+    size_t index;
+    uint32_t out_length = 0u;
+    uint32_t capacity = 0u;
+    /* Alternate buffer for REWRITE_DATA_PTR: not the caller's encoded slot. */
+    static uint8_t rewrite_alt[256];
 
-    (void)txn;
-    (void)key;
     spy->get_calls += 1u;
     if (inout_value != NULL) {
+        capacity = inout_value->capacity;
         inout_value->length = 0u;
     }
-    /* S1 must not call get; still provide a valid Port entry. */
-    trace_push(spy, NINLIL_SPY_OP_GET, NINLIL_STORAGE_NOT_FOUND,
-        0u, 0u, 0u,
-        inout_value != NULL ? inout_value->capacity : 0u, 0u, 0u, 0u);
-    return NINLIL_STORAGE_NOT_FOUND;
+    if (txn == NULL || inout_value == NULL || !spy->txn_live
+        || (key.length > 0u && key.data == NULL)
+        || (inout_value->capacity > 0u && inout_value->data == NULL)) {
+        status = NINLIL_STORAGE_CORRUPT;
+        trace_push(spy, NINLIL_SPY_OP_GET, status, 0u, 0u, capacity,
+            key.length, 0u, 0u, 0u);
+        if (key.data != NULL && key.length > 0u) {
+            trace_set_get_key(spy, key.data, key.length);
+        }
+        return status;
+    }
+
+    fault = find_fault(spy, NINLIL_SPY_OP_GET, spy->get_calls);
+    if (fault != NULL) {
+        fault->used = 1u;
+        status = fault->status;
+        if (fault->shape == NINLIL_SPY_SHAPE_BTS_LENGTHS) {
+            status = NINLIL_STORAGE_BUFFER_TOO_SMALL;
+            /* ch12-valid required length may be non-zero; not a second poison. */
+            if (fault->value_length != 0u) {
+                inout_value->length = fault->value_length;
+                out_length = fault->value_length;
+            }
+        } else if (fault->shape == NINLIL_SPY_SHAPE_NOT_FOUND_POISON) {
+            status = NINLIL_STORAGE_NOT_FOUND;
+            inout_value->length =
+                fault->value_length != 0u ? fault->value_length : 1u;
+            out_length = inout_value->length;
+        } else if (fault->shape == NINLIL_SPY_SHAPE_OK_BAD_LENGTH) {
+            status = NINLIL_STORAGE_OK;
+            inout_value->length = capacity + 1u;
+            out_length = inout_value->length;
+        } else if (fault->shape == NINLIL_SPY_SHAPE_NON_OK_NONEMPTY_LENGTH) {
+            if (status == NINLIL_STORAGE_OK) {
+                status = NINLIL_STORAGE_IO_ERROR;
+            }
+            inout_value->length =
+                fault->value_length != 0u ? fault->value_length : 1u;
+            out_length = inout_value->length;
+        } else if (fault->shape == NINLIL_SPY_SHAPE_OK_NULL) {
+            /* OK with length>0 would require NULL data; leave length 0. */
+            status = NINLIL_STORAGE_OK;
+            inout_value->length = 0u;
+            out_length = 0u;
+        } else if (fault->shape == NINLIL_SPY_SHAPE_REWRITE_DATA_PTR
+            || fault->shape == NINLIL_SPY_SHAPE_REWRITE_CAPACITY) {
+            /* Fall through to row lookup, then rewrite descriptor. */
+            status = NINLIL_STORAGE_OK;
+        } else if (status == NINLIL_STORAGE_OK) {
+            /* Natural OK under fault: fall through to row lookup below. */
+            fault = NULL;
+        } else if (status == NINLIL_STORAGE_COMMIT_UNKNOWN) {
+            inout_value->length = 0u;
+            out_length = 0u;
+            trace_push(spy, NINLIL_SPY_OP_GET, status, 0u, 0u, capacity,
+                key.length, out_length, 0u, 0u);
+            trace_set_get_key(spy, key.data, key.length);
+            return status;
+        } else if ((unsigned)status > (unsigned)NINLIL_STORAGE_UNSUPPORTED_SCHEMA) {
+            /* Unknown status with length 0. */
+            inout_value->length = 0u;
+            out_length = 0u;
+            trace_push(spy, NINLIL_SPY_OP_GET, status, 0u, 0u, capacity,
+                key.length, out_length, 0u, 0u);
+            trace_set_get_key(spy, key.data, key.length);
+            return status;
+        } else {
+            inout_value->length = 0u;
+            out_length = 0u;
+        }
+        if (fault != NULL
+            && fault->shape != NINLIL_SPY_SHAPE_REWRITE_DATA_PTR
+            && fault->shape != NINLIL_SPY_SHAPE_REWRITE_CAPACITY
+            && !(fault->shape == NINLIL_SPY_SHAPE_NATURAL
+                && status == NINLIL_STORAGE_OK)) {
+            trace_push(spy, NINLIL_SPY_OP_GET, status, 0u, 0u, capacity,
+                key.length, out_length, 0u, 0u);
+            trace_set_get_key(spy, key.data, key.length);
+            return status;
+        }
+    }
+
+    for (index = 0u; index < spy->row_count; ++index) {
+        const ninlil_spy_row_t *row = &spy->rows[index];
+        if (row->key_length == key.length
+            && (key.length == 0u
+                || memcmp(row->key, key.data, key.length) == 0)) {
+            if (fault != NULL
+                && fault->shape == NINLIL_SPY_SHAPE_REWRITE_DATA_PTR
+                && row->value_length <= sizeof(rewrite_alt)) {
+                /*
+                 * Leave caller slot completely untouched (preseeded stale valid
+                 * bytes remain). Return OK with data redirected to alternate.
+                 */
+                if (row->value_length != 0u) {
+                    (void)memcpy(rewrite_alt, row->value, row->value_length);
+                }
+                inout_value->data = rewrite_alt;
+                inout_value->length = row->value_length;
+                out_length = row->value_length;
+                status = NINLIL_STORAGE_OK;
+            } else if (row->value_length > inout_value->capacity) {
+                status = NINLIL_STORAGE_BUFFER_TOO_SMALL;
+                inout_value->length = 0u;
+                out_length = 0u;
+            } else {
+                if (row->value_length != 0u) {
+                    (void)memcpy(
+                        inout_value->data, row->value, row->value_length);
+                }
+                inout_value->length = row->value_length;
+                out_length = row->value_length;
+                status = NINLIL_STORAGE_OK;
+                if (fault != NULL
+                    && fault->shape == NINLIL_SPY_SHAPE_REWRITE_CAPACITY) {
+                    /* Bytes written to original slot; capacity rewritten. */
+                    inout_value->capacity =
+                        capacity == 0u ? 1u : capacity + 1u;
+                }
+            }
+            trace_push(spy, NINLIL_SPY_OP_GET, status, 0u, 0u,
+                inout_value->capacity, key.length, out_length, 0u, 0u);
+            trace_set_get_key(spy, key.data, key.length);
+            return status;
+        }
+    }
+
+    status = NINLIL_STORAGE_NOT_FOUND;
+    inout_value->length = 0u;
+    trace_push(spy, NINLIL_SPY_OP_GET, status, 0u, 0u, capacity,
+        key.length, 0u, 0u, 0u);
+    trace_set_get_key(spy, key.data, key.length);
+    return status;
 }
 
 static ninlil_storage_status_t spy_put(
@@ -287,6 +449,9 @@ static ninlil_storage_status_t spy_iter_next(
     ninlil_storage_status_t status = NINLIL_STORAGE_OK;
     uint32_t key_cap = 0u;
     uint32_t value_cap = 0u;
+    /* Alternate buffers for REWRITE_DATA_PTR (not caller workspace scratch). */
+    static uint8_t iter_rewrite_key_alt[NINLIL_SPY_MAX_KEY];
+    static uint8_t iter_rewrite_value_alt[256];
 
     spy->iter_next_calls += 1u;
     if (inout_key != NULL) {
@@ -310,6 +475,15 @@ static ninlil_storage_status_t spy_iter_next(
     if (fault != NULL) {
         fault->used = 1u;
         status = fault->status;
+        if (fault->shape == NINLIL_SPY_SHAPE_EARLY_END) {
+            /* Clean terminal NOT_FOUND even if natural rows remain. */
+            inout_key->length = 0u;
+            inout_value->length = 0u;
+            status = NINLIL_STORAGE_NOT_FOUND;
+            trace_push(spy, NINLIL_SPY_OP_ITER_NEXT, status, 0u, 0u,
+                key_cap, value_cap, 0u, 0u, 0u);
+            return status;
+        }
         if (fault->shape == NINLIL_SPY_SHAPE_BTS_LENGTHS) {
             inout_key->length = fault->key_length;
             inout_value->length = fault->value_length;
@@ -328,8 +502,14 @@ static ninlil_storage_status_t spy_iter_next(
             if (status == NINLIL_STORAGE_OK) {
                 status = NINLIL_STORAGE_IO_ERROR;
             }
+        } else if (fault->shape == NINLIL_SPY_SHAPE_VALUE_MISMATCH
+            || fault->shape == NINLIL_SPY_SHAPE_REWRITE_DATA_PTR
+            || fault->shape == NINLIL_SPY_SHAPE_REWRITE_CAPACITY) {
+            /* Fall through to natural row, then apply shape. */
+            status = NINLIL_STORAGE_OK;
         } else if (status == NINLIL_STORAGE_OK) {
             /* fall through to natural if status OK without special shape */
+            fault = NULL;
         } else {
             inout_key->length = 0u;
             inout_value->length = 0u;
@@ -337,8 +517,11 @@ static ninlil_storage_status_t spy_iter_next(
                 key_cap, value_cap, 0u, 0u, 0u);
             return status;
         }
-        if (fault->shape != NINLIL_SPY_SHAPE_NATURAL
-            || status != NINLIL_STORAGE_OK) {
+        if (fault != NULL
+            && fault->shape != NINLIL_SPY_SHAPE_VALUE_MISMATCH
+            && fault->shape != NINLIL_SPY_SHAPE_REWRITE_DATA_PTR
+            && fault->shape != NINLIL_SPY_SHAPE_REWRITE_CAPACITY
+            && fault->shape != NINLIL_SPY_SHAPE_NATURAL) {
             trace_push(spy, NINLIL_SPY_OP_ITER_NEXT, status, 0u, 0u,
                 key_cap, value_cap, inout_key->length, inout_value->length, 0u);
             return status;
@@ -365,14 +548,53 @@ static ninlil_storage_status_t spy_iter_next(
                 key_cap, value_cap, inout_key->length, inout_value->length, 0u);
             return status;
         }
+
+        if (fault != NULL
+            && fault->shape == NINLIL_SPY_SHAPE_REWRITE_DATA_PTR) {
+            /*
+             * Leave caller workspace scratch untouched (may hold preseed).
+             * Redirect both data pointers to spy-owned alternate buffers.
+             */
+            if (row->key_length != 0u) {
+                (void)memcpy(
+                    iter_rewrite_key_alt, row->key, row->key_length);
+            }
+            if (row->value_length != 0u
+                && row->value_length <= sizeof(iter_rewrite_value_alt)) {
+                (void)memcpy(
+                    iter_rewrite_value_alt, row->value, row->value_length);
+            }
+            inout_key->data = iter_rewrite_key_alt;
+            inout_key->length = row->key_length;
+            inout_value->data = iter_rewrite_value_alt;
+            inout_value->length = row->value_length;
+            spy->iter_position += 1u;
+            status = NINLIL_STORAGE_OK;
+            trace_push(spy, NINLIL_SPY_OP_ITER_NEXT, status, 0u, 0u,
+                key_cap, value_cap, inout_key->length, inout_value->length, 0u);
+            return status;
+        }
+
         (void)memcpy(inout_key->data, row->key, row->key_length);
         inout_key->length = row->key_length;
         (void)memcpy(inout_value->data, row->value, row->value_length);
         inout_value->length = row->value_length;
+        if (fault != NULL
+            && fault->shape == NINLIL_SPY_SHAPE_VALUE_MISMATCH
+            && row->value_length > 0u) {
+            /* Differ from retained get bytes without changing shared rows. */
+            inout_value->data[row->value_length - 1u] ^= 0x5Au;
+        }
+        if (fault != NULL
+            && fault->shape == NINLIL_SPY_SHAPE_REWRITE_CAPACITY) {
+            inout_key->capacity = key_cap == 0u ? 1u : key_cap + 1u;
+            inout_value->capacity = value_cap == 0u ? 1u : value_cap + 1u;
+        }
         spy->iter_position += 1u;
         status = NINLIL_STORAGE_OK;
         trace_push(spy, NINLIL_SPY_OP_ITER_NEXT, status, 0u, 0u,
-            key_cap, value_cap, inout_key->length, inout_value->length, 0u);
+            inout_key->capacity, inout_value->capacity, inout_key->length,
+            inout_value->length, 0u);
         return status;
     }
 }
@@ -552,11 +774,11 @@ int ninlil_spy_assert_no_mutations(const ninlil_scripted_storage_spy_t *spy)
     if (spy == NULL) {
         return 0;
     }
+    /* get is a read and is not a mutation (S2 profiled begin requires gets). */
     return spy->mutation_calls == 0u
         && spy->call_counts[NINLIL_SPY_OP_PUT] == 0u
         && spy->call_counts[NINLIL_SPY_OP_ERASE] == 0u
         && spy->call_counts[NINLIL_SPY_OP_COMMIT] == 0u
-        && spy->call_counts[NINLIL_SPY_OP_GET] == 0u
         && spy->allocator_calls == 0u;
 }
 

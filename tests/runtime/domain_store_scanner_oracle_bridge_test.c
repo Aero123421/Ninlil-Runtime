@@ -147,6 +147,9 @@ static const char *spy_op_name(ninlil_spy_op_t op)
     switch (op) {
     case NINLIL_SPY_OP_BEGIN:
         return "begin:READ_ONLY";
+    case NINLIL_SPY_OP_GET:
+        /* S1 transport must not call get; mapping forces port_trace fail if any. */
+        return "get";
     case NINLIL_SPY_OP_ITER_OPEN:
         return "iter_open:prefix0";
     case NINLIL_SPY_OP_ITER_NEXT:
@@ -263,9 +266,15 @@ static int run_vector(const ninlil_dsf_vector_t *vec)
     }
 
     /*
+     * S1 transport-only path: get must be exactly zero (independent of
+     * mutation semantics used by S2 profiled begin).
+     */
+    REQUIRE(spy.get_calls == 0u);
+
+    /*
      * Mutation-zero: production spy is authoritative. Oracle expected
      * mutation_calls is schema symmetry (always 0); do not treat it as
-     * independent production evidence.
+     * independent production evidence. get is not a mutation (S2).
      */
     REQUIRE(spy.mutation_calls == 0u);
     REQUIRE(ninlil_spy_assert_no_mutations(&spy));

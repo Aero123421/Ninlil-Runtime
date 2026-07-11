@@ -9,6 +9,24 @@ static const uint8_t CURRENT_ROOT[8] = {
     0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x01u
 };
 
+/* Packed encoded_values offsets/capacities by key_id-1 (catalog order). */
+static const uint16_t ENCODED_OFFSETS[17] = {
+    0u, 183u, 267u, 299u, 331u, 363u, 395u, 463u, 531u, 599u, 667u, 735u,
+    803u, 871u, 939u, 1007u, 1075u
+};
+static const uint16_t ENCODED_CAPS[17] = {
+    183u, 84u, 32u, 32u, 32u, 32u, 68u, 68u, 68u, 68u, 68u, 68u, 68u, 68u,
+    68u, 68u, 68u
+};
+
+_Static_assert(
+    183u + 84u + 4u * 32u + 11u * 68u
+        == NINLIL_DOMAIN_SCAN_ENCODED_VALUES_BYTES,
+    "S2 packed encoded_values inventory drift");
+_Static_assert(
+    1075u + 68u == NINLIL_DOMAIN_SCAN_ENCODED_VALUES_BYTES,
+    "S2 packed encoded_values last slot drift");
+
 static int ranges_are_disjoint(
     const void *left,
     size_t left_length,
@@ -101,6 +119,53 @@ static int is_exact_family14_catalog_key(
     return 0;
 }
 
+/*
+ * family 1–4 prefix-shaped but not exact catalog (malformed / noncatalog).
+ * Value is not inspected.
+ */
+static int is_family14_prefix_noncatalog(
+    const uint8_t *key,
+    uint32_t length)
+{
+    if (key == NULL || length < 9u) {
+        return 0;
+    }
+    if (memcmp(key, CURRENT_ROOT, sizeof(CURRENT_ROOT)) != 0) {
+        return 0;
+    }
+    if (key[8] < 0x01u || key[8] > 0x04u) {
+        return 0;
+    }
+    return !is_exact_family14_catalog_key(key, length);
+}
+
+static int catalog_key_id(
+    const uint8_t *key,
+    uint32_t length,
+    uint32_t *out_key_id)
+{
+    if (!is_exact_family14_catalog_key(key, length) || out_key_id == NULL) {
+        return 0;
+    }
+    if (length == 9u && key[8] == 0x01u) {
+        *out_key_id = 1u;
+        return 1;
+    }
+    if (length == 9u && key[8] == 0x02u) {
+        *out_key_id = 2u;
+        return 1;
+    }
+    if (length == 10u && key[8] == 0x03u) {
+        *out_key_id = 2u + (uint32_t)key[9];
+        return 1;
+    }
+    if (length == 10u && key[8] == 0x04u) {
+        *out_key_id = 6u + (uint32_t)key[9];
+        return 1;
+    }
+    return 0;
+}
+
 static int key_strictly_increases(
     const uint8_t *previous,
     uint32_t previous_length,
@@ -142,6 +207,29 @@ static int begin_alias_ok(
             workspace, workspace_bytes, inout_handle, handle_slot_bytes)
         || !ranges_are_disjoint(
             storage, ops_bytes, inout_handle, handle_slot_bytes)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int begin_profiled_alias_ok(
+    const ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_storage_handle_t *inout_handle,
+    const ninlil_domain_scan_workspace_t *workspace,
+    const ninlil_model_runtime_store_binding_t *candidate)
+{
+    const size_t candidate_bytes = sizeof(*candidate);
+
+    if (!begin_alias_ok(session, storage, inout_handle, workspace)) {
+        return 0;
+    }
+    if (!ranges_are_disjoint(session, sizeof(*session), candidate, candidate_bytes)
+        || !ranges_are_disjoint(
+            workspace, sizeof(*workspace), candidate, candidate_bytes)
+        || !ranges_are_disjoint(storage, sizeof(*storage), candidate, candidate_bytes)
+        || !ranges_are_disjoint(
+            inout_handle, sizeof(*inout_handle), candidate, candidate_bytes)) {
         return 0;
     }
     return 1;
@@ -334,6 +422,11 @@ static void publish_result(
     out_result->current_domain_key_count = session->current_domain_key_count;
     out_result->ok_row_count = session->ok_row_count;
     out_result->recognizable_future_seen = session->recognizable_future_seen;
+    out_result->profile_exact_active = session->profile_exact_active;
+    out_result->profile_mismatch = session->profile_mismatch;
+    out_result->future_profile_candidate = session->future_profile_candidate;
+    out_result->profile_get_present_mask = session->profile_get_present_mask;
+    out_result->family14_iter_seen_mask = session->family14_iter_seen_mask;
 }
 
 static ninlil_status_t classify_ok_row(
@@ -346,10 +439,6 @@ static ninlil_status_t classify_ok_row(
     ninlil_bytes_view_t value_view;
     ninlil_model_domain_key_class_t row_class;
     ninlil_status_t status;
-
-    if (is_exact_family14_catalog_key(workspace->key, key_length)) {
-        return checked_inc_u64(&session->family14_row_count);
-    }
 
     key_view.data = workspace->key;
     key_view.length = key_length;
@@ -367,6 +456,43 @@ static ninlil_status_t classify_ok_row(
         return NINLIL_OK;
     }
     return NINLIL_E_STORAGE_CORRUPT;
+}
+
+static ninlil_status_t reconcile_catalog_row(
+    ninlil_domain_scan_session_t *session,
+    const ninlil_domain_scan_workspace_t *workspace,
+    uint32_t key_length,
+    uint32_t value_length)
+{
+    uint32_t key_id = 0u;
+    uint32_t index;
+    uint32_t bit;
+    const uint8_t *retained;
+    uint32_t retained_length;
+
+    if (!catalog_key_id(workspace->key, key_length, &key_id)
+        || key_id < 1u
+        || key_id > 17u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    index = key_id - 1u;
+    bit = 1u << index;
+    if ((session->family14_iter_seen_mask & bit) != 0u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    retained = workspace->encoded_views[index].data;
+    retained_length = workspace->encoded_views[index].length;
+    if (value_length != retained_length) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (value_length != 0u) {
+        if (retained == NULL
+            || memcmp(workspace->value, retained, value_length) != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+    }
+    session->family14_iter_seen_mask |= bit;
+    return checked_inc_u64(&session->family14_row_count);
 }
 
 static ninlil_status_t process_ok_row(
@@ -396,8 +522,23 @@ static ninlil_status_t process_ok_row(
         return NINLIL_E_STORAGE_CORRUPT;
     }
 
-    class_status = classify_ok_row(
-        session, workspace, key_length, value_length);
+    if (is_exact_family14_catalog_key(workspace->key, key_length)) {
+        if (session->profile_reconciliation != 0u) {
+            class_status = reconcile_catalog_row(
+                session, workspace, key_length, value_length);
+        } else {
+            class_status = checked_inc_u64(&session->family14_row_count);
+        }
+    } else if (is_family14_prefix_noncatalog(workspace->key, key_length)) {
+        class_status = NINLIL_E_STORAGE_CORRUPT;
+    } else if (session->profile_mismatch != 0u
+        || session->future_profile_candidate != 0u) {
+        /* Non-family1-4 skip: no classify_row / domain body decode. */
+        class_status = NINLIL_OK;
+    } else {
+        class_status = classify_ok_row(
+            session, workspace, key_length, value_length);
+    }
     if (class_status != NINLIL_OK) {
         return class_status;
     }
@@ -422,87 +563,20 @@ static void bind_session(
     session->original_handle_authority = 1u;
 }
 
-void ninlil_domain_scan_session_init(ninlil_domain_scan_session_t *session)
+static ninlil_status_t open_zero_prefix_iterator(
+    ninlil_domain_scan_session_t *session)
 {
-    if (session == NULL) {
-        return;
-    }
-    /* Caller contract: only fresh/non-live storage. Not safe on live sessions. */
-    (void)memset(session, 0, sizeof(*session));
-    session->state = NINLIL_DOMAIN_SCAN_STATE_IDLE;
-    session->sticky_primary = NINLIL_OK;
-}
-
-ninlil_status_t ninlil_domain_scan_begin(
-    ninlil_domain_scan_session_t *session,
-    const ninlil_storage_ops_t *storage,
-    ninlil_storage_handle_t *inout_handle,
-    ninlil_domain_scan_workspace_t *workspace)
-{
-    ninlil_storage_txn_t transaction = NULL;
+    const ninlil_storage_ops_t *storage = session->bound_storage;
     ninlil_storage_iter_t iterator = NULL;
     ninlil_storage_status_t storage_status;
     ninlil_bytes_view_t prefix;
     ninlil_status_t primary;
 
-    if (session == NULL || workspace == NULL || inout_handle == NULL
-        || !storage_ops_required_nonnull(storage)
-        || *inout_handle == NULL) {
-        return NINLIL_E_INVALID_ARGUMENT;
-    }
-    if (!begin_alias_ok(session, storage, inout_handle, workspace)) {
-        return NINLIL_E_INVALID_ARGUMENT;
-    }
-    if (session->state != NINLIL_DOMAIN_SCAN_STATE_IDLE) {
-        return NINLIL_E_INVALID_STATE;
-    }
-
-    /* Bind before any Port call so cleanup always uses the correct provider. */
-    bind_session(session, storage, inout_handle, workspace);
-
-    storage_status = storage->begin(
-        storage->user, *inout_handle, NINLIL_STORAGE_READ_ONLY, &transaction);
-    if ((storage_status == NINLIL_STORAGE_OK) != (transaction != NULL)) {
-        /* Handle-shape corruption: consume child if any, then fence. */
-        if (transaction != NULL) {
-            ninlil_storage_status_t cleanup = storage->rollback(
-                storage->user, transaction);
-            if (cleanup != NINLIL_STORAGE_OK) {
-                session->cleanup_status = cleanup;
-            }
-        }
-        session->fence_pending = 1u;
-        fence_original_handle(session);
-        session->state = NINLIL_DOMAIN_SCAN_STATE_DONE;
-        set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
-        return NINLIL_E_STORAGE_CORRUPT;
-    }
-    if (storage_status != NINLIL_STORAGE_OK) {
-        if (storage_status_requires_fence(storage_status)) {
-            fence_original_handle(session);
-        } else {
-            /* No scanner child was acquired; ownership returns to caller. */
-            session->original_handle_authority = 0u;
-        }
-        session->state = NINLIL_DOMAIN_SCAN_STATE_DONE;
-        primary = map_storage_status(storage_status);
-        set_sticky_primary(session, primary);
-        return primary;
-    }
-
-    session->txn = transaction;
-    session->txn_live = 1u;
-
     prefix.data = NULL;
     prefix.length = 0u;
     storage_status = storage->iter_open(
-        storage->user, transaction, prefix, &iterator);
+        storage->user, session->txn, prefix, &iterator);
     if ((storage_status == NINLIL_STORAGE_OK) != (iterator != NULL)) {
-        /*
-         * iter_open handle-shape corruption: consume abnormal iter if any,
-         * then cleanup tree with fence pending so Storage is fenced even when
-         * rollback succeeds.
-         */
         if (iterator != NULL) {
             storage->iter_close(storage->user, iterator);
         }
@@ -526,6 +600,297 @@ ninlil_status_t ninlil_domain_scan_begin(
     session->state = NINLIL_DOMAIN_SCAN_STATE_OPEN;
     return NINLIL_OK;
 }
+
+static ninlil_status_t begin_read_only_txn(
+    ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t *inout_handle)
+{
+    ninlil_storage_txn_t transaction = NULL;
+    ninlil_storage_status_t storage_status;
+    ninlil_status_t primary;
+
+    storage_status = storage->begin(
+        storage->user, *inout_handle, NINLIL_STORAGE_READ_ONLY, &transaction);
+    if ((storage_status == NINLIL_STORAGE_OK) != (transaction != NULL)) {
+        if (transaction != NULL) {
+            ninlil_storage_status_t cleanup = storage->rollback(
+                storage->user, transaction);
+            if (cleanup != NINLIL_STORAGE_OK) {
+                session->cleanup_status = cleanup;
+            }
+        }
+        session->fence_pending = 1u;
+        fence_original_handle(session);
+        session->state = NINLIL_DOMAIN_SCAN_STATE_DONE;
+        set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (storage_status != NINLIL_STORAGE_OK) {
+        if (storage_status_requires_fence(storage_status)) {
+            fence_original_handle(session);
+        } else {
+            session->original_handle_authority = 0u;
+        }
+        session->state = NINLIL_DOMAIN_SCAN_STATE_DONE;
+        primary = map_storage_status(storage_status);
+        set_sticky_primary(session, primary);
+        return primary;
+    }
+
+    session->txn = transaction;
+    session->txn_live = 1u;
+    return NINLIL_OK;
+}
+
+/*
+ * Process one Storage get result for profiled begin. Returns OK to continue
+ * the 17-get loop, or a terminal status (caller must cleanup without iter).
+ */
+static ninlil_status_t process_profile_get_result(
+    ninlil_domain_scan_session_t *session,
+    ninlil_domain_scan_workspace_t *workspace,
+    uint32_t key_id,
+    ninlil_storage_status_t storage_status,
+    const ninlil_mut_bytes_t *inout_value)
+{
+    uint32_t index = key_id - 1u;
+    uint32_t bit = 1u << index;
+    uint32_t typed_cap = ENCODED_CAPS[index];
+    uint8_t *slot = &workspace->encoded_values[ENCODED_OFFSETS[index]];
+
+    if (storage_status == NINLIL_STORAGE_OK) {
+        if (inout_value->length > typed_cap
+            || (inout_value->length > 0u && inout_value->data == NULL)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        session->profile_get_present_mask |= bit;
+        workspace->encoded_views[index].data =
+            inout_value->length == 0u ? NULL : slot;
+        workspace->encoded_views[index].length = inout_value->length;
+        return NINLIL_OK;
+    }
+
+    if (storage_status == NINLIL_STORAGE_NOT_FOUND) {
+        if (inout_value->length != 0u) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        workspace->encoded_views[index].data = NULL;
+        workspace->encoded_views[index].length = 0u;
+        return NINLIL_OK;
+    }
+
+    if (storage_status == NINLIL_STORAGE_BUFFER_TOO_SMALL) {
+        /* BTS: no reread / no allocation. Do not second-count length shape. */
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (!storage_status_is_known(storage_status)) {
+        session->fence_pending = 1u;
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (inout_value->length != 0u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (storage_status_requires_fence(storage_status)) {
+        session->fence_pending = 1u;
+    }
+    return map_storage_status(storage_status);
+}
+
+static ninlil_status_t profile_gate_gets_and_model(
+    ninlil_domain_scan_session_t *session,
+    ninlil_domain_scan_workspace_t *workspace)
+{
+    const ninlil_storage_ops_t *storage = session->bound_storage;
+    ninlil_model_runtime_store_encoded_snapshot_t encoded;
+    ninlil_model_runtime_store_binding_comparison_t comparison =
+        NINLIL_MODEL_RUNTIME_STORE_BINDING_COMPARISON_NONE;
+    ninlil_status_t model_status;
+    ninlil_status_t get_status;
+    uint32_t key_id;
+
+    session->profile_get_present_mask = 0u;
+    (void)memset(workspace->encoded_views, 0, sizeof(workspace->encoded_views));
+    (void)memset(&workspace->validated, 0, sizeof(workspace->validated));
+
+    for (key_id = 1u; key_id <= 17u; ++key_id) {
+        ninlil_model_runtime_store_key_t key;
+        ninlil_bytes_view_t key_view;
+        ninlil_mut_bytes_t value;
+        ninlil_storage_status_t storage_status;
+        uint32_t index = key_id - 1u;
+
+        if (ninlil_model_runtime_store_build_key(
+                (ninlil_model_runtime_store_key_id_t)key_id, &key)
+            != NINLIL_OK) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        key_view.data = key.bytes;
+        key_view.length = key.length;
+        (void)memset(&value, 0, sizeof(value));
+        value.data = &workspace->encoded_values[ENCODED_OFFSETS[index]];
+        value.capacity = ENCODED_CAPS[index];
+        value.length = 0u;
+
+        storage_status = storage->get(
+            storage->user, session->txn, key_view, &value);
+        /*
+         * inout_value.data/capacity are caller-owned descriptor fields for this
+         * get. A provider must not rewrite them. Redirected data with intact
+         * workspace-slot prior contents would otherwise risk stale-byte accept.
+         * Unsafe shape: terminal CORRUPT + fence after cleanup.
+         */
+        if (value.data != &workspace->encoded_values[ENCODED_OFFSETS[index]]
+            || value.capacity != ENCODED_CAPS[index]) {
+            session->fence_pending = 1u;
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        get_status = process_profile_get_result(
+            session, workspace, key_id, storage_status, &value);
+        if (get_status != NINLIL_OK) {
+            return get_status;
+        }
+    }
+
+    if (session->profile_get_present_mask
+        != NINLIL_DOMAIN_SCAN_PROFILE_ALL_MASK) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    for (key_id = 1u; key_id <= 17u; ++key_id) {
+        encoded.values[key_id - 1u] = workspace->encoded_views[key_id - 1u];
+    }
+
+    model_status = ninlil_model_runtime_store_validate_snapshot(
+        &encoded, &workspace->validated);
+    if (model_status == NINLIL_E_STORAGE_CORRUPT) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (model_status == NINLIL_E_UNSUPPORTED) {
+        session->future_profile_candidate = 1u;
+        session->profile_exact_active = 0u;
+        session->profile_mismatch = 0u;
+        return NINLIL_OK;
+    }
+    if (model_status != NINLIL_OK) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    model_status = ninlil_model_runtime_store_compare_binding(
+        &workspace->validated, &workspace->candidate, &comparison);
+    if (model_status != NINLIL_OK) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (comparison == NINLIL_MODEL_RUNTIME_STORE_BINDING_EXACT) {
+        session->profile_exact_active = 1u;
+        session->profile_mismatch = 0u;
+        session->future_profile_candidate = 0u;
+        return NINLIL_OK;
+    }
+    if (comparison == NINLIL_MODEL_RUNTIME_STORE_BINDING_UNSUPPORTED) {
+        session->profile_exact_active = 0u;
+        session->profile_mismatch = 1u;
+        session->future_profile_candidate = 0u;
+        return NINLIL_OK;
+    }
+    return NINLIL_E_STORAGE_CORRUPT;
+}
+
+void ninlil_domain_scan_session_init(ninlil_domain_scan_session_t *session)
+{
+    if (session == NULL) {
+        return;
+    }
+    /* Caller contract: only fresh/non-live storage. Not safe on live sessions. */
+    (void)memset(session, 0, sizeof(*session));
+    session->state = NINLIL_DOMAIN_SCAN_STATE_IDLE;
+    session->sticky_primary = NINLIL_OK;
+}
+
+ninlil_status_t ninlil_domain_scan_begin_profiled(
+    ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t *inout_handle,
+    ninlil_domain_scan_workspace_t *workspace,
+    const ninlil_model_runtime_store_binding_t *candidate)
+{
+    ninlil_status_t status;
+
+    if (session == NULL || workspace == NULL || inout_handle == NULL
+        || candidate == NULL
+        || !storage_ops_required_nonnull(storage)
+        || *inout_handle == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!begin_profiled_alias_ok(
+            session, storage, inout_handle, workspace, candidate)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_IDLE) {
+        return NINLIL_E_INVALID_STATE;
+    }
+
+    /* Bind + candidate copy before any Port call; never retain caller ptr. */
+    bind_session(session, storage, inout_handle, workspace);
+    (void)memcpy(&workspace->candidate, candidate, sizeof(workspace->candidate));
+
+    status = begin_read_only_txn(session, storage, inout_handle);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+
+    status = profile_gate_gets_and_model(session, workspace);
+    if (status != NINLIL_OK) {
+        set_sticky_primary(session, status);
+        return cleanup_tree(session, status);
+    }
+
+    session->profile_reconciliation = 1u;
+    session->family14_iter_seen_mask = 0u;
+    return open_zero_prefix_iterator(session);
+}
+
+#if defined(NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN)
+ninlil_status_t ninlil_domain_scan_begin(
+    ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t *inout_handle,
+    ninlil_domain_scan_workspace_t *workspace)
+{
+    ninlil_status_t status;
+
+    if (session == NULL || workspace == NULL || inout_handle == NULL
+        || !storage_ops_required_nonnull(storage)
+        || *inout_handle == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!begin_alias_ok(session, storage, inout_handle, workspace)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_IDLE) {
+        return NINLIL_E_INVALID_STATE;
+    }
+
+    /* Bind before any Port call so cleanup always uses the correct provider. */
+    bind_session(session, storage, inout_handle, workspace);
+
+    status = begin_read_only_txn(session, storage, inout_handle);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+
+    /* S1 transport: no get / no profile gate. */
+    session->profile_reconciliation = 0u;
+    session->profile_exact_active = 0u;
+    session->profile_mismatch = 0u;
+    session->future_profile_candidate = 0u;
+    session->profile_get_present_mask = 0u;
+    session->family14_iter_seen_mask = 0u;
+    return open_zero_prefix_iterator(session);
+}
+#endif /* NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN */
 
 ninlil_status_t ninlil_domain_scan_advance(
     ninlil_domain_scan_session_t *session,
@@ -588,8 +953,30 @@ ninlil_status_t ninlil_domain_scan_advance(
         storage_status = storage->iter_next(
             storage->user, session->iter, &key, &value);
 
+        /*
+         * inout_key/inout_value data+capacity are caller-owned descriptors for
+         * this iter_next (§15.3). Provider rewrite is unsafe shape: CORRUPT +
+         * fence after cleanup (same policy as get inout_value descriptors).
+         */
+        if (key.data != workspace->key
+            || key.capacity != NINLIL_DOMAIN_SCAN_KEY_CAPACITY
+            || value.data != workspace->value
+            || value.capacity != NINLIL_DOMAIN_SCAN_VALUE_CAPACITY) {
+            session->fence_pending = 1u;
+            set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+            session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+
         if (storage_status == NINLIL_STORAGE_NOT_FOUND) {
             if (key.length != 0u || value.length != 0u) {
+                set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+                session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            if (session->profile_reconciliation != 0u
+                && session->family14_iter_seen_mask
+                    != session->profile_get_present_mask) {
                 set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
                 session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
                 return NINLIL_E_STORAGE_CORRUPT;
@@ -605,8 +992,7 @@ ninlil_status_t ninlil_domain_scan_advance(
         }
 
         if (storage_status == NINLIL_STORAGE_OK) {
-            if (key.data == NULL
-                || key.length < 1u
+            if (key.length < 1u
                 || key.length > key.capacity
                 || key.length > NINLIL_DOMAIN_SCAN_KEY_CAPACITY
                 || value.length > value.capacity

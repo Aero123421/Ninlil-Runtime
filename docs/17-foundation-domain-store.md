@@ -1248,6 +1248,7 @@ Handle/status shapeは12章Storage Port規則に従います。
 3. `NOT_FOUND`で両lengthが0以外はcorruption（終端条件は両exact 0のみ）。
 4. `OK`でkey lengthが1..255外、value lengthが0..4096外、length>capacity、またはdata NULL（non-zero length時）はcorruption。
 5. unknown Storage statusは14章closed mappingを維持し、reuse unsafeなら§15.6 treeでchild consume後にfence。
+6. **`iter_next` descriptor identity（get pathと同型）:** `inout_key.data` / `inout_value.data` と `capacity` はcaller-owned workspace固定scratch記述子であり、providerが書き換えてはならない（`length`とbuffer contentsだけがiter_nextの出力）。return後に `key.data` がworkspace key slotでない、`value.data` がworkspace value slotでない、または `capacity` が255/4096 exactでない場合はunsafe provider shape → terminal `STORAGE_CORRUPT`（children consume後fence）。getの`inout_value` descriptor規則（§15.10.3）と同趣旨。
 
 **Data-byte policyとprovider conformance（完璧検出を主張しない）:**
 
@@ -1425,7 +1426,7 @@ L2b1 successはStage 5完了でもD2完了でもありません（14章L2b1 boun
 | --- | --- | --- |
 | **D2-S0** | 本節のNormative contract freeze。実装/vector変更なし | 否 |
 | **D2-S1** | scanner core: state machine、begin binds Port/handle/workspace、advance(row_budget)/finalize|abort(result) only、iter buffer、`has_previous` lex、§15.4 coarse class、mutation 0、uint64 checked counters。独立oracle + production bridge。**実装済み（D2 incomplete）** | 否 |
-| **D2-S2** | **Normative freeze（本§15.10 / §17.1.2）:** production profiled begin only（required candidate; TEST transport beginはtest macro専用）、same-txn 17 exact get + completeness/validate/compare、typed get capacities、iterator reconciliation masks、mismatch/future mode skip、private result diagnostics、sibling profile oracle **schema ownership**。実装・vector本体は後続PR。D2 complete / DSR1/DSR2 completeをclaimしない | 否 |
+| **D2-S2** | **実装済み（D2 incomplete）:** production profiled begin only（required candidate; TEST transport beginはtest macro専用）、same-txn 17 exact get + completeness/validate/compare、typed get capacities、iterator reconciliation masks、mismatch/future mode skip、private result diagnostics、sibling profile oracle `domain-scan-profile-v1.json` / `ninlil-domain-scan-profile-v1-d2s2` + independent generator + production bridge。D2 complete / DSR1/DSR2 complete / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
 | **D2-S3** | 全current domain structural / same-record validation（envelope、4096、subtype body local、duplicate/order接続）。**step 5 same-record/local: witness header+chunk framing/matrix のscan到達**（D1 pure witness codecに依存。member old/new・partial group・successor chainはD3）。**D1 bodies `0x50` EVENT_SPOOL / `0x51` RETRY_SUMMARY / `0x52` MANAGEMENT_LEDGER / `0x61` RETENTION_BASIS / `0x63` CLEANUP_PLAN が未実装の間、S3 completionはblock** | 否 |
 | **D2-S4** | same-snapshot exact `get`とfixed-memory cross-reference seam（全ID集合非保持） | 否 |
 | **D2-S5** | S1〜S4および依存（不足D1 body含む）と必須vector/oracleが揃ったうえでの`DSR1_SCAN` / `DSR2_ESP_BOUND` complete。restart先頭、**D2-detectable** corrupt>future、D3 corruption投入用のexact seam/mechanism、rollback failure/fence、workspace天井、allocation 0。partial group/orphan/counter/capacity/health自体は証明しない | **S1〜S5完了の総称としてだけD2（bounded scanner）を証明。Stage 5全体は証明しない** |
@@ -1437,7 +1438,7 @@ D3（cross-row semantic / cardinality / capacity / health / **witness member old
 
 ### 15.10 D2-S2 profile gateとone-iterator互換（D2-S2 Normative freeze）
 
-**Decision identifier: D2-S2。** 本節はfamily 1〜4 integrity + exact profile gate + one-iterator reconciliationの**Normative freeze**である。実装・vector本体・production bridgeは後続PR。**S2 completion ≠ D2 completion ≠ Stage 5 / public Runtime / ESP hardware completion。** S3–S6・D3・D4はincompleteのまま。L2b1 legacy oversized allocator re-read（§15.8）はD2正本ではなく本pathと分離したまま。
+**Decision identifier: D2-S2。** 本節はfamily 1〜4 integrity + exact profile gate + one-iterator reconciliationの**Normative freeze**であり、実装は production profiled begin / oracle / bridge / tests まで到達してよい。**S2 implementation complete ≠ D2 completion ≠ Stage 5 / public Runtime / ESP hardware completion。** S3–S6・D3・D4はincompleteのまま。L2b1 legacy oversized allocator re-read（§15.8）はD2正本ではなく本pathと分離したまま。
 
 family1-4 corruption > profile unsupported を、**READ_ONLY transaction 1つ + zero-prefix iterator 1つ**と両立させる。`profile_mismatch` / `future_profile_candidate`は**non-terminal candidate**であり、`FAILED`へ遷移させずscanを止めない（§15.2）。
 
@@ -1487,7 +1488,7 @@ family1-4 corruption > profile unsupported を、**READ_ONLY transaction 1つ + 
 2. `inout_value.capacity` = 当該key typeのtyped capacity（上表 exact）
 3. `inout_value.data` = workspace packed encoded slot for that key（non-NULL; capacity>0）
 
-成功`OK` valueは同じ`inout_value` bufferへ書かれ、workspace packed encoded valuesとしてretainedする（viewsがborrow）。
+`inout_value.data` と `inout_value.capacity` はcaller-owned descriptorであり、providerが書き換えてはならない（`length`とbuffer contentsだけがgetの出力）。return後に `data` がexact slot pointerでない、または `capacity` がtyped capacityでない場合はunsafe provider shape → terminal `STORAGE_CORRUPT`（children consume後fence）。成功`OK` valueは同じ`inout_value` bufferへ書かれ、workspace packed encoded valuesとしてretainedする（viewsがborrow）。
 
 **Get status / `inout_value` length / poison / fence（closed）:**
 下記の`length`は**常に`inout_value.length`のみ**を指す。key lengthや「both lengths」表現は`get`に適用しない（key/value両length 0は`iter_next`終端規則のみ。§15.3）。
@@ -1599,8 +1600,8 @@ private result diagnostics（§15.6）: `profile_exact_active`、`profile_mismat
 
 | Claim | S2 freeze / future completion |
 | --- | --- |
-| D2-S2 Normative freeze（本節） | **本doc更新で成立**。実装未をclaimしない |
-| D2-S2 implementation complete | profiled begin + gate + reconciliation + oracle/bridge/testsが本節を満たしたとき。なお**D2 completeではない** |
+| D2-S2 Normative freeze（本節） | **本doc更新で成立** |
+| D2-S2 implementation complete | profiled begin + gate + reconciliation + oracle/bridge/testsが本節を満たしたとき（実装PRで到達可）。なお**D2 completeではない** |
 | D2 complete | S1–S5 + deps（§15.9） |
 | Stage 5 / public Runtime / ESP hardware | D3/D4/§1残gate後。S2 successで置換禁止 |
 
@@ -1654,7 +1655,7 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 | --- | --- | --- |
 | D2-S0 | vector/oracle追加なし。本ledgerと§15 contractだけ | spec freeze ≠ implementation |
 | D2-S1 | `DSR1_SCAN` transport subset + `DSR2_ESP_BOUND` skeleton の**ownership**。独立machine-readable oracle artifactを **`spec/vectors/domain-scan-v1.json`**、format **`ninlil-domain-scan-v1-d2s1`** として固定（schemaは§17.1.1）。**S2以降も本artifactはbyte-for-byte frozen regression**。D1 JSONへscanner fieldを追加しない | S1 ownershipのみ。**DSR1/DSR2 completeおよびD2 completeをclaimしない** |
-| D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator reconciliation。sibling oracle **schema ownership**を **`spec/vectors/domain-scan-profile-v1.json`**、format **`ninlil-domain-scan-profile-v1-d2s2`** として固定（§17.1.2）。**本freezeはschema ownershipのみ; vectors本体・generator・bridge実装は後続** | domain structural全体はS3。**DSR1/DSR2/D2 completeをclaimしない** |
+| D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator reconciliation。sibling oracle **`spec/vectors/domain-scan-profile-v1.json`**、format **`ninlil-domain-scan-profile-v1-d2s2`**（§17.1.2）+ independent generator + production profiled-begin bridge + unit acceptance。**実装済み（D2 incomplete）** | domain structural全体はS3。**DSR1/DSR2/D2 completeをclaimしない** |
 | D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）依存D1 body hexは当該subtype D1 deliverableが正本 | **0x50/51/52/61/63 D1 body未完了ならS3 completion block** |
 | D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference（`DSI1_BACKLINK`のscan接続部など） | 全ID集合RAM保持テストを合法化しない |
 | D2-S5 | `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。かつS1〜S4 ownership vectorと依存D1 bodyが揃っていること | **S1〜S5+depsが揃って初めてD2（bounded scanner）証明。Stage 5証明ではない。S2/S3/S4または5 D1 body欠落のままS5 complete禁止** |
@@ -1706,7 +1707,7 @@ S1 vectors own transport/lifecycle/shape/lex/coarse-class subsets only. They do 
 
 ### 17.1.2 D2-S2 profile oracle artifact schema ownership（Normative freeze）
 
-**本節はschema ownershipのfreezeである。** 実vector JSON・Python generator・production bridgeの追加はD2-S2 **implementation** PRのdeliverableであり、本doc-only freezeでは作成しない。**DSR1_SCAN complete / DSR2_ESP_BOUND complete / D2 completeをclaimしない。**
+**本節はschema ownershipのfreezeである。** 実vector JSON・Python generator・production bridgeはD2-S2 **implementation** deliverableとして追加される（`tools/domain_scan_profile_vector_gen.py` / `spec/vectors/domain-scan-profile-v1.json`）。**DSR1_SCAN complete / DSR2_ESP_BOUND complete / D2 completeをclaimしない。**
 
 | Field | Exact value |
 | --- | --- |
