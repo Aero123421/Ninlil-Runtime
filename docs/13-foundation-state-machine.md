@@ -611,7 +611,7 @@ M1aのORIGIN_WITH_GRANT EventFactは、TEST origin authorization / grant provide
 1. Submission syntaxとcanonical digestを検査する。
 2. caller idempotency key mappingと、source application instance + namespace + service ID scopeのevent ID mappingを検査する。
 3. same key / same digestで既存admissionがあり、EventFactではsame event ID / same canonical digest / same idempotency keyの3条件も揃うなら、現在のgrant expiryに関係なくALREADY_ADMITTEDを返す。
-4. same key / different digest、EventFactのsame key / same digest / different event ID、same event ID / different canonical digest、same event ID / same canonical digestだがdifferent idempotency key、または2つのmappingが別transactionを指す場合はIDEMPOTENCY_CONFLICTです。conflictでnew key / event aliasを追加せず、既存mappingも上書きしません。
+4. same key / different digest、EventFactのsame key / same digest / different event ID、same event ID / different canonical digest、same event ID / same canonical digestだがdifferent idempotency key、または2つのmappingが別transactionを指す場合はIDEMPOTENCY_CONFLICTです。conflictでnew key / event aliasを追加せず、既存mappingも上書きしません。Conflict結果のexisting transaction ID / digestはcaller-key mappingが存在すればそのpair、存在しなければevent ID mappingのpairを返します。両mappingが別transactionでもfieldを混合せずcaller-key mappingを優先し、mapping先recordを検証できない場合はStorage failureとしてfail closedします。
 5. 両mappingがない新規の場合だけtrusted admission reference sampleを取得する。
 6. `transaction_sequence`、次に`scheduler_owner_sequence`のchecked headroomを検査する。どちらかMAXならprovider/entropy/reservation 0でCOUNTER_EXHAUSTED rejection。
 7. Counter headroomがある場合だけproviderをexactly 1回評価する。

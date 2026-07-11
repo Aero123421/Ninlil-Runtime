@@ -1557,6 +1557,7 @@ Rules:
 - DesiredStateCommandは同じscope/key/canonical digestで`ALREADY_ADMITTED`、同じscope/keyで異なるdigestは`IDEMPOTENCY_CONFLICT`です。
 - EventFactは同じscope内に、durable `event_id -> transaction_id + canonical_submission_digest + exact idempotency key length/bytes` mappingを持ちます。同じevent ID、同じcanonical digest、同じidempotency keyの3条件が揃う場合だけ既存transactionの`ALREADY_ADMITTED`です。
 - EventFactはtripleの1要素でも異なり、既存key mappingまたはevent mappingと交差すれば`IDEMPOTENCY_CONFLICT`です。same event ID/digestでkeyだけが違う場合、same key/business contentでevent IDを変えたためcanonical digestが違う場合、key mappingとevent mappingが別transactionを指す場合をすべて含みます。alias mappingを追加せず既存mappingを上書きしません。Event retryはevent IDとidempotency keyの両方を不変にします。
+- EventFact conflict結果へ返すexisting transaction ID / canonical digestは決定的に選びます。Caller-key mappingが存在する場合は常にそのpersist済みpairを返し、caller-key mappingがなくevent ID mappingだけが存在する場合に限りevent mappingのpairを返します。両mappingが別transactionを指す破損・競合状態でもcaller-key mappingを優先し、2つのpairを混合しません。これはcallerが指定したidempotency keyをprimary public lookup boundaryに保ち、再提出ごとの結果を安定させる規則です。どちらかのmappingが参照するrecord自体を検証・読取りできない場合はconflictを合成せず、Storage corruption/errorとしてfail closedします。
 - 新規EventFact admissionはkey mapping、event mapping、transaction、payload/spool、grant snapshotを同じFULL transactionでcommitします。event mapping capacityもadmission前にreserveし、required Receipt/explicit discard前は削除せず、terminal後も少なくとも`required_dedup_window_ms`保持します。
 - DesiredStateはevent ID zero、generation non-zero、finite deadlineです。
 - EventFactはevent ID non-zero、generation zero、`effect_deadline_ms == NINLIL_NO_DEADLINE`、`evidence_grace_ms == 0`です。
