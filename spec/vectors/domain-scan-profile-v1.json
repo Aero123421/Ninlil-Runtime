@@ -1,0 +1,4797 @@
+{
+  "format": "ninlil-domain-scan-profile-v1-d2s2",
+  "scope": "D2-S2 family1-4 integrity + exact profile gate + one-iterator reconciliation ownership only. Does not claim DSR1_SCAN complete, DSR2_ESP_BOUND complete, D2 complete, Stage 5, or public Runtime.",
+  "vectors": [
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 1,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 131071,
+        "family14_row_count": 17,
+        "final_status": "OK",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 17,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 1,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_PROFILE_EXACT_SUCCESS",
+      "kind": "profile_exact",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 99,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 131071,
+        "family14_row_count": 17,
+        "final_status": "UNSUPPORTED",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 17,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 1,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_PROFILE_SEMANTIC_MISMATCH",
+      "kind": "profile_mismatch",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 131071,
+        "family14_row_count": 17,
+        "final_status": "UNSUPPORTED",
+        "future_profile_candidate": 1,
+        "mutation_calls": 0,
+        "ok_row_count": 17,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_PROFILE_FUTURE_VERSION",
+      "kind": "future_profile",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010002000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000905b0e00"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_CORRUPT_OVERRIDES_FUTURE",
+      "kind": "precedence",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010002000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000905b0e00"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c22936"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131070,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_01",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131069,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_02",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131067,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_03",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131063,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_04",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131055,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_05",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131039,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_06",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131007,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_07",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 130943,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_08",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 130815,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_09",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 130559,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_10",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 130047,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_11",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 129023,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_12",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 126975,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_13",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 122879,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_14",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 114687,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_15",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 98303,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_16",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 65535,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISSING_KEY_17",
+      "kind": "completeness",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 0,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_EMPTY_NAMESPACE",
+      "kind": "completeness",
+      "rows": []
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 0,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [
+        {
+          "on_call": 1,
+          "op": "get",
+          "shape": "bts",
+          "status": "BUFFER_TOO_SMALL",
+          "value_length": 200
+        }
+      ],
+      "id": "S2_GET_BTS_NO_REREAD",
+      "kind": "get_fault",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 3,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [
+        {
+          "on_call": 3,
+          "op": "get",
+          "shape": "not_found_poison",
+          "status": "NOT_FOUND",
+          "value_length": 1
+        }
+      ],
+      "id": "S2_GET_NOT_FOUND_POISON",
+      "kind": "get_fault",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 15,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [
+        {
+          "on_call": 5,
+          "op": "get",
+          "shape": "io_error",
+          "status": "IO_ERROR"
+        }
+      ],
+      "id": "S2_GET_IO_ERROR",
+      "kind": "get_fault",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 1,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback",
+          "close"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 7,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 1,
+        "state_after": "DONE"
+      },
+      "faults": [
+        {
+          "on_call": 4,
+          "op": "get",
+          "shape": "unknown",
+          "status": "UNKNOWN"
+        }
+      ],
+      "id": "S2_GET_UNKNOWN_STATUS_FENCE",
+      "kind": "get_fault",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 1,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_COMMIT_UNKNOWN",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "rollback",
+          "close"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 31,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 1,
+        "state_after": "DONE"
+      },
+      "faults": [
+        {
+          "on_call": 6,
+          "op": "get",
+          "shape": "commit_unknown",
+          "status": "COMMIT_UNKNOWN"
+        }
+      ],
+      "id": "S2_GET_COMMIT_UNKNOWN_FENCE",
+      "kind": "get_fault",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 99,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 131071,
+        "family14_row_count": 17,
+        "final_status": "UNSUPPORTED",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 18,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 1,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_MISMATCH_SKIP_DOMAIN_MALFORMED",
+      "kind": "profile_mismatch",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010610",
+          "value_hex": ""
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 99,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 3,
+        "family14_row_count": 2,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 2,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 0,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 1,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_F14_NONCATALOG_OVERRIDES_MISMATCH",
+      "kind": "precedence",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010300",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 0,
+        "family14_row_count": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 1,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [
+        {
+          "key_length": 0,
+          "on_call": 1,
+          "op": "iter_next",
+          "shape": "value_mismatch",
+          "status": "OK",
+          "value_length": 0
+        }
+      ],
+      "id": "S2_ITER_VALUE_MISMATCH",
+      "kind": "iterator_reconcile",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 0,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 65535,
+        "family14_row_count": 16,
+        "final_status": "STORAGE_CORRUPT",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 16,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 1,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [
+        {
+          "key_length": 0,
+          "on_call": 17,
+          "op": "iter_next",
+          "shape": "early_end",
+          "status": "NOT_FOUND",
+          "value_length": 0
+        }
+      ],
+      "id": "S2_ITER_EARLY_END_OMIT_LAST",
+      "kind": "iterator_reconcile",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "op": "begin_profiled"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "candidate_binding": {
+        "environment": 1,
+        "limits": {
+          "max_attempts_per_target_per_cycle": 8,
+          "max_bearer_sends_per_step": 18,
+          "max_callbacks_per_step": 16,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_deferred_tokens": 19,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_event_spool_bytes": 0,
+          "max_event_spool_count": 0,
+          "max_evidence_per_target": 3,
+          "max_ingress_per_step": 15,
+          "max_logical_payload_bytes": 1000,
+          "max_nonterminal_deliveries": 12,
+          "max_nonterminal_transactions": 20,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_retained_terminal_transactions": 30,
+          "max_services": 7,
+          "max_state_transitions_per_step": 17,
+          "max_targets_per_transaction": 1
+        },
+        "observation_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "role": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "storage_schema": 1,
+        "terminal_retention_ms": 0
+      },
+      "expected": {
+        "adopted": 1,
+        "close_count": 0,
+        "current_domain_key_count": 0,
+        "family14_iter_seen_mask": 131071,
+        "family14_row_count": 17,
+        "final_status": "OK",
+        "future_profile_candidate": 0,
+        "mutation_calls": 0,
+        "ok_row_count": 17,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "profile_exact_active": 1,
+        "profile_get_present_mask": 131071,
+        "profile_mismatch": 0,
+        "recognizable_future_seen": 0,
+        "reopen_required": 0,
+        "state_after": "DONE"
+      },
+      "faults": [],
+      "id": "S2_DSR2_CEILING_NOTE",
+      "kind": "dsr2_ceiling",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ]
+    }
+  ],
+  "version": 1,
+  "workspace": {
+    "ceiling_bytes": 8192,
+    "encoded_packing": "binding183+identity84+counter32x4+capacity68x11",
+    "encoded_values_bytes": 1143,
+    "key_capacity": 255,
+    "previous_key_capacity": 255,
+    "value_capacity": 4096
+  }
+}

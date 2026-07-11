@@ -95,6 +95,12 @@ if(NINLIL_ENABLE_SANITIZERS)
     target_link_options(ninlil_runtime_private INTERFACE
         -fsanitize=address,undefined)
 endif()
+# S1 transport-only begin is TEST-build only: declare/compile under this macro.
+# tests-OFF release private archive must not contain ninlil_domain_scan_begin.
+if(NINLIL_BUILD_TESTS)
+    target_compile_definitions(ninlil_runtime_private PRIVATE
+        NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1)
+endif()
 
 if(NINLIL_BUILD_TESTS)
     enable_testing()
@@ -522,6 +528,8 @@ if(NINLIL_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
     )
+    target_compile_definitions(ninlil_domain_store_scanner_test PRIVATE
+        NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1)
     target_link_libraries(ninlil_domain_store_scanner_test PRIVATE
         ninlil_runtime_private
         ninlil_test_scripted_storage_spy
@@ -571,6 +579,8 @@ if(NINLIL_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
         ${CMAKE_CURRENT_BINARY_DIR}
     )
+    target_compile_definitions(ninlil_domain_store_scanner_oracle_bridge_test PRIVATE
+        NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1)
     target_link_libraries(ninlil_domain_store_scanner_oracle_bridge_test PRIVATE
         ninlil_runtime_private
         ninlil_test_scripted_storage_spy
@@ -587,6 +597,68 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_domain_store_scanner_oracle_bridge_test
     )
 
+    # D2-S2 independent profile oracle + production profiled-begin bridge.
+    add_test(
+        NAME domain_scan_profile_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_profile_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-profile-v1.json
+    )
+    set(_ninlil_dsp_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_profile_vector_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_dsp_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_profile_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-profile-v1.json
+            ${_ninlil_dsp_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_profile_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-profile-v1.json
+        COMMENT "Generate domain-scan-profile production bridge fixture"
+        VERBATIM
+    )
+    add_executable(ninlil_domain_store_scanner_profile_oracle_bridge_test
+        tests/runtime/domain_store_scanner_profile_oracle_bridge_test.c
+        ${_ninlil_dsp_fixture}
+    )
+    target_include_directories(
+        ninlil_domain_store_scanner_profile_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(
+        ninlil_domain_store_scanner_profile_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(
+        ninlil_domain_store_scanner_profile_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_domain_store_scanner_profile_oracle_bridge_test)
+    add_test(
+        NAME domain_store_scanner_profile_oracle_bridge
+        COMMAND ninlil_domain_store_scanner_profile_oracle_bridge_test
+    )
+
+    # Release absence: transport-only begin must not appear in tests-OFF private
+    # object symbols (nm). Production profiled begin remains present.
+    add_test(
+        NAME domain_scan_transport_begin_release_absent
+        COMMAND ${CMAKE_COMMAND}
+            -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            "-DNINLIL_GENERATOR=${CMAKE_GENERATOR}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/domain_scan_transport_begin_absent.cmake
+    )
+
     # DSR2 skeleton only (not DSR2 complete): scan .c+.h for allocator/alloca/
     # VLA/65536 paths and direct self-call of scan APIs. Does not prove
     # absence of all recursion via helpers. Full DSR2 is S5 ownership.
@@ -595,7 +667,7 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME domain_scan_dsr2_source_skeleton
         COMMAND ${Python3_EXECUTABLE} -c
-            "import pathlib,re,sys; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}/src/runtime'); files=[root/'domain_store_scanner.c', root/'domain_store_scanner.h']; t='\\n'.join(p.read_text() for p in files); bad=[]; patterns=[(r'\\bmalloc\\b','malloc'),(r'\\bcalloc\\b','calloc'),(r'\\brealloc\\b','realloc'),(r'\\bfree\\b','free'),(r'\\balloca\\b','alloca'),(r'\\[65536\\]','stack65536'),(r'\\[ *4096 *\\]','stack4096_literal')]; [bad.append(n) for p,n in patterns if re.search(p,t)]; c=(root/'domain_store_scanner.c').read_text(); fns=['ninlil_domain_scan_begin','ninlil_domain_scan_advance','ninlil_domain_scan_finalize','ninlil_domain_scan_abort']; [bad.append('self_or_recursive_call:'+fn) for fn in fns if len(list(re.finditer(r'\\b'+fn+r'\\s*\\(', c)))>1]; sys.exit(0 if not bad else (print('DSR2 source skeleton failed:', bad) or 1))"
+            "import pathlib,re,sys; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}/src/runtime'); files=[root/'domain_store_scanner.c', root/'domain_store_scanner.h']; t='\\n'.join(p.read_text() for p in files); bad=[]; patterns=[(r'\\bmalloc\\b','malloc'),(r'\\bcalloc\\b','calloc'),(r'\\brealloc\\b','realloc'),(r'\\bfree\\b','free'),(r'\\balloca\\b','alloca'),(r'\\[65536\\]','stack65536'),(r'\\[ *4096 *\\]','stack4096_literal')]; [bad.append(n) for p,n in patterns if re.search(p,t)]; c=(root/'domain_store_scanner.c').read_text(); fns=['ninlil_domain_scan_begin_profiled','ninlil_domain_scan_begin','ninlil_domain_scan_advance','ninlil_domain_scan_finalize','ninlil_domain_scan_abort']; [bad.append('self_or_recursive_call:'+fn) for fn in fns if len(list(re.finditer(r'\\b'+fn+r'\\s*\\(', c)))>1]; sys.exit(0 if not bad else (print('DSR2 source skeleton failed:', bad) or 1))"
     )
 
     add_executable(ninlil_submission_preflight_test

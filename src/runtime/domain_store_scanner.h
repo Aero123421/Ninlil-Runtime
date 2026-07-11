@@ -2,16 +2,23 @@
 #define NINLIL_DOMAIN_STORE_SCANNER_H
 
 /*
- * D2-S1 private Domain Store bounded scanner core.
+ * D2-S2 private Domain Store bounded scanner core.
  * Production-private; not installed. Not a public C ABI.
  *
- * Implements docs/17-foundation-domain-store.md §15.1–15.7 / §15.4 S1
- * coarse classification only. No profile gate (S2), body structural (S3),
- * cross-row (D3), recovery mutation (D4), or Stage 5 orchestration (S6).
+ * Implements docs/17-foundation-domain-store.md §15.1–15.7 / §15.10.
+ * Production path: ninlil_domain_scan_begin_profiled (required candidate,
+ * same-txn 17 get + validate/compare + one zero-prefix iterator).
+ * S1 transport-only begin is TEST-build only
+ * (NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN).
+ *
+ * No domain body structural (S3), cross-row (D3), recovery mutation (D4),
+ * or Stage 5 orchestration (S6). Does not claim D2 / DSR1 / DSR2 complete.
  *
  * Ownership binding:
- *   begin() binds non-owning pointers to storage ops, handle slot, and
+ *   begin binds non-owning pointers to storage ops, handle slot, and
  *   workspace plus a snapshot of the original handle value into the session.
+ *   Profiled begin also exact-copies the candidate binding into workspace
+ *   before the first Port call and never retains the caller pointer.
  *   advance/finalize/abort use only those bound fields for Port calls and
  *   cleanup; callers cannot substitute a different Port/handle/workspace
  *   mid-session via the API surface.
@@ -30,6 +37,9 @@
 #include <ninlil/platform.h>
 #include <ninlil/runtime.h>
 
+#include "runtime_store_bootstrap.h"
+#include "runtime_store_codec.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,6 +49,10 @@ extern "C" {
 #define NINLIL_DOMAIN_SCAN_KEY_CAPACITY ((uint32_t)255u)
 #define NINLIL_DOMAIN_SCAN_VALUE_CAPACITY ((uint32_t)4096u)
 #define NINLIL_DOMAIN_SCAN_PREVIOUS_KEY_CAPACITY ((uint32_t)255u)
+#define NINLIL_DOMAIN_SCAN_ENCODED_VALUES_BYTES \
+    NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_ENCODED_VALUE_BYTES
+#define NINLIL_DOMAIN_SCAN_PROFILE_ALL_MASK \
+    NINLIL_MODEL_RUNTIME_STORE_PRESENT_ALL_MASK
 
 typedef enum ninlil_domain_scan_state {
     NINLIL_DOMAIN_SCAN_STATE_IDLE = 0,
@@ -49,7 +63,10 @@ typedef enum ninlil_domain_scan_state {
 } ninlil_domain_scan_state_t;
 
 /*
- * Caller-owned fixed scratch (Runtime arena). One key + value + previous-key.
+ * Caller-owned fixed scratch (Runtime arena).
+ * S1: key + value + previous-key.
+ * S2: packed encoded family1-4 values + views + validated snapshot +
+ *     candidate binding copy. No second 4096 value buffer.
  * Has-previous is an explicit session flag; length 0 is never a first-row
  * sentinel.
  */
@@ -57,18 +74,23 @@ typedef struct ninlil_domain_scan_workspace {
     uint8_t key[NINLIL_DOMAIN_SCAN_KEY_CAPACITY];
     uint8_t value[NINLIL_DOMAIN_SCAN_VALUE_CAPACITY];
     uint8_t previous_key[NINLIL_DOMAIN_SCAN_PREVIOUS_KEY_CAPACITY];
+    uint8_t encoded_values[NINLIL_DOMAIN_SCAN_ENCODED_VALUES_BYTES];
+    ninlil_bytes_view_t encoded_views[
+        NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_RECORD_COUNT];
+    ninlil_model_runtime_store_validated_snapshot_t validated;
+    ninlil_model_runtime_store_binding_t candidate;
 } ninlil_domain_scan_workspace_t;
 
 #if defined(__cplusplus)
 static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S1 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S2 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #else
 _Static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S1 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S2 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #endif
 
 /*
@@ -104,8 +126,13 @@ typedef struct ninlil_domain_scan_session {
     uint8_t has_sticky_primary;
     ninlil_status_t sticky_primary;
     uint8_t recognizable_future_seen;
-    uint8_t profile_mismatch; /* S2 seam; S1 always 0 */
-    uint8_t future_profile_candidate; /* S2 seam; S1 always 0 */
+    uint8_t profile_mismatch;
+    uint8_t future_profile_candidate;
+    uint8_t profile_exact_active;
+    /* 1 after successful production profiled gate (reconciliation required). */
+    uint8_t profile_reconciliation;
+    uint32_t profile_get_present_mask;
+    uint32_t family14_iter_seen_mask;
     uint64_t family14_row_count;
     uint64_t current_domain_key_count;
     uint64_t ok_row_count;
@@ -117,7 +144,7 @@ typedef struct ninlil_domain_scan_session {
 /*
  * Authoritative result is published only by successful adopt finalize.
  * Unadopted outcomes keep adopted=0; status still reports finalize/abort
- * aggregation.
+ * aggregation. Profile diagnostics are oracle-visible private fields.
  */
 typedef struct ninlil_domain_scan_result {
     uint32_t adopted;
@@ -128,6 +155,11 @@ typedef struct ninlil_domain_scan_result {
     uint64_t current_domain_key_count;
     uint64_t ok_row_count;
     uint8_t recognizable_future_seen;
+    uint8_t profile_exact_active;
+    uint8_t profile_mismatch;
+    uint8_t future_profile_candidate;
+    uint32_t profile_get_present_mask;
+    uint32_t family14_iter_seen_mask;
 } ninlil_domain_scan_result_t;
 
 /*
@@ -137,15 +169,32 @@ typedef struct ninlil_domain_scan_result {
 void ninlil_domain_scan_session_init(ninlil_domain_scan_session_t *session);
 
 /*
- * Begin READ_ONLY txn + zero-prefix iterator and bind storage/handle/workspace
- * into the session. Pre-validation failures return without Port calls and
- * leave session/workspace unchanged.
+ * Production profiled begin (tests-OFF release only begin).
+ * Required non-NULL typed candidate; same READ_ONLY txn; exact 17 get order
+ * with typed capacities; validate_snapshot + compare_binding; one zero-prefix
+ * iterator. Candidate is exact-copied into workspace before the first Port
+ * call; the caller pointer is never retained.
+ */
+ninlil_status_t ninlil_domain_scan_begin_profiled(
+    ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t *inout_handle,
+    ninlil_domain_scan_workspace_t *workspace,
+    const ninlil_model_runtime_store_binding_t *candidate);
+
+#if defined(NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN)
+/*
+ * TEST-build S1 transport-only begin (no get / no profile gate).
+ * Compile-declared only under NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN.
+ * Absent from tests-OFF release declaration and object symbols.
+ * Forbidden for S6 / Stage 5 / production orchestration.
  */
 ninlil_status_t ninlil_domain_scan_begin(
     ninlil_domain_scan_session_t *session,
     const ninlil_storage_ops_t *storage,
     ninlil_storage_handle_t *inout_handle,
     ninlil_domain_scan_workspace_t *workspace);
+#endif
 
 /*
  * Process up to row_budget successful OK rows using bound Port/workspace.

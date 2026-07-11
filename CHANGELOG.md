@@ -6,6 +6,7 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ### Added
 
+- Domain Store D2-S2 production profiled begin（same-txn 17 exact get + profile gate + one-iterator reconciliation）、sibling oracle `spec/vectors/domain-scan-profile-v1.json`（format `ninlil-domain-scan-profile-v1-d2s2`）、independent generator、production bridge、and unit acceptance。S1 transport begin is TEST-macro only and absent from tests-OFF private symbols. Does not complete D2 / DSR1 / DSR2 / Stage 5 / hardware.
 - Foundation M1aのpublic C ABI headerとC11/C++17 consumer smoke。
 - ABI manifest、reason registry、Operator projection、hook registry、仕様vector、requirements traceabilityの検査tool。
 - Scheduler、deadline、Required Receipt、resource accounting、Submission preflight/admissionのpure C11 model。
