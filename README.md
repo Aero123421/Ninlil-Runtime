@@ -8,7 +8,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 
 ## 現在の状態
 
-**Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer modelと、PR3a/bのcanonical TEST fixtureまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
+**Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer modelと、PR3a/b/cのcanonical TEST fixtureまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
 
 実装済みの範囲:
 
@@ -19,7 +19,8 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
-- 現在の`main`で44件のCTestが成功することを、UbuntuのGCC通常buildとClang ASan/UBSan buildで継続検査するCI
+- 2 endpoint間のtyped message deep-copy、有限FIFO、receive loan、Virtual TxPermitを扱うsimulated Bearer / Tx Gate fixture
+- 現在の開発branchで45件のCTestが成功することを、通常buildとASan/UBSan buildで検査
 
 未実装または未統合の範囲:
 
@@ -104,7 +105,7 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の`main`では44件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは45件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
 
 ## Portabilityとversioning
 

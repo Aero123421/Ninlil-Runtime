@@ -495,6 +495,49 @@ Digestはalgorithm/reserved/32 bytesの36 bytes、`evidence_time`はepoch ID 16 
 
 Fixture accounting vectors: C1 APPLICATION=`455 + 19 + 14 + 14 + 9 = 511 bytes`、E1 APPLICATION=`455 + 19 + 13 + 13 + 10 = 510 bytes`です。C1を2-copy duplicateするqueue reservationは2 entries/1,022 bytesで、1 entryだけ入れるpartial acceptanceは禁止します。
 
+### Canonical typed simulated Bearer fixture
+
+PR 3のtyped simulated BearerはCoreから独立したTEST artifactです。最初のsliceは多親・broadcast・meshの挙動を推測せず、**exactly 2つのRuntime endpoint**と、その間のA→B / B→A independent directed FIFOだけを提供します。`send`は`message.target.target_runtime_id`を唯一のpeerへ照合します。3 endpoint以上、target集合、経路選択、aggregate availabilityはPR 7のcanonical simulatorまで未対応です。
+
+- Backend lifetime中、各non-zero `runtime_id`は最初の成功openでknown `CONTROLLER`または`ENDPOINT` roleへimmutable bindされます。同じIDのactive duplicate openは`NINLIL_BEARER_WOULD_BLOCK` + NULL handle、clean close後のsame ID / same role reopenは可能です。別role、reserved/unknown role、zero ID、または3つ目のdistinct runtime IDは`NINLIL_BEARER_DENIED` + NULL handleです。
+- Handle backingはfixture destroyまでtombstoneとして保持し、addressを別handleへ再利用しません。Stale/double closeはstate/queueを変更しないdiagnostic violationです。Live handleのcloseはoutstanding receive loanがないことをpreconditionとします。違反時はloanをorphan tombstoneへ移してlogical live-loan accountingから除外しますが、host backingはfixture destroyまで保持し、caller-owned message objectをdereference/all-zero化しません。Orphan count/bytesとviolationをdiagnosticへ記録してhandleをretireします。
+- Queueはhandleでなくdestination runtime bindingを所有します。Source close/reopenやdestination close/reopenを跨いでも、accept済みcopyは保持します。Destinationがinactiveな間のnew sendは`UNAVAILABLE`で受理せず、reopen後は既存FIFOを先にreceiveできます。Delay/down-at-due/drop policyはこのbasic fixtureへ持ち込みません。
+- 各directionのdefault capacityは64 entries / 131,072 logical bytesです。`receive_next: OK`でheadをFIFOから外し、directionのqueued entry/byteを減算します。Message backingはloanとして`release_received`までproviderが所有し、queued accountingとlive-loan accountingを分離します。
+- 1 handleのoutstanding receive loanは最大1件です。Loan中の2回目`receive_next`は`NINLIL_BEARER_WOULD_BLOCK` + outer all-zeroです。成功releaseは、loanを受け取ったsame handle、same caller-owned `ninlil_bearer_message_t` object、exactly 1回だけです。成功後はobject全体をall-zeroにします。Wrong handle、wrong object、double/stale releaseはbackingを解放せずdiagnostic violationとし、empty payload/evidenceでもobject identityで判定します。
+- `state(handle)`はそのlive handleから唯一peerへ向かうpath stateです。各runtimeのfirst openでoutgoing laneをepoch=1 / available=0として作り、2つ目のdistinct runtime bind成功時に両laneをatomicにepoch=2 / available=1へ進めます。Peer inactiveまたはpath downなら0です。Local/source closeはそのlane tupleを変更せずhandleをquery不能にするだけで、反対側から見たpeer laneだけをnew epoch / available=0へ進めます。Same-ID reopenは反対laneをnew epoch / available=1へ進め、reopened local laneはclose前のtupleからpeer current stateへ必要な場合だけ進めます。
+- Queue fullだけではavailable bitを0にしません。Directionごとに、actual WOULD_BLOCKとなったsendのうち最小のrequired entry headroomと最小のrequired logical bytesを1つのcoalesced blocked requirementとしてboundedに保持します。Headroomがそのrequirementを初めて満たすdequeueで、available=1のままepochをstrict incrementしてlogical blocked requirementをclearします。より大きいworkが再度失敗すれば新たに登録します。Loan releaseはlogical queue headroomを増やさないため、このbasic fixtureのlogical blocked epochを進めません。
+- Scripted copy-allocation failureはlogical blocked requirementへ混ぜません。最後のfailure occurrenceを返したcallはpre-recovery epochをout resultへ返し、そのreturn boundary後にinternal lane epochをstrict incrementして次の`state`でfresh improvementを観測可能にします。Host allocatorの任意回復を推測せず、basic fixtureに別のunbounded allocator-headroom modelを持ちません。
+- Availability epochはlaneごとのnon-zero checked counterです。上記pair formation、peer up/down/close/reopen、path up/down、blocked-work improvement、scripted allocator recoveryでだけincrementし、poll、successful send、local/source Runtime restart、同値設定では変えません。MAXからのincrement要求はwrapせずlaneをfatal/unavailableへfenceします。同じepochでdifferent availableを生成しません。
+- Natural sendは、safe deep-copyに必要なABI header/size、view pointer/length、text length、checked envelope sizeだけを検査します。Route keyのexact peer照合とpermit internal recordのtransaction/kind/digest/logical bytes照合はtransport admissionです。Kind orientation、source/target reconstruction、echo、family、flags/reserved等のsemantic validationは12章どおりCore ingress責務です。Fixtureはsafeだがsemantic-invalidなtyped messageをreceive queueへ入れるtest-only seamを持ちます。Unsafe pointer/length、overflow、copy不能shapeはenqueueせず`CORRUPT`です。
+- Accepted copyはtop-level/nested inline valueとpayload/evidence bytesをすべてprovider-owned storageへdeep-copyします。Callerはsend return直後に元struct、payload、evidenceを変更・解放でき、受信値は不変です。Natural successは`OK + ACCEPTED`だけを返し、basic fixtureは`DURABLE_CUSTODY`を自然生成しません。
+- Natural failureは、peer/path unavailable=`UNAVAILABLE`、entry/byte fullまたはcopy allocation failure=`WOULD_BLOCK`、shared permit table validation failure=`DENIED`、unsafe structural shape=`CORRUPT`です。いずれもcopy/enqueue/ownership mutation 0です。Natural `CORRUPT`もpermitをconsumeしませんが、Core側のcertaintyは12章closed matrixどおりpossible delivery fenceのままです。
+
+Natural sendのvalidation/status precedenceは、(1) live handleとrequired output pointer、(2) safe structural shapeとchecked logical bytes、(3) permit exact validation、(4) target runtime ID=bound unique peer、(5) peer/path availability、(6) logical entry/byte capacity、(7) allocation/deep-copy、(8) atomic enqueue+permit consumeです。Earlier failureはlater state/faultを観測・consumeしません。Wrong/unknown targetは`DENIED`です。
+
+Public permit valueだけからtransaction/kind/digest/logical bytes/current timeを復元してはなりません。Canonical TEST Tx GateとBearerは同じbackendのinternal permit tableとvirtual clock stateを共有します。AcquireはVirtual TxPermit節の全bindingを保存し、Bearerはsend時にpublic fieldsとinternal record、exact message binding、current epoch/timeを照合します。Queue ownershipを受理したatomic pointでだけpermitをconsumeし、WOULD_BLOCK / UNAVAILABLE / DENIED / natural CORRUPTでは未消費です。`release_unused`済み、expired、epoch mismatch、1-field mismatch、reuseはDENIEDです。
+
+Basic fixtureのfault seamはoperation別bounded FIFOで、matchingするotherwise-valid callだけをconsumeします。Open/send/receive/stateのknown/unknown raw status、exact poison/partial outputを再現できます。Validation failure、stale handle、nonmatching operationはfaultをconsumeしません。
+
+- Raw sendのvalid `OK + ACCEPTED/DURABLE_CUSTODY`はnatural pathと同じatomic deep-copy/enqueueを行いpermitをconsumeします。WOULD_BLOCK/UNAVAILABLE/DENIEDはenqueue 0でpermit未消費です。LOST_UNKNOWN、CORRUPT、EMPTY、unknown、またはinvalid/partial OKはenqueue 0を選ぶdeterministic possible-delivery scenarioですが、permitをfenced tombstoneへ移し再利用不能にします。Non-OK/invalid outputでもCoreのrelease判断に必要なcurrent/pre-recovery epoch rulesは12章どおりです。
+- Raw receiveのnon-OKはqueue/loan mutation 0です。`OK`はcallerへ返したtop-level objectに対応するsynthetic loanをexactly 1つ作り、invalid messageでもrelease可能にします。Safe semantic-invalid typed injectionは全viewをdeep-copyします。Header/view-shape-invalid raw outcomeはstruct tupleをそのまま返す専用synthetic loanとし、releaseはinvalid viewをdereferenceせずloan wrapperだけをtombstone化します。
+- Duplicate/drop/delay/reorder/corrupt/partition、scheduled-delivery ordinal、crash/down-at-dueはPR 7へ分離します。
+
+Fixture diagnosticsはpublic ABI外で、少なくともopen/close/send/receive/release/state call、live/tombstoned handle、direction別queued entries/bytes、live/orphan loan count/bytes、permit live/consumed/released/expired/fenced、availability epoch/blocked history、fault consumption、violation、trace overflowをdeterministicにqueryできます。全counter、byte、ordinal、epoch加算はcheckedで、overflow時はpartial mutationを残しません。
+
+Mandatory fixture vectors:
+
+| Vector | Required coverage |
+| --- | --- |
+| `TB1_ACCOUNTING` | C1=511 / E1=510、64/131072 exact boundary、entry-only/byte-only overflow、allocation failure atomic |
+| `TB2_DEEP_COPY` | 6 message kinds、empty/non-empty payload/evidence、caller struct/view mutation後もexact |
+| `TB3_DIRECTION_FIFO` | A→B / B→A独立FIFO、empty、full→dequeue/release→再送、counter non-interference |
+| `TB4_HANDLE_ROLE` | open OK shape、active duplicate、same-role reopen、wrong/reserved role、stale/double close、handle address nonreuse、queued inbound retention |
+| `TB5_PERMIT_BINDING` | P1〜P5、transaction/attempt/kind/digest/logical bytes各1-field mismatch、release/reuse |
+| `TB6_RECEIVE_LOAN` | one-loan、second receive WOULD_BLOCK、exact release、wrong handle/object、double/stale release、zero-view identity |
+| `TB7_CLOSED_OUTPUT` | send/receive/stateの全known/unknown status、non-OK poison防止、raw partial/invalid OK seam |
+| `TB8_AVAILABILITY` | unpaired initial1→paired2、up/down、peer close/reopen、full-block/allocator improvement、poll/success/local restart不変、MAX overflow wrap 0 |
+| `TB9_VALIDATION_BOUNDARY` | safe semantic-invalidはreceive OK→Core release、unsafe shapeはload/send拒否 |
+
 ## Canonical bounded basic Port fixtures
 
 PR 3のAllocator、Execution、Clock、Entropy fixtureはTEST artifactです。各fixtureはcreate時にconfig、epoch、scriptの全scalar/valueをcopyし、callerの変更や解放へ依存しません。Vtableと`user`はfixture destroyまでstableで、host threadを作らず、thread-safeを主張しません。Scriptはbounded FIFOで、matchingするotherwise-valid callだけをconsumeします。Invalid callもcall count/diagnostic traceへは記録しますがscriptをconsumeしません。Traceはpointer、host timestamp、hash iterationを含めず、sequence、operation、logical ID、入力scalar、outcome、前後counterだけを固定順で保持します。
@@ -2050,7 +2093,7 @@ SR2はcanonical計算まで到達していてもdigestを公開しません。SR
 | `NIN-FND-STO-004` namespace ownership | NS1〜NS9 opaque 1..255/deep-copy/open/close/deallocate/single-writer lease |
 | `NIN-FND-LIF-001` Runtime create lifecycle | CR1〜CR11 9-stage order、first failure、eager Bearer、status mapping、reverse cleanup |
 | `NIN-FND-LIF-002` Runtime destroy lifecycle | DR1〜DR8 precondition no-consume、DESTROYING、single active-token group、failure/unknown/recovery/cleanup |
-| `NIN-FND-BER-001` typed copy/identity/custody | caller buffer mutation、duplicate/loss/reorder、custody-before/after commit |
+| `NIN-FND-BER-001` typed copy/identity/custody | TB1〜TB9 basic fixture、caller buffer mutation、duplicate/loss/reorder、custody-before/after commit |
 | `NIN-FND-BER-002` virtual permit | C1/E1 request/permit golden、P1〜P5、TG1〜TG4、missing/digest/attempt mismatch paths |
 | `NIN-FND-BER-003` kind/orientation/binding | 6-kind matrix、O1、O2A〜O2F、BS1〜BS8 cancel/send/receive/state/custody/all-field、field mutation |
 | `NIN-FND-BER-004` availability epoch | AV1〜AV2 state revision、degradation記録、available improvementだけconsume、restart/poll stable、single consume、複数Event fan-out、capacity-domain separation |
@@ -2090,7 +2133,7 @@ Storage suiteは各operationに対し、success、invalid argument、capacity、
 ### Pull request gate
 
 - canonical C1/E1、Event E2〜E4、entropy block/ID order、TXID1〜TXID3、ID1〜ID3
-- storage FULL1/MB1〜MB8/SH1〜SH5/namespace NS1〜NS9、bearer handle BH1、create CR1〜CR11、destroy DR1〜DR8、bearer kind+orientation/O2/BS1〜BS8 send/receive/state/custody、clock/permit P1〜P5/TG1〜TG4 conformance
+- storage FULL1/MB1〜MB8/SH1〜SH5/namespace NS1〜NS9、typed bearer TB1〜TB9、bearer handle BH1、create CR1〜CR11、destroy DR1〜DR8、bearer kind+orientation/O2/BS1〜BS8 send/receive/state/custody、clock/permit P1〜P5/TG1〜TG4 conformance
 - role/family RF1〜RF10、service restart SV1〜SV5、reason RZ1〜RZ10、representability U1〜U4、Submission SR1〜SR5、origin authorization G1〜G9、admission quota AQ1〜AQ10、deferred D1/D2、callback CB1〜CB7/F1〜F5、Disposition DV1〜DV11
 - retry R1C/R1E/R1S/R1N/R2〜R4、admission/Receipt time T0〜T4、resume M1〜M8、discard A1
 - config RL1〜RL7、capacity CAP1〜CAP9、step B1〜B13、scheduler SCH1〜SCH7/SC1〜SC2/SE1/AVP1/INQ1〜INQ2、availability AV1〜AV2、management MG1〜MG5、metrics MT1〜MT7/health HL1〜HL7、wake W1〜W6、retention RET1〜RET6、same-time boundary S1/S2

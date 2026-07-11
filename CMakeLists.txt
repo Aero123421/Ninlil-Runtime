@@ -306,6 +306,38 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     ninlil_apply_strict_warnings(ninlil_test_storage_fixture)
 
+    add_library(ninlil_test_typed_bearer_fixture STATIC
+        tests/support/typed_simulated_bearer.c
+    )
+    target_include_directories(ninlil_test_typed_bearer_fixture PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_test_typed_bearer_fixture PRIVATE ninlil)
+    set_target_properties(ninlil_test_typed_bearer_fixture PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_test_typed_bearer_fixture)
+
+    add_executable(ninlil_typed_simulated_bearer_test
+        tests/port/typed_simulated_bearer_test.c
+    )
+    target_link_libraries(ninlil_typed_simulated_bearer_test PRIVATE
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_typed_simulated_bearer_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_typed_simulated_bearer_test)
+    add_test(
+        NAME typed_simulated_bearer_fixture
+        COMMAND ninlil_typed_simulated_bearer_test
+    )
+
     add_executable(ninlil_in_memory_storage_test
         tests/port/in_memory_storage_test.c
     )
@@ -651,7 +683,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     set_tests_properties(vector_inventory_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector inventory ok: total=282 table=238 explicit=26 bullet=16 canonical=2"
+            "vector inventory ok: total=291 table=247 explicit=26 bullet=16 canonical=2"
     )
     add_test(
         NAME vector_inventory_negative
@@ -688,7 +720,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     set_tests_properties(vector_reference_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector references ok: definitions=282 mandatory_unique=255 pr_unique=275 union=282 mandatory_occurrences=259 pr_occurrences=275 mandatory_rows=40 pr_bullets=11 excluded=1"
+            "vector references ok: definitions=291 mandatory_unique=264 pr_unique=284 union=291 mandatory_occurrences=268 pr_occurrences=284 mandatory_rows=40 pr_bullets=11 excluded=1"
     )
     add_test(
         NAME vector_reference_negative
