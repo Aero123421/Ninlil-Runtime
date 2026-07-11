@@ -1726,6 +1726,60 @@ EventFact local admissionは12章の`ninlil_origin_authorization_ops_t.evaluate`
 - grant ID/revisionはauthorization evidenceであり、canonical submission digestに含めません。grant更新・再発行で同じlogical EventFact/idempotency keyのdigestを変えてはなりません。
 - grant expiry/revocationは新規admissionを止めます。既にadmittedされたEventFactのownership/spoolを消しません。
 
+### Canonical TEST Origin Authorization fixture
+
+PR 3のcanonical Origin Authorization fixtureは、1つのstatic synthetic grantを同期評価するTEST artifactです。Clock、Storage、Runtime spoolへ直接アクセスせず、requestにcopyされた`now`、active spool、current windowだけを評価します。Provider内部でquota/rate/spoolを加減算、rollover、reserve、persistせず、ALLOW後のprospective再検査とFULL admission commitはCoreの責務です。
+
+Natural evaluateは次のexact orderです。Earlier resultで終了した場合、later comparisonを行いません。
+
+1. call/traceを記録し、`out_decision`をall-zeroにする。
+2. required pointer、current outer/nested ABI known prefix、reserved、known enum、required non-zero ID、digest、time sample、window-start shapeを検査する。Malformed requestは`PERMANENT_FAILURE` + all-zeroで、faultをconsumeしない。
+3. `environment != TEST`はfixture misuseとして`PERMANENT_FAILURE` + all-zeroにする。Policy DENYへ偽装せず、faultもconsumeしない。
+4. Structurally valid TEST requestだけoperation別FIFO faultをconsumeする。
+5. Valid `UNCERTAIN`、またはtrusted sampleのclock epochがsynthetic grant epochと違う場合は`OK` DENY / `CLOCK_UNCERTAIN`。
+6. Source partyまたはservice binding mismatchは`OK` DENY / `GRANT_INVALID`。
+7. Concrete target binding mismatchは`OK` DENY / `TARGET_UNAUTHORIZED`。
+8. `evaluated_at_ms`が`[valid_from_ms, expires_at_ms)`外なら`OK` DENY / `GRANT_EXPIRED`。
+9. Prospective payload、active count、active bytesをこの順でchecked比較し、最初の超過/overflowを`OK` DENY / `GRANT_LIMIT_EXCEEDED`にする。
+10. Prospective admission countをgrant rate limitへchecked比較し、超過/overflowを`OK` DENY / `RATE_EXHAUSTED`にする。
+11. 全条件成立時だけ`OK` ALLOWを返す。
+
+Request `current_window_started_at_ms`は`now_ms - (now_ms % 10,000)`とexact一致します。Natural providerはpayload byte-windowを評価しません。ABIにその入力がないため、descriptor `max_payload_bytes_per_window`はALLOW後にCoreだけがdurable quota recordから検査します。
+
+Synthetic grantのbindingは次をexact比較します。
+
+- Source runtime=`4100...0001`、application=`6000...0001`、local identity=device `4000...0001` / installation `5000...0001` / site `1000...0001` / flags 7 / binding+membership epoch 1。
+- Target runtime=`2100...0001`、application=`3000...0001`、device `2000...0001` / installation `5000...0002` / site `1000...0001` / flags 7 / binding+membership epoch 1。
+- Service namespace=`org.ninlil.examples`、service/schema=`durable-event`、descriptor revision 1、descriptor digest=`SHA-256(1):f64b7c4abf5b9db38b1c9fef0f0e8c341b56caddadb291ebc5456ccbd2aa321b`、schema 1.0、family EventFact。
+- Required evidence=`DURABLY_RECORDED`。Event IDはnon-zero、content digestはvalid SHA-256であればeventごとに異なってよく、grant subject bindingへ固定しません。Payload contentは保持せずlengthだけをlimit評価します。
+
+全natural ALLOW/DENY decisionは、同じconfigured provider policy revisionを表すopaque decision digest `SHA-256(1):3b3e9cae32f01600e4a0553339f978744f87b0af03506c1db1d484c2a2b63c93`を使用します。Reasonごとのdigestを再計算せず、business canonical digestへ含めません。
+
+Output shapeはclosedです。
+
+- Status OKかつALLOW: current header、allowed=1、`NONE/NEVER/0`、provider/grant identity、revision、opaque digest、request clock/evaluated time、validity、全limit、reservedをexact設定します。
+- Status OKかつDENY: current header、allowed=0、exact reason/guidance/delay、provider ID/revision/digest、request clock/evaluated timeだけを設定し、grant ID/revision、validity、全limit/attempt fieldをzeroにします。Grant count/bytes deny delayは1,000ms、rate denyはcurrent 10,000ms windowのstrictly positive remaining time、その他denyは0です。
+- TEMPORARY_FAILURE / PERMANENT_FAILURE: decision全体all-zeroです。Unknown status、non-OK poison、OK partial/invalid decisionはraw fault seamだけが生成します。
+
+Fixture factoryはcanonical TEST manifestだけをconstructし、別environment configを受理しません。Public Origin Authorization ABIにはprovider kind queryがないため、Runtime create時にvtableだけからTEST fixtureを識別・拒否できるとは主張しません。Evaluate時のenvironment二重guardと、public SDK targetがTEST-only fixtureをdirect linkしないconfigure-time composition assertionを境界とします。
+
+Fault seamはoperation別bounded FIFOで、matchingするotherwise-valid TEST requestだけをconsumeします。TEMP/PERM/unknown raw status、non-OK full-struct poison、OK ALLOW/DENYのrepresentative one-field partialをexact valueで返せます。Raw outcomeもprovider policy stateを変更しません。Traceはpointerやhost timeを保持せず、copied scalar/ID、status、decision kind/reason、fault consumptionだけをbounded deterministic orderで記録します。
+
+Mandatory fixture vectors:
+
+| Vector | Required coverage |
+| --- | --- |
+| `OA1_ALLOW_EXACT` | G1全field、opaque digest、borrowed request caller mutation後retention 0 |
+| `OA2_CLOCK_EXPIRY` | expiry-1/expiry、UNCERTAIN、epoch mismatch、zero/unknown trust、window start 9,999/10,000 |
+| `OA3_BINDING` | source/service各field→GRANT_INVALID、target各field→TARGET_UNAUTHORIZED、event/contentはvalid arbitrary |
+| `OA4_LIMIT_PRECEDENCE` | payload 1024/1025、count 31/32、bytes exact/over/overflow、rate 7/8、compound order |
+| `OA5_STATELESS_WINDOW` | provider count mutation0、window boundary、100,000 callsでもbounded state/trace overflow diagnostic |
+| `OA6_CLOSED_OUTPUT` | TEMP/PERM all-zero、unknown/non-OK full-struct poison、OK ALLOW/DENY representative partial/raw |
+| `OA7_FAULT_FIFO` | registration order、matching valid callだけconsume、invalid request/nonmatching operationで保持 |
+| `OA8_TEST_GUARD` | canonical factory以外construct不可、evaluate environment!=TESTはPERMANENT+zero |
+| `OA9_CORE_BOUNDARY` | natural provider deny tupleとforced valid ALLOW seamの双方でprovider内部charge 0。Core prospective deny/delay/double-chargeはAQ integration gate |
+| `OA10_DIAGNOSTICS` | allow/deny reason/temp/perm/raw/validation/fault/arithmetic-overflow counter、trace overflowとdeterministic trace |
+
 ### Synthetic origin grant
 
 Grant `7000...0001`は次へbindingします。
@@ -1744,7 +1798,7 @@ Grant `7000...0001`は次へbindingします。
 - max payload bytes=`1024`
 - max active origin events=`32`、max active spool bytes=`32,768`
 
-G1のdecision digestはfixture manifestが供給するopaqueなprovider-owned定数です。M1aはdecision digestのpreimageやcanonical encoderを定義しません。Coreとfixture testはalgorithm、32-byte値のexact copy/binding、non-zeroだけを検査し、逆算や再計算を行いません。
+G1〜G6のdecision digestはfixture manifestが供給する同じopaqueなprovider policy revision定数です。M1aはdecision digestのpreimageやcanonical encoderを定義しません。Coreとfixture testはalgorithm、32-byte値のexact copy/bindingだけを検査し、逆算やreason別再計算を行いません。
 - rate window=`10,000ms`、max admissions/window=`8`
 - retry cycle attempts=`8`
 
@@ -2097,7 +2151,7 @@ SR2はcanonical計算まで到達していてもdigestを公開しません。SR
 | `NIN-FND-BER-002` virtual permit | C1/E1 request/permit golden、P1〜P5、TG1〜TG4、missing/digest/attempt mismatch paths |
 | `NIN-FND-BER-003` kind/orientation/binding | 6-kind matrix、O1、O2A〜O2F、BS1〜BS8 cancel/send/receive/state/custody/all-field、field mutation |
 | `NIN-FND-BER-004` availability epoch | AV1〜AV2 state revision、degradation記録、available improvementだけconsume、restart/poll stable、single consume、複数Event fan-out、capacity-domain separation |
-| `NIN-FND-AUTH-001` origin authorization | G1〜G9、temporary/permanent health domain、grant snapshot atomicity、TEST外拒否 |
+| `NIN-FND-AUTH-001` origin authorization | G1〜G9、OA1〜OA10、temporary/permanent health domain、grant snapshot atomicity、TEST外拒否 |
 | `NIN-FND-ADM-001` admission quota | AQ1〜AQ10 per-service/grant/counter precedence、bounded window、inclusive boundary、atomic/restart/unknown |
 | `NIN-FND-CLK-001` virtual/admission time | T0 pre-commit reference/commit-crossing、same-time order、overflow、restart、trust loss |
 | `NIN-FND-CLK-002` evidence time | T1〜T4 shared/mismatch/uncertain/no-deadline vectors |
@@ -2134,7 +2188,7 @@ Storage suiteは各operationに対し、success、invalid argument、capacity、
 
 - canonical C1/E1、Event E2〜E4、entropy block/ID order、TXID1〜TXID3、ID1〜ID3
 - storage FULL1/MB1〜MB8/SH1〜SH5/namespace NS1〜NS9、typed bearer TB1〜TB9、bearer handle BH1、create CR1〜CR11、destroy DR1〜DR8、bearer kind+orientation/O2/BS1〜BS8 send/receive/state/custody、clock/permit P1〜P5/TG1〜TG4 conformance
-- role/family RF1〜RF10、service restart SV1〜SV5、reason RZ1〜RZ10、representability U1〜U4、Submission SR1〜SR5、origin authorization G1〜G9、admission quota AQ1〜AQ10、deferred D1/D2、callback CB1〜CB7/F1〜F5、Disposition DV1〜DV11
+- role/family RF1〜RF10、service restart SV1〜SV5、reason RZ1〜RZ10、representability U1〜U4、Submission SR1〜SR5、origin authorization G1〜G9/OA1〜OA10、admission quota AQ1〜AQ10、deferred D1/D2、callback CB1〜CB7/F1〜F5、Disposition DV1〜DV11
 - retry R1C/R1E/R1S/R1N/R2〜R4、admission/Receipt time T0〜T4、resume M1〜M8、discard A1
 - config RL1〜RL7、capacity CAP1〜CAP9、step B1〜B13、scheduler SCH1〜SCH7/SC1〜SC2/SE1/AVP1/INQ1〜INQ2、availability AV1〜AV2、management MG1〜MG5、metrics MT1〜MT7/health HL1〜HL7、wake W1〜W6、retention RET1〜RET6、same-time boundary S1/S2
 - transaction query/list QRY1〜QRY8/QPX1〜QPX4、origin-only domain、all-field projection、mutation/restart/revision/unknown/exhaustion

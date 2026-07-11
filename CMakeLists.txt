@@ -49,6 +49,24 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         )
     endfunction()
 
+    function(ninlil_assert_no_test_only_link target)
+        foreach(link_property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+            get_target_property(linked_targets ${target} ${link_property})
+            if(linked_targets)
+                foreach(linked_target IN LISTS linked_targets)
+                    if(TARGET ${linked_target})
+                        get_target_property(is_test_only
+                            ${linked_target} NINLIL_TEST_ONLY_ARTIFACT)
+                        if(is_test_only)
+                            message(FATAL_ERROR
+                                "${target} links TEST-only artifact ${linked_target}")
+                        endif()
+                    endif()
+                endforeach()
+            endif()
+        endforeach()
+    endfunction()
+
     add_library(ninlil_contract STATIC
         src/contract/abi_contract.c
     )
@@ -319,6 +337,44 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         C_EXTENSIONS OFF
     )
     ninlil_apply_strict_warnings(ninlil_test_typed_bearer_fixture)
+
+    add_library(ninlil_test_origin_auth_fixture STATIC
+        tests/support/canonical_origin_authorization.c
+    )
+    set_property(TARGET ninlil_test_origin_auth_fixture
+        PROPERTY NINLIL_TEST_ONLY_ARTIFACT TRUE)
+    target_include_directories(ninlil_test_origin_auth_fixture PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_test_origin_auth_fixture PRIVATE ninlil)
+    set_target_properties(ninlil_test_origin_auth_fixture PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_test_origin_auth_fixture)
+
+    add_executable(ninlil_canonical_origin_authorization_test
+        tests/port/canonical_origin_authorization_test.c
+    )
+    target_link_libraries(ninlil_canonical_origin_authorization_test PRIVATE
+        ninlil_test_origin_auth_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_canonical_origin_authorization_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_canonical_origin_authorization_test)
+    add_test(
+        NAME canonical_origin_authorization_fixture
+        COMMAND ninlil_canonical_origin_authorization_test
+    )
+
+    # Configure-time release composition gate. The public SDK target must not
+    # acquire the synthetic TEST grant provider as a direct dependency.
+    ninlil_assert_no_test_only_link(ninlil)
 
     add_executable(ninlil_typed_simulated_bearer_test
         tests/port/typed_simulated_bearer_test.c
@@ -683,7 +739,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     set_tests_properties(vector_inventory_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector inventory ok: total=291 table=247 explicit=26 bullet=16 canonical=2"
+            "vector inventory ok: total=301 table=257 explicit=26 bullet=16 canonical=2"
     )
     add_test(
         NAME vector_inventory_negative
@@ -720,7 +776,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     )
     set_tests_properties(vector_reference_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector references ok: definitions=291 mandatory_unique=264 pr_unique=284 union=291 mandatory_occurrences=268 pr_occurrences=284 mandatory_rows=40 pr_bullets=11 excluded=1"
+            "vector references ok: definitions=301 mandatory_unique=274 pr_unique=294 union=301 mandatory_occurrences=278 pr_occurrences=294 mandatory_rows=40 pr_bullets=11 excluded=1"
     )
     add_test(
         NAME vector_reference_negative

@@ -12,12 +12,13 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - Atomic FULL admission write-setとcommit result別のownership/recovery model。
 - In-memory Storage、Allocator、Execution、Virtual Clock、Deterministic Entropy v1のTEST conformance fixture。
 - 2 endpoint typed simulated Bearer、bounded FIFO、receive loan、shared Virtual Tx Gate / one-shot permitのTEST conformance fixture。
+- Stateless synthetic grant、closed deny precedence、fault seam、TEST-only composition assertionを備えたOrigin Authorization fixture。
 - Ubuntu GCC通常buildとClang ASan/UBSan buildを実行するGitHub Actions CI。
 - Apache License 2.0、contribution guide、direct confidential reporting linkを含むsecurity policy。
 
 ### Changed
 
-- Project statusをPR1-only checkpointから、Foundation PR2主要modelとPR3a/b/c fixture実装済みのpre-alpha checkpointへ更新。
+- Project statusをPR1-only checkpointから、Foundation PR2主要modelとPR3a/b/c/d fixture実装済みのpre-alpha checkpointへ更新。
 - Apache License 2.0の採用決定をProject CharterとM11 compliance gateへ反映。
 - `1.0.0`はhardware exitだけでなくM11までの全exit gate後とし、platformの現行検証実績とplanned targetを分離。
 

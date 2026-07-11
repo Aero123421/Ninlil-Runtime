@@ -471,7 +471,7 @@ static int test_repository_inventory_validation(void)
     }
     if (strstr(
             error,
-            "vector inventory validation error: vector definition count mismatch: expected 291, got 1")
+            "vector inventory validation error: vector definition count mismatch: expected 301, got 1")
         == NULL) {
         fprintf(stderr, "unexpected repository inventory validation error: %s\n", error);
         return 1;
