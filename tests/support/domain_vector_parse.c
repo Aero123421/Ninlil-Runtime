@@ -308,7 +308,8 @@ static int known_op(const char *op)
         || strcmp(op, "body_encode") == 0
         || strcmp(op, "body_decode") == 0
         || strcmp(op, "body_roundtrip") == 0
-        || strcmp(op, "typed_record") == 0;
+        || strcmp(op, "typed_record") == 0
+        || strcmp(op, "message_semantic_digest") == 0;
 }
 
 static int has_str(const ninlil_dv_vector_t *v, uint64_t bit)
@@ -488,6 +489,15 @@ static int validate_op_fields(
         NEED_STR(NINLIL_DV_STR_VALUE);
         if (ok) {
             NEED_STR(NINLIL_DV_STR_BODY);
+            NEED_STR(NINLIL_DV_STR_DIGEST);
+        }
+    } else if (strcmp(op, "message_semantic_digest") == 0) {
+        /* body_hex: ORDERED_INGRESS body for prefix fields.
+         * subject_hex: optional payload; retention_hex: optional evidence. */
+        NEED_NUM(NINLIL_DV_NUM_FAMILY);
+        NEED_NUM(NINLIL_DV_NUM_SUBTYPE);
+        NEED_STR(NINLIL_DV_STR_BODY);
+        if (ok) {
             NEED_STR(NINLIL_DV_STR_DIGEST);
         }
     } else {
@@ -966,6 +976,8 @@ static int parse_catalog(parse_ctx *c, ninlil_dv_file_t *file)
             NINLIL_DV_CAT_DSB3_26)
         CAT("dsb3_total_positive", dsb3_total_positive, NINLIL_DV_CAT_DSB3_POS)
         CAT("dsb3_total_negative", dsb3_total_negative, NINLIL_DV_CAT_DSB3_NEG)
+        CAT("dsb3_subtype_27_positive", dsb3_subtype_27_positive,
+            NINLIL_DV_CAT_DSB3_27)
 #undef CAT
         {
             set_err(c->err, c->err_cap, "unknown catalog key");

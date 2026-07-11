@@ -79,6 +79,7 @@ typedef struct body_any {
     ninlil_model_domain_body_idempotency_map_t idempotency_map;
     ninlil_model_domain_body_event_id_map_t event_id_map;
     ninlil_model_domain_body_scheduler_owner_t scheduler_owner;
+    ninlil_model_domain_body_ordered_ingress_t ordered_ingress;
 } body_any_t;
 
 static ninlil_status_t decode_body_any(
@@ -141,6 +142,10 @@ static ninlil_status_t decode_body_any(
     if (family == 6u && subtype == 0x26u) {
         return ninlil_model_domain_decode_body_scheduler_owner(
             body, &any->scheduler_owner);
+    }
+    if (family == 6u && subtype == 0x27u) {
+        return ninlil_model_domain_decode_body_ordered_ingress(
+            body, &any->ordered_ingress);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -208,6 +213,10 @@ static ninlil_status_t encode_body_any(
     if (family == 6u && subtype == 0x26u) {
         return ninlil_model_domain_encode_body_scheduler_owner(
             &any->scheduler_owner, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x27u) {
+        return ninlil_model_domain_encode_body_ordered_ingress(
+            &any->ordered_ingress, out, capacity, out_len);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -835,6 +844,116 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
         }
         return 0;
     }
+    if (strcmp(v->op, "message_semantic_digest") == 0) {
+        ninlil_model_domain_body_ordered_ingress_t ing;
+        ninlil_model_domain_message_semantic_prefix_t prefix;
+        ninlil_model_domain_digest_t dig;
+        ninlil_model_domain_message_semantic_digest_ctx_t ctx;
+        uint8_t payload[256];
+        uint8_t evidence[160];
+        size_t pay_n = 0u;
+        size_t evi_n = 0u;
+        ninlil_bytes_view_t pay_view;
+        ninlil_bytes_view_t evi_view;
+        uint32_t chunk;
+
+        QCHECK(hex_to(ninlil_dv_str(v->body_hex), buf, sizeof(buf), &n) == 0);
+        if (ninlil_dv_str(v->subject_hex)[0] != '\0') {
+            QCHECK(hex_to(ninlil_dv_str(v->subject_hex), payload, sizeof(payload),
+                &pay_n)
+                == 0);
+        }
+        if (ninlil_dv_str(v->retention_hex)[0] != '\0') {
+            QCHECK(hex_to(
+                ninlil_dv_str(v->retention_hex), evidence, sizeof(evidence),
+                &evi_n)
+                == 0);
+        }
+        got = ninlil_model_domain_decode_body_ordered_ingress(
+            (ninlil_bytes_view_t){buf, (uint32_t)n}, &ing);
+        /* Prefix source body must decode for OK helper vectors. */
+        if (expect == NINLIL_OK) {
+            QCHECK(got == NINLIL_OK);
+        } else if (got != NINLIL_OK) {
+            /* Negative may still have a valid body; continue if decode works. */
+            return 0;
+        }
+        (void)memset(&prefix, 0, sizeof(prefix));
+        prefix.kind = ing.message_kind;
+        prefix.flags = ing.message_flags;
+        (void)memcpy(prefix.transaction_id, ing.transaction_id, 16u);
+        (void)memcpy(prefix.attempt_id, ing.attempt_id, 16u);
+        (void)memcpy(prefix.event_id, ing.event_id, 16u);
+        prefix.source = ing.source;
+        prefix.target = ing.target;
+        prefix.service = ing.service;
+        (void)memcpy(prefix.content_digest, ing.content_digest, 32u);
+        prefix.generation = ing.generation;
+        (void)memcpy(prefix.deadline_clock_epoch, ing.deadline_clock_epoch, 16u);
+        prefix.absolute_effect_deadline_ms = ing.absolute_effect_deadline_ms;
+        prefix.evidence_grace_ms = ing.evidence_grace_ms;
+        prefix.required_evidence = ing.required_evidence;
+        prefix.receipt_stage = ing.receipt_stage;
+        prefix.disposition = ing.disposition;
+        prefix.effect_certainty = ing.effect_certainty;
+        prefix.retry_guidance = ing.retry_guidance;
+        prefix.cancel_kind = ing.cancel_kind;
+        prefix.retry_delay_ms = ing.retry_delay_ms;
+        (void)memcpy(prefix.evidence_clock_epoch, ing.evidence_clock_epoch, 16u);
+        prefix.evidence_now_ms = ing.evidence_now_ms;
+        prefix.evidence_trust = ing.evidence_trust;
+        prefix.payload_length = (uint32_t)pay_n;
+        pay_view.data = pay_n != 0u ? payload : NULL;
+        pay_view.length = (uint32_t)pay_n;
+        evi_view.data = evi_n != 0u ? evidence : NULL;
+        evi_view.length = (uint32_t)evi_n;
+        got = ninlil_model_domain_message_semantic_digest(
+            &prefix, pay_view, evi_view, &dig);
+        QCHECK(got == expect);
+        if (expect == NINLIL_OK) {
+            enhex(dig.bytes, 32u, hex);
+            QCHECK(strcmp(hex, ninlil_dv_str(v->digest_hex)) == 0);
+            /* Streaming path: multi-chunk payload then evidence. */
+            QCHECK(ninlil_model_domain_message_semantic_digest_init(
+                &ctx, &prefix)
+                == NINLIL_OK);
+            chunk = 0u;
+            while (chunk < pay_view.length) {
+                uint32_t step = pay_view.length - chunk;
+                if (step > 3u) {
+                    step = 3u;
+                }
+                QCHECK(
+                    ninlil_model_domain_message_semantic_digest_update_payload(
+                        &ctx, pay_view.data + chunk, step)
+                    == NINLIL_OK);
+                chunk += step;
+            }
+            QCHECK(ninlil_model_domain_message_semantic_digest_begin_evidence(
+                &ctx, evi_view.length)
+                == NINLIL_OK);
+            chunk = 0u;
+            while (chunk < evi_view.length) {
+                uint32_t step = evi_view.length - chunk;
+                if (step > 5u) {
+                    step = 5u;
+                }
+                QCHECK(
+                    ninlil_model_domain_message_semantic_digest_update_evidence(
+                        &ctx, evi_view.data + chunk, step)
+                    == NINLIL_OK);
+                chunk += step;
+            }
+            QCHECK(ninlil_model_domain_message_semantic_digest_final(&ctx, &dig)
+                == NINLIL_OK);
+            enhex(dig.bytes, 32u, hex);
+            QCHECK(strcmp(hex, ninlil_dv_str(v->digest_hex)) == 0);
+        } else {
+            QCHECK(zeros(&dig, sizeof(dig)));
+        }
+        return 0;
+    }
+
     if (strcmp(v->op, "typed_record") == 0) {
         ninlil_model_domain_typed_record_t rec;
         const uint8_t *body_start;
@@ -914,6 +1033,12 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 QCHECK(rec.idempotency_map.idempotency_key_length > 0u);
             } else if (v->subtype == 0x25u) {
                 QCHECK(!zeros(rec.event_id_map.event_id, 16u));
+            } else if (v->subtype == 0x26u) {
+                QCHECK(rec.scheduler_owner.owner_sequence != 0u);
+            } else if (v->subtype == 0x27u) {
+                QCHECK(rec.ordered_ingress.ordered_sequence != 0u);
+                QCHECK(rec.ordered_ingress.ingress_state == 1u);
+                QCHECK(rec.envelope.header.record_revision == 1u);
             }
             if (ninlil_dv_str(v->digest_hex)[0] != '\0') {
                 ninlil_model_domain_digest_t d;
@@ -972,6 +1097,7 @@ static int test_catalog_and_replay(const char *path)
     uint32_t cov24 = 0u;
     uint32_t cov25 = 0u;
     uint32_t cov26 = 0u;
+    uint32_t cov27 = 0u;
     uint32_t unimplemented = 0u;
 
     if (ninlil_dv_load_file(path, &file, err, sizeof(err)) != 0) {
@@ -1077,6 +1203,8 @@ static int test_catalog_and_replay(const char *path)
                 dsb3_pos++;
                 if (v->subtype == 0x26u) {
                     cov26++;
+                } else if (v->subtype == 0x27u) {
+                    cov27++;
                 }
             } else {
                 dsb3_neg++;
@@ -1117,11 +1245,12 @@ static int test_catalog_and_replay(const char *path)
     REQUIRE(dsb3_pos == file.catalog.dsb3_total_positive);
     REQUIRE(dsb3_neg == file.catalog.dsb3_total_negative);
     REQUIRE(cov26 == file.catalog.dsb3_subtype_26_positive);
-    /* D1-B1 + D1-B2 + D1-B3a subtype coverage: every target subtype has positives. */
+    REQUIRE(cov27 == file.catalog.dsb3_subtype_27_positive);
+    /* D1-B1 + D1-B2 + D1-B3a + D1-B3b subtype coverage. */
     if (cov01 == 0u || cov60 == 0u || cov62 == 0u || cov64 == 0u
         || cov7d == 0u || cov10 == 0u || cov11 == 0u || cov20 == 0u
         || cov21 == 0u || cov22 == 0u || cov23 == 0u || cov24 == 0u
-        || cov25 == 0u || cov26 == 0u) {
+        || cov25 == 0u || cov26 == 0u || cov27 == 0u) {
         unimplemented = 1u;
     }
     REQUIRE(unimplemented == 0u);
@@ -1130,10 +1259,11 @@ static int test_catalog_and_replay(const char *path)
         "dsb2_pos=%u dsb2_neg=%u dsb3_pos=%u dsb3_neg=%u "
         "cov01=%u cov60=%u cov62=%u cov64=%u cov7d=%u "
         "cov10=%u cov11=%u cov20=%u cov21=%u cov22=%u cov23=%u cov24=%u "
-        "cov25=%u cov26=%u sizeof(ninlil_dv_vector_t)=%zu\n",
+        "cov25=%u cov26=%u cov27=%u sizeof(ninlil_dv_vector_t)=%zu\n",
         file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, dsb3_pos,
         dsb3_neg, cov01, cov60, cov62, cov64, cov7d, cov10, cov11, cov20,
-        cov21, cov22, cov23, cov24, cov25, cov26, sizeof(ninlil_dv_vector_t));
+        cov21, cov22, cov23, cov24, cov25, cov26, cov27,
+        sizeof(ninlil_dv_vector_t));
     ninlil_dv_free(&file);
     return 0;
 }
@@ -2339,6 +2469,17 @@ static int test_body_alias_and_overflow(const char *vector_path)
         ninlil_model_domain_body_scheduler_owner_t,
         ninlil_model_domain_decode_body_scheduler_owner);
 
+    /* --- D1-B3b ORDERED_INGRESS fixed-ish body (no RAW16 borrow) --- */
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_ordered_ingress_t,
+        ninlil_model_domain_encode_body_ordered_ingress);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_ordered_ingress_t,
+        ninlil_model_domain_encode_body_ordered_ingress);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_ordered_ingress_t,
+        ninlil_model_domain_decode_body_ordered_ingress);
+
     /*
      * BUFFER_TOO_SMALL exact required length + untouched short buffer for each
      * variable body. Golden positives from the checked-in DSB2/DSB3 catalog.
@@ -2371,7 +2512,7 @@ static int test_body_alias_and_overflow(const char *vector_path)
             if (v->subtype != 0x10u && v->subtype != 0x11u
                 && v->subtype != 0x20u && v->subtype != 0x23u
                 && v->subtype != 0x24u && v->subtype != 0x25u
-                && v->subtype != 0x26u) {
+                && v->subtype != 0x26u && v->subtype != 0x27u) {
                 continue;
             }
             REQUIRE(hex_to(ninlil_dv_str(v->body_hex), enc, sizeof(enc), &hn)
@@ -2415,6 +2556,490 @@ static int test_body_alias_and_overflow(const char *vector_path)
     return 0;
 }
 
+/*
+ * D1-B3b message_semantic_digest API contract: address-first alias gates,
+ * counter underflow resistance, wrong-phase FAILED policy, oracle match.
+ */
+static int msd_fill_prefix_from_ingress(
+    const ninlil_model_domain_body_ordered_ingress_t *ing,
+    uint32_t payload_length,
+    ninlil_model_domain_message_semantic_prefix_t *prefix)
+{
+    (void)memset(prefix, 0, sizeof(*prefix));
+    prefix->kind = ing->message_kind;
+    prefix->flags = ing->message_flags;
+    (void)memcpy(prefix->transaction_id, ing->transaction_id, 16u);
+    (void)memcpy(prefix->attempt_id, ing->attempt_id, 16u);
+    (void)memcpy(prefix->event_id, ing->event_id, 16u);
+    prefix->source = ing->source;
+    prefix->target = ing->target;
+    prefix->service = ing->service;
+    (void)memcpy(prefix->content_digest, ing->content_digest, 32u);
+    prefix->generation = ing->generation;
+    (void)memcpy(prefix->deadline_clock_epoch, ing->deadline_clock_epoch, 16u);
+    prefix->absolute_effect_deadline_ms = ing->absolute_effect_deadline_ms;
+    prefix->evidence_grace_ms = ing->evidence_grace_ms;
+    prefix->required_evidence = ing->required_evidence;
+    prefix->receipt_stage = ing->receipt_stage;
+    prefix->disposition = ing->disposition;
+    prefix->effect_certainty = ing->effect_certainty;
+    prefix->retry_guidance = ing->retry_guidance;
+    prefix->cancel_kind = ing->cancel_kind;
+    prefix->retry_delay_ms = ing->retry_delay_ms;
+    (void)memcpy(prefix->evidence_clock_epoch, ing->evidence_clock_epoch, 16u);
+    prefix->evidence_now_ms = ing->evidence_now_ms;
+    prefix->evidence_trust = ing->evidence_trust;
+    prefix->payload_length = payload_length;
+    return 0;
+}
+
+static int test_message_semantic_digest_contracts(const char *path)
+{
+    ninlil_dv_file_t file;
+    char err[256];
+    size_t i;
+    ninlil_model_domain_body_ordered_ingress_t empty_ing;
+    ninlil_model_domain_body_ordered_ingress_t stream_ing;
+    ninlil_model_domain_message_semantic_prefix_t prefix;
+    ninlil_model_domain_message_semantic_prefix_t prefix_before;
+    ninlil_model_domain_message_semantic_digest_ctx_t ctx;
+    ninlil_model_domain_message_semantic_digest_ctx_t ctx_before;
+    ninlil_model_domain_digest_t dig;
+    ninlil_model_domain_digest_t dig_before;
+    ninlil_model_domain_digest_t oracle;
+    uint8_t body_empty[2048];
+    uint8_t body_stream[2048];
+    uint8_t payload[64];
+    uint8_t evidence[160];
+    size_t body_empty_n = 0u;
+    size_t body_stream_n = 0u;
+    size_t pay_n = 0u;
+    size_t evi_n = 0u;
+    char dig_hex[65];
+    const char *oracle_empty_hex = NULL;
+    const char *oracle_stream_hex = NULL;
+    uint8_t *overflow_ptr;
+    int found_empty = 0;
+    int found_stream = 0;
+
+    REQUIRE(path != NULL);
+    REQUIRE(ninlil_dv_load_file(path, &file, err, sizeof(err)) == 0);
+
+    for (i = 0u; i < file.vector_count; ++i) {
+        const ninlil_dv_vector_t *v = &file.vectors[i];
+        if (strcmp(v->op, "message_semantic_digest") != 0
+            || strcmp(v->expected_status, "OK") != 0) {
+            continue;
+        }
+        if (strcmp(v->id, "DSB3_MSD_ONESHOT_EMPTY") == 0) {
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_empty,
+                        sizeof(body_empty), &body_empty_n)
+                == 0);
+            oracle_empty_hex = ninlil_dv_str(v->digest_hex);
+            found_empty = 1;
+        } else if (strcmp(v->id, "DSB3_MSD_STREAM_NONEMPTY") == 0) {
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_stream,
+                        sizeof(body_stream), &body_stream_n)
+                == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->subject_hex), payload,
+                        sizeof(payload), &pay_n)
+                == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->retention_hex), evidence,
+                        sizeof(evidence), &evi_n)
+                == 0);
+            oracle_stream_hex = ninlil_dv_str(v->digest_hex);
+            found_stream = 1;
+        }
+    }
+    REQUIRE(found_empty != 0);
+    REQUIRE(found_stream != 0);
+    REQUIRE(ninlil_model_domain_decode_body_ordered_ingress(
+            (ninlil_bytes_view_t){body_empty, (uint32_t)body_empty_n},
+            &empty_ing)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_decode_body_ordered_ingress(
+            (ninlil_bytes_view_t){body_stream, (uint32_t)body_stream_n},
+            &stream_ing)
+        == NINLIL_OK);
+
+    /* --- 7. Valid zero-length + multi-chunk paths match oracle --- */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    (void)memset(&dig, 0xA5, sizeof(dig));
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            &prefix, (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_bytes_view_t){NULL, 0u}, &dig)
+        == NINLIL_OK);
+    enhex(dig.bytes, 32u, dig_hex);
+    REQUIRE(strcmp(dig_hex, oracle_empty_hex) == 0);
+    (void)memcpy(oracle.bytes, dig.bytes, 32u);
+
+    REQUIRE(msd_fill_prefix_from_ingress(
+            &stream_ing, (uint32_t)pay_n, &prefix)
+        == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    {
+        uint32_t chunk = 0u;
+        while (chunk < (uint32_t)pay_n) {
+            uint32_t step = (uint32_t)pay_n - chunk;
+            if (step > 3u) {
+                step = 3u;
+            }
+            REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+                    &ctx, payload + chunk, step)
+                == NINLIL_OK);
+            chunk += step;
+        }
+    }
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(
+            &ctx, (uint32_t)evi_n)
+        == NINLIL_OK);
+    {
+        uint32_t chunk = 0u;
+        while (chunk < (uint32_t)evi_n) {
+            uint32_t step = (uint32_t)evi_n - chunk;
+            if (step > 5u) {
+                step = 5u;
+            }
+            REQUIRE(ninlil_model_domain_message_semantic_digest_update_evidence(
+                    &ctx, evidence + chunk, step)
+                == NINLIL_OK);
+            chunk += step;
+        }
+    }
+    REQUIRE(ninlil_model_domain_message_semantic_digest_final(&ctx, &dig)
+        == NINLIL_OK);
+    enhex(dig.bytes, 32u, dig_hex);
+    REQUIRE(strcmp(dig_hex, oracle_stream_hex) == 0);
+    /* One-shot same inputs. */
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            &prefix, (ninlil_bytes_view_t){payload, (uint32_t)pay_n},
+            (ninlil_bytes_view_t){evidence, (uint32_t)evi_n}, &dig)
+        == NINLIL_OK);
+    enhex(dig.bytes, 32u, dig_hex);
+    REQUIRE(strcmp(dig_hex, oracle_stream_hex) == 0);
+
+    /* --- 1. One-shot out aliases prefix/payload/evidence; payload/evidence overlap --- */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    prefix_before = prefix;
+    (void)memset(&dig, 0x5A, sizeof(dig));
+    dig_before = dig;
+    /* out aliases prefix (prefix storage reinterpreted as digest). */
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            &prefix, (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_model_domain_digest_t *)(void *)&prefix)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&prefix, &prefix_before, sizeof(prefix)) == 0);
+
+    {
+        uint8_t pay_before[64];
+        uint8_t evi_before[160];
+        ninlil_model_domain_message_semantic_prefix_t p_before;
+        REQUIRE(msd_fill_prefix_from_ingress(
+                &stream_ing, (uint32_t)pay_n, &prefix)
+            == 0);
+        p_before = prefix;
+        (void)memcpy(pay_before, payload, pay_n);
+        (void)memcpy(evi_before, evidence, evi_n);
+
+        /* out aliases payload */
+        REQUIRE(ninlil_model_domain_message_semantic_digest(
+                &prefix, (ninlil_bytes_view_t){payload, (uint32_t)pay_n},
+                (ninlil_bytes_view_t){evidence, (uint32_t)evi_n},
+                (ninlil_model_domain_digest_t *)(void *)payload)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(payload, pay_before, pay_n) == 0);
+        REQUIRE(memcmp(evidence, evi_before, evi_n) == 0);
+        REQUIRE(memcmp(&prefix, &p_before, sizeof(prefix)) == 0);
+
+        /* out aliases evidence */
+        REQUIRE(ninlil_model_domain_message_semantic_digest(
+                &prefix, (ninlil_bytes_view_t){payload, (uint32_t)pay_n},
+                (ninlil_bytes_view_t){evidence, (uint32_t)evi_n},
+                (ninlil_model_domain_digest_t *)(void *)evidence)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(payload, pay_before, pay_n) == 0);
+        REQUIRE(memcmp(evidence, evi_before, evi_n) == 0);
+
+        /* payload/evidence ranges overlap (same buffer) */
+        (void)memset(&dig, 0xB7, sizeof(dig));
+        dig_before = dig;
+        REQUIRE(ninlil_model_domain_message_semantic_digest(
+                &prefix, (ninlil_bytes_view_t){payload, (uint32_t)pay_n},
+                (ninlil_bytes_view_t){payload, (uint32_t)pay_n}, &dig)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+        REQUIRE(memcmp(payload, pay_before, pay_n) == 0);
+
+        /* Non-alias shape failure zeros out (sentinel must change to zero). */
+        (void)memset(&dig, 0xB7, sizeof(dig));
+        REQUIRE(ninlil_model_domain_message_semantic_digest(
+                NULL, (ninlil_bytes_view_t){NULL, 0u},
+                (ninlil_bytes_view_t){NULL, 0u}, &dig)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(zeros(&dig, sizeof(dig)));
+    }
+
+    /* --- 2. init: ctx aliases prefix untouched; invalid nested zeros after gate --- */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    {
+        union {
+            ninlil_model_domain_message_semantic_digest_ctx_t ctx;
+            ninlil_model_domain_message_semantic_prefix_t prefix;
+            uint8_t raw[sizeof(ninlil_model_domain_message_semantic_prefix_t)
+                < sizeof(ninlil_model_domain_message_semantic_digest_ctx_t)
+                    ? sizeof(ninlil_model_domain_message_semantic_digest_ctx_t)
+                    : sizeof(ninlil_model_domain_message_semantic_prefix_t)];
+        } storage;
+        uint8_t storage_before[sizeof(storage)];
+        (void)memset(&storage, 0xA5, sizeof(storage));
+        (void)memcpy(&storage.prefix, &prefix, sizeof(prefix));
+        (void)memcpy(storage_before, &storage, sizeof(storage));
+        REQUIRE(ninlil_model_domain_message_semantic_digest_init(
+                &storage.ctx, &storage.prefix)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(&storage, storage_before, sizeof(storage)) == 0);
+
+        /* Non-alias invalid nested shape zeros ctx only after alias gate. */
+        (void)memset(&ctx, 0xA5, sizeof(ctx));
+        REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+        prefix.service.namespace_id.length = 0u; /* invalid TEXT_ID */
+        REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+        {
+            ninlil_model_domain_message_semantic_digest_ctx_t zeroed;
+            (void)memset(&zeroed, 0, sizeof(zeroed));
+            zeroed.phase = NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED;
+            REQUIRE(memcmp(&ctx, &zeroed, sizeof(ctx)) == 0);
+        }
+        /* NULL prefix with valid ctx: zero/fail ctx. */
+        (void)memset(&ctx, 0xA5, sizeof(ctx));
+        REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, NULL)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+    }
+
+    /* --- 3. update payload/evidence data aliases ctx: exact context unchanged --- */
+    REQUIRE(msd_fill_prefix_from_ingress(
+            &stream_ing, (uint32_t)pay_n, &prefix)
+        == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    ctx_before = ctx;
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, (const uint8_t *)&ctx, 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&ctx, &ctx_before, sizeof(ctx)) == 0);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_PAYLOAD);
+
+    /* Advance to evidence phase with zero-length payload (empty_ing prefix). */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(&ctx, 8u)
+        == NINLIL_OK);
+    ctx_before = ctx;
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_evidence(
+            &ctx, (const uint8_t *)&ctx, 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&ctx, &ctx_before, sizeof(ctx)) == 0);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_EVIDENCE);
+
+    /* --- 4. Forged near-UINTPTR_MAX ranges: INVALID, no crash, sentinels stay --- */
+    overflow_ptr = (uint8_t *)(uintptr_t)(UINTPTR_MAX - 3u);
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    (void)memset(&dig, 0x11, sizeof(dig));
+    dig_before = dig;
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            (const ninlil_model_domain_message_semantic_prefix_t *)(void *)
+                overflow_ptr,
+            (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_bytes_view_t){NULL, 0u}, &dig)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+    (void)memset(&dig, 0x22, sizeof(dig));
+    dig_before = dig;
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            &prefix, (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_model_domain_digest_t *)(void *)overflow_ptr)
+        == NINLIL_E_INVALID_ARGUMENT);
+    /* real dig unused; just ensure no crash and local sentinel path below */
+    (void)memset(&dig, 0x22, sizeof(dig));
+    dig_before = dig;
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            &prefix, (ninlil_bytes_view_t){overflow_ptr, 16u},
+            (ninlil_bytes_view_t){NULL, 0u}, &dig)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+    (void)memset(&dig, 0x33, sizeof(dig));
+    dig_before = dig;
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            &prefix, (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_bytes_view_t){overflow_ptr, 16u}, &dig)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+    (void)memset(&ctx, 0xA5, sizeof(ctx));
+    ctx_before = ctx;
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(
+            (ninlil_model_domain_message_semantic_digest_ctx_t *)(void *)
+                overflow_ptr,
+            &prefix)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, overflow_ptr, 16u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&ctx, &ctx_before, sizeof(ctx)) == 0);
+
+    /* --- 5. Tampered counters / incoherent phase / malformed SHA --- */
+    REQUIRE(msd_fill_prefix_from_ingress(
+            &stream_ing, (uint32_t)pay_n, &prefix)
+        == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    /* received > declared before any absorb */
+    ctx.received_payload_length = ctx.declared_payload_length + 1u;
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, payload, 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, payload, (uint32_t)pay_n)
+        == NINLIL_OK);
+    /* evidence declared > max on begin */
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(
+            &ctx, NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX + 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, payload, (uint32_t)pay_n)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(
+            &ctx, (uint32_t)evi_n)
+        == NINLIL_OK);
+    /* tamper: received > declared evidence */
+    ctx.received_evidence_length = ctx.declared_evidence_length + 1u;
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_evidence(
+            &ctx, evidence, 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    /* incoherent phase: update_payload while in evidence phase → FAILED */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(&ctx, 0u)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, payload, 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    /* begin_evidence with incomplete payload → FAILED */
+    REQUIRE(msd_fill_prefix_from_ingress(
+            &stream_ing, (uint32_t)pay_n, &prefix)
+        == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(
+            &ctx, 0u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    /* malformed nested SHA buffer_length */
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    ctx.sha.buffer_length = 64u;
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, payload, 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    /* declared evidence > max via caller-mutated ctx on update_evidence */
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_payload(
+            &ctx, payload, (uint32_t)pay_n)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(
+            &ctx, 4u)
+        == NINLIL_OK);
+    ctx.declared_evidence_length = NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX + 1u;
+    ctx.received_evidence_length = 0u;
+    REQUIRE(ninlil_model_domain_message_semantic_digest_update_evidence(
+            &ctx, evidence, 1u)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    /* --- 6. final alias ctx/out leaves unchanged; non-alias zeros out --- */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(&ctx, 0u)
+        == NINLIL_OK);
+    ctx_before = ctx;
+    (void)memset(&dig, 0x44, sizeof(dig));
+    dig_before = dig;
+    /* out aliases ctx */
+    REQUIRE(ninlil_model_domain_message_semantic_digest_final(
+            &ctx, (ninlil_model_domain_digest_t *)(void *)&ctx)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&ctx, &ctx_before, sizeof(ctx)) == 0);
+    REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+    /* non-alias wrong phase: zeros out, fails ctx */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    /* still PAYLOAD, not EVIDENCE */
+    (void)memset(&dig, 0x55, sizeof(dig));
+    REQUIRE(ninlil_model_domain_message_semantic_digest_final(&ctx, &dig)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(zeros(&dig, sizeof(dig)));
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    /* NULL ctx final zeros out */
+    (void)memset(&dig, 0x66, sizeof(dig));
+    REQUIRE(ninlil_model_domain_message_semantic_digest_final(NULL, &dig)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(zeros(&dig, sizeof(dig)));
+
+    /* incomplete evidence: zeros out, FAILED */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_init(&ctx, &prefix)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_message_semantic_digest_begin_evidence(&ctx, 4u)
+        == NINLIL_OK);
+    (void)memset(&dig, 0x77, sizeof(dig));
+    REQUIRE(ninlil_model_domain_message_semantic_digest_final(&ctx, &dig)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(zeros(&dig, sizeof(dig)));
+    REQUIRE(ctx.phase == NINLIL_MODEL_DOMAIN_MSD_PHASE_FAILED);
+
+    /* Success path still works after negatives. */
+    REQUIRE(msd_fill_prefix_from_ingress(&empty_ing, 0u, &prefix) == 0);
+    REQUIRE(ninlil_model_domain_message_semantic_digest(
+            &prefix, (ninlil_bytes_view_t){NULL, 0u},
+            (ninlil_bytes_view_t){NULL, 0u}, &dig)
+        == NINLIL_OK);
+    REQUIRE(memcmp(dig.bytes, oracle.bytes, 32u) == 0);
+
+    ninlil_dv_free(&file);
+    (void)fprintf(stdout, "message_semantic_digest contracts ok\n");
+    return 0;
+}
+
 static int test_catalog_format_mutations(const char *path)
 {
     ninlil_dv_file_t file;
@@ -2443,7 +3068,7 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3a\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3b\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
@@ -2540,6 +3165,7 @@ int main(int argc, char **argv)
         || test_head_encoded_length_matrix() != 0
         || test_invalid_encode_structs() != 0
         || test_body_alias_and_overflow(path) != 0
+        || test_message_semantic_digest_contracts(path) != 0
         || test_catalog_and_replay(path) != 0
         || test_mutation_rejects_wrong_digest(path) != 0
         || test_manifest_key_length_mutation(path) != 0
