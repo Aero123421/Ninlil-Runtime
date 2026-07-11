@@ -23,8 +23,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
 - Domain Store v1のfamily 5/6 catalog、4KiB record/3KiB chunk上限、最大256-member atomic witness、backlink/capacity/health/recovery順を固定したNormative D0仕様
 - Domain Store D1-Aのkey/envelope/digest/witness primitiveと、D1-B1のINTERNAL_INVARIANT / BEARER_STATE / CLOCK_BASELINE / ATTEMPT_REUSE_FENCE / WITNESS_HEAD_INDEX exact body codec・同一record検証・独立golden vector
-- Domain Store D1-B2 / D1-B3a..f body codec（SCHEDULER_OWNER / ORDERED_INGRESS / BLOB / ATTEMPT / ATTEMPT_ID_INDEX / CANCEL_STATE）。**D1-B3b controller-ingress retrofit implemented**（ORDERED_INGRESS `controller_ingress_*` 32-byte local durable-copy block; vector format `ninlil-domain-store-v1-d1b3f-r1`）
-- **B3g EVIDENCE_CELL**: Normative specification fixed; **production implementation pending**
+- Domain Store D1-B2 / D1-B3a..g body codec（SCHEDULER_OWNER / ORDERED_INGRESS / BLOB / ATTEMPT / ATTEMPT_ID_INDEX / CANCEL_STATE / EVIDENCE_CELL）。**D1-B3b controller-ingress retrofit implemented**（ORDERED_INGRESS `controller_ingress_*` 32-byte local durable-copy block）。**D1-B3g EVIDENCE_CELL production implemented**（vector format `ninlil-domain-store-v1-d1b3g`）
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
@@ -38,7 +37,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
 - restart-safe SQLite portとproduction durable storage
 - Runtime Storeのdomain journal recovery、counter/capacity相互検証、identity rotationとpublic Runtime bodyへの統合
-- Domain Store D1-B3g EVIDENCE_CELL production body codec、残りsemantic body catalog / canonical member-set builder、D2 bounded scanner、D3相互validation、D4 operation別commit-unknown convergence
+- Domain Store 残りsemantic body catalog / canonical member-set builder、D2 bounded scanner、D3相互validation（EVIDENCE live L/cardinality/primary PVD/target match を含む）、D4 operation別commit-unknown convergence
 - end-to-endのReliable Command / Durable Event path
 - ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
 - Display node / Leak nodeを使う実機end-to-end検証
@@ -101,7 +100,7 @@ Project運用文書:
 
 必要なのはCMake 3.16以上と、C11 / C++17に対応するC・C++ compilerです。通常buildではstrict warning付きのconsumer smoke、ABI/contract checker、negative testをCTestから実行します。
 
-**Test / oracle 前提**: Domain Store D1-A / D1-B1 / D1-B2 / D1-B3a / D1-B3b / D1-B3c / D1-B3d / D1-B3e / D1-B3f の vector 生成・検査（`domain_store_vector_oracle` CTest）には **Python 3** interpreter が必要です（`find_package(Python3 COMPONENTS Interpreter REQUIRED)`）。production runtime 自体は Python に依存しません。
+**Test / oracle 前提**: Domain Store D1-A / D1-B1 / D1-B2 / D1-B3a / D1-B3b / D1-B3c / D1-B3d / D1-B3e / D1-B3f / D1-B3g の vector 生成・検査（`domain_store_vector_oracle` CTest）には **Python 3** interpreter が必要です（`find_package(Python3 COMPONENTS Interpreter REQUIRED)`）。production runtime 自体は Python に依存しません。
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug

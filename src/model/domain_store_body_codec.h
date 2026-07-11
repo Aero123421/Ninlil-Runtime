@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..f.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..g.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -24,7 +24,8 @@ extern "C" {
  *   D1-B3d: family 6 31 ATTEMPT pure body + same-record matrix validation
  *   D1-B3e: family 6 34 ATTEMPT_ID_INDEX pure body + same-record binding
  *   D1-B3f: family 6 33 CANCEL_STATE pure body + same-record matrix
- *          (not D2/D3/D4; not B3g EVIDENCE_CELL production)
+ *   D1-B3g: family 6 32 EVIDENCE_CELL pure body + same-record matrix
+ *          (not D2/D3/D4; live L/cardinality/primary PVD/target match are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -57,6 +58,12 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_TX_BYTES ((uint32_t)162u)
 #define NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_DELIVERY_BYTES ((uint32_t)226u)
 #define NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_MAX ((uint32_t)512u)
+/* EVIDENCE_CELL (0x32): 718 + raw contents; TX=734 / DLV=798; max 1024. */
+#define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_FIXED ((uint32_t)718u)
+#define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_TX_BYTES ((uint32_t)734u)
+#define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_DELIVERY_BYTES ((uint32_t)798u)
+#define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_MAX ((uint32_t)1024u)
+#define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_SERVICE_SLOT_BYTES ((uint32_t)240u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
 #define NINLIL_MODEL_DOMAIN_TARGET_BYTES ((uint32_t)100u)
@@ -81,6 +88,8 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_RAW16_ATTEMPT_OWNER_KEY_MAX ((uint32_t)128u)
 /* CANCEL_STATE owner_key_raw content max (docs17 §8.4); TX=16 / DELIVERY=80. */
 #define NINLIL_MODEL_DOMAIN_RAW16_CANCEL_OWNER_KEY_MAX ((uint32_t)128u)
+/* EVIDENCE_CELL owner_key_raw content max (docs17 §8.3); TX=16 / DELIVERY=80. */
+#define NINLIL_MODEL_DOMAIN_RAW16_EVIDENCE_OWNER_KEY_MAX ((uint32_t)128u)
 #define NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX ((uint32_t)128u)
 
 /* BLOB owner_key_raw exact content lengths (docs17 §8.3). */
@@ -95,6 +104,10 @@ extern "C" {
 /* CANCEL_STATE owner_key_raw exact content lengths (docs17 §8.4). */
 #define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_KEY_TX_BYTES ((uint16_t)16u)
 #define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_KEY_DELIVERY_BYTES ((uint16_t)80u)
+
+/* EVIDENCE_CELL owner_key_raw exact content lengths (docs17 §8.3). */
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_KEY_TX_BYTES ((uint16_t)16u)
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_KEY_DELIVERY_BYTES ((uint16_t)80u)
 
 /* Closed body enums (docs17 section 7.1). */
 #define NINLIL_MODEL_DOMAIN_INDEX_STATE_BASELINE ((uint16_t)1u)
@@ -189,6 +202,19 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_CANCEL_GATE_NEVER_INVOKED ((uint32_t)1u)
 #define NINLIL_MODEL_DOMAIN_CANCEL_GATE_WOULD_BLOCK_RETRYABLE ((uint32_t)2u)
 #define NINLIL_MODEL_DOMAIN_CANCEL_GATE_INVOKED_CLOSED ((uint32_t)3u)
+
+/*
+ * EVIDENCE_CELL private enums (docs17 §7.1 / §8.3) — distinct from
+ * reservation / scheduler / BLOB / ATTEMPT / CANCEL owner enums.
+ */
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_TRANSACTION ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_DELIVERY ((uint16_t)2u)
+
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_SUMMARY ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_RAW ((uint16_t)2u)
+
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_UNUSED ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_MATERIALIZED ((uint16_t)2u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -619,6 +645,50 @@ typedef struct ninlil_model_domain_body_cancel_state {
 } ninlil_model_domain_body_cancel_state_t;
 
 /*
+ * EVIDENCE_CELL (0x32). owner_key_raw borrows encoded body on decode.
+ * issuer PARTY and service SERVICE_IDENTITY are value-owned.
+ * evidence_bytes is fixed 128-byte storage (docs17 §8.3).
+ * service_slot[240] is EVIDENCE-only fixed pad of canonical SERVICE_IDENTITY;
+ * ordinary variable SERVICE_IDENTITY wire rules are unchanged.
+ * Live primary PVD / live TARGET / L+1 cardinality / slot continuity /
+ * STATE projection / RESULT_CACHE / retention erase are D3.
+ */
+typedef struct ninlil_model_domain_body_evidence_cell {
+    uint16_t evidence_owner_kind;
+    uint16_t cell_kind;
+    uint16_t owner_key_raw_length;
+    const uint8_t *owner_key_raw;
+    uint8_t primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t target_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t slot_index;
+    uint16_t cell_state;
+    uint16_t reserved0;
+    uint32_t highest_receipt_stage;
+    uint32_t latest_evidence_stage;
+    uint32_t material_receipt_stage;
+    uint32_t disposition;
+    uint32_t effect_certainty;
+    uint32_t late_material;
+    ninlil_model_domain_party_t issuer;
+    ninlil_model_domain_service_identity_t service;
+    uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t generation;
+    uint64_t durable_ingress_sequence;
+    uint8_t evidence_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t evidence_at_ms;
+    uint32_t evidence_trust;
+    uint32_t counter_saturated;
+    uint8_t evidence_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint16_t evidence_length;
+    uint16_t reserved1;
+    uint8_t evidence_bytes[NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX];
+    uint64_t valid_material_count;
+    uint64_t exact_duplicate_count;
+    uint64_t raw_overflow_count;
+    uint64_t late_evidence_count;
+} ninlil_model_domain_body_evidence_cell_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -720,6 +790,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_attempt_t attempt;
         ninlil_model_domain_body_attempt_id_index_t attempt_id_index;
         ninlil_model_domain_body_cancel_state_t cancel_state;
+        ninlil_model_domain_body_evidence_cell_t evidence_cell;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1093,6 +1164,25 @@ ninlil_status_t ninlil_model_domain_decode_body_cancel_state(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_cancel_state_t *out_body);
 
+/* --- EVIDENCE_CELL (0x32) --- */
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_evidence_cell_encoded_length(
+    const ninlil_model_domain_body_evidence_cell_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_evidence_cell(
+    const ninlil_model_domain_body_evidence_cell_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows owner_key_raw from encoded. Valid only while encoded lives.
+ * issuer / service / evidence_bytes are value-owned copies.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_evidence_cell(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_evidence_cell_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1138,7 +1228,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..f.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..g.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1164,8 +1254,15 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       and CANCEL_STATE cross proofs; CANCEL_STATE live primary PVD /
  *       live CANCEL ATTEMPT/index/cardinality / message recompute /
  *       RESULT/REVERSE_REPLY / prior transition/gate history / timeout
- *       scheduling / family/owner/cardinality/reply proofs (B3f proves
- *       same-record body/key/matrix/bijection/primary binding only)
+ *       scheduling / family/owner/cardinality/reply proofs; EVIDENCE_CELL
+ *       live primary PVD / live TARGET→target_digest / exact L and L+1
+ *       cardinality / slot continuity / valid_material_count = M + overflow /
+ *       owner family/content/required_evidence/supported mask / STATE
+ *       latest_evidence / has_late_evidence projection / RESULT_CACHE
+ *       evidence_cell_key_digest / EVIDENCE used/reserved accounting /
+ *       admission journal headroom / CANCEL_FIRST EVIDENCE 0 / deadline
+ *       proof / retention erase (B3g proves same-record body/key/matrix/
+ *       digest recompute/counter/family-generation/primary binding only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

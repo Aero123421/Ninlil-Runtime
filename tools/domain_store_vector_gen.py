@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a..f vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..g vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..f
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..g
 are hand-written here and intentionally do not import or link production C.
 
 Usage:
@@ -5411,6 +5411,759 @@ def build_document():
     assert b3_cov["33"]["negative"] >= 30
     assert b3_cov["33"]["roundtrip"] >= 7
 
+    # =====================================================================
+    # D1-B3g EVIDENCE_CELL (0x32) — after CANCEL_STATE; preserve first 898
+    # =====================================================================
+    def vectors_fingerprint(vec_list):
+        return hashlib.sha256(
+            json.dumps(vec_list, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+
+    PRE_B3G_VECTOR_COUNT = 898
+    PRE_B3G_FULL_FINGERPRINT = (
+        "e3b5e7172f703750271fccf4253652333743cb130cc096b47e867d55845c9740"
+    )
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_CS_REV0"
+    assert len(vectors) == PRE_B3G_VECTOR_COUNT
+    _pre_b3g_fp = vectors_fingerprint(vectors)
+    assert _pre_b3g_fp == PRE_B3G_FULL_FINGERPRINT, (
+        f"pre-B3g full fingerprint drift: got {_pre_b3g_fp}"
+    )
+    PRE_B3G_VECTOR_COUNT_SNAPSHOT = len(vectors)
+
+    # Private EVIDENCE_CELL enums / material constants.
+    EV_TX = 1
+    EV_DLV = 2
+    CK_SUM = 1
+    CK_RAW = 2
+    ST_UNUSED = 1
+    ST_MAT = 2
+    STAGE_RECV = 1
+    STAGE_DUR = 2
+    STAGE_APP = 3
+    STAGE_VER = 4
+    TRUST_T = 1
+    TRUST_U = 2
+    FAM_EF = 1
+    FAM_DS = 2
+    U64_MAX = (1 << 64) - 1
+    empty_sha = sha256(b"")
+    assert empty_sha == bytes.fromhex(
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
+    target_dig = bytes([0x61 + (i % 120) for i in range(32)])
+    content_dig = bytes([0x81 + (i % 100) for i in range(32)])
+    ev_epoch = bytes([0x21 + (i % 16) for i in range(16)])
+    ev_bytes_max = bytes([(i * 7 + 3) & 0xFF for i in range(128)])
+    ev_head = F["head_nz"]
+    ev_pvd = bytes([0x91 + (i % 150) for i in range(32)])
+    assert not all(b == 0 for b in target_dig)
+    assert not all(b == 0 for b in content_dig)
+    assert not all(b == 0 for b in ev_epoch)
+    assert not all(b == 0 for b in ev_pvd)
+    assert len(PARTY) == 100 and len(txn) == 16 and len(dlv_raw) == 80
+
+    def svc_id(ns, svc, schema, rev, dig, major, minor, family):
+        return service_identity(ns, svc, schema, rev, dig, major, minor, family)
+
+    SVC_MIN = svc_id(b"a", b"b", b"c", 1, F["dig"], 1, 0, FAM_EF)
+    SVC_MAX = svc_id(b"n" * 63, b"s" * 63, b"c" * 63, 1, F["dig"], 1, 0, FAM_DS)
+    SVC_EF = svc_id(F["ns"], F["svc"], F["schema"], 1, F["dig"], 1, 0, FAM_EF)
+    SVC_DS = svc_id(F["ns"], F["svc"], F["schema"], 1, F["dig"], 1, 0, FAM_DS)
+    assert 54 <= len(SVC_MIN) <= 240 and len(SVC_MAX) == 240
+    assert len(SVC_EF) <= 240 and len(SVC_DS) <= 240
+
+    def service_slot(svc_wire: bytes) -> bytes:
+        assert 54 <= len(svc_wire) <= 240
+        return svc_wire + bytes(240 - len(svc_wire))
+
+    def evidence_primary_key_digest(owner_kind: int, owner_raw: bytes) -> bytes:
+        if owner_kind == EV_TX:
+            return complete_key_digest_id128(0x20, owner_raw)
+        if owner_kind == EV_DLV:
+            return complete_key_digest_composite(0x40, raw16(owner_raw))
+        raise ValueError("bad evidence owner")
+
+    def evidence_primary_id(owner_kind: int, owner_raw: bytes) -> bytes:
+        if owner_kind == EV_TX:
+            return owner_raw
+        if owner_kind == EV_DLV:
+            return primary_id_from_composite_subtype(0x40, raw16(owner_raw))
+        raise ValueError("bad evidence owner")
+
+    def evidence_key_components(owner_kind: int, owner_raw: bytes, slot: int) -> bytes:
+        return be16(owner_kind) + raw16(owner_raw) + be32(slot)
+
+    def evidence_key(owner_kind: int, owner_raw: bytes, slot: int) -> bytes:
+        return bkey(6, 0x32, 5, composite(
+            0x32, evidence_key_components(owner_kind, owner_raw, slot)))
+
+    def enc_evidence_body(
+        owner_kind=EV_TX,
+        owner_raw=None,
+        cell_kind=CK_SUM,
+        cell_state=ST_MAT,
+        slot=0,
+        primary_kd=None,
+        target=None,
+        reserved0=0,
+        highest=0,
+        latest=0,
+        material_stage=0,
+        disposition=0,
+        effect=0,
+        late_material=0,
+        issuer=None,
+        svc_wire=None,
+        content=None,
+        generation=0,
+        sequence=0,
+        epoch=None,
+        at_ms=0,
+        trust=0,
+        counter_sat=0,
+        evidence_digest=None,
+        evidence_length=0,
+        evidence_bytes=None,
+        reserved1=0,
+        valid_count=0,
+        exact_dup=0,
+        raw_overflow=0,
+        late_count=0,
+        force_service_slot=None,
+    ) -> bytes:
+        if owner_raw is None:
+            owner_raw = txn if owner_kind == EV_TX else dlv_raw
+        if primary_kd is None:
+            if owner_kind in (EV_TX, EV_DLV):
+                primary_kd = evidence_primary_key_digest(owner_kind, owner_raw)
+            else:
+                primary_kd = complete_key_digest_id128(0x20, txn)
+        if target is None:
+            target = target_dig
+        if issuer is None:
+            issuer = bytes(100)
+        if epoch is None:
+            epoch = bytes(16)
+        if content is None:
+            content = bytes(32)
+        if evidence_bytes is None:
+            evidence_bytes = bytes(128)
+        assert len(issuer) == 100
+        assert len(evidence_bytes) == 128
+        if force_service_slot is not None:
+            slot_bytes = force_service_slot
+            assert len(slot_bytes) == 240
+        elif svc_wire is None:
+            slot_bytes = bytes(240)
+        else:
+            slot_bytes = service_slot(svc_wire)
+        if evidence_digest is None:
+            # Empty/inactive identity-only shapes store zero digest.
+            # Active material always recomputes SHA-256(bytes[0,length)),
+            # including length 0 → SHA-256(empty) nonzero.
+            is_empty_shape = (
+                (cell_kind == CK_SUM and cell_state == ST_MAT
+                 and valid_count == 0)
+                or (cell_kind == CK_RAW and cell_state == ST_UNUSED)
+            )
+            if is_empty_shape:
+                evidence_digest = bytes(32)
+            else:
+                evidence_digest = sha256(evidence_bytes[:evidence_length])
+        out = bytearray()
+        out += be16(owner_kind)
+        out += be16(cell_kind)
+        out += raw16(owner_raw)
+        out += primary_kd
+        out += target
+        out += be32(slot)
+        out += be16(cell_state)
+        out += be16(reserved0)
+        out += be32(highest)
+        out += be32(latest)
+        out += be32(material_stage)
+        out += be32(disposition)
+        out += be32(effect)
+        out += be32(late_material)
+        out += issuer
+        out += slot_bytes
+        out += content
+        out += be64(generation)
+        out += be64(sequence)
+        out += epoch
+        out += be64(at_ms)
+        out += be32(trust)
+        out += be32(counter_sat)
+        out += evidence_digest
+        out += be16(evidence_length)
+        out += be16(reserved1)
+        out += evidence_bytes
+        out += be64(valid_count)
+        out += be64(exact_dup)
+        out += be64(raw_overflow)
+        out += be64(late_count)
+        expected = 718 + len(owner_raw)
+        assert len(out) == expected, f"evidence body len {len(out)} != {expected}"
+        return bytes(out)
+
+    def material_kwargs(
+        stage=STAGE_RECV,
+        late_material=0,
+        late_count=0,
+        valid_count=1,
+        exact_dup=0,
+        raw_overflow=0,
+        counter_sat=0,
+        family=FAM_EF,
+        generation=None,
+        sequence=7,
+        trust=TRUST_T,
+        at_ms=0,
+        evidence_length=0,
+        evidence_bytes=None,
+        svc=None,
+        issuer=None,
+        content=None,
+    ):
+        if generation is None:
+            generation = 0 if family == FAM_EF else 1
+        if svc is None:
+            svc = SVC_EF if family == FAM_EF else SVC_DS
+        if issuer is None:
+            issuer = PARTY
+        if content is None:
+            content = content_dig
+        if evidence_bytes is None:
+            if evidence_length == 0:
+                evidence_bytes = bytes(128)
+            elif evidence_length == 128:
+                evidence_bytes = ev_bytes_max
+            else:
+                evidence_bytes = ev_bytes_max[:evidence_length] + bytes(
+                    128 - evidence_length)
+        return dict(
+            highest=stage,
+            latest=stage,
+            material_stage=stage,
+            late_material=late_material,
+            issuer=issuer,
+            svc_wire=svc,
+            content=content,
+            generation=generation,
+            sequence=sequence,
+            epoch=ev_epoch,
+            at_ms=at_ms,
+            trust=trust,
+            counter_sat=counter_sat,
+            evidence_length=evidence_length,
+            evidence_bytes=evidence_bytes,
+            valid_count=valid_count,
+            exact_dup=exact_dup,
+            raw_overflow=raw_overflow,
+            late_count=late_count,
+        )
+
+    def evidence_typed(
+        owner_kind=EV_TX,
+        owner_raw=None,
+        slot=0,
+        rev=1,
+        head=None,
+        pvd=None,
+        primary=None,
+        body=None,
+        **kwargs,
+    ):
+        if owner_raw is None:
+            owner_raw = txn if owner_kind == EV_TX else dlv_raw
+        if head is None:
+            head = ev_head
+        if pvd is None:
+            pvd = ev_pvd
+        if body is None:
+            body = enc_evidence_body(
+                owner_kind=owner_kind, owner_raw=owner_raw, slot=slot, **kwargs)
+        if primary is None:
+            primary = evidence_primary_id(owner_kind, owner_raw)
+        key = evidence_key(owner_kind, owner_raw, slot)
+        val = enc_env_full(6, 0x32, 0, rev, primary, head, pvd, body)
+        return key, val, body
+
+    e_pos = 0
+    e_neg = 0
+    e_mut = 0
+    e_rt = 0
+
+    def add_ev_pos(vid, body, notes=""):
+        nonlocal e_pos, e_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x32, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        e_pos += 1
+        e_rt += 1
+
+    def add_ev_typed(vid, key, val, body, notes=""):
+        nonlocal e_pos
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x32, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        e_pos += 1
+
+    def add_ev_neg_body(vid, body, notes=""):
+        nonlocal e_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x32, body_hex=hx(body), notes=notes)
+        e_neg += 1
+
+    def add_ev_neg_typed(vid, key, val, notes=""):
+        nonlocal e_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x32, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        e_neg += 1
+
+    # --- positives: TX/DLV, summary empty/material, raw unused/material ---
+    body_tx_sum_empty = enc_evidence_body(
+        owner_kind=EV_TX, cell_kind=CK_SUM, cell_state=ST_MAT, slot=0)
+    assert len(body_tx_sum_empty) == 734
+    add_ev_pos("DSB3_EV_TX_SUM_EMPTY", body_tx_sum_empty, "SUMMARY empty TX 734")
+    k, v, b = evidence_typed(body=body_tx_sum_empty)
+    add_ev_typed("DSB3_EV_TX_SUM_EMPTY_TYPED", k, v, b)
+
+    body_dlv_sum_empty = enc_evidence_body(
+        owner_kind=EV_DLV, owner_raw=dlv_raw, cell_kind=CK_SUM,
+        cell_state=ST_MAT, slot=0)
+    assert len(body_dlv_sum_empty) == 798
+    add_ev_pos("DSB3_EV_DLV_SUM_EMPTY", body_dlv_sum_empty, "SUMMARY empty DLV 798")
+    k, v, b = evidence_typed(
+        owner_kind=EV_DLV, owner_raw=dlv_raw, body=body_dlv_sum_empty)
+    add_ev_typed("DSB3_EV_DLV_SUM_EMPTY_TYPED", k, v, b)
+
+    body_tx_raw_unused = enc_evidence_body(
+        cell_kind=CK_RAW, cell_state=ST_UNUSED, slot=1)
+    add_ev_pos("DSB3_EV_TX_RAW_UNUSED", body_tx_raw_unused, "RAW UNUSED slot1")
+    k, v, b = evidence_typed(slot=1, body=body_tx_raw_unused)
+    add_ev_typed("DSB3_EV_TX_RAW_UNUSED_TYPED", k, v, b)
+
+    body_tx_sum_mat0 = enc_evidence_body(
+        cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+        **material_kwargs(evidence_length=0))
+    # length 0 still stores SHA256(empty) nonzero
+    assert not all(x == 0 for x in sha256(b""))
+    add_ev_pos("DSB3_EV_TX_SUM_MAT_LEN0", body_tx_sum_mat0,
+               "SUMMARY material evidence_length 0 digest=SHA256(empty)")
+    k, v, b = evidence_typed(body=body_tx_sum_mat0)
+    add_ev_typed("DSB3_EV_TX_SUM_MAT_LEN0_TYPED", k, v, b)
+
+    body_tx_sum_mat_max = enc_evidence_body(
+        cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+        **material_kwargs(
+            stage=STAGE_VER, evidence_length=128, late_material=1,
+            late_count=1, valid_count=3, exact_dup=1, raw_overflow=1))
+    add_ev_pos("DSB3_EV_TX_SUM_MAT_MAX", body_tx_sum_mat_max,
+               "SUMMARY material max evidence + counters")
+
+    body_tx_sum_mat_ds = enc_evidence_body(
+        cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+        **material_kwargs(family=FAM_DS, generation=2, stage=STAGE_APP))
+    add_ev_pos("DSB3_EV_TX_SUM_MAT_DS", body_tx_sum_mat_ds,
+               "SUMMARY material DesiredState generation>=1")
+
+    body_tx_raw_mat = enc_evidence_body(
+        cell_kind=CK_RAW, cell_state=ST_MAT, slot=3,
+        highest=0, latest=0, material_stage=STAGE_DUR,
+        late_material=1, issuer=PARTY, svc_wire=SVC_EF, content=content_dig,
+        generation=0, sequence=9, epoch=ev_epoch, at_ms=100, trust=TRUST_U,
+        evidence_length=5,
+        evidence_bytes=ev_bytes_max[:5] + bytes(123))
+    add_ev_pos("DSB3_EV_TX_RAW_MAT", body_tx_raw_mat, "RAW MATERIALIZED detail")
+    k, v, b = evidence_typed(slot=3, body=body_tx_raw_mat)
+    add_ev_typed("DSB3_EV_TX_RAW_MAT_TYPED", k, v, b)
+
+    body_dlv_raw_mat = enc_evidence_body(
+        owner_kind=EV_DLV, owner_raw=dlv_raw, cell_kind=CK_RAW,
+        cell_state=ST_MAT, slot=8,
+        highest=0, latest=0, material_stage=STAGE_RECV,
+        late_material=0, issuer=PARTY, svc_wire=SVC_DS, content=content_dig,
+        generation=4, sequence=11, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+        evidence_length=1, evidence_bytes=b"\xAB" + bytes(127))
+    add_ev_pos("DSB3_EV_DLV_RAW_MAT", body_dlv_raw_mat, "DLV RAW MATERIALIZED slot8")
+    k, v, b = evidence_typed(
+        owner_kind=EV_DLV, owner_raw=dlv_raw, slot=8, body=body_dlv_raw_mat)
+    add_ev_typed("DSB3_EV_DLV_RAW_MAT_TYPED", k, v, b)
+
+    # service min/max pad
+    body_svc_min = enc_evidence_body(
+        cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+        **material_kwargs(svc=SVC_MIN, family=FAM_EF))
+    add_ev_pos("DSB3_EV_SVC_MIN", body_svc_min, "service_slot min 54 + zero pad")
+    body_svc_max = enc_evidence_body(
+        cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+        **material_kwargs(svc=SVC_MAX, family=FAM_DS, generation=1))
+    add_ev_pos("DSB3_EV_SVC_MAX", body_svc_max, "service_slot exact 240 no pad")
+
+    # late / saturation / rev2
+    body_sat = enc_evidence_body(
+        cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+        **material_kwargs(
+            valid_count=U64_MAX, late_count=1, late_material=1,
+            counter_sat=1, exact_dup=0, raw_overflow=0))
+    add_ev_pos("DSB3_EV_COUNTER_SAT", body_sat, "counter_saturated=1 with UINT64_MAX")
+    k, v, b = evidence_typed(body=body_sat, rev=2)
+    add_ev_typed("DSB3_EV_REV2_TYPED", k, v, b, "revision>=1 allowed (late/sat)")
+
+    # mutation reserved
+    mut_body = bytearray(body_tx_sum_empty)
+    # reserved0 is after slot/state: offset = 4+2+16 +32+32+4+2 = 92 for TX
+    mut_body[92] ^= 0x01
+    add(id="DSB3_EV_MUT_RESERVED0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x32,
+        body_hex=hx(bytes(mut_body)), notes="reserved0 flip")
+    e_mut += 1
+    e_neg += 1
+
+    # --- matrix / owner / raw / key / primary / target ---
+    add_ev_neg_body(
+        "DSB3_EV_MATRIX_SUM_UNUSED",
+        enc_evidence_body(cell_kind=CK_SUM, cell_state=ST_UNUSED, slot=0),
+        "SUMMARY+UNUSED illegal")
+    add_ev_neg_body(
+        "DSB3_EV_MATRIX_RAW_SLOT0",
+        enc_evidence_body(cell_kind=CK_RAW, cell_state=ST_UNUSED, slot=0),
+        "RAW+slot0 illegal")
+    add_ev_neg_body(
+        "DSB3_EV_MATRIX_SUM_SLOT1",
+        enc_evidence_body(cell_kind=CK_SUM, cell_state=ST_MAT, slot=1),
+        "SUMMARY requires slot 0")
+    add_ev_neg_body(
+        "DSB3_EV_MATRIX_RAW_SLOT9",
+        enc_evidence_body(cell_kind=CK_RAW, cell_state=ST_UNUSED, slot=9),
+        "slot > 8 illegal same-record")
+    add_ev_neg_body(
+        "DSB3_EV_OWNER0",
+        enc_evidence_body(owner_kind=0),
+        "evidence_owner_kind 0 unknown")
+    add_ev_neg_body(
+        "DSB3_EV_OWNER3",
+        enc_evidence_body(
+            owner_kind=3, owner_raw=txn,
+            primary_kd=complete_key_digest_id128(0x20, txn)),
+        "evidence_owner_kind 3 unknown")
+    add_ev_neg_body(
+        "DSB3_EV_KIND0",
+        enc_evidence_body(cell_kind=0, cell_state=ST_MAT, slot=0),
+        "cell_kind 0 unknown")
+    add_ev_neg_body(
+        "DSB3_EV_STATE0",
+        enc_evidence_body(cell_kind=CK_RAW, cell_state=0, slot=1),
+        "cell_state 0 unknown")
+    add_ev_neg_body(
+        "DSB3_EV_TX_RAW_LEN80",
+        enc_evidence_body(
+            owner_kind=EV_TX, owner_raw=dlv_raw,
+            primary_kd=complete_key_digest_id128(0x20, txn)),
+        "TX owner_key_raw must be exact 16")
+    add_ev_neg_body(
+        "DSB3_EV_ZERO_TXN_RAW",
+        enc_evidence_body(
+            owner_raw=bytes(16),
+            primary_kd=complete_key_digest_id128(0x20, bytes(16))),
+        "TX raw must be non-zero transaction ID")
+    add_ev_neg_body(
+        "DSB3_EV_DLV_ZERO_COMP",
+        enc_evidence_body(
+            owner_kind=EV_DLV,
+            owner_raw=dlv_raw[:32] + bytes(16) + dlv_raw[48:]),
+        "DLV raw components must be non-zero")
+    add_ev_neg_body(
+        "DSB3_EV_PKD_ZERO",
+        enc_evidence_body(primary_kd=bytes(32)),
+        "primary_key_digest must be non-zero KEY_DIGEST")
+    add_ev_neg_body(
+        "DSB3_EV_PKD_WRONG",
+        enc_evidence_body(primary_kd=bytes([0xAB] * 32)),
+        "primary_key_digest must equal KEY_DIGEST(complete primary)")
+    add_ev_neg_body(
+        "DSB3_EV_PKD_BARE_COMPOSITE",
+        enc_evidence_body(
+            owner_kind=EV_DLV, owner_raw=dlv_raw,
+            primary_kd=composite(0x40, raw16(dlv_raw))),
+        "bare composite is not KEY_DIGEST(complete DELIVERY key)")
+    add_ev_neg_body(
+        "DSB3_EV_TARGET_ZERO",
+        enc_evidence_body(target=bytes(32)),
+        "target_digest must be non-zero")
+    add_ev_neg_body(
+        "DSB3_EV_RESERVED0_NZ",
+        enc_evidence_body(reserved0=1),
+        "reserved0 must be 0")
+    add_ev_neg_body(
+        "DSB3_EV_RESERVED1_NZ",
+        enc_evidence_body(reserved1=1),
+        "reserved1 must be 0")
+
+    # --- service pad / stage / disp / effect / time / trust / digest / pad ---
+    bad_pad = bytearray(service_slot(SVC_EF))
+    bad_pad[len(SVC_EF)] = 0x01
+    add_ev_neg_body(
+        "DSB3_EV_SVC_PAD_NZ",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            **material_kwargs(), force_service_slot=bytes(bad_pad)),
+        "service_slot pad must be zero")
+    add_ev_neg_body(
+        "DSB3_EV_SVC_INACTIVE_NZ",
+        enc_evidence_body(
+            force_service_slot=service_slot(SVC_EF)),
+        "inactive service_slot must be all-zero")
+    add_ev_neg_body(
+        "DSB3_EV_STAGE_TRIPLE",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            **{**material_kwargs(), "latest": STAGE_DUR}),
+        "SUMMARY material stages must be equal")
+    add_ev_neg_body(
+        "DSB3_EV_STAGE0",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            **material_kwargs(stage=0)),
+        "material stages NONE=0 illegal")
+    add_ev_neg_body(
+        "DSB3_EV_DISP_NZ",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            disposition=1, effect=0, late_material=0, issuer=PARTY,
+            svc_wire=SVC_EF, content=content_dig, generation=0, sequence=1,
+            epoch=ev_epoch, at_ms=0, trust=TRUST_T, evidence_length=0,
+            valid_count=1),
+        "disposition must always be 0")
+    add_ev_neg_body(
+        "DSB3_EV_EFFECT_NZ",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            disposition=0, effect=1, late_material=0, issuer=PARTY,
+            svc_wire=SVC_EF, content=content_dig, generation=0, sequence=1,
+            epoch=ev_epoch, at_ms=0, trust=TRUST_T, evidence_length=0,
+            valid_count=1),
+        "effect_certainty must always be 0")
+    add_ev_neg_body(
+        "DSB3_EV_LATE_COHERENCE",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            late_material=0, issuer=PARTY, svc_wire=SVC_EF, content=content_dig,
+            generation=0, sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=2, late_count=1),
+        "late_material must equal (late_evidence_count>0)")
+
+    add_ev_neg_body(
+        "DSB3_EV_TIME_EPOCH0",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=bytes(16), at_ms=1, trust=TRUST_T,
+            evidence_length=0, valid_count=1),
+        "evidence_clock_epoch must be non-zero when material")
+    add_ev_neg_body(
+        "DSB3_EV_TRUST0",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=0, evidence_length=0,
+            valid_count=1),
+        "evidence_trust must be 1 or 2")
+    add_ev_neg_body(
+        "DSB3_EV_DIGEST_WRONG",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, evidence_digest=bytes(32), valid_count=1),
+        "length0 requires SHA256(empty) not zero digest")
+    add_ev_neg_body(
+        "DSB3_EV_DIGEST_MISMATCH",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=3,
+            evidence_bytes=b"abc" + bytes(125),
+            evidence_digest=sha256(b"abd"), valid_count=1),
+        "evidence_digest must equal SHA256(bytes[0,length))")
+    add_ev_neg_body(
+        "DSB3_EV_BYTES_PAD",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=2,
+            evidence_bytes=b"ab" + b"\x01" + bytes(125), valid_count=1),
+        "evidence_bytes[length,128) must be zero")
+    add_ev_neg_body(
+        "DSB3_EV_GEN_EF_NZ",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=1,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=1),
+        "EventFact generation must be 0")
+    add_ev_neg_body(
+        "DSB3_EV_GEN_DS_0",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_DS, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=1),
+        "DesiredState generation must be >=1")
+    add_ev_neg_body(
+        "DSB3_EV_EMPTY_ISSUER_NZ",
+        enc_evidence_body(issuer=PARTY),
+        "SUMMARY empty issuer must be all-zero")
+    add_ev_neg_body(
+        "DSB3_EV_RAW_MAT_HIGHEST_NZ",
+        enc_evidence_body(
+            cell_kind=CK_RAW, cell_state=ST_MAT, slot=2,
+            highest=STAGE_RECV, latest=0, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0),
+        "RAW MATERIALIZED highest/latest must be 0")
+    add_ev_neg_body(
+        "DSB3_EV_RAW_MAT_COUNTER_NZ",
+        enc_evidence_body(
+            cell_kind=CK_RAW, cell_state=ST_MAT, slot=2,
+            highest=0, latest=0, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=1),
+        "RAW MATERIALIZED counters must be 0")
+    add_ev_neg_body(
+        "DSB3_EV_OVERFLOW_GT",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=1, raw_overflow=2),
+        "raw_overflow_count <= valid_material_count")
+    add_ev_neg_body(
+        "DSB3_EV_LATE_GT",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            late_material=1, issuer=PARTY, svc_wire=SVC_EF, content=content_dig,
+            generation=0, sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=1, late_count=2),
+        "late_evidence_count <= valid_material_count")
+    add_ev_neg_body(
+        "DSB3_EV_SAT_INCOHERENT",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            counter_sat=1, evidence_length=0, valid_count=1),
+        "counter_saturated=1 requires some counter UINT64_MAX")
+    add_ev_neg_body(
+        "DSB3_EV_SAT0_MAX",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            counter_sat=0, evidence_length=0, valid_count=U64_MAX),
+        "counter_saturated=0 forbids UINT64_MAX counters")
+    add_ev_neg_body(
+        "DSB3_EV_CONTENT_ZERO",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=bytes(32), generation=0,
+            sequence=1, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=1),
+        "content_digest must be non-zero when material")
+    add_ev_neg_body(
+        "DSB3_EV_SEQ_ZERO",
+        enc_evidence_body(
+            cell_kind=CK_SUM, cell_state=ST_MAT, slot=0,
+            highest=STAGE_RECV, latest=STAGE_RECV, material_stage=STAGE_RECV,
+            issuer=PARTY, svc_wire=SVC_EF, content=content_dig, generation=0,
+            sequence=0, epoch=ev_epoch, at_ms=0, trust=TRUST_T,
+            evidence_length=0, valid_count=1),
+        "durable_ingress_sequence must be non-zero when material")
+
+    # short / trailing / BTS
+    add(id="DSB3_EV_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x32,
+        body_hex=hx(body_tx_sum_empty[:-1]), notes="short body")
+    e_neg += 1
+    add(id="DSB3_EV_TRAILING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x32,
+        body_hex=hx(body_tx_sum_empty + b"\x00"), notes="trailing byte")
+    e_neg += 1
+    add(id="DSB3_EV_BTS", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x32,
+        body_length=len(body_tx_sum_empty), body_hex=hx(body_tx_sum_empty),
+        key_length=0)
+    e_neg += 1
+
+    # typed negatives: key / primary / header / alias
+    _, val_ok, _ = evidence_typed(body=body_tx_sum_empty)
+    bad_key = evidence_key(EV_DLV, dlv_raw, 0)
+    add_ev_neg_typed(
+        "DSB3_EV_KEY_MISMATCH", bad_key, val_ok,
+        "key COMPOSITE must match body owner/slot")
+    wrong_kind_key = bkey(6, 0x32, 2, txn)
+    add_ev_neg_typed(
+        "DSB3_EV_WRONG_KIND", wrong_kind_key, val_ok,
+        "key must be SHA256_COMPOSITE not ID128")
+    k_wp, v_wp, _ = evidence_typed(
+        body=body_tx_sum_empty, primary=bytes([0xDD] * 16))
+    add_ev_neg_typed("DSB3_EV_BAD_PRIMARY", k_wp, v_wp, "wrong primary_id")
+    k_zp, v_zp, _ = evidence_typed(body=body_tx_sum_empty, primary=bytes(16))
+    add_ev_neg_typed("DSB3_EV_ZERO_PRIMARY", k_zp, v_zp, "zero primary_id")
+    self_pid = composite(
+        0x32, evidence_key_components(EV_TX, txn, 0))[:16]
+    k_sk, v_sk, _ = evidence_typed(body=body_tx_sum_empty, primary=self_pid)
+    add_ev_neg_typed(
+        "DSB3_EV_SELF_KEY_PRIMARY", k_sk, v_sk,
+        "primary_id must be owner primary not self composite")
+    k_zh, v_zh, _ = evidence_typed(body=body_tx_sum_empty, head=bytes(32))
+    add_ev_neg_typed("DSB3_EV_ZERO_HEAD", k_zh, v_zh)
+    k_zv, v_zv, _ = evidence_typed(body=body_tx_sum_empty, pvd=bytes(32))
+    add_ev_neg_typed("DSB3_EV_ZERO_PVD", k_zv, v_zv)
+    k_fl = evidence_key(EV_TX, txn, 0)
+    v_fl = enc_env_full(
+        6, 0x32, 1, 1, txn, ev_head, ev_pvd, body_tx_sum_empty)
+    add_ev_neg_typed("DSB3_EV_FLAGS_NZ", k_fl, v_fl, "flags must be 0")
+    k_r0, v_r0, _ = evidence_typed(body=body_tx_sum_empty, rev=0)
+    add_ev_neg_typed("DSB3_EV_REV0", k_r0, v_r0, "revision must be >=1")
+    # slot mismatch in key
+    bad_slot_key = evidence_key(EV_TX, txn, 1)
+    add_ev_neg_typed(
+        "DSB3_EV_SLOT_KEY_MISMATCH", bad_slot_key, val_ok,
+        "key slot_index must match body")
+
+    b3_cov["32"] = add_body_suite(
+        "EVIDENCE_CELL", 6, 0x32, e_pos, e_neg, e_mut, e_rt)
+    assert b3_cov["32"]["positive"] >= 12
+    assert b3_cov["32"]["negative"] >= 30
+    assert b3_cov["32"]["roundtrip"] >= 6
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -5469,6 +6222,7 @@ def build_document():
         "dsb3_subtype_31_positive": b3_cov["31"]["positive"],
         "dsb3_subtype_34_positive": b3_cov["34"]["positive"],
         "dsb3_subtype_33_positive": b3_cov["33"]["positive"],
+        "dsb3_subtype_32_positive": b3_cov["32"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -5499,23 +6253,14 @@ def build_document():
     assert catalog["dsb3_subtype_31_positive"] > 0
     assert catalog["dsb3_subtype_34_positive"] > 0
     assert catalog["dsb3_subtype_33_positive"] > 0
+    assert catalog["dsb3_subtype_32_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
-    # B3b r1 wire migration: do not claim old full-prefix fingerprints.
-    # Durable gate = non-B3b-wire fixtures only (884-87=797 objects, byte-for-byte).
-    NON_B3B_WIRE_COUNT = 797
-    NON_B3B_WIRE_FINGERPRINT = (
-        "1d0906c4c531df409110b9bfb7ce11d23909109ad7c1a9d0230af570a0609816"
+    # Structural: CS/AII/ATT/EV only after their pre-slice.
+    assert all(
+        not v["id"].startswith("DSB3_EV_")
+        for v in vectors[:PRE_B3G_VECTOR_COUNT_SNAPSHOT]
     )
-    _non_b3b_wire = [v for v in vectors if not is_b3b_wire_fixture(v)]
-    assert len(_non_b3b_wire) == NON_B3B_WIRE_COUNT, (
-        f"non-B3b-wire count drift: {len(_non_b3b_wire)}"
-    )
-    _non_b3b_final = non_b3b_wire_fingerprint(vectors)
-    assert _non_b3b_final == NON_B3B_WIRE_FINGERPRINT, (
-        f"non-B3b-wire fingerprint drift: got {_non_b3b_final}"
-    )
-    # Structural: CS/AII/ATT only after their pre-slice (counts may grow with B3b).
     assert all(
         not v["id"].startswith("DSB3_CS_")
         for v in vectors[:PRE_B3F_VECTOR_COUNT]
@@ -5527,6 +6272,11 @@ def build_document():
     assert all(
         not v["id"].startswith("DSB3_ATT_")
         for v in vectors[:PRE_B3D_VECTOR_COUNT]
+    )
+    _pre_b3g_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3G_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3g_fp_final == PRE_B3G_FULL_FINGERPRINT, (
+        f"post-append pre-B3g full fingerprint drift: got {_pre_b3g_fp_final}"
     )
     _pre_b3f_fp_final = non_b3b_wire_fingerprint(vectors[:PRE_B3F_VECTOR_COUNT])
     assert _pre_b3f_fp_final == PRE_B3F_NON_B3B_WIRE_FINGERPRINT, (
@@ -5540,26 +6290,32 @@ def build_document():
     assert _pre_b3d_fp_final == PRE_B3D_NON_B3B_WIRE_FINGERPRINT, (
         f"post-append pre-B3d non-B3b-wire fingerprint drift: got {_pre_b3d_fp_final}"
     )
+    # Full catalog non-B3b count grows with B3g append (computed after build).
+    _non_b3b_wire = [v for v in vectors if not is_b3b_wire_fixture(v)]
+    assert len(_non_b3b_wire) == 797 + (
+        len(vectors) - PRE_B3G_VECTOR_COUNT_SNAPSHOT
+    ), f"non-B3b-wire count drift: {len(_non_b3b_wire)}"
 
     for v in vectors:
         assert v["required_workspace_bytes"] == 0
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3f-r1",
+        "format": "ninlil-domain-store-v1-d1b3g",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
             "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS controller_ingress "
             "r1) + message_semantic_digest helper + D1-B3c body (30 BLOB "
             "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
-            "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE); "
-            "B3g pending; not full D1 catalog"
+            "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE) + "
+            "D1-B3g body (32 EVIDENCE_CELL); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d/D1-B3e/D1-B3f APIs have no workspace parameter; value is 0."
+            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g APIs have no workspace parameter; "
+            "value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,
