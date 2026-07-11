@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Independent D1-A vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1 vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only.
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1 are
+hand-written here and intentionally do not import or link production C.
 
 Usage:
   python3 tools/domain_store_vector_gen.py generate <path>
@@ -141,8 +142,89 @@ def family4_capacity_key(resource_kind: int) -> bytes:
     return ROOT + bytes([0x04, resource_kind & 0xFF])
 
 
+def family3_counter_key(kind: int) -> bytes:
+    return ROOT + bytes([0x03, kind & 0xFF])
+
+
 def bearer_state_key() -> bytes:
     return ROOT + bytes([6, 0x60, 1, 1, 0])
+
+
+def clock_baseline_key() -> bytes:
+    return ROOT + bytes([6, 0x62, 1, 1, 0])
+
+
+def fence_key() -> bytes:
+    return ROOT + bytes([6, 0x64, 1, 1, 0])
+
+
+def invariant_marker_id(reason: int, subject_kind: int, subject_digest: bytes) -> bytes:
+    return sha256(
+        b"NINLIL-DOMAIN-INVARIANT-V1"
+        + be32(reason)
+        + be16(subject_kind)
+        + subject_digest
+    )[:16]
+
+
+def enc_body_invariant(reason, subject_kind, subject_digest, epoch, at_ms, detail) -> bytes:
+    return (
+        be32(reason)
+        + be16(subject_kind)
+        + be16(0)
+        + subject_digest
+        + epoch
+        + be64(at_ms)
+        + detail
+    )
+
+
+def enc_body_bearer(epoch, available, clock_epoch, at_ms) -> bytes:
+    return be64(epoch) + be32(available) + clock_epoch + be64(at_ms)
+
+
+def enc_body_clock(state, epoch, now_ms, generation) -> bytes:
+    return be32(state) + be32(0) + epoch + be64(now_ms) + be64(generation)
+
+
+def enc_body_fence(count, generation) -> bytes:
+    return be32(count) + be32(0) + be64(generation)
+
+
+def enc_body_head_index(index_state, member_key, value_dig, head_dig) -> bytes:
+    mkd = key_digest(member_key)
+    return (
+        be16(index_state)
+        + be16(0)
+        + mkd
+        + be16(len(member_key))
+        + be16(0)
+        + member_key
+        + value_dig
+        + head_dig
+    )
+
+
+def primary_id_from_identity(kind, identity: bytes) -> bytes:
+    if kind == 1:
+        return bytes(16)
+    if kind == 2:
+        return identity[:16]
+    if kind == 3:
+        return bytes(8) + identity[:8]
+    if kind in (4, 5):
+        return identity[:16]
+    raise ValueError("bad identity kind")
+
+
+def enc_env_full(rtype, st, flags, rev, primary_id, head, pvd, body: bytes) -> bytes:
+    payload = 96 + len(body)
+    out = bytearray()
+    out += b"NLR1" + be16(rtype) + be16(1) + be32(payload)
+    out += be16(1) + bytes([st, flags]) + be64(rev)
+    out += primary_id + head + pvd + be32(len(body)) + body
+    out += be32(crc32c(bytes(out)))
+    return bytes(out)
 
 
 def canonical_op(kind, ident, subject, manifest, ret_kind, ret_dig):
@@ -657,8 +739,490 @@ def build_document():
     add(id="DSW1_HDR_RESERVED_NONZERO", suite="DSW1", op="witness_header_decode",
         expected_status="CORRUPT", value_hex=hx(bytes(bad_res)))
 
+    # ------------------------------------------------------------------
+    # D1-B1: five exact semantic bodies (independent BE oracles)
+    # ------------------------------------------------------------------
+    def add_body_suite(subtype_name, family, subtype, positives, negatives, mutations, roundtrips):
+        """Track per-subtype coverage counters for the catalog checker."""
+        return {
+            "name": subtype_name,
+            "family": family,
+            "subtype": subtype,
+            "positive": positives,
+            "negative": negatives,
+            "mutation": mutations,
+            "roundtrip": roundtrips,
+        }
+
+    b1_cov = {}
+
+    # --- INTERNAL_INVARIANT (family 5 / 01), exact body 96 ---
+    inv_pos = inv_neg = inv_mut = inv_rt = 0
+    reason = 129  # NINLIL_REASON_OUTCOME_UNKNOWN
+    subj_kind = 0x0622  # TRANSACTION_STATE role
+    # Synthetic subject complete key digest for the marker preimage only.
+    subj_dig = sha256(b"subject-key-for-invariant-v1")
+    epoch16 = bytes([0xA0] + [0] * 14 + [0x01])
+    detail = sha256(b"detail")
+    body_inv = enc_body_invariant(reason, subj_kind, subj_dig, epoch16, 1000, detail)
+    assert len(body_inv) == 96
+    marker = invariant_marker_id(reason, subj_kind, subj_dig)
+    key_inv = bkey(5, 0x01, 2, marker)
+    head0 = bytes(32)
+    pvd0 = bytes(32)
+    val_inv = enc_env_full(5, 0x01, 0, 1, marker, head0, pvd0, body_inv)
+    add(id="DSB1_INV_MIN_POSITIVE", suite="DSB1", op="body_encode", expected_status="OK",
+        family=5, subtype=0x01, body_length=96, body_hex=hx(body_inv),
+        identity_hex=hx(marker), digest_hex=hx(marker),
+        notes="reason+subject_kind closed role; reserved=0")
+    inv_pos += 1
+    add(id="DSB1_INV_ENCODE_DECODE", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=5, subtype=0x01, body_length=96, body_hex=hx(body_inv))
+    inv_rt += 1
+    inv_pos += 1
+    add(id="DSB1_INV_TYPED_POSITIVE", suite="DSB1", op="typed_record", expected_status="OK",
+        family=5, subtype=0x01, key_hex=hx(key_inv), value_hex=hx(val_inv),
+        body_hex=hx(body_inv), digest_hex=hx(sha256(val_inv)),
+        crc_hex=f"{crc32c(val_inv[:-4]):08x}")
+    inv_pos += 1
+    # Namespace-wide subject (kind 0 + digest 0)
+    body_ns = enc_body_invariant(reason, 0, bytes(32), epoch16, 0, detail)
+    marker_ns = invariant_marker_id(reason, 0, bytes(32))
+    add(id="DSB1_INV_NAMESPACE_SUBJECT", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=5, subtype=0x01, body_length=96, body_hex=hx(body_ns),
+        identity_hex=hx(marker_ns))
+    inv_pos += 1
+    inv_rt += 1
+    # Family3 / family4 subject roles
+    for sk, name in ((0x0300, "F3"), (0x0400, "F4"), (0x0610, "SVC"), (0x0660, "BEARER")):
+        b = enc_body_invariant(reason, sk, subj_dig, epoch16, 1, detail)
+        add(id=f"DSB1_INV_SUBJECT_{name}", suite="DSB1", op="body_roundtrip", expected_status="OK",
+            family=5, subtype=0x01, body_length=96, body_hex=hx(b))
+        inv_pos += 1
+        inv_rt += 1
+    # Negatives: reserved, short, trailing, bad subject role, kind0+nonzero dig
+    bad = bytearray(body_inv); bad[6:8] = be16(1)
+    add(id="DSB1_INV_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=5, subtype=0x01, body_hex=hx(bytes(bad)))
+    inv_neg += 1
+    add(id="DSB1_INV_SHORT", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=5, subtype=0x01, body_hex=hx(body_inv[:-1]))
+    inv_neg += 1
+    add(id="DSB1_INV_TRAILING", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=5, subtype=0x01, body_hex=hx(body_inv + b"\x00"))
+    inv_neg += 1
+    bad_role = enc_body_invariant(reason, 0x057F, subj_dig, epoch16, 1, detail)
+    add(id="DSB1_INV_BAD_SUBJECT_F5", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=5, subtype=0x01, body_hex=hx(bad_role))
+    inv_neg += 1
+    bad_wit = enc_body_invariant(reason, 0x067D, subj_dig, epoch16, 1, detail)
+    add(id="DSB1_INV_BAD_SUBJECT_7D", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=5, subtype=0x01, body_hex=hx(bad_wit))
+    inv_neg += 1
+    bad_ns = enc_body_invariant(reason, 0, subj_dig, epoch16, 1, detail)
+    add(id="DSB1_INV_KIND0_NONZERO_DIG", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=5, subtype=0x01, body_hex=hx(bad_ns))
+    inv_neg += 1
+    # Mutation: flip reserved bit in positive body
+    mut = bytearray(body_inv); mut[7] ^= 0x01
+    add(id="DSB1_INV_MUT_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=5, subtype=0x01, body_hex=hx(bytes(mut)), notes="bit mutation of reserved")
+    inv_mut += 1
+    # Typed: wrong marker id in key
+    bad_key = bkey(5, 0x01, 2, bytes(range(16)))
+    bad_val = enc_env_full(5, 0x01, 0, 1, bytes(range(16)), head0, pvd0, body_inv)
+    add(id="DSB1_INV_TYPED_BAD_MARKER", suite="DSB1", op="typed_record", expected_status="CORRUPT",
+        family=5, subtype=0x01, key_hex=hx(bad_key), value_hex=hx(bad_val))
+    inv_neg += 1
+    # Typed: revision != 1
+    bad_rev = enc_env_full(5, 0x01, 0, 2, marker, head0, pvd0, body_inv)
+    add(id="DSB1_INV_TYPED_REV2", suite="DSB1", op="typed_record", expected_status="CORRUPT",
+        family=5, subtype=0x01, key_hex=hx(key_inv), value_hex=hx(bad_rev))
+    inv_neg += 1
+    # BUFFER_TOO_SMALL
+    add(id="DSB1_INV_BUFFER_TOO_SMALL", suite="DSB1", op="body_encode", expected_status="BUFFER_TOO_SMALL",
+        family=5, subtype=0x01, body_length=96, body_hex=hx(body_inv),
+        key_length=0, notes="capacity 0 required length 96")
+    inv_neg += 1
+    # Public reason registry boundaries (docs12): NONE=0 allowed; gaps rejected.
+    for r, name in ((0, "NONE"), (1, "LO"), (24, "HI24"), (64, "64"),
+                    (66, "66"), (68, "68"), (86, "86"), (128, "128"),
+                    (132, "132"), (4096, "4096"), (4097, "4097")):
+        b = enc_body_invariant(r, subj_kind, subj_dig, epoch16, 1, detail)
+        add(id=f"DSB1_INV_REASON_{name}", suite="DSB1", op="body_roundtrip",
+            expected_status="OK", family=5, subtype=0x01, body_length=96,
+            body_hex=hx(b))
+        inv_pos += 1
+        inv_rt += 1
+    for r, name in ((25, "25"), (67, "67"), (87, "87"), (133, "133"),
+                    (4098, "4098"), (0xFFFFFFFF, "U32MAX")):
+        b = enc_body_invariant(r, subj_kind, subj_dig, epoch16, 1, detail)
+        add(id=f"DSB1_INV_REASON_BAD_{name}", suite="DSB1", op="body_decode",
+            expected_status="CORRUPT", family=5, subtype=0x01, body_hex=hx(b))
+        inv_neg += 1
+    # Non-namespace zero subject_digest forbidden (namespace sentinel exclusivity)
+    bad_zd = enc_body_invariant(reason, 0x0300, bytes(32), epoch16, 1, detail)
+    add(id="DSB1_INV_NONNS_ZERO_DIGEST", suite="DSB1", op="body_decode",
+        expected_status="CORRUPT", family=5, subtype=0x01, body_hex=hx(bad_zd))
+    inv_neg += 1
+    # Explicit mutation of reason field to reserved 67
+    mut_r2 = enc_body_invariant(67, subj_kind, subj_dig, epoch16, 1, detail)
+    add(id="DSB1_INV_MUT_REASON67", suite="DSB1", op="body_decode",
+        expected_status="CORRUPT", family=5, subtype=0x01,
+        body_hex=hx(mut_r2), notes="mutation: reason=67 reserved")
+    inv_mut += 1
+    inv_neg += 1
+    b1_cov["01"] = add_body_suite("INTERNAL_INVARIANT", 5, 0x01, inv_pos, inv_neg, inv_mut, inv_rt)
+
+    # --- BEARER_STATE (60), exact body 36 ---
+    br_pos = br_neg = br_mut = br_rt = 0
+    clock_ep = bytes([0xB0] + [0] * 14 + [0x02])
+    body_br = enc_body_bearer(1, 1, clock_ep, 5000)
+    assert len(body_br) == 36
+    key_br = bearer_state_key()
+    head_br = bytes([0x11] * 32)
+    val_br = enc_env_full(6, 0x60, 0, 1, bytes(16), head_br, pvd0, body_br)
+    add(id="DSB1_BEARER_MIN_POSITIVE", suite="DSB1", op="body_encode", expected_status="OK",
+        family=6, subtype=0x60, body_length=36, body_hex=hx(body_br))
+    br_pos += 1
+    add(id="DSB1_BEARER_ENCODE_DECODE", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x60, body_length=36, body_hex=hx(body_br))
+    br_rt += 1
+    br_pos += 1
+    add(id="DSB1_BEARER_AVAILABLE0", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x60, body_length=36,
+        body_hex=hx(enc_body_bearer(2, 0, clock_ep, 0)))
+    br_pos += 1
+    br_rt += 1
+    add(id="DSB1_BEARER_TYPED_POSITIVE", suite="DSB1", op="typed_record", expected_status="OK",
+        family=6, subtype=0x60, key_hex=hx(key_br), value_hex=hx(val_br),
+        body_hex=hx(body_br), digest_hex=hx(sha256(val_br)),
+        crc_hex=f"{crc32c(val_br[:-4]):08x}")
+    br_pos += 1
+    add(id="DSB1_BEARER_ZERO_EPOCH", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x60, body_hex=hx(enc_body_bearer(0, 1, clock_ep, 1)))
+    br_neg += 1
+    add(id="DSB1_BEARER_AVAILABLE2", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x60, body_hex=hx(enc_body_bearer(1, 2, clock_ep, 1)))
+    br_neg += 1
+    add(id="DSB1_BEARER_ZERO_CLOCK", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x60, body_hex=hx(enc_body_bearer(1, 1, bytes(16), 1)))
+    br_neg += 1
+    add(id="DSB1_BEARER_SHORT", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x60, body_hex=hx(body_br[:-1]))
+    br_neg += 1
+    add(id="DSB1_BEARER_TRAILING", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x60, body_hex=hx(body_br + b"\x00"))
+    br_neg += 1
+    mut = bytearray(body_br); mut[8] ^= 0x02  # available field high bit-ish
+    add(id="DSB1_BEARER_MUT_AVAILABLE", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x60, body_hex=hx(bytes(mut)))
+    br_mut += 1
+    # zero head typed (envelope already rejects encode; value with zero head + valid CRC)
+    # Construct corrupt value by forcing zero head and fixing CRC
+    val_zh = bytearray(val_br)
+    val_zh[12 + 28:12 + 60] = bytes(32)  # head_witness_digest in common header
+    val_zh[-4:] = be32(crc32c(bytes(val_zh[:-4])))
+    add(id="DSB1_BEARER_TYPED_ZERO_HEAD", suite="DSB1", op="typed_record", expected_status="CORRUPT",
+        family=6, subtype=0x60, key_hex=hx(key_br), value_hex=hx(bytes(val_zh)))
+    br_neg += 1
+    add(id="DSB1_BEARER_BUFFER_TOO_SMALL", suite="DSB1", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x60,
+        body_length=36, body_hex=hx(body_br), key_length=0)
+    br_neg += 1
+    b1_cov["60"] = add_body_suite("BEARER_STATE", 6, 0x60, br_pos, br_neg, br_mut, br_rt)
+
+    # --- CLOCK_BASELINE (62), exact body 40 ---
+    ck_pos = ck_neg = ck_mut = ck_rt = 0
+    body_ck_u = enc_body_clock(1, bytes(16), 0, 0)  # UNINITIALIZED
+    body_ck_t = enc_body_clock(2, epoch16, 9000, 1)  # TRUSTED
+    assert len(body_ck_u) == 40 and len(body_ck_t) == 40
+    key_ck = clock_baseline_key()
+    val_ck_u = enc_env_full(6, 0x62, 0, 1, bytes(16), head0, pvd0, body_ck_u)
+    val_ck_t = enc_env_full(6, 0x62, 0, 2, bytes(16), head0, pvd0, body_ck_t)
+    add(id="DSB1_CLOCK_UNINIT_POSITIVE", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x62, body_length=40, body_hex=hx(body_ck_u))
+    ck_pos += 1
+    ck_rt += 1
+    add(id="DSB1_CLOCK_TRUSTED_POSITIVE", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x62, body_length=40, body_hex=hx(body_ck_t))
+    ck_pos += 1
+    ck_rt += 1
+    add(id="DSB1_CLOCK_TYPED_UNINIT", suite="DSB1", op="typed_record", expected_status="OK",
+        family=6, subtype=0x62, key_hex=hx(key_ck), value_hex=hx(val_ck_u),
+        body_hex=hx(body_ck_u), digest_hex=hx(sha256(val_ck_u)),
+        crc_hex=f"{crc32c(val_ck_u[:-4]):08x}")
+    ck_pos += 1
+    add(id="DSB1_CLOCK_TYPED_TRUSTED", suite="DSB1", op="typed_record", expected_status="OK",
+        family=6, subtype=0x62, key_hex=hx(key_ck), value_hex=hx(val_ck_t),
+        body_hex=hx(body_ck_t), digest_hex=hx(sha256(val_ck_t)),
+        crc_hex=f"{crc32c(val_ck_t[:-4]):08x}")
+    ck_pos += 1
+    add(id="DSB1_CLOCK_BAD_STATE", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62, body_hex=hx(enc_body_clock(0, bytes(16), 0, 0)))
+    ck_neg += 1
+    add(id="DSB1_CLOCK_UNINIT_NONEMPTY", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62, body_hex=hx(enc_body_clock(1, epoch16, 0, 0)))
+    ck_neg += 1
+    add(id="DSB1_CLOCK_TRUSTED_ZERO_EPOCH", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62, body_hex=hx(enc_body_clock(2, bytes(16), 1, 1)))
+    ck_neg += 1
+    add(id="DSB1_CLOCK_TRUSTED_ZERO_GEN", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62, body_hex=hx(enc_body_clock(2, epoch16, 1, 0)))
+    ck_neg += 1
+    add(id="DSB1_CLOCK_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62,
+        body_hex=hx(be32(1) + be32(1) + bytes(16) + be64(0) + be64(0)))
+    ck_neg += 1
+    add(id="DSB1_CLOCK_SHORT", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62, body_hex=hx(body_ck_u[:-1]))
+    ck_neg += 1
+    add(id="DSB1_CLOCK_TRAILING", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62, body_hex=hx(body_ck_u + b"\x00"))
+    ck_neg += 1
+    mut = bytearray(body_ck_t); mut[4] ^= 0x01
+    add(id="DSB1_CLOCK_MUT_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x62, body_hex=hx(bytes(mut)))
+    ck_mut += 1
+    # TRUSTED with revision 1 is typed corrupt
+    bad_tr = enc_env_full(6, 0x62, 0, 1, bytes(16), head0, pvd0, body_ck_t)
+    add(id="DSB1_CLOCK_TYPED_TRUSTED_REV1", suite="DSB1", op="typed_record", expected_status="CORRUPT",
+        family=6, subtype=0x62, key_hex=hx(key_ck), value_hex=hx(bad_tr))
+    ck_neg += 1
+    add(id="DSB1_CLOCK_BUFFER_TOO_SMALL", suite="DSB1", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x62,
+        body_length=40, body_hex=hx(body_ck_t), key_length=0)
+    ck_neg += 1
+    # Same-record rev == gen+1 (docs17 §8.6)
+    body_ck_t2 = enc_body_clock(2, epoch16, 9000, 2)
+    val_ck_t2 = enc_env_full(6, 0x62, 0, 3, bytes(16), head0, pvd0, body_ck_t2)
+    add(id="DSB1_CLOCK_TYPED_REV_GEN_OK", suite="DSB1", op="typed_record",
+        expected_status="OK", family=6, subtype=0x62, key_hex=hx(key_ck),
+        value_hex=hx(val_ck_t2), body_hex=hx(body_ck_t2),
+        digest_hex=hx(sha256(val_ck_t2)),
+        crc_hex=f"{crc32c(val_ck_t2[:-4]):08x}")
+    ck_pos += 1
+    # TRUSTED gen=1 but revision 3 → mismatch
+    bad_rg = enc_env_full(6, 0x62, 0, 3, bytes(16), head0, pvd0, body_ck_t)
+    add(id="DSB1_CLOCK_TYPED_REV_GEN_MISMATCH", suite="DSB1", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x62, key_hex=hx(key_ck),
+        value_hex=hx(bad_rg))
+    ck_neg += 1
+    # UNINIT with rev=2 (body still gen=0)
+    bad_ur = enc_env_full(6, 0x62, 0, 2, bytes(16), head0, pvd0, body_ck_u)
+    add(id="DSB1_CLOCK_TYPED_UNINIT_REV2", suite="DSB1", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x62, key_hex=hx(key_ck),
+        value_hex=hx(bad_ur))
+    ck_neg += 1
+    b1_cov["62"] = add_body_suite("CLOCK_BASELINE", 6, 0x62, ck_pos, ck_neg, ck_mut, ck_rt)
+
+    # --- ATTEMPT_REUSE_FENCE (64), exact body 16 ---
+    fn_pos = fn_neg = fn_mut = fn_rt = 0
+    body_fn = enc_body_fence(1, 1)
+    assert len(body_fn) == 16
+    key_fn = fence_key()
+    head_fn = bytes([0x22] * 32)
+    val_fn = enc_env_full(6, 0x64, 0, 1, bytes(16), head_fn, pvd0, body_fn)
+    add(id="DSB1_FENCE_MIN_POSITIVE", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x64, body_length=16, body_hex=hx(body_fn))
+    fn_pos += 1
+    fn_rt += 1
+    add(id="DSB1_FENCE_COUNT3_GEN5", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x64, body_length=16, body_hex=hx(enc_body_fence(3, 5)))
+    fn_pos += 1
+    fn_rt += 1
+    add(id="DSB1_FENCE_TYPED_POSITIVE", suite="DSB1", op="typed_record", expected_status="OK",
+        family=6, subtype=0x64, key_hex=hx(key_fn), value_hex=hx(val_fn),
+        body_hex=hx(body_fn), digest_hex=hx(sha256(val_fn)),
+        crc_hex=f"{crc32c(val_fn[:-4]):08x}")
+    fn_pos += 1
+    add(id="DSB1_FENCE_COUNT0", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x64, body_hex=hx(enc_body_fence(0, 1)))
+    fn_neg += 1
+    add(id="DSB1_FENCE_GEN0", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x64, body_hex=hx(enc_body_fence(1, 0)))
+    fn_neg += 1
+    add(id="DSB1_FENCE_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x64, body_hex=hx(be32(1) + be32(1) + be64(1)))
+    fn_neg += 1
+    add(id="DSB1_FENCE_SHORT", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x64, body_hex=hx(body_fn[:-1]))
+    fn_neg += 1
+    add(id="DSB1_FENCE_TRAILING", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x64, body_hex=hx(body_fn + b"\x00"))
+    fn_neg += 1
+    mut = bytearray(body_fn); mut[4] ^= 0x01
+    add(id="DSB1_FENCE_MUT_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x64, body_hex=hx(bytes(mut)))
+    fn_mut += 1
+    add(id="DSB1_FENCE_BUFFER_TOO_SMALL", suite="DSB1", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x64,
+        body_length=16, body_hex=hx(body_fn), key_length=0)
+    fn_neg += 1
+    # fence_generation == record_revision
+    body_fn2 = enc_body_fence(2, 5)
+    val_fn2 = enc_env_full(6, 0x64, 0, 5, bytes(16), head_fn, pvd0, body_fn2)
+    add(id="DSB1_FENCE_TYPED_REV_GEN_OK", suite="DSB1", op="typed_record",
+        expected_status="OK", family=6, subtype=0x64, key_hex=hx(key_fn),
+        value_hex=hx(val_fn2), body_hex=hx(body_fn2),
+        digest_hex=hx(sha256(val_fn2)),
+        crc_hex=f"{crc32c(val_fn2[:-4]):08x}")
+    fn_pos += 1
+    # gen=1 but revision 2
+    bad_fn = enc_env_full(6, 0x64, 0, 2, bytes(16), head_fn, pvd0, body_fn)
+    add(id="DSB1_FENCE_TYPED_REV_GEN_MISMATCH", suite="DSB1", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x64, key_hex=hx(key_fn),
+        value_hex=hx(bad_fn))
+    fn_neg += 1
+    b1_cov["64"] = add_body_suite("ATTEMPT_REUSE_FENCE", 6, 0x64, fn_pos, fn_neg, fn_mut, fn_rt)
+
+    # --- WITNESS_HEAD_INDEX (7d), exact body 114 (key length 10) ---
+    hi_pos = hi_neg = hi_mut = hi_rt = 0
+    mk_f3 = family3_counter_key(1)
+    mk_f4 = family4_capacity_key(1)
+    assert len(mk_f3) == 10 and len(mk_f4) == 10
+    val_dig = sha256(b"member-value")
+    head_w = bytes([0x33] * 32)
+    body_hi_b = enc_body_head_index(1, mk_f3, val_dig, bytes(32))  # BASELINE
+    body_hi_w = enc_body_head_index(2, mk_f4, val_dig, head_w)  # WITNESSED
+    assert len(body_hi_b) == 114 and len(body_hi_w) == 114
+    id_hi_b = composite(0x7D, key_digest(mk_f3))
+    id_hi_w = composite(0x7D, key_digest(mk_f4))
+    key_hi_b = bkey(6, 0x7D, 5, id_hi_b)
+    key_hi_w = bkey(6, 0x7D, 5, id_hi_w)
+    val_hi_b = enc_env_full(6, 0x7D, 0, 1, id_hi_b[:16], head0, pvd0, body_hi_b)
+    val_hi_w = enc_env_full(6, 0x7D, 0, 2, id_hi_w[:16], head_w, pvd0, body_hi_w)
+    add(id="DSB1_HEAD_BASELINE_POSITIVE", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x7D, body_length=114, body_hex=hx(body_hi_b),
+        key_hex=hx(mk_f3), digest_hex=hx(key_digest(mk_f3)))
+    hi_pos += 1
+    hi_rt += 1
+    add(id="DSB1_HEAD_WITNESSED_POSITIVE", suite="DSB1", op="body_roundtrip", expected_status="OK",
+        family=6, subtype=0x7D, body_length=114, body_hex=hx(body_hi_w),
+        key_hex=hx(mk_f4), digest_hex=hx(key_digest(mk_f4)))
+    hi_pos += 1
+    hi_rt += 1
+    add(id="DSB1_HEAD_TYPED_BASELINE", suite="DSB1", op="typed_record", expected_status="OK",
+        family=6, subtype=0x7D, key_hex=hx(key_hi_b), value_hex=hx(val_hi_b),
+        body_hex=hx(body_hi_b), digest_hex=hx(sha256(val_hi_b)),
+        crc_hex=f"{crc32c(val_hi_b[:-4]):08x}")
+    hi_pos += 1
+    add(id="DSB1_HEAD_TYPED_WITNESSED", suite="DSB1", op="typed_record", expected_status="OK",
+        family=6, subtype=0x7D, key_hex=hx(key_hi_w), value_hex=hx(val_hi_w),
+        body_hex=hx(body_hi_w), digest_hex=hx(sha256(val_hi_w)),
+        crc_hex=f"{crc32c(val_hi_w[:-4]):08x}")
+    hi_pos += 1
+    # Cover all 4 family3 + a few family4 kinds via body encode positives
+    for kk in range(1, 5):
+        mk = family3_counter_key(kk)
+        b = enc_body_head_index(1, mk, val_dig, bytes(32))
+        add(id=f"DSB1_HEAD_F3_{kk:02d}", suite="DSB1", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x7D, body_length=114, body_hex=hx(b))
+        hi_pos += 1
+        hi_rt += 1
+    for kk in (1, 5, 11):
+        mk = family4_capacity_key(kk)
+        b = enc_body_head_index(1, mk, val_dig, bytes(32))
+        add(id=f"DSB1_HEAD_F4_{kk:02d}", suite="DSB1", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x7D, body_length=114, body_hex=hx(b))
+        hi_pos += 1
+        hi_rt += 1
+    # Negatives
+    add(id="DSB1_HEAD_BAD_STATE", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D,
+        body_hex=hx(be16(0) + be16(0) + key_digest(mk_f3) + be16(10) + be16(0)
+                    + mk_f3 + val_dig + bytes(32)))
+    hi_neg += 1
+    add(id="DSB1_HEAD_BAD_KEY_LEN", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D,
+        body_hex=hx(be16(1) + be16(0) + key_digest(mk_f3) + be16(9) + be16(0)
+                    + mk_f3[:9] + val_dig + bytes(32)))
+    hi_neg += 1
+    bad_mk = ROOT + bytes([0x05, 0x01])  # family 5 not allowed
+    add(id="DSB1_HEAD_BAD_FAMILY", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D,
+        body_hex=hx(be16(1) + be16(0) + key_digest(bad_mk) + be16(10) + be16(0)
+                    + bad_mk + val_dig + bytes(32)))
+    hi_neg += 1
+    # Wrong KEY_DIGEST in body
+    add(id="DSB1_HEAD_BAD_KEY_DIGEST", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D,
+        body_hex=hx(be16(1) + be16(0) + bytes([0xEE] * 32) + be16(10) + be16(0)
+                    + mk_f3 + val_dig + bytes(32)))
+    hi_neg += 1
+    # BASELINE with nonzero head
+    add(id="DSB1_HEAD_BASELINE_NONZERO_HEAD", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D, body_hex=hx(enc_body_head_index(1, mk_f3, val_dig, head_w)))
+    hi_neg += 1
+    # WITNESSED with zero head
+    add(id="DSB1_HEAD_WITNESSED_ZERO_HEAD", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D, body_hex=hx(enc_body_head_index(2, mk_f4, val_dig, bytes(32))))
+    hi_neg += 1
+    add(id="DSB1_HEAD_SHORT", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D, body_hex=hx(body_hi_b[:-1]))
+    hi_neg += 1
+    add(id="DSB1_HEAD_TRAILING", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D, body_hex=hx(body_hi_b + b"\x00"))
+    hi_neg += 1
+    add(id="DSB1_HEAD_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D,
+        body_hex=hx(be16(1) + be16(1) + key_digest(mk_f3) + be16(10) + be16(0)
+                    + mk_f3 + val_dig + bytes(32)))
+    hi_neg += 1
+    mut = bytearray(body_hi_b); mut[2] ^= 0x01
+    add(id="DSB1_HEAD_MUT_RESERVED", suite="DSB1", op="body_decode", expected_status="CORRUPT",
+        family=6, subtype=0x7D, body_hex=hx(bytes(mut)))
+    hi_mut += 1
+    # Typed: common head mismatch for WITNESSED
+    bad_head_val = enc_env_full(6, 0x7D, 0, 2, id_hi_w[:16], bytes([0x44] * 32), pvd0, body_hi_w)
+    add(id="DSB1_HEAD_TYPED_HEAD_MISMATCH", suite="DSB1", op="typed_record", expected_status="CORRUPT",
+        family=6, subtype=0x7D, key_hex=hx(key_hi_w), value_hex=hx(bad_head_val))
+    hi_neg += 1
+    # Typed: wrong composite identity
+    bad_id_key = bkey(6, 0x7D, 5, bytes([0x55] * 32))
+    add(id="DSB1_HEAD_TYPED_BAD_COMPOSITE", suite="DSB1", op="typed_record", expected_status="CORRUPT",
+        family=6, subtype=0x7D, key_hex=hx(bad_id_key), value_hex=hx(val_hi_w))
+    hi_neg += 1
+    add(id="DSB1_HEAD_BUFFER_TOO_SMALL", suite="DSB1", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x7D,
+        body_length=114, body_hex=hx(body_hi_b), key_length=0,
+        key_hex=hx(mk_f3), digest_hex=hx(key_digest(mk_f3)),
+        head_hex=hx(bytes(32)), pvd_hex=hx(val_dig))
+    hi_neg += 1
+    # BASELINE revision must be 1; WITNESSED revision >= 2
+    bad_br = enc_env_full(6, 0x7D, 0, 2, id_hi_b[:16], head0, pvd0, body_hi_b)
+    add(id="DSB1_HEAD_TYPED_BASELINE_REV2", suite="DSB1", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x7D, key_hex=hx(key_hi_b),
+        value_hex=hx(bad_br))
+    hi_neg += 1
+    bad_wr = enc_env_full(6, 0x7D, 0, 1, id_hi_w[:16], head_w, pvd0, body_hi_w)
+    add(id="DSB1_HEAD_TYPED_WITNESSED_REV1", suite="DSB1", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x7D, key_hex=hx(key_hi_w),
+        value_hex=hx(bad_wr))
+    hi_neg += 1
+    # WITNESSED revision 3 positive boundary
+    val_hi_w3 = enc_env_full(6, 0x7D, 0, 3, id_hi_w[:16], head_w, pvd0, body_hi_w)
+    add(id="DSB1_HEAD_TYPED_WITNESSED_REV3", suite="DSB1", op="typed_record",
+        expected_status="OK", family=6, subtype=0x7D, key_hex=hx(key_hi_w),
+        value_hex=hx(val_hi_w3), body_hex=hx(body_hi_w),
+        digest_hex=hx(sha256(val_hi_w3)),
+        crc_hex=f"{crc32c(val_hi_w3[:-4]):08x}")
+    hi_pos += 1
+    b1_cov["7d"] = add_body_suite("WITNESS_HEAD_INDEX", 6, 0x7D, hi_pos, hi_neg, hi_mut, hi_rt)
+
+    # Completeness: every D1-B1 subtype has >=1 positive body + typed
+    for st in ("01", "60", "62", "64", "7d"):
+        assert b1_cov[st]["positive"] >= 2
+        assert b1_cov[st]["negative"] >= 3
+        assert b1_cov[st]["mutation"] >= 1
+        assert b1_cov[st]["roundtrip"] >= 1
+
     primary_ok = sum(1 for v in vectors if v["op"] == "primary_id" and v["expected_status"] == "OK")
     enc_ok = sum(1 for v in vectors if v["op"] == "envelope_encode" and v["expected_status"] == "OK")
+    dsb1_pos = sum(1 for v in vectors if v["suite"] == "DSB1"
+                   and v["expected_status"] == "OK")
+    dsb1_neg = sum(1 for v in vectors if v["suite"] == "DSB1"
+                   and v["expected_status"] != "OK")
     catalog = {
         "dsk1_positive_keys": 30,
         "dsv1_body_exact": 30,
@@ -671,10 +1235,18 @@ def build_document():
         "dsw1_header_positive": header_pos + 2,  # 21 ACTIVE + SUPERSEDED + RETIRED
         "dsk1_primary_id_positive": primary_ok,
         "dsv1_encode_decode_positive": enc_ok,
+        "dsb1_subtype_01_positive": b1_cov["01"]["positive"],
+        "dsb1_subtype_60_positive": b1_cov["60"]["positive"],
+        "dsb1_subtype_62_positive": b1_cov["62"]["positive"],
+        "dsb1_subtype_64_positive": b1_cov["64"]["positive"],
+        "dsb1_subtype_7d_positive": b1_cov["7d"]["positive"],
+        "dsb1_total_positive": dsb1_pos,
+        "dsb1_total_negative": dsb1_neg,
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
     assert sum(1 for v in vectors if v["op"] == "key_build" and v["expected_status"] == "OK") == 30
+    # D1-A EXACT/PLUS1 ids remain 30 each; D1-B1 does not reuse those suffixes alone.
     assert sum(1 for v in vectors if v["id"].endswith("_EXACT")) == 30
     assert sum(1 for v in vectors if v["id"].endswith("_PLUS1")) == 30
     assert sum(1 for v in vectors if v["id"].startswith("DSH2_HEALTH_") and v["expected_status"] == "OK") == 12
@@ -685,14 +1257,27 @@ def build_document():
                and v["expected_status"] == "OK") == 21
     assert sum(1 for v in vectors if v["op"] == "witness_header_roundtrip"
                and v["expected_status"] == "OK") == catalog["dsw1_header_positive"]
+    assert catalog["dsb1_subtype_01_positive"] > 0
+    assert catalog["dsb1_subtype_60_positive"] > 0
+    assert catalog["dsb1_subtype_62_positive"] > 0
+    assert catalog["dsb1_subtype_64_positive"] > 0
+    assert catalog["dsb1_subtype_7d_positive"] > 0
+
+    for v in vectors:
+        assert v["required_workspace_bytes"] == 0
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1a",
-        "scope": "D1-A framing/primitive slice (not full D1 body catalog)",
+        "format": "ninlil-domain-store-v1-d1b1",
+        "scope": (
+            "D1-A framing/primitive slice + D1-B1 five exact bodies "
+            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
+            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog"
+        ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
-            "and state/context objects. Current D1-A APIs have no workspace parameter; value is 0."
+            "and state/context objects. Current D1-A/D1-B1 APIs have no workspace "
+            "parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,

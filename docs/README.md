@@ -1,6 +1,6 @@
 # Ninlil Documentation
 
-状態: M0 public baseline complete / M1a Domain Store D0 fixed, D1+ pre-alpha<br>
+状態: M0 public baseline complete / M1a Domain Store D0 fixed, D1-A・D1-B1 implemented, D1 remaining pre-alpha<br>
 対象release: Foundation / pre-alpha
 
 ## 正本と優先順位

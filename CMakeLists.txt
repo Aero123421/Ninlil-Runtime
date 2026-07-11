@@ -68,6 +68,7 @@ function(ninlil_apply_strict_warnings target)
 endfunction()
 
 add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
+    src/model/domain_store_body_codec.c
     src/model/domain_store_codec.c
     src/model/runtime_lifecycle_model.c
     src/model/runtime_store_bootstrap.c
@@ -208,7 +209,8 @@ if(NINLIL_BUILD_TESTS)
     get_target_property(_ninlil_reducer_sources ninlil_reducer_model SOURCES)
     foreach(_source IN LISTS _ninlil_reducer_sources)
         get_filename_component(_source_name "${_source}" NAME)
-        if(_source_name STREQUAL "domain_store_codec.c"
+        if(_source_name STREQUAL "domain_store_body_codec.c"
+           OR _source_name STREQUAL "domain_store_codec.c"
            OR _source_name STREQUAL "runtime_lifecycle_model.c"
            OR _source_name STREQUAL "runtime_store_codec.c"
            OR _source_name STREQUAL "runtime_store_bootstrap.c"

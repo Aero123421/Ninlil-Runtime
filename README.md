@@ -22,12 +22,13 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Lifecycle/Runtime Store Coreをpublic `ninlil`とTEST fixtureから分離し、subprojectでも単独buildできる非export `ninlil_runtime_private` STATIC target
 - 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
 - Domain Store v1のfamily 5/6 catalog、4KiB record/3KiB chunk上限、最大256-member atomic witness、backlink/capacity/health/recovery順を固定したNormative D0仕様
+- Domain Store D1-Aのkey/envelope/digest/witness primitiveと、D1-B1のINTERNAL_INVARIANT / BEARER_STATE / CLOCK_BASELINE / ATTEMPT_REUSE_FENCE / WITNESS_HEAD_INDEX exact body codec・同一record検証・独立golden vector
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
 - 2 endpoint間のtyped message deep-copy、有限FIFO、receive loan、Virtual TxPermitを扱うsimulated Bearer / Tx Gate fixture
 - stateless synthetic grant、deny precedence、TEST-only composition guardを扱うOrigin Authorization fixture
-- 現在の開発branchで51件のCTestが成功することを、通常buildとASan/UBSan buildで検査
+- 現在の開発branchで54件のCTestが成功することを、通常buildとASan/UBSan buildで検査
 
 未実装または未統合の範囲:
 
@@ -35,7 +36,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
 - restart-safe SQLite portとproduction durable storage
 - Runtime Storeのdomain journal recovery、counter/capacity相互検証、identity rotationとpublic Runtime bodyへの統合
-- Domain Store D1 pure codec、D2 bounded scanner、D3相互validation、D4 operation別commit-unknown convergence
+- Domain Store D1の残りsemantic body catalog / canonical member-set builder、D2 bounded scanner、D3相互validation、D4 operation別commit-unknown convergence
 - end-to-endのReliable Command / Durable Event path
 - ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
 - Display node / Leak nodeを使う実機end-to-end検証
@@ -98,7 +99,7 @@ Project運用文書:
 
 必要なのはCMake 3.16以上と、C11 / C++17に対応するC・C++ compilerです。通常buildではstrict warning付きのconsumer smoke、ABI/contract checker、negative testをCTestから実行します。
 
-**Test / oracle 前提**: Domain Store D1-A の vector 生成・検査（`domain_store_vector_oracle` CTest）には **Python 3** interpreter が必要です（`find_package(Python3 COMPONENTS Interpreter REQUIRED)`）。production runtime 自体は Python に依存しません。
+**Test / oracle 前提**: Domain Store D1-A / D1-B1 の vector 生成・検査（`domain_store_vector_oracle` CTest）には **Python 3** interpreter が必要です（`find_package(Python3 COMPONENTS Interpreter REQUIRED)`）。production runtime 自体は Python に依存しません。
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug

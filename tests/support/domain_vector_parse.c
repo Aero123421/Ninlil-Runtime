@@ -275,7 +275,8 @@ static int known_suite(const char *s)
         || strcmp(s, "DSV1") == 0
         || strcmp(s, "DSH2") == 0
         || strcmp(s, "DSO2") == 0
-        || strcmp(s, "DSW1") == 0;
+        || strcmp(s, "DSW1") == 0
+        || strcmp(s, "DSB1") == 0;
 }
 
 static int known_op(const char *op)
@@ -301,7 +302,11 @@ static int known_op(const char *op)
         || strcmp(op, "witness_header_roundtrip") == 0
         || strcmp(op, "witness_header_decode") == 0
         || strcmp(op, "witness_header_encode") == 0
-        || strcmp(op, "primary_id") == 0;
+        || strcmp(op, "primary_id") == 0
+        || strcmp(op, "body_encode") == 0
+        || strcmp(op, "body_decode") == 0
+        || strcmp(op, "body_roundtrip") == 0
+        || strcmp(op, "typed_record") == 0;
 }
 
 static int has_str(const ninlil_dv_vector_t *v, uint64_t bit)
@@ -463,6 +468,24 @@ static int validate_op_fields(
             NEED_STR(NINLIL_DV_STR_IDENTITY);
         }
         if (ok) {
+            NEED_STR(NINLIL_DV_STR_DIGEST);
+        }
+    } else if (strcmp(op, "body_encode") == 0
+        || strcmp(op, "body_decode") == 0
+        || strcmp(op, "body_roundtrip") == 0) {
+        NEED_NUM(NINLIL_DV_NUM_FAMILY);
+        NEED_NUM(NINLIL_DV_NUM_SUBTYPE);
+        NEED_STR(NINLIL_DV_STR_BODY);
+        if (strcmp(op, "body_encode") == 0 || strcmp(op, "body_roundtrip") == 0) {
+            NEED_NUM(NINLIL_DV_NUM_BODY_LENGTH);
+        }
+    } else if (strcmp(op, "typed_record") == 0) {
+        NEED_NUM(NINLIL_DV_NUM_FAMILY);
+        NEED_NUM(NINLIL_DV_NUM_SUBTYPE);
+        NEED_STR(NINLIL_DV_STR_KEY);
+        NEED_STR(NINLIL_DV_STR_VALUE);
+        if (ok) {
+            NEED_STR(NINLIL_DV_STR_BODY);
             NEED_STR(NINLIL_DV_STR_DIGEST);
         }
     } else {
@@ -907,6 +930,18 @@ static int parse_catalog(parse_ctx *c, ninlil_dv_file_t *file)
             NINLIL_DV_CAT_DSK1_PRIMARY)
         CAT("dsv1_encode_decode_positive", dsv1_encode_decode_positive,
             NINLIL_DV_CAT_DSV1_ENCDEC)
+        CAT("dsb1_subtype_01_positive", dsb1_subtype_01_positive,
+            NINLIL_DV_CAT_DSB1_01)
+        CAT("dsb1_subtype_60_positive", dsb1_subtype_60_positive,
+            NINLIL_DV_CAT_DSB1_60)
+        CAT("dsb1_subtype_62_positive", dsb1_subtype_62_positive,
+            NINLIL_DV_CAT_DSB1_62)
+        CAT("dsb1_subtype_64_positive", dsb1_subtype_64_positive,
+            NINLIL_DV_CAT_DSB1_64)
+        CAT("dsb1_subtype_7d_positive", dsb1_subtype_7d_positive,
+            NINLIL_DV_CAT_DSB1_7D)
+        CAT("dsb1_total_positive", dsb1_total_positive, NINLIL_DV_CAT_DSB1_POS)
+        CAT("dsb1_total_negative", dsb1_total_negative, NINLIL_DV_CAT_DSB1_NEG)
 #undef CAT
         {
             set_err(c->err, c->err_cap, "unknown catalog key");
