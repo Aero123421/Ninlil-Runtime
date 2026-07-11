@@ -292,6 +292,58 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_submission_admission_test
     )
 
+    add_library(ninlil_test_storage_fixture STATIC
+        tests/support/in_memory_storage.c
+    )
+    target_include_directories(ninlil_test_storage_fixture PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_test_storage_fixture PRIVATE ninlil)
+    set_target_properties(ninlil_test_storage_fixture PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_test_storage_fixture)
+
+    add_executable(ninlil_in_memory_storage_test
+        tests/port/in_memory_storage_test.c
+    )
+    target_link_libraries(ninlil_in_memory_storage_test PRIVATE
+        ninlil_test_storage_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_in_memory_storage_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_in_memory_storage_test)
+
+    add_test(
+        NAME in_memory_storage_conformance
+        COMMAND ninlil_in_memory_storage_test
+    )
+
+    add_executable(ninlil_in_memory_storage_boundary_test
+        tests/port/in_memory_storage_boundary_test.c
+    )
+    target_link_libraries(ninlil_in_memory_storage_boundary_test PRIVATE
+        ninlil_test_storage_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_in_memory_storage_boundary_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_in_memory_storage_boundary_test)
+
+    add_test(
+        NAME in_memory_storage_boundaries
+        COMMAND ninlil_in_memory_storage_boundary_test
+    )
+
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
     target_link_libraries(ninlil_smoke_c11 PRIVATE ninlil)
     set_target_properties(ninlil_smoke_c11 PROPERTIES

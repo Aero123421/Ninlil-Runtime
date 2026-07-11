@@ -228,6 +228,8 @@ ACTIVE --rollback/error--> ABORTED_DEGRADED_CLOSED
 
 `get` / `iter_next`へ渡す各`ninlil_mut_bytes_t`はcall前`length=0`です。Capacity=0ならdata NULL、capacity>0ならdata non-NULLです。Input length non-zeroまたはcapacity/data shape違反は`NINLIL_STORAGE_CORRUPT`で、length/data/iterator positionを変更しません。
 
+`iter_next`のkey/value outputは、両方non-zero capacityの場合に`[data, data + capacity)`が重なってはなりません。Exact same pointer、部分overlap、address加算overflowは`NINLIL_STORAGE_CORRUPT`で、両length/data/iterator positionを変更しません。どちらかがzero capacityならNULLであり、overlap判定から除外します。
+
 | Status | Length output | Data / iterator mutation |
 | --- | --- | --- |
 | `NINLIL_STORAGE_OK` | exact returned count、0〜capacity | `[0,length)`だけexact write、tail unchanged。iterだけ1 row進む |
@@ -258,6 +260,24 @@ ACTIVE --rollback/error--> ABORTED_DEGRADED_CLOSED
 | `SH4_CAPACITY_SHAPE` | OK valid/exact boundary、OK max0/used>max/header poison、各non-OK numeric poison、unknown | Validだけchecked availableを導出。Invalid/poison/unknownはCORRUPT、capacity admission判断0 |
 | `SH5_VALUE_BOUNDARY` | put length 0、65,536、65,537 | first2はtotal capacity内ならOK、65,537はmutation 0/NO_SPACE。Host/provider固有の別上限へsilent clampしない |
 | `BH1_BEARER_OPEN_SHAPE` | Bearer openのOK+handle、OK+NULL、各non-OK+NULL/non-NULL、unknown | Valid shapeだけpublish。OK+NULLはDEGRADED、failure+handle/unknownはclose exactly1後DEGRADED。Storage close→reverse free、二重close0 |
+
+### Canonical in-memory Storage fixture
+
+PR 3のin-memory StorageはCoreから独立したconformance fixtureであり、次の決定を固定します。これはM1a Coreが生成してよいcallを増やさず、Port実装間で未規定の挙動を比較する正本でもありません。
+
+- Store identityはfixture backend objectとexact namespace bytesの組です。同じbackend objectの同じnamespaceはactive openを最大1つとし、別backend objectまたは別namespaceは独立です。Clean closeはleaseを解放します。Simulated crashはcommitted storeを保持し、volatile handle、transaction、iterator、leaseだけを破棄します。
+- 1 handleにつきactive read-write transactionは最大1つです。Read-only transactionは複数存在でき、read-write transactionとも共存できます。各`begin`はその時点のcommitted viewを固定します。別transactionはread-write transactionのstaged mutationを見ません。同じread-write transactionだけがread-your-writesを見ます。
+- `READ_ONLY` transactionへの`put` / `erase`、unknown mode、invalid handle/shapeは`NINLIL_STORAGE_CORRUPT`で、mutationとfault消費は0です。Read-only transactionの`commit(FULL)`はtransactionをconsumeして`OK`、`rollback`もconsumeして`OK`です。
+- Fixtureの`commit`は`FULL`だけを受理します。`VOLATILE`、`CHECKPOINTED`、unknown durabilityはtransactionとchild iteratorをconsumeし、noncommitの`NINLIL_STORAGE_CORRUPT`です。これはfixtureの決定であり、M1a Coreは`FULL`以外を生成しないことを`FULL1`で別に検査します。
+- Namespaceは1〜255 bytes、keyは1〜255 bytes、prefixは0〜255 bytesです。Non-zero lengthとNULL dataの組、zero lengthとnon-NULL dataの組、上限超過は`CORRUPT`です。`expected_schema != NINLIL_STORAGE_SCHEMA_M1A`は`UNSUPPORTED_SCHEMA`です。Valueのshape違反は`CORRUPT`、65,536 bytes超過はmutation前の`NO_SPACE`です。
+- Single value上限は`put`前に判定します。Total logical entry/byte capacityはtransactionの最終viewを`commit`直前にnetで判定し、超過ならtransactionをconsumeして全mutation非公開の`NO_SPACE`です。これにより同じtransaction内のeraseとputはcall順でなく最終netだけで決まります。`capacity()`はcommitted viewだけを返します。
+- Fixture faultはoperation kindごとのFIFO entryで、matchingするotherwise-valid callだけが先頭entryのremaining countを1減らします。引数、handle、mode、shape validation failureはfaultを消費しません。Matching faultがある場合はnatural status判定より先にそのstatusを返し、非matching operationはentryを消費しません。同じoperationの複数entryは登録順です。例外として`commit(FULL)`はfinal transaction viewのlogical capacityを先に検査します。超過はfaultを消費せずtransactionをconsumeしてnatural `NO_SPACE`を返し、queue先頭faultは次の容量内commitへ残します。これにより`COMMIT_UNKNOWN / committed` truthがcapacity invariantを破りません。
+- Known `OK`、`NOT_FOUND`、`BUFFER_TOO_SMALL`はfault queueへ登録できず、各operationのnatural pathで生成します。その他のknown error statusとunknown raw statusはCore mapping/shape testのため登録できます。Boolean引数はexact 0/1だけを受理し、commit operationの`COMMIT_UNKNOWN`だけが`has_commit_unknown_truth=1`を必須とします。Truthなしで`commit_unknown_committed=1`、または他operation/statusへtruthを付けた登録は失敗し、queueを変更しません。
+- Commit faultの`OK`以外のdefinite statusは常にnoncommitです。Commit operationの`COMMIT_UNKNOWN` entryはhidden truthを`committed`または`not_committed`として必ず持ち、どちらもpublic statusは同じです。Open等のnon-commit operationへCore shape/mapping testのため`COMMIT_UNKNOWN`を注入する場合はhidden truthを持たず、store mutation 0です。Rollback faultはfixtureでは常にnoncommitですが、これを一般Storage providerの保証へ拡張しません。Commit/rollback faultでもtransactionとchild iteratorはconsumeします。
+- Fault時もmutable output、handle output、iterator positionの規則を守ります。Unknown raw statusはCoreのmalformed-provider試験用であり、fixtureのstore mutationを起こしません。Fault消費後は次の通常operationへ復帰します。
+- Fixture内部のcall traceはtest diagnosticです。Pointer値を含めずlogical handle/transaction/iterator IDとoperation/statusを決定的に記録しますが、PR 7のcanonical simulator traceや異なるStorage provider間の互換形式とは扱いません。
+
+Capacity maximaは有限かつnon-zeroで、`UINT64_MAX`を拒否します。Entry accountingの全加減算はcheckedです。Fixture作成時のinvalid maximaはfixture作成失敗であり、Storage Port callとしてstatusへ射影しません。
 
 ### FULL durabilityとatomicity
 
