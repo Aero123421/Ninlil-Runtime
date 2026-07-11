@@ -1399,7 +1399,7 @@ L2b1 successはStage 5完了でもD2完了でもありません（14章L2b1 boun
 | Slice | 内容 | D2完了証明 |
 | --- | --- | --- |
 | **D2-S0** | 本節のNormative contract freeze。実装/vector変更なし | 否 |
-| **D2-S1** | scanner core: state machine、begin/advance/finalize/abort、iter buffer契約、`has_previous` lex order、§15.4 coarse classification、mutation 0 workspace。独立oracle path/schema固定 | 否 |
+| **D2-S1** | scanner core: state machine、begin binds Port/handle/workspace、advance(row_budget)/finalize|abort(result) only、iter buffer、`has_previous` lex、§15.4 coarse class、mutation 0、uint64 checked counters。独立oracle + production bridge。**実装済み（D2 incomplete）** | 否 |
 | **D2-S2** | 同一READ_ONLY snapshotでのfamily 1〜4 integrity + exact profile gate（§15.10）。profile mismatchでもdomain body decode 0のままsingle zero-prefix iteratorでfamily1-4 malformed/extraを検出し、f1-4 corruption優先を維持 | 否 |
 | **D2-S3** | 全current domain structural / same-record validation（envelope、4096、subtype body local、duplicate/order接続）。**step 5 same-record/local: witness header+chunk framing/matrix のscan到達**（D1 pure witness codecに依存。member old/new・partial group・successor chainはD3）。**D1 bodies `0x50` EVENT_SPOOL / `0x51` RETRY_SUMMARY / `0x52` MANAGEMENT_LEDGER / `0x61` RETENTION_BASIS / `0x63` CLEANUP_PLAN が未実装の間、S3 completionはblock** | 否 |
 | **D2-S4** | same-snapshot exact `get`とfixed-memory cross-reference seam（全ID集合非保持） | 否 |
@@ -1491,7 +1491,7 @@ S2 one-iterator互換の運用詳細は§15.10。profile mismatchはnon-terminal
 | Slice | Mandatory ownership | 完了条件の注意 |
 | --- | --- | --- |
 | D2-S0 | vector/oracle追加なし。本ledgerと§15 contractだけ | spec freeze ≠ implementation |
-| D2-S1 | `DSR1_SCAN` transport subset + `DSR2_ESP_BOUND` skeleton の**ownership**。**独立machine-readable oracle artifact**のpath/schemaをS1で固定してからvector commit | D1 JSON schemaへscanner fieldを無理に追加しない |
+| D2-S1 | `DSR1_SCAN` transport subset + `DSR2_ESP_BOUND` skeleton の**ownership**。独立machine-readable oracle artifactを **`spec/vectors/domain-scan-v1.json`**、format **`ninlil-domain-scan-v1-d2s1`** として固定（schemaは§17.1.1）。D1 JSONへscanner fieldを追加しない | S1 ownershipのみ。**DSR1/DSR2 completeおよびD2 completeをclaimしない** |
 | D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator precedence vectors | domain structural全体はS3 |
 | D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）依存D1 body hexは当該subtype D1 deliverableが正本 | **0x50/51/52/61/63 D1 body未完了ならS3 completion block** |
 | D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference（`DSI1_BACKLINK`のscan接続部など） | 全ID集合RAM保持テストを合法化しない |
@@ -1500,4 +1500,42 @@ S2 one-iterator互換の運用詳細は§15.10。profile mismatchはnon-terminal
 
 D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、**D2 completionはS1〜S5および依存が揃ったmutation 0 bounded scanner composition証明**です（partial group / orphan / counter / capacity / health の正しさは含まない）。D2-S0はNormative固定のみでimplementation pendingです。**Stage 5全体・public Runtime・SQLite recoveryの完成はD2完了後も、D3/D4および§1残gateが揃うまで主張しません。**
 
-D1は上記case名だけで完了扱いせず、`spec/vectors/domain-store-v1.json`をmachine-readable正本として追加します。各caseはinput semantic fields、expected complete key/value hex、全SHA-256/CRC、expected status、required workspace bytesを持ち、production codecとは独立したvector generatorとのbyte equalityをCI gateにします。D0はformat contract、実hex oracleの追加はD1 deliverableです。**既存`domain-store-v1.json`はD1 authorityのまま残し、D2 scanner/fault/call-trace vectorを同schemaへ押し込めない。** D2はslice ownershipに従う**独立machine-readable oracle artifact**を必須とするが、**artifact pathとschemaはD2-S1がvector commit前にNormative固定**する。D2-S0はownershipと独立性だけを固定し、path/schema/hexを先行発明しない。
+D1は上記case名だけで完了扱いせず、`spec/vectors/domain-store-v1.json`をmachine-readable正本として追加します。各caseはinput semantic fields、expected complete key/value hex、全SHA-256/CRC、expected status、required workspace bytesを持ち、production codecとは独立したvector generatorとのbyte equalityをCI gateにします。D0はformat contract、実hex oracleの追加はD1 deliverableです。**既存`domain-store-v1.json`はD1 authorityのまま残し、D2 scanner/fault/call-trace vectorを同schemaへ押し込めない。**
+
+### 17.1.1 D2-S1 oracle artifact（Normative freeze）
+
+| Field | Exact value |
+| --- | --- |
+| path | `spec/vectors/domain-scan-v1.json` |
+| format | `ninlil-domain-scan-v1-d2s1` |
+| version | `1` |
+| independent generator | `tools/domain_scan_vector_gen.py`（production Cをinvoke/translateしない） |
+
+Top-level object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | artifact schema version; exact `1` |
+| `format` | string | exact `ninlil-domain-scan-v1-d2s1` |
+| `scope` | string | S1 ownership prose; must not claim DSR1/DSR2/D2 complete |
+| `workspace` | object | `key_capacity=255`, `value_capacity=4096`, `previous_key_capacity=255`, `ceiling_bytes=8192` |
+| `vectors` | array | S1 lifecycle / row-budget / call-trace / outcome cases |
+
+Each vector object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | stable case id |
+| `kind` | string | closed: `lifecycle`, `row_budget`, `call_trace`, `outcome`, `classification`, `dsr2_skeleton` |
+| `rows` | array | zero or more `{key_hex,value_hex}` snapshot rows in storage order |
+| `faults` | **array** of objects | optional scripted Port faults; each element has `op`, `on_call` (1-based), `status`, `shape`, optional `key_length`/`value_length`. **Not** a map/object keyed by op |
+| `calls` | array | scanner API sequence (`begin` / `advance`+`row_budget` / `finalize` / `abort`) |
+| `expected` | object | `final_status`, `adopted`, `state_after`, coarse flags/counters (`uint64` counts), `port_trace`, `mutation_calls=0` (schema symmetry; production mutation-zero is gated by the scripted spy, not by the oracle field alone), `reopen_required`, `close_count` |
+
+**Fault object fields (exact):** `op` ∈ {`begin`,`iter_open`,`iter_next`,`rollback`}, `on_call` positive integer, `status` storage status name, `shape` ∈ {`natural`,`ok_null`,`error_with_handle`,`bts`,`not_found_poison`,`io_error`,`unknown`}, optional length fields for BTS/poison shapes.
+
+**CI gate:** independent generator `check` plus a production bridge that executes the production private scanner against oracle expected status/adopted/`state_after`/counts/trace/fence for every vector, including begin-only failures, and asserts `result.status ==` returned status on finalize/abort (generated C fixture; oracle remains independent of production C). A mere ID list is insufficient.
+
+**Counter overflow:** `ok_row_count` / `family14_row_count` / `current_domain_key_count` are `uint64` with checked increment; overflow is **D2-detectable corruption** (sticky `STORAGE_CORRUPT`, no wrap).
+
+S1 vectors own transport/lifecycle/shape/lex/coarse-class subsets only. They do **not** complete `DSR1_SCAN` or `DSR2_ESP_BOUND`.

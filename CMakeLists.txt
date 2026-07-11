@@ -73,6 +73,7 @@ add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     src/model/runtime_lifecycle_model.c
     src/model/runtime_store_bootstrap.c
     src/model/runtime_store_codec.c
+    src/runtime/domain_store_scanner.c
     src/runtime/runtime_store_orchestrator.c
 )
 set_property(TARGET ninlil_runtime_private
@@ -214,6 +215,7 @@ if(NINLIL_BUILD_TESTS)
            OR _source_name STREQUAL "runtime_lifecycle_model.c"
            OR _source_name STREQUAL "runtime_store_codec.c"
            OR _source_name STREQUAL "runtime_store_bootstrap.c"
+           OR _source_name STREQUAL "domain_store_scanner.c"
            OR _source_name STREQUAL "runtime_store_orchestrator.c")
             message(FATAL_ERROR
                 "private Runtime source duplicated in reducer: ${_source}")
@@ -496,6 +498,104 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME runtime_store_orchestrator
         COMMAND ninlil_runtime_store_orchestrator_test
+    )
+
+    add_library(ninlil_test_scripted_storage_spy STATIC
+        tests/support/scripted_storage_spy.c
+    )
+    target_include_directories(ninlil_test_scripted_storage_spy PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_test_scripted_storage_spy PRIVATE ninlil)
+    set_target_properties(ninlil_test_scripted_storage_spy PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        NINLIL_TEST_ONLY_ARTIFACT TRUE
+    )
+    ninlil_apply_strict_warnings(ninlil_test_scripted_storage_spy)
+
+    add_executable(ninlil_domain_store_scanner_test
+        tests/runtime/domain_store_scanner_test.c
+    )
+    target_include_directories(ninlil_domain_store_scanner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_domain_store_scanner_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(ninlil_domain_store_scanner_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_store_scanner_test)
+    add_test(
+        NAME domain_store_scanner
+        COMMAND ninlil_domain_store_scanner_test
+    )
+
+    add_test(
+        NAME domain_scan_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-v1.json
+    )
+
+    # Production bridge: oracle expectations vs production scanner (generated fixture).
+    set(_ninlil_dsf_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_vector_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_dsf_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-v1.json
+            ${_ninlil_dsf_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-v1.json
+        COMMENT "Generate domain-scan production bridge fixture"
+        VERBATIM
+    )
+    add_executable(ninlil_domain_store_scanner_oracle_bridge_test
+        tests/runtime/domain_store_scanner_oracle_bridge_test.c
+        ${_ninlil_dsf_fixture}
+    )
+    target_include_directories(ninlil_domain_store_scanner_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(ninlil_domain_store_scanner_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(ninlil_domain_store_scanner_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_store_scanner_oracle_bridge_test)
+    add_test(
+        NAME domain_store_scanner_oracle_bridge
+        COMMAND ninlil_domain_store_scanner_oracle_bridge_test
+    )
+
+    # DSR2 skeleton only (not DSR2 complete): scan .c+.h for allocator/alloca/
+    # VLA/65536 paths and direct self-call of scan APIs. Does not prove
+    # absence of all recursion via helpers. Full DSR2 is S5 ownership.
+    # Pure expression form (no compound statements) so the CMake-joined -c
+    # string stays valid Python.
+    add_test(
+        NAME domain_scan_dsr2_source_skeleton
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,re,sys; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}/src/runtime'); files=[root/'domain_store_scanner.c', root/'domain_store_scanner.h']; t='\\n'.join(p.read_text() for p in files); bad=[]; patterns=[(r'\\bmalloc\\b','malloc'),(r'\\bcalloc\\b','calloc'),(r'\\brealloc\\b','realloc'),(r'\\bfree\\b','free'),(r'\\balloca\\b','alloca'),(r'\\[65536\\]','stack65536'),(r'\\[ *4096 *\\]','stack4096_literal')]; [bad.append(n) for p,n in patterns if re.search(p,t)]; c=(root/'domain_store_scanner.c').read_text(); fns=['ninlil_domain_scan_begin','ninlil_domain_scan_advance','ninlil_domain_scan_finalize','ninlil_domain_scan_abort']; [bad.append('self_or_recursive_call:'+fn) for fn in fns if len(list(re.finditer(r'\\b'+fn+r'\\s*\\(', c)))>1]; sys.exit(0 if not bad else (print('DSR2 source skeleton failed:', bad) or 1))"
     )
 
     add_executable(ninlil_submission_preflight_test
