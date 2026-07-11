@@ -8,7 +8,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 
 ## 現在の状態
 
-**Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer model、PR3a/b/c/dのcanonical TEST fixture、Runtime Lifecycle L1、Runtime Store v1のportable codec/bootstrap pure modelまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
+**Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer model、PR3a/b/c/dのcanonical TEST fixture、Runtime Lifecycle L1、Runtime Store v1のportable codec/bootstrap pure modelとbootstrap-only Storage orchestrationまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
 
 実装済みの範囲:
 
@@ -20,20 +20,20 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Runtime Store v1の17 bootstrap key、typed big-endian record、CRC32C、境界/破損検査を行うportable C11 codec
 - Stage1 successだけが発行するheader/pointer-free accepted-config projectionからcanonical binding/identity、17-record presence/integrity、profile/identity decision、compact lazy bootstrap planを作るRuntime Store L2a2 pure model
 - Lifecycle/Runtime Store Coreをpublic `ninlil`とTEST fixtureから分離し、subprojectでも単独buildできる非export `ninlil_runtime_private` STATIC target
+- 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
 - 2 endpoint間のtyped message deep-copy、有限FIFO、receive loan、Virtual TxPermitを扱うsimulated Bearer / Tx Gate fixture
 - stateless synthetic grant、deny precedence、TEST-only composition guardを扱うOrigin Authorization fixture
-- 現在の開発branchで50件のCTestが成功することを、通常buildとASan/UBSan buildで検査
+- 現在の開発branchで51件のCTestが成功することを、通常buildとASan/UBSan buildで検査
 
 未実装または未統合の範囲:
 
 - public Runtime APIのfunction bodyと`runtime_step` orchestration
 - Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
 - restart-safe SQLite portとproduction durable storage
-- L2b Runtime Store Storage orchestrationとpublic Runtime bodyへの統合
-- Existing 17-record snapshotのbounded Runtime-owned regionまたはincremental validation方式の確定（L2a2 aggregate型をESP stackへ常駐させない）
+- Runtime Storeのdomain journal recovery、counter/capacity相互検証、identity rotationとpublic Runtime bodyへの統合
 - end-to-endのReliable Command / Durable Event path
 - ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
 - Display node / Leak nodeを使う実機end-to-end検証

@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 3)
-    message(FATAL_ERROR "private source count is not 3: ${_private_sources}")
+if(NOT _private_source_count EQUAL 4)
+    message(FATAL_ERROR "private source count is not 4: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -89,6 +89,7 @@ set(_expected_private_source_names
     runtime_lifecycle_model.c
     runtime_store_bootstrap.c
     runtime_store_codec.c
+    runtime_store_orchestrator.c
 )
 list(SORT _expected_private_source_names)
 if(NOT _private_source_names STREQUAL _expected_private_source_names)
@@ -109,6 +110,12 @@ check_c_source_compiles(
 if(NINLIL_PRIVATE_HEADER_LEAKED)
     message(FATAL_ERROR "private Runtime Store header is publicly includable")
 endif()
+check_c_source_compiles(
+    "#include \"runtime_store_orchestrator.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_ORCHESTRATOR_HEADER_LEAKED)
+if(NINLIL_PRIVATE_ORCHESTRATOR_HEADER_LEAKED)
+    message(FATAL_ERROR "private Runtime orchestrator header is publicly includable")
+endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)
 target_link_libraries(ninlil_subproject_public_consumer PRIVATE ninlil)
@@ -116,6 +123,7 @@ target_link_libraries(ninlil_subproject_public_consumer PRIVATE ninlil)
 add_executable(ninlil_subproject_private_consumer private_consumer.c)
 target_include_directories(ninlil_subproject_private_consumer PRIVATE
     "${NINLIL_SOURCE_DIR}/src/model"
+    "${NINLIL_SOURCE_DIR}/src/runtime"
 )
 target_link_libraries(ninlil_subproject_private_consumer PRIVATE
     ninlil_runtime_private
