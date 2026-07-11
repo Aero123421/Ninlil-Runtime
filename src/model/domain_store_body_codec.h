@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..e.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..f.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -22,7 +22,8 @@ extern "C" {
  *   D1-B3c: family 6 30 BLOB manifest (flags=1) + chunk (flags=2) pure body
  *   D1-B3d: family 6 31 ATTEMPT pure body + same-record matrix validation
  *   D1-B3e: family 6 34 ATTEMPT_ID_INDEX pure body + same-record binding
- *          (not CANCEL_STATE 0x33; not D2/D3/D4)
+ *   D1-B3f: family 6 33 CANCEL_STATE pure body + same-record matrix
+ *          (not D2/D3/D4; not other B3g+ subtypes)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -50,6 +51,11 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_STATE_BYTES ((uint32_t)224u)
 /* ATTEMPT_ID_INDEX (0x34) exact fixed body length (docs17 §8.4). */
 #define NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES ((uint32_t)100u)
+/* CANCEL_STATE (0x33): 146 + raw contents; TX=162 / DLV=226; max 512. */
+#define NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_FIXED ((uint32_t)146u)
+#define NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_TX_BYTES ((uint32_t)162u)
+#define NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_DELIVERY_BYTES ((uint32_t)226u)
+#define NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
 #define NINLIL_MODEL_DOMAIN_TARGET_BYTES ((uint32_t)100u)
@@ -72,6 +78,8 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_RAW16_SUBJECT_KEY_MAX ((uint32_t)255u)
 /* ATTEMPT owner_key_raw content max (docs17 §8.3); TX=16 / DELIVERY=80. */
 #define NINLIL_MODEL_DOMAIN_RAW16_ATTEMPT_OWNER_KEY_MAX ((uint32_t)128u)
+/* CANCEL_STATE owner_key_raw content max (docs17 §8.4); TX=16 / DELIVERY=80. */
+#define NINLIL_MODEL_DOMAIN_RAW16_CANCEL_OWNER_KEY_MAX ((uint32_t)128u)
 #define NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX ((uint32_t)128u)
 
 /* BLOB owner_key_raw exact content lengths (docs17 §8.3). */
@@ -82,6 +90,10 @@ extern "C" {
 /* ATTEMPT owner_key_raw exact content lengths (docs17 §8.3). */
 #define NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_TX_BYTES ((uint16_t)16u)
 #define NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_DELIVERY_BYTES ((uint16_t)80u)
+
+/* CANCEL_STATE owner_key_raw exact content lengths (docs17 §8.4). */
+#define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_KEY_TX_BYTES ((uint16_t)16u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_KEY_DELIVERY_BYTES ((uint16_t)80u)
 
 /* Closed body enums (docs17 section 7.1). */
 #define NINLIL_MODEL_DOMAIN_INDEX_STATE_BASELINE ((uint16_t)1u)
@@ -154,6 +166,28 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_SENT_POSSIBLE ((uint32_t)3u)
 #define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_CLOSED_DENIED ((uint32_t)4u)
 #define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RECOVERY_REQUIRED ((uint32_t)5u)
+
+/*
+ * CANCEL_STATE private enums (docs17 §7.1 / §8.4) — distinct from
+ * reservation / scheduler / BLOB / ATTEMPT owner enums.
+ */
+#define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_TRANSACTION ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_OWNER_DELIVERY ((uint16_t)2u)
+
+#define NINLIL_MODEL_DOMAIN_CANCEL_STATE_NONE ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_STATE_PENDING_REMOTE_FENCE ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_STATE_FENCED_BEFORE_DISPATCH ((uint32_t)3u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_STATE_TOO_LATE_EFFECT_POSSIBLE ((uint32_t)4u)
+
+/* Public cancel_kind values stored in body; ALREADY_TERMINAL(4) never stored. */
+#define NINLIL_MODEL_DOMAIN_CANCEL_KIND_NONE ((uint32_t)0u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_KIND_FENCED_BEFORE_DISPATCH ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_KIND_PENDING_REMOTE_FENCE ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_KIND_TOO_LATE_EFFECT_POSSIBLE ((uint32_t)3u)
+
+#define NINLIL_MODEL_DOMAIN_CANCEL_GATE_NEVER_INVOKED ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_GATE_WOULD_BLOCK_RETRYABLE ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_CANCEL_GATE_INVOKED_CLOSED ((uint32_t)3u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -551,6 +585,30 @@ typedef struct ninlil_model_domain_body_attempt_id_index {
 } ninlil_model_domain_body_attempt_id_index_t;
 
 /*
+ * CANCEL_STATE (0x33). owner_key_raw borrows encoded body on decode.
+ * Same-record closed matrix + bijection + identity (docs17 §8.4).
+ * Live primary PVD / CANCEL ATTEMPT/index/cardinality / message recompute /
+ * RESULT/REVERSE_REPLY / transition history / timeout scheduling are D3.
+ */
+typedef struct ninlil_model_domain_body_cancel_state {
+    uint16_t cancel_owner_kind;
+    uint16_t reserved;
+    uint16_t owner_key_raw_length;
+    const uint8_t *owner_key_raw;
+    uint8_t primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t cancel_attempt_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint32_t cancel_state;
+    uint32_t cancel_kind;
+    uint32_t reason;
+    uint32_t effect_certainty;
+    uint32_t cancel_send_gate_state;
+    uint8_t message_semantic_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t timeout_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t timeout_at_ms;
+} ninlil_model_domain_body_cancel_state_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -651,6 +709,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_blob_chunk_t blob_chunk;
         ninlil_model_domain_body_attempt_t attempt;
         ninlil_model_domain_body_attempt_id_index_t attempt_id_index;
+        ninlil_model_domain_body_cancel_state_t cancel_state;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1006,6 +1065,24 @@ ninlil_status_t ninlil_model_domain_decode_body_attempt_id_index(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_attempt_id_index_t *out_body);
 
+/* --- CANCEL_STATE (0x33) --- */
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_cancel_state_encoded_length(
+    const ninlil_model_domain_body_cancel_state_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_cancel_state(
+    const ninlil_model_domain_body_cancel_state_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows owner_key_raw from encoded. Valid only while encoded lives.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_cancel_state(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_cancel_state_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1051,7 +1128,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..e.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..f.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1074,9 +1151,11 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       CREATE manifest new digest equality / local ATTEMPT-index
  *       cardinality / DELIVERY-remote no-index / reverse reply no-index /
  *       co-create witness / fenced pair cleanup/fence counts / family-kind
- *       and CANCEL_STATE cross proofs (B3e proves same-record body/key/
- *       record-key-digest/primary binding only; does not implement
- *       CANCEL_STATE 0x33)
+ *       and CANCEL_STATE cross proofs; CANCEL_STATE live primary PVD /
+ *       live CANCEL ATTEMPT/index/cardinality / message recompute /
+ *       RESULT/REVERSE_REPLY / prior transition/gate history / timeout
+ *       scheduling / family/owner/cardinality/reply proofs (B3f proves
+ *       same-record body/key/matrix/bijection/primary binding only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

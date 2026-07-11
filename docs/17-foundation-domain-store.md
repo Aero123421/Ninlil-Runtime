@@ -183,7 +183,7 @@ SHA-256(ASCII("NINLIL-BEARER-MESSAGE-V1") ||
   payload_length:u32 || payload || evidence_length:u32 || evidence)
 ```
 
-Kind-specific zero/empty ruleは12章5.4です。ORDERED_INGRESSとREVERSE_REPLYは参照BLOBをstreamしてこのdigestを再計算し、stored valueと一致させます。ATTEMPT / CANCEL_STATE bodyはsemantic prefixやBLOB keyを持たないためD1ではdigestのnon-zeroだけを証明し、D3がlive ownerとBLOB（cancelのempty viewを含む）からmessageを再構成して再計算します。
+Kind-specific zero/empty ruleは12章5.4です。ORDERED_INGRESSとREVERSE_REPLYは参照BLOBをstreamしてこのdigestを再計算し、stored valueと一致させます。ATTEMPT bodyはsemantic prefixやBLOB keyを持たないためD1では`message_semantic_digest`のnon-zeroだけを証明し、D3がlive ownerとBLOBからmessageを再構成して再計算します。CANCEL_STATEの`message_semantic_digest`は`cancel_attempt_id`がnon-zeroのときだけnon-zeroで、both-zeroは§8.4 closed matrixのNONEとTX local pre-dispatch FENCEDだけです。D1はattempt/digestのboth-zeroまたはboth-non-zeroとmatrix整合だけを証明します。D3はnon-zero cancel caseだけをlive ownerとempty CANCEL_REQUEST viewからmessageを再構成して再計算し、そのrequest preimageの`cancel_kind`は0（bodyに保存するpublic result kindではない）です。
 
 このpreimageの`PARTY` / `TARGET` / `SERVICE_IDENTITY`は本章3節のdomain encodingであり、public ABI header、pointer、reserved、paddingはhashしません。実装はprefix、宣言済み`payload_length`、payloadのdata byte列、宣言済み`evidence_length`、evidenceのdata byte列の順を変えずincremental SHA-256へ投入し、BLOB chunk recordのframingはhashしません。各streamの実投入長が宣言長とexact一致しないfinalを拒否します。Zero-length viewはlength u32=0だけをhashし、data byteを投入しません。One-shot helperも同じstreaming state machineのwrapperとし、payload/evidenceを連結した一時bufferやVLAを要求しません。
 
@@ -352,7 +352,37 @@ TRANSACTION-owned local ATTEMPTのclosed snapshot matrixは次です。表外pai
 
 DELIVERY-owned ATTEMPTはremote ingressのimmutable message historyです。COMMAND/EVENT/CANCELすべて`attempt_state=RESOLVED / send_state=SENT_POSSIBLE`、`retry_cycle_id=0 / attempt_in_cycle=0 / cumulative_attempts=0`、3 counter=0、availability=0、timeout=(0,0)、prepared epoch non-zero（time 0可）とします。TRANSACTION-owned localのCOMMAND/EVENT cycle規則はDELIVERY-ownedへ適用しません。FamilyとCOMMAND/EVENT kind、live owner、ATTEMPT_ID_INDEX 0、CANCEL_STATE gate、current/stale attempt、primary value digest、target/semantic digest、SEND_COUNTER health/cardinalityの相互証明はD3へ残します。
 - `EVIDENCE_CELL`: `evidence_owner_kind:u16 + cell_kind:u16 + owner_key_raw:RAW16(max 128) + primary_key_digest[32] + target_digest[32] + slot_index:u32 + cell_state:u16 + reserved:u16=0 + highest_receipt_stage:u32 + latest_evidence_stage:u32 + material_receipt_stage:u32 + disposition:u32 + effect_certainty:u32 + late_material:u32 + issuer:PARTY + service:SERVICE_IDENTITY + content_digest[32] + generation:u64 + durable_ingress_sequence:u64 + evidence_clock_epoch[16] + evidence_at_ms:u64 + evidence_trust:u32 + counter_saturated:u32 + evidence_digest[32] + evidence_length:u16 + reserved:u16=0 + evidence_bytes[128] + valid_material_count:u64 + exact_duplicate_count:u64 + raw_overflow_count:u64 + late_evidence_count:u64`。TRANSACTION owner rawはtransaction ID、primaryはTRANSACTION_ANCHOR、DELIVERY owner rawはdelivery key contents、primaryはDELIVERYです。SUMMARYはslot 0/materialized、RAWはslot 1..Lでunused/materializedです。Unused RAWはidentity以外zero、SUMMARYはlatest/highest/issuer/time/dataと4 counterを保持します。RAW materializedはexact material tupleを保持しsummary counterはzeroです。Lengthは0..128、`[length,128)`はzeroです。Admission/Delivery admission時にsummary 1件とraw上限件を最大長fixed cellとしてmaterializeし、issuer/service/content/generation/time/ingress sequenceを含む13章のduplicate/latest/late判定を完全再構成します。
-- `CANCEL_STATE`: `cancel_owner_kind:u16 + reserved:u16=0 + owner_key_raw:RAW16(max 128) + primary_key_digest[32] + transaction_id[16] + cancel_attempt_id[16] + cancel_state:u32 + cancel_kind:u32 + reason:u32 + effect_certainty:u32 + cancel_send_gate_state:u32 + message_semantic_digest[32] + timeout_clock_epoch[16] + timeout_at_ms:u64`。TRANSACTION ownerはController cancel、DELIVERY ownerはEndpoint cancel tombstoneです。GateはNEVER_INVOKED→WOULD_BLOCK_RETRYABLE→INVOKED_CLOSEDだけで、INVOKED_CLOSED後はcrash/restart/timeoutでもremote cancelを再送しません。
+- `CANCEL_STATE`: `cancel_owner_kind:u16 + reserved:u16=0 + owner_key_raw:RAW16(max 128) + primary_key_digest[32] + transaction_id[16] + cancel_attempt_id[16] + cancel_state:u32 + cancel_kind:u32 + reason:u32 + effect_certainty:u32 + cancel_send_gate_state:u32 + message_semantic_digest[32] + timeout_clock_epoch[16] + timeout_at_ms:u64`。TRANSACTION ownerはController cancel、DELIVERY ownerはEndpoint cancel tombstoneです。Gate lifecycleはpre-sendのNEVER_INVOKED/WOULD_BLOCK_RETRYABLEからINVOKED_CLOSEDへ進み、definite WOULD_BLOCK観測時だけINVOKED_CLOSEDからWOULD_BLOCK_RETRYABLEへ戻せる。その他のINVOKED_CLOSEDはcrash/restart/timeoutでも再open不可でremote cancelを再送しません。
+
+CANCEL_STATEのsame-record wire / identity contractは次をexactとします。Body lengthは`146 + owner_key_raw contents`で、TRANSACTION raw exact 16なら162、DELIVERY raw exact 80なら226だけを許します（max 512はsubtype上限で不変）。`cancel_owner_kind`はCANCEL固有enumの1 TRANSACTIONまたは2 DELIVERYで、reservation/scheduler/BLOB/ATTEMPT enumを流用しません。TRANSACTION rawはbody `transaction_id`と同じnon-zero 16 bytes、DELIVERY rawは`delivery_key_raw` contents exact 80 bytesで、そのtransaction ID component `[32,48)`はbody `transaction_id`と一致します。`primary_key_digest`は順にTRANSACTION_ANCHOR ID128 / DELIVERY composite complete keyのKEY_DIGESTです。Key identityは`COMPOSITE(33, cancel_owner_kind:u16 || owner_key_raw:RAW16)`、common primary IDはtransaction IDまたはDELIVERY composite identity先頭16です。`primary_key_digest` / `transaction_id`は常にnon-zero、`reserved=0`、common flagsは0、mutable `record_revision>=1`、head witness digest / primary value digestはnon-zeroです。
+
+Public result tupleとprivate stateのbijectionはclosedです。`cancel_state`→`(cancel_kind, reason, effect_certainty)`は次のexact 4行だけで、表外pairおよび`cancel_kind=ALREADY_TERMINAL(4)`のstoreはcorruptです。
+
+| cancel_state | cancel_kind | reason | effect_certainty |
+| --- | ---: | ---: | ---: |
+| 1 NONE | 0 | 0 | 0 |
+| 2 PENDING_REMOTE_FENCE | 2 | 86 `CANCEL_PENDING_REMOTE_FENCE` | 0 `NONE` |
+| 3 FENCED_BEFORE_DISPATCH | 1 | 82 `CANCEL_FENCED_BEFORE_DISPATCH` | 1 `NO_EFFECT_PROVEN` |
+| 4 TOO_LATE_EFFECT_POSSIBLE | 3 | 83 `CANCEL_AFTER_EFFECT_POSSIBLE` | 2 `POSSIBLE` |
+
+`cancel_attempt_id`と`message_semantic_digest`はboth-zeroまたはboth-non-zeroだけ（global attempt/digest pair）。Timeoutは`(epoch zero, at_ms 0)`または`(epoch non-zero, at_ms non-zero)`のexact 2形です。`cancel_send_gate_state`はexact 1 NEVER_INVOKED / 2 WOULD_BLOCK_RETRYABLE / 3 INVOKED_CLOSEDだけです。
+
+Same-record closed snapshot matrixは次の7 legal shapeだけです。表外のowner/state/gate/attempt/digest/timeout組合せはcorruptです。D1はtransition historyを証明しません。したがってTX PENDING + gate CLOSED + timeout zeroはpre-send crash/denial/post-fireの合法snapshotです。
+
+| # | owner | cancel_state | attempt/digest | gate | timeout |
+| ---: | --- | --- | --- | --- | --- |
+| 1 | TX or DLV | NONE | zero pair | NEVER_INVOKED | (0,0) |
+| 2 | TX | PENDING_REMOTE_FENCE | non-zero pair | NEVER_INVOKED / WOULD_BLOCK_RETRYABLE / INVOKED_CLOSED | NEVER/RETRYABLE=(0,0); CLOSED=(0,0) or active exact pair |
+| 3 | TX | FENCED_BEFORE_DISPATCH (local pre-dispatch) | zero pair | NEVER_INVOKED | (0,0) |
+| 4 | TX | FENCED_BEFORE_DISPATCH (remote result) | non-zero pair | INVOKED_CLOSED | (0,0) |
+| 5 | DLV | FENCED_BEFORE_DISPATCH | non-zero pair | NEVER_INVOKED | (0,0) |
+| 6 | TX | TOO_LATE_EFFECT_POSSIBLE | non-zero pair | INVOKED_CLOSED | (0,0) |
+| 7 | DLV | TOO_LATE_EFFECT_POSSIBLE | non-zero pair | NEVER_INVOKED | (0,0) |
+
+DELIVERY-owned PENDINGはillegal、DELIVERY gateは常にNEVER_INVOKEDです。Live primary PVD、live CANCEL ATTEMPT/index/cardinality、message semantic recompute、RESULT/REVERSE_REPLY、prior transition/gate history、timeout scheduling、family/owner/cardinality/reply proofsはD3へ残します。
+
+B3fはbody length 162/226、owner/raw/primary_key_digest、bijection、closed matrix 7行、key COMPOSITE(33,…) / primary_id、flags 0 / revision>=1 / head・PVD non-zeroまでを証明します。上列D3項目およびD2/D4はB3f非範囲です。
+
 - `ATTEMPT_ID_INDEX`: `attempt_id[16] + transaction_id[16] + attempt_kind:u16 + reserved:u16=0 + attempt_record_key_digest[32] + attempt_creation_value_digest[32]`。Roleを問わずlocal RuntimeがEntropyから生成したApplication/cancel attemptだけexact 1件作り、common primary digestはそのlocal-origin TRANSACTION_ANCHORです。Controller DesiredState attemptとEndpoint EventFact attemptを含み、Endpointが受信したremote Application/cancel echo attempt、reverse replyは作りません。Creation digestはATTEMPT CREATE manifestのnew digestとexact一致するimmutable collision provenanceで、後のATTEMPT replacementではindexを更新しません。Recoveryはcurrent ATTEMPT key/bodyのattempt/transaction/owner bindingを別途検査します。Global retained collision lookupはこのdirect ID128 keyを使い、index/ATTEMPT/anchorを同じwitness groupでcreateし、eraseはsection 11のfenced cleanupだけで行います。
 
 ATTEMPT_ID_INDEXのsame-record wire contractは次をexactとします。Body lengthはexact 100です。`attempt_id` / `transaction_id` / `attempt_creation_value_digest`はnon-zero、`attempt_kind`はexact 1 COMMAND / 2 EVENT / 3 CANCEL（§8.3 ATTEMPTと同じ closed constants）、`reserved=0`です。`attempt_record_key_digest`はTRANSACTION-owned ATTEMPT complete keyのKEY_DIGESTとexact一致します。そのATTEMPT identityは`COMPOSITE(31, attempt_owner_kind:u16=TRANSACTION(1) || owner_key_raw:RAW16(contents=transaction_id exact 16) || attempt_id[16])`であり、bare composite digestそのものとのstore/compareは禁止です。Keyはdirect ID128でbody `attempt_id`と一致、common primary IDはbody `transaction_id`、common flagsは0、immutable `record_revision=1`、head witness digest / primary value digestはnon-zeroです。Indexはcreate-once immutableで、ATTEMPT replacementはcreation digestを更新せず、後のfenced cleanupがindex/ATTEMPTをpair-eraseします。D1 same-recordではcreation digest non-zeroだけを要求します。
@@ -414,17 +444,19 @@ D3 missing-secondary proofは次のexact cardinalityを使います。`L`はacce
 | --- | --- |
 | SERVICE | QUOTA 1、SERVICE RESERVATION 1 |
 | TRANSACTION_ANCHOR any retained | SEQUENCE_INDEX 1、STATE 1、IDEMPOTENCY_MAP 1、SCHEDULER_OWNER 1、TRANSACTION RESERVATION 1、EVIDENCE_CELL `L+1` |
-| DesiredState transaction | EVENT_ID_MAP 0、EVENT_SPOOL 0、CANCEL_STATE 1。Application ATTEMPT count=`STATE.cumulative_attempts`、non-zero cancel attemptなら+1。ATTEMPT_ID_INDEX countはlocal ATTEMPT countと同じ |
-| EventFact transaction | EVENT_ID_MAP 1、EVENT_SPOOL 1、CANCEL_STATE 0。ATTEMPT/ID_INDEX count=`STATE.cumulative_attempts`、MANAGEMENT_LEDGER count=`successful_resume_count + discard_committed`、RETRY_SUMMARYはCUMULATIVE 1 + RECENT `min(total_completed_cycle_count,4)` |
+| DesiredState transaction | EVENT_ID_MAP 0、EVENT_SPOOL 0、CANCEL_STATE physical exact 1。Application ATTEMPT count=`STATE.cumulative_attempts`、non-zero cancel attemptなら+1。ATTEMPT_ID_INDEX countはlocal ATTEMPT countと同じ |
+| EventFact transaction | EVENT_ID_MAP 1、EVENT_SPOOL 1、CANCEL_STATE physical exact 0。ATTEMPT/ID_INDEX count=`STATE.cumulative_attempts`、MANAGEMENT_LEDGER count=`successful_resume_count + discard_committed`、RETRY_SUMMARYはCUMULATIVE 1 + RECENT `min(total_completed_cycle_count,4)` |
 | ORDERED_INGRESS PENDING | INGRESS RESERVATION 1。NEW_DELIVERYならINGRESS-primary SCHEDULER_OWNER 1、EXISTING_TRANSACTION/DELIVERYならnew owner 0でowner sequenceの既存ownerをexact `get`。Payload/evidence viewごとにrequired BLOB 0/1 |
-| DELIVERY APPLICATION_FIRST | RESULT_CACHE 1、SCHEDULER_OWNER 1、DELIVERY RESERVATION 1、EVIDENCE_CELL `L+1`。APPLICATION ATTEMPT count=`RESULT_CACHE.application_attempt_count`で1以上。DesiredStateはCANCEL_STATE 1、EventFactは0。Cancel attempt ID non-zeroならDELIVERY-owned CANCEL ATTEMPT +1。ATTEMPT_ID_INDEX 0、REVERSE_REPLY count=`RESULT_CACHE.reply_count` |
-| DELIVERY CANCEL_FIRST | RESULT_CACHE 1、SCHEDULER_OWNER 1、DELIVERY RESERVATION 1、CANCEL_STATE 1、DELIVERY-owned CANCEL ATTEMPT 1、APPLICATION ATTEMPT 0、EVIDENCE_CELL 0、payload BLOB 0、ATTEMPT_ID_INDEX 0。RESULTはapplication_seen/count/attempt_count 0かつCANCEL_TOMBSTONE_ONLY、REVERSE_REPLY count=`RESULT_CACHE.reply_count` |
+| DELIVERY APPLICATION_FIRST | RESULT_CACHE 1、SCHEDULER_OWNER 1、DELIVERY RESERVATION 1、EVIDENCE_CELL `L+1`。APPLICATION ATTEMPT count=`RESULT_CACHE.application_attempt_count`で1以上。DesiredStateはCANCEL_STATE physical exact 1、EventFactはphysical exact 0。Cancel attempt ID non-zeroならDELIVERY-owned CANCEL ATTEMPT +1。ATTEMPT_ID_INDEX 0、REVERSE_REPLY count=`RESULT_CACHE.reply_count` |
+| DELIVERY CANCEL_FIRST | RESULT_CACHE 1、SCHEDULER_OWNER 1、DELIVERY RESERVATION 1、CANCEL_STATE physical exact 1、DELIVERY-owned CANCEL ATTEMPT 1、APPLICATION ATTEMPT 0、EVIDENCE_CELL 0、payload BLOB 0、ATTEMPT_ID_INDEX 0。RESULTはapplication_seen/count/attempt_count 0かつCANCEL_TOMBSTONE_ONLY、REVERSE_REPLY count=`RESULT_CACHE.reply_count` |
 | DELIVERY_STARTED/DEFERRED_WAIT | CALLBACK RESERVATION 1、それ以外のDelivery stateは0 |
 | BLOB manifest | chunks exact `chunk_count` |
 | SERVICE / active TRANSACTION / active DELIVERY | RETENTION_BASIS 0。SERVICE/EVENT subject-kind recordはM1aでは常に0 |
 | terminal DesiredState/EventFact TRANSACTION | subject_kind TRANSACTION RETENTION_BASIS exact 1 |
 | terminal/cancel-only DELIVERY | subject_kind DELIVERY RETENTION_BASIS exact 1 |
 | cleanup-eligible TRANSACTION/DELIVERY | CLEANUP_PLANはcreate前0、create後finalizeまでexact 1 |
+
+Public queryが「cancel record absent」とprojectする意味はphysical CANCEL_STATE rowがmissingであることではなく、DesiredState owner上のphysical CANCEL_STATEがexact 1件存在しその`cancel_state=NONE`であることです。DesiredState TXおよびDesiredState DELIVERY APPLICATION_FIRST/CANCEL_FIRSTはCANCEL_STATE physical exact 1、EventFact TX/DELIVERYはphysical exact 0です。
 
 SCHEDULER_OWNERはprimaryに保存したowner sequenceのdirect u64 key、EVIDENCEはslot 0..L、RETRY recentはslot 0..3、known 1:1 digest fieldはdirect keyを導出します。Variable ATTEMPT/REPLY/MANAGEMENTはstreaming countに加え、各secondary bodyのraw owner、primary digest、ID uniqueness/indexを照合します。Countだけ一致する別key/別owner代入はvalidになりません。
 

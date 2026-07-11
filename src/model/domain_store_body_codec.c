@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..e body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..f body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -30,7 +30,12 @@
  *   ATTEMPT/index cardinality, DELIVERY/remote no-index, reverse reply
  *   no-index, co-create witness, fenced pair cleanup/fence counts,
  *   family-kind and CANCEL_STATE cross proofs (B3e proves same-record
- *   body/key/record-key-digest/primary binding only; not CANCEL_STATE 0x33).
+ *   body/key/record-key-digest/primary binding only); CANCEL_STATE live
+ *   primary PVD, live CANCEL ATTEMPT/index/cardinality, message recompute
+ *   (NZ cases from live owner/empty CANCEL_REQUEST view; preimage
+ *   cancel_kind=0), RESULT/REVERSE_REPLY, prior transition/gate history,
+ *   timeout scheduling, family/owner/cardinality/reply proofs (B3f proves
+ *   same-record body/key/matrix/bijection/primary binding only).
  * - D4: COMMIT_UNKNOWN old/new complete-value digest convergence.
  */
 
@@ -6082,6 +6087,443 @@ ninlil_status_t ninlil_model_domain_decode_body_attempt_id_index(
     return NINLIL_OK;
 }
 
+/* --- CANCEL_STATE helpers (D1-B3f) --- */
+
+static int cancel_owner_kind_is_known(uint16_t owner_kind)
+{
+    return owner_kind == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_TRANSACTION
+        || owner_kind == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_DELIVERY;
+}
+
+static int cancel_state_is_known(uint32_t cancel_state)
+{
+    return cancel_state == NINLIL_MODEL_DOMAIN_CANCEL_STATE_NONE
+        || cancel_state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_PENDING_REMOTE_FENCE
+        || cancel_state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_FENCED_BEFORE_DISPATCH
+        || cancel_state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_TOO_LATE_EFFECT_POSSIBLE;
+}
+
+static int cancel_gate_is_known(uint32_t gate)
+{
+    return gate == NINLIL_MODEL_DOMAIN_CANCEL_GATE_NEVER_INVOKED
+        || gate == NINLIL_MODEL_DOMAIN_CANCEL_GATE_WOULD_BLOCK_RETRYABLE
+        || gate == NINLIL_MODEL_DOMAIN_CANCEL_GATE_INVOKED_CLOSED;
+}
+
+/* Timeout: (0,0) or (epoch non-zero, at_ms non-zero) only. */
+static int cancel_timeout_pair_ok(
+    const uint8_t epoch[NINLIL_MODEL_DOMAIN_ID_BYTES], uint64_t at_ms)
+{
+    if (epoch == NULL) {
+        return 0;
+    }
+    if (id_is_zero(epoch)) {
+        return at_ms == 0u;
+    }
+    return at_ms != 0u;
+}
+
+/*
+ * Exact public-result bijection (docs17 §8.4). ALREADY_TERMINAL(4) never
+ * stored — no matrix row maps to it.
+ */
+static int cancel_bijection_ok(
+    uint32_t cancel_state,
+    uint32_t cancel_kind,
+    uint32_t reason,
+    uint32_t effect_certainty)
+{
+    if (cancel_state == NINLIL_MODEL_DOMAIN_CANCEL_STATE_NONE) {
+        return cancel_kind == NINLIL_MODEL_DOMAIN_CANCEL_KIND_NONE
+            && reason == 0u
+            && effect_certainty == NINLIL_EFFECT_CERTAINTY_NONE;
+    }
+    if (cancel_state
+        == NINLIL_MODEL_DOMAIN_CANCEL_STATE_PENDING_REMOTE_FENCE) {
+        return cancel_kind
+                == NINLIL_MODEL_DOMAIN_CANCEL_KIND_PENDING_REMOTE_FENCE
+            && reason == NINLIL_REASON_CANCEL_PENDING_REMOTE_FENCE
+            && effect_certainty == NINLIL_EFFECT_CERTAINTY_NONE;
+    }
+    if (cancel_state
+        == NINLIL_MODEL_DOMAIN_CANCEL_STATE_FENCED_BEFORE_DISPATCH) {
+        return cancel_kind
+                == NINLIL_MODEL_DOMAIN_CANCEL_KIND_FENCED_BEFORE_DISPATCH
+            && reason == NINLIL_REASON_CANCEL_FENCED_BEFORE_DISPATCH
+            && effect_certainty == NINLIL_EFFECT_CERTAINTY_NO_EFFECT_PROVEN;
+    }
+    if (cancel_state
+        == NINLIL_MODEL_DOMAIN_CANCEL_STATE_TOO_LATE_EFFECT_POSSIBLE) {
+        return cancel_kind
+                == NINLIL_MODEL_DOMAIN_CANCEL_KIND_TOO_LATE_EFFECT_POSSIBLE
+            && reason == NINLIL_REASON_CANCEL_AFTER_EFFECT_POSSIBLE
+            && effect_certainty == NINLIL_EFFECT_CERTAINTY_POSSIBLE;
+    }
+    return 0;
+}
+
+static int cancel_owner_raw_is_valid(
+    uint16_t owner_kind,
+    uint16_t len,
+    const uint8_t *raw,
+    const uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES])
+{
+    if (raw == NULL || transaction_id == NULL) {
+        return 0;
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_TRANSACTION) {
+        return len == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_KEY_TX_BYTES
+            && !id_is_zero(raw)
+            && memcmp(raw, transaction_id, 16u) == 0;
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_DELIVERY) {
+        if (len != NINLIL_MODEL_DOMAIN_CANCEL_OWNER_KEY_DELIVERY_BYTES) {
+            return 0;
+        }
+        if (!reservation_owner_raw_is_valid(
+                NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_DELIVERY, len, raw)) {
+            return 0;
+        }
+        return memcmp(raw + 32, transaction_id, 16u) == 0;
+    }
+    return 0;
+}
+
+static int cancel_primary_key_digest_ok(
+    uint16_t owner_kind,
+    uint16_t owner_key_raw_length,
+    const uint8_t *owner_key_raw,
+    const uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES],
+    const uint8_t actual[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    uint8_t raw16[2u + NINLIL_MODEL_DOMAIN_RAW16_CANCEL_OWNER_KEY_MAX];
+    ninlil_bytes_view_t components;
+    uint32_t raw16_len = 0u;
+
+    if (actual == NULL || owner_key_raw == NULL || transaction_id == NULL) {
+        return 0;
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_TRANSACTION) {
+        if (owner_key_raw_length != 16u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            actual,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_TRANSACTION_ANCHOR,
+            NINLIL_MODEL_DOMAIN_ID_KIND_ID128,
+            transaction_id,
+            16u);
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_DELIVERY) {
+        if (!encode_raw16_into(
+                owner_key_raw_length, owner_key_raw, raw16, sizeof(raw16),
+                &raw16_len)) {
+            return 0;
+        }
+        components.data = raw16;
+        components.length = raw16_len;
+        return digest_eq_composite_key(
+            actual, NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY, components);
+    }
+    return 0;
+}
+
+/*
+ * Closed snapshot matrix (docs17 §8.4). Seven legal shapes only.
+ * D1 does not prove transition history: TX PENDING + CLOSED + timeout zero
+ * is a valid pre-send crash/denial/post-fire snapshot.
+ */
+static int cancel_matrix_ok(const ninlil_model_domain_body_cancel_state_t *body)
+{
+    int attempt_zero;
+    int digest_zero;
+    int timeout_cleared;
+    int gate_never;
+    int gate_retry;
+    int gate_closed;
+    uint16_t owner;
+    uint32_t state;
+    uint32_t gate;
+
+    if (body == NULL) {
+        return 0;
+    }
+    attempt_zero = id_is_zero(body->cancel_attempt_id);
+    digest_zero = digest_is_zero(body->message_semantic_digest);
+    /* Global: both zero or both non-zero. */
+    if (attempt_zero != digest_zero) {
+        return 0;
+    }
+    if (!cancel_timeout_pair_ok(
+            body->timeout_clock_epoch, body->timeout_at_ms)) {
+        return 0;
+    }
+    if (!cancel_bijection_ok(
+            body->cancel_state, body->cancel_kind, body->reason,
+            body->effect_certainty)) {
+        return 0;
+    }
+    if (!cancel_gate_is_known(body->cancel_send_gate_state)) {
+        return 0;
+    }
+    timeout_cleared = id_is_zero(body->timeout_clock_epoch)
+        && body->timeout_at_ms == 0u;
+    owner = body->cancel_owner_kind;
+    state = body->cancel_state;
+    gate = body->cancel_send_gate_state;
+    gate_never = gate == NINLIL_MODEL_DOMAIN_CANCEL_GATE_NEVER_INVOKED;
+    gate_retry =
+        gate == NINLIL_MODEL_DOMAIN_CANCEL_GATE_WOULD_BLOCK_RETRYABLE;
+    gate_closed = gate == NINLIL_MODEL_DOMAIN_CANCEL_GATE_INVOKED_CLOSED;
+
+    /* Shape 1: TX or DLV NONE — zero pair, NEVER, timeout0. */
+    if (state == NINLIL_MODEL_DOMAIN_CANCEL_STATE_NONE) {
+        return attempt_zero && gate_never && timeout_cleared;
+    }
+
+    if (owner == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_TRANSACTION) {
+        /* Shape 2: TX PENDING — NZ pair; NEVER/RETRYABLE => t0; CLOSED => t0|active. */
+        if (state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_PENDING_REMOTE_FENCE) {
+            if (attempt_zero) {
+                return 0;
+            }
+            if (gate_never || gate_retry) {
+                return timeout_cleared;
+            }
+            if (gate_closed) {
+                return 1; /* timeout already exact 2-form */
+            }
+            return 0;
+        }
+        /* Shapes 3/4: TX FENCED local (zero/NEVER/t0) or remote (NZ/CLOSED/t0). */
+        if (state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_FENCED_BEFORE_DISPATCH) {
+            if (attempt_zero) {
+                return gate_never && timeout_cleared;
+            }
+            return gate_closed && timeout_cleared;
+        }
+        /* Shape 6: TX TOO_LATE — NZ pair, CLOSED, timeout0. */
+        if (state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_TOO_LATE_EFFECT_POSSIBLE) {
+            return !attempt_zero && gate_closed && timeout_cleared;
+        }
+        return 0;
+    }
+
+    if (owner == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_DELIVERY) {
+        /* DLV PENDING illegal; DLV gate always NEVER. */
+        if (state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_PENDING_REMOTE_FENCE) {
+            return 0;
+        }
+        if (!gate_never) {
+            return 0;
+        }
+        /* Shape 5: DLV FENCED — NZ pair, NEVER, timeout0. */
+        if (state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_FENCED_BEFORE_DISPATCH) {
+            return !attempt_zero && timeout_cleared;
+        }
+        /* Shape 7: DLV TOO_LATE — NZ pair, NEVER, timeout0. */
+        if (state
+            == NINLIL_MODEL_DOMAIN_CANCEL_STATE_TOO_LATE_EFFECT_POSSIBLE) {
+            return !attempt_zero && timeout_cleared;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+static int cancel_fields_ok(const ninlil_model_domain_body_cancel_state_t *body)
+{
+    if (body == NULL
+        || id_is_zero(body->transaction_id)
+        || digest_is_zero(body->primary_key_digest)
+        || body->reserved != 0u
+        || !cancel_owner_kind_is_known(body->cancel_owner_kind)
+        || !cancel_state_is_known(body->cancel_state)
+        || !cancel_owner_raw_is_valid(
+            body->cancel_owner_kind, body->owner_key_raw_length,
+            body->owner_key_raw, body->transaction_id)
+        || !cancel_primary_key_digest_ok(
+            body->cancel_owner_kind, body->owner_key_raw_length,
+            body->owner_key_raw, body->transaction_id,
+            body->primary_key_digest)) {
+        return 0;
+    }
+    return cancel_matrix_ok(body);
+}
+
+/* --- CANCEL_STATE (0x33) --- */
+
+uint32_t ninlil_model_domain_body_cancel_state_encoded_length(
+    const ninlil_model_domain_body_cancel_state_t *body)
+{
+    uint32_t n;
+    if (body == NULL || !cancel_fields_ok(body)) {
+        return 0u;
+    }
+    /* fixed 146 + owner_key_raw contents (TX16 => 162, DLV80 => 226). */
+    n = NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_FIXED
+        + (uint32_t)body->owner_key_raw_length;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_cancel_state(
+    const ninlil_model_domain_body_cancel_state_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->owner_key_raw != NULL && body->owner_key_raw_length != 0u) {
+            ptrs[n] = body->owner_key_raw;
+            lens[n] = body->owner_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_cancel_state_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    ninlil_model_domain_encode_u16_be(&out_bytes[0], body->cancel_owner_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[2], body->reserved);
+    o = 4u;
+    o += encode_raw16(
+        &out_bytes[o], body->owner_key_raw_length, body->owner_key_raw);
+    (void)memcpy(&out_bytes[o], body->primary_key_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->transaction_id, 16u);
+    o += 16u;
+    (void)memcpy(&out_bytes[o], body->cancel_attempt_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->cancel_state);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->cancel_kind);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reason);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->effect_certainty);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->cancel_send_gate_state);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->message_semantic_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->timeout_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->timeout_at_ms);
+    o += 8u;
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_cancel_state(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_cancel_state_t *out_body)
+{
+    ninlil_model_domain_body_cancel_state_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 4u + 2u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_CANCEL_STATE_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    tmp.cancel_owner_kind =
+        ninlil_model_domain_decode_u16_be(&encoded.data[0]);
+    tmp.reserved = ninlil_model_domain_decode_u16_be(&encoded.data[2]);
+    o = 4u;
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o,
+            (uint16_t)NINLIL_MODEL_DOMAIN_RAW16_CANCEL_OWNER_KEY_MAX,
+            &tmp.owner_key_raw_length, &tmp.owner_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    /* After RAW16: 32+16+16+4+4+4+4+4+32+16+8 = 140 */
+    if (encoded.length - o < 140u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.primary_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.transaction_id, &encoded.data[o], 16u);
+    o += 16u;
+    (void)memcpy(tmp.cancel_attempt_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.cancel_state = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.cancel_kind = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reason = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.effect_certainty =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.cancel_send_gate_state =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.message_semantic_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.timeout_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.timeout_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    if (o != encoded.length || !cancel_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -6111,6 +6553,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT_ID_INDEX:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_CANCEL_STATE:
         return 1;
     default:
         return 0;
@@ -7078,6 +7521,70 @@ static ninlil_status_t validate_header_body_local(
                 != 0
             || !header_primary_id_eq(
                    env, out->attempt_id_index.transaction_id)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_CANCEL_STATE) {
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+        uint8_t components[2u + 2u + 128u];
+        ninlil_bytes_view_t cv;
+        uint32_t o;
+
+        /*
+         * CANCEL_STATE same-record (docs17 §8.4):
+         * - flags 0; revision >= 1; head and PVD non-zero
+         * - key COMPOSITE(33, cancel_owner_kind:u16 || owner_key_raw:RAW16)
+         * - primary_id: transaction_id (TX) or DELIVERY composite first 16
+         * D3 deferred: live primary PVD; live CANCEL ATTEMPT/index/
+         * cardinality; message recompute; RESULT/REVERSE_REPLY; prior
+         * transition/gate history; timeout scheduling; family/owner/
+         * cardinality/reply proofs.
+         */
+        if (env->header.record_revision < 1u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_cancel_state(
+            env->body, &out->cancel_state);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        ninlil_model_domain_encode_u16_be(
+            components, out->cancel_state.cancel_owner_kind);
+        o = 2u;
+        o += encode_raw16(
+            &components[o], out->cancel_state.owner_key_raw_length,
+            out->cancel_state.owner_key_raw);
+        cv.data = components;
+        cv.length = o;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_CANCEL_STATE, cv, key->identity,
+                key->identity_length)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (out->cancel_state.cancel_owner_kind
+            == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_TRANSACTION) {
+            (void)memcpy(expect_pid, out->cancel_state.transaction_id, 16u);
+        } else if (
+            out->cancel_state.cancel_owner_kind
+            == NINLIL_MODEL_DOMAIN_CANCEL_OWNER_DELIVERY) {
+            if (primary_id_from_raw_contents_as_raw16(
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+                    out->cancel_state.owner_key_raw_length,
+                    out->cancel_state.owner_key_raw, expect_pid)
+                != NINLIL_OK) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+        } else {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (!header_primary_id_eq(env, expect_pid)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;

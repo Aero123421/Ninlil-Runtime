@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/D1-B3c/D1-B3d/D1-B3e vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..f vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b/B3c/B3d/B3e
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..f
 are hand-written here and intentionally do not import or link production C.
 
 Usage:
@@ -4419,6 +4419,650 @@ def build_document():
     assert b3_cov["34"]["negative"] >= 15
     assert b3_cov["34"]["roundtrip"] >= 3
 
+    # =====================================================================
+    # D1-B3f CANCEL_STATE (0x33) — append-only after first 809 (pre-B3f)
+    # =====================================================================
+    # Durable exact-bytes gate for the pre-B3f catalog (not mere id-prefix).
+    # Canonical form: json.dumps(vectors[:809], sort_keys=True,
+    # separators=(",", ":")).encode("utf-8") then SHA-256 hex.
+    PRE_B3F_VECTORS_FINGERPRINT = (
+        "eb43b2501f9ed7ae0a2a94cf64950c74478346658360d901c30518593b29d1e2"
+    )
+    assert len(vectors) == 809, f"pre-B3f length {len(vectors)} != 809"
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_AII_REV2"
+    _pre_b3f_fp = hashlib.sha256(
+        json.dumps(vectors, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    assert _pre_b3f_fp == PRE_B3F_VECTORS_FINGERPRINT, (
+        f"pre-B3f fingerprint drift: got {_pre_b3f_fp}"
+    )
+
+    # Private CANCEL_STATE enums / public bijection constants.
+    CS_TX = 1
+    CS_DLV = 2
+    ST_NONE = 1
+    ST_PEND = 2
+    ST_FENCED = 3
+    ST_TOO_LATE = 4
+    CK_NONE = 0
+    CK_FENCED = 1
+    CK_PEND = 2
+    CK_TOO_LATE = 3
+    CK_ALREADY = 4  # never stored
+    GATE_NEVER = 1
+    GATE_RETRY = 2
+    GATE_CLOSED = 3
+    R_FENCED = 82
+    R_TOO_LATE = 83
+    R_PEND = 86
+    E_NONE = 0
+    E_NO_EFFECT = 1
+    E_POSSIBLE = 2
+    cancel_attempt_id = bytes([0xCA + (i % 40) for i in range(16)])
+    cancel_semantic = bytes([0x5A + (i % 180) for i in range(32)])
+    cancel_timeout_ep = bytes([0xD1 + (i % 16) for i in range(16)])
+    cancel_head = F["head_nz"]
+    cancel_pvd = bytes([0x71 + (i % 170) for i in range(32)])
+    assert not all(b == 0 for b in cancel_attempt_id)
+    assert not all(b == 0 for b in cancel_semantic)
+    assert not all(b == 0 for b in cancel_timeout_ep)
+    assert not all(b == 0 for b in cancel_pvd)
+    assert len(txn) == 16 and len(dlv_raw) == 80
+    assert dlv_raw[32:48] == txn
+
+    def cancel_primary_key_digest(owner_kind: int, owner_raw: bytes) -> bytes:
+        """Independent KEY_DIGEST of referenced primary complete key."""
+        if owner_kind == CS_TX:
+            return complete_key_digest_id128(0x20, owner_raw)
+        if owner_kind == CS_DLV:
+            return complete_key_digest_composite(0x40, raw16(owner_raw))
+        raise ValueError("bad cancel owner")
+
+    def cancel_primary_id(owner_kind: int, owner_raw: bytes, transaction_id: bytes) -> bytes:
+        if owner_kind == CS_TX:
+            return transaction_id
+        if owner_kind == CS_DLV:
+            return primary_id_from_composite_subtype(0x40, raw16(owner_raw))
+        raise ValueError("bad cancel owner")
+
+    def cancel_key_components(owner_kind: int, owner_raw: bytes) -> bytes:
+        return be16(owner_kind) + raw16(owner_raw)
+
+    def cancel_key(owner_kind: int, owner_raw: bytes) -> bytes:
+        return bkey(6, 0x33, 5, composite(0x33, cancel_key_components(
+            owner_kind, owner_raw)))
+
+    def enc_cancel_body(
+        owner_kind=CS_TX,
+        owner_raw=None,
+        transaction_id=None,
+        primary_kd=None,
+        cancel_attempt=None,
+        cancel_state=ST_NONE,
+        cancel_kind=CK_NONE,
+        reason=0,
+        effect=E_NONE,
+        gate=GATE_NEVER,
+        semantic=None,
+        timeout_epoch=None,
+        timeout_at=0,
+        reserved=0,
+    ) -> bytes:
+        if transaction_id is None:
+            transaction_id = txn
+        if owner_raw is None:
+            owner_raw = txn if owner_kind == CS_TX else (
+                dlv_raw if owner_kind == CS_DLV else txn)
+        if primary_kd is None:
+            if owner_kind in (CS_TX, CS_DLV):
+                primary_kd = cancel_primary_key_digest(owner_kind, owner_raw)
+            else:
+                # Negatives with unknown owner still need a digest field.
+                primary_kd = complete_key_digest_id128(0x20, transaction_id)
+        if cancel_attempt is None:
+            cancel_attempt = bytes(16)
+        if semantic is None:
+            semantic = bytes(32)
+        if timeout_epoch is None:
+            timeout_epoch = bytes(16)
+        out = bytearray()
+        out += be16(owner_kind)
+        out += be16(reserved)
+        out += raw16(owner_raw)
+        out += primary_kd
+        out += transaction_id
+        out += cancel_attempt
+        out += be32(cancel_state)
+        out += be32(cancel_kind)
+        out += be32(reason)
+        out += be32(effect)
+        out += be32(gate)
+        out += semantic
+        out += timeout_epoch
+        out += be64(timeout_at)
+        expected = 146 + len(owner_raw)
+        assert len(out) == expected, f"cancel body len {len(out)} != {expected}"
+        return bytes(out)
+
+    def cancel_typed(
+        owner_kind=CS_TX,
+        owner_raw=None,
+        transaction_id=None,
+        rev=1,
+        head=None,
+        pvd=None,
+        primary=None,
+        body=None,
+        **kwargs,
+    ):
+        if transaction_id is None:
+            transaction_id = txn
+        if owner_raw is None:
+            owner_raw = txn if owner_kind == CS_TX else dlv_raw
+        if head is None:
+            head = cancel_head
+        if pvd is None:
+            pvd = cancel_pvd
+        if body is None:
+            body = enc_cancel_body(
+                owner_kind=owner_kind, owner_raw=owner_raw,
+                transaction_id=transaction_id, **kwargs)
+        if primary is None:
+            primary = cancel_primary_id(owner_kind, owner_raw, transaction_id)
+        key = cancel_key(owner_kind, owner_raw)
+        val = enc_env_full(6, 0x33, 0, rev, primary, head, pvd, body)
+        return key, val, body
+
+    c_pos = 0
+    c_neg = 0
+    c_mut = 0
+    c_rt = 0
+
+    def add_cs_pos(vid, body, notes=""):
+        nonlocal c_pos, c_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x33, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        c_pos += 1
+        c_rt += 1
+
+    def add_cs_typed(vid, key, val, body, notes=""):
+        nonlocal c_pos
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x33, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        c_pos += 1
+
+    def add_cs_neg_body(vid, body, notes=""):
+        nonlocal c_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x33, body_hex=hx(body), notes=notes)
+        c_neg += 1
+
+    def add_cs_neg_typed(vid, key, val, notes=""):
+        nonlocal c_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x33, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        c_neg += 1
+
+    # --- 7 legal matrix rows (+ PENDING gate/timeout variants) ---
+    # Shape 1 TX NONE
+    body_tx_none = enc_cancel_body(
+        owner_kind=CS_TX, cancel_state=ST_NONE, cancel_kind=CK_NONE,
+        reason=0, effect=E_NONE, gate=GATE_NEVER)
+    assert len(body_tx_none) == 162
+    add_cs_pos("DSB3_CS_TX_NONE", body_tx_none, "shape1 TX NONE zero pair")
+    k, v, b = cancel_typed(body=body_tx_none)
+    add_cs_typed("DSB3_CS_TX_NONE_TYPED", k, v, b, "typed TX NONE")
+
+    # Shape 1 DLV NONE
+    body_dlv_none = enc_cancel_body(
+        owner_kind=CS_DLV, owner_raw=dlv_raw, cancel_state=ST_NONE,
+        cancel_kind=CK_NONE, reason=0, effect=E_NONE, gate=GATE_NEVER)
+    assert len(body_dlv_none) == 226
+    add_cs_pos("DSB3_CS_DLV_NONE", body_dlv_none, "shape1 DLV NONE zero pair")
+    k, v, b = cancel_typed(owner_kind=CS_DLV, owner_raw=dlv_raw, body=body_dlv_none)
+    add_cs_typed("DSB3_CS_DLV_NONE_TYPED", k, v, b, "typed DLV NONE")
+
+    # Shape 2 TX PENDING variants
+    body_tx_pend_never = enc_cancel_body(
+        cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND, effect=E_NONE,
+        gate=GATE_NEVER, cancel_attempt=cancel_attempt_id, semantic=cancel_semantic)
+    add_cs_pos("DSB3_CS_TX_PEND_NEVER", body_tx_pend_never,
+               "shape2 TX PENDING NEVER timeout0")
+    body_tx_pend_retry = enc_cancel_body(
+        cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND, effect=E_NONE,
+        gate=GATE_RETRY, cancel_attempt=cancel_attempt_id, semantic=cancel_semantic)
+    add_cs_pos("DSB3_CS_TX_PEND_RETRY", body_tx_pend_retry,
+               "shape2 TX PENDING RETRYABLE timeout0")
+    body_tx_pend_closed0 = enc_cancel_body(
+        cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND, effect=E_NONE,
+        gate=GATE_CLOSED, cancel_attempt=cancel_attempt_id, semantic=cancel_semantic)
+    add_cs_pos("DSB3_CS_TX_PEND_CLOSED_T0", body_tx_pend_closed0,
+               "shape2 TX PENDING CLOSED zero timeout (pre-send crash/denial)")
+    body_tx_pend_closed_to = enc_cancel_body(
+        cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND, effect=E_NONE,
+        gate=GATE_CLOSED, cancel_attempt=cancel_attempt_id, semantic=cancel_semantic,
+        timeout_epoch=cancel_timeout_ep, timeout_at=9000)
+    add_cs_pos("DSB3_CS_TX_PEND_CLOSED_ACTIVE", body_tx_pend_closed_to,
+               "shape2 TX PENDING CLOSED active timeout pair")
+    k, v, b = cancel_typed(body=body_tx_pend_never)
+    add_cs_typed("DSB3_CS_TX_PEND_TYPED", k, v, b)
+
+    # Shape 3 TX FENCED local (zero pair)
+    body_tx_fenced_local = enc_cancel_body(
+        cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+        effect=E_NO_EFFECT, gate=GATE_NEVER)
+    add_cs_pos("DSB3_CS_TX_FENCED_LOCAL", body_tx_fenced_local,
+               "shape3 TX FENCED local pre-dispatch zero pair")
+
+    # Shape 4 TX FENCED remote result
+    body_tx_fenced_remote = enc_cancel_body(
+        cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+        effect=E_NO_EFFECT, gate=GATE_CLOSED,
+        cancel_attempt=cancel_attempt_id, semantic=cancel_semantic)
+    add_cs_pos("DSB3_CS_TX_FENCED_REMOTE", body_tx_fenced_remote,
+               "shape4 TX FENCED remote result NZ pair CLOSED")
+    k, v, b = cancel_typed(body=body_tx_fenced_remote)
+    add_cs_typed("DSB3_CS_TX_FENCED_REMOTE_TYPED", k, v, b)
+
+    # Shape 5 DLV FENCED
+    body_dlv_fenced = enc_cancel_body(
+        owner_kind=CS_DLV, owner_raw=dlv_raw,
+        cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+        effect=E_NO_EFFECT, gate=GATE_NEVER,
+        cancel_attempt=cancel_attempt_id, semantic=cancel_semantic)
+    add_cs_pos("DSB3_CS_DLV_FENCED", body_dlv_fenced, "shape5 DLV FENCED")
+    k, v, b = cancel_typed(
+        owner_kind=CS_DLV, owner_raw=dlv_raw, body=body_dlv_fenced)
+    add_cs_typed("DSB3_CS_DLV_FENCED_TYPED", k, v, b)
+
+    # Shape 6 TX TOO_LATE
+    body_tx_too_late = enc_cancel_body(
+        cancel_state=ST_TOO_LATE, cancel_kind=CK_TOO_LATE, reason=R_TOO_LATE,
+        effect=E_POSSIBLE, gate=GATE_CLOSED,
+        cancel_attempt=cancel_attempt_id, semantic=cancel_semantic)
+    add_cs_pos("DSB3_CS_TX_TOO_LATE", body_tx_too_late, "shape6 TX TOO_LATE")
+    k, v, b = cancel_typed(body=body_tx_too_late, rev=2)
+    add_cs_typed("DSB3_CS_TX_TOO_LATE_REV2", k, v, b, "revision>=1 allowed")
+
+    # Shape 7 DLV TOO_LATE
+    body_dlv_too_late = enc_cancel_body(
+        owner_kind=CS_DLV, owner_raw=dlv_raw,
+        cancel_state=ST_TOO_LATE, cancel_kind=CK_TOO_LATE, reason=R_TOO_LATE,
+        effect=E_POSSIBLE, gate=GATE_NEVER,
+        cancel_attempt=cancel_attempt_id, semantic=cancel_semantic)
+    add_cs_pos("DSB3_CS_DLV_TOO_LATE", body_dlv_too_late, "shape7 DLV TOO_LATE")
+    k, v, b = cancel_typed(
+        owner_kind=CS_DLV, owner_raw=dlv_raw, body=body_dlv_too_late)
+    add_cs_typed("DSB3_CS_DLV_TOO_LATE_TYPED", k, v, b)
+
+    # mutation: flip reserved in positive body → corrupt
+    mut_body = bytearray(body_tx_none)
+    mut_body[2] ^= 0x01
+    add(id="DSB3_CS_MUT_RESERVED", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x33,
+        body_hex=hx(bytes(mut_body)), notes="reserved flip")
+    c_mut += 1
+    c_neg += 1
+
+    # --- bijection mismatches / ALREADY_TERMINAL ---
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_NONE_KIND1",
+        enc_cancel_body(cancel_state=ST_NONE, cancel_kind=CK_FENCED,
+                        reason=0, effect=E_NONE, gate=GATE_NEVER),
+        "NONE bijection: kind must be 0")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_PEND_KIND1",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_FENCED, reason=R_PEND,
+            effect=E_NONE, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "PENDING bijection: kind must be 2")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_PEND_REASON82",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_FENCED,
+            effect=E_NONE, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "PENDING bijection: reason must be 86")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_PEND_EFFECT1",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NO_EFFECT, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "PENDING bijection: effect must be 0")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_FENCED_KIND2",
+        enc_cancel_body(
+            cancel_state=ST_FENCED, cancel_kind=CK_PEND, reason=R_FENCED,
+            effect=E_NO_EFFECT, gate=GATE_NEVER),
+        "FENCED bijection: kind must be 1")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_FENCED_REASON86",
+        enc_cancel_body(
+            cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_PEND,
+            effect=E_NO_EFFECT, gate=GATE_NEVER),
+        "FENCED bijection: reason must be 82")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_FENCED_EFFECT0",
+        enc_cancel_body(
+            cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+            effect=E_NONE, gate=GATE_NEVER),
+        "FENCED bijection: effect must be 1")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_TOO_LATE_KIND1",
+        enc_cancel_body(
+            cancel_state=ST_TOO_LATE, cancel_kind=CK_FENCED, reason=R_TOO_LATE,
+            effect=E_POSSIBLE, gate=GATE_CLOSED,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "TOO_LATE bijection: kind must be 3")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_TOO_LATE_REASON82",
+        enc_cancel_body(
+            cancel_state=ST_TOO_LATE, cancel_kind=CK_TOO_LATE, reason=R_FENCED,
+            effect=E_POSSIBLE, gate=GATE_CLOSED,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "TOO_LATE bijection: reason must be 83")
+    add_cs_neg_body(
+        "DSB3_CS_BIJ_TOO_LATE_EFFECT1",
+        enc_cancel_body(
+            cancel_state=ST_TOO_LATE, cancel_kind=CK_TOO_LATE, reason=R_TOO_LATE,
+            effect=E_NO_EFFECT, gate=GATE_CLOSED,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "TOO_LATE bijection: effect must be 2")
+    add_cs_neg_body(
+        "DSB3_CS_ALREADY_TERMINAL",
+        enc_cancel_body(
+            cancel_state=ST_NONE, cancel_kind=CK_ALREADY, reason=0, effect=E_NONE,
+            gate=GATE_NEVER),
+        "ALREADY_TERMINAL kind=4 never stored")
+    # ALREADY with a non-NONE state that might otherwise look legal
+    add_cs_neg_body(
+        "DSB3_CS_ALREADY_ON_FENCED",
+        enc_cancel_body(
+            cancel_state=ST_FENCED, cancel_kind=CK_ALREADY, reason=R_FENCED,
+            effect=E_NO_EFFECT, gate=GATE_NEVER),
+        "ALREADY_TERMINAL not a legal stored kind for FENCED")
+
+    # --- illegal owner / state / gate / attempt / digest / timeout shapes ---
+    add_cs_neg_body(
+        "DSB3_CS_OWNER0",
+        enc_cancel_body(owner_kind=0),
+        "cancel_owner_kind 0 unknown")
+    add_cs_neg_body(
+        "DSB3_CS_OWNER3",
+        enc_cancel_body(
+            owner_kind=3, owner_raw=txn,
+            primary_kd=complete_key_digest_id128(0x20, txn)),
+        "cancel_owner_kind 3 unknown")
+    add_cs_neg_body(
+        "DSB3_CS_STATE0",
+        enc_cancel_body(cancel_state=0, cancel_kind=0, reason=0, effect=0,
+                        gate=GATE_NEVER),
+        "cancel_state 0 unknown")
+    add_cs_neg_body(
+        "DSB3_CS_STATE5",
+        enc_cancel_body(cancel_state=5, cancel_kind=0, reason=0, effect=0,
+                        gate=GATE_NEVER),
+        "cancel_state 5 unknown")
+    add_cs_neg_body(
+        "DSB3_CS_GATE0",
+        enc_cancel_body(gate=0),
+        "gate 0 unknown")
+    add_cs_neg_body(
+        "DSB3_CS_GATE4",
+        enc_cancel_body(gate=4),
+        "gate 4 unknown")
+    # DLV PENDING illegal
+    add_cs_neg_body(
+        "DSB3_CS_DLV_PENDING",
+        enc_cancel_body(
+            owner_kind=CS_DLV, owner_raw=dlv_raw,
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NONE, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "DLV PENDING illegal")
+    # DLV gate must always be NEVER
+    add_cs_neg_body(
+        "DSB3_CS_DLV_GATE_CLOSED",
+        enc_cancel_body(
+            owner_kind=CS_DLV, owner_raw=dlv_raw,
+            cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+            effect=E_NO_EFFECT, gate=GATE_CLOSED,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "DLV gate always NEVER")
+    add_cs_neg_body(
+        "DSB3_CS_DLV_GATE_RETRY",
+        enc_cancel_body(
+            owner_kind=CS_DLV, owner_raw=dlv_raw,
+            cancel_state=ST_TOO_LATE, cancel_kind=CK_TOO_LATE, reason=R_TOO_LATE,
+            effect=E_POSSIBLE, gate=GATE_RETRY,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "DLV gate RETRYABLE illegal")
+    # NONE with NZ attempt
+    add_cs_neg_body(
+        "DSB3_CS_NONE_NZ_ATTEMPT",
+        enc_cancel_body(
+            cancel_state=ST_NONE, cancel_kind=CK_NONE, reason=0, effect=0,
+            gate=GATE_NEVER, cancel_attempt=cancel_attempt_id,
+            semantic=cancel_semantic),
+        "NONE requires zero attempt/digest pair")
+    # PENDING with zero pair
+    add_cs_neg_body(
+        "DSB3_CS_PEND_ZERO_PAIR",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NONE, gate=GATE_NEVER),
+        "PENDING requires NZ attempt/digest pair")
+    # attempt NZ / digest zero mismatch
+    add_cs_neg_body(
+        "DSB3_CS_ATTEMPT_DIGEST_MISMATCH",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NONE, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=bytes(32)),
+        "attempt NZ but digest zero illegal")
+    # digest NZ / attempt zero mismatch
+    add_cs_neg_body(
+        "DSB3_CS_DIGEST_ATTEMPT_MISMATCH",
+        enc_cancel_body(
+            cancel_state=ST_NONE, cancel_kind=CK_NONE, reason=0, effect=0,
+            gate=GATE_NEVER, semantic=cancel_semantic),
+        "digest NZ but attempt zero illegal")
+    # TX PENDING NEVER with active timeout
+    add_cs_neg_body(
+        "DSB3_CS_PEND_NEVER_TIMEOUT",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NONE, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic,
+            timeout_epoch=cancel_timeout_ep, timeout_at=1),
+        "PENDING NEVER requires timeout0")
+    # TX PENDING RETRY with active timeout
+    add_cs_neg_body(
+        "DSB3_CS_PEND_RETRY_TIMEOUT",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NONE, gate=GATE_RETRY,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic,
+            timeout_epoch=cancel_timeout_ep, timeout_at=2),
+        "PENDING RETRYABLE requires timeout0")
+    # TX FENCED local with CLOSED gate
+    add_cs_neg_body(
+        "DSB3_CS_TX_FENCED_LOCAL_CLOSED",
+        enc_cancel_body(
+            cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+            effect=E_NO_EFFECT, gate=GATE_CLOSED),
+        "TX FENCED zero pair requires NEVER not CLOSED")
+    # TX FENCED remote with NEVER
+    add_cs_neg_body(
+        "DSB3_CS_TX_FENCED_REMOTE_NEVER",
+        enc_cancel_body(
+            cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+            effect=E_NO_EFFECT, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "TX FENCED NZ pair requires CLOSED")
+    # TX TOO_LATE with NEVER
+    add_cs_neg_body(
+        "DSB3_CS_TX_TOO_LATE_NEVER",
+        enc_cancel_body(
+            cancel_state=ST_TOO_LATE, cancel_kind=CK_TOO_LATE, reason=R_TOO_LATE,
+            effect=E_POSSIBLE, gate=GATE_NEVER,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic),
+        "TX TOO_LATE requires CLOSED")
+    # TX TOO_LATE zero pair
+    add_cs_neg_body(
+        "DSB3_CS_TX_TOO_LATE_ZERO",
+        enc_cancel_body(
+            cancel_state=ST_TOO_LATE, cancel_kind=CK_TOO_LATE, reason=R_TOO_LATE,
+            effect=E_POSSIBLE, gate=GATE_CLOSED),
+        "TX TOO_LATE requires NZ pair")
+    # DLV FENCED zero pair
+    add_cs_neg_body(
+        "DSB3_CS_DLV_FENCED_ZERO",
+        enc_cancel_body(
+            owner_kind=CS_DLV, owner_raw=dlv_raw,
+            cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+            effect=E_NO_EFFECT, gate=GATE_NEVER),
+        "DLV FENCED requires NZ pair")
+    # malformed timeout (epoch NZ, at=0)
+    add_cs_neg_body(
+        "DSB3_CS_TIMEOUT_EPOCH_ONLY",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NONE, gate=GATE_CLOSED,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic,
+            timeout_epoch=cancel_timeout_ep, timeout_at=0),
+        "timeout epoch NZ requires at_ms NZ")
+    # malformed timeout (epoch 0, at NZ)
+    add_cs_neg_body(
+        "DSB3_CS_TIMEOUT_AT_ONLY",
+        enc_cancel_body(
+            cancel_state=ST_PEND, cancel_kind=CK_PEND, reason=R_PEND,
+            effect=E_NONE, gate=GATE_CLOSED,
+            cancel_attempt=cancel_attempt_id, semantic=cancel_semantic,
+            timeout_epoch=bytes(16), timeout_at=5),
+        "timeout at_ms NZ requires epoch NZ")
+    # NONE with non-NEVER gate
+    add_cs_neg_body(
+        "DSB3_CS_NONE_GATE_CLOSED",
+        enc_cancel_body(gate=GATE_CLOSED),
+        "NONE requires NEVER gate")
+    # TX FENCED local with timeout
+    add_cs_neg_body(
+        "DSB3_CS_TX_FENCED_LOCAL_TIMEOUT",
+        enc_cancel_body(
+            cancel_state=ST_FENCED, cancel_kind=CK_FENCED, reason=R_FENCED,
+            effect=E_NO_EFFECT, gate=GATE_NEVER,
+            timeout_epoch=cancel_timeout_ep, timeout_at=3),
+        "TX FENCED local requires timeout0")
+
+    # --- raw / txn / primary_key_digest ---
+    add_cs_neg_body(
+        "DSB3_CS_ZERO_TXN",
+        enc_cancel_body(transaction_id=bytes(16), owner_raw=bytes(16),
+                        primary_kd=complete_key_digest_id128(0x20, bytes(16))),
+        "transaction_id must be non-zero")
+    add_cs_neg_body(
+        "DSB3_CS_TX_RAW_MISMATCH",
+        enc_cancel_body(owner_raw=bytes([0xEE] * 16)),
+        "TX raw must equal transaction_id")
+    add_cs_neg_body(
+        "DSB3_CS_DLV_TXN_COMPONENT",
+        enc_cancel_body(
+            owner_kind=CS_DLV,
+            owner_raw=dlv_raw[:32] + bytes([0xFF] * 16) + dlv_raw[48:],
+            cancel_state=ST_NONE, cancel_kind=CK_NONE, reason=0, effect=0,
+            gate=GATE_NEVER),
+        "DLV raw [32,48) must equal transaction_id")
+    add_cs_neg_body(
+        "DSB3_CS_PKD_ZERO",
+        enc_cancel_body(primary_kd=bytes(32)),
+        "primary_key_digest must be non-zero complete KEY_DIGEST")
+    add_cs_neg_body(
+        "DSB3_CS_PKD_WRONG",
+        enc_cancel_body(primary_kd=bytes([0xAB] * 32)),
+        "primary_key_digest must equal KEY_DIGEST of complete primary key")
+    add_cs_neg_body(
+        "DSB3_CS_PKD_BARE_COMPOSITE",
+        enc_cancel_body(
+            owner_kind=CS_DLV, owner_raw=dlv_raw,
+            primary_kd=composite(0x40, raw16(dlv_raw))),
+        "bare composite identity is not KEY_DIGEST(complete DELIVERY key)")
+    add_cs_neg_body(
+        "DSB3_CS_RESERVED_NZ",
+        enc_cancel_body(reserved=1),
+        "reserved must be 0")
+    # wrong raw length encoded as TX with 80 bytes
+    bad_tx_len = bytearray()
+    bad_tx_len += be16(CS_TX) + be16(0) + raw16(dlv_raw)
+    bad_tx_len += cancel_primary_key_digest(CS_TX, txn)
+    bad_tx_len += txn + bytes(16)
+    bad_tx_len += be32(ST_NONE) + be32(0) + be32(0) + be32(0) + be32(GATE_NEVER)
+    bad_tx_len += bytes(32) + bytes(16) + be64(0)
+    add_cs_neg_body(
+        "DSB3_CS_TX_RAW_LEN80",
+        bytes(bad_tx_len),
+        "TX owner_key_raw must be exact 16")
+    # short / trailing / BTS
+    add(id="DSB3_CS_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x33,
+        body_hex=hx(body_tx_none[:-1]), notes="short body")
+    c_neg += 1
+    add(id="DSB3_CS_TRAILING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x33,
+        body_hex=hx(body_tx_none + b"\x00"), notes="trailing byte")
+    c_neg += 1
+    add(id="DSB3_CS_BTS", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x33,
+        body_length=len(body_tx_none), body_hex=hx(body_tx_none),
+        key_length=0)
+    c_neg += 1
+
+    # --- typed negatives: key / primary / header ---
+    _, val_ok, _ = cancel_typed(body=body_tx_none)
+    bad_key = cancel_key(CS_DLV, dlv_raw)
+    add_cs_neg_typed(
+        "DSB3_CS_KEY_MISMATCH", bad_key, val_ok,
+        "key COMPOSITE must match body owner")
+    wrong_kind_key = bkey(6, 0x33, 2, txn)
+    add_cs_neg_typed(
+        "DSB3_CS_WRONG_KIND", wrong_kind_key, val_ok,
+        "key must be SHA256_COMPOSITE not ID128")
+    k_wp, v_wp, _ = cancel_typed(body=body_tx_none, primary=bytes([0xDD] * 16))
+    add_cs_neg_typed("DSB3_CS_BAD_PRIMARY", k_wp, v_wp, "wrong primary_id")
+    k_zp, v_zp, _ = cancel_typed(body=body_tx_none, primary=bytes(16))
+    add_cs_neg_typed("DSB3_CS_ZERO_PRIMARY", k_zp, v_zp, "zero primary_id")
+    # self-key primary (composite identity first 16 instead of txn)
+    self_pid = composite(0x33, cancel_key_components(CS_TX, txn))[:16]
+    k_sk, v_sk, _ = cancel_typed(body=body_tx_none, primary=self_pid)
+    add_cs_neg_typed(
+        "DSB3_CS_SELF_KEY_PRIMARY", k_sk, v_sk,
+        "primary_id must be transaction_id not self composite")
+    k_zh, v_zh, _ = cancel_typed(body=body_tx_none, head=bytes(32))
+    add_cs_neg_typed("DSB3_CS_ZERO_HEAD", k_zh, v_zh)
+    k_zv, v_zv, _ = cancel_typed(body=body_tx_none, pvd=bytes(32))
+    add_cs_neg_typed("DSB3_CS_ZERO_PVD", k_zv, v_zv)
+    k_fl = cancel_key(CS_TX, txn)
+    v_fl = enc_env_full(
+        6, 0x33, 1, 1, txn, cancel_head, cancel_pvd, body_tx_none)
+    add_cs_neg_typed("DSB3_CS_FLAGS_NZ", k_fl, v_fl, "flags must be 0")
+    k_r0, v_r0, _ = cancel_typed(body=body_tx_none, rev=0)
+    add_cs_neg_typed("DSB3_CS_REV0", k_r0, v_r0, "revision must be >=1")
+
+    b3_cov["33"] = add_body_suite(
+        "CANCEL_STATE", 6, 0x33, c_pos, c_neg, c_mut, c_rt)
+    assert b3_cov["33"]["positive"] >= 14
+    assert b3_cov["33"]["negative"] >= 30
+    assert b3_cov["33"]["roundtrip"] >= 7
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -4476,6 +5120,7 @@ def build_document():
         "dsb3_subtype_30_positive": b3_cov["30"]["positive"],
         "dsb3_subtype_31_positive": b3_cov["31"]["positive"],
         "dsb3_subtype_34_positive": b3_cov["34"]["positive"],
+        "dsb3_subtype_33_positive": b3_cov["33"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -4505,12 +5150,23 @@ def build_document():
     assert catalog["dsb3_subtype_30_positive"] > 0
     assert catalog["dsb3_subtype_31_positive"] > 0
     assert catalog["dsb3_subtype_34_positive"] > 0
+    assert catalog["dsb3_subtype_33_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
-    # First 777 vector objects must remain the pre-B3e catalog (append-only).
-    # Exact gate is PRE_B3E_VECTORS_FINGERPRINT (canonical SHA-256); id-prefix
+    # First 809 vector objects must remain the pre-B3f catalog (append-only).
+    # Exact gate is PRE_B3F_VECTORS_FINGERPRINT (canonical SHA-256); id-prefix
     # is only a secondary structural check, not an exact-bytes claim.
-    assert len(vectors) > 777
+    assert len(vectors) > 809
+    assert all(not v["id"].startswith("DSB3_CS_") for v in vectors[:809])
+    _pre_b3f_fp_final = hashlib.sha256(
+        json.dumps(vectors[:809], sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    assert _pre_b3f_fp_final == PRE_B3F_VECTORS_FINGERPRINT, (
+        f"post-append pre-B3f fingerprint drift: got {_pre_b3f_fp_final}"
+    )
+    # Nested pre-B3e / pre-B3d durable gates.
     assert all(not v["id"].startswith("DSB3_AII_") for v in vectors[:777])
     _pre_b3e_fp_final = hashlib.sha256(
         json.dumps(vectors[:777], sort_keys=True, separators=(",", ":")).encode(
@@ -4520,7 +5176,6 @@ def build_document():
     assert _pre_b3e_fp_final == PRE_B3E_VECTORS_FINGERPRINT, (
         f"post-append pre-B3e fingerprint drift: got {_pre_b3e_fp_final}"
     )
-    # Keep pre-B3d durable gate too (nested prefix of first 777).
     assert all(not v["id"].startswith("DSB3_ATT_") for v in vectors[:696])
     _pre_b3d_fp_final = hashlib.sha256(
         json.dumps(vectors[:696], sort_keys=True, separators=(",", ":")).encode(
@@ -4536,19 +5191,20 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3e",
+        "format": "ninlil-domain-store-v1-d1b3f",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
             "message_semantic_digest helper + D1-B3c body (30 BLOB "
             "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
-            "(34 ATTEMPT_ID_INDEX); not full D1 catalog"
+            "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE); "
+            "not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d/D1-B3e APIs have no workspace parameter; value is 0."
+            "D1-B3c/D1-B3d/D1-B3e/D1-B3f APIs have no workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,
