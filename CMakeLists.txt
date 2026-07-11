@@ -2,52 +2,109 @@ cmake_minimum_required(VERSION 3.16)
 
 project(ninlil VERSION 0.1.0 LANGUAGES C CXX)
 
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(NINLIL_IS_TOP_LEVEL ON)
+    set(_ninlil_build_tests_default ON)
+    set(_ninlil_strict_warnings_default ON)
+else()
+    set(NINLIL_IS_TOP_LEVEL OFF)
+    set(_ninlil_build_tests_default OFF)
+    set(_ninlil_strict_warnings_default OFF)
+endif()
+option(NINLIL_BUILD_TESTS "Build Ninlil's test suite"
+    ${_ninlil_build_tests_default})
+option(NINLIL_ENABLE_STRICT_WARNINGS "Build Ninlil with warnings as errors"
+    ${_ninlil_strict_warnings_default})
+
 add_library(ninlil INTERFACE)
 target_include_directories(ninlil INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-    enable_testing()
-
-    option(NINLIL_ENABLE_SANITIZERS "Build with ASan and UBSan" OFF)
-    if(NINLIL_ENABLE_SANITIZERS)
-        set(_ninlil_sanitizer_supported FALSE)
-        if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
-           OR CMAKE_C_COMPILER_ID STREQUAL "Clang"
-           OR CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
-            set(_ninlil_sanitizer_supported TRUE)
-        endif()
-        if(NOT _ninlil_sanitizer_supported)
-            message(FATAL_ERROR
-                "NINLIL_ENABLE_SANITIZERS=ON requires GNU, Clang, or AppleClang")
-        endif()
-        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-        add_link_options(-fsanitize=address,undefined)
+option(NINLIL_ENABLE_SANITIZERS "Build with ASan and UBSan" OFF)
+set(_ninlil_sanitizer_supported FALSE)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
+   OR CMAKE_C_COMPILER_ID STREQUAL "Clang"
+   OR CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
+    set(_ninlil_sanitizer_supported TRUE)
+endif()
+if(NINLIL_ENABLE_SANITIZERS)
+    if(NOT _ninlil_sanitizer_supported)
+        message(FATAL_ERROR
+            "NINLIL_ENABLE_SANITIZERS=ON requires GNU, Clang, or AppleClang")
     endif()
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
 
-    set(NINLIL_STRICT_C_FLAGS
-        -Wall
-        -Wextra
-        -Werror
-        -Wpedantic
-        -pedantic-errors
-    )
-    set(NINLIL_STRICT_CXX_FLAGS
-        -Wall
-        -Wextra
-        -Werror
-        -Wpedantic
-        -pedantic-errors
-    )
+set(NINLIL_STRICT_C_FLAGS
+    -Wall
+    -Wextra
+    -Werror
+    -Wpedantic
+    -pedantic-errors
+)
+set(NINLIL_STRICT_CXX_FLAGS
+    -Wall
+    -Wextra
+    -Werror
+    -Wpedantic
+    -pedantic-errors
+)
 
-    function(ninlil_apply_strict_warnings target)
+function(ninlil_apply_strict_warnings target)
+    if(NINLIL_ENABLE_STRICT_WARNINGS)
+        if(NOT (CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+           OR NOT (CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"))
+            message(FATAL_ERROR
+                "NINLIL_ENABLE_STRICT_WARNINGS=ON requires GNU or Clang family compilers")
+        endif()
         target_compile_options(${target} PRIVATE
             $<$<COMPILE_LANGUAGE:C>:${NINLIL_STRICT_C_FLAGS}>
             $<$<COMPILE_LANGUAGE:CXX>:${NINLIL_STRICT_CXX_FLAGS}>
         )
-    endfunction()
+    endif()
+endfunction()
+
+add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
+    src/model/runtime_lifecycle_model.c
+    src/model/runtime_store_bootstrap.c
+    src/model/runtime_store_codec.c
+)
+set_property(TARGET ninlil_runtime_private
+    PROPERTY NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE)
+target_include_directories(ninlil_runtime_private PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+)
+target_link_libraries(ninlil_runtime_private PRIVATE ninlil)
+set_target_properties(ninlil_runtime_private PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON
+    C_VISIBILITY_PRESET hidden
+)
+ninlil_apply_strict_warnings(ninlil_runtime_private)
+if(NINLIL_ENABLE_SANITIZERS)
+    target_link_options(ninlil_runtime_private INTERFACE
+        -fsanitize=address,undefined)
+endif()
+
+if(NINLIL_BUILD_TESTS)
+    enable_testing()
+
+    add_test(
+        NAME runtime_private_subproject_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DNINLIL_SMOKE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/private_subproject
+            -DNINLIL_SMOKE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/private-subproject-smoke
+            "-DNINLIL_GENERATOR=${CMAKE_GENERATOR}"
+            -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+            -DNINLIL_SANITIZER_SUPPORTED=${_ninlil_sanitizer_supported}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/private_subproject_smoke.cmake
+    )
 
     function(ninlil_assert_no_test_only_link target)
         foreach(link_property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
@@ -142,12 +199,19 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         src/model/required_receipt_transition.c
         src/model/resource_ledger.c
         src/model/resource_ledger_batch.c
-        src/model/runtime_lifecycle_model.c
-        src/model/runtime_store_bootstrap.c
-        src/model/runtime_store_codec.c
         src/model/submission_admission.c
         src/model/submission_preflight.c
     )
+    get_target_property(_ninlil_reducer_sources ninlil_reducer_model SOURCES)
+    foreach(_source IN LISTS _ninlil_reducer_sources)
+        get_filename_component(_source_name "${_source}" NAME)
+        if(_source_name STREQUAL "runtime_lifecycle_model.c"
+           OR _source_name STREQUAL "runtime_store_codec.c"
+           OR _source_name STREQUAL "runtime_store_bootstrap.c")
+            message(FATAL_ERROR
+                "private Runtime source duplicated in reducer: ${_source}")
+        endif()
+    endforeach()
     target_include_directories(ninlil_reducer_model PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     )
@@ -276,7 +340,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     )
     target_link_libraries(ninlil_runtime_lifecycle_model_test PRIVATE
-        ninlil_reducer_model
+        ninlil_runtime_private
         ninlil
     )
     set_target_properties(ninlil_runtime_lifecycle_model_test PROPERTIES
@@ -298,7 +362,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     )
     target_link_libraries(ninlil_runtime_store_codec_test PRIVATE
-        ninlil_reducer_model
+        ninlil_runtime_private
         ninlil
     )
     set_target_properties(ninlil_runtime_store_codec_test PROPERTIES
@@ -320,7 +384,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     )
     target_link_libraries(ninlil_runtime_store_bootstrap_test PRIVATE
-        ninlil_reducer_model
+        ninlil_runtime_private
         ninlil
     )
     set_target_properties(ninlil_runtime_store_bootstrap_test PROPERTIES
@@ -444,6 +508,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     # Configure-time release composition gate. The public SDK target must not
     # acquire the synthetic TEST grant provider as a direct dependency.
     ninlil_assert_no_test_only_link(ninlil)
+    ninlil_assert_no_test_only_link(ninlil_runtime_private)
 
     add_executable(ninlil_typed_simulated_bearer_test
         tests/port/typed_simulated_bearer_test.c
