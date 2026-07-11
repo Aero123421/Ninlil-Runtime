@@ -1146,6 +1146,10 @@ Accepted range/zero matrix（上表maxとのinclusive range）:
 - `terminal_retention_ms`は1..`NINLIL_M1A_MAX_RETENTION_MS`、`result_cache_retention_ms`は1..terminal retention、`observation_retention_ms`は0..`NINLIL_M1A_MAX_RETENTION_MS`です。範囲外は`NINLIL_E_INVALID_ARGUMENT`です。Foundation Simulator fixtureはterminal/result cache 86400000ms、observation 3600000msを明示し、0をdefaultにしません。
 - EventFactはrequired Receiptまたはexplicit discardまでretention対象外で、削除禁止です。
 
+Stage 1 validationの分類precedenceはclosedで、`top-level config/platform pointer` → `config/platform outer ABI header/size` → `inline config headerとplatform sub-vtable pointer` → `platform sub-vtable ABI header/size` → `required function pointer` → `reserved/unknown numeric enum` → `named unsupported role/environment` → `runtime ID/local identity/namespace shape` → `lower/conditional/cross-field/retention` → `checked derivation overflow` → `named profile upper`の順です。Pointer/function欠落は`NINLIL_E_INVALID_ARGUMENT`、ABI header/size違反は`NINLIL_E_ABI_MISMATCH`、それ以降はclosed tableの`NINLIL_E_INVALID_ARGUMENT`または`NINLIL_E_UNSUPPORTED`へ正規化し、後順位の違反で先順位を上書きしません。Outer ABI headerが有効になるまでnested pointer/fieldをreadしません。Supported createはController/EndpointかつTESTだけです。PlatformはroleによらずAllocator、Execution、Clock、Entropy、Storage、Bearer、Tx Gate、Origin Authorizationの8 sub-vtableと、各required function pointerをすべて要求します。各sub-vtableの`user`はNULLでもvalidです。
+
+Capacity limitはaccepted configから`N = max_nonterminal_transactions + max_retained_terminal_transactions`として、kind 1..11を順に`max_services`、`N`、`N * max_targets_per_transaction`、`max_durable_outbox_payload_bytes`、`max_nonterminal_deliveries`、`max_event_spool_count`、`max_event_spool_bytes`、`max_result_cache_entries + max_retained_dispositions`、`N * max_targets_per_transaction * (uint64(max_evidence_per_target) + 1)`、`max_ingress_per_step`、`max_deferred_tokens`へ導出します。全加算/乗算は`uint64_t` checked arithmeticで、1件でもoverflowしたら`NINLIL_E_INVALID_ARGUMENT`、partial limit publish 0です。Roleで不使用のkindもzero entryを残します。
+
 ### 6.1 Runtime create lifecycle
 
 `ninlil_runtime_create()`は次のstageをexact orderで実行します。`*out_runtime`はrequired pointer validation直後にNULL化し、stage 9までpublishしません。Earlier stage failureではlater stage/Portを呼びません。
@@ -1158,7 +1162,7 @@ Accepted range/zero matrix（上表maxとのinclusive range）:
 | 4 | `storage.open(user, copied_namespace, NINLIL_STORAGE_SCHEMA_M1A, &handle)`をexactly 1回 | 下表mapping。FailureはStorage handleがあればclose後deallocate |
 | 5 | Storage schema/profile binding、commit-unknown resolution、recovery scan/fence、persistent capacity metadataを完了 | Existing incompatible profile=`NINLIL_E_UNSUPPORTED`。Storage mapping/unknownは下表。Recovery未完了でBearerをopenしない |
 | 6 | `bearer.open(user, runtime_id, role, &handle)`をexactly 1回。M1aはlazy openしない | 下表mapping。FailureはBearer handleがあればclose、次にStorage close、deallocate |
-| 7 | `clock.now`を1回取得し、trusted sampleをmetrics startへ固定。`clock_epoch_id`はnon-zero required、`now_ms == 0`はvalid | temporary/UNCERTAIN=`NINLIL_E_CLOCK_UNCERTAIN`、permanent、trusted+全zero epoch、invalid trust enum、recovered clock stateに対するregression=`NINLIL_E_DEGRADED`。reverse cleanup |
+| 7 | `clock.now`を1回取得し、trusted sampleをmetrics startへ固定。`clock_epoch_id`はnon-zero required、`now_ms == 0`はvalid | temporary/UNCERTAIN=`NINLIL_E_CLOCK_UNCERTAIN`、permanent、trusted+全zero epoch、invalid trust enum、recovered clock stateに対するregression=`NINLIL_E_DEGRADED`。reverse cleanup。Durable baseline source/update境界が未決のためpublic createへは未統合 |
 | 8 | metrics epoch IDを§5.2の最大4 entropy call/partial/all-zero規則で取得。Collision checkなし | 4 candidates失敗=`NINLIL_E_ENTROPY`。reverse cleanup。Transaction/attempt entropyは消費しない |
 | 9 | Stage 5で再構成したdurable health causesを固定priorityへprojectし、cleanなら`OK/NONE`、残存causeありなら`DEGRADED/exact reason`。metrics zero counters/start sample/epoch ID、owner context、Port handlesをfinalizeし`*out_runtime`へ1回publish | `NINLIL_OK`。DEGRADED healthはcreate API failureではない。この時点からcallerがruntimeを所有 |
 
@@ -1174,6 +1178,8 @@ Create/recovery Storage status mapping:
 | `UNSUPPORTED_SCHEMA` | `NINLIL_E_UNSUPPORTED` |
 | `COMMIT_UNKNOWN` | `NINLIL_E_STORAGE_COMMIT_UNKNOWN`。namespaceをfenceしてcloseし、次createでauthoritative journal recovery |
 
+Storage `open`はstatusより先にstatus/handle shapeを検査します。`OK + non-NULL`だけが継続、`OK + NULL`は`NINLIL_E_STORAGE_CORRUPT`です。Known non-OK + NULLは上表へmappingします。Non-OK + non-NULLはhandleをexactly once closeしてshape faultを優先し`NINLIL_E_STORAGE_CORRUPT`、unknown statusも同statusとし、handleがあればexactly once closeします。
+
 Bearer open status mapping:
 
 | Bearer status / output | Public status |
@@ -1182,6 +1188,12 @@ Bearer open status mapping:
 | `WOULD_BLOCK` / `UNAVAILABLE` | `NINLIL_E_WOULD_BLOCK` |
 | `DENIED` | `NINLIL_E_UNSUPPORTED` |
 | `EMPTY` / `LOST_UNKNOWN` / `CORRUPT` / `OK`だがNULL handle | `NINLIL_E_DEGRADED` |
+
+Bearer `open`は`OK + non-NULL`だけが継続です。Known non-OK + NULLは上表へmappingします。Non-OK + non-NULLまたはunknown statusはunexpected handleがあればexactly once closeし、shape faultを優先して`NINLIL_E_DEGRADED`です。
+
+Stage 7のpure clock mapperはcurrent ABI headerを設定し、残りをzero初期化したsampleを入力bufferにします。`OK + trusted + non-zero epoch`だけが継続し、`UNCERTAIN`または`TEMPORARY + exact unchanged buffer`は`NINLIL_E_CLOCK_UNCERTAIN`、`PERMANENT + exact unchanged buffer`とunknown status/non-OK poison/partial header/zero epoch/unknown trust/reservedは`NINLIL_E_DEGRADED`です。Pure helperはPort/harnessが与えるoptional external baselineを受け取り、同epochで`now_ms < baseline_now_ms`だけをregressionとして`NINLIL_E_DEGRADED`にできます。External baselineはRuntime durable record/sourceを表さず、このhelper testだけでrecovered-state要件を満たしたと扱いません。Durable baselineの保存record、recovery source、更新境界を固定するまでpublic createはCR8 completeではありません。
+
+Stage 8は最大4回`entropy.fill(16)`を観測し、`OK + 16-byte non-zero candidate`を即採用します。直前createと同値でもcollision checkしません。All-zero、TEMPORARY/PERMANENT/unknown status、non-OK時のpartial bytesはfailed candidateとして次へ進み、4回失敗で`NINLIL_E_ENTROPY`です。Port contract上、Coreは`OK`で返った16-byte bufferがpartial writeかを推定せず、non-zeroなら受理します。
 
 Stage 4以降のcleanup orderは、存在する場合だけ`bearer.close` → live Storage transaction/iterator 0を確認 → `storage.close` → service/table/namespace/runtime allocationsのreverse deallocateです。Close/deallocateは元failure statusを上書きせず、Port `user`を解放しません。Origin authorizationとTx Gateはcreate中にcallしません。複数faultをscriptしてもexact sequenceで最初に観測したfailureだけを返し、later fault pointへ到達しません。
 
@@ -2209,6 +2221,8 @@ MetricsはRuntime create stage 9からdestroy fenceまでのobservability counte
 全counterは該当観測/commit OKの直後にchecked incrementし、`UINT64_MAX`でsaturate、wrapしません。Saturationはhealth/reducerを変えずsupport diagnosticだけです。`ninlil_metrics_snapshot()`は全fieldを1つのowner-thread logical snapshotとして返し、自身のcallではcounterを増やしません。
 
 Runtime healthはactive degraded-cause multisetから導出します。Cause 0件なら`health = OK`かつ`degraded_reason = NONE`、1件以上なら`health = DEGRADED`かつ次priorityで最上位のnon-zero reasonを返します。`HEALTH_FATAL`は生成しません。
+
+Lifecycle L1 pure reducerのhealth入力は次表の8 slotにclosedです。各slotはfree-form reasonでなくnon-negative reference countで、lowest-numberのnon-zero slotだけをprojectします。全slot zeroなら`OK/NONE`、1件以上なら`DEGRADED/該当reason`で、同priorityは最後のreferenceがclearされるまで残ります。Generic projectorはpublished Runtimeのhealth表示用にpriority 1/2も扱えます。Stage 9は別のpublish gateを必須とし、Stage 5 recovery completeかつpriority 1/2 zeroのときだけproject可能です。Stage 9へ渡すのはStage 5がdurable markerから再構成したreferenceだけで、Provider/clock/entropy/Bearer等のinstance-local causeはrestart時にcopyしません。
 
 | Priority | Active cause / reason | Add / clear boundary |
 | ---: | --- | --- |
