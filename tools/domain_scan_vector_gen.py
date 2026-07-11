@@ -808,7 +808,10 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
                 f"    {{{{ {karr} }}, {len(kb)}u, {{ {varr} }}, {len(vb)}u }},"
             )
         if not vec.get("rows"):
-            lines.append("    {0}")
+            # Keep nested array members explicitly braced. GCC's
+            # -Wmissing-braces diagnoses the otherwise-valid `{0}` form when
+            # strict warnings are errors, even though AppleClang accepts it.
+            lines.append("    { { 0u }, 0u, { 0u }, 0u },")
         lines.append("};")
         # faults
         lines.append(f"static const ninlil_dsf_fault_t ninlil_dsf_faults_{vi}[] = {{")
@@ -839,7 +842,6 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
     lines.append("static const ninlil_dsf_vector_t ninlil_dsf_vectors[NINLIL_DSF_VECTOR_COUNT] = {")
     for vi, vec in enumerate(vectors):
         exp = vec["expected"]
-        row_n = max(len(vec.get("rows", [])), 1)
         fault_n = len(vec.get("faults", []))
         call_n = len(vec["calls"])
         trace_n = len(exp.get("port_trace", []))
@@ -863,7 +865,6 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
         lines.append(f"            ninlil_dsf_trace_{vi}, {trace_n}u")
         lines.append("        }")
         lines.append("    },")
-        _ = (row_n,)  # silence
     lines.append("};")
     lines.append("")
     lines.append("#endif /* NINLIL_DOMAIN_SCAN_VECTOR_FIXTURE_H */")
