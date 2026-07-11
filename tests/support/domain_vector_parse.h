@@ -158,6 +158,7 @@ typedef struct ninlil_dv_catalog {
     uint32_t dsb3_subtype_32_positive;
     uint32_t dsb3_subtype_40_positive;
     uint32_t dsb3_subtype_41_positive;
+    uint32_t dsb3_subtype_42_positive;
 } ninlil_dv_catalog_t;
 
 /*
@@ -214,6 +215,7 @@ typedef struct ninlil_dv_catalog {
 #define NINLIL_DV_CAT_DSB3_40 NINLIL_DV_CAT_BIT(37)
 /* D1-B3i additions start at bit 38 — do not shift 0..37. */
 #define NINLIL_DV_CAT_DSB3_41 NINLIL_DV_CAT_BIT(38)
+#define NINLIL_DV_CAT_DSB3_42 NINLIL_DV_CAT_BIT(39)
 
 #define NINLIL_DV_CAT_REQUIRED_MASK                                            \
     (NINLIL_DV_CAT_DSK1_KEYS | NINLIL_DV_CAT_DSV1_EXACT                         \
@@ -235,7 +237,7 @@ typedef struct ninlil_dv_catalog {
         | NINLIL_DV_CAT_DSB3_30 | NINLIL_DV_CAT_DSB3_31                        \
         | NINLIL_DV_CAT_DSB3_34 | NINLIL_DV_CAT_DSB3_33                        \
         | NINLIL_DV_CAT_DSB3_32 | NINLIL_DV_CAT_DSB3_40                        \
-        | NINLIL_DV_CAT_DSB3_41)
+        | NINLIL_DV_CAT_DSB3_41 | NINLIL_DV_CAT_DSB3_42)
 
 enum {
     NINLIL_DV_TOP_VERSION = 1u << 0,
@@ -250,7 +252,7 @@ enum {
     (NINLIL_DV_TOP_VERSION | NINLIL_DV_TOP_FORMAT | NINLIL_DV_TOP_SCOPE         \
         | NINLIL_DV_TOP_WS_DEF | NINLIL_DV_TOP_CATALOG | NINLIL_DV_TOP_VECTORS)
 
-#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3i"
+#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3j"
 #define NINLIL_DV_SCOPE_REQUIRED                                               \
     "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "              \
     "(10/11/20-25) + D1-B3a body "                                              \
@@ -260,12 +262,13 @@ enum {
     "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE) + "                 \
     "D1-B3g body (32 EVIDENCE_CELL) + D1-B3h body (40 DELIVERY) + "             \
     "D1-B3i body (41 RESULT_CACHE; D1 pre-alpha operation identity "           \
-    "correction kind9/10 phase); not full D1 catalog"
+    "correction kind9/10 phase) + D1-B3j body (42 REVERSE_REPLY "             \
+    "exact330/state matrix); not full D1 catalog"
 
 typedef struct ninlil_dv_file {
     uint32_t version;
     char format[64];
-    char scope[512];
+    char scope[768];
     ninlil_dv_catalog_t catalog;
     uint64_t catalog_bits;
     uint32_t top_bits;

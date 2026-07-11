@@ -7599,6 +7599,505 @@ def build_document():
     assert b3_cov["41"]["negative"] >= 20
     assert b3_cov["41"]["roundtrip"] >= 6
 
+    # =====================================================================
+    # D1-B3j REVERSE_REPLY (0x42) — after RESULT_CACHE; preserve pre-B3j.
+    # =====================================================================
+    PRE_B3J_VECTOR_COUNT = len(vectors)
+    PRE_B3J_VECTOR_COUNT_SNAPSHOT = PRE_B3J_VECTOR_COUNT
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_RC_COMPLETED_AT_ZERO"
+    assert all(
+        not v["id"].startswith("DSB3_RR_")
+        for v in vectors
+    )
+    PRE_B3J_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    # Pin of vectors[0:PRE_B3J] at B3j cutover (full pre-B3j catalog incl. B3i).
+    PRE_B3J_FULL_FINGERPRINT_PIN = (
+        "4d9ee8fcd6fa8eb0239336a9b78a7f1509ca2530abbd015703950627b3812db3"
+    )
+    assert PRE_B3J_FULL_FINGERPRINT == PRE_B3J_FULL_FINGERPRINT_PIN, (
+        f"pre-B3j full fingerprint drift: got {PRE_B3J_FULL_FINGERPRINT}"
+    )
+
+    # REVERSE_REPLY private enums (docs17 §8.5 D1-B3j).
+    RK_RECEIPT = 1
+    RK_DISPOSITION = 2
+    RK_CUSTODY = 3
+    RK_CANCEL = 4
+    SS_PENDING = 1
+    SS_WAIT = 2
+    SS_SENT = 3
+    SS_DENIED = 4
+    SS_EXHAUSTED = 5
+    U64_MAX_RR = (1 << 64) - 1
+    rr_head = bytes([0xD1] * 32)
+    rr_pvd = bytes([0xD2] * 32)  # secondary: non-zero PVD
+    rr_sem = bytes([0xD3] * 32)
+    rr_blob = bytes([0xD4] * 32)
+    rr_attempt = bytes([0xA1] + [0] * 14 + [0xA2])
+
+    def make_rr_raw(src_rt=None, src_app=None, txn_id=None, trt=None, tapp=None):
+        if src_rt is None:
+            src_rt = F["rt"]
+        if src_app is None:
+            src_app = F["app"]
+        if txn_id is None:
+            txn_id = txn
+        if trt is None:
+            trt = F["trt"]
+        if tapp is None:
+            tapp = F["tapp"]
+        raw = src_rt + src_app + txn_id + trt + tapp
+        assert len(raw) == 80
+        return raw
+
+    def rr_reply_contents(raw80: bytes, kind: int) -> bytes:
+        return raw16(raw80) + be32(kind)
+
+    def rr_key(reply86: bytes) -> bytes:
+        return bkey(6, 0x42, 5, composite(0x42, raw16(reply86)))
+
+    def rr_primary_id(raw80: bytes) -> bytes:
+        return primary_id_from_composite_subtype(0x40, raw16(raw80))
+
+    def enc_reverse_reply_body(
+        raw80=None,
+        kind=RK_RECEIPT,
+        state=SS_PENDING,
+        g=0,
+        i=0,
+        exhausted=0,
+        avail=0,
+        retry_epoch=None,
+        retry_ms=0,
+        sem=None,
+        blob=None,
+        attempt=None,
+        txn_id=None,
+        reply_raw=None,
+        reserved=0,
+    ) -> bytes:
+        if raw80 is None:
+            raw80 = make_rr_raw()
+        if txn_id is None:
+            txn_id = raw80[32:48]
+        if sem is None:
+            sem = rr_sem
+        if blob is None:
+            blob = rr_blob
+        if attempt is None:
+            attempt = rr_attempt
+        if retry_epoch is None:
+            retry_epoch = bytes(16)
+        if reply_raw is None:
+            reply_raw = rr_reply_contents(raw80, kind)
+        assert len(reply_raw) == 86
+        out = bytearray()
+        out += raw16(reply_raw)
+        out += raw16(raw80)
+        out += txn_id
+        out += be32(kind)
+        out += sem
+        out += blob
+        out += be32(state)
+        out += be64(g)
+        out += be64(i)
+        out += be32(exhausted)
+        out += be32(reserved)
+        out += attempt
+        out += be64(avail)
+        out += retry_epoch
+        out += be64(retry_ms)
+        assert len(out) == 330, len(out)
+        return bytes(out)
+
+    def reverse_typed(body=None, rev=1, flags=0, primary_id=None, head=None,
+                      pvd=None):
+        if body is None:
+            body = enc_reverse_reply_body()
+        # reply RAW16 at start: len 86 at [0:2], contents [2:88]
+        reply86 = body[2:88]
+        # delivery RAW16 at [88:90] len, contents [90:170]
+        raw80 = body[90:170]
+        if primary_id is None:
+            primary_id = rr_primary_id(raw80)
+        if head is None:
+            head = rr_head
+        if pvd is None:
+            pvd = rr_pvd
+        key = rr_key(reply86)
+        val = enc_env_full(6, 0x42, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    rr_pos = 0
+    rr_neg = 0
+    rr_mut = 0
+    rr_rt = 0
+
+    def add_rr_pos(vid, body, notes=""):
+        nonlocal rr_pos, rr_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x42, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        rr_pos += 1
+        rr_rt += 1
+
+    def add_rr_pos_typed(vid, body, notes=""):
+        nonlocal rr_pos
+        key, val, _ = reverse_typed(body=body)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x42, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        rr_pos += 1
+
+    def add_rr_neg(vid, body, notes=""):
+        nonlocal rr_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x42, body_hex=hx(body), notes=notes)
+        rr_neg += 1
+
+    def add_rr_neg_typed(vid, key, val, notes=""):
+        nonlocal rr_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x42, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        rr_neg += 1
+
+    raw_rr = make_rr_raw()
+    timer_nz = dict(retry_epoch=F["epoch"], retry_ms=1000)
+    timer_z = dict(retry_epoch=bytes(16), retry_ms=0)
+
+    # --- positives: 4 kinds ---
+    for kind, tag in (
+        (RK_RECEIPT, "RECEIPT"),
+        (RK_DISPOSITION, "DISPOSITION"),
+        (RK_CUSTODY, "CUSTODY"),
+        (RK_CANCEL, "CANCEL"),
+    ):
+        b = enc_reverse_reply_body(
+            raw80=raw_rr, kind=kind, state=SS_PENDING, g=0, i=0,
+            exhausted=0, avail=0, **timer_z)
+        add_rr_pos(f"DSB3_RR_KIND_{tag}", b, f"kind {kind} virgin PENDING")
+        if kind == RK_RECEIPT:
+            add_rr_pos_typed("DSB3_RR_KIND_RECEIPT_TYPED", b)
+
+    # --- all states ---
+    b_pending = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_PENDING, g=0, i=0, exhausted=0, avail=0,
+        **timer_z)
+    add_rr_pos("DSB3_RR_PENDING_VIRGIN", b_pending, "state1 virgin G=0")
+
+    # reopen I0 (TxGate path: G>=1, I=0, avail=0)
+    b_reopen_i0 = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_PENDING, g=3, i=0, exhausted=0, avail=0,
+        **timer_z)
+    add_rr_pos("DSB3_RR_PENDING_REOPEN_I0", b_reopen_i0,
+               "state1 reopen I=0 avail=0")
+    add_rr_pos_typed("DSB3_RR_PENDING_REOPEN_I0_TYPED", b_reopen_i0)
+
+    # reopen I1
+    b_reopen_i1 = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_PENDING, g=3, i=1, exhausted=0, avail=7,
+        **timer_z)
+    add_rr_pos("DSB3_RR_PENDING_REOPEN_I1", b_reopen_i1,
+               "state1 reopen I=1 avail nz")
+
+    # mixed G=2 I=1
+    b_g2i1 = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_PENDING, g=2, i=1, exhausted=0, avail=9,
+        **timer_z)
+    add_rr_pos("DSB3_RR_MIXED_G2_I1", b_g2i1, "mixed G=2 I=1")
+    add_rr_pos_typed("DSB3_RR_MIXED_G2_I1_TYPED", b_g2i1)
+
+    b_wait = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_WAIT, g=2, i=1, exhausted=0, avail=5,
+        **timer_nz)
+    add_rr_pos("DSB3_RR_WAITING_RETRY", b_wait, "state2 WAITING_RETRY timer nz")
+    add_rr_pos_typed("DSB3_RR_WAITING_RETRY_TYPED", b_wait)
+
+    b_wait_i0 = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_WAIT, g=1, i=0, exhausted=0, avail=0,
+        **timer_nz)
+    add_rr_pos("DSB3_RR_WAITING_I0", b_wait_i0, "state2 I=0 TxGate path")
+
+    b_sent = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_SENT, g=2, i=1, exhausted=0, avail=11,
+        **timer_z)
+    add_rr_pos("DSB3_RR_CLOSED_SENT", b_sent, "state3 CLOSED_SENT_OR_UNKNOWN")
+    add_rr_pos_typed("DSB3_RR_CLOSED_SENT_TYPED", b_sent)
+
+    b_denied = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_DENIED, g=2, i=0, exhausted=0, avail=0,
+        **timer_z)
+    add_rr_pos("DSB3_RR_CLOSED_DENIED_I0", b_denied, "state4 I=0")
+    b_denied_i = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_DENIED, g=4, i=2, exhausted=0, avail=3,
+        **timer_z)
+    add_rr_pos("DSB3_RR_CLOSED_DENIED_I", b_denied_i, "state4 I>0")
+    add_rr_pos_typed("DSB3_RR_CLOSED_DENIED_TYPED", b_denied_i)
+
+    # MAX: G=MAX I<=G exhausted=1 state5
+    b_max_g = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_EXHAUSTED, g=U64_MAX_RR, i=U64_MAX_RR - 1,
+        exhausted=1, avail=99, **timer_z)
+    add_rr_pos("DSB3_RR_MAX_G", b_max_g, "state5 G=MAX I=MAX-1")
+    add_rr_pos_typed("DSB3_RR_MAX_G_TYPED", b_max_g)
+
+    b_max_i = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_EXHAUSTED, g=U64_MAX_RR, i=U64_MAX_RR,
+        exhausted=1, avail=1, **timer_z)
+    add_rr_pos("DSB3_RR_MAX_I", b_max_i, "state5 G=I=MAX")
+
+    b_max_i_only = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_EXHAUSTED, g=U64_MAX_RR, i=U64_MAX_RR,
+        exhausted=1, avail=0xdead, **timer_z)
+    # already covered; also I=MAX with G=MAX is only legal I=MAX case when G>=I
+    # virgin-ish exhausted with I=0 and G=MAX
+    b_max_g_i0 = enc_reverse_reply_body(
+        raw80=raw_rr, state=SS_EXHAUSTED, g=U64_MAX_RR, i=0, exhausted=1,
+        avail=0, **timer_z)
+    add_rr_pos("DSB3_RR_MAX_G_I0", b_max_g_i0, "state5 G=MAX I=0 avail0")
+
+    # --- negatives ---
+    # length 329 / 331
+    add_rr_neg("DSB3_RR_LEN329", b_pending[:-1], "body 329 trailing short")
+    add_rr_neg("DSB3_RR_LEN331", b_pending + b"\x00", "body 331 trailing byte")
+
+    # Total exact 330 with illegal RAW length pair (reply+delivery contents = 166).
+    # Intermediate remaining-after-RAWs is still 160; same-record exact 86/80 fails.
+    def rr_bad_length_pair(reply_n: int, delivery_n: int) -> bytes:
+        assert reply_n + delivery_n == 166
+        reply86 = b_pending[2:88]
+        raw80 = b_pending[90:170]
+        fixed = b_pending[170:330]
+        if reply_n >= 86:
+            reply_c = reply86 + (b"\x00" * (reply_n - 86))
+        else:
+            reply_c = reply86[:reply_n]
+        if delivery_n >= 80:
+            dlv_c = raw80 + (b"\x00" * (delivery_n - 80))
+        else:
+            dlv_c = raw80[:delivery_n]
+        assert len(reply_c) == reply_n and len(dlv_c) == delivery_n
+        out = raw16(reply_c) + raw16(dlv_c) + fixed
+        assert len(out) == 330, len(out)
+        return out
+
+    add_rr_neg("DSB3_RR_LEN_PAIR_87_79", rr_bad_length_pair(87, 79),
+               "total330 reply87/delivery79 length pair")
+    add_rr_neg("DSB3_RR_LEN_PAIR_85_81", rr_bad_length_pair(85, 81),
+               "total330 reply85/delivery81 length pair")
+
+    # raw: zero delivery component
+    zraw = bytearray(make_rr_raw())
+    zraw[0:16] = bytes(16)
+    add_rr_neg("DSB3_RR_RAW_ZERO_COMP",
+               enc_reverse_reply_body(raw80=bytes(zraw), state=SS_PENDING,
+                                      g=0, i=0, exhausted=0, avail=0, **timer_z),
+               "delivery raw component zero")
+
+    # reply raw not delivery RAW16||kind
+    bad_reply = bytes([0xFF] * 86)
+    add_rr_neg("DSB3_RR_REPLY_RAW_MISMATCH",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=0, i=0, exhausted=0,
+                   avail=0, reply_raw=bad_reply, **timer_z),
+               "reply_key_raw not delivery RAW16||kind")
+
+    # reply kind body vs trailing u32 mismatch (mutate body kind only)
+    bb = bytearray(b_pending)
+    # layout: reply88 + delivery82 = 170, then txn16 -> 186, kind u32 at 186
+    bb[186:190] = be32(RK_DISPOSITION)  # body kind != reply trailing
+    add_rr_neg("DSB3_RR_KIND_MISMATCH", bytes(bb),
+               "body reply_kind != reply raw trailing u32")
+
+    # txn mismatch
+    add_rr_neg("DSB3_RR_TXN_MISMATCH",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, txn_id=bytes([0xEE] * 16), state=SS_PENDING,
+                   g=0, i=0, exhausted=0, avail=0, **timer_z),
+               "body transaction mismatch raw[32:48]")
+
+    # nonzero required zeroed
+    add_rr_neg("DSB3_RR_SEM_ZERO",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=0, i=0, exhausted=0,
+                   avail=0, sem=bytes(32), **timer_z),
+               "semantic_digest zero")
+    add_rr_neg("DSB3_RR_BLOB_ZERO",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=0, i=0, exhausted=0,
+                   avail=0, blob=bytes(32), **timer_z),
+               "body_blob_key_digest zero")
+    add_rr_neg("DSB3_RR_ATTEMPT_ZERO",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=0, i=0, exhausted=0,
+                   avail=0, attempt=bytes(16), **timer_z),
+               "attempt_id zero")
+
+    # reserved nonzero
+    add_rr_neg("DSB3_RR_RESERVED_NZ",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=0, i=0, exhausted=0,
+                   avail=0, reserved=1, **timer_z),
+               "reserved nonzero")
+
+    # counter: I > G
+    add_rr_neg("DSB3_RR_I_GT_G",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=1, i=2, exhausted=0,
+                   avail=1, **timer_z),
+               "I>G corrupt")
+
+    # MAX without exhausted / state5
+    add_rr_neg("DSB3_RR_MAX_NO_EXH",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=U64_MAX_RR, i=0,
+                   exhausted=0, avail=0, **timer_z),
+               "G=MAX with exhausted=0")
+    add_rr_neg("DSB3_RR_MAX_WRONG_STATE",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_SENT, g=U64_MAX_RR, i=1,
+                   exhausted=1, avail=1, **timer_z),
+               "MAX+exhausted on state3 corrupt")
+
+    # state5 without MAX / without exhausted
+    add_rr_neg("DSB3_RR_STATE5_NO_MAX",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_EXHAUSTED, g=5, i=3, exhausted=1,
+                   avail=1, **timer_z),
+               "state5 requires G or I MAX")
+    add_rr_neg("DSB3_RR_STATE5_EXH0",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_EXHAUSTED, g=U64_MAX_RR, i=0,
+                   exhausted=0, avail=0, **timer_z),
+               "state5 exhausted must be 1")
+    add_rr_neg("DSB3_RR_STATE5_TIMER_NZ",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_EXHAUSTED, g=U64_MAX_RR, i=0,
+                   exhausted=1, avail=0, **timer_nz),
+               "state5 timer must be zero")
+
+    # I/avail coupling
+    add_rr_neg("DSB3_RR_I0_AVAIL_NZ",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=2, i=0, exhausted=0,
+                   avail=1, **timer_z),
+               "I=0 requires availability 0")
+    add_rr_neg("DSB3_RR_I_POS_AVAIL0",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=2, i=1, exhausted=0,
+                   avail=0, **timer_z),
+               "I>0 requires availability non-zero")
+
+    # timer mixed
+    add_rr_neg("DSB3_RR_TIMER_EPOCH_ONLY",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_WAIT, g=1, i=0, exhausted=0,
+                   avail=0, retry_epoch=F["epoch"], retry_ms=0),
+               "timer epoch nz ms 0")
+    add_rr_neg("DSB3_RR_TIMER_MS_ONLY",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_WAIT, g=1, i=0, exhausted=0,
+                   avail=0, retry_epoch=bytes(16), retry_ms=5),
+               "timer ms nz epoch 0")
+    add_rr_neg("DSB3_RR_WAIT_TIMER_ZERO",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_WAIT, g=1, i=0, exhausted=0,
+                   avail=0, **timer_z),
+               "state2 requires non-zero timer")
+    add_rr_neg("DSB3_RR_PENDING_TIMER_NZ",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=1, i=0, exhausted=0,
+                   avail=0, **timer_nz),
+               "state1 requires zero timer")
+
+    # state3 I=0 illegal
+    add_rr_neg("DSB3_RR_STATE3_I0",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_SENT, g=2, i=0, exhausted=0,
+                   avail=0, **timer_z),
+               "state3 requires I>=1")
+
+    # unknown kind / state
+    add_rr_neg("DSB3_RR_KIND0",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, kind=0, state=SS_PENDING, g=0, i=0,
+                   exhausted=0, avail=0, **timer_z),
+               "reply_kind 0 illegal")
+    add_rr_neg("DSB3_RR_KIND5",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, kind=5, state=SS_PENDING, g=0, i=0,
+                   exhausted=0, avail=0, **timer_z),
+               "reply_kind 5 illegal")
+    bb = bytearray(b_pending)
+    # send_state at offset after reply88+dlv82+txn16+kind4+sem32+blob32 = 254
+    # 88+82=170, +16=186, +4=190, +32=222, +32=254
+    bb[254:258] = be32(99)
+    add_rr_neg("DSB3_RR_STATE_UNKNOWN", bytes(bb), "unknown send_state")
+    add(id="DSB3_RR_MUT_STATE", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x42,
+        body_hex=hx(bytes(bb)), notes="mutation unknown state")
+    rr_mut += 1
+
+    # exhausted not 0/1
+    bb = bytearray(b_pending)
+    # exhausted after state4 + g8 + i8 = 254+4+8+8=274
+    bb[274:278] = be32(2)
+    add_rr_neg("DSB3_RR_EXH_2", bytes(bb), "exhausted not 0/1")
+
+    # exhausted=1 without MAX on non-state5 already covered; flag1 G not max
+    add_rr_neg("DSB3_RR_EXH1_NO_MAX",
+               enc_reverse_reply_body(
+                   raw80=raw_rr, state=SS_PENDING, g=3, i=1, exhausted=1,
+                   avail=1, **timer_z),
+               "exhausted=1 requires MAX")
+
+    # typed common header negatives
+    k_ok, v_ok, _ = reverse_typed(body=b_pending)
+    raw80 = raw_rr
+    reply86 = rr_reply_contents(raw80, RK_RECEIPT)
+    v_pvd0 = enc_env_full(6, 0x42, 0, 1, rr_primary_id(raw80), rr_head,
+                          bytes(32), b_pending)
+    add_rr_neg_typed("DSB3_RR_PVD_ZERO", rr_key(reply86), v_pvd0,
+                     "secondary PVD zero")
+    v_head0 = enc_env_full(6, 0x42, 0, 1, rr_primary_id(raw80), bytes(32),
+                           rr_pvd, b_pending)
+    add_rr_neg_typed("DSB3_RR_HEAD_ZERO", rr_key(reply86), v_head0, "head zero")
+    v_pm = enc_env_full(6, 0x42, 0, 1, bytes([0x11] * 16), rr_head, rr_pvd,
+                        b_pending)
+    add_rr_neg_typed("DSB3_RR_PRIMARY_MISMATCH", rr_key(reply86), v_pm,
+                     "primary_id mismatch")
+    v_rev0 = enc_env_full(6, 0x42, 0, 0, rr_primary_id(raw80), rr_head, rr_pvd,
+                          b_pending)
+    add_rr_neg_typed("DSB3_RR_REV0", rr_key(reply86), v_rev0, "revision 0")
+    v_flags = enc_env_full(6, 0x42, 1, 1, rr_primary_id(raw80), rr_head, rr_pvd,
+                           b_pending)
+    add_rr_neg_typed("DSB3_RR_FLAGS_NZ", rr_key(reply86), v_flags,
+                     "common flags nonzero")
+
+    # key composite mismatch
+    wrong_key = bkey(6, 0x42, 5, composite(0x42, raw16(bytes([0x11] * 86))))
+    _, v_ok2, _ = reverse_typed(body=b_pending)
+    add_rr_neg_typed("DSB3_RR_KEY_COMPOSITE_MISMATCH", wrong_key, v_ok2,
+                     "REVERSE_REPLY key composite != body reply raw")
+
+    # delivery length wrong in body (truncate reply path via short delivery
+    # already fixed-length; mutate delivery length field)
+    bb = bytearray(b_pending)
+    bb[88:90] = be16(79)  # delivery raw length claim wrong
+    add_rr_neg("DSB3_RR_DLV_LEN79", bytes(bb), "delivery raw length 79")
+
+    b3_cov["42"] = add_body_suite(
+        "REVERSE_REPLY", 6, 0x42, rr_pos, rr_neg, rr_mut, rr_rt)
+    assert b3_cov["42"]["positive"] >= 15
+    assert b3_cov["42"]["negative"] >= 25
+    assert b3_cov["42"]["roundtrip"] >= 6
+    # silence unused if any
+    _ = (b_max_i_only,)
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -7660,6 +8159,7 @@ def build_document():
         "dsb3_subtype_32_positive": b3_cov["32"]["positive"],
         "dsb3_subtype_40_positive": b3_cov["40"]["positive"],
         "dsb3_subtype_41_positive": b3_cov["41"]["positive"],
+        "dsb3_subtype_42_positive": b3_cov["42"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -7693,12 +8193,17 @@ def build_document():
     assert catalog["dsb3_subtype_32_positive"] > 0
     assert catalog["dsb3_subtype_40_positive"] > 0
     assert catalog["dsb3_subtype_41_positive"] > 0
+    assert catalog["dsb3_subtype_42_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
     # Structural: CS/AII/ATT/EV/RC only after their pre-slice.
     assert all(
         not v["id"].startswith("DSB3_RC_")
         for v in vectors[:PRE_B3I_VECTOR_COUNT_SNAPSHOT]
+    )
+    assert all(
+        not v["id"].startswith("DSB3_RR_")
+        for v in vectors[:PRE_B3J_VECTOR_COUNT_SNAPSHOT]
     )
     assert all(
         not v["id"].startswith("DSB3_DLV_")
@@ -7722,6 +8227,11 @@ def build_document():
     )
     # Kind9/10 42-byte re-pin changes early DSO2/DSW1 vectors inside pre-B3h.
     # Full prefix fingerprint is re-pinned at B3i cutover; stable 1025 checked above.
+    _pre_b3j_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3J_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3j_fp_final == PRE_B3J_FULL_FINGERPRINT_PIN, (
+        f"post-append pre-B3j full fingerprint drift: got {_pre_b3j_fp_final}"
+    )
     _pre_b3i_fp_final = vectors_fingerprint(
         vectors[:PRE_B3I_VECTOR_COUNT_SNAPSHOT])
     assert _pre_b3i_fp_final == PRE_B3I_FULL_FINGERPRINT, (
@@ -7779,7 +8289,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3i",
+        "format": "ninlil-domain-store-v1-d1b3j",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -7789,12 +8299,13 @@ def build_document():
             "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE) + "
             "D1-B3g body (32 EVIDENCE_CELL) + D1-B3h body (40 DELIVERY) + "
             "D1-B3i body (41 RESULT_CACHE; D1 pre-alpha operation identity "
-            "correction kind9/10 phase); not full D1 catalog"
+            "correction kind9/10 phase) + D1-B3j body (42 REVERSE_REPLY "
+            "exact330/state matrix); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i APIs have no "
+            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j APIs have no "
             "workspace parameter; value is 0."
         ),
         "catalog": catalog,

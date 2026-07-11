@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..h body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..j body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -8424,6 +8424,374 @@ ninlil_status_t ninlil_model_domain_decode_body_result_cache(
     return NINLIL_OK;
 }
 
+/* --- REVERSE_REPLY (0x42) docs17 §8.5 D1-B3j --- */
+
+/* Exact delivery contents: 5 non-zero IDs; txn at [32,48). */
+static int reverse_reply_delivery_raw_ok(
+    uint16_t raw_len, const uint8_t *raw, const uint8_t *transaction_id)
+{
+    size_t i;
+    if (raw_len != NINLIL_MODEL_DOMAIN_DELIVERY_KEY_CONTENTS_BYTES
+        || raw == NULL || transaction_id == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < 5u; ++i) {
+        if (id_is_zero(raw + (i * 16u))) {
+            return 0;
+        }
+    }
+    return memcmp(raw + 32u, transaction_id, 16u) == 0;
+}
+
+/*
+ * reply_key_raw contents = delivery_key_raw:RAW16 (82) || reply_kind:u32 (4).
+ * Exact 86 bytes; body reply_kind must match trailing u32.
+ */
+static int reverse_reply_reply_raw_ok(
+    const ninlil_model_domain_body_reverse_reply_t *body)
+{
+    uint8_t expect[86];
+    uint32_t o = 0u;
+    uint32_t kind_wire;
+
+    if (body == NULL || body->reply_key_raw == NULL
+        || body->delivery_key_raw == NULL
+        || body->reply_key_raw_length != 86u
+        || body->delivery_key_raw_length
+            != NINLIL_MODEL_DOMAIN_DELIVERY_KEY_CONTENTS_BYTES) {
+        return 0;
+    }
+    o += encode_raw16(
+        expect, body->delivery_key_raw_length, body->delivery_key_raw);
+    if (o != 82u) {
+        return 0;
+    }
+    ninlil_model_domain_encode_u32_be(&expect[o], body->reply_kind);
+    o += 4u;
+    if (o != 86u) {
+        return 0;
+    }
+    if (memcmp(body->reply_key_raw, expect, 86u) != 0) {
+        return 0;
+    }
+    kind_wire = ninlil_model_domain_decode_u32_be(body->reply_key_raw + 82u);
+    return kind_wire == body->reply_kind;
+}
+
+static int reverse_reply_kind_ok(uint32_t kind)
+{
+    return kind == NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT
+        || kind == NINLIL_MODEL_DOMAIN_REPLY_KIND_DISPOSITION
+        || kind == NINLIL_MODEL_DOMAIN_REPLY_KIND_CUSTODY
+        || kind == NINLIL_MODEL_DOMAIN_REPLY_KIND_CANCEL_RESULT;
+}
+
+/* Retry timer: (epoch zero, ms 0) or (epoch nz, ms nz) only. */
+static int reverse_reply_timer_pair_ok(
+    const uint8_t epoch[NINLIL_MODEL_DOMAIN_ID_BYTES], uint64_t ms)
+{
+    if (epoch == NULL) {
+        return 0;
+    }
+    if (id_is_zero(epoch)) {
+        return ms == 0u;
+    }
+    return ms != 0u;
+}
+
+static int reverse_reply_timer_zero(
+    const ninlil_model_domain_body_reverse_reply_t *body)
+{
+    return id_is_zero(body->retry_clock_epoch)
+        && body->retry_not_before_ms == 0u;
+}
+
+static int reverse_reply_timer_nz(
+    const ninlil_model_domain_body_reverse_reply_t *body)
+{
+    return !id_is_zero(body->retry_clock_epoch)
+        && body->retry_not_before_ms != 0u;
+}
+
+/* I==0 iff availability 0; I>0 iff availability non-zero. Always I<=G. */
+static int reverse_reply_i_avail_ok(uint64_t g, uint64_t i, uint64_t avail)
+{
+    if (i > g) {
+        return 0;
+    }
+    if (i == 0u) {
+        return avail == 0u;
+    }
+    return avail != 0u;
+}
+
+/*
+ * Closed send-state matrix (docs17 §8.5 D1-B3j).
+ * not MAX means both G and I are strictly less than UINT64_MAX.
+ * exhausted=1 iff (G or I is MAX) and iff state 5.
+ */
+static int reverse_reply_matrix_ok(
+    const ninlil_model_domain_body_reverse_reply_t *body)
+{
+    uint32_t st;
+    uint64_t g;
+    uint64_t i;
+    uint32_t exhausted;
+    uint64_t avail;
+    int at_max;
+    int not_max;
+    int timer_ok;
+    int timer_zero;
+    int timer_nz;
+    int i_ok;
+
+    if (body == NULL) {
+        return 0;
+    }
+    st = body->send_state;
+    g = body->send_operation_generation;
+    i = body->send_invocation_count;
+    exhausted = body->send_counter_exhausted;
+    avail = body->availability_epoch;
+
+    if (exhausted != 0u && exhausted != 1u) {
+        return 0;
+    }
+    at_max = (g == UINT64_MAX) || (i == UINT64_MAX);
+    not_max = !at_max;
+    timer_ok = reverse_reply_timer_pair_ok(
+        body->retry_clock_epoch, body->retry_not_before_ms);
+    if (!timer_ok) {
+        return 0;
+    }
+    timer_zero = reverse_reply_timer_zero(body);
+    timer_nz = reverse_reply_timer_nz(body);
+    i_ok = reverse_reply_i_avail_ok(g, i, avail);
+    if (!i_ok) {
+        return 0;
+    }
+
+    switch (st) {
+    case NINLIL_MODEL_DOMAIN_REPLY_SEND_PENDING:
+        /* virgin: G=0,I=0,avail=0,exh=0,timer zero */
+        if (g == 0u) {
+            return i == 0u && avail == 0u && exhausted == 0u && timer_zero;
+        }
+        /* reopened: G>=1 not MAX, I 0..G coupled, exh=0, timer zero */
+        return not_max && exhausted == 0u && timer_zero;
+    case NINLIL_MODEL_DOMAIN_REPLY_SEND_WAITING_RETRY:
+        return g >= 1u && not_max && exhausted == 0u && timer_nz;
+    case NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_SENT_OR_UNKNOWN:
+        /* I is 1..G (strictly positive), availability non-zero via coupling */
+        return g >= 1u && not_max && i >= 1u && exhausted == 0u && timer_zero;
+    case NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_DENIED:
+        return g >= 1u && not_max && exhausted == 0u && timer_zero;
+    case NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_COUNTER_EXHAUSTED:
+        return at_max && exhausted == 1u && timer_zero;
+    default:
+        return 0;
+    }
+}
+
+static int reverse_reply_fields_ok(
+    const ninlil_model_domain_body_reverse_reply_t *body)
+{
+    if (body == NULL
+        || !reverse_reply_delivery_raw_ok(
+               body->delivery_key_raw_length, body->delivery_key_raw,
+               body->transaction_id)
+        || !reverse_reply_reply_raw_ok(body)
+        || !reverse_reply_kind_ok(body->reply_kind)
+        || id_is_zero(body->transaction_id)
+        || id_is_zero(body->attempt_id)
+        || digest_is_zero(body->semantic_digest)
+        || digest_is_zero(body->body_blob_key_digest)
+        || body->reserved != 0u) {
+        return 0;
+    }
+    return reverse_reply_matrix_ok(body);
+}
+
+uint32_t ninlil_model_domain_body_reverse_reply_encoded_length(
+    const ninlil_model_domain_body_reverse_reply_t *body)
+{
+    if (body == NULL || !reverse_reply_fields_ok(body)) {
+        return 0u;
+    }
+    return NINLIL_MODEL_DOMAIN_BODY_REVERSE_REPLY_BYTES;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_reverse_reply(
+    const ninlil_model_domain_body_reverse_reply_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[5];
+    size_t lens[5];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->reply_key_raw != NULL && body->reply_key_raw_length != 0u) {
+            ptrs[n] = body->reply_key_raw;
+            lens[n] = body->reply_key_raw_length;
+            n++;
+        }
+        if (body->delivery_key_raw != NULL
+            && body->delivery_key_raw_length != 0u) {
+            ptrs[n] = body->delivery_key_raw;
+            lens[n] = body->delivery_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_reverse_reply_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL) || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    o = 0u;
+    o += encode_raw16(
+        &out_bytes[o], body->reply_key_raw_length, body->reply_key_raw);
+    o += encode_raw16(
+        &out_bytes[o], body->delivery_key_raw_length, body->delivery_key_raw);
+    (void)memcpy(&out_bytes[o], body->transaction_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reply_kind);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->semantic_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->body_blob_key_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->send_state);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->send_operation_generation);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->send_invocation_count);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->send_counter_exhausted);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reserved);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->attempt_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->availability_epoch);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->retry_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->retry_not_before_ms);
+    o += 8u;
+    if (o != NINLIL_MODEL_DOMAIN_BODY_REVERSE_REPLY_BYTES) {
+        *out_length = 0u;
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_reverse_reply(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_reverse_reply_t *out_body)
+{
+    ninlil_model_domain_body_reverse_reply_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length != NINLIL_MODEL_DOMAIN_BODY_REVERSE_REPLY_BYTES) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    /* reply RAW16 max 192 */
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o, (uint16_t)192u,
+            &tmp.reply_key_raw_length, &tmp.reply_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    /* delivery RAW16 max 128 */
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o, (uint16_t)128u,
+            &tmp.delivery_key_raw_length, &tmp.delivery_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    if (encoded.length - o != NINLIL_MODEL_DOMAIN_BODY_REVERSE_REPLY_FIXED) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.transaction_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.reply_kind = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.semantic_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.body_blob_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.send_state = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.send_operation_generation =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.send_invocation_count =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.send_counter_exhausted =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reserved = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.attempt_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.availability_epoch =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.retry_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.retry_not_before_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    if (o != encoded.length || !reverse_reply_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -8457,6 +8825,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVIDENCE_CELL:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_REVERSE_REPLY:
         return 1;
     default:
         return 0;
@@ -9660,6 +10029,56 @@ static ninlil_status_t validate_header_body_local(
                 NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
                 out->result_cache.delivery_key_raw_length,
                 out->result_cache.delivery_key_raw, expect_pid)
+            != NINLIL_OK) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (!header_primary_id_eq(env, expect_pid)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_REVERSE_REPLY) {
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+        uint8_t components[2u + 192u];
+        ninlil_bytes_view_t cv;
+        uint32_t o;
+
+        /*
+         * REVERSE_REPLY same-record (docs17 §8.5 D1-B3j):
+         * - mutable secondary: revision>=1, flags 0, head non-zero, PVD non-zero
+         * - key COMPOSITE(42, reply_key_raw:RAW16)
+         * - primary_id = DELIVERY composite identity first 16
+         * D3: live DELIVERY PVD / reply BLOB / RESULT reply_count / kind exact1.
+         */
+        if (env->header.record_revision < 1u
+            || env->header.flags != 0u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_reverse_reply(
+            env->body, &out->reverse_reply);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        o = encode_raw16(
+            components, out->reverse_reply.reply_key_raw_length,
+            out->reverse_reply.reply_key_raw);
+        cv.data = components;
+        cv.length = o;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_REVERSE_REPLY, cv, key->identity,
+                key->identity_length)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (primary_id_from_raw_contents_as_raw16(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+                out->reverse_reply.delivery_key_raw_length,
+                out->reverse_reply.delivery_key_raw, expect_pid)
             != NINLIL_OK) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
