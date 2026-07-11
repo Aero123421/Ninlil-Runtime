@@ -117,6 +117,42 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_scheduler_candidate_test
     )
 
+    add_library(ninlil_reducer_model STATIC
+        src/model/deadline_projection.c
+    )
+    target_include_directories(ninlil_reducer_model PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_reducer_model PRIVATE ninlil)
+    set_target_properties(ninlil_reducer_model PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_reducer_model)
+
+    add_executable(ninlil_deadline_projection_test
+        tests/model/deadline_projection_test.c
+    )
+    target_include_directories(ninlil_deadline_projection_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_deadline_projection_test PRIVATE
+        ninlil_reducer_model
+        ninlil
+    )
+    set_target_properties(ninlil_deadline_projection_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_deadline_projection_test)
+
+    add_test(
+        NAME deadline_projection_model
+        COMMAND ninlil_deadline_projection_test
+    )
+
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
     target_link_libraries(ninlil_smoke_c11 PRIVATE ninlil)
     set_target_properties(ninlil_smoke_c11 PROPERTIES
