@@ -495,6 +495,31 @@ Digestはalgorithm/reserved/32 bytesの36 bytes、`evidence_time`はepoch ID 16 
 
 Fixture accounting vectors: C1 APPLICATION=`455 + 19 + 14 + 14 + 9 = 511 bytes`、E1 APPLICATION=`455 + 19 + 13 + 13 + 10 = 510 bytes`です。C1を2-copy duplicateするqueue reservationは2 entries/1,022 bytesで、1 entryだけ入れるpartial acceptanceは禁止します。
 
+## Canonical bounded basic Port fixtures
+
+PR 3のAllocator、Execution、Clock、Entropy fixtureはTEST artifactです。各fixtureはcreate時にconfig、epoch、scriptの全scalar/valueをcopyし、callerの変更や解放へ依存しません。Vtableと`user`はfixture destroyまでstableで、host threadを作らず、thread-safeを主張しません。Scriptはbounded FIFOで、matchingするotherwise-valid callだけをconsumeします。Invalid callもcall count/diagnostic traceへは記録しますがscriptをconsumeしません。Traceはpointer、host timestamp、hash iterationを含めず、sequence、operation、logical ID、入力scalar、outcome、前後counterだけを固定順で保持します。
+
+### Allocator fixture
+
+- Valid `allocate`は`size >= 1`、alignmentは1を含む2の冪です。`size > SIZE_MAX`、alignment/metadata加算overflow、host allocation failureはNULLです。成功pointerはrequested alignmentを満たし、少なくとも`size` bytesを読み書きできます。初期内容をzeroとは保証しません。
+- Invalid size/alignmentはNULLとcontract-violation diagnosticを生成し、valid-attempt ordinal、failure script、logical allocation ID、live count/bytesを変更しません。Scripted failureはvalid-attempt ordinalを1進めてNULLを返し、failure occurrenceだけをconsumeし、allocation ID/live accountingを作りません。
+- `deallocate`成功はknown-live pointerとallocate時のexact size/alignmentの組だけです。NULL、unknown、double free、size mismatch、alignment mismatchはvoid callのdiagnosticを別に記録し、対象allocationをliveのまま保持するため、後続のexact deallocateが可能です。Sizeとalignmentが同時に不一致ならsize mismatchを先に記録します。
+- Backing/tokenはfixture destroyまでtombstone保持し、stale pointer addressをnew live allocationへ再利用しません。Exact deallocateはpayloadをpoisonし、live count/bytesを減らしますがhost memoryの最終回収はdestroyです。Destroy前のleak count/bytesとlive/peak/call/failure/violation counterをqueryできます。Counterはcheckedで、表現不能ならfixture diagnostic fenceを立てます。
+
+### Execution fixture
+
+- `current_context_id`はconfigured `uint64_t`をcallごとにそのまま返します。Non-zeroがnormalで、0もowner-context fault vector用に許可します。値をOS thread IDとして解釈せず、fixture間のglobal uniquenessを要求しません。
+- Explicit setterまでは同じ値を返し、setter後の次callからnew valueを返します。Call count/traceを持ち、configとsetter inputはvalue copyです。
+
+### Clock fixture
+
+- Coreは`now`前に`ninlil_time_sample_t`をcurrent ABI header + remaining zeroへ初期化します。Valid pointer/headerだけがfixture script対象です。Invalid pointer/headerは`NINLIL_PORT_PERMANENT_FAILURE`、output/script/state不変です。
+- Normal `PORT_OK`はheaderを維持し、reserved zero、non-zero epoch、known trust、checked nowを全fieldへ設定します。Normal `TEMPORARY` / `PERMANENT`はsampleを変更しません。したがってCore初期値のheader + remaining zeroが保持されます。
+- Core shape test用raw outcomeだけはnormal scriptから分離し、statusとsample全fieldのexact tupleを1 call返せます。Raw outputはvirtual clockのstate、last-good sample、trustを変更しません。これによりnon-OK poison、all-zero epoch、invalid trust/reserved/header、same-epoch regressionを明示的に作れます。
+- Normal stateはsim time、offset、epoch、trustです。Sim timeは減少せず、same epochのoffsetも減少しません。Checked forward jumpだけを許し、rollback actionはsim timeを戻さずexplicit fresh non-zero epoch + UNCERTAINへ移します。Trustはexplicit recovery actionまで自動回復しません。State/action overflowはscenario errorでstateを変更しません。
+- Normal `OK` scriptとexplicit recoveryがcurrent epochと同じepochを指定する場合、sample timeはcurrent checked `sim_time + offset`以上でなければ登録/適用できません。Enqueue後のadvanceによって先頭sampleが後退値になった場合も適用直前に再検査し、そのoccurrenceをconsumeしてoutput/state不変の`PERMANENT_FAILURE`とconfiguration-error diagnosticを返します。Explicit recoveryまたはenqueue時に検出したsame-epoch regressionはstate/FIFO不変で失敗します。Different non-zero epochはnormal transitionとして許可し、regressionをCoreへ注入するのはraw outcomeだけです。
+- Valid callではFIFO raw/statusをnatural sample計算より先にconsumeします。FIFOがないnormal callだけがchecked `sim_time + offset`を評価し、overflow時はoutput不変の`PERMANENT_FAILURE`です。
+
 ## Clock port contract
 
 ### Monotonic time
@@ -573,6 +598,16 @@ block(counter) = SHA-256(
 - metrics epoch/transaction/attempt ID candidateは取得した16 bytesをそのままID byte orderとして使用します。Event/operation IDはcaller-suppliedでこのstreamを消費しません。All-zeroでもproviderは書き換えずCoreが全3種で拒否します。Collision validationはtransaction/attemptだけで、metrics epochは保持indexのないfresh observability labelとして扱います。
 - Runtime restartでcounterを戻しません。harnessがstream stateを保持します。完全なscenario resetだけがcounterを0へ戻します。
 - `entropy_fail` faultは指定streamの次N callsを`NINLIL_PORT_TEMPORARY_FAILURE`にし、failed callではcounterを進めません。
+
+Canonical TEST entropy fixtureのscripted actionは次で固定します。
+
+- `length > 0 && out == NULL`はinvalid callとして`NINLIL_PORT_PERMANENT_FAILURE`を返し、counter/scriptを変更しません。`fill(0)`はout NULL/non-NULLの両方で常に`NINLIL_PORT_OK`で、output dereference、counter進行、script action消費を行いません。
+- Valid non-zero callは必要な全block counterをwrite前にpreflightします。Headroom不足はoutput/counter不変の`NINLIL_PORT_PERMANENT_FAILURE`で、FIFO actionをconsumeしません。HeadroomがあればFIFO先頭actionをconsumeし、なければnormal outcomeを実行します。
+- `TEMPORARY` / `PERMANENT`はoutputを変更せず対応statusを返し、counterを進めません。
+- `PARTIAL(prefix_length)`は`0 < prefix_length < requested length`をrequiredとします。Current counterから生成した通常streamの先頭`prefix_length` bytesだけを書き、残部を変更せず`NINLIL_PORT_TEMPORARY_FAILURE`を返し、counterを進めません。条件不一致はscript configuration errorとしてoutput/counter不変の`NINLIL_PORT_PERMANENT_FAILURE`を返し、そのactionをconsumeしてdiagnosticへ記録します。
+- `ALL_ZERO`はrequested bytes全体をzeroで書き`NINLIL_PORT_OK`を返し、通常成功と同じ`ceil(length / 32)` blocksだけcounterを進めます。Coreがcandidate用途でall-zeroを拒否します。
+- Non-zero requestは必要な全block counterをwrite前にchecked preflightします。`UINT64_MAX` counterのblock自体は最後の1 blockとして使用でき、成功後はexhausted markerを立てます。以後のnon-zero requestはoutput/counter不変の`NINLIL_PORT_PERMANENT_FAILURE`です。途中までwriteしてoverflowを返しません。
+- Runtime restartはseed、stream ID、counter、exhausted marker、未消費FIFOを保持します。Explicit scenario resetだけがcreate時のseed/stream、counter 0、not-exhausted、empty scriptへ戻します。Stream IDのscenario内uniqueness検査はfixture単体でなくharness manifestの責務です。
 
 Foundation fixtureのstream IDはharness=`0`、controller-1=`1`、endpoint-1=`2`です。追加runtimeはscenario manifestで明示し、自動割当しません。
 

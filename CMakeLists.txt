@@ -344,6 +344,57 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         COMMAND ninlil_in_memory_storage_boundary_test
     )
 
+    add_library(ninlil_test_platform_fixtures STATIC
+        tests/support/platform_basic_fixtures.c
+        tests/support/deterministic_entropy.c
+    )
+    target_include_directories(ninlil_test_platform_fixtures PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_test_platform_fixtures PRIVATE ninlil)
+    set_target_properties(ninlil_test_platform_fixtures PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_test_platform_fixtures)
+
+    add_executable(ninlil_platform_basic_fixtures_test
+        tests/port/platform_basic_fixtures_test.c
+    )
+    target_link_libraries(ninlil_platform_basic_fixtures_test PRIVATE
+        ninlil_test_platform_fixtures
+        ninlil
+    )
+    set_target_properties(ninlil_platform_basic_fixtures_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_platform_basic_fixtures_test)
+    add_test(
+        NAME platform_basic_fixtures
+        COMMAND ninlil_platform_basic_fixtures_test
+    )
+
+    add_executable(ninlil_deterministic_entropy_test
+        tests/port/deterministic_entropy_test.c
+    )
+    target_link_libraries(ninlil_deterministic_entropy_test PRIVATE
+        ninlil_test_platform_fixtures
+        ninlil
+    )
+    set_target_properties(ninlil_deterministic_entropy_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_deterministic_entropy_test)
+    add_test(
+        NAME deterministic_entropy_v1
+        COMMAND ninlil_deterministic_entropy_test
+    )
+
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
     target_link_libraries(ninlil_smoke_c11 PRIVATE ninlil)
     set_target_properties(ninlil_smoke_c11 PROPERTIES
