@@ -147,38 +147,49 @@ typedef struct ninlil_dv_catalog {
     uint32_t dsb2_subtype_25_positive;
     uint32_t dsb2_total_positive;
     uint32_t dsb2_total_negative;
+    uint32_t dsb3_subtype_26_positive;
+    uint32_t dsb3_total_positive;
+    uint32_t dsb3_total_negative;
 } ninlil_dv_catalog_t;
 
-enum {
-    NINLIL_DV_CAT_DSK1_KEYS = 1u << 0,
-    NINLIL_DV_CAT_DSV1_EXACT = 1u << 1,
-    NINLIL_DV_CAT_DSV1_PLUS1 = 1u << 2,
-    NINLIL_DV_CAT_DSH2_HEALTH = 1u << 3,
-    NINLIL_DV_CAT_DSH2_FENCE = 1u << 4,
-    NINLIL_DV_CAT_DSO2_KIND = 1u << 5,
-    NINLIL_DV_CAT_DSO2_CANON = 1u << 6,
-    NINLIL_DV_CAT_DSW1_STREAM = 1u << 7,
-    NINLIL_DV_CAT_DSW1_HEADER = 1u << 8,
-    NINLIL_DV_CAT_DSK1_PRIMARY = 1u << 9,
-    NINLIL_DV_CAT_DSV1_ENCDEC = 1u << 10,
-    NINLIL_DV_CAT_DSB1_01 = 1u << 11,
-    NINLIL_DV_CAT_DSB1_60 = 1u << 12,
-    NINLIL_DV_CAT_DSB1_62 = 1u << 13,
-    NINLIL_DV_CAT_DSB1_64 = 1u << 14,
-    NINLIL_DV_CAT_DSB1_7D = 1u << 15,
-    NINLIL_DV_CAT_DSB1_POS = 1u << 16,
-    NINLIL_DV_CAT_DSB1_NEG = 1u << 17,
-    NINLIL_DV_CAT_DSB2_10 = 1u << 18,
-    NINLIL_DV_CAT_DSB2_11 = 1u << 19,
-    NINLIL_DV_CAT_DSB2_20 = 1u << 20,
-    NINLIL_DV_CAT_DSB2_21 = 1u << 21,
-    NINLIL_DV_CAT_DSB2_22 = 1u << 22,
-    NINLIL_DV_CAT_DSB2_23 = 1u << 23,
-    NINLIL_DV_CAT_DSB2_24 = 1u << 24,
-    NINLIL_DV_CAT_DSB2_25 = 1u << 25,
-    NINLIL_DV_CAT_DSB2_POS = 1u << 26,
-    NINLIL_DV_CAT_DSB2_NEG = 1u << 27
-};
+/*
+ * Catalog presence mask is uint64_t. Portable UINT64_C(1) shifts keep bits
+ * 32..63 well-defined for B3b+ growth; do not use 1u<<n (UB past bit 31 on
+ * 32-bit unsigned int). Top-level presence (top_bits) remains uint32_t.
+ */
+#define NINLIL_DV_CAT_BIT(n) (UINT64_C(1) << (n))
+
+#define NINLIL_DV_CAT_DSK1_KEYS NINLIL_DV_CAT_BIT(0)
+#define NINLIL_DV_CAT_DSV1_EXACT NINLIL_DV_CAT_BIT(1)
+#define NINLIL_DV_CAT_DSV1_PLUS1 NINLIL_DV_CAT_BIT(2)
+#define NINLIL_DV_CAT_DSH2_HEALTH NINLIL_DV_CAT_BIT(3)
+#define NINLIL_DV_CAT_DSH2_FENCE NINLIL_DV_CAT_BIT(4)
+#define NINLIL_DV_CAT_DSO2_KIND NINLIL_DV_CAT_BIT(5)
+#define NINLIL_DV_CAT_DSO2_CANON NINLIL_DV_CAT_BIT(6)
+#define NINLIL_DV_CAT_DSW1_STREAM NINLIL_DV_CAT_BIT(7)
+#define NINLIL_DV_CAT_DSW1_HEADER NINLIL_DV_CAT_BIT(8)
+#define NINLIL_DV_CAT_DSK1_PRIMARY NINLIL_DV_CAT_BIT(9)
+#define NINLIL_DV_CAT_DSV1_ENCDEC NINLIL_DV_CAT_BIT(10)
+#define NINLIL_DV_CAT_DSB1_01 NINLIL_DV_CAT_BIT(11)
+#define NINLIL_DV_CAT_DSB1_60 NINLIL_DV_CAT_BIT(12)
+#define NINLIL_DV_CAT_DSB1_62 NINLIL_DV_CAT_BIT(13)
+#define NINLIL_DV_CAT_DSB1_64 NINLIL_DV_CAT_BIT(14)
+#define NINLIL_DV_CAT_DSB1_7D NINLIL_DV_CAT_BIT(15)
+#define NINLIL_DV_CAT_DSB1_POS NINLIL_DV_CAT_BIT(16)
+#define NINLIL_DV_CAT_DSB1_NEG NINLIL_DV_CAT_BIT(17)
+#define NINLIL_DV_CAT_DSB2_10 NINLIL_DV_CAT_BIT(18)
+#define NINLIL_DV_CAT_DSB2_11 NINLIL_DV_CAT_BIT(19)
+#define NINLIL_DV_CAT_DSB2_20 NINLIL_DV_CAT_BIT(20)
+#define NINLIL_DV_CAT_DSB2_21 NINLIL_DV_CAT_BIT(21)
+#define NINLIL_DV_CAT_DSB2_22 NINLIL_DV_CAT_BIT(22)
+#define NINLIL_DV_CAT_DSB2_23 NINLIL_DV_CAT_BIT(23)
+#define NINLIL_DV_CAT_DSB2_24 NINLIL_DV_CAT_BIT(24)
+#define NINLIL_DV_CAT_DSB2_25 NINLIL_DV_CAT_BIT(25)
+#define NINLIL_DV_CAT_DSB2_POS NINLIL_DV_CAT_BIT(26)
+#define NINLIL_DV_CAT_DSB2_NEG NINLIL_DV_CAT_BIT(27)
+#define NINLIL_DV_CAT_DSB3_26 NINLIL_DV_CAT_BIT(28)
+#define NINLIL_DV_CAT_DSB3_POS NINLIL_DV_CAT_BIT(29)
+#define NINLIL_DV_CAT_DSB3_NEG NINLIL_DV_CAT_BIT(30)
 
 #define NINLIL_DV_CAT_REQUIRED_MASK                                            \
     (NINLIL_DV_CAT_DSK1_KEYS | NINLIL_DV_CAT_DSV1_EXACT                         \
@@ -194,7 +205,9 @@ enum {
         | NINLIL_DV_CAT_DSB2_20 | NINLIL_DV_CAT_DSB2_21                          \
         | NINLIL_DV_CAT_DSB2_22 | NINLIL_DV_CAT_DSB2_23                          \
         | NINLIL_DV_CAT_DSB2_24 | NINLIL_DV_CAT_DSB2_25                          \
-        | NINLIL_DV_CAT_DSB2_POS | NINLIL_DV_CAT_DSB2_NEG)
+        | NINLIL_DV_CAT_DSB2_POS | NINLIL_DV_CAT_DSB2_NEG                        \
+        | NINLIL_DV_CAT_DSB3_26 | NINLIL_DV_CAT_DSB3_POS                        \
+        | NINLIL_DV_CAT_DSB3_NEG)
 
 enum {
     NINLIL_DV_TOP_VERSION = 1u << 0,
@@ -209,17 +222,18 @@ enum {
     (NINLIL_DV_TOP_VERSION | NINLIL_DV_TOP_FORMAT | NINLIL_DV_TOP_SCOPE         \
         | NINLIL_DV_TOP_WS_DEF | NINLIL_DV_TOP_CATALOG | NINLIL_DV_TOP_VECTORS)
 
-#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b2"
+#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3a"
 #define NINLIL_DV_SCOPE_REQUIRED                                               \
     "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "              \
-    "(10/11/20-25 service+txn admission); not full D1 catalog"
+    "(10/11/20-25 service+txn admission) + D1-B3a body "                        \
+    "(26 SCHEDULER_OWNER); not full D1 catalog"
 
 typedef struct ninlil_dv_file {
     uint32_t version;
     char format[64];
     char scope[256];
     ninlil_dv_catalog_t catalog;
-    uint32_t catalog_bits;
+    uint64_t catalog_bits;
     uint32_t top_bits;
     ninlil_dv_vector_t *vectors;
     size_t vector_count;

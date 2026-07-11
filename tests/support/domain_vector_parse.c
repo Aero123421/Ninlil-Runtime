@@ -277,7 +277,8 @@ static int known_suite(const char *s)
         || strcmp(s, "DSO2") == 0
         || strcmp(s, "DSW1") == 0
         || strcmp(s, "DSB1") == 0
-        || strcmp(s, "DSB2") == 0;
+        || strcmp(s, "DSB2") == 0
+        || strcmp(s, "DSB3") == 0;
 }
 
 static int known_op(const char *op)
@@ -961,6 +962,10 @@ static int parse_catalog(parse_ctx *c, ninlil_dv_file_t *file)
             NINLIL_DV_CAT_DSB2_25)
         CAT("dsb2_total_positive", dsb2_total_positive, NINLIL_DV_CAT_DSB2_POS)
         CAT("dsb2_total_negative", dsb2_total_negative, NINLIL_DV_CAT_DSB2_NEG)
+        CAT("dsb3_subtype_26_positive", dsb3_subtype_26_positive,
+            NINLIL_DV_CAT_DSB3_26)
+        CAT("dsb3_total_positive", dsb3_total_positive, NINLIL_DV_CAT_DSB3_POS)
+        CAT("dsb3_total_negative", dsb3_total_negative, NINLIL_DV_CAT_DSB3_NEG)
 #undef CAT
         {
             set_err(c->err, c->err_cap, "unknown catalog key");
