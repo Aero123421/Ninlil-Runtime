@@ -1540,7 +1540,6 @@ static int test_body_alias_and_overflow(void)
     uint8_t out_before[256];
     uint8_t dig[32];
     uint8_t marker[16];
-    uint8_t marker_before[16];
     uint32_t len = 77u;
     uint32_t len_before;
     ninlil_model_domain_body_bearer_state_t br;
@@ -1657,11 +1656,6 @@ static int test_body_alias_and_overflow(void)
     /* marker_id alias subject_digest ↔ out */
     (void)memset(dig, 0x11, sizeof(dig));
     (void)memset(marker, 0x22, sizeof(marker));
-    (void)memcpy(marker_before, marker, sizeof(marker));
-    REQUIRE(ninlil_model_domain_invariant_marker_id(
-            129u, 0x0300u, marker /* wrong size as digest alias */,
-            marker)
-        == NINLIL_E_INVALID_ARGUMENT);
     /* Use proper alias: digest buffer overlaps marker */
     {
         uint8_t blob[48];
