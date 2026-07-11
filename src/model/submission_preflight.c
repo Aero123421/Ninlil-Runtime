@@ -534,6 +534,7 @@ static int grant_is_valid(
         && grant->evaluated_at_ms == input->clock.now_ms
         && grant->valid_from_ms <= grant->evaluated_at_ms
         && grant->evaluated_at_ms < grant->expires_at_ms
+        && grant->retry_delay_ms == 0u
         && grant->max_payload_bytes > 0u
         && grant->max_active_spool_count > 0u
         && grant->max_active_spool_bytes > 0u
@@ -560,6 +561,7 @@ static int grant_is_zero(const ninlil_model_origin_grant_snapshot_t *grant)
         && grant->evaluated_at_ms == 0u
         && grant->valid_from_ms == 0u
         && grant->expires_at_ms == 0u
+        && grant->retry_delay_ms == 0u
         && grant->max_payload_bytes == 0u
         && grant->max_active_spool_count == 0u
         && grant->max_active_spool_bytes == 0u
@@ -583,6 +585,7 @@ static int deny_provenance_is_valid(
         && decision->grant_revision == 0u
         && decision->valid_from_ms == 0u
         && decision->expires_at_ms == 0u
+        && decision->retry_delay_ms == 0u
         && decision->max_payload_bytes == 0u
         && decision->max_active_spool_count == 0u
         && decision->max_active_spool_bytes == 0u

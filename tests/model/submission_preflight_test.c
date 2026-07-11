@@ -578,6 +578,34 @@ static int test_authority_results(void)
     REQUIRE(result.public_result.kind == NINLIL_SUBMISSION_INVALID);
 
     input = make_input(NINLIL_FAMILY_EVENT_FACT);
+    input.authority.grant.retry_delay_ms = 1u;
+    REQUIRE(ninlil_model_submission_preflight(&input, &result) == NINLIL_OK);
+    REQUIRE(result.api_status == NINLIL_E_DEGRADED);
+    REQUIRE(result.public_result.kind == NINLIL_SUBMISSION_INVALID);
+
+    input = make_input(NINLIL_FAMILY_EVENT_FACT);
+    input.authority.fact = NINLIL_MODEL_ORIGIN_AUTH_TEMPORARY_FAILURE;
+    (void)memset(&input.authority.grant, 0, sizeof(input.authority.grant));
+    input.authority.grant.retry_delay_ms = 1u;
+    REQUIRE(ninlil_model_submission_preflight(&input, &result) == NINLIL_OK);
+    REQUIRE(result.api_status == NINLIL_E_DEGRADED);
+    REQUIRE(result.public_result.kind == NINLIL_SUBMISSION_INVALID);
+
+    input = make_input(NINLIL_FAMILY_EVENT_FACT);
+    set_valid_deny(
+        &input,
+        NINLIL_REASON_RATE_EXHAUSTED,
+        NINLIL_RETRY_SAME_AFTER,
+        123u);
+    REQUIRE(input.authority.grant.retry_delay_ms == 0u);
+    REQUIRE(ninlil_model_submission_preflight(&input, &result) == NINLIL_OK);
+    REQUIRE(is_rejection(
+        &result,
+        NINLIL_REASON_RATE_EXHAUSTED,
+        NINLIL_RETRY_SAME_AFTER,
+        123u));
+
+    input = make_input(NINLIL_FAMILY_EVENT_FACT);
     set_valid_deny(
         &input,
         NINLIL_REASON_GRANT_EXPIRED,

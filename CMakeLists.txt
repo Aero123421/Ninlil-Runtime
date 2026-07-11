@@ -124,6 +124,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         src/model/required_receipt_transition.c
         src/model/resource_ledger.c
         src/model/resource_ledger_batch.c
+        src/model/submission_admission.c
         src/model/submission_preflight.c
     )
     target_include_directories(ninlil_reducer_model PRIVATE
@@ -267,6 +268,28 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_test(
         NAME submission_preflight_model
         COMMAND ninlil_submission_preflight_test
+    )
+
+    add_executable(ninlil_submission_admission_test
+        tests/model/submission_admission_test.c
+    )
+    target_include_directories(ninlil_submission_admission_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_submission_admission_test PRIVATE
+        ninlil_reducer_model
+        ninlil
+    )
+    set_target_properties(ninlil_submission_admission_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_submission_admission_test)
+
+    add_test(
+        NAME submission_admission_model
+        COMMAND ninlil_submission_admission_test
     )
 
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
