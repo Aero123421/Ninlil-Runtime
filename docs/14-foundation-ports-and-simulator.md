@@ -335,7 +335,19 @@ READ_ONLY cleanup rollbackがOK以外ならloaded snapshotを破棄し、Storage
 
 Initial bootstrapはexact 17 entries / 1,583 logical bytesを必要とします。`capacity()`はadvisory preflightに使用できますが、authoritative NO_SPACEはfinal transaction viewに対するFULL commit結果です。Backend journal、flush、fixed replacement headroomはportable logical bytesへ加えずStorage provider preconditionです。
 
-L2bはcompact L2a planからcaller-owned scratchへ1 recordずつencodeして`put`できます。Conformance Storageは各`put: OK`のreturn前にkey/valueをtransaction-owned stagingへdeep-copyし、callerがscratchを直後にpoison/reuseしてもcommit結果が変わらないことを検査します。Error時ownership 0、transaction consume後staging 0です。Lifecycle/Runtime Store sourceは非export `ninlil_runtime_private` STATIC targetへ分離済みで、public `ninlil`、TEST fixture、public includeへ依存を漏らしません。SQLite providerとStorage orchestrationはL2bの後続変更であり、このtarget分離やL2a2 pure modelの完成をproduction Storage統合と扱いません。
+L2bはcompact L2a planからcaller-owned scratchへ1 recordずつencodeして`put`できます。Conformance Storageは各`put: OK`のreturn前にkey/valueをtransaction-owned stagingへdeep-copyし、callerがscratchを直後にpoison/reuseしてもcommit結果が変わらないことを検査します。Error時ownership 0、transaction consume後staging 0です。Lifecycle/Runtime Store sourceは非export `ninlil_runtime_private` STATIC targetへ分離済みで、public `ninlil`、TEST fixture、public includeへ依存を漏らしません。SQLite provider、domain recovery、public Runtime統合はL2b1より後続の変更であり、bootstrap-only orchestrationの完成をproduction Storage統合やStage 5全体の完成と扱いません。
+
+#### L2b1 bootstrap-only Storage orchestrator boundary
+
+最初のL2b変更は、既に`open`成功済みのStorage handleを受け取る非export Core helperとします。このhelperが所有するのは、helper内で開始したtransactionとiteratorだけです。public `runtime_create`、Storage `open`、family 5/6、domain recovery、identity比較/rotation、health publish、Bearer/Clock/Entropy callは含めません。成功outcomeは`NEW_BOOTSTRAP_COMMITTED`または`EXISTING_PROFILE_EXACT_RECOVERY_REQUIRED`のどちらかであり、どちらもStage 5全体の完了やpublic Runtime公開を意味しません。
+
+17 exact valueのencoded bytes、view、validated typed snapshot、bootstrap record scratchはcaller-owned bounded workspaceに置き、orchestratorの関数stackへaggregateを置きません。WorkspaceはRuntime instanceのallocator/arenaから確保し、同じinstanceのcreate中だけ単独利用します。Outputはworkspaceとaliasせず、failure時はoutcomeをnoneへ戻します。
+
+0/17時の0-byte prefix scanはnamespace全rowを終端まで分類します。Storage ABIの`iter_next`はkey/value atomic pairなので、固定scratchに対する`BUFFER_TOO_SMALL`ではkeyだけを採用してはなりません。CoreはPortが返したrequired key/value lengthがkey 1〜255 byte、value 0〜`NINLIL_M1A_MAX_STORAGE_VALUE_BYTES`内であることを検査し、必要なvalue bytesだけをRuntime Allocatorから一時確保して同じiterator rowを再読します。一時領域はrow分類直後にexact size/alignmentで解放し、常設workspaceやESP32 task stackへ最大value bufferを持ちません。Required shape違反、再読OK時のexact length変化、同じcapacityでの再度`BUFFER_TOO_SMALL`、再読`NOT_FOUND`、unknown statusまたはinvalid output shapeはcorruptです。再読のBUSY、NO_SPACE、IO、UNSUPPORTED_SCHEMA、COMMIT_UNKNOWNはclosed mappingを維持します。Allocator failureは`NINLIL_E_CAPACITY_EXHAUSTED`であり、loaded resultは採用しません。全rowがrecognizable futureだけならunsupported、current/unknown extraが1件でもあればcorrupt、futureとそれ以外の混在もcorruptです。Iteratorの各keyはstrict unsigned-byte lexicographic昇順かつ重複0をCoreでも検査し、0/17 get後にcurrent exact keyがiteratorへ現れる、duplicate/out-of-order、key length範囲外はcorruptです。
+
+READ_ONLY transactionはiterator明示close後の`rollback: OK`まで結果を採用しません。途中のprimary failure後もlive iteratorをcloseしてrollbackし、rollback failureはprimary statusを上書きせずcleanup diagnosticを残してhandleをclose/fenceします。Primaryなしのrollback failureはそのStorage statusをclosed mappingで返します。`commit`は全statusでtransactionをconsumeするためcommit後rollbackは0回です。`COMMIT_UNKNOWN`、rollback failure、out-handle shape violationではorchestratorがin/out Storage handleをcloseしてNULL化し、上位へreopen requiredを返します。
+
+HC13 private dispatcherは17番目の`put: OK`直後かつ`commit(FULL)`直前に`runtime.before_namespace_binding_commit`、commit OK直後かつ次side effect前に`runtime.after_namespace_binding_commit`を通知します。Dispatcherは通常errorを返さず、fault crashはnonlocal abortとして扱います。Initial identityは同じgroupに含め、HC14 occurrenceは0です。Existing profile exactはaggregate validationとtyped binding比較後に`EXISTING_PROFILE_EXACT_RECOVERY_REQUIRED`で停止し、domain recoveryより前にidentityを評価しません。
 
 ### Capacity unitとmapping
 

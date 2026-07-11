@@ -1167,6 +1167,8 @@ Capacity limitはaccepted configから`N = max_nonterminal_transactions + max_re
 | 8 | metrics epoch IDを§5.2の最大4 entropy call/partial/all-zero規則で取得。Collision checkなし | 4 candidates失敗=`NINLIL_E_ENTROPY`。reverse cleanup。Transaction/attempt entropyは消費しない |
 | 9 | Stage 5で再構成したdurable health causesを固定priorityへprojectし、cleanなら`OK/NONE`、残存causeありなら`DEGRADED/exact reason`。metrics zero counters/start sample/epoch ID、owner context、Port handlesをfinalizeし`*out_runtime`へ1回publish | `NINLIL_OK`。DEGRADED healthはcreate API failureではない。この時点からcallerがruntimeを所有 |
 
+Stage 5の0/17 bootstrap key判定でだけ、0-byte prefix iteratorが固定scratchへ`BUFFER_TOO_SMALL`を返した場合は、required value length（最大`NINLIL_M1A_MAX_STORAGE_VALUE_BYTES`）をAllocatorから一時確保できます。これはStage 3のprofile-bounded常設tableではなく、unexpected/future row 1件を分類する間だけ所有するexact-size scratchです。ESP32 task stackやRuntime常設workspaceへ最大value bufferを置きません。Allocation NULLは`NINLIL_E_CAPACITY_EXHAUSTED`で、iterator close、READ_ONLY rollback、必要なhandle fence、Stage 3 allocationのreverse cleanupを実行し、Stage 6以降を呼びません。取得したscratchはrow分類またはStorage error直後に同じsize/alignmentでexactly 1回deallocateします。
+
 Create/recovery Storage status mapping:
 
 | Storage status | Public status |

@@ -71,11 +71,13 @@ add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     src/model/runtime_lifecycle_model.c
     src/model/runtime_store_bootstrap.c
     src/model/runtime_store_codec.c
+    src/runtime/runtime_store_orchestrator.c
 )
 set_property(TARGET ninlil_runtime_private
     PROPERTY NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE)
 target_include_directories(ninlil_runtime_private PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
 )
 target_link_libraries(ninlil_runtime_private PRIVATE ninlil)
 set_target_properties(ninlil_runtime_private PROPERTIES
@@ -207,7 +209,8 @@ if(NINLIL_BUILD_TESTS)
         get_filename_component(_source_name "${_source}" NAME)
         if(_source_name STREQUAL "runtime_lifecycle_model.c"
            OR _source_name STREQUAL "runtime_store_codec.c"
-           OR _source_name STREQUAL "runtime_store_bootstrap.c")
+           OR _source_name STREQUAL "runtime_store_bootstrap.c"
+           OR _source_name STREQUAL "runtime_store_orchestrator.c")
             message(FATAL_ERROR
                 "private Runtime source duplicated in reducer: ${_source}")
         endif()
@@ -397,6 +400,30 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME runtime_store_bootstrap
         COMMAND ninlil_runtime_store_bootstrap_test
+    )
+
+    add_executable(ninlil_runtime_store_orchestrator_test
+        tests/runtime/runtime_store_orchestrator_test.c
+    )
+    target_include_directories(ninlil_runtime_store_orchestrator_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_runtime_store_orchestrator_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_storage_fixture
+        ninlil_test_platform_fixtures
+        ninlil
+    )
+    set_target_properties(ninlil_runtime_store_orchestrator_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_runtime_store_orchestrator_test)
+    add_test(
+        NAME runtime_store_orchestrator
+        COMMAND ninlil_runtime_store_orchestrator_test
     )
 
     add_executable(ninlil_submission_preflight_test

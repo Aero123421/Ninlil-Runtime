@@ -3,6 +3,14 @@
 
 #include <string.h>
 
+_Static_assert(
+    NINLIL_MODEL_RUNTIME_STORE_BINDING_VALUE_BYTES
+        + NINLIL_MODEL_RUNTIME_STORE_IDENTITY_VALUE_BYTES
+        + 4u * NINLIL_MODEL_RUNTIME_STORE_COUNTER_VALUE_BYTES
+        + 11u * NINLIL_MODEL_RUNTIME_STORE_CAPACITY_VALUE_BYTES
+        == NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_ENCODED_VALUE_BYTES,
+    "Runtime Store bootstrap value inventory size drifted");
+
 static const uint8_t KEY_ROOT[8] = {
     0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x01u
 };
