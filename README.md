@@ -1,31 +1,45 @@
 # Ninlil Runtime
 
-Ninlil Runtime は、LoRa、Wi-Fi、USBのような不安定で細い現場network上で、「送信した」ではなく「届いた、保存された、適用された」を分けて追跡する、組み込み向け通信 Runtime / SDK です。
+Ninlil Runtime は、LoRa、Wi-Fi、USBのような不安定で細い現場network上で、「送信した」ではなく「届いた、保存された、適用された」を分けて追跡する、組み込み向け通信 Runtime / SDKを目指すprojectです。
 
 KGuard は最初の reference application ですが、Ninlil Core は KGuard の業務語彙を知りません。LoRa、Wi-Fi、USB などを bearer として扱い、要求の期限、宛先、必要な証拠、電力、容量、経路、法規上の制約に基づいて通信を管理します。
 
+**現時点ではSDKとして利用できないpre-alphaです。** Public Runtimeの実行経路、production storage、実transport、ESP-IDF portは未完成であり、製品や現場へ導入できるreleaseではありません。
+
 ## 現在の状態
 
-**M0 specification baseline complete / Foundation PR1 ABI and contract tooling checkpoint (pre-alpha)** です。実装は開始していますが、現時点の成果はpublic ABI宣言と、その契約差分を検出するtoolingが中心です。
+**Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer modelと、PR3a/bのcanonical TEST fixtureまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
 
 実装済みの範囲:
 
 - `include/ninlil/*.h`のpublic ABI宣言と、C11 / C++17 consumer compile smoke
 - enum、`sizeof`、`offsetof`、reason registry、Operator projection、hook mirror、仕様vector、requirements traceabilityの機械検査
 - public output初期化/nullability、small/future `struct_size`、unsupported値分類に使うinternal pure C11 helper
+- scheduler candidate、deadline projection、Required Receipt、resource ledger/batch、Submission preflight/admissionのpure C11 model
+- atomic FULL admission write-setとcommit結果別ownership/recovery projection
+- exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
+- bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
+- 現在の`main`で44件のCTestが成功することを、UbuntuのGCC通常buildとClang ASan/UBSan buildで継続検査するCI
 
 未実装または未統合の範囲:
 
-- public runtime APIのfunction body、transaction reducer、durable storage、bearer orchestration
-- radio MAC、実RF、ESP-IDF component、Cell Agent
+- public Runtime APIのfunction bodyと`runtime_step` orchestration
+- Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
+- restart-safe SQLite portとproduction durable storage
+- end-to-endのReliable Command / Durable Event path
+- ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
+- Display node / Leak nodeを使う実機end-to-end検証
 - `NIN-PR1-OUTPUT-001`、`NIN-PR1-STRUCT-001`、`NIN-PR1-UNSUPPORTED-001`はhelper testまでで、public runtime APIへ未統合のため`partial`
 
 - 公開 API、wire、storage format の互換性はまだ保証しません。
 - 最初に実装する範囲は、[Foundation Release](docs/08-foundation-release.md)で固定するM1a transaction kernelです。
 - relay、multi-parent、production radio MAC は roadmap 上の後続 milestone であり、Foundation Release の完成条件には含めません。
-- OSS license は公開release前のblockerです。初期推奨はApache-2.0ですが、repository ownerの決定前です。
 
-## Ninlilが約束すること
+Ninlil V1のhardware exitには、PC Controller、ESP-IDF port、USB接続、LoRa通信、Display nodeとLeak nodeによる実機end-to-end testをすべて通す必要があります。これは`1.0.0`の必要条件であり、十分条件ではありません。`1.0.0`は[Roadmap](docs/09-roadmap.md)のM11を含む全milestone exit gateを満たした後にだけreleaseします。現在のfixture/CI成功をV1完成やfield readinessとは扱いません。
+
+## V1 contract goals
+
+V1では、次のcontractを実装・検証することを目標とします。現在のpre-alphaがこれらを提供済みという意味ではありません。
 
 - API受付、送信、受信、永続保存、application反映を別の事実として扱う。
 - admissionした transaction を、終端 Outcome まで追跡する。
@@ -63,6 +77,13 @@ Application effectのexactly-onceには、absolute/idempotent operation、applic
 7. [Operator Model](docs/11-operator-model.md)
 8. [Glossary](docs/15-glossary.md)
 
+Project運用文書:
+
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
+- [Apache License 2.0](LICENSE)
+
 ## Buildとtest
 
 必要なのはCMake 3.16以上と、C11 / C++17に対応するC・C++ compilerです。通常buildではstrict warning付きのconsumer smoke、ABI/contract checker、negative testをCTestから実行します。
@@ -83,7 +104,15 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。GitHub ActionsでもUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の`main`では44件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+
+## Portabilityとversioning
+
+Portable CoreはC11で実装し、host thread、filesystem、radio driverを直接参照しません。現在の検証実績は、GitHub Actions上のUbuntuで行うGCC通常buildとClang ASan/UBSan build、およびmacOSでのlocal development checkです。これらはpre-alpha checkpointの検証環境であり、platform support宣言ではありません。
+
+ESP-IDFはV1のtargetですが、portとtarget buildはplanned / unverifiedです。それ以外のplatformもPort ABIによる移植候補になり得ますが、現時点では検証、互換性、supportを約束しません。
+
+`0.x`でbreaking changeを行う場合も、minor version bump、CHANGELOG、migration note、compatibility matrixを必須とします。`1.0.0`はV1 hardware exitだけではなく、M11までの全exit gateを満たした後にreleaseします。詳細は[Versioning and Compatibility](docs/06-versioning-and-compatibility.md)を参照してください。
 
 ## Repositoryの位置付け
 
@@ -103,3 +132,7 @@ Ninlil CoreへKGuard、Product V1、PoC、Legacy LinkOSの業務codeをimportし
 - ESP-IDF component prefix: `ninlil_`
 
 旧称`LinkOS`はlegacy labを指す場合だけ使用します。
+
+## License
+
+Ninlil Runtimeは[Apache License 2.0](LICENSE)で提供します。脆弱性の報告は[Security Policy](SECURITY.md)に従ってください。

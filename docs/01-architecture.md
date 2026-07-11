@@ -285,7 +285,7 @@ ninlil/
 
 ## Legacy lab slice との関係
 
-現行 [`../linkos/`](../../linkos/) の`host/`、`firmware/`、19-byte wireはLegacy LinkOS Lab v1として、次を検証した資産に限定して残します。
+KGuard側の旧`linkos/`にある`host/`、`firmware/`、19-byte wireはLegacy LinkOS Lab v1として、次を検証した外部の移行元資産に限定します。この独立repositoryにLegacy directoryが存在することは前提にしません。
 
 - AES-GCM cross-language golden vector
 - node 個別鍵
