@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..n body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..o body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -10152,6 +10152,347 @@ ninlil_status_t ninlil_model_domain_decode_body_retention_basis(
     return NINLIL_OK;
 }
 
+/* --- CLEANUP_PLAN (0x63) docs17 §8.6 D1-B3o --- */
+
+static int cleanup_subject_kind_is_known(uint16_t subject_kind)
+{
+    return subject_kind
+            == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_TRANSACTION
+        || subject_kind
+            == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_DELIVERY;
+}
+
+static int cleanup_phase_is_known(uint16_t phase)
+{
+    return phase == NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_DELETE_NON_INDEX
+        || phase == NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_DELETE_ATTEMPT_INDEX
+        || phase == NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_FINALIZE;
+}
+
+static int cleanup_subject_raw_is_valid(
+    uint16_t subject_kind, uint16_t len, const uint8_t *raw)
+{
+    if (raw == NULL && len != 0u) {
+        return 0;
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_TRANSACTION) {
+        return len == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_KEY_TX_BYTES
+            && raw != NULL && !id_is_zero(raw);
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_DELIVERY) {
+        return reservation_owner_raw_is_valid(
+            NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_DELIVERY, len, raw);
+    }
+    return 0;
+}
+
+/*
+ * subject_primary_key_digest = KEY_DIGEST(complete primary key).
+ * TX: family6 subtype 0x20 ID128 identity = raw exact 16.
+ * DELIVERY: family6 subtype 0x40 COMPOSITE(40, delivery_key_raw:RAW16).
+ * Bare composite digest is not stored or compared.
+ */
+static int cleanup_primary_key_digest_ok(
+    uint16_t subject_kind,
+    uint16_t subject_key_raw_length,
+    const uint8_t *subject_key_raw,
+    const uint8_t actual[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    uint8_t raw16[2u + NINLIL_MODEL_DOMAIN_RAW16_CLEANUP_SUBJECT_KEY_MAX];
+    ninlil_bytes_view_t components;
+    uint32_t raw16_len = 0u;
+
+    if (actual == NULL || subject_key_raw == NULL) {
+        return 0;
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_TRANSACTION) {
+        if (subject_key_raw_length != 16u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            actual,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_TRANSACTION_ANCHOR,
+            NINLIL_MODEL_DOMAIN_ID_KIND_ID128,
+            subject_key_raw,
+            16u);
+    }
+    if (subject_kind
+        == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_DELIVERY) {
+        if (!encode_raw16_into(
+                subject_key_raw_length, subject_key_raw, raw16,
+                sizeof(raw16), &raw16_len)) {
+            return 0;
+        }
+        components.data = raw16;
+        components.length = raw16_len;
+        return digest_eq_composite_key(
+            actual, NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY, components);
+    }
+    return 0;
+}
+
+/*
+ * Closed cleanup phase/count matrix (docs17 §8.6 D1-B3o):
+ * common: initial_attempt >= initial_index;
+ *         remaining_attempt <= initial_attempt;
+ *         remaining_index <= initial_index;
+ *         cleanup_generation/batch_generation >= 1;
+ *         fenced is 0 or 1 only.
+ * phase1: remaining_attempt >= remaining_index,
+ *         remaining_index == initial_index, fenced=0
+ * phase2: remaining_attempt == remaining_index && >=1, fenced=1,
+ *         initial_index >= 1
+ * phase3: both remaining 0; fenced=1 iff initial_index > 0 else 0
+ * Live counts/basis/fence aggregate/writer +1 are D3.
+ */
+static int cleanup_plan_matrix_ok(
+    const ninlil_model_domain_body_cleanup_plan_t *body)
+{
+    if (body == NULL) {
+        return 0;
+    }
+    if (body->cleanup_generation < 1u || body->batch_generation < 1u) {
+        return 0;
+    }
+    if (body->initial_attempt_count < body->initial_attempt_index_count) {
+        return 0;
+    }
+    if (body->remaining_attempt_count > body->initial_attempt_count) {
+        return 0;
+    }
+    if (body->remaining_attempt_index_count
+        > body->initial_attempt_index_count) {
+        return 0;
+    }
+    if (body->attempt_reuse_fenced > 1u || body->reserved != 0u) {
+        return 0;
+    }
+    if (body->cleanup_phase
+        == NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_DELETE_NON_INDEX) {
+        return body->remaining_attempt_count
+                >= body->remaining_attempt_index_count
+            && body->remaining_attempt_index_count
+                == body->initial_attempt_index_count
+            && body->attempt_reuse_fenced == 0u;
+    }
+    if (body->cleanup_phase
+        == NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_DELETE_ATTEMPT_INDEX) {
+        return body->remaining_attempt_count
+                == body->remaining_attempt_index_count
+            && body->remaining_attempt_count >= 1u
+            && body->attempt_reuse_fenced == 1u
+            && body->initial_attempt_index_count >= 1u;
+    }
+    if (body->cleanup_phase
+        == NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_FINALIZE) {
+        if (body->remaining_attempt_count != 0u
+            || body->remaining_attempt_index_count != 0u) {
+            return 0;
+        }
+        if (body->initial_attempt_index_count > 0u) {
+            return body->attempt_reuse_fenced == 1u;
+        }
+        return body->attempt_reuse_fenced == 0u;
+    }
+    return 0;
+}
+
+static int cleanup_plan_fields_ok(
+    const ninlil_model_domain_body_cleanup_plan_t *body)
+{
+    if (body == NULL || body->reserved != 0u
+        || !cleanup_subject_kind_is_known(body->subject_kind)
+        || !cleanup_phase_is_known(body->cleanup_phase)
+        || !cleanup_subject_raw_is_valid(
+               body->subject_kind, body->subject_key_raw_length,
+               body->subject_key_raw)
+        || !cleanup_primary_key_digest_ok(
+               body->subject_kind, body->subject_key_raw_length,
+               body->subject_key_raw, body->subject_primary_key_digest)
+        || digest_is_zero(body->subject_primary_value_digest)) {
+        return 0;
+    }
+    return cleanup_plan_matrix_ok(body);
+}
+
+uint32_t ninlil_model_domain_body_cleanup_plan_encoded_length(
+    const ninlil_model_domain_body_cleanup_plan_t *body)
+{
+    uint32_t n;
+
+    if (body == NULL || !cleanup_plan_fields_ok(body)) {
+        return 0u;
+    }
+    /* fixed 126 includes RAW16 length prefix; contents add N. */
+    n = NINLIL_MODEL_DOMAIN_BODY_CLEANUP_PLAN_FIXED
+        + (uint32_t)body->subject_key_raw_length;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_CLEANUP_PLAN_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_cleanup_plan(
+    const ninlil_model_domain_body_cleanup_plan_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->subject_key_raw != NULL
+            && body->subject_key_raw_length != 0u) {
+            ptrs[n] = body->subject_key_raw;
+            lens[n] = body->subject_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_cleanup_plan_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    ninlil_model_domain_encode_u16_be(&out_bytes[0], body->subject_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[2], body->cleanup_phase);
+    o = 4u;
+    o += encode_raw16(
+        &out_bytes[o], body->subject_key_raw_length, body->subject_key_raw);
+    (void)memcpy(&out_bytes[o], body->subject_primary_key_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->subject_primary_value_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->cleanup_generation);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->batch_generation);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->initial_attempt_count);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->remaining_attempt_count);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->initial_attempt_index_count);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->remaining_attempt_index_count);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->attempt_reuse_fenced);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reserved);
+    o += 4u;
+    if (o != required) {
+        *out_length = 0u;
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_cleanup_plan(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_cleanup_plan_t *out_body)
+{
+    ninlil_model_domain_body_cleanup_plan_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 4u + 2u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_CLEANUP_PLAN_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    tmp.subject_kind = ninlil_model_domain_decode_u16_be(&encoded.data[0]);
+    tmp.cleanup_phase = ninlil_model_domain_decode_u16_be(&encoded.data[2]);
+    o = 4u;
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o,
+            (uint16_t)NINLIL_MODEL_DOMAIN_RAW16_CLEANUP_SUBJECT_KEY_MAX,
+            &tmp.subject_key_raw_length, &tmp.subject_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    /* After RAW16: 32+32+8*6+4+4 = 120 */
+    if (encoded.length - o < 120u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.subject_primary_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.subject_primary_value_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.cleanup_generation =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.batch_generation =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.initial_attempt_count =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.remaining_attempt_count =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.initial_attempt_index_count =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.remaining_attempt_index_count =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.attempt_reuse_fenced =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reserved = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    if (o != encoded.length || !cleanup_plan_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -10190,6 +10531,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RETRY_SUMMARY:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_MANAGEMENT_LEDGER:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RETENTION_BASIS:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_CLEANUP_PLAN:
         return 1;
     default:
         return 0;
@@ -11629,6 +11971,84 @@ static ninlil_status_t validate_header_body_local(
                     NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
                     out->retention_basis.subject_key_raw_length,
                     out->retention_basis.subject_key_raw, expect_pid)
+                != NINLIL_OK) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+        } else {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (!header_primary_id_eq(env, expect_pid)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_CLEANUP_PLAN) {
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+        /* subject_kind:u16 || subject_primary_key_digest[32] */
+        uint8_t components[2u + NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+        ninlil_bytes_view_t cv;
+
+        /*
+         * CLEANUP_PLAN same-record (docs17 §8.6 D1-B3o):
+         * - family 6 secondary: flags 0, revision==batch_generation >=1,
+         *   head NZ, PVD NZ
+         * - key COMPOSITE(63, subject_kind:u16 || subject_primary_key_digest)
+         * - primary_id: TX raw16 / DELIVERY COMPOSITE(40,RAW16 raw80) first 16
+         * - subject_primary_value_digest == header primary_value_digest NZ
+         * - body matrix + KEY_DIGEST recompute above
+         * D3: live counts / basis / fence aggregate / writer +1.
+         */
+        if (env->header.record_revision < 1u
+            || env->header.flags != 0u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_cleanup_plan(
+            env->body, &out->cleanup_plan);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        if (env->header.record_revision
+                != out->cleanup_plan.batch_generation
+            || memcmp(
+                   out->cleanup_plan.subject_primary_value_digest,
+                   env->header.primary_value_digest,
+                   NINLIL_MODEL_DOMAIN_DIGEST_BYTES)
+                != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        ninlil_model_domain_encode_u16_be(
+            components, out->cleanup_plan.subject_kind);
+        (void)memcpy(
+            &components[2], out->cleanup_plan.subject_primary_key_digest,
+            NINLIL_MODEL_DOMAIN_DIGEST_BYTES);
+        cv.data = components;
+        cv.length = 2u + NINLIL_MODEL_DOMAIN_DIGEST_BYTES;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_CLEANUP_PLAN, cv,
+                key->identity, key->identity_length)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (out->cleanup_plan.subject_kind
+            == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_TRANSACTION) {
+            if (out->cleanup_plan.subject_key_raw_length != 16u
+                || out->cleanup_plan.subject_key_raw == NULL) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            (void)memcpy(
+                expect_pid, out->cleanup_plan.subject_key_raw, 16u);
+        } else if (
+            out->cleanup_plan.subject_kind
+            == NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_DELIVERY) {
+            if (primary_id_from_raw_contents_as_raw16(
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+                    out->cleanup_plan.subject_key_raw_length,
+                    out->cleanup_plan.subject_key_raw, expect_pid)
                 != NINLIL_OK) {
                 return NINLIL_E_STORAGE_CORRUPT;
             }
