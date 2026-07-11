@@ -100,7 +100,7 @@ KGuard はこれらの reference application ですが、Ninlil の public model
 3. 再現可能な build と dependency lock を持つ。
 4. unit test だけでなく、golden vector、property test、fuzz、simulator、HIL、RF soak を用意する。
 5. README、concept、tutorial、how-to、reference、explanation を分ける。
-6. LICENSE、SECURITY、CONTRIBUTING、CODE_OF_CONDUCT、release process を公開前に確定する。
+6. LICENSE、SECURITY、CONTRIBUTING、CODE_OF_CONDUCT、release process を公開段階に応じて整備する。
 7. generic example を KGuard example より先に説明する。
 8. 実測していない performance や compliance を宣伝しない。
 
@@ -113,9 +113,9 @@ KGuard はこれらの reference application ですが、Ninlil の public model
 
 ## License の扱い
 
-現時点では未決です。公開前 blocker とします。
+Repository ownerはApache License 2.0を採用済みです。配布条件の正本はrepository rootの[`LICENSE`](../LICENSE)です。
 
-候補の初期推奨は Apache License 2.0 です。組み込み SDK として利用しやすく、明示的な patent grant を持つためです。最終決定は repository owner が行い、採用後に source header、third-party notice、dependency license check を整備します。
+NOTICE要否の確定、third-party dependency license inventory、source distributionへの必要表示、SBOMとの整合、release compliance最終監査はM11のexit gateで完了します。Copyright ownerやyearは、確認できない情報を推測して追加しません。
 
 ## KGuard との境界
 

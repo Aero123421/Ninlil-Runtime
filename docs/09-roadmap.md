@@ -253,7 +253,7 @@ Exit gate:
 
 内容:
 
-- Apache-2.0等のlicense確定
+- NOTICE要否、third-party dependency license、source distribution表示、SBOMを含むlicense/compliance最終監査
 - English normative docs
 - CONTRIBUTING / CODE_OF_CONDUCT / SECURITY / governance
 - package/release signing/SBOM
@@ -266,6 +266,7 @@ Exit gate:
 - 外部developerがKGuardなしでbuild、example、test、portを実行できる。
 - release checklist、compatibility matrix、migration policyが運用されている。
 - 1.0 public API/wire/profileのsupport期間を宣言できる。
+- NOTICEと依存licenseの必要表示が監査され、SBOMおよび配布artifactと一致する。
 
 ## Dependency rule
 
