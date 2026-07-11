@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a..k vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..l vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..k
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..l
 are hand-written here and intentionally do not import or link production C.
 
 D1 pre-alpha operation identity correction: kind 9/10 identities are exact 42
@@ -8443,6 +8443,382 @@ def build_document():
     assert b3_cov["50"]["mutation"] >= 1
     assert b3_cov["50"]["roundtrip"] >= 6
 
+    # =====================================================================
+    # D1-B3l RETRY_SUMMARY (0x51) — after EVENT_SPOOL; preserve all 1222 B3k.
+    # =====================================================================
+    PRE_B3L_VECTOR_COUNT = len(vectors)
+    PRE_B3L_VECTOR_COUNT_SNAPSHOT = PRE_B3L_VECTOR_COUNT
+    assert PRE_B3L_VECTOR_COUNT == 1222, PRE_B3L_VECTOR_COUNT
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_ES_KEY_TX_MISMATCH"
+    assert all(not v["id"].startswith("DSB3_RS_") for v in vectors)
+    PRE_B3L_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    # Pin of vectors[0:1222] at B3l cutover (full pre-B3l catalog incl. B3k).
+    PRE_B3L_FULL_FINGERPRINT_PIN = (
+        "bce866f79461cb0ca506b2dab98d515afa095fbad2ac16f77f655f8c04d50ceb"
+    )
+    assert PRE_B3L_FULL_FINGERPRINT == PRE_B3L_FULL_FINGERPRINT_PIN, (
+        f"pre-B3l full fingerprint drift: got {PRE_B3L_FULL_FINGERPRINT}"
+    )
+
+    RS_KIND_CUM = 1
+    RS_KIND_REC = 2
+    rs_head = bytes([0xF1] * 32)
+    rs_pvd = bytes([0xF2] * 32)
+    rs_txn = txn
+    rs_epoch = bytes([0xA1] + [0] * 14 + [0xA2])
+
+    def rs_key(tx: bytes, kind: int, slot: int) -> bytes:
+        assert len(tx) == 16
+        return bkey(6, 0x51, 5, composite(0x51, tx + be16(kind) + be16(slot)))
+
+    def folded_of(total: int) -> int:
+        return max(total - 4, 0)
+
+    def enc_rs_cumulative(
+        tx=None,
+        kind=RS_KIND_CUM,
+        slot=0,
+        total=0,
+        folded=None,
+        cum_attempts=0,
+        last_outcome=0,
+        last_reason=0,
+        ended_epoch=None,
+        ended_at=0,
+        deliv_any=0,
+        sat=0,
+    ) -> bytes:
+        if tx is None:
+            tx = rs_txn
+        if folded is None:
+            folded = folded_of(total)
+        if ended_epoch is None:
+            ended_epoch = bytes(16) if folded == 0 else rs_epoch
+        out = bytearray()
+        out += tx
+        out += be16(kind)
+        out += be16(slot)
+        out += be64(total)
+        out += be64(folded)
+        out += be64(cum_attempts)
+        out += be32(last_outcome)
+        out += be32(last_reason)
+        out += ended_epoch
+        out += be64(ended_at)
+        out += be32(deliv_any)
+        out += be32(sat)
+        assert len(out) == 84, len(out)
+        return bytes(out)
+
+    def enc_rs_recent(
+        tx=None,
+        kind=RS_KIND_REC,
+        slot=None,
+        retry_cycle=1,
+        attempt=1,
+        last_outcome=0,
+        last_reason=0,
+        avail_epoch=0,
+        ended_epoch=None,
+        ended_at=0,
+        deliv=0,
+        reserved=0,
+    ) -> bytes:
+        if tx is None:
+            tx = rs_txn
+        if slot is None:
+            slot = (retry_cycle - 1) % 4
+        if ended_epoch is None:
+            ended_epoch = rs_epoch
+        out = bytearray()
+        out += tx
+        out += be16(kind)
+        out += be16(slot)
+        out += be64(retry_cycle)
+        out += be32(attempt)
+        out += be32(last_outcome)
+        out += be32(last_reason)
+        out += be64(avail_epoch)
+        out += ended_epoch
+        out += be64(ended_at)
+        out += be32(deliv)
+        out += be32(reserved)
+        assert len(out) == 80, len(out)
+        return bytes(out)
+
+    def retry_summary_typed(body=None, rev=1, flags=0, primary_id=None,
+                            head=None, pvd=None, key=None):
+        if body is None:
+            body = enc_rs_cumulative()
+        body_tx = body[0:16]
+        body_kind = struct.unpack(">H", body[16:18])[0]
+        body_slot = struct.unpack(">H", body[18:20])[0]
+        if primary_id is None:
+            primary_id = body_tx
+        if head is None:
+            head = rs_head
+        if pvd is None:
+            pvd = rs_pvd
+        if key is None:
+            key = rs_key(body_tx, body_kind, body_slot)
+        val = enc_env_full(6, 0x51, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    rs_pos = 0
+    rs_neg = 0
+    rs_mut = 0
+    rs_rt = 0
+
+    def add_rs_pos(vid, body, notes=""):
+        nonlocal rs_pos, rs_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x51, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        rs_pos += 1
+        rs_rt += 1
+
+    def add_rs_pos_typed(vid, body, notes="", rev=1):
+        nonlocal rs_pos
+        key, val, _ = retry_summary_typed(body=body, rev=rev)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x51, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        rs_pos += 1
+
+    def add_rs_neg(vid, body, notes=""):
+        nonlocal rs_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x51, body_hex=hx(body), notes=notes)
+        rs_neg += 1
+
+    def add_rs_neg_typed(vid, key, val, notes=""):
+        nonlocal rs_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x51, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        rs_neg += 1
+
+    # --- CUMULATIVE positives: total 0/1/3/4/5/UINT64_MAX fold boundaries ---
+    for total, tag in (
+        (0, "T0"),
+        (1, "T1"),
+        (3, "T3"),  # mid-window folded=0 (not just 0/1/4)
+        (4, "T4"),
+        (5, "T5"),
+        ((1 << 64) - 1, "TMAX"),
+    ):
+        folded = folded_of(total)
+        if folded == 0:
+            b = enc_rs_cumulative(total=total)
+        else:
+            b = enc_rs_cumulative(
+                total=total,
+                cum_attempts=3 if total == 5 else 100,
+                last_outcome=1,
+                last_reason=2,
+                ended_epoch=rs_epoch,
+                ended_at=12345 if total == 5 else 0,
+                deliv_any=1 if total == 5 else 0,
+                sat=1 if total == (1 << 64) - 1 else 0,
+            )
+        add_rs_pos(f"DSB3_RS_CUM_{tag}", b, f"CUMULATIVE total={total} folded={folded}")
+        if total in (0, 3, 5):
+            add_rs_pos_typed(f"DSB3_RS_CUM_{tag}_TYPED", b)
+
+    # empty aggregate matrix at folded=0 already covered; non-zero bools when folded>0
+    b_cum_bools = enc_rs_cumulative(
+        total=5, cum_attempts=1, last_outcome=7, last_reason=8,
+        ended_epoch=rs_epoch, ended_at=9, deliv_any=0, sat=1)
+    add_rs_pos("DSB3_RS_CUM_BOOL01", b_cum_bools, "deliv_any=0 sat=1 folded=1")
+    add_rs_pos_typed("DSB3_RS_CUM_BOOL01_TYPED", b_cum_bools)
+
+    b_cum_bool10 = enc_rs_cumulative(
+        total=6, cum_attempts=2, last_outcome=1, last_reason=1,
+        ended_epoch=rs_epoch, ended_at=1, deliv_any=1, sat=0)
+    add_rs_pos("DSB3_RS_CUM_BOOL10", b_cum_bool10, "deliv_any=1 sat=0 folded=2")
+
+    # --- RECENT positives: slot modulo, attempt 1/8, cycles ---
+    for cycle, tag in (
+        (1, "C1"),
+        (2, "C2"),
+        (3, "C3"),
+        (4, "C4"),
+        (5, "C5"),
+        ((1 << 64) - 1, "CMAX"),
+    ):
+        slot = (cycle - 1) % 4
+        attempt = 1 if cycle == 1 else (8 if cycle == 4 else 3)
+        b = enc_rs_recent(
+            retry_cycle=cycle, attempt=attempt, deliv=(cycle % 2),
+            last_outcome=1, last_reason=2, avail_epoch=cycle, ended_at=100)
+        add_rs_pos(f"DSB3_RS_REC_{tag}", b,
+                   f"RECENT cycle={cycle} slot={slot} attempt={attempt}")
+        if cycle in (1, 4, (1 << 64) - 1):
+            add_rs_pos_typed(f"DSB3_RS_REC_{tag}_TYPED", b)
+
+    b_att8 = enc_rs_recent(retry_cycle=1, attempt=8, deliv=1)
+    add_rs_pos("DSB3_RS_REC_ATT8", b_att8, "attempt_count=8")
+    add_rs_pos_typed("DSB3_RS_REC_ATT8_TYPED", b_att8)
+
+    b_att1 = enc_rs_recent(retry_cycle=2, attempt=1, deliv=0)
+    add_rs_pos("DSB3_RS_REC_ATT1", b_att1, "attempt_count=1")
+
+    # revision saturating MAX allowed for RETRY_SUMMARY
+    b_rev_max_body = enc_rs_cumulative(total=0)
+    add_rs_pos_typed(
+        "DSB3_RS_REV_MAX_TYPED", b_rev_max_body, rev=(1 << 64) - 1,
+        notes="record_revision UINT64_MAX saturating")
+
+    # --- length / trailing / kind-layout mismatch ---
+    b_cum0 = enc_rs_cumulative(total=0)
+    b_rec1 = enc_rs_recent(retry_cycle=1, attempt=1)
+    add_rs_neg("DSB3_RS_LEN83", b_cum0[:-1], "body 83 short")
+    add_rs_neg("DSB3_RS_LEN85", b_cum0 + b"\x00", "body 85 trailing")
+    add_rs_neg("DSB3_RS_LEN79", b_rec1[:-1], "body 79 short")
+    add_rs_neg("DSB3_RS_LEN81", b_rec1 + b"\x00", "body 81 trailing")
+    # kind=1 with RECENT length 80
+    add_rs_neg(
+        "DSB3_RS_KIND1_LEN80",
+        b_cum0[:16] + be16(RS_KIND_CUM) + be16(0) + b_rec1[20:],
+        "CUMULATIVE kind with RECENT length")
+    # kind=2 with CUMULATIVE length 84
+    add_rs_neg(
+        "DSB3_RS_KIND2_LEN84",
+        b_rec1[:16] + be16(RS_KIND_REC) + be16(0) + b_cum0[20:],
+        "RECENT kind with CUMULATIVE length")
+    add_rs_neg(
+        "DSB3_RS_KIND0",
+        enc_rs_cumulative(kind=0, total=0),
+        "unknown summary_kind 0")
+    add_rs_neg(
+        "DSB3_RS_KIND3",
+        enc_rs_cumulative(kind=3, total=0),
+        "unknown summary_kind 3")
+
+    # --- CUMULATIVE negatives ---
+    add_rs_neg("DSB3_RS_CUM_TX_ZERO",
+               enc_rs_cumulative(tx=bytes(16), total=0), "tx zero")
+    add_rs_neg("DSB3_RS_CUM_SLOT1",
+               enc_rs_cumulative(slot=1, total=0), "CUMULATIVE slot != 0")
+    add_rs_neg("DSB3_RS_CUM_FOLD_WRONG",
+               enc_rs_cumulative(total=5, folded=0), "folded != max(total-4,0)")
+    add_rs_neg("DSB3_RS_CUM_FOLD_UNDER",
+               enc_rs_cumulative(total=3, folded=1), "folded 1 with total 3")
+    # folded=0 empty aggregate matrix violations
+    add_rs_neg("DSB3_RS_CUM_EMPTY_ATT",
+               enc_rs_cumulative(total=0, cum_attempts=1),
+               "folded=0 cum_attempts nonzero")
+    add_rs_neg("DSB3_RS_CUM_EMPTY_OUT",
+               enc_rs_cumulative(total=1, last_outcome=1),
+               "folded=0 last_outcome nonzero")
+    add_rs_neg("DSB3_RS_CUM_EMPTY_RSN",
+               enc_rs_cumulative(total=2, last_reason=1),
+               "folded=0 last_reason nonzero")
+    add_rs_neg("DSB3_RS_CUM_EMPTY_CLK",
+               enc_rs_cumulative(total=3, ended_epoch=rs_epoch),
+               "folded=0 clock epoch nonzero")
+    add_rs_neg("DSB3_RS_CUM_EMPTY_AT",
+               enc_rs_cumulative(total=4, ended_at=1),
+               "folded=0 ended_at nonzero")
+    add_rs_neg("DSB3_RS_CUM_EMPTY_DELIV",
+               enc_rs_cumulative(total=0, deliv_any=1),
+               "folded=0 delivery_possible_any nonzero")
+    add_rs_neg("DSB3_RS_CUM_EMPTY_SAT",
+               enc_rs_cumulative(total=0, sat=1),
+               "folded=0 counter_saturated nonzero")
+    add_rs_neg("DSB3_RS_CUM_BOOL2",
+               enc_rs_cumulative(total=5, cum_attempts=1, last_outcome=1,
+                                 last_reason=1, ended_epoch=rs_epoch,
+                                 deliv_any=2),
+               "delivery_possible_any 2")
+    add_rs_neg("DSB3_RS_CUM_SAT2",
+               enc_rs_cumulative(total=5, cum_attempts=1, last_outcome=1,
+                                 last_reason=1, ended_epoch=rs_epoch, sat=2),
+               "counter_saturated 2")
+
+    # --- RECENT negatives ---
+    add_rs_neg("DSB3_RS_REC_TX_ZERO",
+               enc_rs_recent(tx=bytes(16)), "tx zero")
+    add_rs_neg("DSB3_RS_REC_SLOT4",
+               enc_rs_recent(retry_cycle=1, slot=4, attempt=1),
+               "slot 4 out of range")
+    add_rs_neg("DSB3_RS_REC_CYCLE0",
+               enc_rs_recent(retry_cycle=0, slot=0, attempt=1),
+               "retry_cycle_id 0")
+    add_rs_neg("DSB3_RS_REC_SLOT_MOD",
+               enc_rs_recent(retry_cycle=1, slot=1, attempt=1),
+               "slot != (cycle-1)%4")
+    add_rs_neg("DSB3_RS_REC_SLOT_MOD5",
+               enc_rs_recent(retry_cycle=5, slot=1, attempt=1),
+               "cycle5 expects slot0 not 1")
+    add_rs_neg("DSB3_RS_REC_ATT0",
+               enc_rs_recent(retry_cycle=1, attempt=0),
+               "attempt_count 0")
+    add_rs_neg("DSB3_RS_REC_ATT9",
+               enc_rs_recent(retry_cycle=1, attempt=9),
+               "attempt_count 9")
+    add_rs_neg("DSB3_RS_REC_DELIV2",
+               enc_rs_recent(retry_cycle=1, attempt=1, deliv=2),
+               "delivery_possible 2")
+    add_rs_neg("DSB3_RS_REC_RESERVED",
+               enc_rs_recent(retry_cycle=1, attempt=1, reserved=1),
+               "reserved nonzero")
+
+    # mutation: flip kind locus on valid CUMULATIVE
+    bb_mut = bytearray(b_cum0)
+    assert bb_mut[16:18] == be16(RS_KIND_CUM)
+    bb_mut[16:18] = be16(99)
+    add(id="DSB3_RS_MUT_KIND", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x51,
+        body_hex=hx(bytes(bb_mut)),
+        notes="mutation unknown kind at summary_kind locus")
+    rs_mut += 1
+
+    # typed common header / key negatives
+    k_ok, v_ok, _ = retry_summary_typed(body=b_cum0)
+    v_pvd0 = enc_env_full(6, 0x51, 0, 1, rs_txn, rs_head, bytes(32), b_cum0)
+    add_rs_neg_typed("DSB3_RS_PVD_ZERO", rs_key(rs_txn, RS_KIND_CUM, 0), v_pvd0,
+                     "secondary PVD zero")
+    v_head0 = enc_env_full(6, 0x51, 0, 1, rs_txn, bytes(32), rs_pvd, b_cum0)
+    add_rs_neg_typed("DSB3_RS_HEAD_ZERO", rs_key(rs_txn, RS_KIND_CUM, 0), v_head0,
+                     "head zero")
+    v_pm = enc_env_full(6, 0x51, 0, 1, bytes([0x11] * 16), rs_head, rs_pvd,
+                        b_cum0)
+    add_rs_neg_typed("DSB3_RS_PRIMARY_MISMATCH",
+                     rs_key(rs_txn, RS_KIND_CUM, 0), v_pm,
+                     "primary_id mismatch")
+    v_flags = enc_env_full(6, 0x51, 1, 1, rs_txn, rs_head, rs_pvd, b_cum0)
+    add_rs_neg_typed("DSB3_RS_FLAGS_NZ", rs_key(rs_txn, RS_KIND_CUM, 0), v_flags,
+                     "common flags nonzero")
+    v_rev0 = enc_env_full(6, 0x51, 0, 0, rs_txn, rs_head, rs_pvd, b_cum0)
+    add_rs_neg_typed("DSB3_RS_REV0", rs_key(rs_txn, RS_KIND_CUM, 0), v_rev0,
+                     "record_revision 0")
+    # key composite components mismatch body
+    wrong_key = rs_key(bytes([0xEE] * 16), RS_KIND_CUM, 0)
+    add_rs_neg_typed("DSB3_RS_KEY_TX_MISMATCH", wrong_key, v_ok,
+                     "key tx != body transaction_id")
+    wrong_kind_key = rs_key(rs_txn, RS_KIND_REC, 0)
+    add_rs_neg_typed("DSB3_RS_KEY_KIND_MISMATCH", wrong_kind_key, v_ok,
+                     "key kind != body summary_kind")
+    wrong_slot_key = rs_key(rs_txn, RS_KIND_CUM, 1)
+    add_rs_neg_typed("DSB3_RS_KEY_SLOT_MISMATCH", wrong_slot_key, v_ok,
+                     "key slot != body slot_index")
+    # Wrong identity kind: direct ID128 instead of SHA256_COMPOSITE.
+    id128_kind_key = bkey(6, 0x51, 2, rs_txn)
+    add_rs_neg_typed(
+        "DSB3_RS_KEY_ID128_KIND", id128_kind_key, v_ok,
+        "key must be SHA256_COMPOSITE not ID128")
+
+    b3_cov["51"] = add_body_suite(
+        "RETRY_SUMMARY", 6, 0x51, rs_pos, rs_neg, rs_mut, rs_rt)
+    assert b3_cov["51"]["positive"] >= 17
+    assert b3_cov["51"]["negative"] >= 26
+    assert b3_cov["51"]["mutation"] >= 1
+    assert b3_cov["51"]["roundtrip"] >= 9
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -8506,6 +8882,7 @@ def build_document():
         "dsb3_subtype_41_positive": b3_cov["41"]["positive"],
         "dsb3_subtype_42_positive": b3_cov["42"]["positive"],
         "dsb3_subtype_50_positive": b3_cov["50"]["positive"],
+        "dsb3_subtype_51_positive": b3_cov["51"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -8541,6 +8918,7 @@ def build_document():
     assert catalog["dsb3_subtype_41_positive"] > 0
     assert catalog["dsb3_subtype_42_positive"] > 0
     assert catalog["dsb3_subtype_50_positive"] > 0
+    assert catalog["dsb3_subtype_51_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
     # Structural: CS/AII/ATT/EV/RC only after their pre-slice.
@@ -8555,6 +8933,10 @@ def build_document():
     assert all(
         not v["id"].startswith("DSB3_ES_")
         for v in vectors[:PRE_B3K_VECTOR_COUNT_SNAPSHOT]
+    )
+    assert all(
+        not v["id"].startswith("DSB3_RS_")
+        for v in vectors[:PRE_B3L_VECTOR_COUNT_SNAPSHOT]
     )
     assert all(
         not v["id"].startswith("DSB3_DLV_")
@@ -8578,6 +8960,11 @@ def build_document():
     )
     # Kind9/10 42-byte re-pin changes early DSO2/DSW1 vectors inside pre-B3h.
     # Full prefix fingerprint is re-pinned at B3i cutover; stable 1025 checked above.
+    _pre_b3l_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3L_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3l_fp_final == PRE_B3L_FULL_FINGERPRINT_PIN, (
+        f"post-append pre-B3l full fingerprint drift: got {_pre_b3l_fp_final}"
+    )
     _pre_b3k_fp_final = vectors_fingerprint(
         vectors[:PRE_B3K_VECTOR_COUNT_SNAPSHOT])
     assert _pre_b3k_fp_final == PRE_B3K_FULL_FINGERPRINT_PIN, (
@@ -8645,7 +9032,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3k",
+        "format": "ninlil-domain-store-v1-d1b3l",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -8657,12 +9044,14 @@ def build_document():
             "D1-B3i body (41 RESULT_CACHE; D1 pre-alpha operation identity "
             "correction kind9/10 phase) + D1-B3j body (42 REVERSE_REPLY "
             "exact330/state matrix) + D1-B3k body (50 EVENT_SPOOL "
-            "exact300/state-cause matrix); not full D1 catalog"
+            "exact300/state-cause matrix) + D1-B3l body (51 RETRY_SUMMARY "
+            "CUMULATIVE84/RECENT80 kind-slot-fold); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
-            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j/D1-B3k APIs "
+            "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j/D1-B3k/"
+            "D1-B3l APIs "
             "have no workspace parameter; value is 0."
         ),
         "catalog": catalog,

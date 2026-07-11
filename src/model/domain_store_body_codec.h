@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..k.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..l.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -33,6 +33,8 @@ extern "C" {
  *          (live DELIVERY/BLOB/semantic recompute/reply_count are D3)
  *   D1-B3k: family 6 50 EVENT_SPOOL pure body + same-record state×cause
  *          (live ANCHOR PVD / grant re-verify / BLOB cardinality are D3)
+ *   D1-B3l: family 6 51 RETRY_SUMMARY pure body + same-record kind/slot/fold
+ *          (live ANCHOR PVD / cross-row fold/cardinality are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -90,6 +92,17 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_BYTES ((uint32_t)300u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_MAX ((uint32_t)1536u)
 #define NINLIL_MODEL_DOMAIN_EVENT_SPOOL_RESUME_MAX ((uint32_t)8u)
+/* RETRY_SUMMARY (0x51): CUMULATIVE exact 84 / RECENT exact 80; max 768 (§8.6 D1-B3l). */
+#define NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_CUMULATIVE_BYTES ((uint32_t)84u)
+#define NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_RECENT_BYTES ((uint32_t)80u)
+#define NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_MAX ((uint32_t)768u)
+#define NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_RECENT ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_SLOT_MAX ((uint16_t)3u)
+/* Same closed bound as M1a attempts-per-cycle; no local literal drift. */
+#define NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_ATTEMPT_MAX \
+    NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
+#define NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW ((uint64_t)4u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_SERVICE_SLOT_BYTES ((uint32_t)240u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
@@ -286,6 +299,8 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_SPOOL_STATE_PARKED_RETRY ((uint32_t)2u)
 #define NINLIL_MODEL_DOMAIN_SPOOL_STATE_RELEASED ((uint32_t)3u)
 #define NINLIL_MODEL_DOMAIN_SPOOL_STATE_DISCARDED ((uint32_t)4u)
+
+/* RETRY_SUMMARY kinds are the NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_* macros. */
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -893,6 +908,46 @@ typedef struct ninlil_model_domain_body_event_spool {
 } ninlil_model_domain_body_event_spool_t;
 
 /*
+ * RETRY_SUMMARY (0x51). Two exact wire variants (docs17 §8.6 D1-B3l):
+ *   CUMULATIVE kind=1 → exact 84 bytes; RECENT kind=2 → exact 80 bytes.
+ * Key COMPOSITE(51, tx16||kind:u16||slot:u16). Live ANCHOR PVD / cross-row
+ * fold population / cardinality are D3.
+ */
+typedef struct ninlil_model_domain_body_retry_summary_cumulative {
+    uint64_t total_completed_cycle_count;
+    uint64_t folded_cycle_count;
+    uint64_t cumulative_attempt_count;
+    uint32_t last_outcome;
+    uint32_t last_reason;
+    uint8_t last_ended_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t last_ended_at_ms;
+    uint32_t delivery_possible_any;
+    uint32_t counter_saturated;
+} ninlil_model_domain_body_retry_summary_cumulative_t;
+
+typedef struct ninlil_model_domain_body_retry_summary_recent {
+    uint64_t retry_cycle_id;
+    uint32_t attempt_count;
+    uint32_t last_outcome;
+    uint32_t last_reason;
+    uint64_t availability_epoch;
+    uint8_t ended_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t ended_at_ms;
+    uint32_t delivery_possible;
+    uint32_t reserved;
+} ninlil_model_domain_body_retry_summary_recent_t;
+
+typedef struct ninlil_model_domain_body_retry_summary {
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint16_t summary_kind;
+    uint16_t slot_index;
+    union {
+        ninlil_model_domain_body_retry_summary_cumulative_t cumulative;
+        ninlil_model_domain_body_retry_summary_recent_t recent;
+    };
+} ninlil_model_domain_body_retry_summary_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -999,6 +1054,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_result_cache_t result_cache;
         ninlil_model_domain_body_reverse_reply_t reverse_reply;
         ninlil_model_domain_body_event_spool_t event_spool;
+        ninlil_model_domain_body_retry_summary_t retry_summary;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1462,6 +1518,21 @@ ninlil_status_t ninlil_model_domain_decode_body_event_spool(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_event_spool_t *out_body);
 
+/* --- RETRY_SUMMARY (0x51) --- */
+/* Returns exact 84 (CUMULATIVE) or 80 (RECENT), or 0 if not encodable. */
+uint32_t ninlil_model_domain_body_retry_summary_encoded_length(
+    const ninlil_model_domain_body_retry_summary_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_retry_summary(
+    const ninlil_model_domain_body_retry_summary_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_retry_summary(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_retry_summary_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1507,7 +1578,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..k.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..l.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1563,7 +1634,11 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       EVENT_SPOOL live TRANSACTION_ANCHOR PVD / grant decision re-verify /
  *       availability resume path / STATE/RETRY/MANAGEMENT cardinality /
  *       payload BLOB live 0/1 / retention/cleanup (B3k proves same-record
- *       body/key/header/state×cause/resume-discard/reservation KEY_DIGEST only)
+ *       body/key/header/state×cause/resume-discard/reservation KEY_DIGEST only);
+ *       RETRY_SUMMARY live TRANSACTION_ANCHOR PVD / CUMULATIVE admission
+ *       exact 1 + RECENT 0..4 cardinality / fold-before-replace ordering /
+ *       counter overflow→counter_saturated + COUNTER_EXHAUSTED park / slot
+ *       uniqueness (B3l proves same-record body/key/kind-slot-fold/bools only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

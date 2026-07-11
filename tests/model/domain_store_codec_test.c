@@ -90,6 +90,7 @@ typedef struct body_any {
     ninlil_model_domain_body_result_cache_t result_cache;
     ninlil_model_domain_body_reverse_reply_t reverse_reply;
     ninlil_model_domain_body_event_spool_t event_spool;
+    ninlil_model_domain_body_retry_summary_t retry_summary;
 } body_any_t;
 
 static ninlil_status_t decode_body_any(
@@ -199,6 +200,10 @@ static ninlil_status_t decode_body_any(
     if (family == 6u && subtype == 0x50u) {
         return ninlil_model_domain_decode_body_event_spool(
             body, &any->event_spool);
+    }
+    if (family == 6u && subtype == 0x51u) {
+        return ninlil_model_domain_decode_body_retry_summary(
+            body, &any->retry_summary);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -314,6 +319,10 @@ static ninlil_status_t encode_body_any(
     if (family == 6u && subtype == 0x50u) {
         return ninlil_model_domain_encode_body_event_spool(
             &any->event_spool, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x51u) {
+        return ninlil_model_domain_encode_body_retry_summary(
+            &any->retry_summary, out, capacity, out_len);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -914,6 +923,52 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
             return 0;
         }
         QCHECK(got == NINLIL_OK);
+        /* RETRY_SUMMARY positives: re-derive fold / slot modulo / bools. */
+        if (v->family == 6u && v->subtype == 0x51u) {
+            const ninlil_model_domain_body_retry_summary_t *rs =
+                &any.retry_summary;
+            QCHECK(rs->summary_kind
+                    == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE
+                || rs->summary_kind
+                    == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_RECENT);
+            if (rs->summary_kind
+                == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE) {
+                uint64_t expect_folded = 0u;
+                if (rs->cumulative.total_completed_cycle_count
+                    >= NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW) {
+                    expect_folded =
+                        rs->cumulative.total_completed_cycle_count
+                        - NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW;
+                }
+                QCHECK(rs->slot_index == 0u);
+                QCHECK(rs->cumulative.folded_cycle_count == expect_folded);
+                QCHECK(rs->cumulative.delivery_possible_any == 0u
+                    || rs->cumulative.delivery_possible_any == 1u);
+                QCHECK(rs->cumulative.counter_saturated == 0u
+                    || rs->cumulative.counter_saturated == 1u);
+                if (rs->cumulative.folded_cycle_count == 0u) {
+                    QCHECK(rs->cumulative.cumulative_attempt_count == 0u);
+                    QCHECK(rs->cumulative.last_outcome == 0u);
+                    QCHECK(rs->cumulative.last_reason == 0u);
+                    QCHECK(zeros(
+                        rs->cumulative.last_ended_clock_epoch, 16u));
+                    QCHECK(rs->cumulative.last_ended_at_ms == 0u);
+                    QCHECK(rs->cumulative.delivery_possible_any == 0u);
+                    QCHECK(rs->cumulative.counter_saturated == 0u);
+                }
+            } else {
+                uint64_t expect_slot =
+                    (rs->recent.retry_cycle_id - 1u) % 4u;
+                QCHECK(rs->recent.retry_cycle_id >= 1u);
+                QCHECK((uint64_t)rs->slot_index == expect_slot);
+                QCHECK(rs->recent.attempt_count >= 1u
+                    && rs->recent.attempt_count
+                        <= NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_ATTEMPT_MAX);
+                QCHECK(rs->recent.delivery_possible == 0u
+                    || rs->recent.delivery_possible == 1u);
+                QCHECK(rs->recent.reserved == 0u);
+            }
+        }
         elen = 0u;
         got = encode_body_any(
             v->family, v->subtype, v->flags, &any, outb, sizeof(outb), &elen);
@@ -1312,6 +1367,78 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 QCHECK(rec.key.identity_kind
                     == NINLIL_MODEL_DOMAIN_ID_KIND_ID128);
                 QCHECK(rec.key.identity_length == 16u);
+            } else if (v->subtype == 0x51u) {
+                /* RETRY_SUMMARY: rev>=1/flags0/PVD NZ, composite key. */
+                QCHECK(rec.envelope.header.record_revision >= 1u);
+                QCHECK(rec.envelope.header.flags == 0u);
+                QCHECK(!zeros(rec.envelope.header.primary_value_digest, 32u));
+                QCHECK(!zeros(rec.envelope.header.head_witness_digest, 32u));
+                QCHECK(!zeros(rec.retry_summary.transaction_id, 16u));
+                QCHECK(rec.retry_summary.summary_kind == 1u
+                    || rec.retry_summary.summary_kind == 2u);
+                QCHECK(memcmp(
+                           rec.envelope.header.primary_id,
+                           rec.retry_summary.transaction_id, 16u)
+                    == 0);
+                QCHECK(rec.key.identity_kind
+                    == NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE);
+                QCHECK(rec.key.identity_length == 32u);
+                if (rec.retry_summary.summary_kind
+                    == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE) {
+                    uint64_t expect_folded = 0u;
+                    if (rec.retry_summary.cumulative.total_completed_cycle_count
+                        >= NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW) {
+                        expect_folded =
+                            rec.retry_summary.cumulative
+                                .total_completed_cycle_count
+                            - NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW;
+                    }
+                    QCHECK(rec.retry_summary.slot_index == 0u);
+                    QCHECK(rec.envelope.body.length == 84u);
+                    QCHECK(rec.retry_summary.cumulative.folded_cycle_count
+                        == expect_folded);
+                    QCHECK(rec.retry_summary.cumulative.delivery_possible_any
+                            == 0u
+                        || rec.retry_summary.cumulative.delivery_possible_any
+                            == 1u);
+                    QCHECK(rec.retry_summary.cumulative.counter_saturated == 0u
+                        || rec.retry_summary.cumulative.counter_saturated
+                            == 1u);
+                    if (rec.retry_summary.cumulative.folded_cycle_count
+                        == 0u) {
+                        QCHECK(rec.retry_summary.cumulative
+                                .cumulative_attempt_count
+                            == 0u);
+                        QCHECK(
+                            rec.retry_summary.cumulative.last_outcome == 0u);
+                        QCHECK(
+                            rec.retry_summary.cumulative.last_reason == 0u);
+                        QCHECK(zeros(rec.retry_summary.cumulative
+                                         .last_ended_clock_epoch,
+                            16u));
+                        QCHECK(rec.retry_summary.cumulative.last_ended_at_ms
+                            == 0u);
+                        QCHECK(rec.retry_summary.cumulative
+                                .delivery_possible_any
+                            == 0u);
+                        QCHECK(rec.retry_summary.cumulative.counter_saturated
+                            == 0u);
+                    }
+                } else {
+                    uint64_t expect_slot =
+                        (rec.retry_summary.recent.retry_cycle_id - 1u) % 4u;
+                    QCHECK(rec.retry_summary.slot_index <= 3u);
+                    QCHECK(rec.envelope.body.length == 80u);
+                    QCHECK(rec.retry_summary.recent.retry_cycle_id >= 1u);
+                    QCHECK((uint64_t)rec.retry_summary.slot_index
+                        == expect_slot);
+                    QCHECK(rec.retry_summary.recent.attempt_count >= 1u
+                        && rec.retry_summary.recent.attempt_count
+                            <= NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_ATTEMPT_MAX);
+                    QCHECK(rec.retry_summary.recent.delivery_possible == 0u
+                        || rec.retry_summary.recent.delivery_possible == 1u);
+                    QCHECK(rec.retry_summary.recent.reserved == 0u);
+                }
             }
             if (ninlil_dv_str(v->digest_hex)[0] != '\0') {
                 ninlil_model_domain_digest_t d;
@@ -1380,6 +1507,7 @@ static int test_catalog_and_replay(const char *path)
     uint32_t cov41 = 0u;
     uint32_t cov42 = 0u;
     uint32_t cov50 = 0u;
+    uint32_t cov51 = 0u;
     uint32_t unimplemented = 0u;
 
     if (ninlil_dv_load_file(path, &file, err, sizeof(err)) != 0) {
@@ -1505,6 +1633,8 @@ static int test_catalog_and_replay(const char *path)
                     cov42++;
                 } else if (v->subtype == 0x50u) {
                     cov50++;
+                } else if (v->subtype == 0x51u) {
+                    cov51++;
                 }
             } else {
                 dsb3_neg++;
@@ -1555,13 +1685,15 @@ static int test_catalog_and_replay(const char *path)
     REQUIRE(cov41 == file.catalog.dsb3_subtype_41_positive);
     REQUIRE(cov42 == file.catalog.dsb3_subtype_42_positive);
     REQUIRE(cov50 == file.catalog.dsb3_subtype_50_positive);
-    /* D1-B1 + D1-B2 + D1-B3a..k subtype coverage. */
+    REQUIRE(cov51 == file.catalog.dsb3_subtype_51_positive);
+    /* D1-B1 + D1-B2 + D1-B3a..l subtype coverage. */
     if (cov01 == 0u || cov60 == 0u || cov62 == 0u || cov64 == 0u
         || cov7d == 0u || cov10 == 0u || cov11 == 0u || cov20 == 0u
         || cov21 == 0u || cov22 == 0u || cov23 == 0u || cov24 == 0u
         || cov25 == 0u || cov26 == 0u || cov27 == 0u || cov30 == 0u
         || cov31 == 0u || cov34 == 0u || cov33 == 0u || cov32 == 0u
-        || cov40 == 0u || cov41 == 0u || cov42 == 0u || cov50 == 0u) {
+        || cov40 == 0u || cov41 == 0u || cov42 == 0u || cov50 == 0u
+        || cov51 == 0u) {
         unimplemented = 1u;
     }
     REQUIRE(unimplemented == 0u);
@@ -1571,12 +1703,13 @@ static int test_catalog_and_replay(const char *path)
         "cov01=%u cov60=%u cov62=%u cov64=%u cov7d=%u "
         "cov10=%u cov11=%u cov20=%u cov21=%u cov22=%u cov23=%u cov24=%u "
         "cov25=%u cov26=%u cov27=%u cov30=%u cov31=%u cov34=%u cov33=%u "
-        "cov32=%u cov40=%u cov41=%u cov42=%u cov50=%u "
+        "cov32=%u cov40=%u cov41=%u cov42=%u cov50=%u cov51=%u "
         "sizeof(ninlil_dv_vector_t)=%zu\n",
         file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, dsb3_pos,
         dsb3_neg, cov01, cov60, cov62, cov64, cov7d, cov10, cov11, cov20,
         cov21, cov22, cov23, cov24, cov25, cov26, cov27, cov30, cov31, cov34,
-        cov33, cov32, cov40, cov41, cov42, cov50, sizeof(ninlil_dv_vector_t));
+        cov33, cov32, cov40, cov41, cov42, cov50, cov51,
+        sizeof(ninlil_dv_vector_t));
     ninlil_dv_free(&file);
     return 0;
 }
@@ -2248,6 +2381,16 @@ static int test_body_alias_and_overflow(const char *vector_path)
         ninlil_model_domain_encode_body_event_spool,
         ninlil_model_domain_decode_body_event_spool,
         NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_BYTES);
+    CHECK_FIXED_BODY_ALIAS(
+        ninlil_model_domain_body_retry_summary_t,
+        ninlil_model_domain_encode_body_retry_summary,
+        ninlil_model_domain_decode_body_retry_summary,
+        NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_CUMULATIVE_BYTES);
+    CHECK_FIXED_BODY_ALIAS(
+        ninlil_model_domain_body_retry_summary_t,
+        ninlil_model_domain_encode_body_retry_summary,
+        ninlil_model_domain_decode_body_retry_summary,
+        NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_RECENT_BYTES);
     CHECK_FIXED_BODY_ALIAS(
         ninlil_model_domain_body_witness_head_index_t,
         ninlil_model_domain_encode_body_witness_head_index,
@@ -4160,7 +4303,7 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3k\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3l\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
@@ -6277,6 +6420,259 @@ static int test_event_spool_contracts(const char *path)
     return 0;
 }
 
+/*
+ * D1-B3l RETRY_SUMMARY: CUMULATIVE 84 / RECENT 80, kind/slot/fold, bools,
+ * composite key, every negative production-replayed, pre-B3l 1222 prefix.
+ */
+static int test_retry_summary_contracts(const char *path)
+{
+    ninlil_dv_file_t file;
+    char err[256];
+    size_t i;
+    uint32_t rs_count = 0u;
+    uint32_t rs_neg_count = 0u;
+    uint32_t rs_neg_replayed = 0u;
+    int seen_cum = 0;
+    int seen_rec = 0;
+    int seen_fold0 = 0;
+    int seen_fold_nz = 0;
+    int seen_t3_fold0 = 0;
+    int seen_tmax = 0;
+    int seen_cmax = 0;
+    int seen_att1 = 0;
+    int seen_att8 = 0;
+    int seen_typed = 0;
+    int seen_mut = 0;
+    int seen_len = 0;
+    int seen_key = 0;
+    int seen_key_id128 = 0;
+    ninlil_model_domain_body_retry_summary_t body;
+    ninlil_model_domain_typed_record_t rec;
+    uint8_t body_buf[512];
+    size_t bn = 0u;
+    uint8_t out[512];
+    uint32_t olen = 0u;
+
+    REQUIRE(path != NULL);
+    REQUIRE(ninlil_dv_load_file(path, &file, err, sizeof(err)) == 0);
+    REQUIRE(file.vector_count > 1222u);
+    REQUIRE(strcmp(file.vectors[0].id, "DSK1_SHA256_EMPTY") == 0);
+    REQUIRE(strcmp(file.vectors[1221].id, "DSB3_ES_KEY_TX_MISMATCH") == 0);
+    for (i = 0u; i < 1222u; ++i) {
+        REQUIRE(strncmp(file.vectors[i].id, "DSB3_RS_", 8) != 0);
+    }
+
+    for (i = 0u; i < file.vector_count; ++i) {
+        const ninlil_dv_vector_t *v = &file.vectors[i];
+        if (strncmp(v->id, "DSB3_RS_", 8) != 0) {
+            continue;
+        }
+        rs_count++;
+
+        if (strcmp(v->expected_status, "CORRUPT") == 0
+            || strcmp(v->expected_status, "INVALID") == 0) {
+            rs_neg_count++;
+            /* Every negative is replayed against production. */
+            if (strcmp(v->op, "body_decode") == 0
+                || strcmp(v->op, "body_roundtrip") == 0) {
+                REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                            sizeof(body_buf), &bn)
+                    == 0);
+                (void)memset(&body, 0xA5, sizeof(body));
+                REQUIRE(ninlil_model_domain_decode_body_retry_summary(
+                        (ninlil_bytes_view_t){body_buf, (uint32_t)bn},
+                        &body)
+                    == NINLIL_E_STORAGE_CORRUPT);
+                REQUIRE(zeros(&body, sizeof(body)));
+                rs_neg_replayed++;
+            } else if (strcmp(v->op, "typed_record") == 0) {
+                uint8_t kbuf[64];
+                uint8_t vbuf[4096];
+                size_t kn = 0u;
+                size_t vn = 0u;
+                REQUIRE(hex_to(ninlil_dv_str(v->key_hex), kbuf, sizeof(kbuf),
+                            &kn)
+                    == 0);
+                REQUIRE(hex_to(ninlil_dv_str(v->value_hex), vbuf,
+                            sizeof(vbuf), &vn)
+                    == 0);
+                (void)memset(&rec, 0xA5, sizeof(rec));
+                REQUIRE(ninlil_model_domain_validate_typed_record(
+                        (ninlil_bytes_view_t){kbuf, (uint32_t)kn},
+                        (ninlil_bytes_view_t){vbuf, (uint32_t)vn},
+                        &rec)
+                    == NINLIL_E_STORAGE_CORRUPT);
+                REQUIRE(zeros(&rec, sizeof(rec)));
+                rs_neg_replayed++;
+            }
+        }
+
+        if (v->subtype == 0x51u && strcmp(v->expected_status, "OK") == 0
+            && strcmp(v->op, "body_roundtrip") == 0) {
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                        sizeof(body_buf), &bn)
+                == 0);
+            REQUIRE(bn == 84u || bn == 80u);
+            REQUIRE((uint32_t)bn == v->body_length);
+            (void)memset(&body, 0, sizeof(body));
+            REQUIRE(ninlil_model_domain_decode_body_retry_summary(
+                    (ninlil_bytes_view_t){body_buf, (uint32_t)bn}, &body)
+                == NINLIL_OK);
+            REQUIRE(!zeros(body.transaction_id, 16u));
+            olen = 0u;
+            REQUIRE(ninlil_model_domain_encode_body_retry_summary(
+                    &body, out, (uint32_t)sizeof(out), &olen)
+                == NINLIL_OK);
+            REQUIRE(olen == (uint32_t)bn);
+            REQUIRE(memcmp(out, body_buf, bn) == 0);
+            if (body.summary_kind
+                == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE) {
+                uint64_t expect_folded = 0u;
+                if (body.cumulative.total_completed_cycle_count
+                    >= NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW) {
+                    expect_folded =
+                        body.cumulative.total_completed_cycle_count
+                        - NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW;
+                }
+                REQUIRE(bn == 84u);
+                REQUIRE(body.slot_index == 0u);
+                /* Independent fold re-derive (not catalog notes). */
+                REQUIRE(body.cumulative.folded_cycle_count == expect_folded);
+                REQUIRE(body.cumulative.delivery_possible_any == 0u
+                    || body.cumulative.delivery_possible_any == 1u);
+                REQUIRE(body.cumulative.counter_saturated == 0u
+                    || body.cumulative.counter_saturated == 1u);
+                seen_cum = 1;
+                if (body.cumulative.folded_cycle_count == 0u) {
+                    seen_fold0 = 1;
+                    REQUIRE(body.cumulative.cumulative_attempt_count == 0u);
+                    REQUIRE(body.cumulative.last_outcome == 0u);
+                    REQUIRE(body.cumulative.last_reason == 0u);
+                    REQUIRE(zeros(
+                        body.cumulative.last_ended_clock_epoch, 16u));
+                    REQUIRE(body.cumulative.last_ended_at_ms == 0u);
+                    REQUIRE(body.cumulative.delivery_possible_any == 0u);
+                    REQUIRE(body.cumulative.counter_saturated == 0u);
+                } else {
+                    seen_fold_nz = 1;
+                }
+                if (body.cumulative.total_completed_cycle_count == 3u
+                    && body.cumulative.folded_cycle_count == 0u) {
+                    seen_t3_fold0 = 1;
+                }
+                if (body.cumulative.total_completed_cycle_count
+                    == UINT64_MAX) {
+                    seen_tmax = 1;
+                }
+            }
+            if (body.summary_kind
+                == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_RECENT) {
+                uint64_t expect_slot =
+                    (body.recent.retry_cycle_id - 1u) % 4u;
+                REQUIRE(bn == 80u);
+                REQUIRE(body.slot_index <= 3u);
+                REQUIRE(body.recent.retry_cycle_id >= 1u);
+                REQUIRE(body.recent.attempt_count >= 1u
+                    && body.recent.attempt_count
+                        <= NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_ATTEMPT_MAX);
+                REQUIRE(body.recent.reserved == 0u);
+                REQUIRE(body.recent.delivery_possible == 0u
+                    || body.recent.delivery_possible == 1u);
+                REQUIRE((uint64_t)body.slot_index == expect_slot);
+                seen_rec = 1;
+                if (body.recent.attempt_count == 1u) {
+                    seen_att1 = 1;
+                }
+                if (body.recent.attempt_count
+                    == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_ATTEMPT_MAX) {
+                    seen_att8 = 1;
+                }
+                if (body.recent.retry_cycle_id == UINT64_MAX) {
+                    seen_cmax = 1;
+                }
+            }
+        }
+        if (v->subtype == 0x51u && strcmp(v->op, "typed_record") == 0
+            && strcmp(v->expected_status, "OK") == 0) {
+            uint8_t kbuf[64];
+            uint8_t vbuf[4096];
+            size_t kn = 0u;
+            size_t vn = 0u;
+            REQUIRE(hex_to(ninlil_dv_str(v->key_hex), kbuf, sizeof(kbuf), &kn)
+                == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->value_hex), vbuf, sizeof(vbuf), &vn)
+                == 0);
+            REQUIRE(ninlil_model_domain_validate_typed_record(
+                    (ninlil_bytes_view_t){kbuf, (uint32_t)kn},
+                    (ninlil_bytes_view_t){vbuf, (uint32_t)vn},
+                    &rec)
+                == NINLIL_OK);
+            REQUIRE(rec.subtype == 0x51u);
+            REQUIRE(rec.envelope.header.record_revision >= 1u);
+            REQUIRE(rec.envelope.header.flags == 0u);
+            REQUIRE(!zeros(rec.envelope.header.primary_value_digest, 32u));
+            REQUIRE(!zeros(rec.envelope.header.head_witness_digest, 32u));
+            REQUIRE(memcmp(
+                        rec.envelope.header.primary_id,
+                        rec.retry_summary.transaction_id, 16u)
+                == 0);
+            REQUIRE(rec.key.identity_kind
+                == NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE);
+            seen_typed = 1;
+        }
+        if (strcmp(v->id, "DSB3_RS_LEN83") == 0
+            || strcmp(v->id, "DSB3_RS_LEN85") == 0
+            || strcmp(v->id, "DSB3_RS_LEN79") == 0
+            || strcmp(v->id, "DSB3_RS_LEN81") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            seen_len = 1;
+        }
+        if (strcmp(v->id, "DSB3_RS_KEY_TX_MISMATCH") == 0
+            || strcmp(v->id, "DSB3_RS_KEY_KIND_MISMATCH") == 0
+            || strcmp(v->id, "DSB3_RS_KEY_SLOT_MISMATCH") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            seen_key = 1;
+        }
+        if (strcmp(v->id, "DSB3_RS_KEY_ID128_KIND") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            REQUIRE(strcmp(v->op, "typed_record") == 0);
+            seen_key_id128 = 1;
+        }
+        if (strcmp(v->id, "DSB3_RS_MUT_KIND") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            REQUIRE(strcmp(v->op, "body_decode") == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                        sizeof(body_buf), &bn)
+                == 0);
+            REQUIRE(bn == 84u);
+            REQUIRE(body_buf[16] == 0u && body_buf[17] == 99u);
+            seen_mut = 1;
+        }
+    }
+    REQUIRE(rs_count >= 42u);
+    REQUIRE(rs_neg_count >= 26u);
+    REQUIRE(rs_neg_replayed == rs_neg_count);
+    REQUIRE(seen_cum == 1);
+    REQUIRE(seen_rec == 1);
+    REQUIRE(seen_fold0 == 1);
+    REQUIRE(seen_fold_nz == 1);
+    REQUIRE(seen_t3_fold0 == 1);
+    REQUIRE(seen_tmax == 1);
+    REQUIRE(seen_cmax == 1);
+    REQUIRE(seen_att1 == 1);
+    REQUIRE(seen_att8 == 1);
+    REQUIRE(seen_typed == 1);
+    REQUIRE(seen_len == 1);
+    REQUIRE(seen_key == 1);
+    REQUIRE(seen_key_id128 == 1);
+    REQUIRE(seen_mut == 1);
+    ninlil_dv_free(&file);
+    (void)fprintf(stdout,
+        "retry_summary contracts ok rs_vectors=%u neg_replayed=%u\n",
+        rs_count, rs_neg_replayed);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = "spec/vectors/domain-store-v1.json";
@@ -6299,6 +6695,7 @@ int main(int argc, char **argv)
         || test_result_cache_contracts(path) != 0
         || test_reverse_reply_contracts(path) != 0
         || test_event_spool_contracts(path) != 0
+        || test_retry_summary_contracts(path) != 0
         || test_catalog_and_replay(path) != 0
         || test_mutation_rejects_wrong_digest(path) != 0
         || test_manifest_key_length_mutation(path) != 0
