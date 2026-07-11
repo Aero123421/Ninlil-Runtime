@@ -578,7 +578,12 @@ ninlil_status_t ninlil_model_domain_operation_identity_length(
     case 5u: *out_length = 32u; return NINLIL_OK;
     case 6u: *out_length = 40u; return NINLIL_OK;
     case 7u: case 8u: *out_length = 8u; return NINLIL_OK;
-    case 9u: case 10u: *out_length = 40u; return NINLIL_OK;
+    /*
+     * D1 pre-alpha operation identity correction: kind 9/10 add phase:u16
+     * (docs17 §10). Exact 42 = digest[32] || token_generation:u64 || phase:u16.
+     * Legacy 40-byte form is not accepted.
+     */
+    case 9u: case 10u: *out_length = 42u; return NINLIL_OK;
     case 11u: *out_length = 50u; return NINLIL_OK;
     case 12u: *out_length = 42u; return NINLIL_OK;
     case 13u: *out_length = 8u; return NINLIL_OK;
@@ -637,8 +642,14 @@ int ninlil_model_domain_operation_identity_is_valid(
     case 6u: /* digest[32] || post_send_operation_generation:u64 */
         return be64_is_nonzero(&d[32]);
     case 9u:
-    case 10u: /* digest[32] || token_generation:u64 */
-        return be64_is_nonzero(&d[32]);
+    case 10u:
+        /*
+         * digest[32] || token_generation:u64 || phase:u16.
+         * Kind 9 phase ∈ {1 SUCCESS, 2 COUNTER_EXHAUSTED}.
+         * Kind 10 phase ∈ {1 COMPLETE, 2 TOKEN_TIMEOUT}.
+         */
+        phase = ninlil_model_domain_decode_u16_be(&d[40]);
+        return be64_is_nonzero(&d[32]) && phase >= 1u && phase <= 2u;
     case 11u: /* delivery[32] || reconcile_retry:u64 || inv:u64 || phase:u16 */
         phase = ninlil_model_domain_decode_u16_be(&d[48]);
         return be64_is_nonzero(&d[32])
@@ -2309,8 +2320,8 @@ static int witness_metadata_matrix_ok(
             && retention_kind == 3u
             && !ninlil_model_domain_digest_is_zero(retention_subject_key_digest);
     case 9u:
-    case 10u: /* delivery key digest || token_generation */
-        return operation_identity.length == 40u
+    case 10u: /* delivery key digest || token_generation || phase */
+        return operation_identity.length == 42u
             && subject_matches_prefix16(subject_id, operation_identity.data)
             && retention_kind == 3u
             && digests_equal(retention_subject_key_digest, operation_identity.data);

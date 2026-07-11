@@ -7679,6 +7679,751 @@ ninlil_status_t ninlil_model_domain_decode_body_delivery(
     return NINLIL_OK;
 }
 
+
+/* --- RESULT_CACHE (0x41) --- */
+
+static int result_cache_delivery_raw_ok(
+    uint16_t raw_len, const uint8_t *raw, const uint8_t *transaction_id)
+{
+    size_t i;
+    if (raw_len != NINLIL_MODEL_DOMAIN_DELIVERY_KEY_CONTENTS_BYTES
+        || raw == NULL || transaction_id == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < 5u; ++i) {
+        if (id_is_zero(raw + (i * 16u))) {
+            return 0;
+        }
+    }
+    return memcmp(raw + 32u, transaction_id, 16u) == 0;
+}
+
+static int result_cache_delivery_key_digest_ok(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    uint8_t raw16_buf[2u + NINLIL_MODEL_DOMAIN_DELIVERY_KEY_CONTENTS_BYTES];
+    ninlil_bytes_view_t components;
+    uint32_t raw16_len = 0u;
+
+    if (body == NULL || body->delivery_key_raw == NULL) {
+        return 0;
+    }
+    if (!encode_raw16_into(
+            body->delivery_key_raw_length, body->delivery_key_raw, raw16_buf,
+            sizeof(raw16_buf), &raw16_len)) {
+        return 0;
+    }
+    components.data = raw16_buf;
+    components.length = raw16_len;
+    return digest_eq_composite_key(
+        body->delivery_key_digest, NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+        components);
+}
+
+static int result_cache_evidence_cell_key_digest_ok(
+    const ninlil_model_domain_body_result_cache_t *body, int expect_zero)
+{
+    uint8_t comp[2u + 2u + 80u + 4u];
+    ninlil_bytes_view_t components;
+    uint32_t o = 0u;
+
+    if (body == NULL) {
+        return 0;
+    }
+    if (expect_zero) {
+        return digest_is_zero(body->evidence_cell_key_digest);
+    }
+    if (body->delivery_key_raw == NULL
+        || body->delivery_key_raw_length
+            != NINLIL_MODEL_DOMAIN_DELIVERY_KEY_CONTENTS_BYTES
+        || digest_is_zero(body->evidence_cell_key_digest)) {
+        return 0;
+    }
+    ninlil_model_domain_encode_u16_be(
+        &comp[o], NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_DELIVERY);
+    o += 2u;
+    ninlil_model_domain_encode_u16_be(
+        &comp[o], body->delivery_key_raw_length);
+    o += 2u;
+    (void)memcpy(&comp[o], body->delivery_key_raw, 80u);
+    o += 80u;
+    ninlil_model_domain_encode_u32_be(&comp[o], 0u); /* slot 0 SUMMARY */
+    o += 4u;
+    components.data = comp;
+    components.length = o;
+    return digest_eq_composite_key(
+        body->evidence_cell_key_digest,
+        NINLIL_MODEL_DOMAIN_SUBTYPE_EVIDENCE_CELL, components);
+}
+
+static int result_timer_tuple_legal(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    if (body == NULL) {
+        return 0;
+    }
+    if (id_is_zero(body->token_clock_epoch)
+        || id_is_zero(body->delivery_started_clock_epoch)
+        || memcmp(
+               body->token_clock_epoch, body->delivery_started_clock_epoch,
+               16u)
+            != 0) {
+        return 0;
+    }
+    if (body->completion_expires_at_ms == 0u
+        || body->token_expires_at_ms == 0u
+        || body->token_expires_at_ms != body->completion_expires_at_ms) {
+        return 0;
+    }
+    /*
+     * docs17 §8.5: completion_expires =
+     * checked(delivery_started_at + application_completion_timeout_ms) with
+     * timeout >= 1, so same-record requires completion_expires > started_at
+     * (started_at may be 0; equality or less is corrupt).
+     */
+    if (body->completion_expires_at_ms <= body->delivery_started_at_ms) {
+        return 0;
+    }
+    return 1;
+}
+
+static int result_timer_tuple_zero(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    return id_is_zero(body->token_clock_epoch)
+        && body->token_expires_at_ms == 0u
+        && id_is_zero(body->delivery_started_clock_epoch)
+        && body->delivery_started_at_ms == 0u
+        && body->completion_expires_at_ms == 0u;
+}
+
+static int result_completed_zero(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    return id_is_zero(body->completed_clock_epoch)
+        && body->completed_at_ms == 0u;
+}
+
+static int result_completed_nz(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    return !id_is_zero(body->completed_clock_epoch)
+        && body->completed_at_ms != 0u;
+}
+
+static int result_token_context_zero(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    return id_is_zero(body->token_context_id);
+}
+
+static int result_token_context_is_txn(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    return memcmp(body->token_context_id, body->transaction_id, 16u) == 0
+        && !id_is_zero(body->token_context_id);
+}
+
+static int result_e_rec_reason_ok(uint32_t reason, uint32_t guidance)
+{
+    switch (reason) {
+    case NINLIL_REASON_APPLICATION_FAILED:
+    case NINLIL_REASON_CALLBACK_CONTRACT:
+    case NINLIL_REASON_COUNTER_EXHAUSTED:
+    case NINLIL_REASON_OUTCOME_UNKNOWN:
+        return guidance == NINLIL_RETRY_OPERATOR_ACTION;
+    case NINLIL_REASON_APPLICATION_COMPLETION_TIMEOUT:
+        return guidance == NINLIL_RETRY_SAME_AFTER;
+    default:
+        return 0;
+    }
+}
+
+/*
+ * docs17 §8.5 E_REC reason × token_state reachability (state 6/7).
+ * CALLBACK_CONTRACT may retain prior tombstone identity after unknown
+ * reconcile / invalid KNOWN_RESULT (CONSUMED/EXPIRED/RECOVERY_TOMB), not only
+ * direct invalid-callback RECOVERY_REQUIRED_TOMBSTONE.
+ */
+static int result_retained_tombstone(uint32_t token_state)
+{
+    return token_state == NINLIL_MODEL_DOMAIN_TOKEN_STATE_CONSUMED
+        || token_state == NINLIL_MODEL_DOMAIN_TOKEN_STATE_EXPIRED
+        || token_state
+            == NINLIL_MODEL_DOMAIN_TOKEN_STATE_RECOVERY_REQUIRED_TOMBSTONE;
+}
+
+static int result_e_rec_token_pair_ok(
+    uint32_t reason, uint32_t token_state, uint64_t n)
+{
+    switch (reason) {
+    case NINLIL_REASON_APPLICATION_COMPLETION_TIMEOUT:
+        return n >= 1u
+            && token_state == NINLIL_MODEL_DOMAIN_TOKEN_STATE_EXPIRED;
+    case NINLIL_REASON_APPLICATION_FAILED:
+        return n >= 1u
+            && token_state
+                == NINLIL_MODEL_DOMAIN_TOKEN_STATE_RECOVERY_REQUIRED_TOMBSTONE;
+    case NINLIL_REASON_CALLBACK_CONTRACT:
+        /* Direct invalid complete → RECOVERY_TOMB; unknown reconcile keeps prior
+         * retained tombstone (CONSUMED/EXPIRED/RECOVERY_TOMB). Same-record
+         * cannot distinguish history, so all three retained forms are legal. */
+        return n >= 1u && result_retained_tombstone(token_state);
+    case NINLIL_REASON_OUTCOME_UNKNOWN:
+        return n >= 1u
+            && (token_state == NINLIL_MODEL_DOMAIN_TOKEN_STATE_EXPIRED
+                || token_state
+                    == NINLIL_MODEL_DOMAIN_TOKEN_STATE_RECOVERY_REQUIRED_TOMBSTONE);
+    case NINLIL_REASON_COUNTER_EXHAUSTED:
+        return n == UINT64_MAX && result_retained_tombstone(token_state);
+    default:
+        return 0;
+    }
+}
+
+static int result_e_zero_ok(const ninlil_model_domain_body_result_cache_t *body)
+{
+    return body->application_result_kind == 0u
+        && body->evidence_stage == NINLIL_EVIDENCE_NONE
+        && body->disposition == NINLIL_DISPOSITION_NONE
+        && body->reason == NINLIL_REASON_NONE
+        && body->effect_certainty == NINLIL_EFFECT_CERTAINTY_NONE
+        && body->retry_guidance == NINLIL_RETRY_NEVER
+        && body->retry_delay_ms == 0u
+        && result_completed_zero(body);
+}
+
+static int result_e_pos_ok(const ninlil_model_domain_body_result_cache_t *body)
+{
+    return body->application_result_kind == NINLIL_APP_RESULT_POSITIVE_EVIDENCE
+        && body->evidence_stage != NINLIL_EVIDENCE_NONE
+        && evidence_stage_is_known(body->evidence_stage)
+        && body->disposition == NINLIL_DISPOSITION_NONE
+        && body->reason == NINLIL_REASON_NONE
+        && body->effect_certainty == NINLIL_EFFECT_CERTAINTY_NONE
+        && body->retry_guidance == NINLIL_RETRY_NEVER
+        && body->retry_delay_ms == 0u
+        && result_completed_nz(body);
+}
+
+static int result_disp_reason_ok(
+    uint32_t disposition, uint32_t reason, uint32_t effect_certainty)
+{
+    switch (disposition) {
+    case NINLIL_DISPOSITION_RETRY_LATER:
+        return reason == NINLIL_REASON_RECONCILE_RETRY_LATER;
+    case NINLIL_DISPOSITION_INVALID_PAYLOAD:
+    case NINLIL_DISPOSITION_UNSUPPORTED_SCHEMA:
+    case NINLIL_DISPOSITION_STALE_NOT_APPLIED:
+        return reason == NINLIL_REASON_APPLICATION_FAILED;
+    case NINLIL_DISPOSITION_UNAUTHORIZED_SERVICE:
+        return reason == NINLIL_REASON_TARGET_UNAUTHORIZED;
+    case NINLIL_DISPOSITION_APPLICATION_BUSY:
+        return reason == NINLIL_REASON_RECEIVER_UNAVAILABLE;
+    case NINLIL_DISPOSITION_APPLY_FAILED:
+        return reason == NINLIL_REASON_APPLICATION_FAILED;
+    case NINLIL_DISPOSITION_VERIFY_FAILED:
+        return reason == NINLIL_REASON_APPLICATION_FAILED;
+    case NINLIL_DISPOSITION_CAPACITY_EXHAUSTED:
+        return reason == NINLIL_REASON_CAPACITY_EXHAUSTED;
+    case NINLIL_DISPOSITION_OUTCOME_UNKNOWN:
+        return reason == NINLIL_REASON_OUTCOME_UNKNOWN
+            && effect_certainty == NINLIL_EFFECT_CERTAINTY_POSSIBLE;
+    default:
+        return 0;
+    }
+}
+
+static int result_e_disp_ok(const ninlil_model_domain_body_result_cache_t *body)
+{
+    return body->application_result_kind == NINLIL_APP_RESULT_DISPOSITION
+        && body->evidence_stage == NINLIL_EVIDENCE_NONE
+        && disposition_tuple_is_valid(
+               body->disposition, body->effect_certainty, body->retry_guidance,
+               body->retry_delay_ms)
+        && result_disp_reason_ok(
+               body->disposition, body->reason, body->effect_certainty)
+        && result_completed_nz(body);
+}
+
+static int result_e_rec_ok(const ninlil_model_domain_body_result_cache_t *body)
+{
+    return body->application_result_kind == 0u
+        && body->evidence_stage == NINLIL_EVIDENCE_NONE
+        && body->disposition == NINLIL_DISPOSITION_NONE
+        && body->effect_certainty == NINLIL_EFFECT_CERTAINTY_POSSIBLE
+        && body->retry_delay_ms == 0u
+        && result_e_rec_reason_ok(body->reason, body->retry_guidance)
+        && result_completed_zero(body);
+}
+
+static int result_token_shape_ok(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    uint64_t n;
+
+    if (body == NULL) {
+        return 0;
+    }
+    n = body->delivery_count;
+    if (body->callback_invocations != n || body->token_generation != n) {
+        return 0;
+    }
+    switch (body->token_state) {
+    case NINLIL_MODEL_DOMAIN_TOKEN_STATE_NONE:
+        return n == 0u && result_token_context_zero(body)
+            && body->token_generation == 0u && result_timer_tuple_zero(body);
+    case NINLIL_MODEL_DOMAIN_TOKEN_STATE_ACTIVE:
+        return n >= 1u && result_token_context_is_txn(body)
+            && result_timer_tuple_legal(body);
+    case NINLIL_MODEL_DOMAIN_TOKEN_STATE_CONSUMED:
+    case NINLIL_MODEL_DOMAIN_TOKEN_STATE_EXPIRED:
+    case NINLIL_MODEL_DOMAIN_TOKEN_STATE_RECOVERY_REQUIRED_TOMBSTONE:
+        return n >= 1u && result_token_context_is_txn(body)
+            && result_timer_tuple_legal(body);
+    default:
+        return 0;
+    }
+}
+
+static int result_product_ok(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    uint64_t n;
+    uint32_t st;
+    uint32_t ts;
+    uint32_t f;
+    int a_app;
+    int a_cancel;
+    int tombstone;
+    int e_zero;
+    int e_pos;
+    int e_disp;
+    int e_rec;
+    uint64_t g;
+    uint64_t ri;
+    int d_idle;
+    int d_open;
+    int d_wait;
+    int d_held;
+
+    if (body == NULL) {
+        return 0;
+    }
+    n = body->delivery_count;
+    st = body->delivery_state;
+    ts = body->token_state;
+    f = body->cancel_result_kind;
+    g = body->reconcile_retry_generation;
+    ri = body->reconcile_invocation_count;
+
+    if (st == 3u) {
+        return 0; /* DEFERRED_WAIT illegal on wire */
+    }
+    if (body->reply_count > 4u) {
+        return 0;
+    }
+    if (!result_token_shape_ok(body)) {
+        return 0;
+    }
+
+    a_app = body->application_seen == 1u && body->application_attempt_count >= 1u
+        && result_cache_evidence_cell_key_digest_ok(body, 0);
+    a_cancel = body->application_seen == 0u
+        && body->application_attempt_count == 0u && n == 0u
+        && result_cache_evidence_cell_key_digest_ok(body, 1);
+
+    e_zero = result_e_zero_ok(body);
+    e_pos = result_e_pos_ok(body);
+    e_disp = result_e_disp_ok(body);
+    e_rec = result_e_rec_ok(body);
+
+    d_idle = (g == 0u && ri == 0u
+        && id_is_zero(body->reconcile_not_before_clock_epoch)
+        && body->reconcile_not_before_ms == 0u);
+    d_open = (g >= 1u
+        && (ri == UINT64_MAX || g <= ri + 1u)
+        && id_is_zero(body->reconcile_not_before_clock_epoch)
+        && body->reconcile_not_before_ms == 0u);
+    d_wait = (g >= 1u
+        && (ri == UINT64_MAX || g <= ri + 1u)
+        && !id_is_zero(body->reconcile_not_before_clock_epoch)
+        && body->reconcile_not_before_ms != 0u);
+    d_held = (g >= 1u && ri >= 1u && ri >= g
+        && id_is_zero(body->reconcile_not_before_clock_epoch)
+        && body->reconcile_not_before_ms == 0u);
+
+    tombstone = ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_CONSUMED
+        || ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_EXPIRED
+        || ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_RECOVERY_REQUIRED_TOMBSTONE;
+
+    /* F rules */
+    if (f == NINLIL_CANCEL_FENCED_BEFORE_DISPATCH) {
+        if (n != 0u || ts != NINLIL_MODEL_DOMAIN_TOKEN_STATE_NONE
+            || (st != NINLIL_MODEL_DOMAIN_DELIVERY_STATE_INBOX_COMMITTED
+                && st
+                    != NINLIL_MODEL_DOMAIN_DELIVERY_STATE_CANCEL_TOMBSTONE_ONLY)) {
+            return 0;
+        }
+    } else if (f == NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE) {
+        if (st == NINLIL_MODEL_DOMAIN_DELIVERY_STATE_CANCEL_TOMBSTONE_ONLY) {
+            return 0;
+        }
+        if (n == 0u
+            && st != NINLIL_MODEL_DOMAIN_DELIVERY_STATE_DISPOSITION_COMMITTED
+            && st != NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RESULT_COMMITTED
+            && st != NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RECOVERY_REQUIRED
+            && st != NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RECONCILE_WAIT
+            && st != NINLIL_MODEL_DOMAIN_DELIVERY_STATE_DELIVERY_STARTED) {
+            /* F_LATE requires N>=1 or post-start/recovery shapes */
+            return 0;
+        }
+        if (n == 0u) {
+            return 0; /* F_LATE needs N>=1 for same-record */
+        }
+    } else if (f != 0u) {
+        return 0; /* unknown cancel kind / PENDING not stored on RESULT */
+    }
+
+    switch (st) {
+    case NINLIL_MODEL_DOMAIN_DELIVERY_STATE_INBOX_COMMITTED:
+        if (!a_app || !e_zero) {
+            return 0;
+        }
+        if (n == 0u) {
+            return ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_NONE && d_idle
+                && (f == 0u || f == NINLIL_CANCEL_FENCED_BEFORE_DISPATCH);
+        }
+        return tombstone && d_held
+            && (f == 0u || f == NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE);
+    case NINLIL_MODEL_DOMAIN_DELIVERY_STATE_DELIVERY_STARTED:
+        return a_app && n >= 1u
+            && ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_ACTIVE && e_zero
+            && (d_idle || d_held)
+            && (f == 0u || f == NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE)
+            && result_completed_zero(body);
+    case NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RESULT_COMMITTED:
+        return a_app && n >= 1u
+            && ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_CONSUMED && e_pos
+            && (d_idle || d_held)
+            && (f == 0u || f == NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE);
+    case NINLIL_MODEL_DOMAIN_DELIVERY_STATE_DISPOSITION_COMMITTED:
+        if (!a_app || !e_disp) {
+            return 0;
+        }
+        if (n == 0u) {
+            return ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_NONE && d_idle
+                && f == 0u; /* pre-callback F_NONE only */
+        }
+        return ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_CONSUMED
+            && (d_idle || d_held)
+            && (f == 0u || f == NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE);
+    case NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RECOVERY_REQUIRED:
+        if (!a_app || !e_rec || !d_open) {
+            return 0;
+        }
+        if (!result_e_rec_token_pair_ok(body->reason, ts, n)) {
+            return 0;
+        }
+        return f == 0u || f == NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE;
+    case NINLIL_MODEL_DOMAIN_DELIVERY_STATE_RECONCILE_WAIT:
+        /* Same E_REC×token reachability as state 6; D_WAIT only. */
+        if (!a_app || !e_rec || !d_wait) {
+            return 0;
+        }
+        if (!result_e_rec_token_pair_ok(body->reason, ts, n)) {
+            return 0;
+        }
+        return f == 0u || f == NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE;
+    case NINLIL_MODEL_DOMAIN_DELIVERY_STATE_CANCEL_TOMBSTONE_ONLY:
+        return a_cancel && n == 0u
+            && ts == NINLIL_MODEL_DOMAIN_TOKEN_STATE_NONE && d_idle && e_zero
+            && f == NINLIL_CANCEL_FENCED_BEFORE_DISPATCH
+            && result_completed_zero(body);
+    default:
+        return 0;
+    }
+}
+
+static int result_cache_fields_ok(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    if (body == NULL
+        || !result_cache_delivery_raw_ok(
+               body->delivery_key_raw_length, body->delivery_key_raw,
+               body->transaction_id)
+        || id_is_zero(body->transaction_id)
+        || !result_cache_delivery_key_digest_ok(body)) {
+        return 0;
+    }
+    if (body->application_seen > 1u) {
+        return 0;
+    }
+    if (body->reconcile_retry_generation == 0u) {
+        if (body->reconcile_invocation_count != 0u
+            || !id_is_zero(body->reconcile_not_before_clock_epoch)
+            || body->reconcile_not_before_ms != 0u) {
+            return 0;
+        }
+    } else if (
+        body->reconcile_invocation_count != UINT64_MAX
+        && body->reconcile_retry_generation
+            > body->reconcile_invocation_count + 1u) {
+        return 0;
+    }
+    /* mixed not-before (one zero one not) illegal */
+    if (id_is_zero(body->reconcile_not_before_clock_epoch)
+        != (body->reconcile_not_before_ms == 0u)) {
+        return 0;
+    }
+    return result_product_ok(body);
+}
+
+uint32_t ninlil_model_domain_body_result_cache_encoded_length(
+    const ninlil_model_domain_body_result_cache_t *body)
+{
+    if (body == NULL || !result_cache_fields_ok(body)) {
+        return 0u;
+    }
+    return NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_BYTES;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_result_cache(
+    const ninlil_model_domain_body_result_cache_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->delivery_key_raw != NULL
+            && body->delivery_key_raw_length != 0u) {
+            ptrs[n] = body->delivery_key_raw;
+            lens[n] = body->delivery_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_result_cache_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL) || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    o = 0u;
+    o += encode_raw16(
+        &out_bytes[o], body->delivery_key_raw_length, body->delivery_key_raw);
+    (void)memcpy(&out_bytes[o], body->delivery_key_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->transaction_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->delivery_count);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->application_seen);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->application_attempt_count);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->delivery_state);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reply_count);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->token_context_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->token_generation);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->token_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->token_expires_at_ms);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->delivery_started_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->delivery_started_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->completion_expires_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->callback_invocations);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->reconcile_invocation_count);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->reconcile_retry_generation);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->reconcile_not_before_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->reconcile_not_before_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->application_result_kind);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->evidence_stage);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->disposition);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reason);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->effect_certainty);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->retry_guidance);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->retry_delay_ms);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->evidence_cell_key_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->token_state);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->cancel_result_kind);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->completed_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->completed_at_ms);
+    o += 8u;
+    if (o != NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_BYTES) {
+        *out_length = 0u;
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_result_cache(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_result_cache_t *out_body)
+{
+    ninlil_model_domain_body_result_cache_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length != NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_BYTES) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o, (uint16_t)128u,
+            &tmp.delivery_key_raw_length, &tmp.delivery_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    if (encoded.length - o != NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_FIXED) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.delivery_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.transaction_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.delivery_count = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.application_seen = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.application_attempt_count =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.delivery_state = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reply_count = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.token_context_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.token_generation = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.token_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.token_expires_at_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.delivery_started_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.delivery_started_at_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.completion_expires_at_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.callback_invocations =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.reconcile_invocation_count =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.reconcile_retry_generation =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.reconcile_not_before_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.reconcile_not_before_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.application_result_kind =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.evidence_stage = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.disposition = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reason = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.effect_certainty = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.retry_guidance = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.retry_delay_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.evidence_cell_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.token_state = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.cancel_result_kind =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.completed_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.completed_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    if (o != encoded.length || !result_cache_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -7711,6 +8456,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_CANCEL_STATE:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVIDENCE_CELL:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE:
         return 1;
     default:
         return 0;
@@ -8864,6 +9610,56 @@ static ninlil_status_t validate_header_body_local(
                 NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
                 out->delivery.delivery_key_raw_length,
                 out->delivery.delivery_key_raw, expect_pid)
+            != NINLIL_OK) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (!header_primary_id_eq(env, expect_pid)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE) {
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+        uint8_t components[2u + 128u];
+        ninlil_bytes_view_t cv;
+        uint32_t o;
+
+        /*
+         * RESULT_CACHE same-record (docs17 §8.5 D1-B3i):
+         * - mutable secondary: revision>=1, flags 0, head non-zero, PVD non-zero
+         * - key COMPOSITE(41, delivery_key_raw:RAW16)
+         * - primary_id = DELIVERY composite identity first 16
+         * D3: live DELIVERY PVD / reply_count / ATTEMPT / CANCEL live.
+         */
+        if (env->header.record_revision < 1u
+            || env->header.flags != 0u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_result_cache(
+            env->body, &out->result_cache);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        o = encode_raw16(
+            components, out->result_cache.delivery_key_raw_length,
+            out->result_cache.delivery_key_raw);
+        cv.data = components;
+        cv.length = o;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE, cv, key->identity,
+                key->identity_length)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (primary_id_from_raw_contents_as_raw16(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+                out->result_cache.delivery_key_raw_length,
+                out->result_cache.delivery_key_raw, expect_pid)
             != NINLIL_OK) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
