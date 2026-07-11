@@ -37,6 +37,8 @@ _Static_assert(NINLIL_DV_CAT_DSB3_33 == NINLIL_DV_CAT_BIT(35),
     "D1-B3f subtype 33 catalog bit is bit 35 (no shift of 0..34)");
 _Static_assert(NINLIL_DV_CAT_DSB3_32 == NINLIL_DV_CAT_BIT(36),
     "D1-B3g subtype 32 catalog bit is bit 36 (no shift of 0..35)");
+_Static_assert(NINLIL_DV_CAT_DSB3_42 == NINLIL_DV_CAT_BIT(39),
+    "D1-B3j subtype 42 catalog bit is bit 39 (no shift of 0..38)");
 _Static_assert(NINLIL_DV_CAT_DSB3_NEG == NINLIL_DV_CAT_BIT(30),
     "pre-B3b highest wire catalog bit stays bit 30");
 _Static_assert(NINLIL_DV_CAT_TEST_BIT40 == (UINT64_C(1) << 40),
@@ -65,6 +67,9 @@ _Static_assert(
 _Static_assert(
     (NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_DSB3_32) != 0u,
     "B3g catalog bit 36 is part of the required mask");
+_Static_assert(
+    (NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_DSB3_42) != 0u,
+    "B3j catalog bit 39 is part of the required mask");
 _Static_assert(
     (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_DSB3_30)
         != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
@@ -112,7 +117,7 @@ static const char *full_catalog =
     "\"dsb3_subtype_30_positive\":0,\"dsb3_subtype_31_positive\":0,"
     "\"dsb3_subtype_34_positive\":0,\"dsb3_subtype_33_positive\":0,"
     "\"dsb3_subtype_32_positive\":0,\"dsb3_subtype_40_positive\":0,"
-    "\"dsb3_subtype_41_positive\":0}";
+    "\"dsb3_subtype_41_positive\":0,\"dsb3_subtype_42_positive\":0}";
 
 static const char *ws_def =
     "\"required_workspace_bytes_definition\":"
@@ -291,7 +296,7 @@ int main(void)
         (void)snprintf(ok, sizeof(ok),
             "{\n"
             "  \"version\": 1,\n"
-            "  \"format\": \"ninlil-domain-store-v1-d1b3i\",\n"
+            "  \"format\": \"ninlil-domain-store-v1-d1b3j\",\n"
             "  \"scope\": \"%s\",\n"
             "  %s,\n"
             "  %s,\n"

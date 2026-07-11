@@ -29,6 +29,8 @@ extern "C" {
  *   D1-B3h: family 6 40 DELIVERY pure body + same-record matrix
  *   D1-B3i: family 6 41 RESULT_CACHE pure body + same-record A–G matrix
  *          (live DELIVERY PVD / reply_count / ATTEMPT cardinality are D3)
+ *   D1-B3j: family 6 42 REVERSE_REPLY pure body + same-record state matrix
+ *          (live DELIVERY/BLOB/semantic recompute/reply_count are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -75,6 +77,13 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_FIXED ((uint32_t)296u)
 #define NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_BYTES ((uint32_t)378u)
 #define NINLIL_MODEL_DOMAIN_BODY_RESULT_CACHE_MAX ((uint32_t)1024u)
+/* REVERSE_REPLY (0x42): reply RAW16(86)=88 + delivery RAW16(80)=82 + fixed160 = 330. */
+#define NINLIL_MODEL_DOMAIN_BODY_REVERSE_REPLY_FIXED ((uint32_t)160u)
+#define NINLIL_MODEL_DOMAIN_BODY_REVERSE_REPLY_BYTES ((uint32_t)330u)
+#define NINLIL_MODEL_DOMAIN_BODY_REVERSE_REPLY_MAX ((uint32_t)3264u)
+#define NINLIL_MODEL_DOMAIN_REPLY_KEY_CONTENTS_BYTES ((uint16_t)86u)
+#define NINLIL_MODEL_DOMAIN_RAW16_REPLY_KEY_MAX ((uint32_t)192u)
+#define NINLIL_MODEL_DOMAIN_RAW16_DELIVERY_KEY_MAX ((uint32_t)128u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_SERVICE_SLOT_BYTES ((uint32_t)240u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
@@ -253,6 +262,18 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_OP9_PHASE_DELIVERY_START_COUNTER_EXHAUSTED ((uint16_t)2u)
 #define NINLIL_MODEL_DOMAIN_OP10_PHASE_APPLICATION_RESULT_OR_DELIVERY_COMPLETE ((uint16_t)1u)
 #define NINLIL_MODEL_DOMAIN_OP10_PHASE_TOKEN_TIMEOUT ((uint16_t)2u)
+
+/* REVERSE_REPLY private enums (docs17 §7.1 / §8.5 D1-B3j). */
+#define NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_REPLY_KIND_DISPOSITION ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_REPLY_KIND_CUSTODY ((uint32_t)3u)
+#define NINLIL_MODEL_DOMAIN_REPLY_KIND_CANCEL_RESULT ((uint32_t)4u)
+
+#define NINLIL_MODEL_DOMAIN_REPLY_SEND_PENDING ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_REPLY_SEND_WAITING_RETRY ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_SENT_OR_UNKNOWN ((uint32_t)3u)
+#define NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_DENIED ((uint32_t)4u)
+#define NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_COUNTER_EXHAUSTED ((uint32_t)5u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -798,6 +819,31 @@ typedef struct ninlil_model_domain_body_result_cache {
 } ninlil_model_domain_body_result_cache_t;
 
 /*
+ * REVERSE_REPLY (0x42). reply_key_raw and delivery_key_raw borrow encoded body
+ * on decode. Same-record exact 330 + closed state matrix (docs17 §8.5 D1-B3j).
+ * Live DELIVERY/BLOB/semantic recompute/reply_count are D3.
+ */
+typedef struct ninlil_model_domain_body_reverse_reply {
+    uint16_t reply_key_raw_length;
+    const uint8_t *reply_key_raw;
+    uint16_t delivery_key_raw_length;
+    const uint8_t *delivery_key_raw;
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint32_t reply_kind;
+    uint8_t semantic_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t body_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t send_state;
+    uint64_t send_operation_generation;
+    uint64_t send_invocation_count;
+    uint32_t send_counter_exhausted;
+    uint32_t reserved;
+    uint8_t attempt_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t availability_epoch;
+    uint8_t retry_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t retry_not_before_ms;
+} ninlil_model_domain_body_reverse_reply_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -902,6 +948,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_evidence_cell_t evidence_cell;
         ninlil_model_domain_body_delivery_t delivery;
         ninlil_model_domain_body_result_cache_t result_cache;
+        ninlil_model_domain_body_reverse_reply_t reverse_reply;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1331,6 +1378,25 @@ ninlil_status_t ninlil_model_domain_decode_body_result_cache(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_result_cache_t *out_body);
 
+/* --- REVERSE_REPLY (0x42) --- */
+/* Returns exact 330, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_reverse_reply_encoded_length(
+    const ninlil_model_domain_body_reverse_reply_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_reverse_reply(
+    const ninlil_model_domain_body_reverse_reply_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows reply_key_raw and delivery_key_raw from encoded.
+ * Valid only while encoded lives.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_reverse_reply(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_reverse_reply_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1376,7 +1442,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..i.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..j.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1424,7 +1490,11 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       REVERSE_REPLY cardinality / application_attempt_count live ATTEMPT
  *       count / CANCEL_STATE live kind / EVIDENCE_CELL live presence (B3i
  *       proves same-record body/key/A–G matrix/delivery_key_digest/
- *       evidence_cell_key_digest formula/primary binding only)
+ *       evidence_cell_key_digest formula/primary binding only);
+ *       REVERSE_REPLY live DELIVERY PVD / REPLY BLOB manifest/chunks/content /
+ *       semantic digest recompute / RESULT_CACHE.reply_count / kind exact1 /
+ *       attempt/RESULT/CANCEL binding / kind6 witness member-set / reopen
+ *       E2E / retention (B3j proves same-record body/key/state matrix only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

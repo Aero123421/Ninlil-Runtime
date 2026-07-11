@@ -999,6 +999,8 @@ static int parse_catalog(parse_ctx *c, ninlil_dv_file_t *file)
             NINLIL_DV_CAT_DSB3_40)
         CAT("dsb3_subtype_41_positive", dsb3_subtype_41_positive,
             NINLIL_DV_CAT_DSB3_41)
+        CAT("dsb3_subtype_42_positive", dsb3_subtype_42_positive,
+            NINLIL_DV_CAT_DSB3_42)
 #undef CAT
         {
             set_err(c->err, c->err_cap, "unknown catalog key");

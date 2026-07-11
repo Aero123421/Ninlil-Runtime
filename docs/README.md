@@ -1,6 +1,6 @@
 # Ninlil Documentation
 
-状態: M0 public baseline complete / M1a Domain Store D0 fixed, D1-A・D1-B1・D1-B2・D1-B3a (SCHEDULER_OWNER 0x26)・D1-B3b (ORDERED_INGRESS 0x27 + message_semantic_digest; **controller-ingress retrofit implemented**)・D1-B3c (BLOB 0x30 manifest/chunk)・D1-B3d (ATTEMPT 0x31)・D1-B3e (ATTEMPT_ID_INDEX 0x34)・D1-B3f (CANCEL_STATE 0x33)・**D1-B3g (EVIDENCE_CELL 0x32) implemented**・**D1-B3h (DELIVERY 0x40) implemented**・**D1-B3i (RESULT_CACHE 0x41) implemented** (kind9/10 phase identity 42-byte correction)・**D1-B3j (REVERSE_REPLY 0x42) Normative spec fixed / implementation pending**, D1 remaining (B3j implementation+ / D2–D4) pre-alpha<br>
+状態: M0 public baseline complete / M1a Domain Store D0 fixed, D1-A・D1-B1・D1-B2・D1-B3a (SCHEDULER_OWNER 0x26)・D1-B3b (ORDERED_INGRESS 0x27 + message_semantic_digest; **controller-ingress retrofit implemented**)・D1-B3c (BLOB 0x30 manifest/chunk)・D1-B3d (ATTEMPT 0x31)・D1-B3e (ATTEMPT_ID_INDEX 0x34)・D1-B3f (CANCEL_STATE 0x33)・**D1-B3g (EVIDENCE_CELL 0x32) implemented**・**D1-B3h (DELIVERY 0x40) implemented**・**D1-B3i (RESULT_CACHE 0x41) implemented** (kind9/10 phase identity 42-byte correction)・**D1-B3j (REVERSE_REPLY 0x42) implemented** (exact 330 / raw80+raw86 / closed state matrix; vector format `ninlil-domain-store-v1-d1b3j`)、D1 remaining (D2–D4) pre-alpha<br>
 対象release: Foundation / pre-alpha
 
 ## 正本と優先順位
