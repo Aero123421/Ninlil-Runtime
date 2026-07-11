@@ -89,6 +89,7 @@ typedef struct body_any {
     ninlil_model_domain_body_delivery_t delivery;
     ninlil_model_domain_body_result_cache_t result_cache;
     ninlil_model_domain_body_reverse_reply_t reverse_reply;
+    ninlil_model_domain_body_event_spool_t event_spool;
 } body_any_t;
 
 static ninlil_status_t decode_body_any(
@@ -194,6 +195,10 @@ static ninlil_status_t decode_body_any(
     if (family == 6u && subtype == 0x42u) {
         return ninlil_model_domain_decode_body_reverse_reply(
             body, &any->reverse_reply);
+    }
+    if (family == 6u && subtype == 0x50u) {
+        return ninlil_model_domain_decode_body_event_spool(
+            body, &any->event_spool);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -305,6 +310,10 @@ static ninlil_status_t encode_body_any(
     if (family == 6u && subtype == 0x42u) {
         return ninlil_model_domain_encode_body_reverse_reply(
             &any->reverse_reply, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x50u) {
+        return ninlil_model_domain_encode_body_event_spool(
+            &any->event_spool, out, capacity, out_len);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -1278,6 +1287,31 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 QCHECK(rec.key.identity_kind
                     == NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE);
                 QCHECK(rec.key.identity_length == 32u);
+            } else if (v->subtype == 0x50u) {
+                /* EVENT_SPOOL: rev==spool_rev>=1/flags0/PVD NZ, exact 300. */
+                QCHECK(rec.envelope.header.record_revision >= 1u);
+                QCHECK(rec.envelope.header.record_revision
+                    == rec.event_spool.spool_revision);
+                QCHECK(rec.envelope.header.flags == 0u);
+                QCHECK(!zeros(rec.envelope.header.primary_value_digest, 32u));
+                QCHECK(!zeros(rec.envelope.header.head_witness_digest, 32u));
+                QCHECK(!zeros(rec.event_spool.transaction_id, 16u));
+                QCHECK(!zeros(rec.event_spool.event_id, 16u));
+                QCHECK(!zeros(rec.event_spool.payload_blob_key_digest, 32u));
+                QCHECK(!zeros(rec.event_spool.reservation_key_digest, 32u));
+                QCHECK(rec.event_spool.retry_cycle_id >= 1u);
+                QCHECK(rec.event_spool.successful_resume_count <= 8u);
+                QCHECK(rec.event_spool.discard_committed <= 1u);
+                QCHECK((rec.event_spool.discard_committed == 1u)
+                    == (rec.event_spool.spool_state
+                        == NINLIL_MODEL_DOMAIN_SPOOL_STATE_DISCARDED));
+                QCHECK(memcmp(
+                           rec.envelope.header.primary_id,
+                           rec.event_spool.transaction_id, 16u)
+                    == 0);
+                QCHECK(rec.key.identity_kind
+                    == NINLIL_MODEL_DOMAIN_ID_KIND_ID128);
+                QCHECK(rec.key.identity_length == 16u);
             }
             if (ninlil_dv_str(v->digest_hex)[0] != '\0') {
                 ninlil_model_domain_digest_t d;
@@ -1345,6 +1379,7 @@ static int test_catalog_and_replay(const char *path)
     uint32_t cov40 = 0u;
     uint32_t cov41 = 0u;
     uint32_t cov42 = 0u;
+    uint32_t cov50 = 0u;
     uint32_t unimplemented = 0u;
 
     if (ninlil_dv_load_file(path, &file, err, sizeof(err)) != 0) {
@@ -1468,6 +1503,8 @@ static int test_catalog_and_replay(const char *path)
                     cov41++;
                 } else if (v->subtype == 0x42u) {
                     cov42++;
+                } else if (v->subtype == 0x50u) {
+                    cov50++;
                 }
             } else {
                 dsb3_neg++;
@@ -1517,13 +1554,14 @@ static int test_catalog_and_replay(const char *path)
     REQUIRE(cov40 == file.catalog.dsb3_subtype_40_positive);
     REQUIRE(cov41 == file.catalog.dsb3_subtype_41_positive);
     REQUIRE(cov42 == file.catalog.dsb3_subtype_42_positive);
-    /* D1-B1 + D1-B2 + D1-B3a..j subtype coverage. */
+    REQUIRE(cov50 == file.catalog.dsb3_subtype_50_positive);
+    /* D1-B1 + D1-B2 + D1-B3a..k subtype coverage. */
     if (cov01 == 0u || cov60 == 0u || cov62 == 0u || cov64 == 0u
         || cov7d == 0u || cov10 == 0u || cov11 == 0u || cov20 == 0u
         || cov21 == 0u || cov22 == 0u || cov23 == 0u || cov24 == 0u
         || cov25 == 0u || cov26 == 0u || cov27 == 0u || cov30 == 0u
         || cov31 == 0u || cov34 == 0u || cov33 == 0u || cov32 == 0u
-        || cov40 == 0u || cov41 == 0u || cov42 == 0u) {
+        || cov40 == 0u || cov41 == 0u || cov42 == 0u || cov50 == 0u) {
         unimplemented = 1u;
     }
     REQUIRE(unimplemented == 0u);
@@ -1533,11 +1571,12 @@ static int test_catalog_and_replay(const char *path)
         "cov01=%u cov60=%u cov62=%u cov64=%u cov7d=%u "
         "cov10=%u cov11=%u cov20=%u cov21=%u cov22=%u cov23=%u cov24=%u "
         "cov25=%u cov26=%u cov27=%u cov30=%u cov31=%u cov34=%u cov33=%u "
-        "cov32=%u cov40=%u cov41=%u cov42=%u sizeof(ninlil_dv_vector_t)=%zu\n",
+        "cov32=%u cov40=%u cov41=%u cov42=%u cov50=%u "
+        "sizeof(ninlil_dv_vector_t)=%zu\n",
         file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, dsb3_pos,
         dsb3_neg, cov01, cov60, cov62, cov64, cov7d, cov10, cov11, cov20,
         cov21, cov22, cov23, cov24, cov25, cov26, cov27, cov30, cov31, cov34,
-        cov33, cov32, cov40, cov41, cov42, sizeof(ninlil_dv_vector_t));
+        cov33, cov32, cov40, cov41, cov42, cov50, sizeof(ninlil_dv_vector_t));
     ninlil_dv_free(&file);
     return 0;
 }
@@ -2083,8 +2122,13 @@ static int test_invalid_encode_structs(void)
 
 static int test_body_alias_and_overflow(const char *vector_path)
 {
-    uint8_t out[256];
-    uint8_t out_before[256];
+    /*
+     * Fixed-body alias storage/output must fit the largest exact fixed D1
+     * bodies exercised here: EVENT_SPOOL (300) and REVERSE_REPLY-sized (330).
+     * A 256-byte member is insufficient for those EncodedBytes views.
+     */
+    uint8_t out[512];
+    uint8_t out_before[512];
     uint8_t dig[32];
     uint8_t marker[16];
     uint32_t len = 77u;
@@ -2106,7 +2150,7 @@ static int test_body_alias_and_overflow(const char *vector_path)
     do {                                                                       \
         union {                                                                \
             Type object;                                                       \
-            uint8_t bytes[256];                                                \
+            uint8_t bytes[512];                                                \
         } storage;                                                             \
         uint8_t storage_before[sizeof(storage)];                               \
         uint32_t alias_length;                                                 \
@@ -2199,6 +2243,11 @@ static int test_body_alias_and_overflow(const char *vector_path)
         ninlil_model_domain_encode_body_attempt_id_index,
         ninlil_model_domain_decode_body_attempt_id_index,
         NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES);
+    CHECK_FIXED_BODY_ALIAS(
+        ninlil_model_domain_body_event_spool_t,
+        ninlil_model_domain_encode_body_event_spool,
+        ninlil_model_domain_decode_body_event_spool,
+        NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_BYTES);
     CHECK_FIXED_BODY_ALIAS(
         ninlil_model_domain_body_witness_head_index_t,
         ninlil_model_domain_encode_body_witness_head_index,
@@ -4111,7 +4160,7 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3j\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3k\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
@@ -5996,6 +6045,238 @@ static int test_reverse_reply_contracts(const char *path)
     return 0;
 }
 
+/*
+ * D1-B3k EVENT_SPOOL: exact 300, state×cause matrix, resume/discard,
+ * reservation KEY_DIGEST, revision relation, pre-B3k prefix guard.
+ */
+static int test_event_spool_contracts(const char *path)
+{
+    ninlil_dv_file_t file;
+    char err[256];
+    size_t i;
+    uint32_t es_count = 0u;
+    int seen_active = 0;
+    int seen_parked = 0;
+    int seen_parked_causes = 0;
+    int seen_released = 0;
+    int seen_discarded = 0;
+    int seen_resume0 = 0;
+    int seen_resume8 = 0;
+    int seen_len = 0;
+    int seen_typed = 0;
+    int seen_key = 0;
+    int seen_rev = 0;
+    int seen_res = 0;
+    int seen_res_bare = 0;
+    int seen_mut = 0;
+    int seen_matrix = 0;
+    int parked_cause_bits = 0;
+    ninlil_model_domain_body_event_spool_t body;
+    ninlil_model_domain_typed_record_t rec;
+    uint8_t body_buf[512];
+    size_t bn = 0u;
+    uint8_t out[512];
+    uint32_t olen = 0u;
+
+    REQUIRE(path != NULL);
+    REQUIRE(ninlil_dv_load_file(path, &file, err, sizeof(err)) == 0);
+    REQUIRE(file.vector_count > 1179u);
+    REQUIRE(strcmp(file.vectors[0].id, "DSK1_SHA256_EMPTY") == 0);
+    REQUIRE(strcmp(file.vectors[1178].id, "DSB3_RR_DLV_LEN79") == 0);
+    for (i = 0u; i < 1179u; ++i) {
+        REQUIRE(strncmp(file.vectors[i].id, "DSB3_ES_", 8) != 0);
+    }
+
+    for (i = 0u; i < file.vector_count; ++i) {
+        const ninlil_dv_vector_t *v = &file.vectors[i];
+        if (strncmp(v->id, "DSB3_ES_", 8) != 0) {
+            continue;
+        }
+        es_count++;
+        if (v->subtype == 0x50u && strcmp(v->expected_status, "OK") == 0
+            && strcmp(v->op, "body_roundtrip") == 0) {
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                        sizeof(body_buf), &bn)
+                == 0);
+            REQUIRE(bn == 300u);
+            REQUIRE((uint32_t)bn == v->body_length);
+            (void)memset(&body, 0, sizeof(body));
+            REQUIRE(ninlil_model_domain_decode_body_event_spool(
+                    (ninlil_bytes_view_t){body_buf, (uint32_t)bn}, &body)
+                == NINLIL_OK);
+            REQUIRE(body.spool_revision >= 1u);
+            REQUIRE(body.retry_cycle_id >= 1u);
+            REQUIRE(body.successful_resume_count <= 8u);
+            REQUIRE(!zeros(body.transaction_id, 16u));
+            REQUIRE(!zeros(body.event_id, 16u));
+            REQUIRE(!zeros(body.payload_blob_key_digest, 32u));
+            REQUIRE(!zeros(body.reservation_key_digest, 32u));
+            olen = 0u;
+            REQUIRE(ninlil_model_domain_encode_body_event_spool(
+                    &body, out, (uint32_t)sizeof(out), &olen)
+                == NINLIL_OK);
+            REQUIRE(olen == 300u);
+            REQUIRE(memcmp(out, body_buf, bn) == 0);
+            if (body.spool_state
+                == NINLIL_MODEL_DOMAIN_SPOOL_STATE_ACTIVE) {
+                REQUIRE(body.park_cause == NINLIL_EVENT_PARK_CAUSE_NONE);
+                REQUIRE(body.discard_committed == 0u);
+                seen_active = 1;
+                if (body.successful_resume_count == 0u) {
+                    seen_resume0 = 1;
+                }
+                if (body.successful_resume_count == 8u) {
+                    seen_resume8 = 1;
+                }
+            }
+            if (body.spool_state
+                == NINLIL_MODEL_DOMAIN_SPOOL_STATE_PARKED_RETRY) {
+                REQUIRE(body.park_cause >= 1u && body.park_cause <= 5u);
+                REQUIRE(body.discard_committed == 0u);
+                seen_parked = 1;
+                parked_cause_bits |= (1 << (int)body.park_cause);
+            }
+            if (body.spool_state
+                == NINLIL_MODEL_DOMAIN_SPOOL_STATE_RELEASED) {
+                REQUIRE(body.park_cause == NINLIL_EVENT_PARK_CAUSE_NONE);
+                REQUIRE(body.discard_committed == 0u);
+                seen_released = 1;
+            }
+            if (body.spool_state
+                == NINLIL_MODEL_DOMAIN_SPOOL_STATE_DISCARDED) {
+                REQUIRE(body.park_cause == NINLIL_EVENT_PARK_CAUSE_NONE);
+                REQUIRE(body.discard_committed == 1u);
+                seen_discarded = 1;
+            }
+        }
+        if (v->subtype == 0x50u && strcmp(v->op, "typed_record") == 0
+            && strcmp(v->expected_status, "OK") == 0) {
+            uint8_t kbuf[64];
+            uint8_t vbuf[4096];
+            size_t kn = 0u;
+            size_t vn = 0u;
+            REQUIRE(hex_to(ninlil_dv_str(v->key_hex), kbuf, sizeof(kbuf), &kn)
+                == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->value_hex), vbuf, sizeof(vbuf), &vn)
+                == 0);
+            REQUIRE(ninlil_model_domain_validate_typed_record(
+                    (ninlil_bytes_view_t){kbuf, (uint32_t)kn},
+                    (ninlil_bytes_view_t){vbuf, (uint32_t)vn},
+                    &rec)
+                == NINLIL_OK);
+            REQUIRE(rec.subtype == 0x50u);
+            REQUIRE(rec.envelope.header.record_revision
+                == rec.event_spool.spool_revision);
+            REQUIRE(rec.envelope.header.record_revision >= 1u);
+            REQUIRE(rec.envelope.header.flags == 0u);
+            REQUIRE(!zeros(rec.envelope.header.primary_value_digest, 32u));
+            REQUIRE(!zeros(rec.envelope.header.head_witness_digest, 32u));
+            REQUIRE(memcmp(
+                        rec.envelope.header.primary_id,
+                        rec.event_spool.transaction_id, 16u)
+                == 0);
+            REQUIRE(rec.key.identity_kind
+                == NINLIL_MODEL_DOMAIN_ID_KIND_ID128);
+            seen_typed = 1;
+        }
+        if (strcmp(v->id, "DSB3_ES_LEN299") == 0
+            || strcmp(v->id, "DSB3_ES_LEN301") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                        sizeof(body_buf), &bn)
+                == 0);
+            (void)memset(&body, 0xA5, sizeof(body));
+            REQUIRE(ninlil_model_domain_decode_body_event_spool(
+                    (ninlil_bytes_view_t){body_buf, (uint32_t)bn}, &body)
+                == NINLIL_E_STORAGE_CORRUPT);
+            REQUIRE(zeros(&body, sizeof(body)));
+            seen_len = 1;
+        }
+        if (strcmp(v->id, "DSB3_ES_KEY_TX_MISMATCH") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            seen_key = 1;
+        }
+        if (strcmp(v->id, "DSB3_ES_REV_MISMATCH") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            seen_rev = 1;
+        }
+        if (strcmp(v->id, "DSB3_ES_RES_DIGEST_WRONG") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                        sizeof(body_buf), &bn)
+                == 0);
+            (void)memset(&body, 0xA5, sizeof(body));
+            REQUIRE(ninlil_model_domain_decode_body_event_spool(
+                    (ninlil_bytes_view_t){body_buf, (uint32_t)bn}, &body)
+                == NINLIL_E_STORAGE_CORRUPT);
+            REQUIRE(zeros(&body, sizeof(body)));
+            seen_res = 1;
+        }
+        if (strcmp(v->id, "DSB3_ES_RES_DIGEST_BARE_COMPOSITE") == 0) {
+            /* bare COMPOSITE(RESERVATION, owner_kind=2||RAW16(tx)) rejected */
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            REQUIRE(strcmp(v->op, "body_decode") == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                        sizeof(body_buf), &bn)
+                == 0);
+            REQUIRE(bn == 300u);
+            (void)memset(&body, 0xA5, sizeof(body));
+            REQUIRE(ninlil_model_domain_decode_body_event_spool(
+                    (ninlil_bytes_view_t){body_buf, (uint32_t)bn}, &body)
+                == NINLIL_E_STORAGE_CORRUPT);
+            REQUIRE(zeros(&body, sizeof(body)));
+            seen_res_bare = 1;
+        }
+        if (strcmp(v->id, "DSB3_ES_MUT_STATE") == 0) {
+            /* production replay of generator mutation at spool_state @40 */
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            REQUIRE(strcmp(v->op, "body_decode") == 0);
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_buf,
+                        sizeof(body_buf), &bn)
+                == 0);
+            REQUIRE(bn == 300u);
+            REQUIRE(body_buf[40] == 0u && body_buf[41] == 0u
+                && body_buf[42] == 0u && body_buf[43] == 99u);
+            (void)memset(&body, 0xA5, sizeof(body));
+            REQUIRE(ninlil_model_domain_decode_body_event_spool(
+                    (ninlil_bytes_view_t){body_buf, (uint32_t)bn}, &body)
+                == NINLIL_E_STORAGE_CORRUPT);
+            REQUIRE(zeros(&body, sizeof(body)));
+            seen_mut = 1;
+        }
+        if (strcmp(v->id, "DSB3_ES_ACTIVE_CAUSE1") == 0
+            || strcmp(v->id, "DSB3_ES_PARKED_CAUSE0") == 0
+            || strcmp(v->id, "DSB3_ES_DISCARD1_ACTIVE") == 0
+            || strcmp(v->id, "DSB3_ES_DISCARD0_DISCARDED") == 0) {
+            REQUIRE(strcmp(v->expected_status, "CORRUPT") == 0);
+            seen_matrix = 1;
+        }
+    }
+    /* each park cause 1..5 appears at least once among positives */
+    if ((parked_cause_bits & 0x3e) == 0x3e) {
+        seen_parked_causes = 1;
+    }
+    REQUIRE(es_count >= 35u);
+    REQUIRE(seen_active == 1);
+    REQUIRE(seen_parked == 1);
+    REQUIRE(seen_parked_causes == 1);
+    REQUIRE(seen_released == 1);
+    REQUIRE(seen_discarded == 1);
+    REQUIRE(seen_resume0 == 1);
+    REQUIRE(seen_resume8 == 1);
+    REQUIRE(seen_len == 1);
+    REQUIRE(seen_typed == 1);
+    REQUIRE(seen_key == 1);
+    REQUIRE(seen_rev == 1);
+    REQUIRE(seen_res == 1);
+    REQUIRE(seen_res_bare == 1);
+    REQUIRE(seen_mut == 1);
+    REQUIRE(seen_matrix == 1);
+    ninlil_dv_free(&file);
+    (void)fprintf(stdout, "event_spool contracts ok es_vectors=%u\n", es_count);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = "spec/vectors/domain-store-v1.json";
@@ -6017,6 +6298,7 @@ int main(int argc, char **argv)
         || test_delivery_contracts(path) != 0
         || test_result_cache_contracts(path) != 0
         || test_reverse_reply_contracts(path) != 0
+        || test_event_spool_contracts(path) != 0
         || test_catalog_and_replay(path) != 0
         || test_mutation_rejects_wrong_digest(path) != 0
         || test_manifest_key_length_mutation(path) != 0

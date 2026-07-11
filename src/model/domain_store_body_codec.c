@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..j body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..k body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -8792,6 +8792,277 @@ ninlil_status_t ninlil_model_domain_decode_body_reverse_reply(
     return NINLIL_OK;
 }
 
+/* --- EVENT_SPOOL (0x50) docs17 §8.6 D1-B3k --- */
+
+static int spool_state_is_known(uint32_t st)
+{
+    return st == NINLIL_MODEL_DOMAIN_SPOOL_STATE_ACTIVE
+        || st == NINLIL_MODEL_DOMAIN_SPOOL_STATE_PARKED_RETRY
+        || st == NINLIL_MODEL_DOMAIN_SPOOL_STATE_RELEASED
+        || st == NINLIL_MODEL_DOMAIN_SPOOL_STATE_DISCARDED;
+}
+
+/*
+ * state × cause matrix (docs17 §8.6):
+ * ACTIVE / RELEASED / DISCARDED → park_cause exact NONE(0)
+ * PARKED_RETRY → park_cause exact 1..5
+ */
+static int event_spool_state_cause_ok(uint32_t state, uint32_t cause)
+{
+    if (!spool_state_is_known(state) || !park_cause_is_known(cause)) {
+        return 0;
+    }
+    if (state == NINLIL_MODEL_DOMAIN_SPOOL_STATE_PARKED_RETRY) {
+        return cause >= NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT
+            && cause <= NINLIL_EVENT_PARK_CAUSE_COUNTER_EXHAUSTED;
+    }
+    return cause == NINLIL_EVENT_PARK_CAUSE_NONE;
+}
+
+static int event_spool_reservation_key_digest_ok(
+    const ninlil_model_domain_body_event_spool_t *body)
+{
+    uint8_t res_comp[4u + 16u];
+    ninlil_bytes_view_t res_view;
+
+    if (body == NULL) {
+        return 0;
+    }
+    /* owner_kind:u16=TRANSACTION(2) || owner_key_raw:RAW16(tx exact 16) */
+    ninlil_model_domain_encode_u16_be(
+        res_comp, NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_TRANSACTION);
+    ninlil_model_domain_encode_u16_be(&res_comp[2], 16u);
+    (void)memcpy(&res_comp[4], body->transaction_id, 16u);
+    res_view.data = res_comp;
+    res_view.length = 4u + 16u;
+    return digest_eq_composite_key(
+        body->reservation_key_digest,
+        NINLIL_MODEL_DOMAIN_SUBTYPE_RESERVATION,
+        res_view);
+}
+
+static int event_spool_fields_ok(
+    const ninlil_model_domain_body_event_spool_t *body)
+{
+    if (body == NULL
+        || id_is_zero(body->transaction_id)
+        || id_is_zero(body->event_id)
+        || body->spool_revision < 1u
+        || !event_spool_state_cause_ok(body->spool_state, body->park_cause)
+        || body->retry_cycle_id < 1u
+        || digest_is_zero(body->payload_blob_key_digest)
+        || body->successful_resume_count
+            > NINLIL_MODEL_DOMAIN_EVENT_SPOOL_RESUME_MAX
+        || (body->discard_committed != 0u && body->discard_committed != 1u)
+        || ((body->discard_committed == 1u)
+            != (body->spool_state
+                == NINLIL_MODEL_DOMAIN_SPOOL_STATE_DISCARDED))) {
+        return 0;
+    }
+    return event_spool_reservation_key_digest_ok(body);
+}
+
+uint32_t ninlil_model_domain_body_event_spool_encoded_length(
+    const ninlil_model_domain_body_event_spool_t *body)
+{
+    if (body == NULL || !event_spool_fields_ok(body)) {
+        return 0u;
+    }
+    return NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_BYTES;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_event_spool(
+    const ninlil_model_domain_body_event_spool_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_alias_ok(
+            body, body == NULL ? 0u : sizeof(*body),
+            out_bytes, capacity, out_length)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_event_spool_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL) || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    o = 0u;
+    (void)memcpy(&out_bytes[o], body->transaction_id, 16u);
+    o += 16u;
+    (void)memcpy(&out_bytes[o], body->event_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->spool_revision);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->spool_state);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->park_cause);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->retry_cycle_id);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->payload_blob_key_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->provider_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->provider_revision);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->decision_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->grant_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->grant_revision);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->decision_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->evaluated_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->valid_from_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->expires_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->provider_retry_delay_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->grant_limit_payload);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->grant_limit_active_count);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->grant_limit_active_bytes);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->grant_window_ms);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->grant_max_admissions_per_window);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->grant_attempts_per_cycle);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->last_seen_availability_epoch);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->last_consumed_availability_epoch);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->successful_resume_count);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->discard_committed);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->reservation_key_digest, 32u);
+    o += 32u;
+    if (o != NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_BYTES) {
+        *out_length = 0u;
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_event_spool(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_event_spool_t *out_body)
+{
+    ninlil_model_domain_body_event_spool_t tmp;
+    uint32_t o = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length != NINLIL_MODEL_DOMAIN_BODY_EVENT_SPOOL_BYTES) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    (void)memcpy(tmp.transaction_id, &encoded.data[o], 16u);
+    o += 16u;
+    (void)memcpy(tmp.event_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.spool_revision = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.spool_state = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.park_cause = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.retry_cycle_id = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.payload_blob_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.provider_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.provider_revision =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.decision_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.grant_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.grant_revision = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.decision_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.evaluated_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.valid_from_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.expires_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.provider_retry_delay_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.grant_limit_payload =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.grant_limit_active_count =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.grant_limit_active_bytes =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.grant_window_ms = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.grant_max_admissions_per_window =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.grant_attempts_per_cycle =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.last_seen_availability_epoch =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.last_consumed_availability_epoch =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.successful_resume_count =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.discard_committed =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.reservation_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    if (o != encoded.length || !event_spool_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -8826,6 +9097,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_REVERSE_REPLY:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_SPOOL:
         return 1;
     default:
         return 0;
@@ -10083,6 +10355,40 @@ static ninlil_status_t validate_header_body_local(
             return NINLIL_E_STORAGE_CORRUPT;
         }
         if (!header_primary_id_eq(env, expect_pid)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_SPOOL) {
+        /*
+         * EVENT_SPOOL same-record (docs17 §8.6 D1-B3k):
+         * - family 6 secondary: flags 0, head NZ, PVD NZ
+         * - key ID128 == body transaction_id
+         * - primary_id == body transaction_id
+         * - record_revision == spool_revision >= 1
+         * - body state×cause / resume / discard / reservation KEY_DIGEST
+         * D3: live ANCHOR PVD / grant re-verify / BLOB cardinality.
+         */
+        if (env->header.flags != 0u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind != NINLIL_MODEL_DOMAIN_ID_KIND_ID128
+            || key->identity_length != 16u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_event_spool(
+            env->body, &out->event_spool);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        if (env->header.record_revision != out->event_spool.spool_revision
+            || env->header.record_revision < 1u
+            || memcmp(
+                   key->identity, out->event_spool.transaction_id, 16u)
+                != 0
+            || !header_primary_id_eq(
+                   env, out->event_spool.transaction_id)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;
