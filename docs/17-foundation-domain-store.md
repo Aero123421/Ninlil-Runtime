@@ -694,22 +694,163 @@ State 3/4はexact duplicate inboundがsame semantic replyをPENDINGへ進めるn
 
 ### 8.6 Event、management、namespace state
 
-- `EVENT_SPOOL`: `transaction_id[16] + event_id[16] + spool_revision:u64 + spool_state:u32 + park_cause:u32 + retry_cycle_id:u64 + payload_blob_key_digest[32] + provider_id[16] + provider_revision:u64 + decision_digest[32] + grant_id[16] + grant_revision:u64 + decision_clock_epoch[16] + evaluated_at_ms:u64 + valid_from_ms:u64 + expires_at_ms:u64 + provider_retry_delay_ms:u64 + grant_limit_payload:u32 + grant_limit_active_count:u32 + grant_limit_active_bytes:u64 + grant_window_ms:u32 + grant_max_admissions_per_window:u32 + grant_attempts_per_cycle:u32 + last_seen_availability_epoch:u64 + last_consumed_availability_epoch:u64 + successful_resume_count:u32 + discard_committed:u32 + reservation_key_digest[32]`。Common primary digestはTRANSACTION_ANCHORです。Admission時のsource/application/service/target authorization tupleは同anchorのexact snapshotを参照し、decision fieldsと組み合わせて13章のgrant decisionを完全再検証します。Provider grantにbyte-window fieldはなく、descriptor payload-byte quotaと混同しません。`successful_resume_count`は0..8、`discard_committed`は0/1です。
-- `RETRY_SUMMARY` CUMULATIVE: `transaction_id[16] + summary_kind:u16=1 + slot_index:u16=0 + total_completed_cycle_count:u64 + folded_cycle_count:u64 + cumulative_attempt_count:u64 + last_outcome:u32 + last_reason:u32 + last_ended_clock_epoch[16] + last_ended_at_ms:u64 + delivery_possible_any:u32 + counter_saturated:u32`。
-- `RETRY_SUMMARY` RECENT: `transaction_id[16] + summary_kind:u16=2 + slot_index:u16(0..3) + retry_cycle_id:u64 + attempt_count:u32 + last_outcome:u32 + last_reason:u32 + availability_epoch:u64 + ended_clock_epoch[16] + ended_at_ms:u64 + delivery_possible:u32 + reserved:u32=0`。Common primary digestはどちらもTRANSACTION_ANCHORです。Completed cycleは`slot_index=(retry_cycle_id - 1) mod 4`へ保存し、既存slotをreplaceする前にそのold cycleをCUMULATIVEへchecked foldします。Always `recent_count=min(total_completed_cycle_count,4)`、`folded_cycle_count=max(total_completed_cycle_count-4,0)`です。CUMULATIVEはadmission時exact 1件、RECENTは0..4件で、5件を超えて増殖しません。Counter overflowはMAX維持+`counter_saturated=1`で、EventをCOUNTER_EXHAUSTED parkへ進めます。
-- `MANAGEMENT_LEDGER`: `operation_id[16] + operation_kind:u16 + reserved:u16=0 + ordered_sequence:u64 + transaction_id[16] + event_id[16] + actor_id[16] + canonical_request_digest[32] + expected_spool_revision:u64 + expected_event_id[16] + expected_content_digest_algorithm:u16 + reserved:u16=0 + expected_content_digest[32] + request_reason:u32 + acknowledge_flag:u32 + audit_length:u16 + reserved:u16=0 + audit_bytes[128] + audit_clock_epoch[16] + audit_committed_at_ms:u64 + replay_result_kind:u32 + replay_result_reason:u32 + replay_retry_cycle_id:u64 + replay_spool_revision:u64 + replay_spool_released:u32 + reserved:u32=0`。Common primary digestはTRANSACTION_ANCHORです。Operation kindは15 EVENT_RESUMEまたは16 EVENT_DISCARDだけ、ordered sequenceはpublic management inputへ割り当てたnon-zero durable input sequenceでfamily 3 counter以下です。Content digest algorithmは0 NONE / 1 SHA-256です。Resumeではexpected event/content、ack、audit clock/time、releasedがzero、discardではalgorithm 1、ack 1、trusted audit clock/timeが必須です。Audit `[length,128)`はzeroです。Digest再計算時はpersist済みu16 lengthをchecked u32へ拡張して12章preimageへencodeします。
+本節の5 body（`0x50` / `0x51` / `0x52` / `0x61` / `0x63`）はいずれも **family 6 secondary** です。same-record共通header閉包は次をexactとします（各slice境界でも再掲）: common `flags=0`、`head_witness_digest` non-zero、`primary_value_digest` non-zero、body trailing byte禁止。`primary_id`は参照primary identityの16-byte hintで、最終同一性はbody rawから再構成したcomplete primary keyと`primary_value_digest`で判定します（§4）。
 
-MANAGEMENT_LEDGERはEvent admission時に物理slotを作りません。成功したdistinct resume/discardのFULL mutationだけが`transaction_id || operation_id` composite keyのledgerを1件createし、Event spool/count、reservation vector、state/resultを同じwitness groupで更新します。Event spoolはresume最大8、discard最大1をguardし、RESERVATIONは未使用分をlogical `reserved`、作成済みledger分をlogical `used`としてexact 256/512 bytesずつ表します。Ledger hitはcanonical request digestとoperation kindを先に比較し、一致ならpersist済みreplay fieldをcurrent Event state/revisionを再評価せず返します。不一致はpublic conflict resultです。
+| Subtype | `primary_id`（referenced primary identity） |
+| --- | --- |
+| `50` EVENT_SPOOL / `51` RETRY_SUMMARY / `52` MANAGEMENT_LEDGER | body `transaction_id`（TRANSACTION_ANCHOR ID128） |
+| `61` RETENTION_BASIS / `63` CLEANUP_PLAN | subject kind 2 TRANSACTION: `subject_key_raw` contents exact 16 = transaction ID。subject kind 3 DELIVERY: `COMPOSITE(40, delivery_key_raw:RAW16(contents=subject_key_raw contents exact 80))` の composite identity先頭16 bytes |
+
+M1a subject kindは2 TRANSACTION（raw exact 16）または3 DELIVERY（raw exact 80）だけです。1 SERVICE / 4 EVENTのsubject recordはcorruptです（cardinality 0; §9）。stored `subject_primary_key_digest` / `reservation_key_digest` 等のcomplete-key digest fieldは§5.1どおり `KEY_DIGEST(complete_key)` を再計算して一致を要求します。
+
+- `EVENT_SPOOL`（**D1-B3k**）: `transaction_id[16] + event_id[16] + spool_revision:u64 + spool_state:u32 + park_cause:u32 + retry_cycle_id:u64 + payload_blob_key_digest[32] + provider_id[16] + provider_revision:u64 + decision_digest[32] + grant_id[16] + grant_revision:u64 + decision_clock_epoch[16] + evaluated_at_ms:u64 + valid_from_ms:u64 + expires_at_ms:u64 + provider_retry_delay_ms:u64 + grant_limit_payload:u32 + grant_limit_active_count:u32 + grant_limit_active_bytes:u64 + grant_window_ms:u32 + grant_max_admissions_per_window:u32 + grant_attempts_per_cycle:u32 + last_seen_availability_epoch:u64 + last_consumed_availability_epoch:u64 + successful_resume_count:u32 + discard_committed:u32 + reservation_key_digest[32]`。
+
+EVENT_SPOOLのsame-record wire / identity / closed shape contractは次をexactとします。
+
+Body lengthは**exact 300**です（max 1536はsubtype上限で不変）。Body trailing byteは禁止です。
+
+Key identityはdirect ID128でbody `transaction_id`とexact一致、common `primary_id`もbody `transaction_id`、common flagsは0です。common `record_revision`はbody `spool_revision`とexact一致し、いずれも1以上です（late/duplicate/saturating updateは§4どおりMAX維持可）。head witness digest / primary value digestはnon-zeroです（live TRANSACTION_ANCHOR complete value一致はD3）。
+
+`transaction_id` / `event_id`はnon-zeroです。`spool_state`は§7.1 closed 1 ACTIVE / 2 PARKED_RETRY / 3 RELEASED / 4 DISCARDEDだけです。`park_cause`はpublic `ninlil_event_park_cause_t`のclosed 0..5だけです。**state × cause matrix**: ACTIVE / RELEASED / DISCARDED は cause exact `NONE(0)`、PARKED_RETRY は cause exact 1..5（`CYCLE_EXHAUSTED_TRANSIENT` / `BEARER_UNAVAILABLE` / `CAPACITY_UNAVAILABLE` / `APPLICATION_REMEDIATION` / `COUNTER_EXHAUSTED`）。表外はcorruptです。
+
+`retry_cycle_id`は1以上です。`payload_blob_key_digest`は全stateでnon-zero（historical key digest。payload manifest 0/1 live cardinalityとrelease eraseは§9 / D3）。`successful_resume_count`は0..8、`discard_committed`はu32 exact 0/1で、**`discard_committed=1` iff `spool_state=DISCARDED(4)`**（1かつ非DISCARDED、またはDISCARDEDかつ0はcorrupt）。
+
+`reservation_key_digest`は`KEY_DIGEST(complete RESERVATION key)`とexact一致します。そのcomponentsは`owner_kind:u16=TRANSACTION(2) || owner_key_raw:RAW16(contents=transaction_id exact 16)`です。composite digest本体とのstore/compareは禁止です（§5.1）。
+
+Admission時のsource/application/service/target authorization tupleは同TRANSACTION_ANCHORのexact snapshotを参照し、decision / grant / availability epoch fieldsと組み合わせた13章grant decisionの完全再検証、provider grantとdescriptor payload-byte quotaの混同禁止、live RESERVATION / STATE / RETRY / MANAGEMENT cardinality、payload BLOB live 0/1は **D3** です。Provider grantにbyte-window fieldはありません。B3kはsame-record body/key/header/state-cause/resume-discard bool/reservation digestまでだけを閉じ、grant/clock truthを追加凍結しません。
+
+**D1-B3k境界**: B3kはEVENT_SPOOL (`0x50`) pure body encode/decodeと本same-record閉包だけの **docs-only Normative freeze** です。implementation / golden vector / D2-S3 scan到達はpending（§8.6.1）。Live TRANSACTION_ANCHOR PVD、grant re-verify、availability resume path、STATE/RETRY/MANAGEMENT cardinality、payload BLOB、retention/cleanupはD3以降です。
+
+- `RETRY_SUMMARY`（**D1-B3l**）CUMULATIVE: `transaction_id[16] + summary_kind:u16=1 + slot_index:u16=0 + total_completed_cycle_count:u64 + folded_cycle_count:u64 + cumulative_attempt_count:u64 + last_outcome:u32 + last_reason:u32 + last_ended_clock_epoch[16] + last_ended_at_ms:u64 + delivery_possible_any:u32 + counter_saturated:u32`。
+- `RETRY_SUMMARY` RECENT: `transaction_id[16] + summary_kind:u16=2 + slot_index:u16(0..3) + retry_cycle_id:u64 + attempt_count:u32 + last_outcome:u32 + last_reason:u32 + availability_epoch:u64 + ended_clock_epoch[16] + ended_at_ms:u64 + delivery_possible:u32 + reserved:u32=0`。
+
+RETRY_SUMMARYのsame-record wire / identity contractは次をexactとします。
+
+Body lengthはCUMULATIVE **exact 84**、RECENT **exact 80**だけです（max 768はsubtype上限で不変）。Body trailing byteは禁止です。variantを跨ぐlength、またはdeclared `summary_kind`とlayout不一致はcorruptです。
+
+Key identityは`COMPOSITE(51, transaction_id[16] || summary_kind:u16 || slot_index:u16)`で、componentsはbody同名fieldとexact一致します。common `primary_id`はbody `transaction_id`、common flagsは0、`record_revision>=1`（§4 saturating MAX維持可）、head witness digest / primary value digestはnon-zeroです（live TRANSACTION_ANCHOR一致はD3）。
+
+**CUMULATIVE（kind=1）**: `slot_index` exact 0。`folded_cycle_count = max(total_completed_cycle_count - 4, 0)`（checked u64算術; underflow禁止の定義どおり）。`delivery_possible_any` / `counter_saturated`はu32 exact 0/1です。`folded_cycle_count=0`（admission直後およびcompleted cycle 1..4）ではfold済みaggregateがまだ無いため、`cumulative_attempt_count` / `last_outcome` / `last_reason` / `last_ended_clock_epoch` / `last_ended_at_ms` / `delivery_possible_any` / `counter_saturated` はすべてexact 0です。
+
+**RECENT（kind=2）**: `slot_index` exact 0..3。`retry_cycle_id`は1以上。`slot_index = (retry_cycle_id - 1) mod 4`（u64）。`attempt_count`は1..8（`NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE`）。RECENTは少なくとも1 attemptを実行したpartial/full cycleをcloseしたときだけ作り、attempt 0のcycleには作りません。`reserved` exact 0。`delivery_possible`はu32 exact 0/1です。
+
+Cross-row population（CUMULATIVE admission exact 1、RECENT 0..4、`recent_count=min(total,4)`、fold前replace、counter overflow→`counter_saturated=1`とEvent COUNTER_EXHAUSTED park、slot uniqueness）はwriter/D3です。B3lはsingle-row body/key/kind-slot arithmeticとbool/reservedだけを閉じます。
+
+**D1-B3l境界**: B3lはRETRY_SUMMARY (`0x51`) pure body encode/decodeと本same-record閉包だけの **docs-only Normative freeze** です。implementation / vector / D2-S3はpending（§8.6.1）。Cross-row fold ordering、cardinality、live STATE/SPOOL整合はD3です。
+
+- `MANAGEMENT_LEDGER`（**D1-B3m**）: `operation_id[16] + operation_kind:u16 + reserved:u16=0 + ordered_sequence:u64 + transaction_id[16] + event_id[16] + actor_id[16] + canonical_request_digest[32] + expected_spool_revision:u64 + expected_event_id[16] + expected_content_digest_algorithm:u16 + reserved:u16=0 + expected_content_digest[32] + request_reason:u32 + acknowledge_flag:u32 + audit_length:u16 + reserved:u16=0 + audit_bytes[128] + audit_clock_epoch[16] + audit_committed_at_ms:u64 + replay_result_kind:u32 + replay_result_reason:u32 + replay_retry_cycle_id:u64 + replay_spool_revision:u64 + replay_spool_released:u32 + reserved:u32=0`。
+
+MANAGEMENT_LEDGERのsame-record wire / identity / digest contractは次をexactとします。
+
+Body lengthは**exact 364**です（max 1024はsubtype上限で不変）。Body trailing byteは禁止です。全`reserved` fieldはexact 0です。
+
+Key identityは`COMPOSITE(52, transaction_id[16] || operation_id[16])`で、body `transaction_id` / `operation_id`とexact一致します。common `primary_id`はbody `transaction_id`、common flagsは0、**immutable `record_revision=1`**（create-once; replacement禁止）、head witness digest / primary value digestはnon-zeroです（live TRANSACTION_ANCHOR一致はD3）。
+
+`operation_kind`は15 EVENT_RESUMEまたは16 EVENT_DISCARDだけです（§10 operation kindと同値）。`ordered_sequence`は1以上です（public management inputへ割り当てたdurable sequence; family 3 counter upper boundはD3）。`transaction_id` / `operation_id` / `actor_id`は常にnon-zeroです。`event_id`はoperationが要求するときnon-zero: kind 16ではnon-zero、kind 15ではEventFactのdurable event IDとしてnon-zeroを要求します（zero event_idはcorrupt）。
+
+Content digest algorithmは0 NONE / 1 SHA-256だけです。canonical request digestはbody fieldだけから12章10節のdomain-separated management request preimageを再計算しstored `canonical_request_digest`とexact一致させます。persist済み`audit_length:u16`はchecked u32へwidenしてpreimageの`metadata_length`へ入れます（u16→u32拡張overflowは起きない）。ABI header / pointer / reserved / paddingはhashしません（§5.1のCOMPOSITE / KEY_DIGEST preimageとは別）。
+
+| 軸 | kind 15 EVENT_RESUME | kind 16 EVENT_DISCARD |
+| --- | --- | --- |
+| algorithm | exact 0 NONE | exact 1 SHA-256 |
+| `expected_event_id` / `expected_content_digest` | both all-zero | both non-zero |
+| `acknowledge_flag` | exact 0 | exact 1（`acknowledge_required_receipt_absent`） |
+| `audit_clock_epoch` / `audit_committed_at_ms` | both zero | epoch **non-zero**（`audit_committed_at_ms`は **0可**; 12章presenceはepoch） |
+| `replay_spool_released` | exact 0 | exact 1 |
+| `request_reason` | resume reason 1..5（`CONNECTIVITY_REMEDIATED`..`TEST`） | discard reason 1..4（`DEVICE_DECOMMISSIONED`..`TEST_CLEANUP`） |
+| stored replay kind / reason | `ALREADY_RESUMED(2)` + reason `NONE(0)` | `ALREADY_DISCARDED(2)` + reason `OPERATOR_DISCARDED_WITHOUT_REQUIRED_RECEIPT` |
+| `replay_retry_cycle_id` / `replay_spool_revision` | both non-zero | revision non-zero、**cycle exact 0** |
+
+kind 16ではbody `event_id == expected_event_id`をexactに要求します。kind 15の`expected_event_id`はzeroですがbody `event_id`はnon-zero durable EventFact IDです。`audit_length`は1..128、`audit_bytes[audit_length,128)`はall-zeroです。`expected_spool_revision`は1以上かつ`UINT64_MAX`未満で、成功commitのpersist済み `replay_spool_revision = expected_spool_revision + 1`を両kindでexactに要求します（checked addition; overflow ledger生成は禁止）。
+
+MANAGEMENT_LEDGERはEvent admission時に物理slotを作りません。成功したdistinct resume/discardのFULL mutationだけが`transaction_id || operation_id` composite keyのledgerを1件createし、Event spool/count、reservation vector、state/resultを同じwitness groupで更新します。Event spoolはresume最大8、discard最大1をguardし、RESERVATIONは未使用分をlogical `reserved`、作成済みledger分をlogical `used`としてexact 256/512 bytesずつ表します。Ledger hitはcanonical request digestとoperation kindを先に比較し、一致ならpersist済みreplay fieldをcurrent Event state/revisionを再評価せず返します。不一致はpublic conflict resultです。live counter/state/spool整合は **D3** です。
+
+**D1-B3m境界**: B3mはMANAGEMENT_LEDGER (`0x52`) pure body encode/decode、exact 364、key/tx+op bijection、kind別closed field matrix、canonical digest再計算までの **docs-only Normative freeze** です。implementation / vector / D2-S3はpending（§8.6.1）。live SPOOL/STATE/RESERVATION counter、family 3 sequence upper bound、writer E2EはD3です。
+
 - `BEARER_STATE`: `availability_epoch:u64 + available:u32 + observation_clock_epoch[16] + observed_at_ms:u64`。Absent before first observation、以後non-zero strictly increasing epochだけoperation kind 20 witnessでcreate/replaceします。Same/old epochはwrite 0、same epoch/different availableはcontract failureです。
-- `RETENTION_BASIS`: `subject_kind:u16 + reserved:u16=0 + subject_key_raw:RAW16(max 255) + subject_primary_key_digest[32] + basis_clock_epoch[16] + basis_at_ms:u64 + exclusive_cleanup_at_ms:u64 + required_window_ms:u64 + retention_state:u32 + basis_pending:u32 + retention_overflow:u32`。Common primary digestはretained immutable subject complete valueです。M1aで生成するsubjectはTRANSACTIONとDELIVERYだけです。DesiredState/EventFactはともにTRANSACTION_ANCHORをrootとするTRANSACTION basis exact 1へ全attempt/index、Event spool/retry/managementを集約し、required windowは`terminal_retention_ms`です。Endpoint DeliveryはDELIVERY basis exact 1へresult/disposition/token/cancel/reply/evidenceを集約し、required windowは`result_cache_retention_ms`です。SERVICEはM1aにunregisterがないためbasis 0、EVENTはTRANSACTIONへ統合するためbasis 0です。BLOB/management/attemptはowner basisへ集約し独立basisを作りません。登録時guardにより各windowは該当service dedup要件以上で、stored `required_window_ms`がprofile値と異なればcorruptです。
+- `RETENTION_BASIS`（**D1-B3n**）: `subject_kind:u16 + reserved:u16=0 + subject_key_raw:RAW16(max 255) + subject_primary_key_digest[32] + basis_clock_epoch[16] + basis_at_ms:u64 + exclusive_cleanup_at_ms:u64 + required_window_ms:u64 + retention_state:u32 + basis_pending:u32 + retention_overflow:u32`。
 
-Retention field matrixはclosedです。ACTIVE+pendingは`basis_pending=1`、overflow=0、epoch/time/delete-at zero。ACTIVE+overflowはpending=0、overflow=1、trusted non-zero epoch/basis time、delete-at zero。ACTIVE+trustedは両flag 0、non-zero epoch、`delete_at=checked(basis+window)`でcurrent trusted nowがexclusive end未満です。ELIGIBLEは両flag 0、同じtrusted basis/delete-atを保持し、eligibility判定sampleがsame epochかつnow>=delete-atとなるFULL replacementです。CLEANUP_COMMITTEDはPLAN_CREATEと同じwitnessでELIGIBLEからだけ進み、両flag 0とbasis/delete-atを保持してCLEANUP_PLAN `cleanup_generation`へpost-replacement record revisionを保存します。Plan存在中はexact CLEANUP_COMMITTED、FINALIZEでbasisとplanを同時eraseします。Pending/overflowからELIGIBLE/CLEANUP_COMMITTEDへ直接進めず、Clock epoch changeだけがfull windowをnew trusted sampleから再基準化し、same-epoch regressionはcreate/operation failureでrebaseしません。
+RETENTION_BASISのsame-record wire / identity / matrix contractは次をexactとします。
+
+Body lengthは`90 + N`です。`N`は`subject_key_raw` contents長で、M1a legalは **TRANSACTION `N=16` → body exact 106**、**DELIVERY `N=80` → body exact 170**だけです（max 512はsubtype上限で不変）。他N、trailing byte、`reserved≠0`はcorruptです。
+
+`subject_kind`は2 TRANSACTIONまたは3 DELIVERYだけ（1 SERVICE / 4 EVENTはcorrupt）。Key identityは`COMPOSITE(61, subject_kind:u16 || subject_key_raw:RAW16)`でbodyと同components exact一致です。common `primary_id`は本節冒頭表どおり、common flagsは0、`record_revision>=1`、head witness digest / primary value digestはnon-zeroです（live subject primary complete value一致はD3; common primary digestの意味はretained immutable subject complete value）。
+
+`subject_primary_key_digest`はsubject primary complete keyの`KEY_DIGEST`を再計算してexact一致します。TRANSACTION: family 6 subtype `20` ID128 key、identity = raw exact 16。DELIVERY: family 6 subtype `40`、identity = `COMPOSITE(40, delivery_key_raw:RAW16(contents=raw exact 80))`。composite digest本体とのstore/compareは禁止です。
+
+DesiredState/EventFactはともにTRANSACTION_ANCHORをrootとするTRANSACTION basis exact 1へ全attempt/index、Event spool/retry/managementを集約し、required windowは`terminal_retention_ms`です。Endpoint DeliveryはDELIVERY basis exact 1へresult/disposition/token/cancel/reply/evidenceを集約し、required windowは`result_cache_retention_ms`です。SERVICEはM1aにunregisterがないためbasis 0、EVENTはTRANSACTIONへ統合するためbasis 0です。BLOB/management/attemptはowner basisへ集約し独立basisを作りません。登録時guardにより各windowは該当service dedup要件以上で、stored `required_window_ms`がprofile値と異なればcorruptです（profile照合はD3）。
+
+Retention field matrix（same-record）はclosedです。`retention_state`は§7.1の1 ACTIVE / 2 ELIGIBLE / 3 CLEANUP_COMMITTED、`basis_pending` / `retention_overflow`はu32 exact 0/1です。
+
+| state | pending | overflow | epoch / basis_at / delete_at / window |
+| --- | ---: | ---: | --- |
+| ACTIVE pending | 1 | 0 | `required_window_ms>0`、epoch/time/delete-at **all-zero** |
+| ACTIVE overflow | 0 | 1 | `required_window_ms>0`、epoch **non-zero**、`basis_at_ms`は0可、delete-at **zero** |
+| ACTIVE trusted | 0 | 0 | epoch non-zero、`required_window_ms>0`、`delete_at=checked(basis_at+window)` |
+| ELIGIBLE | 0 | 0 | ACTIVE trustedと同じtrusted arithmetic（basis/delete/window） |
+| CLEANUP_COMMITTED | 0 | 0 | 同上trusted arithmetic |
+
+ACTIVE overflowのpresenceは`basis_clock_epoch`で表し、他のtrusted-clock fieldと同じく時刻値0自体は合法です。したがって「trusted non-zero epoch/basis time」は **epochがnon-zeroでbasis timeがtrusted** の意味へ明確化し、`basis_at_ms` non-zeroを要求しません。current trusted now / profile window / plan generation整合は **D3** です。
+
+ELIGIBLEはeligibility判定sampleがsame epochかつnow>=delete-atとなるFULL replacementです。CLEANUP_COMMITTEDはPLAN_CREATEと同じwitnessでELIGIBLEからだけ進み、両flag 0とbasis/delete-atを保持してCLEANUP_PLAN `cleanup_generation`へpost-replacement record revisionを保存します。Plan存在中はexact CLEANUP_COMMITTED、FINALIZEでbasisとplanを同時eraseします。Pending/overflowからELIGIBLE/CLEANUP_COMMITTEDへ直接進めず、Clock epoch changeだけがfull windowをnew trusted sampleから再基準化し、same-epoch regressionはcreate/operation failureでrebaseしません。
+
+**D1-B3n境界**: B3nはRETENTION_BASIS (`0x61`) pure body encode/decode、size `90+N`、subject raw/kind、KEY_DIGEST再計算、pending/trusted/eligible matrixまでの **docs-only Normative freeze** です。implementation / vector / D2-S3はpending。current-now/profile/planはD3です。
+
 - `CLOCK_BASELINE`: `baseline_state:u32 + reserved:u32=0 + trusted_clock_epoch[16] + last_trusted_now_ms:u64 + publish_generation:u64`。Metadata初期化はUNINITIALIZED/common revision 1、epoch/time/generation zeroを必ず作り、以後absentはcorruptです。最初のaccepted Stage 7 sampleはTRUSTED/common revision 2/generation 1へreplaceし、以後の各accepted sampleはsame/new epochともcommon revisionとgenerationをchecked +1してStage 8前にreplaceします。同epochでは`now >= last`、new epochでは任意のtrusted `now`を受理します。後続Bearer open等が失敗してpublic handleをpublishしなくてもbaselineを巻き戻さないため、`publish_generation`はpublish済みhandle数ではなくpublish-attempt用trusted sampleのdurable generationです。GenerationまたはrevisionがMAXならwrapせず`NINLIL_E_DEGRADED`、publish 0、Storage mutation 0です。COMMIT_UNKNOWNはold/new complete value digestで収束し、authoritative newを確認できるまでpublishしません。
 
 Stage 7がstrictly new clock epochをcommitした場合、Stage 9前にfresh domain scanを行います。ATTEMPT receipt timeout、CANCEL timeout、TRANSACTION retry/deadline timer、RESULT token/reconcile timer、REVERSE_REPLY retry timer、RETENTION_BASISのnon-zero old epochをcomplete record keyごとのpriority 6 `CLOCK_UNCERTAIN` sourceとして導出します。Matching CLEANUP_PLANが存在しbasis state=CLEANUP_COMMITTEDのRETENTION_BASISだけはeligibilityが既にdurable確定しているためsource/rebase対象外で、plan phaseをepoch非依存に継続します。それ以外のmismatch subjectはtimer比較、callback completion、send、cleanupをfail closedし、old numeric timeをnew epochへ比較/換算しません。Active token/send effectを誤って再開しないためRESULT/CANCEL/ATTEMPTと必要なowner STATE/SPOOL/SCHEDULER companionはoperation kind 21のwitnessでRECOVERY_REQUIRED/parkへ進めます。RESULT が ACTIVE token を回収する post は **token_state=EXPIRED**、**E_REC reason=`OUTCOME_UNKNOWN`** です（**`CLOCK_UNCERTAIN` を RESULT business reason へ書かない**）。old-epoch RESULT token/reconcile timer 由来の health は complete key + timer_kind + stored epoch の **CLOCK_FENCE** source として別軸で add し、当該 recovery commit で clear します。RETENTION_BASISはnew trusted sampleからfull durationをrebaseします。Createはpriority 6を含むDEGRADED Runtimeをpublishでき、`runtime_step`はこれらrecovery itemを通常effectより先に1件ずつ処理します。各valid recovery commitでそのrecord-key sourceだけclearし、全件解消後にCLOCK_UNCERTAINをclearします。
-- `CLEANUP_PLAN`: `subject_kind:u16 + cleanup_phase:u16 + subject_key_raw:RAW16(max 255) + subject_primary_key_digest[32] + subject_primary_value_digest[32] + cleanup_generation:u64 + batch_generation:u64 + initial_attempt_count:u64 + remaining_attempt_count:u64 + initial_attempt_index_count:u64 + remaining_attempt_index_count:u64 + attempt_reuse_fenced:u32 + reserved:u32=0`。Common primary digestはcleanup対象immutable primaryです。M1a legal subject kindは2 TRANSACTIONまたは3 DELIVERYだけで、1 SERVICE/4 EVENTはcorruptです。`cleanup_generation`はplan create時のRETENTION_BASIS post-replacement common record revisionでimmutable、`batch_generation`はcreate=1、各phase/batch commitでchecked +1です。Initial countはPLAN_CREATE snapshotのsame-primary ATTEMPT / local ATTEMPT_ID_INDEX exact countでimmutable、remainingは各successful bounded batchが消したexact件数だけchecked減少し、増加やinitial超過は禁止です。Retention eligibility commit後にphase 1でcreateし、public query/listはplan存在subjectをlogically absentとして扱いますが、collision lookup/recoveryはphysical primaryをfinalizeまで保持します。
+- `CLEANUP_PLAN`（**D1-B3o**）: `subject_kind:u16 + cleanup_phase:u16 + subject_key_raw:RAW16(max 255) + subject_primary_key_digest[32] + subject_primary_value_digest[32] + cleanup_generation:u64 + batch_generation:u64 + initial_attempt_count:u64 + remaining_attempt_count:u64 + initial_attempt_index_count:u64 + remaining_attempt_index_count:u64 + attempt_reuse_fenced:u32 + reserved:u32=0`。
+
+CLEANUP_PLANのsame-record wire / identity / phase contractは次をexactとします。
+
+Body lengthは`126 + N`です。M1a legalは **TRANSACTION `N=16` → body exact 142**、**DELIVERY `N=80` → body exact 206**だけです（max 512はsubtype上限で不変）。他N、trailing byte、`reserved≠0`はcorruptです。
+
+`subject_kind`は2 TRANSACTIONまたは3 DELIVERYだけ（1 SERVICE / 4 EVENTはcorrupt）。`cleanup_phase`は§7.1 closed 1 DELETE_NON_INDEX / 2 DELETE_ATTEMPT_INDEX / 3 FINALIZEだけです。Key identityは`COMPOSITE(63, subject_kind:u16 || subject_primary_key_digest[32])`で、body `subject_kind` / `subject_primary_key_digest`とexact一致します。common `primary_id`は本節冒頭表どおり、common flagsは0、**common `record_revision`はbody `batch_generation`とexact一致**し、いずれも1以上です。head witness digest / primary value digestはnon-zeroです。
+
+`subject_primary_key_digest`はB3nと同じsubject primary complete keyの`KEY_DIGEST`再計算とexact一致です。`subject_key_raw` contentsはkindどおりexact 16または80で、digest再計算のraw sourceとbijectionです。`subject_primary_value_digest`はnon-zeroかつcommon header `primary_value_digest`とexact一致します（live primary row `VALUE_DIGEST`一致はD3）。
+
+`cleanup_generation` / `batch_generation`は1以上です。`cleanup_generation`はplan create時のRETENTION_BASIS post-replacement common record revisionでimmutable、`batch_generation`はcreate=1、各phase/batch commitでchecked +1です（writer; D1はstored値の範囲とrevision一致だけ）。Initial countはPLAN_CREATE snapshotのsame-primary ATTEMPT / local ATTEMPT_ID_INDEX exact countでimmutable。same-record: **`initial_attempt_count >= initial_attempt_index_count`**、**`remaining_attempt_count <= initial_attempt_count`**、**`remaining_attempt_index_count <= initial_attempt_index_count`**。remainingの増加やinitial超過はcorruptです。
+
+Phase closed matrix（same-record; §9と同値）:
+
+| phase | remaining attempt / index | `attempt_reuse_fenced` | 追加 |
+| ---: | --- | ---: | --- |
+| 1 DELETE_NON_INDEX | `remaining_attempt >= remaining_index`、かつ `remaining_attempt_index_count == initial_attempt_index_count` | exact 0 | index phase前なのでindex count不変 |
+| 2 DELETE_ATTEMPT_INDEX | equal かつ `>=1` | exact 1 | `initial_attempt_index_count >= 1` |
+| 3 FINALIZE | both exact 0 | **1 iff `initial_attempt_index_count > 0`、else 0** | — |
+
+Retention eligibility commit後にphase 1でcreateし、public query/listはplan存在subjectをlogically absentとして扱いますが、collision lookup/recoveryはphysical primaryをfinalizeまで保持します。Live ATTEMPT/index counts、basis CLEANUP_COMMITTED、ATTEMPT_REUSE_FENCE aggregate、phase batch eraseは **D3** です。
+
+**D1-B3o境界**: B3oはCLEANUP_PLAN (`0x63`) pure body encode/decode、size `126+N`、key kind+digest、KEY_DIGEST/PVD bijection、generation/revision、phase remaining/fence matrixまでの **docs-only Normative freeze** です。implementation / vector / D2-S3はpending（§8.6.1）。live counts/basis/fence aggregateはD3です。
+
 - `ATTEMPT_REUSE_FENCE`: `active_plan_count:u32 + reserved:u32=0 + fence_generation:u64`。Active count 1以上だけrecordが存在し、zeroでeraseします。Absent→first createのgenerationは1、present join/leave replacementはchecked +1、count 1→0ではrecordをeraseします。後に別cleanupでabsentから再createする場合もgeneration 1です。Fence単独mutation、MAX replacement、flagged planなしのpresent fence、flagged planがあるabsent fenceはcorruptです。Common primary digestはzeroです。Fence存在中はnew attempt Entropy allocationを`NINLIL_E_WOULD_BLOCK`で停止し、transaction ID allocationやreplay/recoveryは継続します。
 - `WITNESS_HEAD_INDEX`: `index_state:u16 + reserved:u16=0 + member_key_digest[32] + member_key_length:u16 + reserved:u16=0 + member_key_bytes[member_key_length] + member_value_digest[32] + member_head_witness_digest[32]`。Memberはfamily 3 counter 4件またはfamily 4 capacity 11件、key lengthはexact 10です。BASELINEはhead zero/common head zero、WITNESSEDはnon-zero両head exact一致です。Common primary digestはzeroです。これはshared mutable recordにhead chainを与えるmetadataで、単独のsemantic truthではありません。
+
+#### 8.6.1 D1-B3k..B3o status / ownership ledger（docs-only Normative freeze）
+
+**Decision identifier: D1-B3k..B3o（まとめて docs-only）。** 本節は5 remaining Domain Store bodiesのsame-record Normative contract freezeであり、**implementation complete / D1 complete / D2-S3 complete / Stage 5 complete をclaimしない**。public C ABI / export symbol / public status を追加しない。
+
+| Slice | Subtype | Body same-record（本freeze） | Status | Future vector format（artifact未存在） | Implementation / D2-S3 |
+| --- | ---: | --- | --- | --- | --- |
+| **D1-B3k** | `0x50` EVENT_SPOOL | exact 300、ID128=tx、revision=spool_revision、state×cause、resume 0..8、discard iff DISCARDED、reservation KEY_DIGEST | **Normative freeze / implementation pending** | `ninlil-domain-store-v1-d1b3k` | pending; **blocks D2-S3** |
+| **D1-B3l** | `0x51` RETRY_SUMMARY | CUMULATIVE 84 / RECENT 80、composite key=body、kind/slot/fold arithmetic、bools | **Normative freeze / implementation pending** | `ninlil-domain-store-v1-d1b3l` | pending; **blocks D2-S3** |
+| **D1-B3m** | `0x52` MANAGEMENT_LEDGER | exact 364、tx+op key、immutable rev1、kind15/16 matrix、canonical digest recompute | **Normative freeze / implementation pending** | `ninlil-domain-store-v1-d1b3m` | pending; **blocks D2-S3** |
+| **D1-B3n** | `0x61` RETENTION_BASIS | 90+N→106/170、kind+raw key、KEY_DIGEST、pending/trusted/eligible matrix | **Normative freeze / implementation pending** | `ninlil-domain-store-v1-d1b3n` | pending; **blocks D2-S3** |
+| **D1-B3o** | `0x63` CLEANUP_PLAN | 126+N→142/206、kind+digest key、PVD bijection、phase/fence matrix | **Normative freeze / implementation pending** | `ninlil-domain-store-v1-d1b3o` | pending; **blocks D2-S3** |
+
+**Acceptance ownership（implementation PRが最低限所有; 本docs-onlyでは未達）:**
+
+1. pure body encode/decode + same-record validator（Port call 0）が§8.6各slice閉包を満たす
+2. independent generatorが上表format stringのoracleをappend-only生成し、production bridgeがbyte equality
+3. **module alias / unchanged-output規則（B3a..jと同じ）**: 既存`domain_store_body_codec` module aliasへprivate helperを追加しpublic ABIを増やさない。`spec/vectors/domain-store-v1.json`は **prior format objectsをbyte-for-byte保持** したappend-onlyでformatを`d1b3k`→…→`d1b3o`へ順に進める。prior fingerprint / prefix guardを壊すin-place rewrite禁止
+4. D2-S3 scan pathが当該subtype body local validationへ到達できること（5 body + 依存が揃うまでS3 complete禁止）
+
+**Explicit non-completion / non-claims:**
+
+- 本docs更新は **Normative freeze only**。codec / tests / tools / vectors / root README / changelog を本sliceで追加したとみなさない（artifact pathを凍結しても **現存を主張しない**）
+- 5 implementationが揃うまで **D1 catalog incomplete**、**D2-S3 blocked**、**D2 incomplete**、Stage 5 / public Runtime / ESP hardware incomplete
+- B3n overflowはepoch non-zeroでpresenceを表し、`basis_at_ms=0`を合法とする。current-now/profile/plan整合はD3
+- cross-row / grant / profile now / fence aggregate / writer E2EはD3/D4
 
 ## 9. Primary/index/backlink rules
 
@@ -1427,12 +1568,12 @@ L2b1 successはStage 5完了でもD2完了でもありません（14章L2b1 boun
 | **D2-S0** | 本節のNormative contract freeze。実装/vector変更なし | 否 |
 | **D2-S1** | scanner core: state machine、begin binds Port/handle/workspace、advance(row_budget)/finalize|abort(result) only、iter buffer、`has_previous` lex、§15.4 coarse class、mutation 0、uint64 checked counters。独立oracle + production bridge。**実装済み（D2 incomplete）** | 否 |
 | **D2-S2** | **実装済み（D2 incomplete）:** production profiled begin only（required candidate; TEST transport beginはtest macro専用）、same-txn 17 exact get + completeness/validate/compare、typed get capacities、iterator reconciliation masks、mismatch/future mode skip、private result diagnostics、sibling profile oracle `domain-scan-profile-v1.json` / `ninlil-domain-scan-profile-v1-d2s2` + independent generator + production bridge。D2 complete / DSR1/DSR2 complete / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
-| **D2-S3** | 全current domain structural / same-record validation（envelope、4096、subtype body local、duplicate/order接続）。**step 5 same-record/local: witness header+chunk framing/matrix のscan到達**（D1 pure witness codecに依存。member old/new・partial group・successor chainはD3）。**D1 bodies `0x50` EVENT_SPOOL / `0x51` RETRY_SUMMARY / `0x52` MANAGEMENT_LEDGER / `0x61` RETENTION_BASIS / `0x63` CLEANUP_PLAN が未実装の間、S3 completionはblock** | 否 |
+| **D2-S3** | 全current domain structural / same-record validation（envelope、4096、subtype body local、duplicate/order接続）。**step 5 same-record/local: witness header+chunk framing/matrix のscan到達**（D1 pure witness codecに依存。member old/new・partial group・successor chainはD3）。**D1-B3k..B3o（`0x50`/`0x51`/`0x52`/`0x61`/`0x63`）は§8.6 docs-only Normative freeze済みだが implementation pendingの間、S3 completionはblock**（§8.6.1） | 否 |
 | **D2-S4** | same-snapshot exact `get`とfixed-memory cross-reference seam（全ID集合非保持） | 否 |
 | **D2-S5** | S1〜S4および依存（不足D1 body含む）と必須vector/oracleが揃ったうえでの`DSR1_SCAN` / `DSR2_ESP_BOUND` complete。restart先頭、**D2-detectable** corrupt>future、D3 corruption投入用のexact seam/mechanism、rollback failure/fence、workspace天井、allocation 0。partial group/orphan/counter/capacity/health自体は証明しない | **S1〜S5完了の総称としてだけD2（bounded scanner）を証明。Stage 5全体は証明しない** |
 | **D2-S6** | Stage 5 orchestration hookup。scannerをcreate Stage 5へ接続。なおmutation 0（recovery mutation本体はD4） | D2を統合するだけで、S5未完了をD2完了に置換せず、D3/D4未完了をStage 5完了に置換しない |
 
-**「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S2/S3/S4が未完了のまま、またはD1 bodies `0x50`/`0x51`/`0x52`/`0x61`/`0x63`が欠けS3がblockされているまま、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vectorもD2完了宣言に使ってはなりません。
+**「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S2/S3/S4が未完了のまま、またはD1-B3k..B3o（`0x50`/`0x51`/`0x52`/`0x61`/`0x63`）がdocs-only freezeのみでimplementation欠けS3がblockされているまま（§8.6.1）、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vector、docs-only body freezeもD2完了宣言に使ってはなりません。
 
 D3（cross-row semantic / cardinality / capacity / health / **witness member old/new・partial group・successor chain**）とD4（operation別mutation / convergence / FULL writer）は本ledgerの外です。§15 steps 1〜11の最終Stage 5 closed orderと§1 publish gateはD1+D2+D3+D4 compositionのRuntime objectiveのままです。
 
@@ -1656,7 +1797,7 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 | D2-S0 | vector/oracle追加なし。本ledgerと§15 contractだけ | spec freeze ≠ implementation |
 | D2-S1 | `DSR1_SCAN` transport subset + `DSR2_ESP_BOUND` skeleton の**ownership**。独立machine-readable oracle artifactを **`spec/vectors/domain-scan-v1.json`**、format **`ninlil-domain-scan-v1-d2s1`** として固定（schemaは§17.1.1）。**S2以降も本artifactはbyte-for-byte frozen regression**。D1 JSONへscanner fieldを追加しない | S1 ownershipのみ。**DSR1/DSR2 completeおよびD2 completeをclaimしない** |
 | D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator reconciliation。sibling oracle **`spec/vectors/domain-scan-profile-v1.json`**、format **`ninlil-domain-scan-profile-v1-d2s2`**（§17.1.2）+ independent generator + production profiled-begin bridge + unit acceptance。**実装済み（D2 incomplete）** | domain structural全体はS3。**DSR1/DSR2/D2 completeをclaimしない** |
-| D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）依存D1 body hexは当該subtype D1 deliverableが正本 | **0x50/51/52/61/63 D1 body未完了ならS3 completion block** |
+| D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）依存D1 body hexは当該subtype D1 deliverableが正本。future formats `ninlil-domain-store-v1-d1b3k`..`d1b3o`は§8.6.1で予約（artifact未存在） | **D1-B3k..B3o docs-frozen / implementation pendingの間 S3 completion block**（§8.6.1） |
 | D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference（`DSI1_BACKLINK`のscan接続部など） | 全ID集合RAM保持テストを合法化しない |
 | D2-S5 | `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。かつS1〜S4 ownership vectorと依存D1 bodyが揃っていること | **S1〜S5+depsが揃って初めてD2（bounded scanner）証明。Stage 5証明ではない。S2/S3/S4または5 D1 body欠落のままS5 complete禁止** |
 | D2-S6 | 新規D2 oracleを必須化しない。Stage 5 orchestration integration testはD2完了の代替にもStage 5完了の代替にもならない | S5未完了のままS6 successでD2 claim禁止 |
