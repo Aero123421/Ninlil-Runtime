@@ -8,7 +8,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 
 ## 現在の状態
 
-**Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer model、PR3a/b/c/dのcanonical TEST fixture、Runtime Lifecycle L1のpure modelまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
+**Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer model、PR3a/b/c/dのcanonical TEST fixture、Runtime Lifecycle L1、Runtime Store v1のportable codecまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
 
 実装済みの範囲:
 
@@ -17,12 +17,13 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - public output初期化/nullability、small/future `struct_size`、unsupported値分類に使うinternal pure C11 helper
 - scheduler candidate、deadline projection、Required Receipt、resource ledger/batch、Submission preflight/admissionのpure C11 model
 - Runtime config/Platform検証、11種capacity導出、Storage/Bearer/Clock/entropy分類、Stage 9 health gateのpure C11 Lifecycle model
+- Runtime Store v1の17 bootstrap key、typed big-endian record、CRC32C、境界/破損検査を行うportable C11 codec
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
 - 2 endpoint間のtyped message deep-copy、有限FIFO、receive loan、Virtual TxPermitを扱うsimulated Bearer / Tx Gate fixture
 - stateless synthetic grant、deny precedence、TEST-only composition guardを扱うOrigin Authorization fixture
-- 現在の開発branchで47件のCTestが成功することを、通常buildとASan/UBSan buildで検査
+- 現在の開発branchで48件のCTestが成功することを、通常buildとASan/UBSan buildで検査
 
 未実装または未統合の範囲:
 
@@ -107,7 +108,7 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは47件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは48件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
 
 ## Portabilityとversioning
 

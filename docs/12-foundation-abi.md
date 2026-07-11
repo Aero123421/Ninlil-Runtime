@@ -1221,6 +1221,49 @@ Forward rotation後は新規admission/inbound bindingだけがnew current snapsh
 
 空namespaceの初回createはprofile binding、capacity metadata初期値、`transaction_sequence=0`、`last_assigned_ordered_input_sequence=0`、`last_assigned_scheduler_owner_sequence=0`、`last_visited_scheduler_owner_sequence=0`を1つの`FULL` transactionへcommitします。Commit unknownは`NINLIL_E_STORAGE_COMMIT_UNKNOWN`としてnamespaceをfenceし、次createのjournal recoveryで「全て存在」または「全て不在」へ収束させます。Reopenは4 counter/cursorをexact loadし、部分欠損、owner/indexより小さいassigned値、0 owner、MAX wrap痕跡をstorage corruptionとします。Existing profile recordが上表とexact matchなら再利用し、1 fieldでも違えば`NINLIL_E_UNSUPPORTED`でrecord/capacity/recovery stateを変更せずBearerをopenしません。Unknown future binding field/versionもsilent ignoreせず`NINLIL_E_UNSUPPORTED`です。
 
+### 6.2 Private Runtime Store v1
+
+Runtime Storeはpublic ABIを増やさないCore-private形式です。Key/valueはC struct memory、padding、pointer、host endianへ依存せず、全integerをunsigned big-endianでencodeします。Private key rootはexact 8 bytes `4e 49 4e 4c 49 4c 00 01`（ASCII `NINLIL`、zero、keyspace version 1）です。
+
+L2a private codec APIのinput/output object・byte rangeはexact/partialを問わず相互にoverlapしてはなりません。Overlapまたはrange終端のaddress加算overflowは`NINLIL_E_INVALID_ARGUMENT`で、いずれのrangeも変更しません。Generic envelope decodeのpayload viewはencoded inputをborrowし、そのinputの生存期間を越えて保持しません。
+
+| Record | Exact key bytes | Value type |
+| --- | --- | ---: |
+| profile binding | `4e494e4c494c0001 01` | 1 |
+| current identity | `4e494e4c494c0001 02` | 2 |
+| counter/cursor | `4e494e4c494c0001 03 kk`、`kk=01..04` | 3 |
+| capacity metadata | `4e494e4c494c0001 04 kk`、`kk=01..0b` | 4 |
+
+Counter kindは1=`transaction_sequence`、2=`last_assigned_ordered_input_sequence`、3=`last_assigned_scheduler_owner_sequence`、4=`last_visited_scheduler_owner_sequence`です。Capacity kindはpublic resource kind 1..11とexact一致します。Family 5はexplicit durable namespace health marker、family 6はoperation-specific journal/fence用に予約しますが、L2a bootstrapはどちらも生成しません。Family 5/6のpayloadと上位transaction/Delivery/cycle recordとの相互validationは未確定であり、この予約だけでhealth recoveryまたは汎用COMMIT_UNKNOWN recoveryを完成扱いしません。
+
+全valueは次のclosed envelopeです。
+
+```text
+magic          4 bytes exact 4e 4c 52 31  # ASCII NLR1
+record_type    u16 big-endian
+record_version u16 big-endian, exact 1
+payload_length u32 big-endian
+payload        exact payload_length bytes
+checksum       u32 big-endian CRC32C
+```
+
+Total lengthはexact `12 + payload_length + 4`で、trailing byteを許しません。CRC32CはCastagnoli reflected polynomial `0x82f63b78`、initial/final XOR `0xffffffff`で、checksum fieldを除くenvelope先頭からpayload末尾までを入力にします。ASCII `123456789`のgolden checksumは`0xe3069283`です。Key familyと`record_type`は一致必須です。Current keyspaceでmagic/type/length/checksum、boolean、reserved invariantが不正なら`NINLIL_E_STORAGE_CORRUPT`、current exact keyのunknown `record_version`は`NINLIL_E_UNSUPPORTED`です。Checksumはsecurity/authenticationではなくportable corruption detectionであり、Storage Portのdurability/integrity契約を置き換えません。
+
+Payloadは次のfieldだけをexact order/widthで持ちます。
+
+- Type 1 profile binding、payload 167 bytes: `binding_format:u32=1`、`profile_name_length:u16=25`、exact 25-byte ASCII `NINLIL-FOUNDATION-SMALL-1`、`storage_schema:u32`、`role:u32`、`environment:u32`、`runtime_id[16]`、resource limit 19 scalarをABI宣言順かつABIのunsigned width（`max_durable_outbox_payload_bytes`と`max_event_spool_bytes`だけu64、他はu32）、terminal/result-cache/observation retentionを各u64でencodeします。Value totalは183 bytesです。ABI header、reserved field、namespace、paddingは保存しません。
+- Type 2 current identity、payload 68 bytes: `flags:u32`、device/installation/site IDを各16 bytes、`binding_epoch:u64`、`membership_epoch:u64`です。Value totalは84 bytesです。Known flagだけ、presenceとzero/non-zero ID/epochの3.1規則を要求します。
+- Type 3 counter/cursor、payload 16 bytes: `counter_kind:u32`、`value:u64`、`exhausted_marker:u32`です。Value totalは32 bytesです。Kindはkey suffixと一致し、markerはexact 0/1、kind 4では0必須です。Kind 1..3のmarker 1はvalue `UINT64_MAX`を要求しますが、value MAXだけでmarker 1を推測しません。Initial value/markerは全kind 0です。Live owner/indexとの大小、orphan、wrap痕跡の相互validationはL2b domain recovery scanで行い、codec単体の成功条件へ偽装しません。
+- Type 4 capacity metadata、payload 52 bytes: `resource_kind:u32`、`limit:u64`、`used:u64`、`reserved:u64`、`high_water:u64`、`capacity_epoch:u64`、`blocked:u32`、`counter_exhausted:u32`です。Value totalは68 bytesです。Kindはkey suffix、limitはprofileからのchecked derivationとexact一致し、booleanはexact 0/1、epochはnon-zero、checked `used + reserved <= high_water <= limit`です。`counter_exhausted=1`はepoch MAXかつblocked 0を要求しますが、epoch MAXだけでmarkerを推測しません。Initialは11 kindすべてused/reserved/high-water 0、epoch 1、blocked/exhausted 0で、role非使用kindもrecordを省略しません。
+
+Initial bootstrap groupはprofile 1、identity 1、counter 4、capacity 11のexact 17 recordsです。上記codecではStorage portable usageがexact 17 entries / 1,583 logical bytes（`16 + key_length + value_length`）です。17 recordsをkey unsigned-byte lexicographic順にstageし、`runtime.before_namespace_binding_commit`後に1回だけ`commit(FULL)`します。Commit OK後だけ`runtime.after_namespace_binding_commit`へ到達します。Initial identityはこのHC13 groupに含め、identity-rotation hook occurrenceは0です。
+
+同一read snapshotで17/17 presentはexisting、0/17かつnamespace全体にkey 0件だけをnew、1..16/17は`NINLIL_E_STORAGE_CORRUPT`と分類します。0/17でもcurrent keyspaceの別keyまたはunrecognized private dataがあればemptyとみなさずcorrupt、recognizable future keyspace/profile versionは`NINLIL_E_UNSUPPORTED`です。Envelope integrityと17-record completenessをprofile compatibilityより先に検査します。Profile exact mismatchは`NINLIL_E_UNSUPPORTED`、write/recovery mutation/Bearer open 0です。
+
+Initial commitが`COMMIT_UNKNOWN`ならsame transactionをretryせずStorageをclose/fenceし、`NINLIL_E_STORAGE_COMMIT_UNKNOWN`を返します。次createは同一snapshotの17/17をcommitted truth、0/17かつemptyをnon-committed truthとしてauthoritativeに扱い、partialをcorruptにします。Current identity rotationはsingle Type 2 replacementなので、unknown後のold/new exact valueがauthoritative truthです。これはbootstrap/identityだけのclosed recoveryであり、family 6を使うmulti-record business operationのoperation ID、witness、retention、all-present/all-absent read setは別途固定するまで未完了です。
+
+L2aはkey builder、envelope/profile/identity/counter/capacity codec、CRC、17-record presence classification、profile compare、identity forward-rotation判定だけを行うpure modelで、Storage Port callとRuntime bodyを持ちません。L2bはStorage open、single-snapshot load、FULL bootstrap、Stage 5 journal/domain recovery、counter/capacity相互validation、durable health-source scan、identity rotation、cleanup/status mappingを担当します。Clock durable baseline record/sourceはこのkeyspaceへ追加せず、CR8の別未決事項のままです。
+
 ## 7. Service Descriptorとcallback
 
 ### 7.1 Descriptor
