@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..g.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..h.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -26,6 +26,8 @@ extern "C" {
  *   D1-B3f: family 6 33 CANCEL_STATE pure body + same-record matrix
  *   D1-B3g: family 6 32 EVIDENCE_CELL pure body + same-record matrix
  *          (not D2/D3/D4; live L/cardinality/primary PVD/target match are D3)
+ *   D1-B3h: family 6 40 DELIVERY pure body + same-record matrix
+ *          (RESULT_CACHE 0x41 is next slice; live secondaries are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -63,6 +65,11 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_TX_BYTES ((uint32_t)734u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_DELIVERY_BYTES ((uint32_t)798u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_MAX ((uint32_t)1024u)
+/* DELIVERY (0x40): 498 + SERVICE_IDENTITY; raw exact 80 → body 552..738. */
+#define NINLIL_MODEL_DOMAIN_BODY_DELIVERY_FIXED_WITH_RAW80 ((uint32_t)498u)
+#define NINLIL_MODEL_DOMAIN_BODY_DELIVERY_MIN ((uint32_t)552u)
+#define NINLIL_MODEL_DOMAIN_BODY_DELIVERY_MAX_CANONICAL ((uint32_t)738u)
+#define NINLIL_MODEL_DOMAIN_BODY_DELIVERY_MAX ((uint32_t)1024u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_SERVICE_SLOT_BYTES ((uint32_t)240u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
@@ -215,6 +222,10 @@ extern "C" {
 
 #define NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_UNUSED ((uint16_t)1u)
 #define NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_MATERIALIZED ((uint16_t)2u)
+
+/* DELIVERY creation_kind (docs17 §7.1 / §8.5). */
+#define NINLIL_MODEL_DOMAIN_DELIVERY_CREATION_APPLICATION_FIRST ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_DELIVERY_CREATION_CANCEL_FIRST ((uint16_t)2u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -689,6 +700,36 @@ typedef struct ninlil_model_domain_body_evidence_cell {
 } ninlil_model_domain_body_evidence_cell_t;
 
 /*
+ * DELIVERY (0x40). delivery_key_raw borrows encoded body on decode.
+ * source / local_target / service are value-owned.
+ * Same-record body/key/digest/family matrix (docs17 §8.5 D1-B3h).
+ * Live RESULT_CACHE / SCHEDULER / RESERVATION / ATTEMPT / EVIDENCE /
+ * CANCEL / BLOB / attach / public ABSENT are D3. RESULT_CACHE body is
+ * the next slice (not B3h).
+ */
+typedef struct ninlil_model_domain_body_delivery {
+    uint16_t delivery_key_raw_length;
+    const uint8_t *delivery_key_raw;
+    uint16_t creation_kind;
+    uint16_t reserved;
+    uint64_t scheduler_owner_sequence;
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    ninlil_model_domain_party_t source;
+    ninlil_model_domain_target_t local_target;
+    ninlil_model_domain_service_identity_t service;
+    uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t generation;
+    uint8_t deadline_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t absolute_effect_deadline_ms;
+    uint64_t evidence_grace_ms;
+    uint32_t required_evidence;
+    uint8_t payload_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t result_cache_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t reservation_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_delivery_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -791,6 +832,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_attempt_id_index_t attempt_id_index;
         ninlil_model_domain_body_cancel_state_t cancel_state;
         ninlil_model_domain_body_evidence_cell_t evidence_cell;
+        ninlil_model_domain_body_delivery_t delivery;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1183,6 +1225,25 @@ ninlil_status_t ninlil_model_domain_decode_body_evidence_cell(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_evidence_cell_t *out_body);
 
+/* --- DELIVERY (0x40) --- */
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_delivery_encoded_length(
+    const ninlil_model_domain_body_delivery_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_delivery(
+    const ninlil_model_domain_body_delivery_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows delivery_key_raw from encoded. Valid only while encoded lives.
+ * source / local_target / service are value-owned copies.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_delivery(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_delivery_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1228,7 +1289,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..g.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..h.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1262,7 +1323,17 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       evidence_cell_key_digest / EVIDENCE used/reserved accounting /
  *       admission journal headroom / CANCEL_FIRST EVIDENCE 0 / deadline
  *       proof / retention erase (B3g proves same-record body/key/matrix/
- *       digest recompute/counter/family-generation/primary binding only)
+ *       digest recompute/counter/family-generation/primary binding only);
+ *       DELIVERY live RESULT_CACHE exact 1 and delivery_state/token/reply /
+ *       SCHEDULER_OWNER / DELIVERY RESERVATION live cardinality /
+ *       APPLICATION/CANCEL ATTEMPT / EVIDENCE_CELL L+1 or CANCEL_FIRST 0 /
+ *       CANCEL_STATE / payload BLOB live / ORDERED_INGRESS erase and
+ *       admission witness / later APPLICATION attach / binding conflict /
+ *       public ABSENT projection / supported evidence mask / evidence grace
+ *       live SERVICE max / deadline proof / retention cleanup (B3h proves
+ *       same-record body/key/family matrix/payload presence/result and
+ *       reservation KEY_DIGEST/primary binding only; RESULT_CACHE body is
+ *       next slice)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and
