@@ -23,6 +23,8 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
 - Domain Store v1のfamily 5/6 catalog、4KiB record/3KiB chunk上限、最大256-member atomic witness、backlink/capacity/health/recovery順を固定したNormative D0仕様
 - Domain Store D1-Aのkey/envelope/digest/witness primitiveと、D1-B1のINTERNAL_INVARIANT / BEARER_STATE / CLOCK_BASELINE / ATTEMPT_REUSE_FENCE / WITNESS_HEAD_INDEX exact body codec・同一record検証・独立golden vector
+- Domain Store D1-B2 / D1-B3a..f body codec（SCHEDULER_OWNER / ORDERED_INGRESS / BLOB / ATTEMPT / ATTEMPT_ID_INDEX / CANCEL_STATE）。**D1-B3b controller-ingress retrofit implemented**（ORDERED_INGRESS `controller_ingress_*` 32-byte local durable-copy block; vector format `ninlil-domain-store-v1-d1b3f-r1`）
+- **B3g EVIDENCE_CELL**: Normative specification fixed; **production implementation pending**
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
@@ -36,7 +38,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
 - restart-safe SQLite portとproduction durable storage
 - Runtime Storeのdomain journal recovery、counter/capacity相互検証、identity rotationとpublic Runtime bodyへの統合
-- Domain Store D1の残りsemantic body catalog / canonical member-set builder、D2 bounded scanner、D3相互validation、D4 operation別commit-unknown convergence
+- Domain Store D1-B3g EVIDENCE_CELL production body codec、残りsemantic body catalog / canonical member-set builder、D2 bounded scanner、D3相互validation、D4 operation別commit-unknown convergence
 - end-to-endのReliable Command / Durable Event path
 - ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
 - Display node / Leak nodeを使う実機end-to-end検証

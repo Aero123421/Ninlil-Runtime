@@ -2438,15 +2438,23 @@ def build_document():
         pre += be32(len(payload)) + payload + be32(len(evidence)) + evidence
         return sha256(pre)
 
+    # Default controller durable-copy sample for RECEIPT positives (docs17 §8.3).
+    CTRL_EP = bytes([0xA1] + [0] * 14 + [0xC1])
+    CTRL_EP2 = bytes([0xA2] + [0] * 14 + [0xC2])
+
     def enc_ingress_body(
         ordered_seq=1, owner_seq=1, binding=3, kind=1, flags=0,
         txn=None, attempt=None, event=None, src=None, tgt=None, svc=None,
         content=None, generation=1, dl_ep=None, abs_dl=5000, grace=100,
         req_ev=3, receipt=0, disp=0, cert=0, guidance=0, cancel_kind=0,
         retry_delay=0, ev_ep=None, ev_now=0, ev_trust=0, reserved1=0,
+        ctrl_ep=None, ctrl_at=0, ctrl_trust=0, ctrl_reserved=0,
         semantic=None, payload_blob=None, evidence_blob=None,
         ingress_state=1, res_kd=None, payload=b"", evidence=b"",
+        include_controller=True,
     ):
+        """ORDERED_INGRESS body. include_controller=False emits pre-r1 wire
+        (legacy underlength / migration negative evidence only)."""
         txn = txn if txn is not None else bytes([0x71] + [0] * 14 + [0x01])
         attempt = attempt if attempt is not None else bytes([0x72] + [0] * 14 + [0x02])
         event = event if event is not None else bytes(16)
@@ -2458,7 +2466,16 @@ def build_document():
         ev_ep = ev_ep if ev_ep is not None else bytes(16)
         payload_blob = payload_blob if payload_blob is not None else bytes(32)
         evidence_blob = evidence_blob if evidence_blob is not None else bytes(32)
+        # Controller defaults: RECEIPT → nonzero sample; non-RECEIPT → all-zero.
+        if ctrl_ep is None:
+            if kind == 2:
+                ctrl_ep = CTRL_EP
+                if ctrl_trust == 0:
+                    ctrl_trust = 1  # TRUSTED
+            else:
+                ctrl_ep = bytes(16)
         if semantic is None:
+            # Preimage excludes controller_* (docs17 §5.1 / §8.3).
             semantic = message_semantic_digest(
                 kind, flags, txn, attempt, event, src, tgt, svc, content,
                 generation, dl_ep, abs_dl, grace, req_ev, receipt, disp, cert,
@@ -2467,14 +2484,21 @@ def build_document():
             )
         if res_kd is None:
             res_kd = ingress_res_kd(ordered_seq)
-        return (
+        head = (
             be64(ordered_seq) + be64(owner_seq) + be16(binding) + be16(0)
             + be32(kind) + be32(flags) + txn + attempt + event
             + src + tgt + svc + content + be64(generation) + dl_ep
             + be64(abs_dl) + be64(grace) + be32(req_ev) + be32(receipt)
             + be32(disp) + be32(cert) + be32(guidance) + be32(cancel_kind)
             + be64(retry_delay) + ev_ep + be64(ev_now) + be32(ev_trust)
-            + be32(reserved1) + semantic + payload_blob + evidence_blob
+            + be32(reserved1)
+        )
+        if include_controller:
+            head += (
+                ctrl_ep + be64(ctrl_at) + be32(ctrl_trust) + be32(ctrl_reserved)
+            )
+        return (
+            head + semantic + payload_blob + evidence_blob
             + be32(ingress_state) + res_kd
         )
 
@@ -2688,6 +2712,13 @@ def build_document():
     # helper: body_hex = ORDERED_INGRESS body supplying prefix fields;
     # subject_hex = payload bytes; retention_hex = evidence bytes (optional).
     # payload_length in prefix is taken from subject length (not body blob).
+    #
+    # B3b wire fixture note (DSB3_MSD_*): op is message_semantic_digest, but
+    # body_hex is a full ORDERED_INGRESS body used only as prefix source. r1
+    # inserts the controller_ingress 32-byte block into that body_hex, so the
+    # four MSD vectors change object bytes under the B3b wire migration.
+    # The digest_hex / streamed semantic digest itself is unchanged (preimage
+    # excludes controller_*).
     sem_app = message_semantic_digest(
         1, 0, txn1, att1, bytes(16), PARTY, TARGET, SVC_DS, EMPTY_SHA,
         1, F["epoch"], 5000, 50, 3, 0, 0, 0, 0, 0, 0, bytes(16), 0, 0,
@@ -2946,14 +2977,339 @@ def build_document():
         notes="evidence length 129 > 128")
     i_neg += 1
 
+    # --- D1-B3b controller-ingress retrofit (docs17 §8.3) ---
+    # New B3b wire fixtures only (appended after the pre-r1 DSB3_ING_/MSD_ set).
+    # Non-B3b-wire vectors stay byte-stable (NON_B3B_WIRE_FINGERPRINT).
+    body_rcpt_ctrl_t = enc_ingress_body(
+        ordered_seq=200, owner_seq=1, binding=1, kind=2, generation=1,
+        abs_dl=7000, grace=0, req_ev=3, receipt=3, ev_ep=ev_clock,
+        ev_now=0, ev_trust=1, ctrl_ep=CTRL_EP, ctrl_at=0, ctrl_trust=1,
+    )
+    add(id="DSB3_ING_RECEIPT_CTRL_TRUSTED", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_rcpt_ctrl_t), body_hex=hx(body_rcpt_ctrl_t),
+        notes="controller TRUSTED, at_ms=0 valid; semantic excludes controller")
+    i_pos += 1; i_rt += 1
+    body_rcpt_ctrl_u = enc_ingress_body(
+        ordered_seq=201, owner_seq=1, binding=1, kind=2, generation=1,
+        abs_dl=7000, grace=0, req_ev=3, receipt=2, ev_ep=ev_clock,
+        ev_now=50, ev_trust=2, ctrl_ep=CTRL_EP2, ctrl_at=99, ctrl_trust=2,
+    )
+    add(id="DSB3_ING_RECEIPT_CTRL_UNCERTAIN", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_rcpt_ctrl_u), body_hex=hx(body_rcpt_ctrl_u),
+        notes="controller UNCERTAIN + nonzero at_ms")
+    i_pos += 1; i_rt += 1
+    # Same semantic digest with different controller samples (independence).
+    body_rcpt_a = enc_ingress_body(
+        ordered_seq=202, owner_seq=1, binding=1, kind=2, generation=1,
+        abs_dl=7000, grace=0, req_ev=3, receipt=3, ev_ep=ev_clock,
+        ev_now=0, ev_trust=1, ctrl_ep=CTRL_EP, ctrl_at=1, ctrl_trust=1,
+    )
+    body_rcpt_b = enc_ingress_body(
+        ordered_seq=202, owner_seq=1, binding=1, kind=2, generation=1,
+        abs_dl=7000, grace=0, req_ev=3, receipt=3, ev_ep=ev_clock,
+        ev_now=0, ev_trust=1, ctrl_ep=CTRL_EP2, ctrl_at=999, ctrl_trust=2,
+    )
+    # semantic field is identical by construction (same preimage args).
+    # Tail: semantic[32] + payload_blob[32] + evidence_blob[32] + state[4] + res_kd[32]
+    # => semantic at body[-132:-100].
+    sem_a = message_semantic_digest(
+        2, 0, txn1, att1, bytes(16), PARTY, TARGET, SVC_DS, F["content"],
+        1, F["epoch"], 7000, 0, 3, 3, 0, 0, 0, 0, 0, ev_clock, 0, 1,
+    )
+    assert body_rcpt_a != body_rcpt_b
+    assert body_rcpt_a[-132:-100] == body_rcpt_b[-132:-100] == sem_a
+    add(id="DSB3_ING_CTRL_SEMANTIC_INDEP_A", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_rcpt_a), body_hex=hx(body_rcpt_a),
+        digest_hex=hx(sem_a),
+        notes="controller sample A; message_semantic_digest independent of controller")
+    i_pos += 1; i_rt += 1
+    add(id="DSB3_ING_CTRL_SEMANTIC_INDEP_B", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_rcpt_b), body_hex=hx(body_rcpt_b),
+        digest_hex=hx(sem_a),
+        notes="controller sample B differs; semantic digest exact same as A")
+    i_pos += 1; i_rt += 1
+    # non-RECEIPT must keep controller block all-zero (positive APP already does)
+    add(id="DSB3_ING_APP_CTRL_ZERO", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x27,
+        body_length=len(body_app_ds), body_hex=hx(body_app_ds),
+        notes="non-RECEIPT controller block all-zero")
+    i_pos += 1; i_rt += 1
+
+    # controller negatives
+    add(id="DSB3_ING_CTRL_ON_APP", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            content=EMPTY_SHA, kind=1, ctrl_ep=CTRL_EP, ctrl_trust=1)))
+    i_neg += 1
+    add(id="DSB3_ING_CTRL_ON_DISP", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=3, generation=1, abs_dl=1000, disp=1, cert=1, guidance=1,
+            retry_delay=0, ctrl_ep=CTRL_EP, ctrl_trust=1)))
+    i_neg += 1
+    add(id="DSB3_ING_CTRL_EPOCH0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=ev_clock,
+            ev_trust=1, ctrl_ep=bytes(16), ctrl_trust=1)))
+    i_neg += 1
+    add(id="DSB3_ING_CTRL_TRUST0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=ev_clock,
+            ev_trust=1, ctrl_ep=CTRL_EP, ctrl_trust=0)))
+    i_neg += 1
+    add(id="DSB3_ING_CTRL_TRUST3", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=ev_clock,
+            ev_trust=1, ctrl_ep=CTRL_EP, ctrl_trust=3)))
+    i_neg += 1
+    add(id="DSB3_ING_CTRL_HALF", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=ev_clock,
+            ev_trust=1, ctrl_ep=bytes(16), ctrl_at=5, ctrl_trust=1)),
+        notes="half shape: zero epoch with nonzero trust/at")
+    i_neg += 1
+    add(id="DSB3_ING_CTRL_RESERVED_NZ", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(enc_ingress_body(
+            kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=ev_clock,
+            ev_trust=1, ctrl_ep=CTRL_EP, ctrl_trust=1, ctrl_reserved=1)))
+    i_neg += 1
+    # pre-r1 wire (no controller block) = underlength / corrupt for r1 decoder
+    legacy = enc_ingress_body(
+        content=EMPTY_SHA, include_controller=False)
+    add(id="DSB3_ING_LEGACY_UNDERLENGTH", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(legacy),
+        notes="pre-r1 ORDERED_INGRESS wire missing controller 32-byte block")
+    i_neg += 1
+    legacy_rcpt = enc_ingress_body(
+        kind=2, generation=1, abs_dl=1000, receipt=2, ev_ep=ev_clock,
+        ev_trust=1, include_controller=False)
+    add(id="DSB3_ING_LEGACY_RECEIPT_UNDERLENGTH", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x27,
+        body_hex=hx(legacy_rcpt),
+        notes="legacy RECEIPT positive under r1 is corrupt underlength")
+    i_neg += 1
+
     b3_cov["27"] = add_body_suite(
         "ORDERED_INGRESS", 6, 0x27, i_pos, i_neg, i_mut, i_rt)
     assert b3_cov["27"]["positive"] >= 20
     assert b3_cov["27"]["negative"] >= 25
     assert b3_cov["27"]["roundtrip"] >= 6
 
+    # ------------------------------------------------------------------
+    # B3b wire fixture migration guards (DSB3_ING_ + DSB3_MSD_ only).
+    # "B3b wire fixture" = any catalog object whose body_hex (or typed value
+    # body) is an ORDERED_INGRESS wire image, including MSD ops that only
+    # borrow that body as a prefix source. Not "all of suite DSB3".
+    # ------------------------------------------------------------------
+    def is_b3b_wire_fixture(v):
+        return v["id"].startswith("DSB3_ING_") or v["id"].startswith("DSB3_MSD_")
+
+    def b3b_wire_id_order_hash(ids):
+        return hashlib.sha256(
+            json.dumps(list(ids), separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
+    def b3b_wire_object_fingerprint(objs):
+        return hashlib.sha256(
+            json.dumps(list(objs), sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+
+    # HEAD pre-r1 (format d1b3f, 884 vectors): the 87 B3b wire fixtures.
+    B3B_WIRE_PRE_R1_COUNT = 87
+    B3B_WIRE_PRE_R1_ID_ORDER_HASH = (
+        "ba731ccfe4a5a8376ef15e3f5453aeed14c3c54f02524c8085486534eb004382"
+    )
+    B3B_WIRE_PRE_R1_OBJECT_FINGERPRINT = (
+        "1a73495e38d0691d5bb8d777ab2c05a1861e3aa53004f7b028c1b376e533db78"
+    )
+    # Historical: documents HEAD pre-r1 object bytes (not recomputed at r1).
+    assert B3B_WIRE_PRE_R1_COUNT == 87
+    assert len(B3B_WIRE_PRE_R1_OBJECT_FINGERPRINT) == 64
+
+    # Exact pre-r1 / existing-r1 ID sequence (missing/add/reorder fail).
+    B3B_WIRE_EXISTING_ID_SEQUENCE = (
+        "DSB3_ING_APP_DS_EMPTY",
+        "DSB3_ING_APP_DS_TYPED",
+        "DSB3_ING_APP_EF_EMPTY",
+        "DSB3_ING_APP_EF_TYPED",
+        "DSB3_ING_APP_PAYLOAD_BLOB_NZ",
+        "DSB3_ING_APP_PAYLOAD_BLOB_TYPED",
+        "DSB3_ING_RECEIPT_NOW0",
+        "DSB3_ING_RECEIPT_TYPED",
+        "DSB3_ING_RECEIPT_EVIDENCE_BLOB_NZ",
+        "DSB3_ING_DISP_RETRY_LATER_0",
+        "DSB3_ING_DISP_RETRY_LATER_0_TYPED",
+        "DSB3_ING_DISP_RETRY_LATER_MAX",
+        "DSB3_ING_DISP_RETRY_LATER_MAX_TYPED",
+        "DSB3_ING_DISP_INVALID_PAYLOAD",
+        "DSB3_ING_DISP_INVALID_PAYLOAD_TYPED",
+        "DSB3_ING_DISP_UNSUPPORTED_SCHEMA",
+        "DSB3_ING_DISP_UNSUPPORTED_SCHEMA_TYPED",
+        "DSB3_ING_DISP_UNAUTHORIZED",
+        "DSB3_ING_DISP_UNAUTHORIZED_TYPED",
+        "DSB3_ING_DISP_STALE",
+        "DSB3_ING_DISP_STALE_TYPED",
+        "DSB3_ING_DISP_BUSY_0",
+        "DSB3_ING_DISP_BUSY_0_TYPED",
+        "DSB3_ING_DISP_BUSY_MAX",
+        "DSB3_ING_DISP_BUSY_MAX_TYPED",
+        "DSB3_ING_DISP_APPLY_NO_EFFECT",
+        "DSB3_ING_DISP_APPLY_NO_EFFECT_TYPED",
+        "DSB3_ING_DISP_APPLY_POSSIBLE",
+        "DSB3_ING_DISP_APPLY_POSSIBLE_TYPED",
+        "DSB3_ING_DISP_VERIFY_FAILED",
+        "DSB3_ING_DISP_VERIFY_FAILED_TYPED",
+        "DSB3_ING_DISP_CAPACITY",
+        "DSB3_ING_DISP_CAPACITY_TYPED",
+        "DSB3_ING_DISP_OUTCOME_UNKNOWN",
+        "DSB3_ING_DISP_OUTCOME_UNKNOWN_TYPED",
+        "DSB3_ING_CANCEL_REQ",
+        "DSB3_ING_CANCEL_REQ_TYPED",
+        "DSB3_ING_CUSTODY",
+        "DSB3_ING_CUSTODY_TYPED",
+        "DSB3_ING_CANCEL_RES_FENCED",
+        "DSB3_ING_CANCEL_RES_FENCED_TYPED",
+        "DSB3_ING_CANCEL_RES_TOO_LATE",
+        "DSB3_ING_CANCEL_RES_TOO_LATE_TYPED",
+        "DSB3_ING_MAX_TEXT_ID",
+        "DSB3_ING_MAX_TEXT_ID_TYPED",
+        "DSB3_ING_BINDING_EXISTING_DELIVERY",
+        "DSB3_MSD_ONESHOT_EMPTY",
+        "DSB3_MSD_STREAM_NONEMPTY",
+        "DSB3_MSD_EVIDENCE_MAX",
+        "DSB3_ING_SEQ0",
+        "DSB3_ING_OWNER_SEQ0",
+        "DSB3_ING_BAD_BINDING_APP_TX",
+        "DSB3_ING_BAD_BINDING_RCPT_NEW",
+        "DSB3_ING_KIND0",
+        "DSB3_ING_KIND7",
+        "DSB3_ING_FLAGS_NZ",
+        "DSB3_ING_TXN_ZERO",
+        "DSB3_ING_ATTEMPT_ZERO",
+        "DSB3_ING_CONTENT_ZERO",
+        "DSB3_ING_REQ_EV_NONE",
+        "DSB3_ING_CANCEL_ON_EF",
+        "DSB3_ING_EF_FINITE_DEADLINE",
+        "DSB3_ING_DS_NO_DEADLINE",
+        "DSB3_ING_APP_EMPTY_BAD_CONTENT",
+        "DSB3_ING_DISP_DELAY_OVER",
+        "DSB3_ING_DISP_BAD_TUPLE",
+        "DSB3_ING_RECEIPT_STAGE0",
+        "DSB3_ING_RECEIPT_EPOCH0",
+        "DSB3_ING_PAYLOAD_BLOB_ON_RCPT",
+        "DSB3_ING_EVIDENCE_BLOB_ON_APP",
+        "DSB3_ING_BLOB_NZ_SEMANTIC_ZERO",
+        "DSB3_ING_BAD_RES_KD",
+        "DSB3_ING_BAD_SEMANTIC",
+        "DSB3_ING_SHORT",
+        "DSB3_ING_TRAILING",
+        "DSB3_ING_BUFFER_TOO_SMALL",
+        "DSB3_ING_SEQ_MISMATCH",
+        "DSB3_ING_BAD_PRIMARY",
+        "DSB3_ING_REV_NE1",
+        "DSB3_ING_ZERO_HEAD",
+        "DSB3_ING_NZ_PVD",
+        "DSB3_ING_HEADER_FLAGS",
+        "DSB3_ING_STATE_NE1",
+        "DSB3_ING_RESERVED1",
+        "DSB3_ING_CANCEL_RES_KIND2",
+        "DSB3_ING_BAD_PARTY",
+        "DSB3_MSD_EVIDENCE_OVERMAX",
+    )
+    assert len(B3B_WIRE_EXISTING_ID_SEQUENCE) == B3B_WIRE_PRE_R1_COUNT
+    assert (
+        b3b_wire_id_order_hash(B3B_WIRE_EXISTING_ID_SEQUENCE)
+        == B3B_WIRE_PRE_R1_ID_ORDER_HASH
+    )
+
+    # r1 regenerated objects for the same 87 IDs (controller block in body_hex).
+    B3B_WIRE_EXISTING_R1_COUNT = 87
+    B3B_WIRE_EXISTING_R1_ID_ORDER_HASH = B3B_WIRE_PRE_R1_ID_ORDER_HASH
+    B3B_WIRE_EXISTING_R1_OBJECT_FINGERPRINT = (
+        "2e16f761ba92e458abd2a37e9119d8d0b8cb7388626f4da04c959efdbe69d9a7"
+    )
+
+    # Exact new r1-only B3b wire fixtures (append-only after existing 87).
+    B3B_WIRE_NEW_R1_ID_SEQUENCE = (
+        "DSB3_ING_RECEIPT_CTRL_TRUSTED",
+        "DSB3_ING_RECEIPT_CTRL_UNCERTAIN",
+        "DSB3_ING_CTRL_SEMANTIC_INDEP_A",
+        "DSB3_ING_CTRL_SEMANTIC_INDEP_B",
+        "DSB3_ING_APP_CTRL_ZERO",
+        "DSB3_ING_CTRL_ON_APP",
+        "DSB3_ING_CTRL_ON_DISP",
+        "DSB3_ING_CTRL_EPOCH0",
+        "DSB3_ING_CTRL_TRUST0",
+        "DSB3_ING_CTRL_TRUST3",
+        "DSB3_ING_CTRL_HALF",
+        "DSB3_ING_CTRL_RESERVED_NZ",
+        "DSB3_ING_LEGACY_UNDERLENGTH",
+        "DSB3_ING_LEGACY_RECEIPT_UNDERLENGTH",
+    )
+    B3B_WIRE_NEW_R1_COUNT = 14
+    B3B_WIRE_NEW_R1_ID_ORDER_HASH = (
+        "9c8ea2989024a11ca9ff5d15002c6826f8760a4695e0dad6d37dd8bbb927433b"
+    )
+    B3B_WIRE_NEW_R1_OBJECT_FINGERPRINT = (
+        "6bd9d94d52e4d845d794b42f799c60d58718f75e1a5fe80ccc530d0f1e759952"
+    )
+    assert len(B3B_WIRE_NEW_R1_ID_SEQUENCE) == B3B_WIRE_NEW_R1_COUNT
+    assert (
+        b3b_wire_id_order_hash(B3B_WIRE_NEW_R1_ID_SEQUENCE)
+        == B3B_WIRE_NEW_R1_ID_ORDER_HASH
+    )
+
+    # Assert against current catalog slice (existing 87 then new 14, no reorder).
+    _b3b_wire_now = [v for v in vectors if is_b3b_wire_fixture(v)]
+    _b3b_ids_now = [v["id"] for v in _b3b_wire_now]
+    assert len(_b3b_wire_now) == (
+        B3B_WIRE_EXISTING_R1_COUNT + B3B_WIRE_NEW_R1_COUNT
+    ), f"B3b wire fixture count drift: {len(_b3b_wire_now)}"
+    _existing_now = _b3b_wire_now[:B3B_WIRE_EXISTING_R1_COUNT]
+    _new_now = _b3b_wire_now[B3B_WIRE_EXISTING_R1_COUNT:]
+    _existing_ids_now = [v["id"] for v in _existing_now]
+    _new_ids_now = [v["id"] for v in _new_now]
+    assert tuple(_existing_ids_now) == B3B_WIRE_EXISTING_ID_SEQUENCE, (
+        "B3b wire existing ID missing/add/reorder"
+    )
+    assert (
+        b3b_wire_id_order_hash(_existing_ids_now)
+        == B3B_WIRE_EXISTING_R1_ID_ORDER_HASH
+    )
+    assert len(_existing_now) == B3B_WIRE_EXISTING_R1_COUNT
+    assert (
+        b3b_wire_object_fingerprint(_existing_now)
+        == B3B_WIRE_EXISTING_R1_OBJECT_FINGERPRINT
+    ), "B3b wire existing r1 object fingerprint drift"
+    assert tuple(_new_ids_now) == B3B_WIRE_NEW_R1_ID_SEQUENCE, (
+        "B3b wire new ID missing/add/rename/reorder"
+    )
+    assert b3b_wire_id_order_hash(_new_ids_now) == B3B_WIRE_NEW_R1_ID_ORDER_HASH
+    assert len(_new_now) == B3B_WIRE_NEW_R1_COUNT
+    assert (
+        b3b_wire_object_fingerprint(_new_now)
+        == B3B_WIRE_NEW_R1_OBJECT_FINGERPRINT
+    ), "B3b wire new r1 object fingerprint drift"
+    # No stray B3b wire IDs outside the fixed sequences.
+    assert set(_b3b_ids_now) == set(B3B_WIRE_EXISTING_ID_SEQUENCE) | set(
+        B3B_WIRE_NEW_R1_ID_SEQUENCE
+    )
+
     # --- D1-B3c: BLOB (0x30) manifest + chunk pure body codec ---
-    # Append-only after the 617 D1-B3b vectors; do not mutate prior objects.
+    # After D1-B3b controller-ingress retrofit; non-B3b-wire vectors keep
+    # pre-r1 bytes via NON_B3B_WIRE fingerprint gate.
     b_pos = b_neg = b_mut = b_rt = 0
     EMPTY_SHA = sha256(b"")
     CHUNK_MAX = 3072
@@ -3506,25 +3862,31 @@ def build_document():
     assert b3_cov["30"]["roundtrip"] >= 8
 
     # =====================================================================
-    # D1-B3d ATTEMPT (0x31) — append-only after first 696 (pre-B3d) objects
+    # D1-B3d ATTEMPT (0x31) — after BLOB; B3b r1 migration may grow the
+    # pre-B3d vector count (ORDERED_INGRESS controller retrofit).
     # =====================================================================
-    # Durable exact-bytes gate for the pre-B3d catalog (not mere id-prefix).
-    # Canonical form: json.dumps(vectors[:696], sort_keys=True,
-    # separators=(",", ":")).encode("utf-8") then SHA-256 hex.
-    PRE_B3D_VECTORS_FINGERPRINT = (
-        "d1636a7db92e0fd31ee914e897420d37dd429b346f1ea38aca139056d7385267"
+    # Durable gate: non-B3b-wire fixtures only (DSB3_ING_/DSB3_MSD_ excluded).
+    # B3b wire migration intentionally changes those objects; do not claim
+    # old full-prefix fingerprints that included pre-r1 ING/MSD bytes.
+    def non_b3b_wire_fingerprint(vec_list):
+        durable = [v for v in vec_list if not is_b3b_wire_fixture(v)]
+        return hashlib.sha256(
+            json.dumps(durable, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+
+    # Pre-r1 non-B3b-wire objects in the pre-B3d prefix (BLOB end inclusive).
+    PRE_B3D_NON_B3B_WIRE_FINGERPRINT = (
+        "721ee13410be427aee1c4616db61fe60fa8e61a03faa403c167c04b8b1182a78"
     )
-    assert len(vectors) == 696, f"pre-B3d length {len(vectors)} != 696"
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_BLOB_CHK_BLOB_ID_ZERO"
-    _pre_b3d_fp = hashlib.sha256(
-        json.dumps(vectors, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-    assert _pre_b3d_fp == PRE_B3D_VECTORS_FINGERPRINT, (
-        f"pre-B3d fingerprint drift: got {_pre_b3d_fp}"
+    _pre_b3d_fp = non_b3b_wire_fingerprint(vectors)
+    assert _pre_b3d_fp == PRE_B3D_NON_B3B_WIRE_FINGERPRINT, (
+        f"pre-B3d non-B3b-wire fingerprint drift: got {_pre_b3d_fp}"
     )
+    PRE_B3D_VECTOR_COUNT = len(vectors)
 
     # Private ATTEMPT enums (distinct from reservation/scheduler/BLOB/reply).
     ATT_TX = 1
@@ -4123,25 +4485,18 @@ def build_document():
     assert b3_cov["31"]["roundtrip"] >= 8
 
     # =====================================================================
-    # D1-B3e ATTEMPT_ID_INDEX (0x34) — append-only after first 777 (pre-B3e)
+    # D1-B3e ATTEMPT_ID_INDEX (0x34) — after ATTEMPT (B3b r1 may shift count)
     # =====================================================================
-    # Durable exact-bytes gate for the pre-B3e catalog (not mere id-prefix).
-    # Canonical form: json.dumps(vectors[:777], sort_keys=True,
-    # separators=(",", ":")).encode("utf-8") then SHA-256 hex.
-    PRE_B3E_VECTORS_FINGERPRINT = (
-        "8f367eb7bf88220cf72bdfbe7fecced031db06d7226cf1926a56afeabd79b2dd"
+    PRE_B3E_NON_B3B_WIRE_FINGERPRINT = (
+        "47756913b78663abef3f213878d04bb12dc2b1e01ba24748394a8f81d646cfa0"
     )
-    assert len(vectors) == 777, f"pre-B3e length {len(vectors)} != 777"
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_ATT_REV0"
-    _pre_b3e_fp = hashlib.sha256(
-        json.dumps(vectors, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-    assert _pre_b3e_fp == PRE_B3E_VECTORS_FINGERPRINT, (
-        f"pre-B3e fingerprint drift: got {_pre_b3e_fp}"
+    _pre_b3e_fp = non_b3b_wire_fingerprint(vectors)
+    assert _pre_b3e_fp == PRE_B3E_NON_B3B_WIRE_FINGERPRINT, (
+        f"pre-B3e non-B3b-wire fingerprint drift: got {_pre_b3e_fp}"
     )
+    PRE_B3E_VECTOR_COUNT = len(vectors)
 
     # Distinct attempt IDs for COMMAND / EVENT / CANCEL positives.
     aii_id_cmd = bytes([0xA1 + i for i in range(16)])
@@ -4420,25 +4775,18 @@ def build_document():
     assert b3_cov["34"]["roundtrip"] >= 3
 
     # =====================================================================
-    # D1-B3f CANCEL_STATE (0x33) — append-only after first 809 (pre-B3f)
+    # D1-B3f CANCEL_STATE (0x33) — after AII (B3b r1 may shift count)
     # =====================================================================
-    # Durable exact-bytes gate for the pre-B3f catalog (not mere id-prefix).
-    # Canonical form: json.dumps(vectors[:809], sort_keys=True,
-    # separators=(",", ":")).encode("utf-8") then SHA-256 hex.
-    PRE_B3F_VECTORS_FINGERPRINT = (
-        "eb43b2501f9ed7ae0a2a94cf64950c74478346658360d901c30518593b29d1e2"
+    PRE_B3F_NON_B3B_WIRE_FINGERPRINT = (
+        "85e98216752899b82ed869e2fa3deecaebc3933816752e7717ac3ca2d29efd76"
     )
-    assert len(vectors) == 809, f"pre-B3f length {len(vectors)} != 809"
     assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
     assert vectors[-1]["id"] == "DSB3_AII_REV2"
-    _pre_b3f_fp = hashlib.sha256(
-        json.dumps(vectors, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-    assert _pre_b3f_fp == PRE_B3F_VECTORS_FINGERPRINT, (
-        f"pre-B3f fingerprint drift: got {_pre_b3f_fp}"
+    _pre_b3f_fp = non_b3b_wire_fingerprint(vectors)
+    assert _pre_b3f_fp == PRE_B3F_NON_B3B_WIRE_FINGERPRINT, (
+        f"pre-B3f non-B3b-wire fingerprint drift: got {_pre_b3f_fp}"
     )
+    PRE_B3F_VECTOR_COUNT = len(vectors)
 
     # Private CANCEL_STATE enums / public bijection constants.
     CS_TX = 1
@@ -5153,37 +5501,44 @@ def build_document():
     assert catalog["dsb3_subtype_33_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
-    # First 809 vector objects must remain the pre-B3f catalog (append-only).
-    # Exact gate is PRE_B3F_VECTORS_FINGERPRINT (canonical SHA-256); id-prefix
-    # is only a secondary structural check, not an exact-bytes claim.
-    assert len(vectors) > 809
-    assert all(not v["id"].startswith("DSB3_CS_") for v in vectors[:809])
-    _pre_b3f_fp_final = hashlib.sha256(
-        json.dumps(vectors[:809], sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-    assert _pre_b3f_fp_final == PRE_B3F_VECTORS_FINGERPRINT, (
-        f"post-append pre-B3f fingerprint drift: got {_pre_b3f_fp_final}"
+    # B3b r1 wire migration: do not claim old full-prefix fingerprints.
+    # Durable gate = non-B3b-wire fixtures only (884-87=797 objects, byte-for-byte).
+    NON_B3B_WIRE_COUNT = 797
+    NON_B3B_WIRE_FINGERPRINT = (
+        "1d0906c4c531df409110b9bfb7ce11d23909109ad7c1a9d0230af570a0609816"
     )
-    # Nested pre-B3e / pre-B3d durable gates.
-    assert all(not v["id"].startswith("DSB3_AII_") for v in vectors[:777])
-    _pre_b3e_fp_final = hashlib.sha256(
-        json.dumps(vectors[:777], sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-    assert _pre_b3e_fp_final == PRE_B3E_VECTORS_FINGERPRINT, (
-        f"post-append pre-B3e fingerprint drift: got {_pre_b3e_fp_final}"
+    _non_b3b_wire = [v for v in vectors if not is_b3b_wire_fixture(v)]
+    assert len(_non_b3b_wire) == NON_B3B_WIRE_COUNT, (
+        f"non-B3b-wire count drift: {len(_non_b3b_wire)}"
     )
-    assert all(not v["id"].startswith("DSB3_ATT_") for v in vectors[:696])
-    _pre_b3d_fp_final = hashlib.sha256(
-        json.dumps(vectors[:696], sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
-    ).hexdigest()
-    assert _pre_b3d_fp_final == PRE_B3D_VECTORS_FINGERPRINT, (
-        f"post-append pre-B3d fingerprint drift: got {_pre_b3d_fp_final}"
+    _non_b3b_final = non_b3b_wire_fingerprint(vectors)
+    assert _non_b3b_final == NON_B3B_WIRE_FINGERPRINT, (
+        f"non-B3b-wire fingerprint drift: got {_non_b3b_final}"
+    )
+    # Structural: CS/AII/ATT only after their pre-slice (counts may grow with B3b).
+    assert all(
+        not v["id"].startswith("DSB3_CS_")
+        for v in vectors[:PRE_B3F_VECTOR_COUNT]
+    )
+    assert all(
+        not v["id"].startswith("DSB3_AII_")
+        for v in vectors[:PRE_B3E_VECTOR_COUNT]
+    )
+    assert all(
+        not v["id"].startswith("DSB3_ATT_")
+        for v in vectors[:PRE_B3D_VECTOR_COUNT]
+    )
+    _pre_b3f_fp_final = non_b3b_wire_fingerprint(vectors[:PRE_B3F_VECTOR_COUNT])
+    assert _pre_b3f_fp_final == PRE_B3F_NON_B3B_WIRE_FINGERPRINT, (
+        f"post-append pre-B3f non-B3b-wire fingerprint drift: got {_pre_b3f_fp_final}"
+    )
+    _pre_b3e_fp_final = non_b3b_wire_fingerprint(vectors[:PRE_B3E_VECTOR_COUNT])
+    assert _pre_b3e_fp_final == PRE_B3E_NON_B3B_WIRE_FINGERPRINT, (
+        f"post-append pre-B3e non-B3b-wire fingerprint drift: got {_pre_b3e_fp_final}"
+    )
+    _pre_b3d_fp_final = non_b3b_wire_fingerprint(vectors[:PRE_B3D_VECTOR_COUNT])
+    assert _pre_b3d_fp_final == PRE_B3D_NON_B3B_WIRE_FINGERPRINT, (
+        f"post-append pre-B3d non-B3b-wire fingerprint drift: got {_pre_b3d_fp_final}"
     )
 
     for v in vectors:
@@ -5191,15 +5546,15 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3f",
+        "format": "ninlil-domain-store-v1-d1b3f-r1",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
-            "(10/11/20-25 service+txn admission) + D1-B3a body "
-            "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
-            "message_semantic_digest helper + D1-B3c body (30 BLOB "
+            "(10/11/20-25) + D1-B3a body "
+            "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS controller_ingress "
+            "r1) + message_semantic_digest helper + D1-B3c body (30 BLOB "
             "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "
             "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE); "
-            "not full D1 catalog"
+            "B3g pending; not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "

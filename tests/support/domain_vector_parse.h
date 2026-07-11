@@ -239,15 +239,15 @@ enum {
     (NINLIL_DV_TOP_VERSION | NINLIL_DV_TOP_FORMAT | NINLIL_DV_TOP_SCOPE         \
         | NINLIL_DV_TOP_WS_DEF | NINLIL_DV_TOP_CATALOG | NINLIL_DV_TOP_VECTORS)
 
-#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3f"
+#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3f-r1"
 #define NINLIL_DV_SCOPE_REQUIRED                                               \
     "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "              \
-    "(10/11/20-25 service+txn admission) + D1-B3a body "                        \
-    "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "                \
-    "message_semantic_digest helper + D1-B3c body (30 BLOB "                    \
+    "(10/11/20-25) + D1-B3a body "                                              \
+    "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS controller_ingress " \
+    "r1) + message_semantic_digest helper + D1-B3c body (30 BLOB "              \
     "manifest/chunk) + D1-B3d body (31 ATTEMPT) + D1-B3e body "               \
     "(34 ATTEMPT_ID_INDEX) + D1-B3f body (33 CANCEL_STATE); "                  \
-    "not full D1 catalog"
+    "B3g pending; not full D1 catalog"
 
 typedef struct ninlil_dv_file {
     uint32_t version;

@@ -19,11 +19,12 @@ extern "C" {
  *          (SERVICE, SERVICE_QUOTA, TRANSACTION_*, RESERVATION, maps)
  *   D1-B3a: family 6 26 SCHEDULER_OWNER only
  *   D1-B3b: family 6 27 ORDERED_INGRESS + pure message_semantic_digest helper
+ *          (+ controller_ingress_* durable-copy block retrofit)
  *   D1-B3c: family 6 30 BLOB manifest (flags=1) + chunk (flags=2) pure body
  *   D1-B3d: family 6 31 ATTEMPT pure body + same-record matrix validation
  *   D1-B3e: family 6 34 ATTEMPT_ID_INDEX pure body + same-record binding
  *   D1-B3f: family 6 33 CANCEL_STATE pure body + same-record matrix
- *          (not D2/D3/D4; not other B3g+ subtypes)
+ *          (not D2/D3/D4; not B3g EVIDENCE_CELL production)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -464,6 +465,11 @@ typedef struct ninlil_model_domain_body_scheduler_owner {
  * when both BLOB key digests are zero (empty payload/evidence streams).
  * Non-zero BLOB digests: D1 proves digest non-zero + kind presence only;
  * BLOB key material and stream recompute are D3 (do not guess keys here).
+ *
+ * D1-B3b controller-ingress retrofit (docs17 §8.3): after issuer evidence
+ * trust and reserved1, body carries exact 32-byte local durable-copy
+ * controller_ingress_* block before message_semantic_digest. That block is
+ * NOT part of the Bearer message_semantic_digest preimage.
  */
 typedef struct ninlil_model_domain_body_ordered_ingress {
     uint64_t ordered_sequence;
@@ -494,6 +500,10 @@ typedef struct ninlil_model_domain_body_ordered_ingress {
     uint64_t evidence_now_ms;
     uint32_t evidence_trust;
     uint32_t reserved1;
+    uint8_t controller_ingress_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t controller_ingress_at_ms;
+    uint32_t controller_ingress_trust;
+    uint32_t controller_ingress_reserved;
     uint8_t message_semantic_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
     uint8_t payload_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
     uint8_t evidence_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];

@@ -2829,6 +2829,82 @@ static int test_body_alias_and_overflow(const char *vector_path)
 }
 
 /*
+ * D1-B3b controller-ingress retrofit: two RECEIPT bodies that differ only in
+ * controller_ingress_* must share the same message_semantic_digest (preimage
+ * excludes the controller block). Also reject pre-r1 underlength wire.
+ */
+static int test_ordered_ingress_controller_contracts(const char *path)
+{
+    ninlil_dv_file_t file;
+    char err[256];
+    size_t i;
+    uint8_t body_a[2048];
+    uint8_t body_b[2048];
+    uint8_t body_legacy[2048];
+    size_t na = 0u;
+    size_t nb = 0u;
+    size_t nl = 0u;
+    ninlil_model_domain_body_ordered_ingress_t ing_a;
+    ninlil_model_domain_body_ordered_ingress_t ing_b;
+    ninlil_model_domain_body_ordered_ingress_t ing_fail;
+    int found_a = 0;
+    int found_b = 0;
+    int found_legacy = 0;
+
+    REQUIRE(path != NULL);
+    REQUIRE(ninlil_dv_load_file(path, &file, err, sizeof(err)) == 0);
+    for (i = 0u; i < file.vector_count; ++i) {
+        const ninlil_dv_vector_t *v = &file.vectors[i];
+        if (strcmp(v->id, "DSB3_ING_CTRL_SEMANTIC_INDEP_A") == 0) {
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_a, sizeof(body_a),
+                        &na)
+                == 0);
+            found_a = 1;
+        } else if (strcmp(v->id, "DSB3_ING_CTRL_SEMANTIC_INDEP_B") == 0) {
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_b, sizeof(body_b),
+                        &nb)
+                == 0);
+            found_b = 1;
+        } else if (strcmp(v->id, "DSB3_ING_LEGACY_UNDERLENGTH") == 0) {
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body_legacy,
+                        sizeof(body_legacy), &nl)
+                == 0);
+            found_legacy = 1;
+        }
+    }
+    REQUIRE(found_a != 0);
+    REQUIRE(found_b != 0);
+    REQUIRE(found_legacy != 0);
+    REQUIRE(na != nb || memcmp(body_a, body_b, na) != 0);
+    REQUIRE(ninlil_model_domain_decode_body_ordered_ingress(
+            (ninlil_bytes_view_t){body_a, (uint32_t)na}, &ing_a)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_domain_decode_body_ordered_ingress(
+            (ninlil_bytes_view_t){body_b, (uint32_t)nb}, &ing_b)
+        == NINLIL_OK);
+    REQUIRE(memcmp(ing_a.message_semantic_digest, ing_b.message_semantic_digest,
+                32u)
+        == 0);
+    REQUIRE(memcmp(ing_a.controller_ingress_clock_epoch,
+                ing_b.controller_ingress_clock_epoch, 16u)
+        != 0
+        || ing_a.controller_ingress_at_ms != ing_b.controller_ingress_at_ms
+        || ing_a.controller_ingress_trust != ing_b.controller_ingress_trust);
+    REQUIRE(ing_a.controller_ingress_reserved == 0u);
+    REQUIRE(ing_b.controller_ingress_reserved == 0u);
+    REQUIRE(!zeros(ing_a.controller_ingress_clock_epoch, 16u));
+    REQUIRE(!zeros(ing_b.controller_ingress_clock_epoch, 16u));
+    (void)memset(&ing_fail, 0x5A, sizeof(ing_fail));
+    REQUIRE(ninlil_model_domain_decode_body_ordered_ingress(
+            (ninlil_bytes_view_t){body_legacy, (uint32_t)nl}, &ing_fail)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(zeros(&ing_fail, sizeof(ing_fail)));
+    ninlil_dv_free(&file);
+    (void)fprintf(stdout, "ordered_ingress controller contracts ok\n");
+    return 0;
+}
+
+/*
  * D1-B3b message_semantic_digest API contract: address-first alias gates,
  * counter underflow resistance, wrong-phase FAILED policy, oracle match.
  */
@@ -3643,12 +3719,12 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3f\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3f-r1\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
-            "\"format\": \"ninlil-domain-store-v1-d1bXX\"",
-            strlen("\"format\": \"ninlil-domain-store-v1-d1bXX\""));
+            "\"format\": \"ninlil-domain-store-v1-d1b3f-XX\"",
+            strlen("\"format\": \"ninlil-domain-store-v1-d1b3f-XX\""));
         REQUIRE(ninlil_dv_parse_text(mut, strlen(mut), &file, err, sizeof(err))
             != 0);
         ninlil_dv_free(&file);
@@ -4547,6 +4623,7 @@ int main(int argc, char **argv)
         || test_head_encoded_length_matrix() != 0
         || test_invalid_encode_structs() != 0
         || test_body_alias_and_overflow(path) != 0
+        || test_ordered_ingress_controller_contracts(path) != 0
         || test_message_semantic_digest_contracts(path) != 0
         || test_blob_helper_contracts(path) != 0
         || test_attempt_contracts(path) != 0
