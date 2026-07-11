@@ -1089,11 +1089,13 @@ COMMIT_FENCE_DIGEST = SHA-256(
 
 Scanは1 READ_ONLY snapshotに0-byte prefix iteratorを開き、Storage namespace全体をunsigned-byte lexicographic順で行います。Current rootだけのprefix scanは禁止です。
 
+次の1〜11は**最終Stage 5 recoveryのclosed order**です。D2 bounded scannerはこれに沿って走査・seam・status集約を**供給/接続**しますが、**各stepの事実をすべてD2単独で証明するわけではない**。本節の最終Runtime objectiveは縮小しません。D2-S0はscanner contractをNormative固定するだけで、D2実装完了・Stage 5完了・public Runtime publishを主張しません。
+
 1. provider schema/open fencing完了
 2. family 1〜4 completeness/CRC/current version
 3. profile exact compare。Mismatchなら`UNSUPPORTED`でdomain decode/mutation 0
 4. exact profileだけfamily 5/6全key、envelope、4096-byte上限、duplicate/order検査
-5. witness header/chunk/member old/new検査
+5. witness header/chunk/member old/new検査（所有は下表。D1 pure codec / D2-S3 same-record local / D3 cross-row に分割し、step 5をownerlessにしない）
 6. primary/index/backlink/blob参照検査
 7. 4 counter upper bound/unique/orphan検査
 8. service quota、ingress/owner、attempt/delivery/result/event ledger検査
@@ -1101,40 +1103,401 @@ Scanは1 READ_ONLY snapshotに0-byte prefix iteratorを開き、Storage namespac
 10. durable health source再構成
 11. iterator close→READ_ONLY rollback OK後だけresult採用
 
-必要なrecovery mutationはsnapshot終了後、1 item / 1 specific FULL transactionで行い、fresh READ_ONLY scanを先頭から再実行します。Durable scan cursorは作りません。Crash/reopenは常に先頭からです。Identity比較/rotationは最終scan成功後だけです。
+**所有分割（D2-S0）:**
 
-Cross-referenceは同じsnapshotのexact `get`を使います。全ID集合をRAMへ保持しません。Private scannerはcaller-owned 255-byte key + 4096-byte value workspaceと`begin/advance(row_budget)/finalize/abort`状態機械にし、関数stackにrecord bufferを置きません。Recognizable futureの唯一のpredicateはsection 5のkey length/prefix/versionとcomplete NLR1 length/CRC条件で、本節の実装はそれを再定義・緩和しません。Predicate外のcurrent root外rowはcorruptです。Futureを読むための65,536-byte allocationは行いません。
+| Owner | 担当 |
+| --- | --- |
+| **D1** | Port call 0のpure key/record/**witness** codecとgolden。witness header/chunk/memberのbyte layout・local encode/decode正本 |
+| **D2** | mutation 0 bounded traversal、Port/shape/transport、lex order、framing/coarse classification、scanner-detectable status集約、same-snapshot exact `get` seam、adopt/finalize/fence。steps 2〜4のscanner到達可能な部分、**step 5のうち same-record/local witness header+chunk framing/matrix のscan到達（D2-S3）**、step 11のtxn/iterator lifetime |
+| **D3** | cross-row semantic / partial group / orphan / cardinality / counter / capacity / health の相互validation。**step 5のうち witness member old/new・partial witness group・successor/supersede chain および他cross-row witness validation**。そのfindingを§16 precedenceへ投入 |
+| **D4** | recovery mutation / convergence / FULL writer。snapshot終了後の1 item mutationとfresh re-scan接続 |
+
+必要なrecovery mutationはsnapshot終了後、1 item / 1 specific FULL transactionで行い、fresh READ_ONLY scanを先頭から再実行します（D4）。Durable scan cursorは作りません。Crash/reopenは常に先頭からです。Identity比較/rotationは最終scan成功後だけです。
+
+Cross-referenceは同じsnapshotのexact `get`を使います（D2-S4 seam）。全ID集合をRAMへ保持しません。Private scannerはcaller-owned 255-byte key + 4096-byte value workspaceと`begin/advance(row_budget)/finalize/abort`状態機械にし、関数stackにrecord bufferを置きません。Recognizable futureの唯一のpredicateはsection 5のkey length/prefix/versionとcomplete NLR1 length/CRC条件で、本節およびD2各sliceはそれを再定義・緩和しません。Predicate外のcurrent root外rowはcorruptです。Futureを読むための65,536-byte allocationは行いません。
+
+**D2 completion ≠ Stage 5 completion。** S1〜S5完了はmutation 0 bounded scannerの完成だけを意味し、public Runtime publish gate・§1条件・step 5 cross-row witnessおよびsteps 6〜10のcross-row/health証明はD3/D4および残gateが揃うまでfalseのままです（step 5 local framingはD2-S3到達分まで）。
+
+### 15.1 D2-S0 placementと所有境界
+
+**D2-S0**（本freezeのdecision identifier）: private Domain Store bounded scannerのNormative contract。実装・vector・generated oracleの追加は後続sliceです。
+
+Private scannerは概念上`src/runtime`に置きます。Port-owning state machineであり、pure model codecでもpublic C ABIでもありません。Public header / export symbol / new public status / public workspace typeを追加しません。
+
+Callerは次を所有し、scannerへ渡します。
+
+1. すでに`open`成功済みのcaller-owned Storage handle slot: 12章の`ninlil_storage_handle_t`を保持するcaller変数へのpointer、すなわち`ninlil_storage_handle_t *inout_handle`。`*inout_handle`はnon-NULLのlive handle。新typeや`ninlil_storage_t`は導入しない
+2. prevalidated Storage Port ops tableへのexact pointer `const ninlil_storage_ops_t *storage`（required entryは少なくとも`begin` / `get` / `iter_open` / `iter_next` / `iter_close` / `rollback`、およびfence時の`close`。D2本体は`READ_WRITE` / `put` / `erase` / `commit`を呼び出さない。S1が`get`を使わない場合でもops表に`get` non-NULLを要求してよく、S2のsame-txn exact getのため）
+3. Runtime arena上のcaller-owned scanner workspace（§15.5）
+4. private scanner session/control object（状態機械本体。public type名は持たない）
+
+Scannerは成功した`begin`から`finalize`または`abort`完了まで、そのsnapshotのREAD_ONLY transactionを所有します。zero-prefix iteratorは`iter_open`成功からcloseまで所有します（S2は`iter_open`前にsame-txn exact getを挟んでよい。§15.10）。Fenceが必要になった時点でStorage handleを`close`し、`*inout_handle = NULL`にします。Callerはfenced handleを再利用せず、reopen後に新しいhandleを渡します。
+
+### 15.2 状態機械（D2-S0）
+
+状態はexactに次のclosed setです。
+
+| State | 意味 |
+| --- | --- |
+| `IDLE` | 資源0。唯一の`begin`合法起点。**明示初期化済みのfresh sessionだけ**がこの状態を持つ |
+| `OPEN` | READ_ONLY txn live、かつzero-prefix iterator live。`advance`可能。**non-terminal candidate flagがあっても`OPEN`のまま** |
+| `EXHAUSTED` | 終端`NOT_FOUND`（両length 0）到達。iterator/txnはまだlive。candidate flagは保持してよい |
+| `FAILED` | **terminal primary failure**後、**live資源が残る間だけ**のpoison状態。`advance`不可 |
+| `DONE` | 当該sessionの終端。cleanup完了（live Port資源0）。result採用の有無は§15.6。**`begin`再入不可** |
+
+#### 観察の二分類（D2-S0 closed）
+
+Scan observationは次の2集合だけに属する。混同禁止。
+
+| Class | 含むもの | 状態への影響 | scan停止 |
+| --- | --- | --- | --- |
+| **Terminal primary failure** | Port/status-shape unsafe error、lex duplicate/out-of-order、`BUFFER_TOO_SMALL`/domain-bound（255/4096）corruption、および **exact-profile pathがactiveなときの** D2-detectable current corruption（S3 structuralを含むscanner到達分） | live資源が残る間`FAILED`へ遷移しsticky primaryを記録。cleanup failureで上書きしない | **停止**: 以降`advance`禁止。後続rowを読んでstatusを書き換えない |
+| **Non-terminal candidate** | `recognizable_future_seen`、`profile_mismatch` / `future_profile_candidate` | **`FAILED`へは遷移しない**。状態は`OPEN`/`EXHAUSTED`のまま。aggregate flagとしてsessionに保持 | **停止しない**。走査・lex・transport検査は継続 |
+
+規則:
+
+1. Non-terminal candidateは**primary failureではない**。したがって「sticky primaryを後続rowで上書きしない」規則の対象外である。
+2. **後続のterminal corruptionはnon-terminal candidateをreplace/overrideしてよい**（corrupt > future、family1-4 corruption > profile unsupported）。これはsticky-primary禁止の例外ではなく、candidateがprimaryではないことの帰結である。
+3. Terminal primaryが一度立った後は、candidate flagの有無にかかわらずscan停止・`FAILED`（またはcleanup後`DONE`）であり、後続rowでprimaryを書き換えない。
+4. Cleanup failureはterminal sticky primaryを上書きしない（§15.6）。
+
+#### `finalize`集約順序（closed）
+
+`finalize`が返すoutcome（cleanup後）はexactに次順:
+
+1. terminal sticky primaryがある → そのprimary（通常`NINLIL_E_STORAGE_CORRUPT`または14章closed mappingのPort failure）
+2. なければ `profile_mismatch` / `future_profile_candidate` → `NINLIL_E_UNSUPPORTED`（domain decode/mutation 0）
+3. なければ `recognizable_future_seen`のみ → `NINLIL_E_UNSUPPORTED`候補（Stage 5最終はS2+composition。S1単独は最終証明をclaimしない）
+4. どれもなければ success/adopt path（`EXHAUSTED`かつrollback OK shape等。§15.6）
+
+#### 遷移規則
+
+1. `begin`は`IDLE`だけ合法。成功で`OPEN`（S1はtxn+iterator確立後。S2 compositionは§15.10のpre-`iter_open` get後にiteratorを確立してから`OPEN`へ進む）
+2. `advance`は`OPEN`だけ合法。
+3. 終端条件を満たす`advance`は`EXHAUSTED`へ進む（§15.3）。candidate flagは保持する。
+4. **Terminal primary failure**だけが、live資源が残る間`FAILED`へsticky遷移する。Non-terminal candidateでは`FAILED`へ遷移しない。
+5. `finalize`は`EXHAUSTED`または`FAILED`で合法。
+6. `abort`は`OPEN` / `EXHAUSTED` / `FAILED`で合法。
+7. 第二回cleanup（既に`DONE`）および上記以外のillegal callは`NINLIL_E_INVALID_STATE`、**Port call 0**、状態/workspace/outputs不変。`IDLE`への`finalize`/`abort`もillegal（資源0でcleanup不要）。
+8. **`DONE`は当該scanner session/control objectの終端である。`DONE → IDLE`の暗黙遷移も、同一session objectへの`begin`再呼出も禁止。** 再scanするcallerは、prior sessionが`DONE`（または未使用）でlive Port資源0であることを確認したうえで、**新しいsession/control objectを明示初期化して`IDLE`にする**。将来private init APIがworkspace byte領域の再利用を許す場合でも、それは明示初期化であり、`DONE` sessionのreuseではない。途中状態（`OPEN` / `EXHAUSTED` / `FAILED`）からのsession再利用は禁止。
+9. **`FAILED`はlive資源が残る間だけ存在する。** cleanup tree（§15.6）でchildrenをconsumeし終わったfailureは`DONE`（unadopted）へ進む。fully cleaned failureを`FAILED`に残してはならない。
+
+### 15.3 `begin` / `advance` / `row_budget` / `iter_next`（D2-S0）
+
+#### begin
+
+`begin`は次を**output mutationおよびPort callの前**に検証します。違反は`NINLIL_E_INVALID_ARGUMENT`（またはpointer shapeが12章のPort contractに該当するなら同章のclosed mapping）、**Port call 0**、状態`IDLE`維持、workspace/outputs不変です。
+
+1. scanner session/control object / workspace / required ops table / `inout_handle`がnon-NULL
+2. `*inout_handle`がnon-NULL（already-open `ninlil_storage_handle_t`）
+3. required ops function pointerがすべてnon-NULL
+4. workspaceのkey/value/previous-key rangesがnon-NULL、capacity exact、相互およびscanner/result objectとaliasしない（§15.7）
+5. 状態が`IDLE`（`DONE`を含む非`IDLE`は`NINLIL_E_INVALID_STATE`）
+
+検証成功後だけ、Storage Portの`begin`をexactに1回、mode `NINLIL_STORAGE_READ_ONLY`で呼び、成功shapeの`ninlil_storage_txn_t`を保持します。
+
+その後、**当該READ_ONLY transaction上でzero-prefix iteratorはlifetime中exact 1つ**だけ開きます。
+
+- **S1**: transaction確立後、追加`get`なしでexact 1回`iter_open`（prefix `{NULL, 0}`）し、成功shapeの`ninlil_storage_iter_t`を保持して`OPEN`へ進む
+- **S2以降**: `iter_open`の**前**に、同じtransactionでfamily 1〜4の17 exact keyへ`get`してよい（§15.10）。その後もzero-prefix `iter_open`はexact 1回だけ
+
+Handle/status shapeは12章Storage Port規則に従います。
+
+- call前にout handle（txn / iterator）をNULLにする
+- `OK`は対応handle non-NULL、non-OKはNULLが唯一のvalid shape
+- `OK + NULL`は`NINLIL_E_STORAGE_CORRUPT`
+- non-OK + non-NULLは§15.6 cleanup treeでlive childをexactly once consumeしたうえで`NINLIL_E_STORAGE_CORRUPT`（cleanup statusでprimaryを上書きしない）
+- unknown status / invalid output shapeでreuseが安全でない場合はchild consume後にStorageをfence（`close` + `*inout_handle = NULL`、`reopen_required`）。**fence/`close`はlive childrenをconsume済み（またはrollbackによる暗黙consume済み）と分かってからのみ**
+
+`begin`途中failureは§15.6 cleanup treeを使い、採用可能resultを公開しません。live資源が残る間だけ`FAILED`、**fully cleaned failureは`DONE`（unadopted）**です。`DONE`になったsessionへは`begin`し直せません。
+
+#### advanceとrow_budget
+
+- `row_budget = 0`は`NINLIL_E_INVALID_ARGUMENT`。状態は`OPEN`のまま、workspace/outputs不変、**Port call 0**。
+- 正の`row_budget`は**successful `OK` rowだけ**を数える。classification markや内部bookkeepingはbudgetを消費しない。
+- budget exhaustionは`NINLIL_OK`を返し状態は`OPEN`のまま。callerは同じsnapshotで再度`advance`できる。
+- `iter_next`が`NOT_FOUND`かつkey/value lengthが両方exact 0なら終端として`EXHAUSTED`へ遷移し、その`advance`は`NINLIL_OK`（0 OK rows可）。
+- `EXHAUSTED`後の`advance`は`NINLIL_E_INVALID_STATE`、Port call 0、状態/workspace/outputs不変。
+- 終端以外の`NOT_FOUND`（length shape不正）はcorruption。
+
+#### 各`iter_next`前のbuffer契約
+
+毎回`iter_next`を呼ぶ直前に、scannerはcaller-owned bufferを次へresetします。
+
+| Field | Exact value |
+| --- | ---: |
+| key.length | 0 |
+| value.length | 0 |
+| key.capacity | 255 |
+| value.capacity | 4096 |
+| key.data / value.data | workspace固定scratch（heap/VLAなし） |
+
+**Observable shape checks（scannerが必ず行い、違反をterminal corruptionとする）:**
+
+1. `NINLIL_STORAGE_BUFFER_TOO_SMALL`（BTS）: private D2の255/4096 workspaceでは常にterminal `NINLIL_E_STORAGE_CORRUPT`。required lengthを信頼してのreread、65,536-byte（または任意size）一時allocation、iterator advance仮定は行わない。**BTSは12章のvalid non-OK shapeであり、atomic pairは両方の`length`へrequired countを書く（oversized時は非0になり得る）。そのch12-validな非0 lengthを「第二のshape violation」として数えてはならない。** domain outcomeはstatus→`STORAGE_CORRUPT`のみ。
+2. **BTSを除く** non-OK statusでkey.lengthまたはvalue.lengthが非0はobservable corruption。終端`NOT_FOUND`およびother errorは12章どおり両length 0がvalid shape。generic「non-OKならlength==0」規則は**明示的にBTSを除外**する。
+3. `NOT_FOUND`で両lengthが0以外はcorruption（終端条件は両exact 0のみ）。
+4. `OK`でkey lengthが1..255外、value lengthが0..4096外、length>capacity、またはdata NULL（non-zero length時）はcorruption。
+5. unknown Storage statusは14章closed mappingを維持し、reuse unsafeなら§15.6 treeでchild consume後にfence。
+
+**Data-byte policyとprovider conformance（完璧検出を主張しない）:**
+
+1. non-OK（`BUFFER_TOO_SMALL`含む）ではkey/value **data bytesを採用しない**。classification、lex previous、result、coarse counterのいずれへも取り込まない。
+2. non-OK後のscratch data内容はunspecifiedとして無視する。scannerはfull shadow copyを持たないため、providerがcapacity内dataを部分書き換えしても**bytes mutationそのものを完全検出する義務も能力も持たない**。
+3. capacity内dataをnon-OKで書き換えるproviderは12/14章Port conformance違反である。D2のNormative義務は (a) observable length/status shapeの検査、(b) non-OK dataの非採用、(c) OK rowだけをlex/classificationへ投入、までに閉じる。
+4. `OK`のときだけlength範囲内dataを当該rowの内容として読んでよい。
+
+### 15.4 順序・terminal primary / candidate・S1分類分岐（D2-S0 freeze）
+
+#### 順序
+
+Iteratorが返す各OK keyはstrict unsigned-byte lexicographic増加で、duplicate 0です。比較状態はworkspaceの **explicit `has_previous` flag** とprevious-key scratch（最大255 bytes）だけです。全key集合を保持しません。**previous length 0をfirst-row sentinelに使ってはならない。**
+
+- session/`begin`成功時: `has_previous = 0`。previous lengthの値は比較に使わない
+- `has_previous == 0`の最初のOK row: 順序比較なしで受理し、keyをprevious scratchへcopy、previous lengthをkey lengthへ設定、`has_previous = 1`
+- `has_previous == 1`の以降のOK row: previous lengthとprevious bytesに対し`memcmp`共通prefix + length規則でstrict increaseを要求
+- equal（duplicate）またはdecrease（out-of-order）は即**terminal** `NINLIL_E_STORAGE_CORRUPT`（scan停止、`FAILED`）
+- non-OK / 終端rowはpreviousを更新しない
+- **Terminal primary**が立った時点でscan classificationを停止する。後続rowを読んでterminal primaryを上書きしない
+- **Non-terminal candidate**（`recognizable_future_seen` / profile candidate）では停止しない。後続のterminal corruptionはcandidateをoverrideしてよい（§15.2）
+- sticky **terminal** primaryはcleanup failureで上書きしない
+
+#### D2-S1 row classification分岐（実装はS1、分岐表はS0で固定）
+
+各OK rowのcoarse分類はexactに次のclosed branchだけです。S1はtransport / lexicographic order / 本coarse分類までを確立し、§16の**Stage 5 four-level precedence全体**を完成したとは主張しません。
+
+**D1 `ninlil_model_domain_classify_row`の実enum/semantics（唯一のrow-class helper。dual future predicate禁止）:**
+
+| Class | 意味（実装どおり） |
+| --- | --- |
+| `NINLIL_MODEL_DOMAIN_KEY_CLASS_CURRENT` | current-root key grammarが受理された。**valueはclassify_rowが検証しない**。envelope/CRC/body structuralは**S3**が担当 |
+| `NINLIL_MODEL_DOMAIN_KEY_CLASS_RECOGNIZABLE_FUTURE` | **非current-root**について、complete key length/prefix/version **かつ** complete NLR1 framing/CRC を満たすrowだけ |
+| `NINLIL_MODEL_DOMAIN_KEY_CLASS_MALFORMED` | 上記どちらでもない |
+
+「current valid / current malformed value」をclassify_rowの出力として述べてはならない。`CURRENT`はkey側受理のみである。
+
+各OK rowの分岐:
+
+1. **exact valid family 1〜4 Runtime Store key**（L2a/Runtime Store key grammar: current root `4e494e4c494c0001` + family `0x01`/`0x02` length 9、または family `0x03` suffix 1..4 / `0x04` suffix 1..11 length 10のcatalog一致）: family1-4 seenとしてcount/markする。value integrity / profile exact compareは**S2**へ延期（S2は§15.10のexact get pathでも検証する）。
+2. **それ以外のOK row**:
+   - **profile-mismatch mode**（§15.10）: domain body decodeも`classify_row`も行わない。non-family1-4 rowはprofile candidateをoverrideせずscan継続する（family1-4は分岐1および§15.10 prefix routingのみ）。
+   - **それ以外（S1既定およびexact-profile path active）**: D1 `ninlil_model_domain_classify_row`（Port call 0）を**exact 1回**呼ぶ（future predicateの再実装・緩和禁止）。
+     - `CURRENT` → current-key accepted。value未証明。exact-profile pathがactiveなら後続S3 structuralの対象
+     - `RECOGNIZABLE_FUTURE` → non-terminal `recognizable_future_seen` flagを立て、**scan継続**（`FAILED`にしない）
+     - `MALFORMED` → **terminal** D2-detectable corruption（key/class failure。value valid/invalidの主張ではない）
+
+追加closed規則:
+
+- current root上のunknown subtype / key grammar failureは**futureではない**（`MALFORMED`側。silent ignore禁止）。
+- `recognizable_future_seen`の後でも、後続の**terminal** D2-detectable corruptionがあればoutcomeはcorrupt（candidateはprimaryではないのでoverride可）。partial group / orphan / counter / capacity / health はD3 findingでありS1が証明しない。
+- future-only候補およびprofile gateの最終`UNSUPPORTED`合成はS2以降が接続する。S1単独の「futureを見た」はStage 5最終`UNSUPPORTED`証明ではない。
+
+### 15.5 Mutation 0とworkspace天井（D2-S0）
+
+D2全slice（S1〜S6）は次を必須とします。
+
+- Storage mutation 0: `READ_WRITE` / `put` / `erase` / `commit` call 0
+- heap allocation 0、VLA 0、recursion 0
+- 関数stack上のrecord buffer 0
+- 65,536-byte temporary value allocation 0
+- public ABI追加 0
+
+Caller-owned固定scratch（Runtime arena）:
+
+| Scratch / flag | Capacity / meaning |
+| --- | --- |
+| key | 255 bytes |
+| value | 4096 bytes |
+| previous key | 255 bytes |
+| `has_previous` | explicit 0/1 flag。first-row sentinelにlength 0を使わない |
+| previous key length | `has_previous==1`のときだけ有効な1..255 |
+
+Scanner session/control objectの固定フィールド（state、txn/iterator opaque、sticky **terminal** primary status、non-terminal candidate flags、coarse counters/flags、`has_previous`、reopen flag等）もRuntime-owned固定領域に置き、heapへ逃がしません。
+
+**保守的static workspace天井**（private Normative bound名。public ABI / public header constantではない）:
+
+| Name | Exact value | 意味 |
+| --- | ---: | --- |
+| `DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES` | 8192 | S1起点のscanner workspace静的上限（doc bound。実装symbol強制ではない） |
+
+8192はkey+value+previous（4606）とstate/fixed aggregate headroomを含む保守値です。後続D2 sliceがsame-snapshot fixed aggregate（count、digest accumulator、seam flag、D3投入seam state等）を追加して本天井を超える必要がある場合、**そのsliceの実装/vectorより先に本章のNormative docでexact新ceilingを更新**しなければならない。silent raise・実装側だけの拡大は禁止。次を破ってはなりません。
+
+1. heap / VLA / stack record buffer / 65,536 temp pathを使わない
+2. 全ID集合や可変長row listをRAMへ保持しない
+3. public symbol / public type / public constantとして露出しない
+4. ESP32 task stackへaggregateを置かない
+5. non-OK data検出のためのfull shadow copy bufferを追加しない
+
+`DSR2_ESP_BOUND`は**当時のNormative exact ceiling**（S1時点なら8192、以後doc更新後はその値）と4096 scratch / allocation 0を証明します（所有は§17.1）。forever-8192固定をclaimしてはならない。
+
+### 15.6 `finalize` / `abort` / fence / result採用（D2-S0）
+
+#### 単一cleanup tree（begin / advance failure / finalize / abort 共通）
+
+全failureおよび正常終了cleanupは**exactに次の1 tree**だけを使う（12章: ACTIVE中の明示`iter_close`、`rollback`は未close childを暗黙consume、rollback後の`iter_close`禁止、`close`時live txn/iterator 0）。
+
+1. iteratorがliveかつparent txnがまだACTIVEなら → `iter_close` exactly once。その後iteratorをliveとみなさない
+2. transactionがliveなら → `rollback` exactly once。txnは戻り値にかかわらずconsumed。**rollback後にそのtxnのchildへ`iter_close` / `iter_next`を呼んではならない**（未closeだったchildはrollbackが暗黙consume済み）
+3. fenceが必要なときだけ（rollback non-OK、unknown/unsafe shape、reuse unsafe）: live childrenがconsume済み（またはrollback暗黙consume済み）と分かってから `close` exactly once + `*inout_handle = NULL` + `reopen_required`
+4. どちらのchild handleもreuseしない
+5. **fully cleaned failure / 正常cleanup完了後の状態は`DONE`（unadoptedまたはadopt後）。`FAILED`はlive資源が残って`finalize`/`abort`待ちの間だけ**
+
+#### finalize
+
+`finalize`は上記cleanup treeを実行する。outcome集約は§15.2（terminal primary → profile candidate → future candidate → adopt/success）。
+
+採用規則:
+
+- **adopt**は次をすべて満たすときだけ: 状態が`EXHAUSTED`、**terminal sticky primaryなし**、profile/future **candidateもなし**、`rollback`がOK shape、provider contract shapeがvalid
+- terminal primaryまたはcandidate-onlyの`finalize`はcleanupを行うが**never adopt**（candidateは§15.2順で`UNSUPPORTED`等を返す）
+- `FAILED`上の`finalize`はcleanupを行うが**never adopt**
+- adopt失敗（rollback non-OK、shape fault、unknown unsafe status）ではresultはunadoptedのまま
+
+`rollback` non-OK:
+
+1. transactionはconsumedとみなす（再rollbackしない。残childは暗黙consume済みなので`iter_close`しない）
+2. Storageをfence: `close` exactly once + `*inout_handle = NULL`（children consume後のみ）
+3. `reopen_required`を立てる
+4. sticky **terminal** primaryがあればそれを維持し、なければclosed mappingのrollback failureを返す
+5. resultはunadopted。状態は`DONE`
+
+Provider contract shape violation / unknown statusでreuse unsafeな場合も、同じtreeでlive childrenをconsumeしたあとfenceする。Cleanup failureはsticky **terminal** primaryを上書きしない。
+
+#### abort
+
+`abort`は常にresultをdiscard（unadopted）し、`OPEN` / `EXHAUSTED` / `FAILED`のlive資源を**同一cleanup tree**で破棄する。rollback non-OK / unsafe shape時のfence規則も同じ。成功abort後の状態は`DONE`（unadopted）です。
+
+#### 第二cleanupとsession終端
+
+`DONE`に対する`finalize`/`abort`/`begin`/`advance`再呼出は`NINLIL_E_INVALID_STATE`、Port call 0です。cleanup後sessionは死んでおり、再利用には明示的なfresh session初期化が必要です（§15.2規則8）。
+
+### 15.7 Result publicationとalias政策（C11実装可能）
+
+C11実装が満たすべきpublication / unchanged / alias規則:
+
+1. **Pre-validation failure**（`INVALID_ARGUMENT` / `INVALID_STATE`でPort call 0）: scanner session state、workspace scratch contentsのうちcallが触る必要のない領域、caller result objectを変更しない。out statusだけ返す。
+2. **Port-path failure with sticky terminal primary**: sticky terminal statusをscanner stateへ記録してよい。adopt済みresult flagはfalseのまま。caller result summaryを部分更新する場合は「unadopted / not authoritative」がobservableで、adopt境界（成功`finalize`のみ）前にauthoritative successと解釈させない。
+3. **Successful `advance`（budget内OK rowsまたは終端）**: coarse counters/flags、non-terminal candidate flags、`has_previous`、previous-key scratchだけを更新してよい。final adopt resultは`finalize`成功までcallerへauthoritative公開しない。non-OK / terminal pathではprevious/`has_previous`を進めない。
+4. **Successful adopt `finalize`**: rollback OK後にだけresult summaryをauthoritative trueへpublishする。publish前にfailureが確定した場合はresultをnone/unadoptedへ戻すか、当初からunadoptedのままにする。
+5. **Alias**: workspace key/value/previous-key、scanner session object、ops table、`inout_handle`が指すhandle slot、caller result objectのwritable rangeは相互にoverlapしてはならない。overlapは`begin`前に`INVALID_ARGUMENT`、Port call 0。readonly input viewがworkspaceとaliasすることも禁止。
+6. **NULL/length shape**: zero lengthはdata NULLを許すview規則に12章/ D1 helperと同じく従う。non-zero length + NULL dataは`INVALID_ARGUMENT`またはcorruptionのclosed側へ倒し、silent skipしない。
+7. **単一thread / owner**: scanner sessionは同時に1 owner contextだけが操作する。re-entrancyはpublic Runtime規則に従いD2 scanner APIをcallbackから再入させない。
+8. **non-OK data**: §15.3のとおりdata bytesは無視・非採用。shadow比較による「部分書込検出」を実装要件にしない。
+
+### 15.8 L2b1 oversized allocator re-read（non-authoritative legacy）
+
+現行L2b1 bootstrap orchestrator（`src/runtime/runtime_store_orchestrator.c`）には、caller-owned 4096-byte value scratchへの`BUFFER_TOO_SMALL`に対し、temporary allocatorで最大Storage ABI上限付近まで確保して`iter_next`を再読するpathが残っています。これは次の理由で**D2の正本ではない**既知legacyです。
+
+1. 本章§2 / §15および12/14章はprivate namespace single value上限4096と、required key>255またはvalue>4096の`BUFFER_TOO_SMALL`→`STORAGE_CORRUPT`（reread/allocationなし）を固定している
+2. D2 scannerは当該pathをcopyしてはならない
+3. Stage 5 completion前のhardeningで、L2b1 legacy re-read/65,536-class temporary allocation pathは除去し、本D2 contractへ収束させる
+
+L2b1 successはStage 5完了でもD2完了でもありません（14章L2b1 boundaryと同じ）。
+
+### 15.9 Ordered D2 slice ledger（D2-S0..S6）
+
+| Slice | 内容 | D2完了証明 |
+| --- | --- | --- |
+| **D2-S0** | 本節のNormative contract freeze。実装/vector変更なし | 否 |
+| **D2-S1** | scanner core: state machine、begin/advance/finalize/abort、iter buffer契約、`has_previous` lex order、§15.4 coarse classification、mutation 0 workspace。独立oracle path/schema固定 | 否 |
+| **D2-S2** | 同一READ_ONLY snapshotでのfamily 1〜4 integrity + exact profile gate（§15.10）。profile mismatchでもdomain body decode 0のままsingle zero-prefix iteratorでfamily1-4 malformed/extraを検出し、f1-4 corruption優先を維持 | 否 |
+| **D2-S3** | 全current domain structural / same-record validation（envelope、4096、subtype body local、duplicate/order接続）。**step 5 same-record/local: witness header+chunk framing/matrix のscan到達**（D1 pure witness codecに依存。member old/new・partial group・successor chainはD3）。**D1 bodies `0x50` EVENT_SPOOL / `0x51` RETRY_SUMMARY / `0x52` MANAGEMENT_LEDGER / `0x61` RETENTION_BASIS / `0x63` CLEANUP_PLAN が未実装の間、S3 completionはblock** | 否 |
+| **D2-S4** | same-snapshot exact `get`とfixed-memory cross-reference seam（全ID集合非保持） | 否 |
+| **D2-S5** | S1〜S4および依存（不足D1 body含む）と必須vector/oracleが揃ったうえでの`DSR1_SCAN` / `DSR2_ESP_BOUND` complete。restart先頭、**D2-detectable** corrupt>future、D3 corruption投入用のexact seam/mechanism、rollback failure/fence、workspace天井、allocation 0。partial group/orphan/counter/capacity/health自体は証明しない | **S1〜S5完了の総称としてだけD2（bounded scanner）を証明。Stage 5全体は証明しない** |
+| **D2-S6** | Stage 5 orchestration hookup。scannerをcreate Stage 5へ接続。なおmutation 0（recovery mutation本体はD4） | D2を統合するだけで、S5未完了をD2完了に置換せず、D3/D4未完了をStage 5完了に置換しない |
+
+**「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S2/S3/S4が未完了のまま、またはD1 bodies `0x50`/`0x51`/`0x52`/`0x61`/`0x63`が欠けS3がblockされているまま、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vectorもD2完了宣言に使ってはなりません。
+
+D3（cross-row semantic / cardinality / capacity / health / **witness member old/new・partial group・successor chain**）とD4（operation別mutation / convergence / FULL writer）は本ledgerの外です。§15 steps 1〜11の最終Stage 5 closed orderと§1 publish gateはD1+D2+D3+D4 compositionのRuntime objectiveのままです。
+
+### 15.10 D2-S2 profile gateとone-iterator互換（D2-S0 freeze）
+
+family1-4 corruption > profile unsupported を、**READ_ONLY transaction 1つ + zero-prefix iterator 1つ**の設計と両立させる。profile mismatchは**non-terminal candidate**であり、`FAILED`へ遷移させずscanを止めない（§15.2）。
+
+1. Storage `begin(READ_ONLY)`成功後、`iter_open`の**前**に、S2は同じtransactionでbootstrap 17 exact family 1〜4 keysへ`get`し、completeness / CRC / current version / typed profile exact compareを行ってよい。
+2. profile mismatchまたはfuture profileを検出したら **non-terminal** `profile_mismatch` / `future_profile_candidate` flagを立てる。その時点ではdomain body decode / family 5/6 structural decode / `classify_row`によるdomain row解釈を開始しない（exact-profile pathはinactive）。
+3. なお**single global zero-prefix iterator**をexact 1回開き、namespace全体を走査する。profile-mismatch modeのiterator義務は次に閉じる。
+4. **profile-mismatch modeのiteratorが検出するterminal corruption（candidateをoverrideしてよい）:**
+   - Port/status-shape unsafe、`BUFFER_TOO_SMALL`/domain-bound、lex duplicate/out-of-order
+   - **family 1〜4 key-prefix routing**によるmalformed / unexpected extra current-key row（下記）
+5. **profile-mismatch modeで行ってはならないこと:** domain body decode、family 5/6 structural decode、non-family1-4 rowをterminal primaryとしてprofile candidateへoverrideすること。当該rowはskip（candidate維持）しscan継続する。
+6. 走査でfamily 1〜4 terminal corruptionが1件でもあれば最終statusは`NINLIL_E_STORAGE_CORRUPT`（profile candidateより優先・override）。
+7. family 1〜4 corruption 0のままprofile candidateだけなら`finalize`で`NINLIL_E_UNSUPPORTED`。domain decode/mutation 0。
+8. exact profileのときだけexact-profile pathをactiveにし、S3以降のcurrent domain body/structural decodeと`classify_row`フル分岐を許可する。
+9. iteratorはlifetime中1つ。prefix scan分割やsecond iteratorで「profile用」「domain用」を同時に持たない。restartは常にtxn/iteratorを閉じた後の先頭から。
+
+#### family 1〜4 key-prefix routing（domain body decodeなし）
+
+profile-mismatch modeおよびS1 coarseのfamily1-4識別は、L2a/Runtime Store key grammarの**key bytesだけ**で行う（value integrityはS2 get path / exact profile後）。
+
+| Match | Key bytes（current root `4e494e4c494c0001`） | 扱い |
+| --- | --- | --- |
+| binding | length 9、`family=0x01` | exact catalog key（17のうち） |
+| identity | length 9、`family=0x02` | exact catalog key |
+| counter | length 10、`family=0x03`、suffix `1..4` | exact catalog key |
+| capacity | length 10、`family=0x04`、suffix `1..11` | exact catalog key |
+| family1-4 malformed | 上記prefixに見えるがlength/suffix/catalog外（例: `0x03` suffix 0/5+、length 10の`0x01`、extra unknown suffix） | **terminal** family1-4 corruption |
+| unexpected extra | catalogに無いが上表exact形の追加row（同一keyはiteratorがdupで既にterminal） | **terminal** family1-4 corruption |
+| non-family1-4 | current root family `0x05`/`0x06`、future root、その他 | profile-mismatch modeではdomain decodeせずcandidate overrideしない。exact-profile pathでのみ§15.4分岐2へ |
+
+この段落はS2実装の契約固定であり、S0時点の実装完了を意味しない。
 
 ## 16. Status precedence
 
-Port call/shapeのearlier primary failureは14章closed mappingを維持します。Precedenceはphase境界ごとにclosedです。
+Port call/shapeのearlier primary failureは14章closed mappingを維持します。Precedenceはphase境界ごとにclosedです。次の四段は**最終Stage 5 composition**（D2 scanner + D3 cross-row/health + 残gate）が守る順序です。D2単独・D2-S5単独が全段を証明するわけではありません。
 
 1. family 1〜4 current key/value CRC/shape/length/completeness failure → `NINLIL_E_STORAGE_CORRUPT`
 2. family 1〜4 integrity後のprofile mismatch/future profile → `NINLIL_E_UNSUPPORTED`。ここでdomain decode/mutationを行わない
 3. Exact profileでのcurrent domain CRC/shape/length、partial group、orphan、duplicate/order、digest/revision、counter/capacity不一致 → `NINLIL_E_STORAGE_CORRUPT`
 4. Exact profileかつcurrent domain corruption 0でrecognizable future root/record versionだけ → `NINLIL_E_UNSUPPORTED`
 
-Exact profile domain scan内でfutureとcurrent malformedが混在すればcorruptです。Current rootのunknown subtypeをfutureとしてsilent ignoreしません。Global scanのatomic iterator pairが4096 bytesを超えるrowを返した場合はkeyだけを信用せずcorruptです。
+言い換え（Stage 5必須の保存順序）: **family1-4 corruption > profile unsupported > exact-profile current corruption > recognizable future unsupported**。
+
+**D2 / D2-S5が証明すること:**
+
+- scanner-detectable / transport / framing / lex / coarse classification / family1-4 integrity+profile gate（S2）/ same-record structural（S3）に由来する corruption と future の相対順序
+- D2-detectable corruption が recognizable future より常に勝つこと（`DSR1_SCAN`のD2-detectable corrupt>future）
+- 後続D3が同じsnapshot/session結果へcross-row corruption findingを投入したとき、そのcorruptionがfutureより上位に出る**exact mechanism / aggregation seam**（D3がfindingを供給する前提。D2はpartial group / orphan / counter / capacity / health の正しさ自体を証明しない）
+
+**D2 / D2-S5が証明しないこと:** partial group、orphan、counter upper-bound/unique、capacity recompute一致、durable health reconstruction、およびそれらを含む§16 level 3の全集合。それらはD3。recovery mutation/convergenceはD4。
+
+Exact profile domain scan内でfutureと**D2-detectable** current malformedが混在すればcorruptです。Current rootのunknown subtypeをfutureとしてsilent ignoreしません。Global scanのatomic iterator pairが4096 bytesを超えるrowを返した場合はkeyだけを信用せずcorruptです（D2-detectable）。
+
+S2 one-iterator互換の運用詳細は§15.10。profile mismatchはnon-terminal candidateのままiteratorを継続し、family1-4 terminal corruptionが見つかればcorruptがcandidateをoverrideする。
+
+**D2-S1限定**: S1はtransport / shape / lex order / §15.4 coarse classification（terminal vs candidate分離含む）だけを確立します。S1は上記Stage 5 four-level precedenceの最終証明をclaimしてはなりません。profile gateはS2、D2-detectable current structuralはS3（exact-profile path active時）、cross-rowおよびwitness member old/newはD3、D2-detectable corrupt>future compositionとD3投入seamはS5、Stage 5最終precedenceはD2+D3 compositionです。
 
 ## 17. Mandatory D0/D1/D2 vectors
 
 - `DSK1_KEY_CATALOG`: 全subtype exact key golden、unknown kind/subtype/root version
 - `DSV1_RECORD_BOUNDARY`: 各body min/max、4096/4097、chunk 3072/3073、trailing/short/CRC
 - `DSI1_BACKLINK`: primary/index exact、missing、orphan、collision raw mismatch、revision conflict
-- `DSW1_ALL_OLD_NEW`: create/replace/erase、1/8/9/199/256 members、1/2/25/32 chunks、all-old/all-new/mixed/partial
-- `DSW2_SUPERSEDE_CHAIN`: W1 ACTIVE / W2 absent、W1 SUPERSEDED / W2 ACTIVE、複数predecessor、successor欠損、head advance crash境界
-- `DSW3_RETIRE_CLEANUP`: SUPERSEDED→RETIRED unknown両truth、semantic head/incoming successor参照、oldest-first chunk partial cleanup、ACTIVE partial拒否
+- `DSW1_ALL_OLD_NEW`: create/replace/erase、1/8/9/199/256 members、1/2/25/32 chunks、all-old/all-new/mixed/partial（D1 pure witness codec golden + D2-S3 same-record header/chunk scan到達 + D3 member old/new cross-row。所有を混ぜてstep 5をownerlessにしない）
+- `DSW2_SUPERSEDE_CHAIN`: W1 ACTIVE / W2 absent、W1 SUPERSEDED / W2 ACTIVE、複数predecessor、successor欠損、head advance crash境界（successor/supersede chainはD3 cross-row。header localはD1/D2-S3）
+- `DSW3_RETIRE_CLEANUP`: SUPERSEDED→RETIRED unknown両truth、semantic head/incoming successor参照、oldest-first chunk partial cleanup、ACTIVE partial拒否（D3 cross-row主体。local framing依存はD1/D2-S3）
 - `DSC1_COUNTERS`: gap、retained max以下/超過、zero/duplicate/wrap、visited cleanup gap
 - `DSC2_CAPACITY`: 11 kind used/reserved exact、overflow、double count、manifest/chunk accounting、high-water
 - `DSH1_HEALTH`: priority 1..8 source、重複count 0、publish gate
-- `DSR1_SCAN`: row budget 1/64、restart先頭、same snapshot get、rollback failure、corrupt>future precedence
-- `DSR2_ESP_BOUND`: workspace static upper bound、VLA/recursion/stack record 0、4096 scratch、65,536 allocation 0
+- `DSR1_SCAN`: row budget 1/64、restart先頭、same snapshot get、rollback failure、**D2-detectable** corrupt>future precedence（cross-row orphan/partial/counter/capacity/healthのfull corrupt>futureはD3統合。D2自身のDSR1 caseは弱めない）
+- `DSR2_ESP_BOUND`: **当時のNormative exact** workspace ceiling、VLA/recursion/stack record 0、4096 scratch、65,536 allocation 0
 - `DSD1_LOGICAL_DELIVERY`: APPLICATION_FIRST、CANCEL_FIRST、later matching APPLICATION、binding conflict、same logical delivery/different attempt、reply-kind single key replacement
 - `DSC3_CLEANUP_PHASES`: remote ATTEMPT phase 1、local ATTEMPT+INDEX pair phase 2、fence join/leave/recreate、phase COMMIT_UNKNOWN all-old/all-new、cleanup中submission/ingress WOULD_BLOCK
 - `DSH2_HEALTH_GOLDEN`: source/stage/method/timer/counter/fence numeric registry、exact HEALTH_SOURCE_ID/COMMIT_FENCE_DIGEST、Delivery counter exhaustion dedup
 - `DSO1_OPERATION_BUILDERS`: kind 1..21全variantのsubject ID、retention kind/key、allowed role、HEAD companion、predecessor、member ceiling、named-hook mapping
 - `DSO2_AUTOMATIC_TRANSITIONS`: ATTEMPT/REVERSE_REPLY kind 6 send operation generation、TxGate no-send反復、Bearer-return count、reply BLOB close、SEND_COUNTER MAX、Command timeout/evidence-close/deadline-terminal、Event timeout/park/availability resume kind 14 phase/identity、explicit resume kind 15分離
 
-D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、D2 completionはmutation 0のbounded scannerです。これらを通るまでStage 5全体、public Runtime、SQLite recoveryを完成扱いしません。
+### 17.1 D2 slice別vector ownership（D2-S0）
 
-D1は上記case名だけで完了扱いせず、`spec/vectors/domain-store-v1.json`をmachine-readable正本として追加します。各caseはinput semantic fields、expected complete key/value hex、全SHA-256/CRC、expected status、required workspace bytesを持ち、production codecとは独立したvector generatorとのbyte equalityをCI gateにします。D0はformat contract、実hex oracleの追加はD1 deliverableです。
+| Slice | Mandatory ownership | 完了条件の注意 |
+| --- | --- | --- |
+| D2-S0 | vector/oracle追加なし。本ledgerと§15 contractだけ | spec freeze ≠ implementation |
+| D2-S1 | `DSR1_SCAN` transport subset + `DSR2_ESP_BOUND` skeleton の**ownership**。**独立machine-readable oracle artifact**のpath/schemaをS1で固定してからvector commit | D1 JSON schemaへscanner fieldを無理に追加しない |
+| D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator precedence vectors | domain structural全体はS3 |
+| D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）依存D1 body hexは当該subtype D1 deliverableが正本 | **0x50/51/52/61/63 D1 body未完了ならS3 completion block** |
+| D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference（`DSI1_BACKLINK`のscan接続部など） | 全ID集合RAM保持テストを合法化しない |
+| D2-S5 | `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。かつS1〜S4 ownership vectorと依存D1 bodyが揃っていること | **S1〜S5+depsが揃って初めてD2（bounded scanner）証明。Stage 5証明ではない。S2/S3/S4または5 D1 body欠落のままS5 complete禁止** |
+| D2-S6 | 新規D2 oracleを必須化しない。Stage 5 orchestration integration testはD2完了の代替にもStage 5完了の代替にもならない | S5未完了のままS6 successでD2 claim禁止 |
+
+D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、**D2 completionはS1〜S5および依存が揃ったmutation 0 bounded scanner composition証明**です（partial group / orphan / counter / capacity / health の正しさは含まない）。D2-S0はNormative固定のみでimplementation pendingです。**Stage 5全体・public Runtime・SQLite recoveryの完成はD2完了後も、D3/D4および§1残gateが揃うまで主張しません。**
+
+D1は上記case名だけで完了扱いせず、`spec/vectors/domain-store-v1.json`をmachine-readable正本として追加します。各caseはinput semantic fields、expected complete key/value hex、全SHA-256/CRC、expected status、required workspace bytesを持ち、production codecとは独立したvector generatorとのbyte equalityをCI gateにします。D0はformat contract、実hex oracleの追加はD1 deliverableです。**既存`domain-store-v1.json`はD1 authorityのまま残し、D2 scanner/fault/call-trace vectorを同schemaへ押し込めない。** D2はslice ownershipに従う**独立machine-readable oracle artifact**を必須とするが、**artifact pathとschemaはD2-S1がvector commit前にNormative固定**する。D2-S0はownershipと独立性だけを固定し、path/schema/hexを先行発明しない。
