@@ -12,6 +12,7 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - Runtime config/Platform検証、11種capacity導出、Storage/Bearer/Clock/entropy分類、Stage 9 health gateを含むRuntime Lifecycle L1 pure C11 model。
 - Runtime Store v1の17 bootstrap key、typed big-endian record、CRC32C、境界/破損検査を行うportable C11 codec。
 - Stage1 successだけが発行するheader/pointer-free accepted-config projectionに束縛したcanonical profile/identity、17-record aggregate validation、presence/profile/identity decision、compact lazy bootstrap planのRuntime Store L2a2 pure C11 model。
+- Lifecycle/Runtime Store sourceをTEST-only reducerから分離した、非export・subproject build対応の`ninlil_runtime_private` STATIC targetとcomposition smoke gate。
 - Atomic FULL admission write-setとcommit result別のownership/recovery model。
 - In-memory Storage、Allocator、Execution、Virtual Clock、Deterministic Entropy v1のTEST conformance fixture。
 - 2 endpoint typed simulated Bearer、bounded FIFO、receive loan、shared Virtual Tx Gate / one-shot permitのTEST conformance fixture。

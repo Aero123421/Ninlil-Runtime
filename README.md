@@ -19,19 +19,20 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Runtime config/Platform検証、11種capacity導出、Storage/Bearer/Clock/entropy分類、Stage 9 health gateのpure C11 Lifecycle model
 - Runtime Store v1の17 bootstrap key、typed big-endian record、CRC32C、境界/破損検査を行うportable C11 codec
 - Stage1 successだけが発行するheader/pointer-free accepted-config projectionからcanonical binding/identity、17-record presence/integrity、profile/identity decision、compact lazy bootstrap planを作るRuntime Store L2a2 pure model
+- Lifecycle/Runtime Store Coreをpublic `ninlil`とTEST fixtureから分離し、subprojectでも単独buildできる非export `ninlil_runtime_private` STATIC target
 - atomic FULL admission write-setとcommit結果別ownership/recovery projection
 - exact namespace、snapshot、capacity、fault、commit-unknownを扱うin-memory Storage conformance fixture
 - bounded Allocator、Execution、Virtual Clock、Deterministic Entropy v1 fixture
 - 2 endpoint間のtyped message deep-copy、有限FIFO、receive loan、Virtual TxPermitを扱うsimulated Bearer / Tx Gate fixture
 - stateless synthetic grant、deny precedence、TEST-only composition guardを扱うOrigin Authorization fixture
-- 現在の開発branchで49件のCTestが成功することを、通常buildとASan/UBSan buildで検査
+- 現在の開発branchで50件のCTestが成功することを、通常buildとASan/UBSan buildで検査
 
 未実装または未統合の範囲:
 
 - public Runtime APIのfunction bodyと`runtime_step` orchestration
 - Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
 - restart-safe SQLite portとproduction durable storage
-- L2b直前に行うRuntime Store production-private target分離とStorage orchestration
+- L2b Runtime Store Storage orchestrationとpublic Runtime bodyへの統合
 - Existing 17-record snapshotのbounded Runtime-owned regionまたはincremental validation方式の確定（L2a2 aggregate型をESP stackへ常駐させない）
 - end-to-endのReliable Command / Durable Event path
 - ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
@@ -111,7 +112,7 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは49件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは50件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
 
 ## Portabilityとversioning
 
