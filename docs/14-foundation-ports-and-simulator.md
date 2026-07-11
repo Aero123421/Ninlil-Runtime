@@ -314,6 +314,27 @@ Vector `FULL1_M1A_REQUESTS_FULL`はspy Storage PortでM1a Coreが行う全durabl
 
 Simulatorの`storage_commit_unknown` faultは、hidden ground truthとして`committed`または`not_committed`を明示し、Storage portは常に`NINLIL_STORAGE_COMMIT_UNKNOWN`を返します。Coreのpublic mappingは`NINLIL_E_STORAGE_COMMIT_UNKNOWN`です。両方のrecovery収束をtestします。
 
+### Runtime Store L2 bootstrap orchestration
+
+Private key/value codec、17-record inventory、CRC32C、presence classificationの正本は12章6.2です。L2を次の独立release boundaryへ分けます。
+
+- L2a codec/bootstrap modelはPort call 0のpure C11です。Exact key golden、全record round-trip、big-endian boundary、CRC golden/1-bit mutation、short/long/trailing value、key/type mismatch、unknown version、17/17・0/17・各1-record missing/extra、profile各field mutation、identity exact/conflict/forward、counter/capacity local invariantを検査します。
+- L2b Storage orchestrationはL2aを唯一のbyte codecとして使用し、public ABIを追加しません。Generic business operation journal、transaction/Delivery/cycle codec、Clock durable baselineはL2b bootstrapへ混ぜません。
+
+L2b create Stage 5は次のexact orderです。
+
+1. `open + OK`はproviderが同じstore identityのold writerをfence済みであることの証明です。Dead-owner検出はStorage provider責務で、未確認なら`BUSY`を返します。Coreはlease generation/fencing tokenをpublic ABIへ追加しません。
+2. 1つのREAD_ONLY transaction snapshotで17 exact keysをunsigned-byte lexicographic順に`get`します。0/17の場合だけ0-byte prefix iteratorでnamespace全体がemptyか確認します。Iteratorをcloseし、rollback OKでtransactionをconsumeするまでloaded resultを採用しません。
+3. NewならREAD_WRITE transactionへ17 valuesを同じkey順でputし、HC13 before → `commit(FULL)` → OK時だけHC13 afterです。Identityを同じatomic groupへ含め、HC14 occurrenceは0です。Definite failureは全record non-commit、COMMIT_UNKNOWNはafter 0、transaction consumed、Storage close/fence、public `NINLIL_E_STORAGE_COMMIT_UNKNOWN`です。
+4. Existingなら17-record structural/integrity検査後にprofileをtyped exact比較します。Mismatchは`NINLIL_E_UNSUPPORTED`、write、identity rotation、domain recovery mutation、Bearer/Clock/Entropy call 0です。
+5. Exact profileだけがoperation journal/domain recovery scanへ進みます。4 counter/cursorとowner/index、11 capacity recordとdomain-derived used/reserved、durable health source markerを同じrecovered truthに対して検査します。Partial group、orphan、underflow/overflow、checksum/digest conflictはfail closedです。このdomain key inventoryとoperation-specific family 6 witnessは後続仕様が必要で、L2a successだけでStage 5全体をcompleteにしません。
+6. Recovery完了後にcurrent identityを比較します。Exactはwrite/hook 0、device anchor mismatchまたはchanged tupleのequal/regressive epochは`NINLIL_E_CONFLICT`、valid forward rotationはType 2だけを1 READ_WRITE/FULL transactionとHC14 pairで置換します。Rotation COMMIT_UNKNOWN後はold/new recordのauthoritative truthが決まるまでBearerをopenしません。
+7. Stage 5 durable markerだけからhealth referenceを再構成し、Storage priority 1/2がzeroの場合だけStage 9 publish gateへ渡します。Clock/provider/entropy/Bearerのinstance-local causeをcopyしません。
+
+READ_ONLY cleanup rollbackがOK以外ならloaded snapshotを破棄し、Storageをclose/reopen対象にします。An earlier primary failureのcleanupとしてunexpected transaction/iteratorをconsumeしている場合はprimary statusを上書きせず、cleanup failureをbounded diagnosticへ残してreopenします。Status mappingはBUSY→`NINLIL_E_WOULD_BLOCK`、NO_SPACE→`NINLIL_E_CAPACITY_EXHAUSTED`、definite IO→`NINLIL_E_STORAGE`、CORRUPT、current-key oversized `BUFFER_TOO_SMALL`、unexpected absence/partial→`NINLIL_E_STORAGE_CORRUPT`、UNSUPPORTED_SCHEMA/record version/profile→`NINLIL_E_UNSUPPORTED`、COMMIT_UNKNOWN→`NINLIL_E_STORAGE_COMMIT_UNKNOWN`です。Unknown status/invalid output shapeはcorruptとしてfail closedします。
+
+Initial bootstrapはexact 17 entries / 1,583 logical bytesを必要とします。`capacity()`はadvisory preflightに使用できますが、authoritative NO_SPACEはfinal transaction viewに対するFULL commit結果です。Backend journal、flush、fixed replacement headroomはportable logical bytesへ加えずStorage provider preconditionです。
+
 ### Capacity unitとmapping
 
 Storage capacityはportableなlogical unitで表し、filesystem block、SQLite page、allocator overheadを使用しません。
@@ -862,7 +883,7 @@ CIは両章のcode blockからcomment/blankを除いた配列を抽出し、coun
 | `HC10_REVERSE_OBSERVATION` | `runtime.before_reverse_send_observation_commit` / `runtime.after_reverse_send_observation_commit` | BS4 reverse state PENDING/WAITINGまたはclosed observationの一方。Crash before commitはduplicate-safe resend可 |
 | `HC11_RETENTION_BASIS` | `runtime.before_retention_basis_commit` / `runtime.after_retention_basis_commit` | RET2〜RET4 basis pending/rebased/overflow markerの一方。Actual cleanupはcleanup-specific hook |
 | `HC12_APPLICATION_SEND_OBSERVATION` | role-specific `before_application_send_observation_commit` / `after` | TxGate semantic no-sendまたはBearer return後、state/timer/cursorが未commitまたは全commit。Eventが同commitでPARKEDへ進むcaseもこのpairだけでevent-park pair 0。Bearer-return before crashはsame attempt replay、after crashはadditional send 0。Reverse/cancel occurrence 0 |
-| `HC13_NAMESPACE_BINDING` | `runtime.before_namespace_binding_commit` / `runtime.after_namespace_binding_commit` | Profile/capacity/4 countersが全部absentまたは全部commit。Exact reopen/identity rotation occurrence 0 |
+| `HC13_NAMESPACE_BINDING` | `runtime.before_namespace_binding_commit` / `runtime.after_namespace_binding_commit` | Profile/initial identity/capacity/4 countersが全部absentまたは全部commit。Exact reopen/identity rotation occurrence 0 |
 | `HC14_IDENTITY_ROTATION` | `runtime.before_identity_rotation_commit` / `runtime.after_identity_rotation_commit` | Old current identityまたはforward rotation全commit。Initial binding/exact/stale/device conflict occurrence 0 |
 | `HC15_EVENT_OVERLAP_PRIMARY` | Receipt terminal、8th timeout park、Application send-result park、Disposition park、availability/manual resume、discardを各実行 | 12章overlap tableのprimary pair exactly1。Send-result parkはapplication observation、Disposition parkはevent park。Removed summary/release pair、secondary park/resume/cleanup pair occurrence 0 |
 
