@@ -5,8 +5,8 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a + D1-B3b body codec. Boundary notes for later
- * milestones:
+ * D1-B1 + D1-B2 + D1-B3a + D1-B3b + D1-B3c body codec. Boundary notes for
+ * later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -15,15 +15,18 @@
  *   exact get of live primary complete value; SCHEDULER_OWNER 1:1 cardinality,
  *   counter/cursor upper bound, ready semantics, ingress→delivery owner
  *   transfer; ORDERED_INGRESS live owner/SCHEDULER/RESERVATION/BLOB 0/1
- *   cardinality, BLOB manifest/chunk length/content/key digest, non-zero
- *   BLOB stream recompute of message_semantic_digest, SERVICE supported
- *   evidence mask vs receipt_stage, namespace counter upper bound, reduction
- *   erase (same-record codec alone does not prove these — B3b must not guess
- *   BLOB keys from body fields alone).
+ *   cardinality and non-zero BLOB stream recompute of message_semantic_digest,
+ *   SERVICE supported evidence mask vs receipt_stage, namespace counter upper
+ *   bound, reduction erase (B3b must not guess BLOB keys from body alone);
+ *   BLOB live owner/manifest get, primary value digest equality, chunk
+ *   0..count-1 enumeration, multi-chunk stream digest, owner semantic content
+ *   match, same-owner/kind/content manifest alias, lifecycle erase / capacity
+ *   accounting (B3c proves same-record body/key/blob_id/local length only).
  * - D4: COMMIT_UNKNOWN old/new complete-value digest convergence.
  */
 
 static const char PREIMAGE_INVARIANT[] = "NINLIL-DOMAIN-INVARIANT-V1";
+static const char PREIMAGE_BLOB_ID[] = "NINLIL-DOMAIN-BLOB-ID-V1";
 
 static const uint8_t KEY_ROOT[8] = {
     0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x01u
@@ -4708,6 +4711,659 @@ ninlil_status_t ninlil_model_domain_decode_body_ordered_ingress(
     return NINLIL_OK;
 }
 
+/* --- BLOB helpers (D1-B3c) --- */
+
+static int blob_owner_kind_is_known(uint16_t owner_kind)
+{
+    return owner_kind == NINLIL_MODEL_DOMAIN_BLOB_OWNER_TRANSACTION
+        || owner_kind == NINLIL_MODEL_DOMAIN_BLOB_OWNER_INGRESS
+        || owner_kind == NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY;
+}
+
+static int blob_kind_is_known(uint16_t blob_kind)
+{
+    return blob_kind >= NINLIL_MODEL_DOMAIN_BLOB_KIND_COMMAND_PAYLOAD
+        && blob_kind <= NINLIL_MODEL_DOMAIN_BLOB_KIND_REPLY;
+}
+
+/* Allowed (owner, blob_kind) pairs — docs17 §8.3. */
+static int blob_owner_kind_pair_ok(uint16_t owner_kind, uint16_t blob_kind)
+{
+    if (!blob_owner_kind_is_known(owner_kind) || !blob_kind_is_known(blob_kind)) {
+        return 0;
+    }
+    switch (owner_kind) {
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_TRANSACTION:
+        return blob_kind == NINLIL_MODEL_DOMAIN_BLOB_KIND_COMMAND_PAYLOAD
+            || blob_kind == NINLIL_MODEL_DOMAIN_BLOB_KIND_EVENT_PAYLOAD;
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_INGRESS:
+        return blob_kind == NINLIL_MODEL_DOMAIN_BLOB_KIND_INGRESS_PAYLOAD
+            || blob_kind == NINLIL_MODEL_DOMAIN_BLOB_KIND_EVIDENCE;
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY:
+        return blob_kind == NINLIL_MODEL_DOMAIN_BLOB_KIND_COMMAND_PAYLOAD
+            || blob_kind == NINLIL_MODEL_DOMAIN_BLOB_KIND_EVENT_PAYLOAD
+            || blob_kind == NINLIL_MODEL_DOMAIN_BLOB_KIND_REPLY;
+    default:
+        return 0;
+    }
+}
+
+static int blob_owner_raw_is_valid(
+    uint16_t owner_kind, uint16_t len, const uint8_t *raw)
+{
+    if (raw == NULL || len == 0u) {
+        return 0;
+    }
+    switch (owner_kind) {
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_TRANSACTION:
+        return len == NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_TX_BYTES
+            && !id_is_zero(raw);
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_INGRESS:
+        return len == NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_INGRESS_BYTES
+            && (raw[0] | raw[1] | raw[2] | raw[3] | raw[4] | raw[5] | raw[6]
+                | raw[7])
+            != 0u;
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY:
+        return reservation_owner_raw_is_valid(
+            NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_DELIVERY, len, raw);
+    default:
+        return 0;
+    }
+}
+
+static int blob_owner_primary_key_digest_ok(
+    uint16_t owner_kind,
+    uint16_t owner_key_raw_length,
+    const uint8_t *owner_key_raw,
+    const uint8_t actual[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    uint8_t raw16[257];
+    ninlil_bytes_view_t components;
+    uint32_t raw16_len = 0u;
+
+    if (actual == NULL || owner_key_raw == NULL) {
+        return 0;
+    }
+    switch (owner_kind) {
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_TRANSACTION:
+        if (owner_key_raw_length != 16u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            actual,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_TRANSACTION_ANCHOR,
+            NINLIL_MODEL_DOMAIN_ID_KIND_ID128,
+            owner_key_raw,
+            16u);
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_INGRESS:
+        if (owner_key_raw_length != 8u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            actual,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_ORDERED_INGRESS,
+            NINLIL_MODEL_DOMAIN_ID_KIND_U64,
+            owner_key_raw,
+            8u);
+    case NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY:
+        if (!encode_raw16_into(
+                owner_key_raw_length, owner_key_raw, raw16, sizeof(raw16),
+                &raw16_len)) {
+            return 0;
+        }
+        components.data = raw16;
+        components.length = raw16_len;
+        return digest_eq_composite_key(
+            actual, NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY, components);
+    default:
+        return 0;
+    }
+}
+
+static int blob_id_matches(
+    const ninlil_model_domain_body_blob_manifest_t *body)
+{
+    ninlil_model_domain_digest_t dig;
+
+    if (body == NULL) {
+        return 0;
+    }
+    if (ninlil_model_domain_blob_id_digest(
+            body->blob_owner_kind, body->owner_key_raw_length,
+            body->owner_key_raw, body->blob_kind, body->content_digest,
+            body->total_length, &dig)
+        != NINLIL_OK) {
+        return 0;
+    }
+    return memcmp(body->blob_id_digest, dig.bytes, 32u) == 0;
+}
+
+static int blob_manifest_length_count_ok(
+    uint64_t total_length, uint32_t chunk_count,
+    const uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    uint32_t expect = 0u;
+    ninlil_model_domain_digest_t empty;
+
+    if (content_digest == NULL) {
+        return 0;
+    }
+    if (ninlil_model_domain_blob_chunk_count_for_total(total_length, &expect)
+        != NINLIL_OK) {
+        return 0;
+    }
+    if (chunk_count != expect) {
+        return 0;
+    }
+    if (total_length == 0u) {
+        if (ninlil_model_domain_sha256(NULL, 0u, &empty) != NINLIL_OK) {
+            return 0;
+        }
+        return memcmp(content_digest, empty.bytes, 32u) == 0;
+    }
+    return 1;
+}
+
+static int blob_manifest_fields_ok(
+    const ninlil_model_domain_body_blob_manifest_t *body)
+{
+    if (body == NULL
+        || digest_is_zero(body->blob_id_digest)
+        || digest_is_zero(body->content_digest)
+        || !blob_owner_kind_pair_ok(body->blob_owner_kind, body->blob_kind)
+        || !blob_owner_raw_is_valid(
+            body->blob_owner_kind, body->owner_key_raw_length,
+            body->owner_key_raw)
+        || !blob_owner_primary_key_digest_ok(
+            body->blob_owner_kind, body->owner_key_raw_length,
+            body->owner_key_raw, body->owner_primary_key_digest)
+        || !blob_id_matches(body)
+        || !blob_manifest_length_count_ok(
+            body->total_length, body->chunk_count, body->content_digest)) {
+        return 0;
+    }
+    return 1;
+}
+
+/* KEY_DIGEST of complete BLOB manifest key for this blob_id. */
+static int blob_manifest_key_digest_ok(
+    const uint8_t blob_id[NINLIL_MODEL_DOMAIN_DIGEST_BYTES],
+    const uint8_t actual[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    uint8_t components[1u + 32u];
+    ninlil_bytes_view_t cv;
+
+    if (blob_id == NULL || actual == NULL) {
+        return 0;
+    }
+    components[0] = 1u;
+    (void)memcpy(&components[1], blob_id, 32u);
+    cv.data = components;
+    cv.length = 33u;
+    return digest_eq_composite_key(
+        actual, NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB, cv);
+}
+
+static int blob_chunk_local_length_ok(
+    uint32_t chunk_index,
+    uint32_t chunk_count,
+    uint64_t total_length,
+    uint32_t chunk_length)
+{
+    uint32_t expect_count = 0u;
+    uint64_t prior;
+    uint64_t final_len;
+
+    if (chunk_count == 0u || chunk_index >= chunk_count
+        || total_length == 0u
+        || chunk_length == 0u
+        || chunk_length > NINLIL_MODEL_DOMAIN_BLOB_CHUNK_DATA_MAX_BYTES) {
+        return 0;
+    }
+    if (ninlil_model_domain_blob_chunk_count_for_total(
+            total_length, &expect_count)
+            != NINLIL_OK
+        || expect_count != chunk_count) {
+        return 0;
+    }
+    if (chunk_index + 1u < chunk_count) {
+        /* Non-final: exact full chunk. */
+        return chunk_length == NINLIL_MODEL_DOMAIN_BLOB_CHUNK_DATA_MAX_BYTES;
+    }
+    /* Final: total_length - 3072*(chunk_count-1) in 1..3072. */
+    prior = (uint64_t)(chunk_count - 1u)
+        * (uint64_t)NINLIL_MODEL_DOMAIN_BLOB_CHUNK_DATA_MAX_BYTES;
+    if (total_length <= prior) {
+        return 0;
+    }
+    final_len = total_length - prior;
+    if (final_len == 0u
+        || final_len > NINLIL_MODEL_DOMAIN_BLOB_CHUNK_DATA_MAX_BYTES
+        || final_len != (uint64_t)chunk_length) {
+        return 0;
+    }
+    return 1;
+}
+
+static int blob_chunk_content_digest_ok(
+    const ninlil_model_domain_body_blob_chunk_t *body)
+{
+    ninlil_model_domain_digest_t dig;
+
+    if (body == NULL || body->chunk_bytes == NULL
+        || digest_is_zero(body->content_digest)) {
+        return 0;
+    }
+    /* Multi-chunk stream digest is D3 — do not recompute from one chunk. */
+    if (body->chunk_count != 1u) {
+        return 1;
+    }
+    if (ninlil_model_domain_sha256(
+            body->chunk_bytes, body->chunk_length, &dig)
+        != NINLIL_OK) {
+        return 0;
+    }
+    return memcmp(body->content_digest, dig.bytes, 32u) == 0;
+}
+
+static int blob_chunk_fields_ok(
+    const ninlil_model_domain_body_blob_chunk_t *body)
+{
+    if (body == NULL
+        || body->chunk_bytes == NULL
+        || digest_is_zero(body->blob_id_digest)
+        || digest_is_zero(body->manifest_key_digest)
+        || !blob_chunk_local_length_ok(
+            body->chunk_index, body->chunk_count, body->total_length,
+            body->chunk_length)
+        || !blob_manifest_key_digest_ok(
+            body->blob_id_digest, body->manifest_key_digest)
+        || !blob_chunk_content_digest_ok(body)) {
+        return 0;
+    }
+    return 1;
+}
+
+ninlil_status_t ninlil_model_domain_blob_id_digest(
+    uint16_t blob_owner_kind,
+    uint16_t owner_key_raw_length,
+    const uint8_t *owner_key_raw,
+    uint16_t blob_kind,
+    const uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES],
+    uint64_t total_length,
+    ninlil_model_domain_digest_t *out_digest)
+{
+    ninlil_model_domain_sha256_ctx_t ctx;
+    uint8_t be16[2];
+    uint8_t be64[8];
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+
+    if (out_digest != NULL) {
+        ptrs[n] = out_digest;
+        lens[n] = sizeof(*out_digest);
+        n++;
+    }
+    if (owner_key_raw != NULL && owner_key_raw_length != 0u) {
+        ptrs[n] = owner_key_raw;
+        lens[n] = owner_key_raw_length;
+        n++;
+    }
+    if (content_digest != NULL) {
+        ptrs[n] = content_digest;
+        lens[n] = NINLIL_MODEL_DOMAIN_DIGEST_BYTES;
+        n++;
+    }
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (out_digest == NULL || content_digest == NULL
+        || owner_key_raw_length > 255u
+        || (owner_key_raw_length != 0u && owner_key_raw == NULL)
+        || digest_is_zero(content_digest)
+        || !blob_owner_kind_pair_ok(blob_owner_kind, blob_kind)
+        || !blob_owner_raw_is_valid(
+            blob_owner_kind, owner_key_raw_length, owner_key_raw)) {
+        if (out_digest != NULL) {
+            (void)memset(out_digest, 0, sizeof(*out_digest));
+        }
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+
+    ninlil_model_domain_sha256_init(&ctx);
+    if (ninlil_model_domain_sha256_update(
+            &ctx, (const uint8_t *)PREIMAGE_BLOB_ID,
+            (uint32_t)(sizeof(PREIMAGE_BLOB_ID) - 1u))
+        != NINLIL_OK) {
+        (void)memset(out_digest, 0, sizeof(*out_digest));
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    ninlil_model_domain_encode_u16_be(be16, blob_owner_kind);
+    if (ninlil_model_domain_sha256_update(&ctx, be16, 2u) != NINLIL_OK) {
+        (void)memset(out_digest, 0, sizeof(*out_digest));
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    ninlil_model_domain_encode_u16_be(be16, owner_key_raw_length);
+    if (ninlil_model_domain_sha256_update(&ctx, be16, 2u) != NINLIL_OK
+        || (owner_key_raw_length != 0u
+            && ninlil_model_domain_sha256_update(
+                   &ctx, owner_key_raw, owner_key_raw_length)
+                != NINLIL_OK)) {
+        (void)memset(out_digest, 0, sizeof(*out_digest));
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    ninlil_model_domain_encode_u16_be(be16, blob_kind);
+    if (ninlil_model_domain_sha256_update(&ctx, be16, 2u) != NINLIL_OK
+        || ninlil_model_domain_sha256_update(
+               &ctx, content_digest, NINLIL_MODEL_DOMAIN_DIGEST_BYTES)
+            != NINLIL_OK) {
+        (void)memset(out_digest, 0, sizeof(*out_digest));
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    ninlil_model_domain_encode_u64_be(be64, total_length);
+    if (ninlil_model_domain_sha256_update(&ctx, be64, 8u) != NINLIL_OK
+        || ninlil_model_domain_sha256_final(&ctx, out_digest) != NINLIL_OK) {
+        (void)memset(out_digest, 0, sizeof(*out_digest));
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_blob_chunk_count_for_total(
+    uint64_t total_length,
+    uint32_t *out_chunk_count)
+{
+    uint64_t chunks;
+    const uint64_t max_chunk =
+        (uint64_t)NINLIL_MODEL_DOMAIN_BLOB_CHUNK_DATA_MAX_BYTES;
+
+    /*
+     * Address-first: forged near-UINTPTR_MAX outputs must return
+     * INVALID_ARGUMENT without writing or crashing. Only after the full
+     * out_chunk_count object range is known-valid may we zero or store.
+     */
+    if (out_chunk_count == NULL
+        || !range_address_is_valid(
+            out_chunk_count, sizeof(*out_chunk_count))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_chunk_count = 0u;
+    if (total_length == 0u) {
+        return NINLIL_OK;
+    }
+    /* checked ceil: (total + max - 1) / max, result must fit u32 */
+    if (total_length > UINT64_MAX - (max_chunk - 1u)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    chunks = (total_length + max_chunk - 1u) / max_chunk;
+    if (chunks == 0u || chunks > (uint64_t)UINT32_MAX) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_chunk_count = (uint32_t)chunks;
+    return NINLIL_OK;
+}
+
+uint32_t ninlil_model_domain_body_blob_manifest_encoded_length(
+    const ninlil_model_domain_body_blob_manifest_t *body)
+{
+    uint32_t n;
+    if (body == NULL || !blob_manifest_fields_ok(body)) {
+        return 0u;
+    }
+    /* dig32 + u16 + u16 + RAW16 + dig32 + u64 + u32 + dig32 */
+    n = 32u + 2u + 2u + 2u + (uint32_t)body->owner_key_raw_length + 32u + 8u
+        + 4u + 32u;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_BLOB_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_blob_manifest(
+    const ninlil_model_domain_body_blob_manifest_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->owner_key_raw != NULL && body->owner_key_raw_length != 0u) {
+            ptrs[n] = body->owner_key_raw;
+            lens[n] = body->owner_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_blob_manifest_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    (void)memcpy(&out_bytes[0], body->blob_id_digest, 32u);
+    ninlil_model_domain_encode_u16_be(&out_bytes[32], body->blob_owner_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[34], body->blob_kind);
+    o = 36u;
+    o += encode_raw16(
+        &out_bytes[o], body->owner_key_raw_length, body->owner_key_raw);
+    (void)memcpy(&out_bytes[o], body->owner_primary_key_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->total_length);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->chunk_count);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->content_digest, 32u);
+    o += 32u;
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_blob_manifest(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_blob_manifest_t *out_body)
+{
+    ninlil_model_domain_body_blob_manifest_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 36u + 2u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_BLOB_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    (void)memcpy(tmp.blob_id_digest, &encoded.data[0], 32u);
+    tmp.blob_owner_kind = ninlil_model_domain_decode_u16_be(&encoded.data[32]);
+    tmp.blob_kind = ninlil_model_domain_decode_u16_be(&encoded.data[34]);
+    o = 36u;
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o,
+            (uint16_t)NINLIL_MODEL_DOMAIN_RAW16_OWNER_KEY_MAX,
+            &tmp.owner_key_raw_length, &tmp.owner_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    /* dig32 + u64 + u32 + dig32 = 76 */
+    if (encoded.length - o < 76u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.owner_primary_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.total_length = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.chunk_count = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.content_digest, &encoded.data[o], 32u);
+    o += 32u;
+    if (o != encoded.length || !blob_manifest_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
+uint32_t ninlil_model_domain_body_blob_chunk_encoded_length(
+    const ninlil_model_domain_body_blob_chunk_t *body)
+{
+    uint32_t n;
+    if (body == NULL || !blob_chunk_fields_ok(body)) {
+        return 0u;
+    }
+    /* dig32 + dig32 + u32 + u32 + u64 + dig32 + u32 + bytes */
+    n = 32u + 32u + 4u + 4u + 8u + 32u + 4u + body->chunk_length;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_BLOB_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_blob_chunk(
+    const ninlil_model_domain_body_blob_chunk_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->chunk_bytes != NULL && body->chunk_length != 0u) {
+            ptrs[n] = body->chunk_bytes;
+            lens[n] = body->chunk_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_blob_chunk_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    (void)memcpy(&out_bytes[0], body->blob_id_digest, 32u);
+    (void)memcpy(&out_bytes[32], body->manifest_key_digest, 32u);
+    ninlil_model_domain_encode_u32_be(&out_bytes[64], body->chunk_index);
+    ninlil_model_domain_encode_u32_be(&out_bytes[68], body->chunk_count);
+    ninlil_model_domain_encode_u64_be(&out_bytes[72], body->total_length);
+    (void)memcpy(&out_bytes[80], body->content_digest, 32u);
+    ninlil_model_domain_encode_u32_be(&out_bytes[112], body->chunk_length);
+    o = 116u;
+    if (body->chunk_length != 0u) {
+        (void)memcpy(&out_bytes[o], body->chunk_bytes, body->chunk_length);
+        o += body->chunk_length;
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_blob_chunk(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_blob_chunk_t *out_body)
+{
+    ninlil_model_domain_body_blob_chunk_t tmp;
+    uint32_t o = 0u;
+    uint32_t clen;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 116u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_BLOB_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    (void)memcpy(tmp.blob_id_digest, &encoded.data[0], 32u);
+    (void)memcpy(tmp.manifest_key_digest, &encoded.data[32], 32u);
+    tmp.chunk_index = ninlil_model_domain_decode_u32_be(&encoded.data[64]);
+    tmp.chunk_count = ninlil_model_domain_decode_u32_be(&encoded.data[68]);
+    tmp.total_length = ninlil_model_domain_decode_u64_be(&encoded.data[72]);
+    (void)memcpy(tmp.content_digest, &encoded.data[80], 32u);
+    clen = ninlil_model_domain_decode_u32_be(&encoded.data[112]);
+    o = 116u;
+    /*
+     * Zero length is always corrupt for a stored chunk row. Do not treat
+     * the generic D1-A 0..3072 logical-view bound as sufficient validity.
+     */
+    if (clen == 0u
+        || clen > NINLIL_MODEL_DOMAIN_BLOB_CHUNK_DATA_MAX_BYTES
+        || encoded.length - o != clen) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    tmp.chunk_length = clen;
+    tmp.chunk_bytes = &encoded.data[o];
+    o += clen;
+    if (o != encoded.length || !blob_chunk_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -4734,6 +5390,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_ID_MAP:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_SCHEDULER_OWNER:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_ORDERED_INGRESS:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB:
         return 1;
     default:
         return 0;
@@ -4949,8 +5606,16 @@ static ninlil_status_t validate_common_header_local(
 {
     if (env->header.subtype != subtype
         || env->header.domain_format != NINLIL_MODEL_DOMAIN_FORMAT_VERSION
-        || env->header.flags != 0u
         || env->header.record_revision == 0u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    /* BLOB flags are exact one of manifest/chunk; all other subtypes flags=0. */
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB) {
+        if (env->header.flags != NINLIL_MODEL_DOMAIN_FLAG_BLOB_MANIFEST
+            && env->header.flags != NINLIL_MODEL_DOMAIN_FLAG_BLOB_CHUNK) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+    } else if (env->header.flags != 0u) {
         return NINLIL_E_STORAGE_CORRUPT;
     }
     if (family == NINLIL_MODEL_DOMAIN_FAMILY_HEALTH) {
@@ -5481,6 +6146,117 @@ static ninlil_status_t validate_header_body_local(
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB) {
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+        uint8_t components[1u + 32u + 4u];
+        ninlil_bytes_view_t cv;
+
+        /*
+         * BLOB same-record (docs17 §8.3):
+         * - flags exact 1=manifest / 2=chunk matching body variant
+         * - immutable revision 1; head and PVD non-zero
+         * - key COMPOSITE(30, u8=1|2 || blob_id [|| index])
+         * - primary_id: owner identity (manifest) or manifest composite
+         *   first 16 (chunk)
+         * D3 deferred: live owner/manifest get, PVD live value equality,
+         * chunk 0..count-1 enumeration, multi-chunk stream, owner semantic
+         * content match, manifest alias, lifecycle erase/capacity.
+         */
+        if (env->header.record_revision != 1u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+
+        if (env->header.flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_MANIFEST) {
+            status = ninlil_model_domain_decode_body_blob_manifest(
+                env->body, &out->blob_manifest);
+            if (status != NINLIL_OK) {
+                return status;
+            }
+            components[0] = 1u;
+            (void)memcpy(
+                &components[1], out->blob_manifest.blob_id_digest, 32u);
+            cv.data = components;
+            cv.length = 33u;
+            if (!composite_identity_matches(
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB, cv, key->identity,
+                    key->identity_length)) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            switch (out->blob_manifest.blob_owner_kind) {
+            case NINLIL_MODEL_DOMAIN_BLOB_OWNER_TRANSACTION:
+                if (out->blob_manifest.owner_key_raw_length != 16u
+                    || out->blob_manifest.owner_key_raw == NULL) {
+                    return NINLIL_E_STORAGE_CORRUPT;
+                }
+                (void)memcpy(
+                    expect_pid, out->blob_manifest.owner_key_raw, 16u);
+                break;
+            case NINLIL_MODEL_DOMAIN_BLOB_OWNER_INGRESS:
+                if (out->blob_manifest.owner_key_raw_length != 8u
+                    || out->blob_manifest.owner_key_raw == NULL) {
+                    return NINLIL_E_STORAGE_CORRUPT;
+                }
+                (void)memset(expect_pid, 0, NINLIL_MODEL_DOMAIN_ID_BYTES);
+                (void)memcpy(
+                    &expect_pid[8], out->blob_manifest.owner_key_raw, 8u);
+                break;
+            case NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY:
+                if (primary_id_from_raw_contents_as_raw16(
+                        NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+                        out->blob_manifest.owner_key_raw_length,
+                        out->blob_manifest.owner_key_raw, expect_pid)
+                    != NINLIL_OK) {
+                    return NINLIL_E_STORAGE_CORRUPT;
+                }
+                break;
+            default:
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            if (!header_primary_id_eq(env, expect_pid)) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            return NINLIL_OK;
+        }
+
+        if (env->header.flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_CHUNK) {
+            status = ninlil_model_domain_decode_body_blob_chunk(
+                env->body, &out->blob_chunk);
+            if (status != NINLIL_OK) {
+                return status;
+            }
+            components[0] = 2u;
+            (void)memcpy(&components[1], out->blob_chunk.blob_id_digest, 32u);
+            ninlil_model_domain_encode_u32_be(
+                &components[33], out->blob_chunk.chunk_index);
+            cv.data = components;
+            cv.length = 37u;
+            if (!composite_identity_matches(
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB, cv, key->identity,
+                    key->identity_length)) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            /* primary_id = manifest composite identity first 16 */
+            components[0] = 1u;
+            (void)memcpy(&components[1], out->blob_chunk.blob_id_digest, 32u);
+            cv.data = components;
+            cv.length = 33u;
+            if (primary_id_from_composite_components(
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB, cv, expect_pid)
+                    != NINLIL_OK
+                || !header_primary_id_eq(env, expect_pid)) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+            return NINLIL_OK;
+        }
+
+        return NINLIL_E_STORAGE_CORRUPT;
     }
 
     return NINLIL_E_INVALID_ARGUMENT;

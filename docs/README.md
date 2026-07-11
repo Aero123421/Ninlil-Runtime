@@ -1,6 +1,6 @@
 # Ninlil Documentation
 
-状態: M0 public baseline complete / M1a Domain Store D0 fixed, D1-A・D1-B1・D1-B2・D1-B3a (SCHEDULER_OWNER 0x26)・D1-B3b (ORDERED_INGRESS 0x27 + message_semantic_digest) implemented, D1 remaining (B3c+) pre-alpha<br>
+状態: M0 public baseline complete / M1a Domain Store D0 fixed, D1-A・D1-B1・D1-B2・D1-B3a (SCHEDULER_OWNER 0x26)・D1-B3b (ORDERED_INGRESS 0x27 + message_semantic_digest)・D1-B3c (BLOB 0x30 manifest/chunk) implemented, D1 remaining (B3d+) pre-alpha<br>
 対象release: Foundation / pre-alpha
 
 ## 正本と優先順位

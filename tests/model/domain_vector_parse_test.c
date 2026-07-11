@@ -23,6 +23,8 @@ _Static_assert(sizeof(((ninlil_dv_file_t){0}).top_bits) == sizeof(uint32_t),
     "top_bits remains uint32_t (separate from catalog presence)");
 _Static_assert(NINLIL_DV_CAT_DSB3_27 == NINLIL_DV_CAT_BIT(31),
     "D1-B3b subtype 27 catalog bit is bit 31 (no shift of 0..30)");
+_Static_assert(NINLIL_DV_CAT_DSB3_30 == NINLIL_DV_CAT_BIT(32),
+    "D1-B3c subtype 30 catalog bit is bit 32 (no shift of 0..31)");
 _Static_assert(NINLIL_DV_CAT_DSB3_NEG == NINLIL_DV_CAT_BIT(30),
     "pre-B3b highest wire catalog bit stays bit 30");
 _Static_assert(NINLIL_DV_CAT_TEST_BIT33 == (UINT64_C(1) << 33),
@@ -36,6 +38,14 @@ _Static_assert(
         != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
             | NINLIL_DV_CAT_TEST_BIT33),
     "uint32 storage would truncate catalog presence bit 33");
+_Static_assert(
+    (NINLIL_DV_CAT_REQUIRED_MASK & NINLIL_DV_CAT_DSB3_30) != 0u,
+    "B3c catalog bit 32 is part of the required mask");
+_Static_assert(
+    (NINLIL_DV_CAT_REQUIRED_MASK | NINLIL_DV_CAT_DSB3_30)
+        != (uint64_t)(uint32_t)(NINLIL_DV_CAT_REQUIRED_MASK
+            | NINLIL_DV_CAT_DSB3_30),
+    "uint32 storage would truncate catalog presence bit 32");
 
 static const char *full_catalog =
     "\"catalog\":{"
@@ -54,7 +64,8 @@ static const char *full_catalog =
     "\"dsb2_subtype_24_positive\":0,\"dsb2_subtype_25_positive\":0,"
     "\"dsb2_total_positive\":0,\"dsb2_total_negative\":0,"
     "\"dsb3_subtype_26_positive\":0,\"dsb3_total_positive\":0,"
-    "\"dsb3_total_negative\":0,\"dsb3_subtype_27_positive\":0}";
+    "\"dsb3_total_negative\":0,\"dsb3_subtype_27_positive\":0,"
+    "\"dsb3_subtype_30_positive\":0}";
 
 static const char *ws_def =
     "\"required_workspace_bytes_definition\":"
@@ -62,11 +73,12 @@ static const char *ws_def =
     "and state/context objects.\"";
 
 static const char *top_ok_prefix =
-    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3b\","
+    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3c\","
     "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
     "(10/11/20-25 service+txn admission) + D1-B3a body "
     "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
-    "message_semantic_digest helper; not full D1 catalog\",";
+    "message_semantic_digest helper + D1-B3c body (30 BLOB "
+    "manifest/chunk); not full D1 catalog\",";
 
 static int expect_fail(const char *text)
 {
@@ -159,7 +171,7 @@ int main(void)
     {
         char bad[8192];
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":2,\"format\":\"ninlil-domain-store-v1-d1b3b\","
+            "{\"version\":2,\"format\":\"ninlil-domain-store-v1-d1b3c\","
             "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
             "bodies (10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER); not full D1 catalog\","
@@ -181,7 +193,7 @@ int main(void)
             ws_def, full_catalog);
         REQUIRE(expect_fail(bad));
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3b\","
+            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3c\","
             "\"scope\":\"not-a-valid-scope\","
             "%s,%s,\"vectors\":[{\"id\":\"a\",\"suite\":\"DSK1\",\"op\":\"sha256\","
             "\"expected_status\":\"OK\",\"required_workspace_bytes\":0,"
@@ -190,7 +202,7 @@ int main(void)
             ws_def, full_catalog);
         REQUIRE(expect_fail(bad));
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3b\","
+            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3c\","
             "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
             "bodies (10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER); not full D1 catalog\","
@@ -201,7 +213,7 @@ int main(void)
             full_catalog);
         REQUIRE(expect_fail(bad));
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":\"1\",\"format\":\"ninlil-domain-store-v1-d1b3b\","
+            "{\"version\":\"1\",\"format\":\"ninlil-domain-store-v1-d1b3c\","
             "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
             "bodies (10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER); not full D1 catalog\","
@@ -217,7 +229,7 @@ int main(void)
     {
         char bad[8192];
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":1,\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3b\","
+            "{\"version\":1,\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b3c\","
             "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
             "bodies (10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER); not full D1 catalog\","
@@ -236,7 +248,7 @@ int main(void)
         (void)snprintf(ok, sizeof(ok),
             "{\n"
             "  \"version\": 1,\n"
-            "  \"format\": \"ninlil-domain-store-v1-d1b3b\",\n"
+            "  \"format\": \"ninlil-domain-store-v1-d1b3c\",\n"
             "  \"scope\": \"%s\",\n"
             "  %s,\n"
             "  %s,\n"

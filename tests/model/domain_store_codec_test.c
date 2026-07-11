@@ -80,11 +80,14 @@ typedef struct body_any {
     ninlil_model_domain_body_event_id_map_t event_id_map;
     ninlil_model_domain_body_scheduler_owner_t scheduler_owner;
     ninlil_model_domain_body_ordered_ingress_t ordered_ingress;
+    ninlil_model_domain_body_blob_manifest_t blob_manifest;
+    ninlil_model_domain_body_blob_chunk_t blob_chunk;
 } body_any_t;
 
 static ninlil_status_t decode_body_any(
     uint32_t family,
     uint32_t subtype,
+    uint32_t flags,
     ninlil_bytes_view_t body,
     body_any_t *any)
 {
@@ -147,12 +150,24 @@ static ninlil_status_t decode_body_any(
         return ninlil_model_domain_decode_body_ordered_ingress(
             body, &any->ordered_ingress);
     }
+    if (family == 6u && subtype == 0x30u) {
+        if (flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_MANIFEST) {
+            return ninlil_model_domain_decode_body_blob_manifest(
+                body, &any->blob_manifest);
+        }
+        if (flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_CHUNK) {
+            return ninlil_model_domain_decode_body_blob_chunk(
+                body, &any->blob_chunk);
+        }
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
     return NINLIL_E_INVALID_ARGUMENT;
 }
 
 static ninlil_status_t encode_body_any(
     uint32_t family,
     uint32_t subtype,
+    uint32_t flags,
     const body_any_t *any,
     uint8_t *out,
     uint32_t capacity,
@@ -217,6 +232,17 @@ static ninlil_status_t encode_body_any(
     if (family == 6u && subtype == 0x27u) {
         return ninlil_model_domain_encode_body_ordered_ingress(
             &any->ordered_ingress, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x30u) {
+        if (flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_MANIFEST) {
+            return ninlil_model_domain_encode_body_blob_manifest(
+                &any->blob_manifest, out, capacity, out_len);
+        }
+        if (flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_CHUNK) {
+            return ninlil_model_domain_encode_body_blob_chunk(
+                &any->blob_chunk, out, capacity, out_len);
+        }
+        return NINLIL_E_INVALID_ARGUMENT;
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -785,7 +811,7 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
         (void)memset(&any, 0, sizeof(any));
 
         if (strcmp(v->op, "body_decode") == 0) {
-            got = decode_body_any(v->family, v->subtype, bv, &any);
+            got = decode_body_any(v->family, v->subtype, v->flags, bv, &any);
             QCHECK(got == expect);
             if (expect != NINLIL_OK) {
                 QCHECK(zeros(&any, sizeof(any)));
@@ -800,17 +826,17 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
          * of a positive sibling body (body_hex remains well-formed).
          */
         if (expect == NINLIL_E_BUFFER_TOO_SMALL) {
-            got = decode_body_any(v->family, v->subtype, bv, &any);
+            got = decode_body_any(v->family, v->subtype, v->flags, bv, &any);
             QCHECK(got == NINLIL_OK);
             elen = 0u;
             got = encode_body_any(
-                v->family, v->subtype, &any, NULL, 0u, &elen);
+                v->family, v->subtype, v->flags, &any, NULL, 0u, &elen);
             QCHECK(got == NINLIL_E_BUFFER_TOO_SMALL);
             QCHECK(elen == v->body_length);
             return 0;
         }
 
-        got = decode_body_any(v->family, v->subtype, bv, &any);
+        got = decode_body_any(v->family, v->subtype, v->flags, bv, &any);
         if (strcmp(v->op, "body_encode") == 0 && expect != NINLIL_OK) {
             /* Encode-path invalid arguments are not currently vectorized. */
             QCHECK(got == expect);
@@ -819,7 +845,7 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
         QCHECK(got == NINLIL_OK);
         elen = 0u;
         got = encode_body_any(
-            v->family, v->subtype, &any, outb, sizeof(outb), &elen);
+            v->family, v->subtype, v->flags, &any, outb, sizeof(outb), &elen);
         QCHECK(got == expect);
         if (expect == NINLIL_OK) {
             QCHECK(elen == (uint32_t)n);
@@ -833,14 +859,28 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 (void)memset(&any2, 0, sizeof(any2));
                 bv2.data = outb;
                 bv2.length = elen;
-                QCHECK(decode_body_any(v->family, v->subtype, bv2, &any2)
+                QCHECK(decode_body_any(
+                    v->family, v->subtype, v->flags, bv2, &any2)
                     == NINLIL_OK);
                 QCHECK(encode_body_any(
-                    v->family, v->subtype, &any2, buf2, sizeof(buf2), &elen2)
+                    v->family, v->subtype, v->flags, &any2, buf2, sizeof(buf2),
+                    &elen2)
                     == NINLIL_OK);
                 QCHECK(elen2 == elen);
                 QCHECK(memcmp(buf2, outb, elen) == 0);
             }
+        }
+        return 0;
+    }
+    if (strcmp(v->op, "blob_chunk_count") == 0) {
+        uint32_t c = 0u;
+        got = ninlil_model_domain_blob_chunk_count_for_total(
+            v->sha_bit_length, &c);
+        QCHECK(got == expect);
+        if (expect == NINLIL_OK) {
+            QCHECK(c == v->chunk_count);
+        } else {
+            QCHECK(c == 0u);
         }
         return 0;
     }
@@ -1039,6 +1079,19 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 QCHECK(rec.ordered_ingress.ordered_sequence != 0u);
                 QCHECK(rec.ordered_ingress.ingress_state == 1u);
                 QCHECK(rec.envelope.header.record_revision == 1u);
+            } else if (v->subtype == 0x30u) {
+                QCHECK(rec.envelope.header.record_revision == 1u);
+                QCHECK(rec.envelope.header.flags == (uint8_t)v->flags);
+                if (v->flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_MANIFEST) {
+                    QCHECK(rec.blob_manifest.owner_key_raw != NULL
+                        || rec.blob_manifest.owner_key_raw_length == 0u);
+                    QCHECK(rec.blob_manifest.owner_key_raw_length > 0u);
+                } else if (v->flags == NINLIL_MODEL_DOMAIN_FLAG_BLOB_CHUNK) {
+                    QCHECK(rec.blob_chunk.chunk_length > 0u);
+                    QCHECK(rec.blob_chunk.chunk_bytes != NULL);
+                    /* Borrowed chunk starts after fixed 116-byte prefix. */
+                    QCHECK(rec.blob_chunk.chunk_bytes == &body_start[116]);
+                }
             }
             if (ninlil_dv_str(v->digest_hex)[0] != '\0') {
                 ninlil_model_domain_digest_t d;
@@ -1098,6 +1151,7 @@ static int test_catalog_and_replay(const char *path)
     uint32_t cov25 = 0u;
     uint32_t cov26 = 0u;
     uint32_t cov27 = 0u;
+    uint32_t cov30 = 0u;
     uint32_t unimplemented = 0u;
 
     if (ninlil_dv_load_file(path, &file, err, sizeof(err)) != 0) {
@@ -1205,6 +1259,8 @@ static int test_catalog_and_replay(const char *path)
                     cov26++;
                 } else if (v->subtype == 0x27u) {
                     cov27++;
+                } else if (v->subtype == 0x30u) {
+                    cov30++;
                 }
             } else {
                 dsb3_neg++;
@@ -1246,11 +1302,12 @@ static int test_catalog_and_replay(const char *path)
     REQUIRE(dsb3_neg == file.catalog.dsb3_total_negative);
     REQUIRE(cov26 == file.catalog.dsb3_subtype_26_positive);
     REQUIRE(cov27 == file.catalog.dsb3_subtype_27_positive);
-    /* D1-B1 + D1-B2 + D1-B3a + D1-B3b subtype coverage. */
+    REQUIRE(cov30 == file.catalog.dsb3_subtype_30_positive);
+    /* D1-B1 + D1-B2 + D1-B3a + D1-B3b + D1-B3c subtype coverage. */
     if (cov01 == 0u || cov60 == 0u || cov62 == 0u || cov64 == 0u
         || cov7d == 0u || cov10 == 0u || cov11 == 0u || cov20 == 0u
         || cov21 == 0u || cov22 == 0u || cov23 == 0u || cov24 == 0u
-        || cov25 == 0u || cov26 == 0u || cov27 == 0u) {
+        || cov25 == 0u || cov26 == 0u || cov27 == 0u || cov30 == 0u) {
         unimplemented = 1u;
     }
     REQUIRE(unimplemented == 0u);
@@ -1259,10 +1316,10 @@ static int test_catalog_and_replay(const char *path)
         "dsb2_pos=%u dsb2_neg=%u dsb3_pos=%u dsb3_neg=%u "
         "cov01=%u cov60=%u cov62=%u cov64=%u cov7d=%u "
         "cov10=%u cov11=%u cov20=%u cov21=%u cov22=%u cov23=%u cov24=%u "
-        "cov25=%u cov26=%u cov27=%u sizeof(ninlil_dv_vector_t)=%zu\n",
+        "cov25=%u cov26=%u cov27=%u cov30=%u sizeof(ninlil_dv_vector_t)=%zu\n",
         file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, dsb3_pos,
         dsb3_neg, cov01, cov60, cov62, cov64, cov7d, cov10, cov11, cov20,
-        cov21, cov22, cov23, cov24, cov25, cov26, cov27,
+        cov21, cov22, cov23, cov24, cov25, cov26, cov27, cov30,
         sizeof(ninlil_dv_vector_t));
     ninlil_dv_free(&file);
     return 0;
@@ -2480,6 +2537,88 @@ static int test_body_alias_and_overflow(const char *vector_path)
         ninlil_model_domain_body_ordered_ingress_t,
         ninlil_model_domain_decode_body_ordered_ingress);
 
+    /* --- D1-B3c BLOB manifest (RAW16 owner_key) + chunk (borrowed bytes) --- */
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_blob_manifest_t,
+        ninlil_model_domain_encode_body_blob_manifest);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_blob_manifest_t,
+        ninlil_model_domain_encode_body_blob_manifest);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_blob_manifest_t,
+        ninlil_model_domain_encode_body_blob_manifest,
+        owner_key_raw, owner_key_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_blob_manifest_t,
+        ninlil_model_domain_encode_body_blob_manifest,
+        owner_key_raw, owner_key_raw_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_blob_manifest_t,
+        ninlil_model_domain_decode_body_blob_manifest);
+
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_blob_chunk_t,
+        ninlil_model_domain_encode_body_blob_chunk);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_blob_chunk_t,
+        ninlil_model_domain_encode_body_blob_chunk);
+    /* Nested chunk_bytes alias/overflow: same pattern as RAW16 but u32 length.
+     * Compare body object snapshots as well as out_bytes / out_length. */
+    {
+        ninlil_model_domain_body_blob_chunk_t object;
+        ninlil_model_domain_body_blob_chunk_t object_before;
+        uint8_t local_out[128];
+        uint8_t local_before[128];
+        uint32_t local_len;
+        uint32_t local_len_before;
+        uint8_t raw_own[8];
+        (void)memset(&object, 0, sizeof(object));
+        (void)memset(raw_own, 0x41, sizeof(raw_own));
+        object.chunk_length = 8u;
+        /* nested chunk_bytes aliases out_bytes */
+        object.chunk_bytes = local_out;
+        object_before = object;
+        (void)memset(local_out, 0x5A, sizeof(local_out));
+        (void)memcpy(local_before, local_out, sizeof(local_out));
+        local_len = 66u;
+        local_len_before = local_len;
+        REQUIRE(ninlil_model_domain_encode_body_blob_chunk(
+                    &object, local_out, sizeof(local_out), &local_len)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(local_len == local_len_before);
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);
+        /* nested chunk_bytes aliases out_length */
+        object.chunk_bytes = (const uint8_t *)&local_len;
+        object.chunk_length = (uint32_t)sizeof(local_len);
+        object_before = object;
+        local_len = 55u;
+        local_len_before = local_len;
+        REQUIRE(ninlil_model_domain_encode_body_blob_chunk(
+                    &object, local_out, sizeof(local_out), &local_len)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(local_len == local_len_before);
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);
+        /* nested chunk_bytes aliases body object */
+        object.chunk_bytes = (const uint8_t *)&object;
+        object.chunk_length = 8u;
+        object_before = object;
+        local_len = 44u;
+        local_len_before = local_len;
+        (void)memset(local_out, 0x5A, sizeof(local_out));
+        (void)memcpy(local_before, local_out, sizeof(local_out));
+        REQUIRE(ninlil_model_domain_encode_body_blob_chunk(
+                    &object, local_out, sizeof(local_out), &local_len)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(local_len == local_len_before);
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);
+        (void)raw_own;
+    }
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_blob_chunk_t,
+        ninlil_model_domain_decode_body_blob_chunk);
+
     /*
      * BUFFER_TOO_SMALL exact required length + untouched short buffer for each
      * variable body. Golden positives from the checked-in DSB2/DSB3 catalog.
@@ -2494,9 +2633,9 @@ static int test_body_alias_and_overflow(const char *vector_path)
         REQUIRE(ninlil_dv_load_file(vector_path, &file, err, sizeof(err)) == 0);
         for (vi = 0u; vi < file.vector_count; ++vi) {
             const ninlil_dv_vector_t *v = &file.vectors[vi];
-            uint8_t enc[2048];
-            uint8_t short_buf[2048];
-            uint8_t short_before[2048];
+            uint8_t enc[4096];
+            uint8_t short_buf[4096];
+            uint8_t short_before[4096];
             size_t hn = 0u;
             uint32_t n = 0u;
             uint32_t required = 0u;
@@ -2512,7 +2651,8 @@ static int test_body_alias_and_overflow(const char *vector_path)
             if (v->subtype != 0x10u && v->subtype != 0x11u
                 && v->subtype != 0x20u && v->subtype != 0x23u
                 && v->subtype != 0x24u && v->subtype != 0x25u
-                && v->subtype != 0x26u && v->subtype != 0x27u) {
+                && v->subtype != 0x26u && v->subtype != 0x27u
+                && v->subtype != 0x30u) {
                 continue;
             }
             REQUIRE(hex_to(ninlil_dv_str(v->body_hex), enc, sizeof(enc), &hn)
@@ -2520,11 +2660,12 @@ static int test_body_alias_and_overflow(const char *vector_path)
             n = (uint32_t)hn;
             (void)memset(&any, 0, sizeof(any));
             got = decode_body_any(
-                v->family, v->subtype, (ninlil_bytes_view_t){enc, n}, &any);
+                v->family, v->subtype, v->flags,
+                (ninlil_bytes_view_t){enc, n}, &any);
             REQUIRE(got == NINLIL_OK);
             required = 0u;
             got = encode_body_any(
-                v->family, v->subtype, &any, NULL, 0u, &required);
+                v->family, v->subtype, v->flags, &any, NULL, 0u, &required);
             REQUIRE(got == NINLIL_E_BUFFER_TOO_SMALL);
             REQUIRE(required == n);
             REQUIRE(required == v->body_length);
@@ -2532,15 +2673,15 @@ static int test_body_alias_and_overflow(const char *vector_path)
             (void)memcpy(short_before, short_buf, sizeof(short_buf));
             short_len = 0u;
             got = encode_body_any(
-                v->family, v->subtype, &any, short_buf,
+                v->family, v->subtype, v->flags, &any, short_buf,
                 required > 0u ? required - 1u : 0u, &short_len);
             REQUIRE(got == NINLIL_E_BUFFER_TOO_SMALL);
             REQUIRE(short_len == required);
             REQUIRE(memcmp(short_buf, short_before, sizeof(short_buf)) == 0);
             bts_seen++;
         }
-        /* At least one positive body_roundtrip per seven variable subtypes. */
-        REQUIRE(bts_seen >= 7u);
+        /* At least one positive body_roundtrip per variable subtype family. */
+        REQUIRE(bts_seen >= 8u);
         ninlil_dv_free(&file);
     }
 
@@ -3040,6 +3181,309 @@ static int test_message_semantic_digest_contracts(const char *path)
     return 0;
 }
 
+/*
+ * Independent oracle for blob_id_digest: SHA-256 of the documented preimage
+ * (tag || owner_kind:u16 || owner_key_raw:RAW16 || blob_kind:u16 ||
+ *  content_digest[32] || total_length:u64). Not the production helper.
+ */
+static int blob_id_digest_oracle(
+    uint16_t blob_owner_kind,
+    uint16_t owner_key_raw_length,
+    const uint8_t *owner_key_raw,
+    uint16_t blob_kind,
+    const uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES],
+    uint64_t total_length,
+    ninlil_model_domain_digest_t *out_digest)
+{
+    static const char tag[] = "NINLIL-DOMAIN-BLOB-ID-V1";
+    uint8_t pre[sizeof(tag) - 1u + 2u + 2u + 255u + 2u + 32u + 8u];
+    uint32_t o = 0u;
+    uint8_t be[8];
+
+    if (out_digest == NULL || content_digest == NULL
+        || owner_key_raw_length > 255u
+        || (owner_key_raw_length != 0u && owner_key_raw == NULL)) {
+        return 1;
+    }
+    (void)memcpy(&pre[o], tag, sizeof(tag) - 1u);
+    o += (uint32_t)(sizeof(tag) - 1u);
+    ninlil_model_domain_encode_u16_be(be, blob_owner_kind);
+    (void)memcpy(&pre[o], be, 2u);
+    o += 2u;
+    ninlil_model_domain_encode_u16_be(be, owner_key_raw_length);
+    (void)memcpy(&pre[o], be, 2u);
+    o += 2u;
+    if (owner_key_raw_length != 0u) {
+        (void)memcpy(&pre[o], owner_key_raw, owner_key_raw_length);
+        o += owner_key_raw_length;
+    }
+    ninlil_model_domain_encode_u16_be(be, blob_kind);
+    (void)memcpy(&pre[o], be, 2u);
+    o += 2u;
+    (void)memcpy(&pre[o], content_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u64_be(be, total_length);
+    (void)memcpy(&pre[o], be, 8u);
+    o += 8u;
+    if (ninlil_model_domain_sha256(pre, o, out_digest) != NINLIL_OK) {
+        return 1;
+    }
+    return 0;
+}
+
+/*
+ * D1-B3c blob_id_digest + blob_chunk_count_for_total helper contracts:
+ * oracle match, alias/address untouched, non-alias zeros output, output nonzero.
+ */
+static int test_blob_helper_contracts(const char *path)
+{
+    ninlil_dv_file_t file;
+    char err[256];
+    size_t i;
+    ninlil_model_domain_body_blob_manifest_t man;
+    ninlil_model_domain_digest_t dig;
+    ninlil_model_domain_digest_t dig_before;
+    ninlil_model_domain_digest_t oracle;
+    uint8_t content_before[32];
+    uint8_t owner_before[128];
+    uint8_t *overflow_ptr;
+    uint32_t chunk_count;
+    uint32_t chunk_before;
+    uint32_t *overflow_count;
+    const uint64_t chunk_max =
+        (uint64_t)NINLIL_MODEL_DOMAIN_BLOB_CHUNK_DATA_MAX_BYTES;
+    const uint64_t u32_max = (uint64_t)UINT32_MAX;
+    /* Checked constants — product stays in uint64_t, no host narrowing. */
+    const uint64_t total_u32_max = u32_max * chunk_max;
+    const uint64_t total_u32_max_plus1 = total_u32_max + 1u;
+    const uint64_t total_overflow = (u32_max + 1u) * chunk_max;
+    int seen_tx = 0;
+    int seen_ing = 0;
+    int seen_dlv = 0;
+
+    REQUIRE(path != NULL);
+    REQUIRE(ninlil_dv_load_file(path, &file, err, sizeof(err)) == 0);
+
+    /* --- Valid TX / INGRESS / DELIVERY vectors match independent oracle --- */
+    for (i = 0u; i < file.vector_count; ++i) {
+        const ninlil_dv_vector_t *v = &file.vectors[i];
+        uint8_t body[512];
+        size_t bn = 0u;
+        if (strcmp(v->op, "body_roundtrip") != 0
+            || strcmp(v->expected_status, "OK") != 0
+            || v->subtype != 0x30u
+            || v->flags != NINLIL_MODEL_DOMAIN_FLAG_BLOB_MANIFEST) {
+            continue;
+        }
+        if (strcmp(v->id, "DSB3_BLOB_MAN_TX_CMD") != 0
+            && strcmp(v->id, "DSB3_BLOB_MAN_ING_PAY") != 0
+            && strcmp(v->id, "DSB3_BLOB_MAN_DLV_CMD") != 0) {
+            continue;
+        }
+        REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body, sizeof(body), &bn)
+            == 0);
+        REQUIRE(ninlil_model_domain_decode_body_blob_manifest(
+                (ninlil_bytes_view_t){body, (uint32_t)bn}, &man)
+            == NINLIL_OK);
+        REQUIRE(blob_id_digest_oracle(
+                man.blob_owner_kind, man.owner_key_raw_length,
+                man.owner_key_raw, man.blob_kind, man.content_digest,
+                man.total_length, &oracle)
+            == 0);
+        (void)memset(&dig, 0xA5, sizeof(dig));
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, man.owner_key_raw_length,
+                man.owner_key_raw, man.blob_kind, man.content_digest,
+                man.total_length, &dig)
+            == NINLIL_OK);
+        REQUIRE(memcmp(dig.bytes, oracle.bytes, 32u) == 0);
+        REQUIRE(memcmp(dig.bytes, man.blob_id_digest, 32u) == 0);
+        /* Helper output must be non-zero. */
+        REQUIRE(!zeros(dig.bytes, 32u));
+        if (man.blob_owner_kind
+            == NINLIL_MODEL_DOMAIN_BLOB_OWNER_TRANSACTION) {
+            seen_tx = 1;
+        } else if (man.blob_owner_kind
+            == NINLIL_MODEL_DOMAIN_BLOB_OWNER_INGRESS) {
+            seen_ing = 1;
+        } else if (man.blob_owner_kind
+            == NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY) {
+            seen_dlv = 1;
+        }
+    }
+    REQUIRE(seen_tx != 0);
+    REQUIRE(seen_ing != 0);
+    REQUIRE(seen_dlv != 0);
+
+    /* Re-load TX_CMD fixture for alias / invalid cases. */
+    {
+        const ninlil_dv_vector_t *v = NULL;
+        uint8_t body[512];
+        size_t bn = 0u;
+        for (i = 0u; i < file.vector_count; ++i) {
+            if (strcmp(file.vectors[i].id, "DSB3_BLOB_MAN_TX_CMD") == 0) {
+                v = &file.vectors[i];
+                break;
+            }
+        }
+        REQUIRE(v != NULL);
+        REQUIRE(hex_to(ninlil_dv_str(v->body_hex), body, sizeof(body), &bn)
+            == 0);
+        REQUIRE(ninlil_model_domain_decode_body_blob_manifest(
+                (ninlil_bytes_view_t){body, (uint32_t)bn}, &man)
+            == NINLIL_OK);
+        REQUIRE(man.owner_key_raw_length <= sizeof(owner_before));
+        (void)memcpy(owner_before, man.owner_key_raw, man.owner_key_raw_length);
+        (void)memcpy(content_before, man.content_digest, 32u);
+
+        /* out aliases owner raw — every range unchanged */
+        (void)memset(&dig, 0x5A, sizeof(dig));
+        dig_before = dig;
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, man.owner_key_raw_length,
+                man.owner_key_raw, man.blob_kind, man.content_digest,
+                man.total_length,
+                (ninlil_model_domain_digest_t *)(void *)man.owner_key_raw)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(man.owner_key_raw, owner_before, man.owner_key_raw_length)
+            == 0);
+        REQUIRE(memcmp(man.content_digest, content_before, 32u) == 0);
+        REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+        /* out aliases content_digest — every range unchanged */
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, man.owner_key_raw_length,
+                man.owner_key_raw, man.blob_kind, man.content_digest,
+                man.total_length,
+                (ninlil_model_domain_digest_t *)(void *)man.content_digest)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(man.owner_key_raw, owner_before, man.owner_key_raw_length)
+            == 0);
+        REQUIRE(memcmp(man.content_digest, content_before, 32u) == 0);
+
+        /* owner raw overlaps content_digest (same buffer as both) */
+        {
+            uint8_t shared[32];
+            uint8_t shared_before[32];
+            (void)memcpy(shared, content_before, 32u);
+            (void)memcpy(shared_before, shared, 32u);
+            (void)memset(&dig, 0xB7, sizeof(dig));
+            dig_before = dig;
+            REQUIRE(ninlil_model_domain_blob_id_digest(
+                    man.blob_owner_kind, 16u, shared, man.blob_kind, shared,
+                    man.total_length, &dig)
+                == NINLIL_E_INVALID_ARGUMENT);
+            REQUIRE(memcmp(shared, shared_before, 32u) == 0);
+            REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+        }
+
+        /* Forged near-UINTPTR_MAX out/raw/content: safe INVALID, sentinel stays */
+        overflow_ptr = (uint8_t *)(uintptr_t)(UINTPTR_MAX - 3u);
+        (void)memset(&dig, 0x11, sizeof(dig));
+        dig_before = dig;
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, man.owner_key_raw_length,
+                man.owner_key_raw, man.blob_kind, man.content_digest,
+                man.total_length,
+                (ninlil_model_domain_digest_t *)(void *)overflow_ptr)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+        (void)memset(&dig, 0x22, sizeof(dig));
+        dig_before = dig;
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, 16u, overflow_ptr, man.blob_kind,
+                man.content_digest, man.total_length, &dig)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+        (void)memset(&dig, 0x33, sizeof(dig));
+        dig_before = dig;
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, man.owner_key_raw_length,
+                man.owner_key_raw, man.blob_kind, overflow_ptr,
+                man.total_length, &dig)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(memcmp(dig.bytes, dig_before.bytes, 32u) == 0);
+
+        /* Non-alias invalid owner/kind/raw/content-zero zeros valid output */
+        (void)memset(&dig, 0xC3, sizeof(dig));
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                0u /* bad owner */, man.owner_key_raw_length, man.owner_key_raw,
+                man.blob_kind, man.content_digest, man.total_length, &dig)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(zeros(dig.bytes, 32u));
+
+        (void)memset(&dig, 0xC3, sizeof(dig));
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, man.owner_key_raw_length,
+                man.owner_key_raw, 99u /* bad kind */, man.content_digest,
+                man.total_length, &dig)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(zeros(dig.bytes, 32u));
+
+        (void)memset(&dig, 0xC3, sizeof(dig));
+        REQUIRE(ninlil_model_domain_blob_id_digest(
+                man.blob_owner_kind, 15u /* wrong TX raw len */, man.owner_key_raw,
+                man.blob_kind, man.content_digest, man.total_length, &dig)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(zeros(dig.bytes, 32u));
+
+        {
+            uint8_t zero_content[32];
+            (void)memset(zero_content, 0, sizeof(zero_content));
+            (void)memset(&dig, 0xC3, sizeof(dig));
+            REQUIRE(ninlil_model_domain_blob_id_digest(
+                    man.blob_owner_kind, man.owner_key_raw_length,
+                    man.owner_key_raw, man.blob_kind, zero_content,
+                    man.total_length, &dig)
+                == NINLIL_E_INVALID_ARGUMENT);
+            REQUIRE(zeros(dig.bytes, 32u));
+        }
+    }
+
+    /* --- chunk_count: exact u32 capacity + forged out pointer --- */
+    chunk_count = 0xA5A5A5A5u;
+    REQUIRE(ninlil_model_domain_blob_chunk_count_for_total(
+            total_u32_max, &chunk_count)
+        == NINLIL_OK);
+    REQUIRE(chunk_count == (uint32_t)UINT32_MAX);
+
+    chunk_count = 0xA5A5A5A5u;
+    REQUIRE(ninlil_model_domain_blob_chunk_count_for_total(
+            total_u32_max_plus1, &chunk_count)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(chunk_count == 0u);
+
+    chunk_count = 0xA5A5A5A5u;
+    REQUIRE(ninlil_model_domain_blob_chunk_count_for_total(
+            total_overflow, &chunk_count)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(chunk_count == 0u);
+
+    /* Forged near-UINTPTR_MAX out: INVALID without write/crash */
+    overflow_count = (uint32_t *)(uintptr_t)(UINTPTR_MAX - 1u);
+    REQUIRE(ninlil_model_domain_blob_chunk_count_for_total(1u, overflow_count)
+        == NINLIL_E_INVALID_ARGUMENT);
+
+    /* NULL out */
+    REQUIRE(ninlil_model_domain_blob_chunk_count_for_total(1u, NULL)
+        == NINLIL_E_INVALID_ARGUMENT);
+
+    /* Non-alias semantic failure still zeros valid output */
+    chunk_count = 0xA5A5A5A5u;
+    chunk_before = chunk_count;
+    REQUIRE(ninlil_model_domain_blob_chunk_count_for_total(
+            total_u32_max_plus1, &chunk_count)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(chunk_count == 0u);
+    REQUIRE(chunk_count != chunk_before);
+
+    ninlil_dv_free(&file);
+    (void)fprintf(stdout, "blob helper contracts ok\n");
+    return 0;
+}
+
 static int test_catalog_format_mutations(const char *path)
 {
     ninlil_dv_file_t file;
@@ -3068,7 +3512,7 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3b\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3c\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
@@ -3166,6 +3610,7 @@ int main(int argc, char **argv)
         || test_invalid_encode_structs() != 0
         || test_body_alias_and_overflow(path) != 0
         || test_message_semantic_digest_contracts(path) != 0
+        || test_blob_helper_contracts(path) != 0
         || test_catalog_and_replay(path) != 0
         || test_mutation_rejects_wrong_digest(path) != 0
         || test_manifest_key_length_mutation(path) != 0

@@ -431,7 +431,12 @@ ninlil_status_t ninlil_model_domain_witness_chunk_count_for_members(
     uint16_t member_count,
     uint16_t *out_chunk_count);
 
-/* BLOB chunk data field length (section 2): 0 or 1..3072. */
+/*
+ * Generic BLOB logical data/view length bound (section 2): 0..3072.
+ * Zero represents an empty logical view/zero-length manifest and is not a
+ * valid stored BLOB chunk row; subtype 0x30 body validation rejects a chunk
+ * field length of 0 because zero-length blobs have no chunk rows.
+ */
 ninlil_status_t ninlil_model_domain_blob_chunk_data_length_validate(
     uint32_t chunk_data_length);
 

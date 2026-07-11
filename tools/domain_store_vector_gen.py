@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/D1-B3c vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a/B3b/B3c
 are hand-written here and intentionally do not import or link production C.
 
 Usage:
@@ -334,6 +334,60 @@ def scheduler_primary_id(owner_kind: int, subject_raw: bytes) -> bytes:
     if owner_kind == 3:
         return primary_id_from_identity(3, subject_raw)
     raise ValueError("bad scheduler owner kind")
+
+
+def blob_owner_primary_key_digest(owner_kind: int, owner_raw: bytes) -> bytes:
+    """KEY_DIGEST of BLOB owner primary complete key (BLOB enum: 1 TX, 2 ING, 3 DLV)."""
+    if owner_kind == 1:  # TRANSACTION
+        return complete_key_digest_id128(0x20, owner_raw)
+    if owner_kind == 2:  # INGRESS
+        return complete_key_digest_u64(0x27, owner_raw)
+    if owner_kind == 3:  # DELIVERY
+        return complete_key_digest_composite(0x40, raw16(owner_raw))
+    raise ValueError("bad blob owner kind")
+
+
+def blob_owner_primary_id(owner_kind: int, owner_raw: bytes) -> bytes:
+    if owner_kind == 1:
+        return owner_raw
+    if owner_kind == 2:
+        return primary_id_from_identity(3, owner_raw)
+    if owner_kind == 3:
+        return primary_id_from_composite_subtype(0x40, raw16(owner_raw))
+    raise ValueError("bad blob owner kind")
+
+
+def blob_id_digest(
+    owner_kind: int, owner_raw: bytes, blob_kind: int,
+    content_digest: bytes, total_length: int,
+) -> bytes:
+    return sha256(
+        b"NINLIL-DOMAIN-BLOB-ID-V1"
+        + be16(owner_kind)
+        + raw16(owner_raw)
+        + be16(blob_kind)
+        + content_digest
+        + be64(total_length)
+    )
+
+
+def blob_chunk_count_for_total(total_length: int):
+    """Checked ceil(total/3072) as u32; 0 length → 0; overflow → None.
+
+    Uses exact Python integers only — no host narrowing of the product.
+    """
+    if total_length == 0:
+        return 0
+    if total_length < 0:
+        return None
+    max_chunk = 3072
+    u32_max = 0xFFFFFFFF
+    if total_length > ((1 << 64) - 1) - (max_chunk - 1):
+        return None
+    chunks = (total_length + max_chunk - 1) // max_chunk
+    if chunks == 0 or chunks > u32_max:
+        return None
+    return int(chunks)
 
 
 def enc_env_full(rtype, st, flags, rev, primary_id, head, pvd, body: bytes) -> bytes:
@@ -2898,6 +2952,559 @@ def build_document():
     assert b3_cov["27"]["negative"] >= 25
     assert b3_cov["27"]["roundtrip"] >= 6
 
+    # --- D1-B3c: BLOB (0x30) manifest + chunk pure body codec ---
+    # Append-only after the 617 D1-B3b vectors; do not mutate prior objects.
+    b_pos = b_neg = b_mut = b_rt = 0
+    EMPTY_SHA = sha256(b"")
+    CHUNK_MAX = 3072
+    # BLOB owner enum: 1 TX, 2 INGRESS, 3 DELIVERY (distinct from scheduler)
+    BLOB_TX, BLOB_ING, BLOB_DLV = 1, 2, 3
+    BK_CMD, BK_EVT, BK_ING, BK_EVD, BK_RPL = 1, 2, 3, 4, 5
+    assert len(dlv_raw) == 80
+    assert len(txn) == 16
+    ing_seq8 = be64(42)
+    content_nz = sha256(b"blob-content-seed")
+    content_one = sha256(b"x")  # single-byte content
+
+    def enc_manifest_body(
+        owner_kind, owner_raw, blob_kind, total_length, content=None,
+        blob_id=None, owner_pkd=None, chunk_count=None,
+    ):
+        if content is None:
+            content = EMPTY_SHA if total_length == 0 else content_nz
+        if chunk_count is None:
+            chunk_count = blob_chunk_count_for_total(total_length)
+            assert chunk_count is not None
+        if blob_id is None:
+            blob_id = blob_id_digest(
+                owner_kind, owner_raw, blob_kind, content, total_length)
+        if owner_pkd is None:
+            owner_pkd = blob_owner_primary_key_digest(owner_kind, owner_raw)
+        return (
+            blob_id + be16(owner_kind) + be16(blob_kind) + raw16(owner_raw)
+            + owner_pkd + be64(total_length) + be32(chunk_count) + content
+        )
+
+    def enc_chunk_body(
+        blob_id, chunk_index, chunk_count, total_length, content, chunk_bytes,
+        manifest_kd=None,
+    ):
+        if manifest_kd is None:
+            manifest_kd = complete_key_digest_composite(
+                0x30, bytes([1]) + blob_id)
+        return (
+            blob_id + manifest_kd + be32(chunk_index) + be32(chunk_count)
+            + be64(total_length) + content + be32(len(chunk_bytes))
+            + chunk_bytes
+        )
+
+    def manifest_key(blob_id):
+        return bkey(6, 0x30, 5, composite(0x30, bytes([1]) + blob_id))
+
+    def chunk_key(blob_id, index):
+        return bkey(
+            6, 0x30, 5,
+            composite(0x30, bytes([2]) + blob_id + be32(index)))
+
+    def manifest_typed(owner_kind, owner_raw, blob_kind, total_length,
+                       content=None, rev=1, flags=1, head=None, pvd=None,
+                       primary=None, body=None):
+        if content is None:
+            content = EMPTY_SHA if total_length == 0 else content_nz
+        if body is None:
+            body = enc_manifest_body(
+                owner_kind, owner_raw, blob_kind, total_length, content=content)
+        bid = body[:32]
+        if primary is None:
+            primary = blob_owner_primary_id(owner_kind, owner_raw)
+        if head is None:
+            head = F["head_nz"]
+        if pvd is None:
+            pvd = F["pvd_nz"]
+        key = manifest_key(bid)
+        val = enc_env_full(6, 0x30, flags, rev, primary, head, pvd, body)
+        return key, val, body, bid
+
+    def chunk_typed(
+        blob_id, chunk_index, chunk_count, total_length, content, chunk_bytes,
+        rev=1, flags=2, head=None, pvd=None, primary=None, body=None,
+    ):
+        if body is None:
+            body = enc_chunk_body(
+                blob_id, chunk_index, chunk_count, total_length, content,
+                chunk_bytes)
+        if primary is None:
+            primary = composite(0x30, bytes([1]) + blob_id)[:16]
+        if head is None:
+            head = F["head_nz"]
+        if pvd is None:
+            pvd = F["pvd_nz"]
+        key = chunk_key(blob_id, chunk_index)
+        val = enc_env_full(6, 0x30, flags, rev, primary, head, pvd, body)
+        return key, val, body
+
+    # Legal owner-kind pairs (all allowed)
+    legal_pairs = [
+        (BLOB_TX, txn, BK_CMD, "TX_CMD"),
+        (BLOB_TX, txn, BK_EVT, "TX_EVT"),
+        (BLOB_ING, ing_seq8, BK_ING, "ING_PAY"),
+        (BLOB_ING, ing_seq8, BK_EVD, "ING_EVD"),
+        (BLOB_DLV, dlv_raw, BK_CMD, "DLV_CMD"),
+        (BLOB_DLV, dlv_raw, BK_EVT, "DLV_EVT"),
+        (BLOB_DLV, dlv_raw, BK_RPL, "DLV_RPL"),
+    ]
+    for owner_kind, owner_raw, blob_kind, tag in legal_pairs:
+        body = enc_manifest_body(owner_kind, owner_raw, blob_kind, 1, content=content_one)
+        add(id=f"DSB3_BLOB_MAN_{tag}", suite="DSB3", op="body_roundtrip",
+            expected_status="OK", family=6, subtype=0x30, flags=1,
+            body_length=len(body), body_hex=hx(body),
+            notes=f"manifest owner={owner_kind} kind={blob_kind} total=1")
+        b_pos += 1
+        b_rt += 1
+        key, val, body, bid = manifest_typed(
+            owner_kind, owner_raw, blob_kind, 1, content=content_one, body=body)
+        add(id=f"DSB3_BLOB_MAN_{tag}_TYPED", suite="DSB3", op="typed_record",
+            expected_status="OK", family=6, subtype=0x30, flags=1,
+            key_hex=hx(key), value_hex=hx(val), body_hex=hx(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}")
+        b_pos += 1
+
+    # Zero-length manifest (count 0, empty digest)
+    body_zero = enc_manifest_body(BLOB_TX, txn, BK_CMD, 0, content=EMPTY_SHA)
+    assert blob_chunk_count_for_total(0) == 0
+    add(id="DSB3_BLOB_MAN_ZERO", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x30, flags=1,
+        body_length=len(body_zero), body_hex=hx(body_zero),
+        notes="total_length=0 chunk_count=0 empty content digest")
+    b_pos += 1
+    b_rt += 1
+    key_z, val_z, body_z, bid_z = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 0, content=EMPTY_SHA, body=body_zero)
+    add(id="DSB3_BLOB_MAN_ZERO_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x30, flags=1,
+        key_hex=hx(key_z), value_hex=hx(val_z), body_hex=hx(body_z),
+        digest_hex=hx(sha256(val_z)),
+        crc_hex=f"{crc32c(val_z[:-4]):08x}")
+    b_pos += 1
+
+    # Lengths 1 / 3072 / 3073 and checked ceil boundary
+    for total, tag in ((1, "LEN1"), (3072, "LEN3072"), (3073, "LEN3073")):
+        cc = blob_chunk_count_for_total(total)
+        assert cc == (1 if total <= 3072 else 2)
+        body = enc_manifest_body(BLOB_TX, txn, BK_CMD, total, content=content_nz)
+        add(id=f"DSB3_BLOB_MAN_{tag}", suite="DSB3", op="body_roundtrip",
+            expected_status="OK", family=6, subtype=0x30, flags=1,
+            body_length=len(body), body_hex=hx(body),
+            notes=f"total={total} chunk_count={cc}")
+        b_pos += 1
+        b_rt += 1
+        add(id=f"DSB3_BLOB_COUNT_{tag}", suite="DSB3", op="blob_chunk_count",
+            expected_status="OK", family=6, subtype=0x30,
+            sha_bit_length=total, chunk_count=cc)
+        b_pos += 1
+
+    # ceil boundary: exact multiple and next
+    assert blob_chunk_count_for_total(3072 * 2) == 2
+    assert blob_chunk_count_for_total(3072 * 2 + 1) == 3
+    add(id="DSB3_BLOB_COUNT_CEIL_MUL", suite="DSB3", op="blob_chunk_count",
+        expected_status="OK", family=6, subtype=0x30,
+        sha_bit_length=3072 * 2, chunk_count=2,
+        notes="exact multiple of 3072")
+    b_pos += 1
+    add(id="DSB3_BLOB_COUNT_CEIL_NEXT", suite="DSB3", op="blob_chunk_count",
+        expected_status="OK", family=6, subtype=0x30,
+        sha_bit_length=3072 * 2 + 1, chunk_count=3)
+    b_pos += 1
+    add(id="DSB3_BLOB_COUNT_ZERO", suite="DSB3", op="blob_chunk_count",
+        expected_status="OK", family=6, subtype=0x30,
+        sha_bit_length=0, chunk_count=0)
+    b_pos += 1
+    # ceil overflow: total that needs > UINT32_MAX chunks
+    U32_MAX = 0xFFFFFFFF
+    overflow_total = (U32_MAX + 1) * CHUNK_MAX
+    assert blob_chunk_count_for_total(overflow_total) is None
+    add(id="DSB3_BLOB_COUNT_OVERFLOW", suite="DSB3", op="blob_chunk_count",
+        expected_status="INVALID_ARGUMENT", family=6, subtype=0x30,
+        sha_bit_length=overflow_total, chunk_count=0,
+        notes="ceil(total/3072) > UINT32_MAX")
+    b_neg += 1
+
+    # Single-chunk positive (content recompute)
+    one_bytes = b"x"
+    assert content_one == sha256(one_bytes)
+    bid_one = blob_id_digest(BLOB_TX, txn, BK_CMD, content_one, 1)
+    body_ch1 = enc_chunk_body(bid_one, 0, 1, 1, content_one, one_bytes)
+    add(id="DSB3_BLOB_CHK_SINGLE", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        body_length=len(body_ch1), body_hex=hx(body_ch1),
+        notes="single chunk content_digest recompute")
+    b_pos += 1
+    b_rt += 1
+    key_c1, val_c1, body_c1 = chunk_typed(
+        bid_one, 0, 1, 1, content_one, one_bytes, body=body_ch1)
+    add(id="DSB3_BLOB_CHK_SINGLE_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        key_hex=hx(key_c1), value_hex=hx(val_c1), body_hex=hx(body_c1),
+        digest_hex=hx(sha256(val_c1)),
+        crc_hex=f"{crc32c(val_c1[:-4]):08x}")
+    b_pos += 1
+
+    # Non-final / final / max chunk for multi-chunk total=3073
+    multi_total = 3073
+    multi_count = 2
+    multi_content = content_nz  # not equal to sha256 of either chunk alone
+    bid_multi = blob_id_digest(BLOB_ING, ing_seq8, BK_ING, multi_content, multi_total)
+    nonfinal_bytes = bytes([0x11]) * CHUNK_MAX
+    final_bytes = bytes([0x22])  # 1 byte
+    assert len(nonfinal_bytes) == CHUNK_MAX and len(final_bytes) == 1
+    # Prove multi-chunk does NOT recompute content from local chunk alone:
+    # content_digest != sha256(nonfinal) and != sha256(final)
+    assert multi_content != sha256(nonfinal_bytes)
+    assert multi_content != sha256(final_bytes)
+    body_nf = enc_chunk_body(
+        bid_multi, 0, multi_count, multi_total, multi_content, nonfinal_bytes)
+    body_fin = enc_chunk_body(
+        bid_multi, 1, multi_count, multi_total, multi_content, final_bytes)
+    add(id="DSB3_BLOB_CHK_NONFINAL", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        body_length=len(body_nf), body_hex=hx(body_nf),
+        notes="non-final length 3072; multi content not local recompute")
+    b_pos += 1
+    b_rt += 1
+    add(id="DSB3_BLOB_CHK_FINAL", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        body_length=len(body_fin), body_hex=hx(body_fin),
+        notes="final length 1 for total 3073")
+    b_pos += 1
+    b_rt += 1
+    key_nf, val_nf, _ = chunk_typed(
+        bid_multi, 0, multi_count, multi_total, multi_content, nonfinal_bytes,
+        body=body_nf)
+    add(id="DSB3_BLOB_CHK_NONFINAL_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        key_hex=hx(key_nf), value_hex=hx(val_nf), body_hex=hx(body_nf),
+        digest_hex=hx(sha256(val_nf)),
+        crc_hex=f"{crc32c(val_nf[:-4]):08x}",
+        notes="multi-chunk content digest not locally recomputed from one chunk")
+    b_pos += 1
+    key_fin, val_fin, _ = chunk_typed(
+        bid_multi, 1, multi_count, multi_total, multi_content, final_bytes,
+        body=body_fin)
+    add(id="DSB3_BLOB_CHK_FINAL_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        key_hex=hx(key_fin), value_hex=hx(val_fin), body_hex=hx(body_fin),
+        digest_hex=hx(sha256(val_fin)),
+        crc_hex=f"{crc32c(val_fin[:-4]):08x}")
+    b_pos += 1
+
+    # Max chunk (3072) single
+    max_bytes = bytes([0xAB]) * CHUNK_MAX
+    max_content = sha256(max_bytes)
+    bid_max = blob_id_digest(BLOB_DLV, dlv_raw, BK_RPL, max_content, CHUNK_MAX)
+    body_max = enc_chunk_body(bid_max, 0, 1, CHUNK_MAX, max_content, max_bytes)
+    add(id="DSB3_BLOB_CHK_MAX", suite="DSB3", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        body_length=len(body_max), body_hex=hx(body_max),
+        notes="single chunk length 3072")
+    b_pos += 1
+    b_rt += 1
+    key_max, val_max, _ = chunk_typed(
+        bid_max, 0, 1, CHUNK_MAX, max_content, max_bytes, body=body_max)
+    add(id="DSB3_BLOB_CHK_MAX_TYPED", suite="DSB3", op="typed_record",
+        expected_status="OK", family=6, subtype=0x30, flags=2,
+        key_hex=hx(key_max), value_hex=hx(val_max), body_hex=hx(body_max),
+        digest_hex=hx(sha256(val_max)),
+        crc_hex=f"{crc32c(val_max[:-4]):08x}")
+    b_pos += 1
+
+    # DELIVERY owner typed already covered; TX/INGRESS/DELIVERY manifest above.
+
+    # --- negatives ---
+    # flags/body mismatch: chunk flags with manifest body
+    key_mm, val_mm, body_mm, _ = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one, flags=2)
+    add(id="DSB3_BLOB_FLAGS_CHUNK_ON_MAN", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        key_hex=hx(key_mm), value_hex=hx(val_mm),
+        notes="flags=chunk with manifest body")
+    b_neg += 1
+    # flags=manifest with chunk body
+    key_mc, val_mc, body_mc = chunk_typed(
+        bid_one, 0, 1, 1, content_one, one_bytes, flags=1)
+    add(id="DSB3_BLOB_FLAGS_MAN_ON_CHK", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        key_hex=hx(key_mc), value_hex=hx(val_mc))
+    b_neg += 1
+    # flags both/zero
+    key_f0, val_f0, _, _ = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one, flags=0)
+    add(id="DSB3_BLOB_FLAGS_ZERO", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=0,
+        key_hex=hx(key_f0), value_hex=hx(val_f0))
+    b_neg += 1
+    key_f3, val_f3, _, _ = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one, flags=3)
+    add(id="DSB3_BLOB_FLAGS_BOTH", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=3,
+        key_hex=hx(key_f3), value_hex=hx(val_f3))
+    b_neg += 1
+
+    # raw length wrong
+    add(id="DSB3_BLOB_RAW_TX_15", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_TX, txn[:15], BK_CMD, 1, content=content_one,
+            blob_id=bytes(32), owner_pkd=bytes(32))))
+    b_neg += 1
+    add(id="DSB3_BLOB_RAW_ING_7", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_ING, ing_seq8[:7], BK_ING, 1, content=content_one,
+            blob_id=bytes(32), owner_pkd=bytes(32))))
+    b_neg += 1
+    add(id="DSB3_BLOB_RAW_DLV_79", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_DLV, dlv_raw[:79], BK_CMD, 1, content=content_one,
+            blob_id=bytes(32), owner_pkd=bytes(32))))
+    b_neg += 1
+
+    # forbidden owner-kind pairs
+    forbidden = [
+        (BLOB_TX, txn, BK_ING, "TX_ING"),
+        (BLOB_TX, txn, BK_RPL, "TX_RPL"),
+        (BLOB_ING, ing_seq8, BK_CMD, "ING_CMD"),
+        (BLOB_ING, ing_seq8, BK_RPL, "ING_RPL"),
+        (BLOB_DLV, dlv_raw, BK_ING, "DLV_ING"),
+        (BLOB_DLV, dlv_raw, BK_EVD, "DLV_EVD"),
+    ]
+    for owner_kind, owner_raw, blob_kind, tag in forbidden:
+        add(id=f"DSB3_BLOB_FORBID_{tag}", suite="DSB3", op="body_decode",
+            expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+            body_hex=hx(enc_manifest_body(
+                owner_kind, owner_raw, blob_kind, 1, content=content_one,
+                blob_id=bytes(32), owner_pkd=bytes(32))))
+        b_neg += 1
+
+    # blob_id mutation
+    mut_bid = bytearray(enc_manifest_body(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one))
+    mut_bid[0] ^= 0x01
+    add(id="DSB3_BLOB_MAN_BAD_BLOB_ID", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(bytes(mut_bid)))
+    b_neg += 1
+    b_mut += 1
+
+    # owner primary key digest mutation / identity-digest confusion
+    mut_pkd = bytearray(enc_manifest_body(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one))
+    off_pkd = 32 + 2 + 2 + 2 + 16
+    mut_pkd[off_pkd:off_pkd + 32] = bytes([0xB0] * 32)
+    add(id="DSB3_BLOB_MAN_BAD_OWNER_PKD", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(bytes(mut_pkd)))
+    b_neg += 1
+    b_mut += 1
+    add(id="DSB3_BLOB_MAN_ID_DIGEST_CONFUSION", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_TX, txn, BK_CMD, 1, content=content_one, owner_pkd=sha256(txn))),
+        notes="owner_primary_key_digest must be KEY_DIGEST not sha256(id)")
+    b_neg += 1
+
+    # zero / mismatched count
+    add(id="DSB3_BLOB_MAN_COUNT_NZ_ZERO_TOTAL", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_TX, txn, BK_CMD, 0, content=EMPTY_SHA, chunk_count=1)))
+    b_neg += 1
+    add(id="DSB3_BLOB_MAN_COUNT_MISMATCH", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_TX, txn, BK_CMD, 1, content=content_one, chunk_count=2)))
+    b_neg += 1
+    add(id="DSB3_BLOB_MAN_ZERO_BAD_DIGEST", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_TX, txn, BK_CMD, 0, content=content_nz)))
+    b_neg += 1
+
+    # chunk index / zero length / nonfinal/final length errors
+    add(id="DSB3_BLOB_CHK_INDEX_OOB", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(enc_chunk_body(
+            bid_one, 1, 1, 1, content_one, one_bytes)))
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_ZERO_LEN", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(
+            bid_one + complete_key_digest_composite(0x30, bytes([1]) + bid_one)
+            + be32(0) + be32(1) + be64(1) + content_one + be32(0)),
+        notes="zero chunk_length always corrupt")
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_NONFINAL_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(enc_chunk_body(
+            bid_multi, 0, multi_count, multi_total, multi_content,
+            bytes([0x11]) * 3071)))
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_FINAL_WRONG", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(enc_chunk_body(
+            bid_multi, 1, multi_count, multi_total, multi_content,
+            bytes([0x22, 0x33]))))
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_COUNT_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(enc_chunk_body(
+            bid_one, 0, 0, 1, content_one, one_bytes)))
+    b_neg += 1
+
+    # single chunk content mismatch
+    add(id="DSB3_BLOB_CHK_SINGLE_CONTENT_MISMATCH", suite="DSB3",
+        op="body_decode", expected_status="CORRUPT", family=6, subtype=0x30,
+        flags=2,
+        body_hex=hx(enc_chunk_body(
+            bid_one, 0, 1, 1, content_nz, one_bytes)),
+        notes="single-chunk content_digest must equal SHA-256(chunk_bytes)")
+    b_neg += 1
+
+    # multi-chunk content not equal to local sha is OK (already positive);
+    # vector explicitly notes D3 deferral above (NONFINAL_TYPED).
+
+    # manifest key digest bad
+    bad_mkd = enc_chunk_body(
+        bid_one, 0, 1, 1, content_one, one_bytes, manifest_kd=bytes([0xCC] * 32))
+    add(id="DSB3_BLOB_CHK_BAD_MANIFEST_KD", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(bad_mkd))
+    b_neg += 1
+
+    # revision / head / PVD / primary_id
+    key_r, val_r, _, _ = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one, rev=2)
+    add(id="DSB3_BLOB_REV2", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        key_hex=hx(key_r), value_hex=hx(val_r))
+    b_neg += 1
+    key_zh, val_zh, _, _ = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one, head=bytes(32))
+    add(id="DSB3_BLOB_ZERO_HEAD", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        key_hex=hx(key_zh), value_hex=hx(val_zh))
+    b_neg += 1
+    key_zp, val_zp, _, _ = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one, pvd=bytes(32))
+    add(id="DSB3_BLOB_ZERO_PVD", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        key_hex=hx(key_zp), value_hex=hx(val_zp))
+    b_neg += 1
+    key_bp, val_bp, _, _ = manifest_typed(
+        BLOB_TX, txn, BK_CMD, 1, content=content_one, primary=bytes(16))
+    add(id="DSB3_BLOB_BAD_PRIMARY_ID", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        key_hex=hx(key_bp), value_hex=hx(val_bp))
+    b_neg += 1
+    # chunk primary must be manifest composite first 16, not owner id
+    key_cp, val_cp, _ = chunk_typed(
+        bid_one, 0, 1, 1, content_one, one_bytes, primary=txn)
+    assert txn != composite(0x30, bytes([1]) + bid_one)[:16]
+    add(id="DSB3_BLOB_CHK_BAD_PRIMARY_ID", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        key_hex=hx(key_cp), value_hex=hx(val_cp),
+        notes="chunk primary_id is manifest composite first 16")
+    b_neg += 1
+    # key composite mismatch
+    bad_key = bkey(6, 0x30, 5, bytes([0x55] * 32))
+    add(id="DSB3_BLOB_BAD_KEY_COMPOSITE", suite="DSB3", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        key_hex=hx(bad_key), value_hex=hx(val_z))
+    b_neg += 1
+
+    # short / trailing / BTS
+    add(id="DSB3_BLOB_MAN_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(body_zero[:-1]))
+    b_neg += 1
+    add(id="DSB3_BLOB_MAN_TRAILING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(body_zero + b"\x00"))
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_SHORT", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(body_ch1[:-1]))
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_TRAILING", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(body_ch1 + b"\x00"))
+    b_neg += 1
+    add(id="DSB3_BLOB_MAN_BUFFER_TOO_SMALL", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x30, flags=1,
+        body_length=len(body_zero), body_hex=hx(body_zero), key_length=0)
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_BUFFER_TOO_SMALL", suite="DSB3", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x30, flags=2,
+        body_length=len(body_ch1), body_hex=hx(body_ch1), key_length=0)
+    b_neg += 1
+
+    # owner kind 0 / 4
+    add(id="DSB3_BLOB_OWNER0", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            0, txn, BK_CMD, 1, content=content_one,
+            blob_id=bytes(32), owner_pkd=bytes(32))))
+    b_neg += 1
+    add(id="DSB3_BLOB_OWNER4", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            4, txn, BK_CMD, 1, content=content_one,
+            blob_id=bytes(32), owner_pkd=bytes(32))))
+    b_neg += 1
+
+    # --- Review-fix appends (keep prior 691 objects as a stable prefix) ---
+    # Exact u32 capacity boundaries via checked constants (no host narrowing).
+    max_ok_total = U32_MAX * CHUNK_MAX  # exact: 0xFFFFFFFF * 3072
+    max_plus1_total = max_ok_total + 1
+    assert blob_chunk_count_for_total(max_ok_total) == U32_MAX
+    assert blob_chunk_count_for_total(max_plus1_total) is None
+    assert overflow_total > max_plus1_total
+    add(id="DSB3_BLOB_COUNT_U32_MAX", suite="DSB3", op="blob_chunk_count",
+        expected_status="OK", family=6, subtype=0x30,
+        sha_bit_length=max_ok_total, chunk_count=U32_MAX,
+        notes="total=UINT32_MAX*3072 => count UINT32_MAX")
+    b_pos += 1
+    add(id="DSB3_BLOB_COUNT_U32_MAX_P1", suite="DSB3", op="blob_chunk_count",
+        expected_status="INVALID_ARGUMENT", family=6, subtype=0x30,
+        sha_bit_length=max_plus1_total, chunk_count=0,
+        notes="total=UINT32_MAX*3072+1 => INVALID, out 0")
+    b_neg += 1
+    # Focused non-zero digest negatives (docs17 same-record contract).
+    add(id="DSB3_BLOB_MAN_CONTENT_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=1,
+        body_hex=hx(enc_manifest_body(
+            BLOB_TX, txn, BK_CMD, 1, content=bytes(32))),
+        notes="nonzero total requires non-zero content_digest")
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_MULTI_CONTENT_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(enc_chunk_body(
+            bid_multi, 0, multi_count, multi_total, bytes(32), nonfinal_bytes)),
+        notes="multi-chunk content_digest must be non-zero; no local recompute")
+    b_neg += 1
+    add(id="DSB3_BLOB_CHK_BLOB_ID_ZERO", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x30, flags=2,
+        body_hex=hx(enc_chunk_body(
+            bytes(32), 0, 1, 1, content_one, one_bytes)),
+        notes="stored chunk blob_id_digest must be non-zero")
+    b_neg += 1
+
+    b3_cov["30"] = add_body_suite("BLOB", 6, 0x30, b_pos, b_neg, b_mut, b_rt)
+    assert b3_cov["30"]["positive"] >= 20
+    assert b3_cov["30"]["negative"] >= 25
+    assert b3_cov["30"]["roundtrip"] >= 8
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -2952,6 +3559,7 @@ def build_document():
         "dsb3_total_positive": dsb3_pos,
         "dsb3_total_negative": dsb3_neg,
         "dsb3_subtype_27_positive": b3_cov["27"]["positive"],
+        "dsb3_subtype_30_positive": b3_cov["30"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -2978,28 +3586,30 @@ def build_document():
     assert catalog["dsb2_total_negative"] > 0
     assert catalog["dsb3_subtype_26_positive"] > 0
     assert catalog["dsb3_subtype_27_positive"] > 0
+    assert catalog["dsb3_subtype_30_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
-    # First 530 vector objects must remain the pre-B3b catalog (append-only).
-    assert len([v for v in vectors if not v["id"].startswith("DSB3_ING_")
-                and not v["id"].startswith("DSB3_MSD_")]) == 530
+    # First 617 vector objects must remain the pre-B3c catalog (append-only).
+    pre_b3c = [v for v in vectors if not v["id"].startswith("DSB3_BLOB_")]
+    assert len(pre_b3c) == 617
 
     for v in vectors:
         assert v["required_workspace_bytes"] == 0
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3b",
+        "format": "ninlil-domain-store-v1-d1b3c",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25 service+txn admission) + D1-B3a body "
             "(26 SCHEDULER_OWNER) + D1-B3b body (27 ORDERED_INGRESS) + "
-            "message_semantic_digest helper; not full D1 catalog"
+            "message_semantic_digest helper + D1-B3c body (30 BLOB "
+            "manifest/chunk); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
-            "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b "
-            "APIs have no workspace parameter; value is 0."
+            "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
+            "D1-B3c APIs have no workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,
