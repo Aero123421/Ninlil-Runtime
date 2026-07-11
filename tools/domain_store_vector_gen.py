@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a..m vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..o vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..m
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..o
 are hand-written here and intentionally do not import or link production C.
 
 D1 pre-alpha operation identity correction: kind 9/10 identities are exact 42
@@ -10124,6 +10124,744 @@ def build_document():
     assert b3_cov["61"]["mutation"] >= 1
     assert b3_cov["61"]["roundtrip"] >= 12
 
+    # =====================================================================
+    # D1-B3o CLEANUP_PLAN (0x63) — after RETENTION_BASIS; preserve 1460.
+    # =====================================================================
+    PRE_B3O_VECTOR_COUNT = len(vectors)
+    PRE_B3O_VECTOR_COUNT_SNAPSHOT = PRE_B3O_VECTOR_COUNT
+    assert PRE_B3O_VECTOR_COUNT == 1460, PRE_B3O_VECTOR_COUNT
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_RB_DLV_ZERO_SEG_SRC_APP"
+    assert all(not v["id"].startswith("DSB3_CP_") for v in vectors)
+    PRE_B3O_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    PRE_B3O_FULL_FINGERPRINT_PIN = (
+        "6aba67e63084c97a857e6d574955a7341a2c73960f8dbe58e52e151442508552"
+    )
+    assert PRE_B3O_FULL_FINGERPRINT == PRE_B3O_FULL_FINGERPRINT_PIN, (
+        f"pre-B3o full fingerprint drift: got {PRE_B3O_FULL_FINGERPRINT}"
+    )
+
+    CP_SK_TX = 2
+    CP_SK_DLV = 3
+    CP_PH1 = 1  # DELETE_NON_INDEX
+    CP_PH2 = 2  # DELETE_ATTEMPT_INDEX
+    CP_PH3 = 3  # FINALIZE
+    cp_head = bytes([0xC3] * 32)
+    cp_pvd = bytes([0xC4] * 32)
+    cp_txn = txn
+    cp_dlv = dlv_raw
+    assert len(cp_txn) == 16 and len(cp_dlv) == 80
+    U64_MAX = (1 << 64) - 1
+
+    def cp_subject_primary_digest(kind: int, raw: bytes) -> bytes:
+        if kind == CP_SK_TX:
+            return complete_key_digest_id128(0x20, raw)
+        if kind == CP_SK_DLV:
+            return complete_key_digest_composite(0x40, raw16(raw))
+        raise ValueError("bad cleanup subject kind")
+
+    def cp_primary_id(kind: int, raw: bytes) -> bytes:
+        if kind == CP_SK_TX:
+            return raw
+        if kind == CP_SK_DLV:
+            return primary_id_from_composite_subtype(0x40, raw16(raw))
+        raise ValueError("bad cleanup subject kind")
+
+    def cp_key(kind: int, primary_dig: bytes) -> bytes:
+        return bkey(
+            6, 0x63, 5, composite(0x63, be16(kind) + primary_dig))
+
+    def enc_cp(
+        kind=CP_SK_TX,
+        phase=CP_PH1,
+        raw=None,
+        primary_dig=None,
+        pvd=None,
+        cleanup_gen=1,
+        batch_gen=1,
+        init_att=3,
+        rem_att=3,
+        init_idx=2,
+        rem_idx=2,
+        fenced=0,
+        reserved=0,
+        recompute_digest=True,
+    ) -> bytes:
+        if raw is None:
+            raw = cp_txn if kind == CP_SK_TX else cp_dlv
+        if recompute_digest or primary_dig is None:
+            primary_dig = cp_subject_primary_digest(kind, raw)
+        if pvd is None:
+            pvd = cp_pvd
+        out = bytearray()
+        out += be16(kind)
+        out += be16(phase)
+        out += raw16(raw)
+        out += primary_dig
+        out += pvd
+        out += be64(cleanup_gen)
+        out += be64(batch_gen)
+        out += be64(init_att)
+        out += be64(rem_att)
+        out += be64(init_idx)
+        out += be64(rem_idx)
+        out += be32(fenced)
+        out += be32(reserved)
+        expect = 126 + len(raw)
+        assert len(out) == expect, (len(out), expect)
+        return bytes(out)
+
+    def cleanup_typed(
+        body=None, rev=None, flags=0, primary_id=None,
+        head=None, pvd=None, key=None,
+    ):
+        if body is None:
+            body = enc_cp()
+        kind = int.from_bytes(body[0:2], "big")
+        raw_len = int.from_bytes(body[4:6], "big")
+        raw = body[6:6 + raw_len]
+        dig = body[6 + raw_len:6 + raw_len + 32]
+        body_pvd = body[6 + raw_len + 32:6 + raw_len + 64]
+        batch = int.from_bytes(
+            body[6 + raw_len + 64 + 8:6 + raw_len + 64 + 16], "big")
+        if primary_id is None:
+            primary_id = cp_primary_id(kind, raw)
+        if head is None:
+            head = cp_head
+        if pvd is None:
+            pvd = body_pvd
+        if key is None:
+            key = cp_key(kind, dig)
+        if rev is None:
+            rev = batch
+        val = enc_env_full(6, 0x63, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    cp_pos = 0
+    cp_neg = 0
+    cp_mut = 0
+    cp_rt = 0
+
+    def add_cp_pos(vid, body, notes=""):
+        nonlocal cp_pos, cp_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x63, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        cp_pos += 1
+        cp_rt += 1
+
+    def add_cp_pos_typed(vid, body, notes="", rev=None):
+        nonlocal cp_pos
+        key, val, _ = cleanup_typed(body=body, rev=rev)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x63, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        cp_pos += 1
+
+    def add_cp_neg_body(vid, body, notes=""):
+        nonlocal cp_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x63, body_hex=hx(body), notes=notes)
+        cp_neg += 1
+
+    def add_cp_neg_typed(vid, key, val, notes=""):
+        nonlocal cp_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x63, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        cp_neg += 1
+
+    # --- positives: both kinds, 142/206, phase matrix, generations ---
+    # phase1: rem_att>=rem_idx, rem_idx==init_idx, fenced=0
+    b_tx_p1 = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH1, init_att=5, rem_att=5,
+        init_idx=2, rem_idx=2, fenced=0)
+    add_cp_pos("DSB3_CP_TX_P1_FULL", b_tx_p1, "TX phase1 full remaining")
+    add_cp_pos_typed("DSB3_CP_TX_P1_FULL_TYPED", b_tx_p1)
+
+    b_tx_p1_idx0 = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH1, init_att=4, rem_att=4,
+        init_idx=0, rem_idx=0, fenced=0)
+    add_cp_pos("DSB3_CP_TX_P1_IDX0", b_tx_p1_idx0,
+               "phase1 initial_index 0 legal")
+    add_cp_pos_typed("DSB3_CP_TX_P1_IDX0_TYPED", b_tx_p1_idx0)
+
+    b_tx_p1_partial = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH1, init_att=10, rem_att=7,
+        init_idx=3, rem_idx=3, fenced=0)
+    add_cp_pos("DSB3_CP_TX_P1_PARTIAL", b_tx_p1_partial,
+               "phase1 remaining attempt reduced, index frozen")
+
+    b_tx_p1_equal = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH1, init_att=3, rem_att=2,
+        init_idx=2, rem_idx=2, fenced=0)
+    add_cp_pos("DSB3_CP_TX_P1_ATT_EQ_IDX", b_tx_p1_equal,
+               "phase1 remaining_attempt == remaining_index boundary")
+
+    b_tx_p1_gen1 = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH1, cleanup_gen=1, batch_gen=1,
+        init_att=1, rem_att=1, init_idx=0, rem_idx=0, fenced=0)
+    add_cp_pos("DSB3_CP_TX_P1_GEN1", b_tx_p1_gen1, "generations exact 1")
+    add_cp_pos_typed("DSB3_CP_TX_P1_GEN1_TYPED", b_tx_p1_gen1)
+
+    b_tx_p1_genmax = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH1, cleanup_gen=U64_MAX,
+        batch_gen=U64_MAX, init_att=2, rem_att=2, init_idx=1, rem_idx=1,
+        fenced=0)
+    add_cp_pos("DSB3_CP_TX_P1_GENMAX", b_tx_p1_genmax,
+               "generation MAX legal stored")
+    add_cp_pos_typed("DSB3_CP_TX_P1_GENMAX_TYPED", b_tx_p1_genmax)
+
+    # phase2: rem_att==rem_idx>=1, fenced=1, init_idx>=1
+    b_tx_p2 = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH2, init_att=5, rem_att=3,
+        init_idx=3, rem_idx=3, fenced=1)
+    add_cp_pos("DSB3_CP_TX_P2_MIN", b_tx_p2, "phase2 min equal remaining")
+    add_cp_pos_typed("DSB3_CP_TX_P2_TYPED", b_tx_p2)
+
+    b_tx_p2_one = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH2, init_att=1, rem_att=1,
+        init_idx=1, rem_idx=1, fenced=1)
+    add_cp_pos("DSB3_CP_TX_P2_ONE", b_tx_p2_one, "phase2 remaining=1 min")
+
+    b_tx_p2_high = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH2, init_att=100, rem_att=50,
+        init_idx=50, rem_idx=50, fenced=1, cleanup_gen=9, batch_gen=4)
+    add_cp_pos("DSB3_CP_TX_P2_HIGH", b_tx_p2_high)
+    add_cp_pos_typed("DSB3_CP_TX_P2_HIGH_TYPED", b_tx_p2_high)
+
+    # phase3: both remaining 0; fenced iff init_idx>0
+    b_tx_p3_idx0 = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH3, init_att=5, rem_att=0,
+        init_idx=0, rem_idx=0, fenced=0, batch_gen=7)
+    add_cp_pos("DSB3_CP_TX_P3_IDX0", b_tx_p3_idx0,
+               "phase3 finalize index0 fenced0")
+    add_cp_pos_typed("DSB3_CP_TX_P3_IDX0_TYPED", b_tx_p3_idx0)
+
+    b_tx_p3_idx_pos = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH3, init_att=8, rem_att=0,
+        init_idx=3, rem_idx=0, fenced=1, batch_gen=12)
+    add_cp_pos("DSB3_CP_TX_P3_IDX_POS", b_tx_p3_idx_pos,
+               "phase3 finalize index>0 fenced1")
+    add_cp_pos_typed("DSB3_CP_TX_P3_IDX_POS_TYPED", b_tx_p3_idx_pos)
+
+    b_tx_p3_init0 = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH3, init_att=0, rem_att=0,
+        init_idx=0, rem_idx=0, fenced=0)
+    add_cp_pos("DSB3_CP_TX_P3_ALL0", b_tx_p3_init0,
+               "phase3 all counts zero legal")
+
+    # DELIVERY positives
+    b_dlv_p1 = enc_cp(
+        kind=CP_SK_DLV, phase=CP_PH1, init_att=4, rem_att=4,
+        init_idx=1, rem_idx=1, fenced=0)
+    add_cp_pos("DSB3_CP_DLV_P1", b_dlv_p1, "DLV phase1 body 206")
+    add_cp_pos_typed("DSB3_CP_DLV_P1_TYPED", b_dlv_p1)
+
+    b_dlv_p1_idx0 = enc_cp(
+        kind=CP_SK_DLV, phase=CP_PH1, init_att=2, rem_att=1,
+        init_idx=0, rem_idx=0, fenced=0)
+    add_cp_pos("DSB3_CP_DLV_P1_IDX0", b_dlv_p1_idx0)
+
+    b_dlv_p2 = enc_cp(
+        kind=CP_SK_DLV, phase=CP_PH2, init_att=6, rem_att=2,
+        init_idx=2, rem_idx=2, fenced=1)
+    add_cp_pos("DSB3_CP_DLV_P2", b_dlv_p2)
+    add_cp_pos_typed("DSB3_CP_DLV_P2_TYPED", b_dlv_p2)
+
+    b_dlv_p3_idx0 = enc_cp(
+        kind=CP_SK_DLV, phase=CP_PH3, init_att=3, rem_att=0,
+        init_idx=0, rem_idx=0, fenced=0)
+    add_cp_pos("DSB3_CP_DLV_P3_IDX0", b_dlv_p3_idx0)
+
+    b_dlv_p3_idx_pos = enc_cp(
+        kind=CP_SK_DLV, phase=CP_PH3, init_att=9, rem_att=0,
+        init_idx=4, rem_idx=0, fenced=1, batch_gen=3)
+    add_cp_pos("DSB3_CP_DLV_P3_IDX_POS", b_dlv_p3_idx_pos)
+    add_cp_pos_typed("DSB3_CP_DLV_P3_IDX_POS_TYPED", b_dlv_p3_idx_pos)
+
+    b_dlv_p1_genmax = enc_cp(
+        kind=CP_SK_DLV, phase=CP_PH1, cleanup_gen=U64_MAX,
+        batch_gen=1, init_att=1, rem_att=1, init_idx=1, rem_idx=1, fenced=0)
+    add_cp_pos("DSB3_CP_DLV_P1_CGENMAX", b_dlv_p1_genmax)
+
+    # mutation: flip reserved
+    mut_body = bytearray(b_tx_p1)
+    mut_body[-1] = 0x01
+    add(id="DSB3_CP_MUT_RESERVED", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x63,
+        body_hex=hx(bytes(mut_body)), notes="reserved flip mutation")
+    cp_mut += 1
+    cp_neg += 1
+
+    # --- body negatives ---
+    def craft_raw_len(kind, n, raw_bytes, **kw):
+        dig = kw.pop("primary_dig", None)
+        if dig is None:
+            dig = cp_subject_primary_digest(
+                CP_SK_TX if kind == CP_SK_TX else CP_SK_DLV,
+                cp_txn if kind == CP_SK_TX else cp_dlv)
+        pvd = kw.get("pvd", cp_pvd)
+        phase = kw.get("phase", CP_PH1)
+        out = bytearray()
+        out += be16(kind)
+        out += be16(phase)
+        out += be16(n) + raw_bytes
+        out += dig
+        out += pvd
+        out += be64(kw.get("cleanup_gen", 1))
+        out += be64(kw.get("batch_gen", 1))
+        out += be64(kw.get("init_att", 3))
+        out += be64(kw.get("rem_att", 3))
+        out += be64(kw.get("init_idx", 1))
+        out += be64(kw.get("rem_idx", 1))
+        out += be32(kw.get("fenced", 0))
+        out += be32(kw.get("reserved", 0))
+        return bytes(out)
+
+    add_cp_neg_body(
+        "DSB3_CP_RAW15",
+        craft_raw_len(CP_SK_TX, 15, cp_txn[:15]), "TX raw contents 15")
+    add_cp_neg_body(
+        "DSB3_CP_RAW17",
+        craft_raw_len(CP_SK_TX, 17, cp_txn + b"\x00"), "TX raw contents 17")
+    add_cp_neg_body(
+        "DSB3_CP_RAW79",
+        craft_raw_len(CP_SK_DLV, 79, cp_dlv[:79]), "DLV raw contents 79")
+    add_cp_neg_body(
+        "DSB3_CP_RAW81",
+        craft_raw_len(CP_SK_DLV, 81, cp_dlv + b"\x00"), "DLV raw contents 81")
+
+    # DLV single zero segment with correct KEY_DIGEST
+    dlv_one_zero = bytearray(cp_dlv)
+    dlv_one_zero[16:32] = bytes(16)
+    dig_one_zero = cp_subject_primary_digest(CP_SK_DLV, bytes(dlv_one_zero))
+    assert dig_one_zero == complete_key_digest_composite(
+        0x40, raw16(bytes(dlv_one_zero)))
+    b_dlv_zero_seg = enc_cp(
+        kind=CP_SK_DLV, phase=CP_PH1, raw=bytes(dlv_one_zero),
+        primary_dig=dig_one_zero, recompute_digest=False,
+        init_att=2, rem_att=2, init_idx=1, rem_idx=1, fenced=0)
+    assert len(b_dlv_zero_seg) == 206
+    add_cp_neg_body(
+        "DSB3_CP_DLV_ZERO_SEG", b_dlv_zero_seg,
+        "DELIVERY raw one all-zero ID segment; KEY_DIGEST correct")
+
+    add_cp_neg_body(
+        "DSB3_CP_KIND1",
+        enc_cp(kind=1, raw=cp_txn,
+               primary_dig=cp_subject_primary_digest(CP_SK_TX, cp_txn),
+               recompute_digest=False),
+        "subject_kind SERVICE=1 corrupt")
+    add_cp_neg_body(
+        "DSB3_CP_KIND4",
+        enc_cp(kind=4, raw=cp_txn,
+               primary_dig=cp_subject_primary_digest(CP_SK_TX, cp_txn),
+               recompute_digest=False),
+        "subject_kind EVENT=4 corrupt")
+    add_cp_neg_body("DSB3_CP_PHASE0", enc_cp(phase=0), "phase 0 unknown")
+    add_cp_neg_body("DSB3_CP_PHASE4", enc_cp(phase=4), "phase 4 unknown")
+    add_cp_neg_body(
+        "DSB3_CP_RESERVED",
+        enc_cp(reserved=1), "reserved nonzero")
+    add_cp_neg_body(
+        "DSB3_CP_TRAILING", b_tx_p1 + b"\x00", "trailing byte")
+    add_cp_neg_body(
+        "DSB3_CP_LEN141", b_tx_p1[:-1], "TX body short by 1")
+    add_cp_neg_body(
+        "DSB3_CP_LEN205", b_dlv_p1[:-1], "DLV body short by 1")
+    add_cp_neg_body("DSB3_CP_EMPTY", b"", "empty body")
+
+    # wrong / zero digests
+    add_cp_neg_body(
+        "DSB3_CP_TX_WRONG_DIGEST",
+        enc_cp(kind=CP_SK_TX, primary_dig=sha256(cp_txn),
+               recompute_digest=False),
+        "TX digest not complete key KEY_DIGEST")
+    bare_comp = composite(0x40, raw16(cp_dlv))
+    add_cp_neg_body(
+        "DSB3_CP_DLV_BARE_COMPOSITE",
+        enc_cp(kind=CP_SK_DLV, primary_dig=bare_comp, recompute_digest=False),
+        "bare composite digest instead of KEY_DIGEST")
+    add_cp_neg_body(
+        "DSB3_CP_PVD_ZERO",
+        enc_cp(pvd=bytes(32)), "subject_primary_value_digest zero")
+    add_cp_neg_body(
+        "DSB3_CP_TX_RAW_ZERO",
+        enc_cp(kind=CP_SK_TX, raw=bytes(16),
+               primary_dig=complete_key_digest_id128(0x20, bytes(16)),
+               recompute_digest=False),
+        "TX raw all-zero")
+
+    # generation 0
+    add_cp_neg_body(
+        "DSB3_CP_CLEANUP_GEN0",
+        enc_cp(cleanup_gen=0), "cleanup_generation 0")
+    add_cp_neg_body(
+        "DSB3_CP_BATCH_GEN0",
+        enc_cp(batch_gen=0), "batch_generation 0")
+
+    # common count inequalities
+    add_cp_neg_body(
+        "DSB3_CP_INIT_ATT_LT_IDX",
+        enc_cp(init_att=1, rem_att=1, init_idx=2, rem_idx=2, fenced=0),
+        "initial_attempt < initial_index")
+    add_cp_neg_body(
+        "DSB3_CP_REM_ATT_GT_INIT",
+        enc_cp(init_att=2, rem_att=3, init_idx=1, rem_idx=1, fenced=0),
+        "remaining_attempt > initial_attempt")
+    add_cp_neg_body(
+        "DSB3_CP_REM_IDX_GT_INIT",
+        enc_cp(init_att=5, rem_att=5, init_idx=1, rem_idx=2, fenced=0),
+        "remaining_index > initial_index")
+
+    # phase1 contradictions
+    add_cp_neg_body(
+        "DSB3_CP_P1_FENCED1",
+        enc_cp(phase=CP_PH1, init_att=3, rem_att=3, init_idx=2, rem_idx=2,
+               fenced=1),
+        "phase1 fenced must be 0")
+    add_cp_neg_body(
+        "DSB3_CP_P1_IDX_CHANGED",
+        enc_cp(phase=CP_PH1, init_att=5, rem_att=5, init_idx=3, rem_idx=2,
+               fenced=0),
+        "phase1 remaining_index != initial_index")
+    add_cp_neg_body(
+        "DSB3_CP_P1_ATT_LT_IDX",
+        enc_cp(phase=CP_PH1, init_att=5, rem_att=1, init_idx=3, rem_idx=3,
+               fenced=0),
+        "phase1 remaining_attempt < remaining_index")
+
+    # phase2 contradictions
+    add_cp_neg_body(
+        "DSB3_CP_P2_FENCED0",
+        enc_cp(phase=CP_PH2, init_att=3, rem_att=2, init_idx=2, rem_idx=2,
+               fenced=0),
+        "phase2 fenced must be 1")
+    add_cp_neg_body(
+        "DSB3_CP_P2_REM0",
+        enc_cp(phase=CP_PH2, init_att=3, rem_att=0, init_idx=2, rem_idx=0,
+               fenced=1),
+        "phase2 remaining must be >=1")
+    add_cp_neg_body(
+        "DSB3_CP_P2_ATT_NE_IDX",
+        enc_cp(phase=CP_PH2, init_att=5, rem_att=3, init_idx=2, rem_idx=2,
+               fenced=1),
+        "phase2 remaining_attempt != remaining_index")
+    add_cp_neg_body(
+        "DSB3_CP_P2_INIT_IDX0",
+        enc_cp(phase=CP_PH2, init_att=2, rem_att=1, init_idx=0, rem_idx=0,
+               fenced=1),
+        "phase2 initial_index must be >=1")
+
+    # phase3 contradictions
+    add_cp_neg_body(
+        "DSB3_CP_P3_REM_ATT_NZ",
+        enc_cp(phase=CP_PH3, init_att=3, rem_att=1, init_idx=0, rem_idx=0,
+               fenced=0),
+        "phase3 remaining_attempt nonzero")
+    add_cp_neg_body(
+        "DSB3_CP_P3_REM_IDX_NZ",
+        enc_cp(phase=CP_PH3, init_att=3, rem_att=0, init_idx=2, rem_idx=1,
+               fenced=1),
+        "phase3 remaining_index nonzero")
+    add_cp_neg_body(
+        "DSB3_CP_P3_FENCE_WRONG_IDX0",
+        enc_cp(phase=CP_PH3, init_att=2, rem_att=0, init_idx=0, rem_idx=0,
+               fenced=1),
+        "phase3 index0 requires fenced0")
+    add_cp_neg_body(
+        "DSB3_CP_P3_FENCE_WRONG_IDX_POS",
+        enc_cp(phase=CP_PH3, init_att=4, rem_att=0, init_idx=2, rem_idx=0,
+               fenced=0),
+        "phase3 index>0 requires fenced1")
+    add_cp_neg_body(
+        "DSB3_CP_FENCED2",
+        enc_cp(phase=CP_PH1, fenced=2), "attempt_reuse_fenced=2")
+
+    # --- typed negatives ---
+    k_ok, v_ok, _ = cleanup_typed(body=b_tx_p1)
+    add_cp_neg_typed(
+        "DSB3_CP_REV0",
+        *cleanup_typed(body=b_tx_p1, rev=0)[:2],
+        notes="record_revision 0")
+    add_cp_neg_typed(
+        "DSB3_CP_REV_MISMATCH",
+        *cleanup_typed(body=b_tx_p1, rev=99)[:2],
+        notes="record_revision != batch_generation")
+    add_cp_neg_typed(
+        "DSB3_CP_FLAGS",
+        *cleanup_typed(body=b_tx_p1, flags=1)[:2],
+        notes="flags nonzero")
+    v_pvd0 = enc_env_full(
+        6, 0x63, 0, 1, cp_txn, cp_head, bytes(32), b_tx_p1)
+    add_cp_neg_typed(
+        "DSB3_CP_HEADER_PVD0", cp_key(CP_SK_TX, cp_subject_primary_digest(
+            CP_SK_TX, cp_txn)), v_pvd0, "header primary_value_digest zero")
+    # body PVD nonzero but mismatches header PVD
+    body_pvd_alt = enc_cp(pvd=bytes([0xAB] * 32))
+    v_pvd_mm = enc_env_full(
+        6, 0x63, 0, 1, cp_txn, cp_head, cp_pvd, body_pvd_alt)
+    add_cp_neg_typed(
+        "DSB3_CP_PVD_MISMATCH",
+        cp_key(CP_SK_TX, cp_subject_primary_digest(CP_SK_TX, cp_txn)),
+        v_pvd_mm, "body subject_primary_value_digest != header PVD")
+    v_head0 = enc_env_full(
+        6, 0x63, 0, 1, cp_txn, bytes(32), cp_pvd, b_tx_p1)
+    add_cp_neg_typed(
+        "DSB3_CP_HEAD0",
+        cp_key(CP_SK_TX, cp_subject_primary_digest(CP_SK_TX, cp_txn)),
+        v_head0, "head_witness_digest zero")
+    v_pid_bad = enc_env_full(
+        6, 0x63, 0, 1, bytes([0x11] * 16), cp_head, cp_pvd, b_tx_p1)
+    add_cp_neg_typed(
+        "DSB3_CP_PRIMARY_ID_MISMATCH",
+        cp_key(CP_SK_TX, cp_subject_primary_digest(CP_SK_TX, cp_txn)),
+        v_pid_bad, "primary_id != TX raw")
+    k_dlv, v_dlv, _ = cleanup_typed(body=b_dlv_p1)
+    bad_dlv_pid = enc_env_full(
+        6, 0x63, 0, 1, cp_txn, cp_head, cp_pvd, b_dlv_p1)
+    add_cp_neg_typed(
+        "DSB3_CP_DLV_PRIMARY_ID_MISMATCH", k_dlv, bad_dlv_pid,
+        "DELIVERY primary_id is TX not composite prefix")
+    id128_kind_key = bkey(6, 0x63, 2, cp_txn)
+    add_cp_neg_typed(
+        "DSB3_CP_KEY_ID128_KIND", id128_kind_key, v_ok,
+        "key must be SHA256_COMPOSITE not ID128")
+    # key subject kind mismatch
+    dig_tx = cp_subject_primary_digest(CP_SK_TX, cp_txn)
+    wrong_kind_key = cp_key(CP_SK_DLV, dig_tx)
+    add_cp_neg_typed(
+        "DSB3_CP_KEY_KIND_MISMATCH", wrong_kind_key, v_ok,
+        "key subject_kind != body")
+    # key digest mismatch
+    dig_other = cp_subject_primary_digest(CP_SK_TX, bytes([0xEE] * 16))
+    wrong_dig_key = cp_key(CP_SK_TX, dig_other)
+    add_cp_neg_typed(
+        "DSB3_CP_KEY_DIGEST_MISMATCH", wrong_dig_key, v_ok,
+        "key digest != body subject_primary_key_digest")
+    wrong_sub_key = bkey(
+        6, 0x63, 5, composite(0x61, be16(CP_SK_TX) + dig_tx))
+    add_cp_neg_typed(
+        "DSB3_CP_KEY_COMP_SUBTYPE", wrong_sub_key, v_ok,
+        "composite subtype tag mismatch")
+
+    # =====================================================================
+    # D1-B3o independent-audit regression assets (W1–W7).
+    # Append-only after the initial B3o suite (1537 total). Production code
+    # is unchanged; every negative is production-replayed by the contract test.
+    # =====================================================================
+    B3O_BASELINE_VECTOR_COUNT = len(vectors)
+    assert B3O_BASELINE_VECTOR_COUNT == 1537, B3O_BASELINE_VECTOR_COUNT
+    assert vectors[-1]["id"] == "DSB3_CP_KEY_COMP_SUBTYPE"
+    B3O_BASELINE_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    B3O_BASELINE_FULL_FINGERPRINT_PIN = (
+        "7830b9ee70adaa5855da811fc1ca3dda7acc67f3835d211bc9eef7cf57ce6dd0"
+    )
+    assert B3O_BASELINE_FULL_FINGERPRINT == B3O_BASELINE_FULL_FINGERPRINT_PIN, (
+        f"B3o baseline-1537 fingerprint drift: got {B3O_BASELINE_FULL_FINGERPRINT}"
+    )
+
+    # --- W6 known-answer constants (docs domain tags + complete key bytes).
+    # Computed on a separate path from complete_key_digest_* helpers so a shared
+    # preimage bug in generator helpers cannot self-validate. Hardcoded pins are
+    # the durable gate; helpers and body digests must match them.
+    _W6_TAG_KEY = b"NINLIL-DOMAIN-KEY-V1"
+    _W6_TAG_ENC = b"NINLIL-DOMAIN-ENCODED-KEY-V1"
+    _w6_tx_complete = ROOT + bytes([6, 0x20, 1, 2, 16]) + cp_txn
+    _w6_tx_pkd = sha256(_W6_TAG_ENC + _w6_tx_complete)
+    CP_W6_TX_PRIMARY_KEY_DIGEST = bytes.fromhex(
+        "d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb"
+    )
+    assert _w6_tx_pkd == CP_W6_TX_PRIMARY_KEY_DIGEST
+    assert cp_subject_primary_digest(CP_SK_TX, cp_txn) == CP_W6_TX_PRIMARY_KEY_DIGEST
+
+    _w6_dlv_comp = sha256(_W6_TAG_KEY + bytes([0x40]) + raw16(cp_dlv))
+    _w6_dlv_complete = ROOT + bytes([6, 0x40, 1, 5, 32]) + _w6_dlv_comp
+    _w6_dlv_pkd = sha256(_W6_TAG_ENC + _w6_dlv_complete)
+    CP_W6_DLV_PRIMARY_KEY_DIGEST = bytes.fromhex(
+        "b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b238838569791"
+    )
+    assert _w6_dlv_pkd == CP_W6_DLV_PRIMARY_KEY_DIGEST
+    assert (
+        cp_subject_primary_digest(CP_SK_DLV, cp_dlv) == CP_W6_DLV_PRIMARY_KEY_DIGEST
+    )
+
+    _w6_cp_tx_comp = sha256(
+        _W6_TAG_KEY + bytes([0x63]) + be16(CP_SK_TX) + CP_W6_TX_PRIMARY_KEY_DIGEST
+    )
+    CP_W6_CLEANUP_COMPOSITE_IDENTITY_TX = bytes.fromhex(
+        "9a3b3ab4f436682207a049d1bfd76df87909cf3f1fc7c1b9e5864dfb413ac76b"
+    )
+    assert _w6_cp_tx_comp == CP_W6_CLEANUP_COMPOSITE_IDENTITY_TX
+    assert (
+        composite(0x63, be16(CP_SK_TX) + dig_tx)
+        == CP_W6_CLEANUP_COMPOSITE_IDENTITY_TX
+    )
+
+    CP_W6_DLV_PRIMARY_ID = bytes.fromhex("8434dbf6d6f14c86d85836e72bbac4e8")
+    assert _w6_dlv_comp[:16] == CP_W6_DLV_PRIMARY_ID
+    assert cp_primary_id(CP_SK_DLV, cp_dlv) == CP_W6_DLV_PRIMARY_ID
+    # raw[:16] must not accidentally equal the composite prefix (W7 precondition).
+    assert cp_dlv[:16] != CP_W6_DLV_PRIMARY_ID
+
+    # Body digests / key identity on baseline positives must match W6 pins.
+    assert b_tx_p1[6 + 16:6 + 16 + 32] == CP_W6_TX_PRIMARY_KEY_DIGEST
+    assert b_dlv_p1[6 + 80:6 + 80 + 32] == CP_W6_DLV_PRIMARY_KEY_DIGEST
+    assert k_ok[13:45] == CP_W6_CLEANUP_COMPOSITE_IDENTITY_TX
+    # typed envelope primary_id is at common-header offset 16 inside NLR1
+    # (8-byte NLR1 + 2 record_type + 2 flags + 8 revision + 16 primary_id).
+    # Prefer the typed helper's explicit primary_id argument path:
+    _w6_k_dlv, _w6_v_dlv, _ = cleanup_typed(
+        body=b_dlv_p1, primary_id=CP_W6_DLV_PRIMARY_ID)
+    assert _w6_k_dlv == k_dlv
+    assert _w6_v_dlv == v_dlv
+
+    # --- W1: typed key = COMPOSITE(63, kind||subject_raw_contents) CORRUPT ---
+    # Correct identity is COMPOSITE(63, kind||subject_primary_key_digest[32]).
+    w1_tx_key = bkey(
+        6, 0x63, 5, composite(0x63, be16(CP_SK_TX) + cp_txn))
+    assert w1_tx_key != k_ok
+    add_cp_neg_typed(
+        "DSB3_CP_W1_KEY_RAW_CONTENTS_TX", w1_tx_key, v_ok,
+        "W1: COMPOSITE(63, kind||TX raw contents) not kind||digest")
+    w1_dlv_key = bkey(
+        6, 0x63, 5, composite(0x63, be16(CP_SK_DLV) + cp_dlv))
+    assert w1_dlv_key != k_dlv
+    add_cp_neg_typed(
+        "DSB3_CP_W1_KEY_RAW_CONTENTS_DLV", w1_dlv_key, v_dlv,
+        "W1: COMPOSITE(63, kind||DLV raw contents) not kind||digest")
+
+    # --- W2: subject_primary_key_digest = systematic wrong preimages CORRUPT ---
+    # Self-key confusion: KEY_DIGEST(complete CLEANUP_PLAN key) is not the
+    # subject primary KEY_DIGEST (TX ID128 / DLV COMPOSITE(40,...)).
+    _w2_cp_tx_kd = key_digest(
+        bkey(6, 0x63, 5, CP_W6_CLEANUP_COMPOSITE_IDENTITY_TX))
+    assert _w2_cp_tx_kd != CP_W6_TX_PRIMARY_KEY_DIGEST
+    add_cp_neg_body(
+        "DSB3_CP_W2_SELF_KEY_DIGEST_TX",
+        enc_cp(
+            kind=CP_SK_TX, primary_dig=_w2_cp_tx_kd, recompute_digest=False),
+        "W2: body dig = KEY_DIGEST(complete CLEANUP_PLAN key) TX")
+    _w2_cp_dlv_comp = composite(
+        0x63, be16(CP_SK_DLV) + CP_W6_DLV_PRIMARY_KEY_DIGEST)
+    _w2_cp_dlv_kd = key_digest(bkey(6, 0x63, 5, _w2_cp_dlv_comp))
+    assert _w2_cp_dlv_kd != CP_W6_DLV_PRIMARY_KEY_DIGEST
+    add_cp_neg_body(
+        "DSB3_CP_W2_SELF_KEY_DIGEST_DLV",
+        enc_cp(
+            kind=CP_SK_DLV, primary_dig=_w2_cp_dlv_kd, recompute_digest=False),
+        "W2: body dig = KEY_DIGEST(complete CLEANUP_PLAN key) DLV")
+    # Additional systematic wrong preimage: bare cleanup COMPOSITE identity
+    # (not KEY_DIGEST of complete primary) stored as subject_primary_key_digest.
+    add_cp_neg_body(
+        "DSB3_CP_W2_BARE_CLEANUP_COMPOSITE_TX",
+        enc_cp(
+            kind=CP_SK_TX,
+            primary_dig=CP_W6_CLEANUP_COMPOSITE_IDENTITY_TX,
+            recompute_digest=False),
+        "W2: bare CLEANUP COMPOSITE identity as subject dig")
+
+    # --- W3: kind/raw length cross CORRUPT (kind2+raw80, kind3+raw16) ---
+    add_cp_neg_body(
+        "DSB3_CP_W3_KIND2_RAW80",
+        craft_raw_len(
+            CP_SK_TX, 80, cp_dlv,
+            primary_dig=CP_W6_DLV_PRIMARY_KEY_DIGEST),
+        "W3: subject_kind TRANSACTION with valid DELIVERY raw80")
+    add_cp_neg_body(
+        "DSB3_CP_W3_KIND3_RAW16",
+        craft_raw_len(
+            CP_SK_DLV, 16, cp_txn,
+            primary_dig=CP_W6_TX_PRIMARY_KEY_DIGEST),
+        "W3: subject_kind DELIVERY with valid TRANSACTION raw16")
+
+    # --- W4: phase1 all counts 0 / fence 0 explicit positive + typed ---
+    b_w4_p1_all0 = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH1, init_att=0, rem_att=0,
+        init_idx=0, rem_idx=0, fenced=0)
+    assert len(b_w4_p1_all0) == 142
+    add_cp_pos(
+        "DSB3_CP_W4_P1_ALL0", b_w4_p1_all0,
+        "W4: phase1 all counts 0 fence 0 legal")
+    add_cp_pos_typed(
+        "DSB3_CP_W4_P1_ALL0_TYPED", b_w4_p1_all0,
+        notes="W4 typed phase1 all0")
+
+    # --- W5: phase2 legal intermediate (init 10/7, rem 2/2, fence 1) ---
+    b_w5_p2_mid = enc_cp(
+        kind=CP_SK_TX, phase=CP_PH2, init_att=10, rem_att=2,
+        init_idx=7, rem_idx=2, fenced=1)
+    assert len(b_w5_p2_mid) == 142
+    add_cp_pos(
+        "DSB3_CP_W5_P2_MID", b_w5_p2_mid,
+        "W5: phase2 init_att10/init_idx7 rem=2 fence1")
+    add_cp_pos_typed(
+        "DSB3_CP_W5_P2_MID_TYPED", b_w5_p2_mid,
+        notes="W5 typed phase2 intermediate")
+
+    # --- W7: DELIVERY primary_id = raw[:16] typed CORRUPT ---
+    _w7_correct_pid = CP_W6_DLV_PRIMARY_ID
+    _w7_wrong_pid = cp_dlv[:16]
+    assert _w7_wrong_pid != _w7_correct_pid
+    _w7_val = enc_env_full(
+        6, 0x63, 0, 1, _w7_wrong_pid, cp_head, cp_pvd, b_dlv_p1)
+    add_cp_neg_typed(
+        "DSB3_CP_W7_DLV_PRIMARY_ID_RAW16", k_dlv, _w7_val,
+        "W7: DELIVERY primary_id=raw[:16] != COMPOSITE(40) first16")
+
+    # independent confirmation: all negative body/typed vectors use production
+    # status CORRUPT only; generator never embeds production error codes.
+    for v in vectors[PRE_B3O_VECTOR_COUNT_SNAPSHOT:]:
+        if v["id"].startswith("DSB3_CP_") and v["expected_status"] != "OK":
+            assert v["expected_status"] == "CORRUPT", v["id"]
+            assert "NINLIL_E_" not in json.dumps(v)
+
+    # W1–W7 coverage ids present after baseline pin.
+    _audit_ids = {
+        "DSB3_CP_W1_KEY_RAW_CONTENTS_TX",
+        "DSB3_CP_W1_KEY_RAW_CONTENTS_DLV",
+        "DSB3_CP_W2_SELF_KEY_DIGEST_TX",
+        "DSB3_CP_W2_SELF_KEY_DIGEST_DLV",
+        "DSB3_CP_W2_BARE_CLEANUP_COMPOSITE_TX",
+        "DSB3_CP_W3_KIND2_RAW80",
+        "DSB3_CP_W3_KIND3_RAW16",
+        "DSB3_CP_W4_P1_ALL0",
+        "DSB3_CP_W4_P1_ALL0_TYPED",
+        "DSB3_CP_W5_P2_MID",
+        "DSB3_CP_W5_P2_MID_TYPED",
+        "DSB3_CP_W7_DLV_PRIMARY_ID_RAW16",
+    }
+    _ids_now = {v["id"] for v in vectors[B3O_BASELINE_VECTOR_COUNT:]}
+    assert _audit_ids <= _ids_now, _audit_ids - _ids_now
+    assert all(
+        v["id"].startswith("DSB3_CP_W")
+        for v in vectors[B3O_BASELINE_VECTOR_COUNT:]
+    )
+    _baseline_fp_final = vectors_fingerprint(
+        vectors[:B3O_BASELINE_VECTOR_COUNT])
+    assert _baseline_fp_final == B3O_BASELINE_FULL_FINGERPRINT_PIN, (
+        f"post-audit baseline-1537 fingerprint drift: got {_baseline_fp_final}"
+    )
+
+    b3_cov["63"] = add_body_suite(
+        "CLEANUP_PLAN", 6, 0x63, cp_pos, cp_neg, cp_mut, cp_rt)
+    assert b3_cov["63"]["positive"] >= 20
+    assert b3_cov["63"]["negative"] >= 40
+    assert b3_cov["63"]["mutation"] >= 1
+    assert b3_cov["63"]["roundtrip"] >= 12
+    assert all(
+        not v["id"].startswith("DSB3_CP_")
+        for v in vectors[:PRE_B3O_VECTOR_COUNT_SNAPSHOT]
+    )
+    _pre_b3o_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3O_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3o_fp_final == PRE_B3O_FULL_FINGERPRINT_PIN, (
+        f"post-append pre-B3o full fingerprint drift: got {_pre_b3o_fp_final}"
+    )
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -10190,6 +10928,7 @@ def build_document():
         "dsb3_subtype_51_positive": b3_cov["51"]["positive"],
         "dsb3_subtype_52_positive": b3_cov["52"]["positive"],
         "dsb3_subtype_61_positive": b3_cov["61"]["positive"],
+        "dsb3_subtype_63_positive": b3_cov["63"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -10228,6 +10967,7 @@ def build_document():
     assert catalog["dsb3_subtype_51_positive"] > 0
     assert catalog["dsb3_subtype_52_positive"] > 0
     assert catalog["dsb3_subtype_61_positive"] > 0
+    assert catalog["dsb3_subtype_63_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
     # Structural: CS/AII/ATT/EV/RC only after their pre-slice.
@@ -10256,6 +10996,10 @@ def build_document():
         for v in vectors[:PRE_B3N_VECTOR_COUNT_SNAPSHOT]
     )
     assert all(
+        not v["id"].startswith("DSB3_CP_")
+        for v in vectors[:PRE_B3O_VECTOR_COUNT_SNAPSHOT]
+    )
+    assert all(
         not v["id"].startswith("DSB3_DLV_")
         for v in vectors[:PRE_B3H_VECTOR_COUNT_SNAPSHOT]
     )
@@ -10277,6 +11021,24 @@ def build_document():
     )
     # Kind9/10 42-byte re-pin changes early DSO2/DSW1 vectors inside pre-B3h.
     # Full prefix fingerprint is re-pinned at B3i cutover; stable 1025 checked above.
+    _pre_b3o_fp_final2 = vectors_fingerprint(
+        vectors[:PRE_B3O_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3o_fp_final2 == PRE_B3O_FULL_FINGERPRINT_PIN, (
+        f"post-append pre-B3o full fingerprint drift: got {_pre_b3o_fp_final2}"
+    )
+    # B3o baseline (initial suite, 1537) remains byte-stable under W1–W7 append.
+    assert B3O_BASELINE_VECTOR_COUNT == 1537
+    _b3o_baseline_fp_final = vectors_fingerprint(
+        vectors[:B3O_BASELINE_VECTOR_COUNT])
+    assert _b3o_baseline_fp_final == B3O_BASELINE_FULL_FINGERPRINT_PIN, (
+        f"post-append B3o baseline-1537 fingerprint drift: "
+        f"got {_b3o_baseline_fp_final}"
+    )
+    assert len(vectors) > B3O_BASELINE_VECTOR_COUNT
+    assert vectors[B3O_BASELINE_VECTOR_COUNT - 1]["id"] == (
+        "DSB3_CP_KEY_COMP_SUBTYPE"
+    )
+    assert vectors[B3O_BASELINE_VECTOR_COUNT]["id"].startswith("DSB3_CP_W")
     _pre_b3n_fp_final = vectors_fingerprint(
         vectors[:PRE_B3N_VECTOR_COUNT_SNAPSHOT])
     assert _pre_b3n_fp_final == PRE_B3N_FULL_FINGERPRINT_PIN, (
@@ -10359,7 +11121,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3n",
+        "format": "ninlil-domain-store-v1-d1b3o",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -10374,13 +11136,14 @@ def build_document():
             "exact300/state-cause matrix) + D1-B3l body (51 RETRY_SUMMARY "
             "CUMULATIVE84/RECENT80 kind-slot-fold) + D1-B3m body "
             "(52 MANAGEMENT_LEDGER exact364/kind15-16 matrix) + D1-B3n body "
-            "(61 RETENTION_BASIS 90+N/106|170 state matrix); not full D1 catalog"
+            "(61 RETENTION_BASIS 90+N/106|170 state matrix) + D1-B3o body "
+            "(63 CLEANUP_PLAN 126+N/142|206 phase matrix); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
             "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j/D1-B3k/"
-            "D1-B3l/D1-B3m/D1-B3n APIs "
+            "D1-B3l/D1-B3m/D1-B3n/D1-B3o APIs "
             "have no workspace parameter; value is 0."
         ),
         "catalog": catalog,

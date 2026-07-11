@@ -163,6 +163,7 @@ typedef struct ninlil_dv_catalog {
     uint32_t dsb3_subtype_51_positive;
     uint32_t dsb3_subtype_52_positive;
     uint32_t dsb3_subtype_61_positive;
+    uint32_t dsb3_subtype_63_positive;
 } ninlil_dv_catalog_t;
 
 /*
@@ -228,6 +229,8 @@ typedef struct ninlil_dv_catalog {
 #define NINLIL_DV_CAT_DSB3_52 NINLIL_DV_CAT_BIT(42)
 /* D1-B3n additions start at bit 43 — do not shift 0..42. */
 #define NINLIL_DV_CAT_DSB3_61 NINLIL_DV_CAT_BIT(43)
+/* D1-B3o additions start at bit 44 — do not shift 0..43. */
+#define NINLIL_DV_CAT_DSB3_63 NINLIL_DV_CAT_BIT(44)
 
 #define NINLIL_DV_CAT_REQUIRED_MASK                                            \
     (NINLIL_DV_CAT_DSK1_KEYS | NINLIL_DV_CAT_DSV1_EXACT                         \
@@ -251,7 +254,8 @@ typedef struct ninlil_dv_catalog {
         | NINLIL_DV_CAT_DSB3_32 | NINLIL_DV_CAT_DSB3_40                        \
         | NINLIL_DV_CAT_DSB3_41 | NINLIL_DV_CAT_DSB3_42                        \
         | NINLIL_DV_CAT_DSB3_50 | NINLIL_DV_CAT_DSB3_51                        \
-        | NINLIL_DV_CAT_DSB3_52 | NINLIL_DV_CAT_DSB3_61)
+        | NINLIL_DV_CAT_DSB3_52 | NINLIL_DV_CAT_DSB3_61                        \
+        | NINLIL_DV_CAT_DSB3_63)
 
 enum {
     NINLIL_DV_TOP_VERSION = 1u << 0,
@@ -266,7 +270,7 @@ enum {
     (NINLIL_DV_TOP_VERSION | NINLIL_DV_TOP_FORMAT | NINLIL_DV_TOP_SCOPE         \
         | NINLIL_DV_TOP_WS_DEF | NINLIL_DV_TOP_CATALOG | NINLIL_DV_TOP_VECTORS)
 
-#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3n"
+#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b3o"
 #define NINLIL_DV_SCOPE_REQUIRED                                               \
     "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "              \
     "(10/11/20-25) + D1-B3a body "                                              \
@@ -281,7 +285,8 @@ enum {
     "exact300/state-cause matrix) + D1-B3l body (51 RETRY_SUMMARY "           \
     "CUMULATIVE84/RECENT80 kind-slot-fold) + D1-B3m body "                    \
     "(52 MANAGEMENT_LEDGER exact364/kind15-16 matrix) + D1-B3n body "         \
-    "(61 RETENTION_BASIS 90+N/106|170 state matrix); not full D1 catalog"
+    "(61 RETENTION_BASIS 90+N/106|170 state matrix) + D1-B3o body "           \
+    "(63 CLEANUP_PLAN 126+N/142|206 phase matrix); not full D1 catalog"
 
 typedef struct ninlil_dv_file {
     uint32_t version;

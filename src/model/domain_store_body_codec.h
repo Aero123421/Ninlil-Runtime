@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..n.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..o.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -39,6 +39,8 @@ extern "C" {
  *          (live SPOOL/STATE/RESERVATION counters / sequence upper bound are D3)
  *   D1-B3n: family 6 61 RETENTION_BASIS pure body + same-record state matrix
  *          (live now/profile window/plan generation/primary PVD are D3)
+ *   D1-B3o: family 6 63 CLEANUP_PLAN pure body + same-record phase matrix
+ *          (live counts/basis/fence aggregate/writer +1 are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -118,6 +120,14 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_TX_BYTES ((uint32_t)106u)
 #define NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_DELIVERY_BYTES ((uint32_t)170u)
 #define NINLIL_MODEL_DOMAIN_BODY_RETENTION_BASIS_MAX ((uint32_t)512u)
+/* CLEANUP_PLAN (0x63): 126+N fixed after RAW16; TX142 / DLV206; max 512. */
+#define NINLIL_MODEL_DOMAIN_BODY_CLEANUP_PLAN_FIXED ((uint32_t)126u)
+#define NINLIL_MODEL_DOMAIN_BODY_CLEANUP_PLAN_TX_BYTES ((uint32_t)142u)
+#define NINLIL_MODEL_DOMAIN_BODY_CLEANUP_PLAN_DELIVERY_BYTES ((uint32_t)206u)
+#define NINLIL_MODEL_DOMAIN_BODY_CLEANUP_PLAN_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_RAW16_CLEANUP_SUBJECT_KEY_MAX ((uint32_t)255u)
+#define NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_KEY_TX_BYTES ((uint16_t)16u)
+#define NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_KEY_DELIVERY_BYTES ((uint16_t)80u)
 #define NINLIL_MODEL_DOMAIN_RAW16_RETENTION_SUBJECT_KEY_MAX ((uint32_t)255u)
 #define NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_KEY_TX_BYTES ((uint16_t)16u)
 #define NINLIL_MODEL_DOMAIN_RETENTION_SUBJECT_KEY_DELIVERY_BYTES ((uint16_t)80u)
@@ -260,6 +270,17 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_RETENTION_STATE_ACTIVE ((uint32_t)1u)
 #define NINLIL_MODEL_DOMAIN_RETENTION_STATE_ELIGIBLE ((uint32_t)2u)
 #define NINLIL_MODEL_DOMAIN_RETENTION_STATE_CLEANUP_COMMITTED ((uint32_t)3u)
+
+/*
+ * CLEANUP_PLAN subject_kind / cleanup_phase (docs17 §7.1 / §8.6 D1-B3o).
+ * Subject kinds match RETENTION_BASIS (2/3 only). Phase closed 1..3.
+ */
+#define NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_TRANSACTION ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_CLEANUP_SUBJECT_DELIVERY ((uint16_t)3u)
+
+#define NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_DELETE_NON_INDEX ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_DELETE_ATTEMPT_INDEX ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_CLEANUP_PHASE_FINALIZE ((uint16_t)3u)
 
 #define NINLIL_MODEL_DOMAIN_CANCEL_STATE_NONE ((uint32_t)1u)
 #define NINLIL_MODEL_DOMAIN_CANCEL_STATE_PENDING_REMOTE_FENCE ((uint32_t)2u)
@@ -1040,6 +1061,33 @@ typedef struct ninlil_model_domain_body_retention_basis {
 } ninlil_model_domain_body_retention_basis_t;
 
 /*
+ * CLEANUP_PLAN (0x63). Body length 126+N (docs17 §8.6 D1-B3o).
+ * subject_key_raw borrows encoded body on decode. Legal N: TRANSACTION 16
+ * (body 142) or DELIVERY 80 (body 206). Key COMPOSITE(63, subject_kind:u16 ||
+ * subject_primary_key_digest[32]). subject_primary_key_digest = KEY_DIGEST of
+ * complete primary (TX ID128 subtype20 / DLV COMPOSITE(40, RAW16 raw80));
+ * bare composite digest store/compare is forbidden.
+ * subject_primary_value_digest non-zero and equals header primary_value_digest
+ * (live primary VALUE_DIGEST match is D3). Live counts/basis/fence are D3.
+ */
+typedef struct ninlil_model_domain_body_cleanup_plan {
+    uint16_t subject_kind;
+    uint16_t cleanup_phase;
+    uint16_t subject_key_raw_length;
+    const uint8_t *subject_key_raw;
+    uint8_t subject_primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t subject_primary_value_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t cleanup_generation;
+    uint64_t batch_generation;
+    uint64_t initial_attempt_count;
+    uint64_t remaining_attempt_count;
+    uint64_t initial_attempt_index_count;
+    uint64_t remaining_attempt_index_count;
+    uint32_t attempt_reuse_fenced;
+    uint32_t reserved;
+} ninlil_model_domain_body_cleanup_plan_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -1149,6 +1197,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_retry_summary_t retry_summary;
         ninlil_model_domain_body_management_ledger_t management_ledger;
         ninlil_model_domain_body_retention_basis_t retention_basis;
+        ninlil_model_domain_body_cleanup_plan_t cleanup_plan;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1657,6 +1706,21 @@ ninlil_status_t ninlil_model_domain_decode_body_retention_basis(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_retention_basis_t *out_body);
 
+/* --- CLEANUP_PLAN (0x63) --- */
+/* Returns 126+N (142 or 206), or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_cleanup_plan_encoded_length(
+    const ninlil_model_domain_body_cleanup_plan_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_cleanup_plan(
+    const ninlil_model_domain_body_cleanup_plan_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_cleanup_plan(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_cleanup_plan_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1702,7 +1766,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..n.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..o.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1768,7 +1832,11 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       kind15-16 matrix / canonical digest recompute / rev1 only);
  *       RETENTION_BASIS live trusted now / profile window match / plan
  *       generation / live primary PVD (B3n proves same-record body/key/
- *       kind+raw / KEY_DIGEST / pending-trusted-eligible matrix only)
+ *       kind+raw / KEY_DIGEST / pending-trusted-eligible matrix only);
+ *       CLEANUP_PLAN live ATTEMPT/index counts / basis CLEANUP_COMMITTED /
+ *       ATTEMPT_REUSE_FENCE aggregate / phase batch erase / writer +1
+ *       (B3o proves same-record body/key/digest/PVD/phase remaining/fence
+ *       matrix only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and
