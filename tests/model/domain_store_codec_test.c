@@ -3,6 +3,7 @@
 #include "domain_store_codec_internal.h"
 #include "domain_vector_parse.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,33 +61,81 @@ static ninlil_status_t st_from(const char *s)
 }
 
 /*
- * Decode body_hex into a typed body struct for the five D1-B1 subtypes.
+ * Decode/encode body_hex for D1-B1 + D1-B2 subtypes via a scratch workspace.
  * Returns production status.
  */
+typedef struct body_any {
+    ninlil_model_domain_body_internal_invariant_t inv;
+    ninlil_model_domain_body_bearer_state_t bearer;
+    ninlil_model_domain_body_clock_baseline_t clock;
+    ninlil_model_domain_body_attempt_reuse_fence_t fence;
+    ninlil_model_domain_body_witness_head_index_t head;
+    ninlil_model_domain_body_service_t service;
+    ninlil_model_domain_body_service_quota_t service_quota;
+    ninlil_model_domain_body_transaction_anchor_t transaction_anchor;
+    ninlil_model_domain_body_transaction_sequence_index_t sequence_index;
+    ninlil_model_domain_body_transaction_state_t transaction_state;
+    ninlil_model_domain_body_reservation_t reservation;
+    ninlil_model_domain_body_idempotency_map_t idempotency_map;
+    ninlil_model_domain_body_event_id_map_t event_id_map;
+} body_any_t;
+
 static ninlil_status_t decode_body_any(
     uint32_t family,
     uint32_t subtype,
     ninlil_bytes_view_t body,
-    ninlil_model_domain_body_internal_invariant_t *inv,
-    ninlil_model_domain_body_bearer_state_t *bearer,
-    ninlil_model_domain_body_clock_baseline_t *clock,
-    ninlil_model_domain_body_attempt_reuse_fence_t *fence,
-    ninlil_model_domain_body_witness_head_index_t *head)
+    body_any_t *any)
 {
     if (family == 5u && subtype == 0x01u) {
-        return ninlil_model_domain_decode_body_internal_invariant(body, inv);
+        return ninlil_model_domain_decode_body_internal_invariant(
+            body, &any->inv);
     }
     if (family == 6u && subtype == 0x60u) {
-        return ninlil_model_domain_decode_body_bearer_state(body, bearer);
+        return ninlil_model_domain_decode_body_bearer_state(
+            body, &any->bearer);
     }
     if (family == 6u && subtype == 0x62u) {
-        return ninlil_model_domain_decode_body_clock_baseline(body, clock);
+        return ninlil_model_domain_decode_body_clock_baseline(
+            body, &any->clock);
     }
     if (family == 6u && subtype == 0x64u) {
-        return ninlil_model_domain_decode_body_attempt_reuse_fence(body, fence);
+        return ninlil_model_domain_decode_body_attempt_reuse_fence(
+            body, &any->fence);
     }
     if (family == 6u && subtype == 0x7du) {
-        return ninlil_model_domain_decode_body_witness_head_index(body, head);
+        return ninlil_model_domain_decode_body_witness_head_index(
+            body, &any->head);
+    }
+    if (family == 6u && subtype == 0x10u) {
+        return ninlil_model_domain_decode_body_service(body, &any->service);
+    }
+    if (family == 6u && subtype == 0x11u) {
+        return ninlil_model_domain_decode_body_service_quota(
+            body, &any->service_quota);
+    }
+    if (family == 6u && subtype == 0x20u) {
+        return ninlil_model_domain_decode_body_transaction_anchor(
+            body, &any->transaction_anchor);
+    }
+    if (family == 6u && subtype == 0x21u) {
+        return ninlil_model_domain_decode_body_transaction_sequence_index(
+            body, &any->sequence_index);
+    }
+    if (family == 6u && subtype == 0x22u) {
+        return ninlil_model_domain_decode_body_transaction_state(
+            body, &any->transaction_state);
+    }
+    if (family == 6u && subtype == 0x23u) {
+        return ninlil_model_domain_decode_body_reservation(
+            body, &any->reservation);
+    }
+    if (family == 6u && subtype == 0x24u) {
+        return ninlil_model_domain_decode_body_idempotency_map(
+            body, &any->idempotency_map);
+    }
+    if (family == 6u && subtype == 0x25u) {
+        return ninlil_model_domain_decode_body_event_id_map(
+            body, &any->event_id_map);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -94,34 +143,62 @@ static ninlil_status_t decode_body_any(
 static ninlil_status_t encode_body_any(
     uint32_t family,
     uint32_t subtype,
-    const ninlil_model_domain_body_internal_invariant_t *inv,
-    const ninlil_model_domain_body_bearer_state_t *bearer,
-    const ninlil_model_domain_body_clock_baseline_t *clock,
-    const ninlil_model_domain_body_attempt_reuse_fence_t *fence,
-    const ninlil_model_domain_body_witness_head_index_t *head,
+    const body_any_t *any,
     uint8_t *out,
     uint32_t capacity,
     uint32_t *out_len)
 {
     if (family == 5u && subtype == 0x01u) {
         return ninlil_model_domain_encode_body_internal_invariant(
-            inv, out, capacity, out_len);
+            &any->inv, out, capacity, out_len);
     }
     if (family == 6u && subtype == 0x60u) {
         return ninlil_model_domain_encode_body_bearer_state(
-            bearer, out, capacity, out_len);
+            &any->bearer, out, capacity, out_len);
     }
     if (family == 6u && subtype == 0x62u) {
         return ninlil_model_domain_encode_body_clock_baseline(
-            clock, out, capacity, out_len);
+            &any->clock, out, capacity, out_len);
     }
     if (family == 6u && subtype == 0x64u) {
         return ninlil_model_domain_encode_body_attempt_reuse_fence(
-            fence, out, capacity, out_len);
+            &any->fence, out, capacity, out_len);
     }
     if (family == 6u && subtype == 0x7du) {
         return ninlil_model_domain_encode_body_witness_head_index(
-            head, out, capacity, out_len);
+            &any->head, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x10u) {
+        return ninlil_model_domain_encode_body_service(
+            &any->service, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x11u) {
+        return ninlil_model_domain_encode_body_service_quota(
+            &any->service_quota, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x20u) {
+        return ninlil_model_domain_encode_body_transaction_anchor(
+            &any->transaction_anchor, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x21u) {
+        return ninlil_model_domain_encode_body_transaction_sequence_index(
+            &any->sequence_index, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x22u) {
+        return ninlil_model_domain_encode_body_transaction_state(
+            &any->transaction_state, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x23u) {
+        return ninlil_model_domain_encode_body_reservation(
+            &any->reservation, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x24u) {
+        return ninlil_model_domain_encode_body_idempotency_map(
+            &any->idempotency_map, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x25u) {
+        return ninlil_model_domain_encode_body_event_id_map(
+            &any->event_id_map, out, capacity, out_len);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -680,34 +757,20 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
     if (strcmp(v->op, "body_decode") == 0
         || strcmp(v->op, "body_encode") == 0
         || strcmp(v->op, "body_roundtrip") == 0) {
-        ninlil_model_domain_body_internal_invariant_t inv;
-        ninlil_model_domain_body_bearer_state_t bearer;
-        ninlil_model_domain_body_clock_baseline_t clock;
-        ninlil_model_domain_body_attempt_reuse_fence_t fence;
-        ninlil_model_domain_body_witness_head_index_t head;
+        body_any_t any;
         ninlil_bytes_view_t bv;
         uint32_t elen = 0u;
 
         QCHECK(hex_to(ninlil_dv_str(v->body_hex), buf, sizeof(buf), &n) == 0);
         bv.data = n ? buf : NULL;
         bv.length = (uint32_t)n;
-        (void)memset(&inv, 0, sizeof(inv));
-        (void)memset(&bearer, 0, sizeof(bearer));
-        (void)memset(&clock, 0, sizeof(clock));
-        (void)memset(&fence, 0, sizeof(fence));
-        (void)memset(&head, 0, sizeof(head));
+        (void)memset(&any, 0, sizeof(any));
 
         if (strcmp(v->op, "body_decode") == 0) {
-            got = decode_body_any(
-                v->family, v->subtype, bv, &inv, &bearer, &clock, &fence,
-                &head);
+            got = decode_body_any(v->family, v->subtype, bv, &any);
             QCHECK(got == expect);
             if (expect != NINLIL_OK) {
-                QCHECK(zeros(&inv, sizeof(inv)));
-                QCHECK(zeros(&bearer, sizeof(bearer)));
-                QCHECK(zeros(&clock, sizeof(clock)));
-                QCHECK(zeros(&fence, sizeof(fence)));
-                QCHECK(zeros(&head, sizeof(head)));
+                QCHECK(zeros(&any, sizeof(any)));
             }
             return 0;
         }
@@ -719,21 +782,17 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
          * of a positive sibling body (body_hex remains well-formed).
          */
         if (expect == NINLIL_E_BUFFER_TOO_SMALL) {
-            got = decode_body_any(
-                v->family, v->subtype, bv, &inv, &bearer, &clock, &fence,
-                &head);
+            got = decode_body_any(v->family, v->subtype, bv, &any);
             QCHECK(got == NINLIL_OK);
             elen = 0u;
             got = encode_body_any(
-                v->family, v->subtype, &inv, &bearer, &clock, &fence, &head,
-                NULL, 0u, &elen);
+                v->family, v->subtype, &any, NULL, 0u, &elen);
             QCHECK(got == NINLIL_E_BUFFER_TOO_SMALL);
             QCHECK(elen == v->body_length);
             return 0;
         }
 
-        got = decode_body_any(
-            v->family, v->subtype, bv, &inv, &bearer, &clock, &fence, &head);
+        got = decode_body_any(v->family, v->subtype, bv, &any);
         if (strcmp(v->op, "body_encode") == 0 && expect != NINLIL_OK) {
             /* Encode-path invalid arguments are not currently vectorized. */
             QCHECK(got == expect);
@@ -742,8 +801,7 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
         QCHECK(got == NINLIL_OK);
         elen = 0u;
         got = encode_body_any(
-            v->family, v->subtype, &inv, &bearer, &clock, &fence, &head,
-            outb, sizeof(outb), &elen);
+            v->family, v->subtype, &any, outb, sizeof(outb), &elen);
         QCHECK(got == expect);
         if (expect == NINLIL_OK) {
             QCHECK(elen == (uint32_t)n);
@@ -751,27 +809,16 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
             QCHECK(elen == v->body_length);
             /* Second encode-decode-encode */
             {
-                ninlil_model_domain_body_internal_invariant_t inv2;
-                ninlil_model_domain_body_bearer_state_t bearer2;
-                ninlil_model_domain_body_clock_baseline_t clock2;
-                ninlil_model_domain_body_attempt_reuse_fence_t fence2;
-                ninlil_model_domain_body_witness_head_index_t head2;
+                body_any_t any2;
                 uint32_t elen2 = 0u;
                 ninlil_bytes_view_t bv2;
-                (void)memset(&inv2, 0, sizeof(inv2));
-                (void)memset(&bearer2, 0, sizeof(bearer2));
-                (void)memset(&clock2, 0, sizeof(clock2));
-                (void)memset(&fence2, 0, sizeof(fence2));
-                (void)memset(&head2, 0, sizeof(head2));
+                (void)memset(&any2, 0, sizeof(any2));
                 bv2.data = outb;
                 bv2.length = elen;
-                QCHECK(decode_body_any(
-                    v->family, v->subtype, bv2, &inv2, &bearer2, &clock2,
-                    &fence2, &head2)
+                QCHECK(decode_body_any(v->family, v->subtype, bv2, &any2)
                     == NINLIL_OK);
                 QCHECK(encode_body_any(
-                    v->family, v->subtype, &inv2, &bearer2, &clock2, &fence2,
-                    &head2, buf2, sizeof(buf2), &elen2)
+                    v->family, v->subtype, &any2, buf2, sizeof(buf2), &elen2)
                     == NINLIL_OK);
                 QCHECK(elen2 == elen);
                 QCHECK(memcmp(buf2, outb, elen) == 0);
@@ -839,6 +886,25 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 QCHECK(memcmp(rec.witness_head_index.member_key_bytes,
                     body_start + 40u, 10u)
                     == 0);
+            } else if (v->subtype == 0x10u) {
+                QCHECK(rec.service.target_limit == 1u);
+                QCHECK(rec.service.service_key_raw != NULL);
+            } else if (v->subtype == 0x11u) {
+                QCHECK(rec.service_quota.service_key_raw != NULL);
+            } else if (v->subtype == 0x20u) {
+                QCHECK(rec.transaction_anchor.target_count == 1u);
+            } else if (v->subtype == 0x21u) {
+                QCHECK(rec.transaction_sequence_index.transaction_sequence
+                    != 0u);
+            } else if (v->subtype == 0x22u) {
+                QCHECK(rec.transaction_state.target_state
+                    == rec.transaction_state.state);
+            } else if (v->subtype == 0x23u) {
+                QCHECK(rec.reservation.owner_key_raw != NULL);
+            } else if (v->subtype == 0x24u) {
+                QCHECK(rec.idempotency_map.idempotency_key_length > 0u);
+            } else if (v->subtype == 0x25u) {
+                QCHECK(!zeros(rec.event_id_map.event_id, 16u));
             }
             if (ninlil_dv_str(v->digest_hex)[0] != '\0') {
                 ninlil_model_domain_digest_t d;
@@ -879,14 +945,27 @@ static int test_catalog_and_replay(const char *path)
     uint32_t hdr_ok = 0u;
     uint32_t dsb1_pos = 0u;
     uint32_t dsb1_neg = 0u;
+    uint32_t dsb2_pos = 0u;
+    uint32_t dsb2_neg = 0u;
     uint32_t cov01 = 0u;
     uint32_t cov60 = 0u;
     uint32_t cov62 = 0u;
     uint32_t cov64 = 0u;
     uint32_t cov7d = 0u;
+    uint32_t cov10 = 0u;
+    uint32_t cov11 = 0u;
+    uint32_t cov20 = 0u;
+    uint32_t cov21 = 0u;
+    uint32_t cov22 = 0u;
+    uint32_t cov23 = 0u;
+    uint32_t cov24 = 0u;
+    uint32_t cov25 = 0u;
     uint32_t unimplemented = 0u;
 
-    REQUIRE(ninlil_dv_load_file(path, &file, err, sizeof(err)) == 0);
+    if (ninlil_dv_load_file(path, &file, err, sizeof(err)) != 0) {
+            (void)fprintf(stderr, "load failed path=%s err=%s\n", path, err);
+            return 1;
+        }
     REQUIRE(file.catalog.dsk1_positive_keys == 30u);
     REQUIRE(file.catalog.dsv1_body_exact == 30u);
     REQUIRE(file.catalog.dsv1_body_plus1 == 30u);
@@ -957,6 +1036,30 @@ static int test_catalog_and_replay(const char *path)
                 dsb1_neg++;
             }
         }
+        if (strcmp(v->suite, "DSB2") == 0) {
+            if (strcmp(v->expected_status, "OK") == 0) {
+                dsb2_pos++;
+                if (v->subtype == 0x10u) {
+                    cov10++;
+                } else if (v->subtype == 0x11u) {
+                    cov11++;
+                } else if (v->subtype == 0x20u) {
+                    cov20++;
+                } else if (v->subtype == 0x21u) {
+                    cov21++;
+                } else if (v->subtype == 0x22u) {
+                    cov22++;
+                } else if (v->subtype == 0x23u) {
+                    cov23++;
+                } else if (v->subtype == 0x24u) {
+                    cov24++;
+                } else if (v->subtype == 0x25u) {
+                    cov25++;
+                }
+            } else {
+                dsb2_neg++;
+            }
+        }
         if (replay(v) != 0) {
             (void)fprintf(stderr, "replay failed %s\n", v->id);
             ninlil_dv_free(&file);
@@ -979,18 +1082,33 @@ static int test_catalog_and_replay(const char *path)
     REQUIRE(cov62 == file.catalog.dsb1_subtype_62_positive);
     REQUIRE(cov64 == file.catalog.dsb1_subtype_64_positive);
     REQUIRE(cov7d == file.catalog.dsb1_subtype_7d_positive);
-    /* Five subtype coverage: every target subtype has positives, 0 missing. */
+    REQUIRE(dsb2_pos == file.catalog.dsb2_total_positive);
+    REQUIRE(dsb2_neg == file.catalog.dsb2_total_negative);
+    REQUIRE(cov10 == file.catalog.dsb2_subtype_10_positive);
+    REQUIRE(cov11 == file.catalog.dsb2_subtype_11_positive);
+    REQUIRE(cov20 == file.catalog.dsb2_subtype_20_positive);
+    REQUIRE(cov21 == file.catalog.dsb2_subtype_21_positive);
+    REQUIRE(cov22 == file.catalog.dsb2_subtype_22_positive);
+    REQUIRE(cov23 == file.catalog.dsb2_subtype_23_positive);
+    REQUIRE(cov24 == file.catalog.dsb2_subtype_24_positive);
+    REQUIRE(cov25 == file.catalog.dsb2_subtype_25_positive);
+    /* D1-B1 + D1-B2 subtype coverage: every target subtype has positives. */
     if (cov01 == 0u || cov60 == 0u || cov62 == 0u || cov64 == 0u
-        || cov7d == 0u) {
+        || cov7d == 0u || cov10 == 0u || cov11 == 0u || cov20 == 0u
+        || cov21 == 0u || cov22 == 0u || cov23 == 0u || cov24 == 0u
+        || cov25 == 0u) {
         unimplemented = 1u;
     }
     REQUIRE(unimplemented == 0u);
     (void)fprintf(stdout,
         "production replayed vectors=%zu dsb1_pos=%u dsb1_neg=%u "
+        "dsb2_pos=%u dsb2_neg=%u "
         "cov01=%u cov60=%u cov62=%u cov64=%u cov7d=%u "
-        "sizeof(ninlil_dv_vector_t)=%zu\n",
-        file.vector_count, dsb1_pos, dsb1_neg, cov01, cov60, cov62, cov64,
-        cov7d, sizeof(ninlil_dv_vector_t));
+        "cov10=%u cov11=%u cov20=%u cov21=%u cov22=%u cov23=%u cov24=%u "
+        "cov25=%u sizeof(ninlil_dv_vector_t)=%zu\n",
+        file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, cov01,
+        cov60, cov62, cov64, cov7d, cov10, cov11, cov20, cov21, cov22, cov23,
+        cov24, cov25, sizeof(ninlil_dv_vector_t));
     ninlil_dv_free(&file);
     return 0;
 }
@@ -1534,7 +1652,7 @@ static int test_invalid_encode_structs(void)
     return 0;
 }
 
-static int test_body_alias_and_overflow(void)
+static int test_body_alias_and_overflow(const char *vector_path)
 {
     uint8_t out[256];
     uint8_t out_before[256];
@@ -1674,6 +1792,17 @@ static int test_body_alias_and_overflow(void)
         == NINLIL_E_INVALID_ARGUMENT);
     REQUIRE(zeros(marker, sizeof(marker)));
 
+    /* marker_id rejects overflowing input/output ranges before dereference. */
+    overflow_ptr = (uint8_t *)(uintptr_t)(UINTPTR_MAX - 3u);
+    (void)memset(marker, 0xA7, sizeof(marker));
+    REQUIRE(ninlil_model_domain_invariant_marker_id(
+            129u, 0x0300u, overflow_ptr, marker)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(marker[0] == 0xA7u);
+    REQUIRE(ninlil_model_domain_invariant_marker_id(
+            129u, 0x0300u, dig, overflow_ptr)
+        == NINLIL_E_INVALID_ARGUMENT);
+
     /* HEAD nested key aliases out_bytes */
     (void)memcpy(mk, R, 8u);
     mk[8] = 0x03u;
@@ -1770,8 +1899,473 @@ static int test_body_alias_and_overflow(void)
         != NINLIL_OK);
     REQUIRE(zeros(&rec, sizeof(rec)));
 
+    /* --- D1-B2 fixed bodies: same encode/decode alias contract --- */
+    CHECK_FIXED_BODY_ALIAS(
+        ninlil_model_domain_body_transaction_sequence_index_t,
+        ninlil_model_domain_encode_body_transaction_sequence_index,
+        ninlil_model_domain_decode_body_transaction_sequence_index,
+        NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_SEQUENCE_INDEX_BYTES);
+    CHECK_FIXED_BODY_ALIAS(
+        ninlil_model_domain_body_transaction_state_t,
+        ninlil_model_domain_encode_body_transaction_state,
+        ninlil_model_domain_decode_body_transaction_state,
+        NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_STATE_BYTES);
+
+    /*
+     * D1-B2 variable RAW16 bodies: full pairwise alias + address-overflow
+     * contract. Macros avoid copy/paste; forged overflow pointers are only
+     * passed through uintptr_t casts and must be rejected before any read/write.
+     * Overlap uses properly sized storage unions so -Werror cannot infer
+     * object-size overread from undersized real arrays.
+     */
+#define CHECK_VAR_ENCODE_BODY_OUT_ALIAS(Type, Encode)                          \
+    do {                                                                       \
+        union {                                                                \
+            Type object;                                                       \
+            uint8_t bytes[sizeof(Type) < 256u ? 256u : sizeof(Type)];          \
+        } storage;                                                             \
+        uint8_t storage_before[sizeof(storage)];                               \
+        uint32_t alias_length = 91u;                                           \
+        (void)memset(&storage, 0xA5, sizeof(storage));                         \
+        (void)memcpy(storage_before, &storage, sizeof(storage));               \
+        REQUIRE(Encode(&storage.object, storage.bytes,                         \
+                    (uint32_t)sizeof(storage.bytes), &alias_length)            \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(alias_length == 91u);                                          \
+        REQUIRE(memcmp(&storage, storage_before, sizeof(storage)) == 0);       \
+    } while (0)
+
+#define CHECK_VAR_ENCODE_BODY_LEN_ALIAS(Type, Encode)                          \
+    do {                                                                       \
+        Type object;                                                           \
+        Type object_before;                                                    \
+        uint8_t local_out[64];                                                 \
+        uint8_t local_before[64];                                              \
+        (void)memset(&object, 0xA5, sizeof(object));                           \
+        object_before = object;                                                \
+        (void)memset(local_out, 0x5A, sizeof(local_out));                      \
+        (void)memcpy(local_before, local_out, sizeof(local_out));              \
+        REQUIRE(Encode(&object, local_out, sizeof(local_out),                  \
+                    (uint32_t *)(void *)&object)                               \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);      \
+    } while (0)
+
+#define CHECK_VAR_ENCODE_RAW_ALIASES(Type, Encode, RawField, RawLenField)      \
+    do {                                                                       \
+        Type object;                                                           \
+        Type object_before;                                                    \
+        uint8_t local_out[128];                                                \
+        uint8_t local_before[128];                                             \
+        uint32_t local_len;                                                    \
+        uint32_t local_len_before;                                             \
+        uint8_t raw_own[8];                                                    \
+        (void)memset(&object, 0, sizeof(object));                              \
+        (void)memset(raw_own, 0x41, sizeof(raw_own));                          \
+        object.RawLenField = 8u;                                               \
+        /* nested RAW aliases out_bytes */                                     \
+        object.RawField = local_out;                                           \
+        object_before = object;                                                \
+        (void)memset(local_out, 0x5A, sizeof(local_out));                      \
+        (void)memcpy(local_before, local_out, sizeof(local_out));              \
+        local_len = 66u;                                                       \
+        local_len_before = local_len;                                          \
+        REQUIRE(Encode(&object, local_out, sizeof(local_out), &local_len)      \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(local_len == local_len_before);                                \
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);      \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+        /* nested RAW aliases out_length */                                    \
+        object.RawField = (const uint8_t *)&local_len;                         \
+        object.RawLenField = (uint16_t)sizeof(local_len);                      \
+        object_before = object;                                                \
+        local_len = 55u;                                                       \
+        local_len_before = local_len;                                          \
+        REQUIRE(Encode(&object, local_out, sizeof(local_out), &local_len)      \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(local_len == local_len_before);                                \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+        /* nested RAW aliases body object */                                   \
+        object.RawField = (const uint8_t *)&object;                            \
+        object.RawLenField = 8u;                                               \
+        object_before = object;                                                \
+        local_len = 44u;                                                       \
+        local_len_before = local_len;                                          \
+        (void)memset(local_out, 0x5A, sizeof(local_out));                      \
+        (void)memcpy(local_before, local_out, sizeof(local_out));              \
+        REQUIRE(Encode(&object, local_out, sizeof(local_out), &local_len)      \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(local_len == local_len_before);                                \
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);      \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+        (void)raw_own;                                                         \
+    } while (0)
+
+#define CHECK_VAR_ENCODE_DUAL_RAW_OVERLAP(                                     \
+    Type, Encode, RawA, LenA, RawB, LenB)                                      \
+    do {                                                                       \
+        Type object;                                                           \
+        Type object_before;                                                    \
+        uint8_t shared[16];                                                    \
+        uint8_t local_out[128];                                                \
+        uint8_t local_before[128];                                             \
+        uint32_t local_len = 33u;                                              \
+        uint32_t local_len_before = local_len;                                 \
+        (void)memset(&object, 0, sizeof(object));                              \
+        (void)memset(shared, 0x42, sizeof(shared));                            \
+        object.LenA = 8u;                                                      \
+        object.RawA = shared;                                                  \
+        object.LenB = 8u;                                                      \
+        object.RawB = shared; /* nested↔nested overlap */                      \
+        object_before = object;                                                \
+        (void)memset(local_out, 0x5A, sizeof(local_out));                      \
+        (void)memcpy(local_before, local_out, sizeof(local_out));              \
+        REQUIRE(Encode(&object, local_out, sizeof(local_out), &local_len)      \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(local_len == local_len_before);                                \
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);      \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+        REQUIRE(shared[0] == 0x42u);                                           \
+    } while (0)
+
+#define CHECK_VAR_ENCODE_OVERFLOW(Type, Encode, RawField, RawLenField)         \
+    do {                                                                       \
+        Type object;                                                           \
+        Type object_before;                                                    \
+        uint8_t local_out[64];                                                 \
+        uint8_t local_before[64];                                              \
+        uint32_t local_len;                                                    \
+        uint32_t local_len_before;                                             \
+        uint8_t raw_own[8];                                                    \
+        Type *overflow_body;                                                   \
+        uint8_t *overflow_bytes;                                               \
+        uint32_t *overflow_len;                                                \
+        /* forged ranges via uintptr_t only — never read/written */            \
+        overflow_body = (Type *)(uintptr_t)(UINTPTR_MAX - 3u);                 \
+        overflow_bytes = (uint8_t *)(uintptr_t)(UINTPTR_MAX - 3u);             \
+        overflow_len = (uint32_t *)(uintptr_t)(UINTPTR_MAX - 1u);              \
+        (void)memset(&object, 0, sizeof(object));                              \
+        (void)memset(raw_own, 0x41, sizeof(raw_own));                          \
+        object.RawLenField = 8u;                                               \
+        object.RawField = raw_own;                                             \
+        object_before = object;                                                \
+        (void)memset(local_out, 0x5A, sizeof(local_out));                      \
+        (void)memcpy(local_before, local_out, sizeof(local_out));              \
+        local_len = 77u;                                                       \
+        local_len_before = local_len;                                          \
+        /* overflowing body pointer */                                         \
+        REQUIRE(Encode(overflow_body, local_out, sizeof(local_out),            \
+                    &local_len)                                                \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(local_len == local_len_before);                                \
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);      \
+        /* overflowing nested RAW pointer */                                   \
+        object.RawField = (const uint8_t *)(uintptr_t)(UINTPTR_MAX - 3u);      \
+        object.RawLenField = 16u;                                              \
+        object_before = object;                                                \
+        local_len = 77u;                                                       \
+        local_len_before = local_len;                                          \
+        REQUIRE(Encode(&object, local_out, sizeof(local_out), &local_len)      \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(local_len == local_len_before);                                \
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);      \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+        /* overflowing out pointer */                                          \
+        object.RawField = raw_own;                                             \
+        object.RawLenField = 8u;                                               \
+        object_before = object;                                                \
+        local_len = 77u;                                                       \
+        local_len_before = local_len;                                          \
+        REQUIRE(Encode(&object, overflow_bytes, 16u, &local_len)               \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(local_len == local_len_before);                                \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+        /* overflowing out_length pointer */                                   \
+        REQUIRE(Encode(&object, local_out, sizeof(local_out), overflow_len)    \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(memcmp(local_out, local_before, sizeof(local_out)) == 0);      \
+        REQUIRE(memcmp(&object, &object_before, sizeof(object)) == 0);         \
+    } while (0)
+
+#define CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(Type, Decode)                      \
+    do {                                                                       \
+        Type object;                                                           \
+        uint8_t *overflow_ptr;                                                 \
+        /* encoded ↔ out alias: out untouched */                               \
+        (void)memset(&object, 0xA5, sizeof(object));                           \
+        REQUIRE(Decode(                                                        \
+                    (ninlil_bytes_view_t){(const uint8_t *)&object, 64u},       \
+                    &object)                                                   \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(((const uint8_t *)&object)[0] == 0xA5u);                       \
+        /* empty encoded + overflowing out: INVALID, no write */               \
+        overflow_ptr = (uint8_t *)(uintptr_t)(UINTPTR_MAX - 3u);               \
+        REQUIRE(Decode((ninlil_bytes_view_t){NULL, 0u},                        \
+                    (Type *)(void *)overflow_ptr)                              \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        /* overflowing encoded pointer: INVALID, real out untouched */         \
+        (void)memset(&object, 0xB7, sizeof(object));                           \
+        REQUIRE(Decode(                                                        \
+                    (ninlil_bytes_view_t){overflow_ptr, 16u}, &object)          \
+            == NINLIL_E_INVALID_ARGUMENT);                                     \
+        REQUIRE(((const uint8_t *)&object)[0] == 0xB7u);                       \
+        /* non-alias malformed empty: CORRUPT with valid out zeroed */         \
+        (void)memset(&object, 0xC3, sizeof(object));                           \
+        REQUIRE(Decode((ninlil_bytes_view_t){NULL, 0u}, &object)               \
+            == NINLIL_E_STORAGE_CORRUPT);                                      \
+        REQUIRE(zeros(&object, sizeof(object)));                               \
+    } while (0)
+
+#define CHECK_VAR_ENCODE_BTS_AFTER_DECODE(Type, Decode, Encode, HexLit)        \
+    do {                                                                       \
+        static const char *const hx = (HexLit);                                \
+        uint8_t enc[2048];                                                     \
+        uint8_t reenc[2048];                                                   \
+        uint8_t reenc_before[2048];                                            \
+        size_t hn;                                                             \
+        uint32_t n = 0u;                                                       \
+        uint32_t required = 0u;                                                \
+        uint32_t short_len = 0u;                                               \
+        Type object;                                                           \
+        REQUIRE(hex_to(hx, enc, sizeof(enc), &hn) == 0);                       \
+        n = (uint32_t)hn;                                                      \
+        (void)memset(&object, 0, sizeof(object));                              \
+        REQUIRE(Decode((ninlil_bytes_view_t){enc, n}, &object) == NINLIL_OK);  \
+        required = 0u;                                                         \
+        REQUIRE(Encode(&object, NULL, 0u, &required)                           \
+            == NINLIL_E_BUFFER_TOO_SMALL);                                     \
+        REQUIRE(required == n);                                                \
+        (void)memset(reenc, 0x5A, sizeof(reenc));                              \
+        (void)memcpy(reenc_before, reenc, sizeof(reenc));                      \
+        short_len = 0u;                                                        \
+        REQUIRE(Encode(&object, reenc, required > 0u ? required - 1u : 0u,     \
+                    &short_len)                                                \
+            == NINLIL_E_BUFFER_TOO_SMALL);                                     \
+        REQUIRE(short_len == required);                                        \
+        REQUIRE(memcmp(reenc, reenc_before, sizeof(reenc)) == 0);              \
+    } while (0)
+
+    /* --- single-RAW variable bodies --- */
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_service_t,
+        ninlil_model_domain_encode_body_service);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_service_t,
+        ninlil_model_domain_encode_body_service);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_service_t,
+        ninlil_model_domain_encode_body_service,
+        service_key_raw, service_key_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_service_t,
+        ninlil_model_domain_encode_body_service,
+        service_key_raw, service_key_raw_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_service_t,
+        ninlil_model_domain_decode_body_service);
+
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_service_quota_t,
+        ninlil_model_domain_encode_body_service_quota);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_service_quota_t,
+        ninlil_model_domain_encode_body_service_quota);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_service_quota_t,
+        ninlil_model_domain_encode_body_service_quota,
+        service_key_raw, service_key_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_service_quota_t,
+        ninlil_model_domain_encode_body_service_quota,
+        service_key_raw, service_key_raw_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_service_quota_t,
+        ninlil_model_domain_decode_body_service_quota);
+
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_reservation_t,
+        ninlil_model_domain_encode_body_reservation);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_reservation_t,
+        ninlil_model_domain_encode_body_reservation);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_reservation_t,
+        ninlil_model_domain_encode_body_reservation,
+        owner_key_raw, owner_key_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_reservation_t,
+        ninlil_model_domain_encode_body_reservation,
+        owner_key_raw, owner_key_raw_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_reservation_t,
+        ninlil_model_domain_decode_body_reservation);
+
+    /* --- dual-RAW variable bodies --- */
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_encode_body_transaction_anchor);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_encode_body_transaction_anchor);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_encode_body_transaction_anchor,
+        idempotency_scope_raw, idempotency_scope_raw_length);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_encode_body_transaction_anchor,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_ENCODE_DUAL_RAW_OVERLAP(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_encode_body_transaction_anchor,
+        idempotency_scope_raw, idempotency_scope_raw_length,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_encode_body_transaction_anchor,
+        idempotency_scope_raw, idempotency_scope_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_encode_body_transaction_anchor,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_transaction_anchor_t,
+        ninlil_model_domain_decode_body_transaction_anchor);
+
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_encode_body_idempotency_map);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_encode_body_idempotency_map);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_encode_body_idempotency_map,
+        scope_raw, scope_raw_length);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_encode_body_idempotency_map,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_ENCODE_DUAL_RAW_OVERLAP(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_encode_body_idempotency_map,
+        scope_raw, scope_raw_length,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_encode_body_idempotency_map,
+        scope_raw, scope_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_encode_body_idempotency_map,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_idempotency_map_t,
+        ninlil_model_domain_decode_body_idempotency_map);
+
+    CHECK_VAR_ENCODE_BODY_OUT_ALIAS(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_encode_body_event_id_map);
+    CHECK_VAR_ENCODE_BODY_LEN_ALIAS(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_encode_body_event_id_map);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_encode_body_event_id_map,
+        scope_raw, scope_raw_length);
+    CHECK_VAR_ENCODE_RAW_ALIASES(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_encode_body_event_id_map,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_ENCODE_DUAL_RAW_OVERLAP(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_encode_body_event_id_map,
+        scope_raw, scope_raw_length,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_encode_body_event_id_map,
+        scope_raw, scope_raw_length);
+    CHECK_VAR_ENCODE_OVERFLOW(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_encode_body_event_id_map,
+        idempotency_key, idempotency_key_length);
+    CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW(
+        ninlil_model_domain_body_event_id_map_t,
+        ninlil_model_domain_decode_body_event_id_map);
+
+    /*
+     * BUFFER_TOO_SMALL exact required length + untouched short buffer for each
+     * variable body. Golden positives from the checked-in DSB2 catalog.
+     */
+    {
+        /* Load positives via the same vector path used by main/replay. */
+        ninlil_dv_file_t file;
+        char err[256];
+        size_t vi;
+        uint32_t bts_seen = 0u;
+        REQUIRE(vector_path != NULL);
+        REQUIRE(ninlil_dv_load_file(vector_path, &file, err, sizeof(err)) == 0);
+        for (vi = 0u; vi < file.vector_count; ++vi) {
+            const ninlil_dv_vector_t *v = &file.vectors[vi];
+            uint8_t enc[2048];
+            uint8_t short_buf[2048];
+            uint8_t short_before[2048];
+            size_t hn = 0u;
+            uint32_t n = 0u;
+            uint32_t required = 0u;
+            uint32_t short_len = 0u;
+            body_any_t any;
+            ninlil_status_t got;
+            if (strcmp(v->suite, "DSB2") != 0
+                || strcmp(v->expected_status, "OK") != 0
+                || strcmp(v->op, "body_roundtrip") != 0) {
+                continue;
+            }
+            if (v->subtype != 0x10u && v->subtype != 0x11u
+                && v->subtype != 0x20u && v->subtype != 0x23u
+                && v->subtype != 0x24u && v->subtype != 0x25u) {
+                continue;
+            }
+            REQUIRE(hex_to(ninlil_dv_str(v->body_hex), enc, sizeof(enc), &hn)
+                == 0);
+            n = (uint32_t)hn;
+            (void)memset(&any, 0, sizeof(any));
+            got = decode_body_any(
+                v->family, v->subtype, (ninlil_bytes_view_t){enc, n}, &any);
+            REQUIRE(got == NINLIL_OK);
+            required = 0u;
+            got = encode_body_any(
+                v->family, v->subtype, &any, NULL, 0u, &required);
+            REQUIRE(got == NINLIL_E_BUFFER_TOO_SMALL);
+            REQUIRE(required == n);
+            REQUIRE(required == v->body_length);
+            (void)memset(short_buf, 0x5A, sizeof(short_buf));
+            (void)memcpy(short_before, short_buf, sizeof(short_buf));
+            short_len = 0u;
+            got = encode_body_any(
+                v->family, v->subtype, &any, short_buf,
+                required > 0u ? required - 1u : 0u, &short_len);
+            REQUIRE(got == NINLIL_E_BUFFER_TOO_SMALL);
+            REQUIRE(short_len == required);
+            REQUIRE(memcmp(short_buf, short_before, sizeof(short_buf)) == 0);
+            bts_seen++;
+        }
+        /* At least one positive body_roundtrip per six variable subtypes. */
+        REQUIRE(bts_seen >= 6u);
+        ninlil_dv_free(&file);
+    }
+
     (void)fprintf(stdout, "body alias/overflow contract ok\n");
 #undef CHECK_FIXED_BODY_ALIAS
+#undef CHECK_VAR_ENCODE_BODY_OUT_ALIAS
+#undef CHECK_VAR_ENCODE_BODY_LEN_ALIAS
+#undef CHECK_VAR_ENCODE_RAW_ALIASES
+#undef CHECK_VAR_ENCODE_DUAL_RAW_OVERLAP
+#undef CHECK_VAR_ENCODE_OVERFLOW
+#undef CHECK_VAR_DECODE_ALIAS_AND_OVERFLOW
+#undef CHECK_VAR_ENCODE_BTS_AFTER_DECODE
     return 0;
 }
 
@@ -1803,7 +2397,7 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b1\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b2\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
@@ -1899,7 +2493,7 @@ int main(int argc, char **argv)
         || test_reason_registry_unit() != 0
         || test_head_encoded_length_matrix() != 0
         || test_invalid_encode_structs() != 0
-        || test_body_alias_and_overflow() != 0
+        || test_body_alias_and_overflow(path) != 0
         || test_catalog_and_replay(path) != 0
         || test_mutation_rejects_wrong_digest(path) != 0
         || test_manifest_key_length_mutation(path) != 0

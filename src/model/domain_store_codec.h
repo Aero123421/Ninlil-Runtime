@@ -318,7 +318,12 @@ ninlil_status_t ninlil_model_domain_key_digest(
     ninlil_bytes_view_t complete_key,
     ninlil_model_domain_digest_t *out_digest);
 
-/* primary_id hint from key identity (section 4). */
+/*
+ * Encode an identity kind/bytes into the 16-byte primary_id form (docs17 §4):
+ * ID128 as-is, u64/singleton left-zero-padded, digest identity first 16 bytes.
+ * This is the encoding helper only; secondary records must not use their own
+ * key identity as primary_id — typed validation derives the referenced primary.
+ */
 ninlil_status_t ninlil_model_domain_primary_id_from_identity(
     uint8_t identity_kind,
     ninlil_bytes_view_t identity,

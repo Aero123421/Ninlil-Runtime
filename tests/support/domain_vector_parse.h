@@ -15,7 +15,7 @@ extern "C" {
 #define NINLIL_DV_MAX_NOTES 256u
 #define NINLIL_DV_MAX_HEX_CHARS 65536u
 #define NINLIL_DV_MAX_CHUNKS 32u
-#define NINLIL_DV_MAX_VECTORS 768u
+#define NINLIL_DV_MAX_VECTORS 1024u
 
 /*
  * Large/optional hex and notes are exactly-sized heap strings (NULL if
@@ -137,6 +137,16 @@ typedef struct ninlil_dv_catalog {
     uint32_t dsb1_subtype_7d_positive;
     uint32_t dsb1_total_positive;
     uint32_t dsb1_total_negative;
+    uint32_t dsb2_subtype_10_positive;
+    uint32_t dsb2_subtype_11_positive;
+    uint32_t dsb2_subtype_20_positive;
+    uint32_t dsb2_subtype_21_positive;
+    uint32_t dsb2_subtype_22_positive;
+    uint32_t dsb2_subtype_23_positive;
+    uint32_t dsb2_subtype_24_positive;
+    uint32_t dsb2_subtype_25_positive;
+    uint32_t dsb2_total_positive;
+    uint32_t dsb2_total_negative;
 } ninlil_dv_catalog_t;
 
 enum {
@@ -157,7 +167,17 @@ enum {
     NINLIL_DV_CAT_DSB1_64 = 1u << 14,
     NINLIL_DV_CAT_DSB1_7D = 1u << 15,
     NINLIL_DV_CAT_DSB1_POS = 1u << 16,
-    NINLIL_DV_CAT_DSB1_NEG = 1u << 17
+    NINLIL_DV_CAT_DSB1_NEG = 1u << 17,
+    NINLIL_DV_CAT_DSB2_10 = 1u << 18,
+    NINLIL_DV_CAT_DSB2_11 = 1u << 19,
+    NINLIL_DV_CAT_DSB2_20 = 1u << 20,
+    NINLIL_DV_CAT_DSB2_21 = 1u << 21,
+    NINLIL_DV_CAT_DSB2_22 = 1u << 22,
+    NINLIL_DV_CAT_DSB2_23 = 1u << 23,
+    NINLIL_DV_CAT_DSB2_24 = 1u << 24,
+    NINLIL_DV_CAT_DSB2_25 = 1u << 25,
+    NINLIL_DV_CAT_DSB2_POS = 1u << 26,
+    NINLIL_DV_CAT_DSB2_NEG = 1u << 27
 };
 
 #define NINLIL_DV_CAT_REQUIRED_MASK                                            \
@@ -169,7 +189,12 @@ enum {
         | NINLIL_DV_CAT_DSV1_ENCDEC | NINLIL_DV_CAT_DSB1_01                      \
         | NINLIL_DV_CAT_DSB1_60 | NINLIL_DV_CAT_DSB1_62                          \
         | NINLIL_DV_CAT_DSB1_64 | NINLIL_DV_CAT_DSB1_7D                          \
-        | NINLIL_DV_CAT_DSB1_POS | NINLIL_DV_CAT_DSB1_NEG)
+        | NINLIL_DV_CAT_DSB1_POS | NINLIL_DV_CAT_DSB1_NEG                        \
+        | NINLIL_DV_CAT_DSB2_10 | NINLIL_DV_CAT_DSB2_11                          \
+        | NINLIL_DV_CAT_DSB2_20 | NINLIL_DV_CAT_DSB2_21                          \
+        | NINLIL_DV_CAT_DSB2_22 | NINLIL_DV_CAT_DSB2_23                          \
+        | NINLIL_DV_CAT_DSB2_24 | NINLIL_DV_CAT_DSB2_25                          \
+        | NINLIL_DV_CAT_DSB2_POS | NINLIL_DV_CAT_DSB2_NEG)
 
 enum {
     NINLIL_DV_TOP_VERSION = 1u << 0,
@@ -184,11 +209,10 @@ enum {
     (NINLIL_DV_TOP_VERSION | NINLIL_DV_TOP_FORMAT | NINLIL_DV_TOP_SCOPE         \
         | NINLIL_DV_TOP_WS_DEF | NINLIL_DV_TOP_CATALOG | NINLIL_DV_TOP_VECTORS)
 
-#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b1"
+#define NINLIL_DV_FORMAT_REQUIRED "ninlil-domain-store-v1-d1b2"
 #define NINLIL_DV_SCOPE_REQUIRED                                               \
-    "D1-A framing/primitive slice + D1-B1 five exact bodies "                   \
-    "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "                      \
-    "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog"
+    "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "              \
+    "(10/11/20-25 service+txn admission); not full D1 catalog"
 
 typedef struct ninlil_dv_file {
     uint32_t version;

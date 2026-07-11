@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1 vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2 vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1 are
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2 are
 hand-written here and intentionally do not import or link production C.
 
 Usage:
@@ -205,7 +205,59 @@ def enc_body_head_index(index_state, member_key, value_dig, head_dig) -> bytes:
     )
 
 
+
+
+def text_id(s: bytes) -> bytes:
+    assert 1 <= len(s) <= 63
+    return bytes([len(s)]) + s
+
+
+def local_identity(flags, device, installation, site, bind_ep, mem_ep) -> bytes:
+    return be32(flags) + device + installation + site + be64(bind_ep) + be64(mem_ep)
+
+
+def party(rt, app, li: bytes) -> bytes:
+    return rt + app + li
+
+
+def target(flags, trt, tapp, device, installation, site, bind_ep, mem_ep) -> bytes:
+    return (
+        be32(flags) + trt + tapp + device + installation + site
+        + be64(bind_ep) + be64(mem_ep)
+    )
+
+
+def service_identity(ns, svc, schema, rev, dig, major, minor, family) -> bytes:
+    return (
+        text_id(ns) + text_id(svc) + text_id(schema) + be64(rev) + dig
+        + be16(major) + be16(minor) + be32(family)
+    )
+
+
+def raw16(contents: bytes) -> bytes:
+    assert len(contents) <= 255
+    return be16(len(contents)) + contents
+
+
+def service_key_raw(app, ns, svc, rev, dig) -> bytes:
+    return app + text_id(ns) + text_id(svc) + be64(rev) + dig
+
+
+def resource_vector(pairs) -> bytes:
+    # pairs: list of (used, reserved) length 11
+    assert len(pairs) == 11
+    out = b""
+    for u, r in pairs:
+        out += be64(u) + be64(r)
+    return out
+
+
+def scope_raw(app, ns, svc) -> bytes:
+    return app + text_id(ns) + text_id(svc)
+
+
 def primary_id_from_identity(kind, identity: bytes) -> bytes:
+    """Encode identity kind/bytes into 16-byte primary_id form (docs17 §4)."""
     if kind == 1:
         return bytes(16)
     if kind == 2:
@@ -215,6 +267,48 @@ def primary_id_from_identity(kind, identity: bytes) -> bytes:
     if kind in (4, 5):
         return identity[:16]
     raise ValueError("bad identity kind")
+
+
+def primary_id_from_composite_subtype(subtype: int, components: bytes) -> bytes:
+    """Referenced primary composite identity first 16 (not secondary self-key)."""
+    return composite(subtype, components)[:16]
+
+
+def complete_key_digest_composite(subtype: int, components: bytes) -> bytes:
+    """KEY_DIGEST of complete family-6 composite-identity key (kind 5)."""
+    return key_digest(bkey(6, subtype, 5, composite(subtype, components)))
+
+
+def complete_key_digest_id128(subtype: int, identity16: bytes) -> bytes:
+    """KEY_DIGEST of complete family-6 ID128 key (kind 2)."""
+    assert len(identity16) == 16
+    return key_digest(bkey(6, subtype, 2, identity16))
+
+
+def complete_key_digest_u64(subtype: int, identity8: bytes) -> bytes:
+    """KEY_DIGEST of complete family-6 u64 key (kind 3)."""
+    assert len(identity8) == 8
+    return key_digest(bkey(6, subtype, 3, identity8))
+
+
+def reservation_primary_key_digest(owner_kind: int, owner_raw_contents: bytes) -> bytes:
+    """
+    KEY_DIGEST of the referenced primary complete key (docs17 §5.1 / §9).
+    Independent of production C helpers.
+    """
+    if owner_kind == 1:  # SERVICE
+        return complete_key_digest_composite(0x10, raw16(owner_raw_contents))
+    if owner_kind == 2:  # TRANSACTION → TRANSACTION_ANCHOR
+        return complete_key_digest_id128(0x20, owner_raw_contents)
+    if owner_kind == 3:  # INGRESS → ORDERED_INGRESS
+        return complete_key_digest_u64(0x27, owner_raw_contents)
+    if owner_kind == 4:  # DELIVERY
+        return complete_key_digest_composite(0x40, raw16(owner_raw_contents))
+    if owner_kind == 5:  # CALLBACK → DELIVERY from embedded delivery RAW16 prefix
+        dlen = int.from_bytes(owner_raw_contents[:2], "big")
+        return complete_key_digest_composite(
+            0x40, owner_raw_contents[: 2 + dlen])
+    raise ValueError("bad owner kind")
 
 
 def enc_env_full(rtype, st, flags, rev, primary_id, head, pvd, body: bytes) -> bytes:
@@ -1210,6 +1304,774 @@ def build_document():
     hi_pos += 1
     b1_cov["7d"] = add_body_suite("WITNESS_HEAD_INDEX", 6, 0x7D, hi_pos, hi_neg, hi_mut, hi_rt)
 
+
+    # --- D1-B2: Service + transaction-admission bodies (suite DSB2) ---
+    b2_cov = {}
+
+    def fixture_ids():
+        app = bytes([0xA1] + [0] * 14 + [0x01])
+        rt = bytes([0xB1] + [0] * 14 + [0x02])
+        trt = bytes([0xC1] + [0] * 14 + [0x03])
+        tapp = bytes([0xD1] + [0] * 14 + [0x04])
+        dev = bytes([0xE1] + [0] * 14 + [0x05])
+        site = bytes([0xF1] + [0] * 14 + [0x06])
+        dig = sha256(b"descriptor-v1")
+        content = sha256(b"content-v1")
+        canon = sha256(b"canonical-submission-v1")
+        epoch = bytes([0x11] + [0] * 14 + [0x22])
+        head_nz = bytes([0x44] * 32)
+        pvd_nz = bytes([0x55] * 32)
+        return dict(
+            app=app, rt=rt, trt=trt, tapp=tapp, dev=dev, site=site, dig=dig,
+            content=content, canon=canon, epoch=epoch, head_nz=head_nz,
+            pvd_nz=pvd_nz, ns=b"acme.ns", svc=b"svc1", schema=b"schema1",
+            ikey=b"idem-key-01",
+        )
+
+    F = fixture_ids()
+    LI = local_identity(0x5, F["dev"], bytes(16), F["site"], 1, 2)  # device+site
+    PARTY = party(F["rt"], F["app"], LI)
+    TARGET = target(0x5, F["trt"], F["tapp"], F["dev"], bytes(16), F["site"], 1, 2)
+    assert len(PARTY) == 100 and len(TARGET) == 100
+
+    # SERVICE DesiredState (family 2)
+    sk_raw = service_key_raw(F["app"], F["ns"], F["svc"], 1, F["dig"])
+    # quota/reservation KEY_DIGEST precompute
+    sk_raw16 = raw16(sk_raw)
+    svc_comp = composite(0x10, sk_raw16)
+    svc_key = bkey(6, 0x10, 5, svc_comp)
+    quota_comp = composite(0x11, sk_raw16)
+    quota_key = bkey(6, 0x11, 5, quota_comp)
+    quota_kd = key_digest(quota_key)
+    res_comp = composite(0x23, be16(1) + sk_raw16)
+    res_key = bkey(6, 0x23, 5, res_comp)
+    res_kd = key_digest(res_key)
+
+    def enc_body_service(
+        family=2, direction=2, authority=1, applyc=1, min_dl=1000, max_dl=5000,
+        grace=100, attempts=8, sk=None
+    ):
+        sk = sk if sk is not None else sk_raw
+        body = bytearray()
+        body += raw16(sk)
+        body += be64(1) + F["dig"] + F["app"]
+        body += text_id(F["ns"]) + text_id(F["svc"]) + text_id(F["schema"])
+        body += be16(1) + be16(0) + be16(9)  # major, minor_min, minor_max
+        body += be32(family) + be32(direction) + be32(authority) + be32(applyc)
+        body += be32(1)  # custody UNTIL_REQUIRED_EVIDENCE
+        body += be32(0x1E)  # evidence mask stages 1..4
+        body += be32(1024) + be32(1) + be32(4) + be32(attempts)
+        body += be32(60000) + be32(10) + be32(1024)
+        body += be64(min_dl) + be64(max_dl) + be64(grace)
+        body += be64(1000) + be64(500) + be64(1000) + be64(3600000)
+        body += quota_kd + res_kd
+        return bytes(body)
+
+    # EventFact service variant
+    def enc_body_service_event():
+        return enc_body_service(
+            family=1, direction=1, authority=2, applyc=2,
+            min_dl=(1 << 64) - 1, max_dl=(1 << 64) - 1, grace=0, attempts=8
+        )
+
+    body_svc = enc_body_service()
+    assert len(body_svc) <= 768
+    val_svc = enc_env_full(
+        6, 0x10, 0, 1, svc_comp[:16], F["head_nz"], bytes(32), body_svc
+    )
+    s_pos = s_neg = s_mut = s_rt = 0
+    add(id="DSB2_SERVICE_DS_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x10, body_length=len(body_svc),
+        body_hex=hx(body_svc))
+    s_pos += 1; s_rt += 1
+    body_svc_ev = enc_body_service_event()
+    add(id="DSB2_SERVICE_EF_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x10, body_length=len(body_svc_ev),
+        body_hex=hx(body_svc_ev))
+    s_pos += 1; s_rt += 1
+    add(id="DSB2_SERVICE_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x10, key_hex=hx(svc_key),
+        value_hex=hx(val_svc), body_hex=hx(body_svc),
+        digest_hex=hx(sha256(val_svc)), crc_hex=f"{crc32c(val_svc[:-4]):08x}")
+    s_pos += 1
+    # negatives
+    bad = bytearray(body_svc); bad[2:18] = bytes(16)  # zero app in raw only
+    add(id="DSB2_SERVICE_RAW_MISMATCH", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x10, body_hex=hx(bytes(bad)))
+    s_neg += 1
+    add(id="DSB2_SERVICE_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x10, body_hex=hx(body_svc[:-1]))
+    s_neg += 1
+    add(id="DSB2_SERVICE_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x10, body_hex=hx(body_svc + b"\x00"))
+    s_neg += 1
+    bad_dir = enc_body_service(direction=3)
+    add(id="DSB2_SERVICE_BAD_DIR", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x10, body_hex=hx(bad_dir))
+    s_neg += 1
+    # Corrupt: zero local_application_instance_id field (after raw+rev+dig)
+    mut = bytearray(body_svc)
+    # after RAW16(sk): offset = 2+len(sk_raw); then rev 8 + dig 32 = start of app
+    off = 2 + len(sk_raw) + 8 + 32
+    mut[off:off+16] = bytes(16)
+    add(id="DSB2_SERVICE_MUT_APP", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x10, body_hex=hx(bytes(mut)))
+    s_mut += 1; s_neg += 1
+    add(id="DSB2_SERVICE_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x10,
+        body_length=len(body_svc), body_hex=hx(body_svc), key_length=0)
+    s_neg += 1
+    bad_rev = enc_env_full(6, 0x10, 0, 2, svc_comp[:16], F["head_nz"], bytes(32), body_svc)
+    add(id="DSB2_SERVICE_TYPED_REV2", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x10, key_hex=hx(svc_key),
+        value_hex=hx(bad_rev))
+    s_neg += 1
+    # Same-body KEY_DIGEST negatives (pure body decode, not typed-only).
+    mut_q = bytearray(body_svc)
+    mut_q[-64:-32] = bytes([0xEE] * 32)  # quota_key_digest
+    add(id="DSB2_SERVICE_BAD_QUOTA_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x10, body_hex=hx(bytes(mut_q)))
+    s_neg += 1
+    mut_r = bytearray(body_svc)
+    mut_r[-32:] = bytes([0xEF] * 32)  # reservation_key_digest
+    add(id="DSB2_SERVICE_BAD_RESV_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x10, body_hex=hx(bytes(mut_r)))
+    s_neg += 1
+    b2_cov["10"] = add_body_suite("SERVICE", 6, 0x10, s_pos, s_neg, s_mut, s_rt)
+
+    # SERVICE_QUOTA (secondary → primary_id = SERVICE composite first 16)
+    body_q = (
+        sk_raw16 + key_digest(svc_key) + F["epoch"] + be64(0)
+        + be32(1) + be64(100) + be32(0) + be32(0) + be64(0)
+    )
+    assert len(body_q) <= 512
+    q_comp = composite(0x11, sk_raw16)
+    q_key = bkey(6, 0x11, 5, q_comp)
+    # Correct: referenced SERVICE primary, not own QUOTA composite identity.
+    q_primary = primary_id_from_composite_subtype(0x10, sk_raw16)
+    assert q_primary == svc_comp[:16]
+    assert q_primary != q_comp[:16]
+    val_q = enc_env_full(6, 0x11, 0, 1, q_primary, F["head_nz"], F["pvd_nz"], body_q)
+    q_pos = q_neg = q_mut = q_rt = 0
+    add(id="DSB2_QUOTA_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x11, body_length=len(body_q),
+        body_hex=hx(body_q))
+    q_pos += 1; q_rt += 1
+    add(id="DSB2_QUOTA_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x11, key_hex=hx(q_key),
+        value_hex=hx(val_q), body_hex=hx(body_q), digest_hex=hx(sha256(val_q)),
+        crc_hex=f"{crc32c(val_q[:-4]):08x}")
+    q_pos += 1
+    # Old defect: self-key-derived primary_id (QUOTA composite first 16).
+    val_q_self = enc_env_full(
+        6, 0x11, 0, 1, q_comp[:16], F["head_nz"], F["pvd_nz"], body_q)
+    add(id="DSB2_QUOTA_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x11, key_hex=hx(q_key),
+        value_hex=hx(val_q_self))
+    q_neg += 1
+    add(id="DSB2_QUOTA_ZERO_EPOCH", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x11,
+        body_hex=hx(sk_raw16 + key_digest(svc_key) + bytes(16) + be64(0)
+                    + be32(0) + be64(0) + be32(0) + be32(0) + be64(0)))
+    q_neg += 1
+    add(id="DSB2_QUOTA_BAD_KEY_DIG", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x11,
+        body_hex=hx(sk_raw16 + bytes([0xEE]*32) + F["epoch"] + be64(0)
+                    + be32(0) + be64(0) + be32(0) + be32(0) + be64(0)))
+    q_neg += 1
+    add(id="DSB2_QUOTA_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x11, body_hex=hx(body_q[:-1]))
+    q_neg += 1
+    add(id="DSB2_QUOTA_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x11, body_hex=hx(body_q + b"\x00"))
+    q_neg += 1
+    mut = bytearray(body_q); mut[2] ^= 0x01
+    add(id="DSB2_QUOTA_MUT_RAW", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x11, body_hex=hx(bytes(mut)))
+    q_mut += 1; q_neg += 1
+    add(id="DSB2_QUOTA_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x11,
+        body_length=len(body_q), body_hex=hx(body_q), key_length=0)
+    q_neg += 1
+    b2_cov["11"] = add_body_suite("SERVICE_QUOTA", 6, 0x11, q_pos, q_neg, q_mut, q_rt)
+
+    # TRANSACTION_ANCHOR DesiredState
+    txn = bytes([0x71] + [0]*14 + [0x99])
+    SI = service_identity(F["ns"], F["svc"], F["schema"], 1, F["dig"], 1, 0, 2)
+    scope = scope_raw(F["app"], F["ns"], F["svc"])
+    ikey = F["ikey"]
+    txn_seq = 1
+    # Exact KEY_DIGEST backlinks (independent oracle; not production helpers).
+    seq_kd = complete_key_digest_u64(0x21, be64(txn_seq))
+    im_kd = complete_key_digest_composite(0x24, raw16(scope) + raw16(ikey))
+    res_tx_kd = complete_key_digest_composite(0x23, be16(2) + raw16(txn))
+    # payload_blob_key_digest: non-zero only (blob kind/length cross-record)
+    payload_kd = sha256(b"payload-blob")
+    assert all(x != bytes(32) for x in (seq_kd, im_kd, res_tx_kd, payload_kd))
+
+    def enc_anchor(
+        family=2, event=bytes(16), gen=1, ddl_ep=None, abs_ddl=9000, grace=50,
+        emap=None, seq_d=None, im_d=None, res_d=None, scope_bytes=None,
+        svc_ident=None,
+    ):
+        ddl_ep = F["epoch"] if ddl_ep is None else ddl_ep
+        emap = bytes(32) if emap is None else emap
+        seq_d = seq_kd if seq_d is None else seq_d
+        im_d = im_kd if im_d is None else im_d
+        res_d = res_tx_kd if res_d is None else res_d
+        sc = scope if scope_bytes is None else scope_bytes
+        si = SI if svc_ident is None else svc_ident
+        b = bytearray()
+        b += txn + be64(txn_seq) + be64(2) + be32(family)
+        b += PARTY + si
+        b += F["content"] + F["canon"] + event + be64(gen)
+        b += F["epoch"] + be64(1000) + ddl_ep + be64(abs_ddl) + be64(grace)
+        b += be32(1) + be32(1) + TARGET  # required_evidence RECEIVED, target_count 1
+        b += raw16(sc) + raw16(ikey)
+        b += seq_d + im_d + emap + res_d
+        b += be64(2) + payload_kd
+        return bytes(b)
+
+    body_a = enc_anchor()
+    assert len(body_a) <= 1536
+    a_key = bkey(6, 0x20, 2, txn)
+    val_a = enc_env_full(6, 0x20, 0, 1, txn, F["head_nz"], bytes(32), body_a)
+    a_pos = a_neg = a_mut = a_rt = 0
+    add(id="DSB2_ANCHOR_DS_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x20, body_length=len(body_a),
+        body_hex=hx(body_a))
+    a_pos += 1; a_rt += 1
+    # EventFact anchor
+    ev_id = bytes([0x81] + [0]*14 + [0x42])
+    em_kd = complete_key_digest_composite(0x25, raw16(scope) + ev_id)
+    SI_E = service_identity(F["ns"], F["svc"], F["schema"], 1, F["dig"], 1, 0, 1)
+    body_ae = enc_anchor(
+        family=1, event=ev_id, gen=0, ddl_ep=bytes(16),
+        abs_ddl=(1 << 64) - 1, grace=0, emap=em_kd, svc_ident=SI_E)
+    add(id="DSB2_ANCHOR_EF_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x20, body_length=len(body_ae),
+        body_hex=hx(body_ae))
+    a_pos += 1; a_rt += 1
+    add(id="DSB2_ANCHOR_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x20, key_hex=hx(a_key),
+        value_hex=hx(val_a), body_hex=hx(body_a), digest_hex=hx(sha256(val_a)),
+        crc_hex=f"{crc32c(val_a[:-4]):08x}")
+    a_pos += 1
+    # DS with non-zero event id corrupt
+    bad_a = enc_anchor(event=ev_id)
+    add(id="DSB2_ANCHOR_DS_EVENT_NZ", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20, body_hex=hx(bad_a))
+    a_neg += 1
+    # target_count != 1
+    def enc_anchor_tc2():
+        b = bytearray()
+        b += txn + be64(txn_seq) + be64(2) + be32(2)
+        b += PARTY + SI
+        b += F["content"] + F["canon"] + bytes(16) + be64(1)
+        b += F["epoch"] + be64(1000) + F["epoch"] + be64(9000) + be64(50)
+        b += be32(1) + be32(2) + TARGET
+        b += raw16(scope) + raw16(ikey)
+        b += seq_kd + im_kd + bytes(32) + res_tx_kd
+        b += be64(2) + payload_kd
+        return bytes(b)
+    add(id="DSB2_ANCHOR_TARGET_COUNT2", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20, body_hex=hx(enc_anchor_tc2()))
+    a_neg += 1
+    add(id="DSB2_ANCHOR_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20, body_hex=hx(body_a[:-1]))
+    a_neg += 1
+    add(id="DSB2_ANCHOR_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20, body_hex=hx(body_a + b"\x00"))
+    a_neg += 1
+    # Zero transaction_id is same-record corrupt (non-zero required).
+    mut = bytearray(body_a)
+    mut[0:16] = bytes(16)
+    add(id="DSB2_ANCHOR_MUT_TXN", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20, body_hex=hx(bytes(mut)))
+    a_mut += 1
+    a_neg += 1
+    mut2 = bytearray(body_a)
+    # family at offset 16+8+8=32
+    mut2[32:36] = be32(99)
+    add(id="DSB2_ANCHOR_MUT_FAMILY", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20, body_hex=hx(bytes(mut2)))
+    a_mut += 1
+    a_neg += 1
+    add(id="DSB2_ANCHOR_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x20,
+        body_length=len(body_a), body_hex=hx(body_a), key_length=0)
+    a_neg += 1
+    # Derived KEY_DIGEST negatives (body decode only).
+    # Layout tail: seq(32)+im(32)+emap(32)+resv(32)+sched_seq(8)+payload(32)
+    def mut_anchor_digest(offset_from_end, fill):
+        m = bytearray(body_a)
+        start = len(m) - offset_from_end
+        m[start:start + 32] = fill
+        return bytes(m)
+    add(id="DSB2_ANCHOR_BAD_SEQ_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20,
+        body_hex=hx(mut_anchor_digest(32 + 8 + 32 + 32 + 32 + 32, bytes([0xA1] * 32))))
+    a_neg += 1
+    add(id="DSB2_ANCHOR_BAD_IDEM_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20,
+        body_hex=hx(mut_anchor_digest(32 + 8 + 32 + 32 + 32, bytes([0xA2] * 32))))
+    a_neg += 1
+    # DesiredState: non-zero event_map_key_digest is corrupt
+    add(id="DSB2_ANCHOR_BAD_EMAP_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20,
+        body_hex=hx(mut_anchor_digest(32 + 8 + 32 + 32, bytes([0xA3] * 32))))
+    a_neg += 1
+    add(id="DSB2_ANCHOR_BAD_RESV_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20,
+        body_hex=hx(mut_anchor_digest(32 + 8 + 32, bytes([0xA4] * 32))))
+    a_neg += 1
+    # EventFact wrong event_map KEY_DIGEST
+    bad_ae = bytearray(body_ae)
+    # emap is third digest of four before sched+payload
+    bad_ae[-(32 + 8 + 32 + 32):- (32 + 8 + 32)] = bytes([0xA5] * 32)
+    add(id="DSB2_ANCHOR_EF_BAD_EMAP_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20, body_hex=hx(bytes(bad_ae)))
+    a_neg += 1
+    # Scope namespace/service mismatch: syntactically valid scope_raw but not
+    # exact encoding of source.app || service.namespace || service.service.
+    scope_mismatch = scope_raw(F["app"], b"other.ns", F["svc"])
+    assert scope_mismatch != scope
+    add(id="DSB2_ANCHOR_SCOPE_NS_MISMATCH", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x20,
+        body_hex=hx(enc_anchor(scope_bytes=scope_mismatch)))
+    a_neg += 1
+    b2_cov["20"] = add_body_suite("TRANSACTION_ANCHOR", 6, 0x20, a_pos, a_neg, a_mut, a_rt)
+
+    # SEQUENCE_INDEX (secondary → primary_id = body transaction_id)
+    body_si = be64(1) + txn + sha256(b"anchor-value")
+    assert len(body_si) == 56
+    si_key = bkey(6, 0x21, 3, be64(1))
+    si_self_primary = primary_id_from_identity(3, be64(1))  # old wrong: padded seq
+    assert si_self_primary != txn
+    val_si = enc_env_full(6, 0x21, 0, 1, txn, F["head_nz"], F["pvd_nz"], body_si)
+    si_pos = si_neg = si_mut = si_rt = 0
+    add(id="DSB2_SEQ_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x21, body_length=56, body_hex=hx(body_si))
+    si_pos += 1; si_rt += 1
+    add(id="DSB2_SEQ_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x21, key_hex=hx(si_key),
+        value_hex=hx(val_si), body_hex=hx(body_si), digest_hex=hx(sha256(val_si)),
+        crc_hex=f"{crc32c(val_si[:-4]):08x}")
+    si_pos += 1
+    val_si_self = enc_env_full(
+        6, 0x21, 0, 1, si_self_primary, F["head_nz"], F["pvd_nz"], body_si)
+    add(id="DSB2_SEQ_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x21, key_hex=hx(si_key),
+        value_hex=hx(val_si_self))
+    si_neg += 1
+    add(id="DSB2_SEQ_ZERO_SEQ", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x21,
+        body_hex=hx(be64(0) + txn + sha256(b"a")))
+    si_neg += 1
+    add(id="DSB2_SEQ_ZERO_TXN", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x21,
+        body_hex=hx(be64(1) + bytes(16) + sha256(b"a")))
+    si_neg += 1
+    add(id="DSB2_SEQ_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x21, body_hex=hx(body_si[:-1]))
+    si_neg += 1
+    add(id="DSB2_SEQ_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x21, body_hex=hx(body_si + b"\x00"))
+    si_neg += 1
+    add(id="DSB2_SEQ_ZERO_DIG", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x21,
+        body_hex=hx(be64(1) + txn + bytes(32)))
+    si_mut += 1; si_neg += 1
+    add(id="DSB2_SEQ_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x21,
+        body_length=56, body_hex=hx(body_si), key_length=0)
+    si_neg += 1
+    b2_cov["21"] = add_body_suite("TRANSACTION_SEQUENCE_INDEX", 6, 0x21, si_pos, si_neg, si_mut, si_rt)
+
+    # TRANSACTION_STATE (secondary; key ID128 == body txn, so self-key form equals correct)
+    def enc_state(state=1, outcome=0, dlv=0, lev=0, reason=0, park=0,
+                  late=0, disc=0, tstate=None):
+        tstate = state if tstate is None else tstate
+        b = bytearray()
+        b += txn + sha256(b"anchor-value")
+        b += be32(state) + be32(outcome) + be32(dlv) + be32(lev) + be32(reason) + be32(park)
+        b += be64(0) + be32(0) + be64(0) + be64(0)
+        b += be32(late) + be32(disc) + TARGET
+        b += be32(tstate) + be32(outcome) + be32(reason) + be32(lev)
+        return bytes(b)
+    body_st = enc_state()
+    assert len(body_st) == 224
+    st_key = bkey(6, 0x22, 2, txn)
+    # primary_id = body transaction_id (coincides with ID128 key form).
+    val_st = enc_env_full(6, 0x22, 0, 1, txn, F["head_nz"], F["pvd_nz"], body_st)
+    st_pos = st_neg = st_mut = st_rt = 0
+    add(id="DSB2_STATE_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x22, body_length=224, body_hex=hx(body_st))
+    st_pos += 1; st_rt += 1
+    add(id="DSB2_STATE_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x22, key_hex=hx(st_key),
+        value_hex=hx(val_st), body_hex=hx(body_st), digest_hex=hx(sha256(val_st)),
+        crc_hex=f"{crc32c(val_st[:-4]):08x}")
+    st_pos += 1
+    # Wrong primary_id (not self-key-distinct for ID128; still prove body-derived check).
+    val_st_bad = enc_env_full(
+        6, 0x22, 0, 1, bytes([0xEE] * 16), F["head_nz"], F["pvd_nz"], body_st)
+    add(id="DSB2_STATE_TYPED_BAD_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x22, key_hex=hx(st_key),
+        value_hex=hx(val_st_bad))
+    st_neg += 1
+    add(id="DSB2_STATE_BAD_ENUM", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x22, body_hex=hx(enc_state(state=0)))
+    st_neg += 1
+    add(id="DSB2_STATE_TARGET_MISMATCH", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x22, body_hex=hx(enc_state(tstate=2)))
+    st_neg += 1
+    add(id="DSB2_STATE_BOOL2", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x22, body_hex=hx(enc_state(late=2)))
+    st_neg += 1
+    add(id="DSB2_STATE_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x22, body_hex=hx(body_st[:-1]))
+    st_neg += 1
+    add(id="DSB2_STATE_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x22, body_hex=hx(body_st + b"\x00"))
+    st_neg += 1
+    mut = bytearray(body_st); mut[48] ^= 0x08  # state high bit
+    add(id="DSB2_STATE_MUT_STATE", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x22, body_hex=hx(bytes(mut)))
+    st_mut += 1; st_neg += 1
+    add(id="DSB2_STATE_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x22,
+        body_length=224, body_hex=hx(body_st), key_length=0)
+    st_neg += 1
+    b2_cov["22"] = add_body_suite("TRANSACTION_STATE", 6, 0x22, st_pos, st_neg, st_mut, st_rt)
+
+    # RESERVATION — all five owner kinds (typed + self-key primary negatives)
+    rv = resource_vector([(0, 0)] * 11)
+    dlv_raw = F["rt"] + F["app"] + txn + F["trt"] + F["tapp"]
+    assert len(dlv_raw) == 80
+    ingress_seq = be64(7)
+    cb_owner_raw = raw16(dlv_raw) + be64(3)  # delivery_key_raw:RAW16 || token_generation
+    dlv_primary = primary_id_from_composite_subtype(0x40, raw16(dlv_raw))
+    svc_primary = primary_id_from_composite_subtype(0x10, sk_raw16)
+
+    def enc_res_body(owner_kind, owner_raw_contents, inflight=0, pkd=None):
+        if pkd is None:
+            pkd = reservation_primary_key_digest(owner_kind, owner_raw_contents)
+        return (
+            be16(owner_kind) + be16(0) + raw16(owner_raw_contents)
+            + pkd + rv + be32(inflight) + be32(0) + be64(0) + be32(0)
+        )
+
+    def res_owner_primary(owner_kind, owner_raw_contents):
+        if owner_kind == 1:  # SERVICE
+            return primary_id_from_composite_subtype(0x10, raw16(owner_raw_contents))
+        if owner_kind == 2:  # TRANSACTION
+            return owner_raw_contents  # transaction_id
+        if owner_kind == 3:  # INGRESS
+            return primary_id_from_identity(3, owner_raw_contents)
+        if owner_kind == 4:  # DELIVERY
+            return primary_id_from_composite_subtype(0x40, raw16(owner_raw_contents))
+        if owner_kind == 5:  # CALLBACK → DELIVERY composite of delivery RAW16 prefix
+            dlen = int.from_bytes(owner_raw_contents[:2], "big")
+            return primary_id_from_composite_subtype(
+                0x40, owner_raw_contents[: 2 + dlen])
+        raise ValueError("bad owner kind")
+
+    def mut_res_primary_kd(body: bytes) -> bytes:
+        """Corrupt primary_key_digest field (after owner_kind+reserved+RAW16)."""
+        m = bytearray(body)
+        # primary_key_digest starts after: u16+u16+raw16(owner)
+        owner_len = int.from_bytes(m[4:6], "big")
+        off = 6 + owner_len
+        m[off:off + 32] = bytes([0xB0] * 32)
+        return bytes(m)
+
+    r_pos = r_neg = r_mut = r_rt = 0
+    # TRANSACTION owner
+    body_r = enc_res_body(2, txn)
+    r_comp = composite(0x23, be16(2) + raw16(txn))
+    r_key = bkey(6, 0x23, 5, r_comp)
+    r_primary = res_owner_primary(2, txn)
+    assert r_primary == txn and r_primary != r_comp[:16]
+    assert reservation_primary_key_digest(2, txn) == complete_key_digest_id128(0x20, txn)
+    val_r = enc_env_full(6, 0x23, 0, 1, r_primary, F["head_nz"], F["pvd_nz"], body_r)
+    add(id="DSB2_RES_TX_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x23, body_length=len(body_r),
+        body_hex=hx(body_r))
+    r_pos += 1; r_rt += 1
+    add(id="DSB2_RES_TX_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x23, key_hex=hx(r_key),
+        value_hex=hx(val_r), body_hex=hx(body_r), digest_hex=hx(sha256(val_r)),
+        crc_hex=f"{crc32c(val_r[:-4]):08x}")
+    r_pos += 1
+    val_r_self = enc_env_full(
+        6, 0x23, 0, 1, r_comp[:16], F["head_nz"], F["pvd_nz"], body_r)
+    add(id="DSB2_RES_TX_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x23, key_hex=hx(r_key),
+        value_hex=hx(val_r_self))
+    r_neg += 1
+    add(id="DSB2_RES_TX_BAD_PRIMARY_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23,
+        body_hex=hx(mut_res_primary_kd(body_r)))
+    r_neg += 1
+    r_mut += 1
+
+    # SERVICE owner
+    body_rs = enc_res_body(1, sk_raw, inflight=1)
+    rs_comp = composite(0x23, be16(1) + raw16(sk_raw))
+    rs_key = bkey(6, 0x23, 5, rs_comp)
+    rs_primary = res_owner_primary(1, sk_raw)
+    assert rs_primary == svc_primary and rs_primary != rs_comp[:16]
+    val_rs = enc_env_full(6, 0x23, 0, 1, rs_primary, F["head_nz"], F["pvd_nz"], body_rs)
+    add(id="DSB2_RES_SVC_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x23, body_length=len(body_rs),
+        body_hex=hx(body_rs))
+    r_pos += 1; r_rt += 1
+    add(id="DSB2_RES_SVC_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x23, key_hex=hx(rs_key),
+        value_hex=hx(val_rs), body_hex=hx(body_rs), digest_hex=hx(sha256(val_rs)),
+        crc_hex=f"{crc32c(val_rs[:-4]):08x}")
+    r_pos += 1
+    val_rs_self = enc_env_full(
+        6, 0x23, 0, 1, rs_comp[:16], F["head_nz"], F["pvd_nz"], body_rs)
+    add(id="DSB2_RES_SVC_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x23, key_hex=hx(rs_key),
+        value_hex=hx(val_rs_self))
+    r_neg += 1
+    add(id="DSB2_RES_SVC_BAD_PRIMARY_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23,
+        body_hex=hx(mut_res_primary_kd(body_rs)))
+    r_neg += 1
+    r_mut += 1
+
+    # INGRESS owner
+    body_ri = enc_res_body(3, ingress_seq)
+    ri_comp = composite(0x23, be16(3) + raw16(ingress_seq))
+    ri_key = bkey(6, 0x23, 5, ri_comp)
+    ri_primary = res_owner_primary(3, ingress_seq)
+    assert ri_primary == primary_id_from_identity(3, ingress_seq)
+    assert ri_primary != ri_comp[:16]
+    val_ri = enc_env_full(6, 0x23, 0, 1, ri_primary, F["head_nz"], F["pvd_nz"], body_ri)
+    add(id="DSB2_RES_ING_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x23, body_length=len(body_ri),
+        body_hex=hx(body_ri))
+    r_pos += 1; r_rt += 1
+    add(id="DSB2_RES_ING_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x23, key_hex=hx(ri_key),
+        value_hex=hx(val_ri), body_hex=hx(body_ri), digest_hex=hx(sha256(val_ri)),
+        crc_hex=f"{crc32c(val_ri[:-4]):08x}")
+    r_pos += 1
+    val_ri_self = enc_env_full(
+        6, 0x23, 0, 1, ri_comp[:16], F["head_nz"], F["pvd_nz"], body_ri)
+    add(id="DSB2_RES_ING_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x23, key_hex=hx(ri_key),
+        value_hex=hx(val_ri_self))
+    r_neg += 1
+    add(id="DSB2_RES_ING_BAD_PRIMARY_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23,
+        body_hex=hx(mut_res_primary_kd(body_ri)))
+    r_neg += 1
+    r_mut += 1
+
+    # DELIVERY owner
+    body_rd = enc_res_body(4, dlv_raw)
+    rd_comp = composite(0x23, be16(4) + raw16(dlv_raw))
+    rd_key = bkey(6, 0x23, 5, rd_comp)
+    rd_primary = res_owner_primary(4, dlv_raw)
+    assert rd_primary == dlv_primary and rd_primary != rd_comp[:16]
+    val_rd = enc_env_full(6, 0x23, 0, 1, rd_primary, F["head_nz"], F["pvd_nz"], body_rd)
+    add(id="DSB2_RES_DLV_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x23, body_length=len(body_rd),
+        body_hex=hx(body_rd))
+    r_pos += 1; r_rt += 1
+    add(id="DSB2_RES_DLV_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x23, key_hex=hx(rd_key),
+        value_hex=hx(val_rd), body_hex=hx(body_rd), digest_hex=hx(sha256(val_rd)),
+        crc_hex=f"{crc32c(val_rd[:-4]):08x}")
+    r_pos += 1
+    val_rd_self = enc_env_full(
+        6, 0x23, 0, 1, rd_comp[:16], F["head_nz"], F["pvd_nz"], body_rd)
+    add(id="DSB2_RES_DLV_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x23, key_hex=hx(rd_key),
+        value_hex=hx(val_rd_self))
+    r_neg += 1
+    add(id="DSB2_RES_DLV_BAD_PRIMARY_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23,
+        body_hex=hx(mut_res_primary_kd(body_rd)))
+    r_neg += 1
+    r_mut += 1
+
+    # CALLBACK owner (primary = DELIVERY composite of embedded delivery RAW16)
+    body_rc = enc_res_body(5, cb_owner_raw)
+    rc_comp = composite(0x23, be16(5) + raw16(cb_owner_raw))
+    rc_key = bkey(6, 0x23, 5, rc_comp)
+    rc_primary = res_owner_primary(5, cb_owner_raw)
+    assert rc_primary == dlv_primary and rc_primary != rc_comp[:16]
+    # CALLBACK primary_key_digest equals DELIVERY KEY_DIGEST (token gen ignored)
+    assert (reservation_primary_key_digest(5, cb_owner_raw)
+            == reservation_primary_key_digest(4, dlv_raw))
+    val_rc = enc_env_full(6, 0x23, 0, 1, rc_primary, F["head_nz"], F["pvd_nz"], body_rc)
+    add(id="DSB2_RES_CB_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x23, body_length=len(body_rc),
+        body_hex=hx(body_rc))
+    r_pos += 1; r_rt += 1
+    add(id="DSB2_RES_CB_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x23, key_hex=hx(rc_key),
+        value_hex=hx(val_rc), body_hex=hx(body_rc), digest_hex=hx(sha256(val_rc)),
+        crc_hex=f"{crc32c(val_rc[:-4]):08x}")
+    r_pos += 1
+    val_rc_self = enc_env_full(
+        6, 0x23, 0, 1, rc_comp[:16], F["head_nz"], F["pvd_nz"], body_rc)
+    add(id="DSB2_RES_CB_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x23, key_hex=hx(rc_key),
+        value_hex=hx(val_rc_self))
+    r_neg += 1
+    add(id="DSB2_RES_CB_BAD_PRIMARY_KD", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23,
+        body_hex=hx(mut_res_primary_kd(body_rc)))
+    r_neg += 1
+    r_mut += 1
+
+    # released bit with nonzero resource
+    rv_bad = resource_vector([(1, 0)] + [(0, 0)] * 10)
+    body_rb = (
+        be16(2) + be16(0) + raw16(txn)
+        + reservation_primary_key_digest(2, txn) + rv_bad
+        + be32(0) + be32(0) + be64(0) + be32(1)
+    )
+    add(id="DSB2_RES_RELEASED_NONEMPTY", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23, body_hex=hx(body_rb))
+    r_neg += 1
+    add(id="DSB2_RES_OWNER0", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23,
+        body_hex=hx(be16(0) + be16(0) + raw16(txn)
+                    + reservation_primary_key_digest(2, txn)
+                    + rv + be32(0) + be32(0) + be64(0) + be32(0)))
+    r_neg += 1
+    add(id="DSB2_RES_RESERVED", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23,
+        body_hex=hx(be16(2) + be16(1) + raw16(txn)
+                    + reservation_primary_key_digest(2, txn)
+                    + rv + be32(0) + be32(0) + be64(0) + be32(0)))
+    r_neg += 1
+    add(id="DSB2_RES_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23, body_hex=hx(body_r[:-1]))
+    r_neg += 1
+    add(id="DSB2_RES_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23, body_hex=hx(body_r + b"\x00"))
+    r_neg += 1
+    mut = bytearray(body_r); mut[2] ^= 0x01
+    add(id="DSB2_RES_MUT_RESERVED", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x23, body_hex=hx(bytes(mut)))
+    r_mut += 1; r_neg += 1
+    add(id="DSB2_RES_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x23,
+        body_length=len(body_r), body_hex=hx(body_r), key_length=0)
+    r_neg += 1
+    b2_cov["23"] = add_body_suite("RESERVATION", 6, 0x23, r_pos, r_neg, r_mut, r_rt)
+
+    # IDEMPOTENCY_MAP (secondary → primary_id = body transaction_id)
+    body_im = raw16(scope) + raw16(ikey) + txn + F["canon"] + sha256(b"anchor-value")
+    im_comp = composite(0x24, raw16(scope) + raw16(ikey))
+    im_key = bkey(6, 0x24, 5, im_comp)
+    assert im_comp[:16] != txn
+    val_im = enc_env_full(6, 0x24, 0, 1, txn, F["head_nz"], F["pvd_nz"], body_im)
+    im_pos = im_neg = im_mut = im_rt = 0
+    add(id="DSB2_IDEM_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x24, body_length=len(body_im),
+        body_hex=hx(body_im))
+    im_pos += 1; im_rt += 1
+    add(id="DSB2_IDEM_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x24, key_hex=hx(im_key),
+        value_hex=hx(val_im), body_hex=hx(body_im), digest_hex=hx(sha256(val_im)),
+        crc_hex=f"{crc32c(val_im[:-4]):08x}")
+    im_pos += 1
+    val_im_self = enc_env_full(
+        6, 0x24, 0, 1, im_comp[:16], F["head_nz"], F["pvd_nz"], body_im)
+    add(id="DSB2_IDEM_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x24, key_hex=hx(im_key),
+        value_hex=hx(val_im_self))
+    im_neg += 1
+    add(id="DSB2_IDEM_EMPTY_KEY", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x24,
+        body_hex=hx(raw16(scope) + raw16(b"") + txn + F["canon"] + sha256(b"a")))
+    im_neg += 1
+    add(id="DSB2_IDEM_KEY_65", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x24,
+        body_hex=hx(raw16(scope) + raw16(b"x"*65) + txn + F["canon"] + sha256(b"a")))
+    im_neg += 1
+    add(id="DSB2_IDEM_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x24, body_hex=hx(body_im[:-1]))
+    im_neg += 1
+    add(id="DSB2_IDEM_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x24, body_hex=hx(body_im + b"\x00"))
+    im_neg += 1
+    # Zero application_instance_id in scope_raw (must be non-zero).
+    mut = bytearray(body_im)
+    mut[2:18] = bytes(16)
+    add(id="DSB2_IDEM_MUT_SCOPE", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x24, body_hex=hx(bytes(mut)))
+    im_mut += 1; im_neg += 1
+    add(id="DSB2_IDEM_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x24,
+        body_length=len(body_im), body_hex=hx(body_im), key_length=0)
+    im_neg += 1
+    b2_cov["24"] = add_body_suite("IDEMPOTENCY_MAP", 6, 0x24, im_pos, im_neg, im_mut, im_rt)
+
+    # EVENT_ID_MAP (secondary → primary_id = body transaction_id)
+    body_em = raw16(scope) + ev_id + txn + F["canon"] + raw16(ikey) + sha256(b"anchor-value")
+    em_comp = composite(0x25, raw16(scope) + ev_id)
+    em_key = bkey(6, 0x25, 5, em_comp)
+    assert em_comp[:16] != txn
+    val_em = enc_env_full(6, 0x25, 0, 1, txn, F["head_nz"], F["pvd_nz"], body_em)
+    em_pos = em_neg = em_mut = em_rt = 0
+    add(id="DSB2_EVMAP_POSITIVE", suite="DSB2", op="body_roundtrip",
+        expected_status="OK", family=6, subtype=0x25, body_length=len(body_em),
+        body_hex=hx(body_em))
+    em_pos += 1; em_rt += 1
+    add(id="DSB2_EVMAP_TYPED", suite="DSB2", op="typed_record",
+        expected_status="OK", family=6, subtype=0x25, key_hex=hx(em_key),
+        value_hex=hx(val_em), body_hex=hx(body_em), digest_hex=hx(sha256(val_em)),
+        crc_hex=f"{crc32c(val_em[:-4]):08x}")
+    em_pos += 1
+    val_em_self = enc_env_full(
+        6, 0x25, 0, 1, em_comp[:16], F["head_nz"], F["pvd_nz"], body_em)
+    add(id="DSB2_EVMAP_TYPED_SELF_PRIMARY", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x25, key_hex=hx(em_key),
+        value_hex=hx(val_em_self))
+    em_neg += 1
+    add(id="DSB2_EVMAP_ZERO_EVENT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x25,
+        body_hex=hx(raw16(scope) + bytes(16) + txn + F["canon"] + raw16(ikey) + sha256(b"a")))
+    em_neg += 1
+    add(id="DSB2_EVMAP_SHORT", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x25, body_hex=hx(body_em[:-1]))
+    em_neg += 1
+    add(id="DSB2_EVMAP_TRAILING", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x25, body_hex=hx(body_em + b"\x00"))
+    em_neg += 1
+    add(id="DSB2_EVMAP_ZERO_DIG", suite="DSB2", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x25,
+        body_hex=hx(raw16(scope) + ev_id + txn + F["canon"] + raw16(ikey) + bytes(32)))
+    em_mut += 1; em_neg += 1
+    add(id="DSB2_EVMAP_BUFFER_TOO_SMALL", suite="DSB2", op="body_encode",
+        expected_status="BUFFER_TOO_SMALL", family=6, subtype=0x25,
+        body_length=len(body_em), body_hex=hx(body_em), key_length=0)
+    em_neg += 1
+    # alias-style typed bad composite
+    bad_em_key = bkey(6, 0x25, 5, bytes([0x55]*32))
+    add(id="DSB2_EVMAP_TYPED_BAD_COMPOSITE", suite="DSB2", op="typed_record",
+        expected_status="CORRUPT", family=6, subtype=0x25, key_hex=hx(bad_em_key),
+        value_hex=hx(val_em))
+    em_neg += 1
+    b2_cov["25"] = add_body_suite("EVENT_ID_MAP", 6, 0x25, em_pos, em_neg, em_mut, em_rt)
+
+    for st in ("10", "11", "20", "21", "22", "23", "24", "25"):
+        assert b2_cov[st]["positive"] >= 1
+        assert b2_cov[st]["negative"] >= 3
+        assert b2_cov[st]["roundtrip"] >= 1
+
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -1222,6 +2084,10 @@ def build_document():
     dsb1_pos = sum(1 for v in vectors if v["suite"] == "DSB1"
                    and v["expected_status"] == "OK")
     dsb1_neg = sum(1 for v in vectors if v["suite"] == "DSB1"
+                   and v["expected_status"] != "OK")
+    dsb2_pos = sum(1 for v in vectors if v["suite"] == "DSB2"
+                   and v["expected_status"] == "OK")
+    dsb2_neg = sum(1 for v in vectors if v["suite"] == "DSB2"
                    and v["expected_status"] != "OK")
     catalog = {
         "dsk1_positive_keys": 30,
@@ -1242,6 +2108,16 @@ def build_document():
         "dsb1_subtype_7d_positive": b1_cov["7d"]["positive"],
         "dsb1_total_positive": dsb1_pos,
         "dsb1_total_negative": dsb1_neg,
+        "dsb2_subtype_10_positive": b2_cov["10"]["positive"],
+        "dsb2_subtype_11_positive": b2_cov["11"]["positive"],
+        "dsb2_subtype_20_positive": b2_cov["20"]["positive"],
+        "dsb2_subtype_21_positive": b2_cov["21"]["positive"],
+        "dsb2_subtype_22_positive": b2_cov["22"]["positive"],
+        "dsb2_subtype_23_positive": b2_cov["23"]["positive"],
+        "dsb2_subtype_24_positive": b2_cov["24"]["positive"],
+        "dsb2_subtype_25_positive": b2_cov["25"]["positive"],
+        "dsb2_total_positive": dsb2_pos,
+        "dsb2_total_negative": dsb2_neg,
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -1262,22 +2138,25 @@ def build_document():
     assert catalog["dsb1_subtype_62_positive"] > 0
     assert catalog["dsb1_subtype_64_positive"] > 0
     assert catalog["dsb1_subtype_7d_positive"] > 0
+    for st in ("10", "11", "20", "21", "22", "23", "24", "25"):
+        assert catalog[f"dsb2_subtype_{st}_positive"] > 0
+    assert catalog["dsb2_total_positive"] > 0
+    assert catalog["dsb2_total_negative"] > 0
 
     for v in vectors:
         assert v["required_workspace_bytes"] == 0
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b1",
+        "format": "ninlil-domain-store-v1-d1b2",
         "scope": (
-            "D1-A framing/primitive slice + D1-B1 five exact bodies "
-            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog"
+            "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
+            "(10/11/20-25 service+txn admission); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
-            "and state/context objects. Current D1-A/D1-B1 APIs have no workspace "
-            "parameter; value is 0."
+            "and state/context objects. Current D1-A/D1-B1/D1-B2 APIs have no "
+            "workspace parameter; value is 0."
         ),
         "catalog": catalog,
         "vectors": vectors,

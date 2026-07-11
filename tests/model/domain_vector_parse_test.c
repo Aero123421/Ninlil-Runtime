@@ -21,7 +21,12 @@ static const char *full_catalog =
     "\"dsb1_subtype_01_positive\":0,\"dsb1_subtype_60_positive\":0,"
     "\"dsb1_subtype_62_positive\":0,\"dsb1_subtype_64_positive\":0,"
     "\"dsb1_subtype_7d_positive\":0,\"dsb1_total_positive\":0,"
-    "\"dsb1_total_negative\":0}";
+    "\"dsb1_total_negative\":0,"
+    "\"dsb2_subtype_10_positive\":0,\"dsb2_subtype_11_positive\":0,"
+    "\"dsb2_subtype_20_positive\":0,\"dsb2_subtype_21_positive\":0,"
+    "\"dsb2_subtype_22_positive\":0,\"dsb2_subtype_23_positive\":0,"
+    "\"dsb2_subtype_24_positive\":0,\"dsb2_subtype_25_positive\":0,"
+    "\"dsb2_total_positive\":0,\"dsb2_total_negative\":0}";
 
 static const char *ws_def =
     "\"required_workspace_bytes_definition\":"
@@ -29,10 +34,9 @@ static const char *ws_def =
     "and state/context objects.\"";
 
 static const char *top_ok_prefix =
-    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b1\","
-    "\"scope\":\"D1-A framing/primitive slice + D1-B1 five exact bodies "
-    "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-    "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog\",";
+    "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b2\","
+    "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
+    "(10/11/20-25 service+txn admission); not full D1 catalog\",";
 
 static int expect_fail(const char *text)
 {
@@ -45,7 +49,7 @@ static int expect_fail(const char *text)
 
 static int expect_fail_doc(const char *mid)
 {
-    char buf[4096];
+    char buf[8192];
     (void)snprintf(buf, sizeof(buf), "%s%s,%s,\"vectors\":[%s]}",
         top_ok_prefix, ws_def, full_catalog, mid);
     return expect_fail(buf);
@@ -123,12 +127,11 @@ int main(void)
 
     /* top-level: wrong version / format / scope / missing ws_def / wrong type */
     {
-        char bad[4096];
+        char bad[8192];
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":2,\"format\":\"ninlil-domain-store-v1-d1b1\","
-            "\"scope\":\"D1-A framing/primitive slice + D1-B1 five exact bodies "
-            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog\","
+            "{\"version\":2,\"format\":\"ninlil-domain-store-v1-d1b2\","
+            "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
+            "bodies (10/11/20-25 service+txn admission); not full D1 catalog\","
             "%s,%s,\"vectors\":[{\"id\":\"a\",\"suite\":\"DSK1\",\"op\":\"sha256\","
             "\"expected_status\":\"OK\",\"required_workspace_bytes\":0,"
             "\"body_hex\":\"\","
@@ -137,9 +140,8 @@ int main(void)
         REQUIRE(expect_fail(bad));
         (void)snprintf(bad, sizeof(bad),
             "{\"version\":1,\"format\":\"wrong-format\","
-            "\"scope\":\"D1-A framing/primitive slice + D1-B1 five exact bodies "
-            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog\","
+            "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
+            "bodies (10/11/20-25 service+txn admission); not full D1 catalog\","
             "%s,%s,\"vectors\":[{\"id\":\"a\",\"suite\":\"DSK1\",\"op\":\"sha256\","
             "\"expected_status\":\"OK\",\"required_workspace_bytes\":0,"
             "\"body_hex\":\"\","
@@ -147,7 +149,7 @@ int main(void)
             ws_def, full_catalog);
         REQUIRE(expect_fail(bad));
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b1\","
+            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b2\","
             "\"scope\":\"not-a-valid-scope\","
             "%s,%s,\"vectors\":[{\"id\":\"a\",\"suite\":\"DSK1\",\"op\":\"sha256\","
             "\"expected_status\":\"OK\",\"required_workspace_bytes\":0,"
@@ -156,10 +158,9 @@ int main(void)
             ws_def, full_catalog);
         REQUIRE(expect_fail(bad));
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b1\","
-            "\"scope\":\"D1-A framing/primitive slice + D1-B1 five exact bodies "
-            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog\","
+            "{\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b2\","
+            "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
+            "bodies (10/11/20-25 service+txn admission); not full D1 catalog\","
             "%s,\"vectors\":[{\"id\":\"a\",\"suite\":\"DSK1\",\"op\":\"sha256\","
             "\"expected_status\":\"OK\",\"required_workspace_bytes\":0,"
             "\"body_hex\":\"\","
@@ -167,10 +168,9 @@ int main(void)
             full_catalog);
         REQUIRE(expect_fail(bad));
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":\"1\",\"format\":\"ninlil-domain-store-v1-d1b1\","
-            "\"scope\":\"D1-A framing/primitive slice + D1-B1 five exact bodies "
-            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog\","
+            "{\"version\":\"1\",\"format\":\"ninlil-domain-store-v1-d1b2\","
+            "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
+            "bodies (10/11/20-25 service+txn admission); not full D1 catalog\","
             "%s,%s,\"vectors\":[{\"id\":\"a\",\"suite\":\"DSK1\",\"op\":\"sha256\","
             "\"expected_status\":\"OK\",\"required_workspace_bytes\":0,"
             "\"body_hex\":\"\","
@@ -181,12 +181,11 @@ int main(void)
 
     /* duplicate top-level / catalog */
     {
-        char bad[4096];
+        char bad[8192];
         (void)snprintf(bad, sizeof(bad),
-            "{\"version\":1,\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b1\","
-            "\"scope\":\"D1-A framing/primitive slice + D1-B1 five exact bodies "
-            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog\","
+            "{\"version\":1,\"version\":1,\"format\":\"ninlil-domain-store-v1-d1b2\","
+            "\"scope\":\"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 "
+            "bodies (10/11/20-25 service+txn admission); not full D1 catalog\","
             "%s,%s,\"vectors\":[{\"id\":\"a\",\"suite\":\"DSK1\",\"op\":\"sha256\","
             "\"expected_status\":\"OK\",\"required_workspace_bytes\":0,"
             "\"body_hex\":\"\","
@@ -198,14 +197,14 @@ int main(void)
     /* valid minimal */
     {
         ninlil_dv_file_t f;
-        char ok[4096];
+        char ok[8192];
         (void)snprintf(ok, sizeof(ok),
             "{\n"
             "  \"version\": 1,\n"
-            "  \"format\": \"ninlil-domain-store-v1-d1b1\",\n"
-            "  \"scope\": \"D1-A framing/primitive slice + D1-B1 five exact bodies "
-            "(INTERNAL_INVARIANT, BEARER_STATE, CLOCK_BASELINE, "
-            "ATTEMPT_REUSE_FENCE, WITNESS_HEAD_INDEX); not full D1 body catalog\",\n"
+            "  \"format\": \"ninlil-domain-store-v1-d1b2\",\n"
+            "  \"scope\": \"D1-A framing + D1-B1 bodies (01/60/62/64/7d) + "
+            "D1-B2 bodies (10/11/20-25 service+txn admission); not full D1 "
+            "catalog\",\n"
             "  %s,\n"
             "  %s,\n"
             "  \"vectors\": [\n"

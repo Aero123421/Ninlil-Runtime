@@ -276,7 +276,8 @@ static int known_suite(const char *s)
         || strcmp(s, "DSH2") == 0
         || strcmp(s, "DSO2") == 0
         || strcmp(s, "DSW1") == 0
-        || strcmp(s, "DSB1") == 0;
+        || strcmp(s, "DSB1") == 0
+        || strcmp(s, "DSB2") == 0;
 }
 
 static int known_op(const char *op)
@@ -942,6 +943,24 @@ static int parse_catalog(parse_ctx *c, ninlil_dv_file_t *file)
             NINLIL_DV_CAT_DSB1_7D)
         CAT("dsb1_total_positive", dsb1_total_positive, NINLIL_DV_CAT_DSB1_POS)
         CAT("dsb1_total_negative", dsb1_total_negative, NINLIL_DV_CAT_DSB1_NEG)
+        CAT("dsb2_subtype_10_positive", dsb2_subtype_10_positive,
+            NINLIL_DV_CAT_DSB2_10)
+        CAT("dsb2_subtype_11_positive", dsb2_subtype_11_positive,
+            NINLIL_DV_CAT_DSB2_11)
+        CAT("dsb2_subtype_20_positive", dsb2_subtype_20_positive,
+            NINLIL_DV_CAT_DSB2_20)
+        CAT("dsb2_subtype_21_positive", dsb2_subtype_21_positive,
+            NINLIL_DV_CAT_DSB2_21)
+        CAT("dsb2_subtype_22_positive", dsb2_subtype_22_positive,
+            NINLIL_DV_CAT_DSB2_22)
+        CAT("dsb2_subtype_23_positive", dsb2_subtype_23_positive,
+            NINLIL_DV_CAT_DSB2_23)
+        CAT("dsb2_subtype_24_positive", dsb2_subtype_24_positive,
+            NINLIL_DV_CAT_DSB2_24)
+        CAT("dsb2_subtype_25_positive", dsb2_subtype_25_positive,
+            NINLIL_DV_CAT_DSB2_25)
+        CAT("dsb2_total_positive", dsb2_total_positive, NINLIL_DV_CAT_DSB2_POS)
+        CAT("dsb2_total_negative", dsb2_total_negative, NINLIL_DV_CAT_DSB2_NEG)
 #undef CAT
         {
             set_err(c->err, c->err_cap, "unknown catalog key");
