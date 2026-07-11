@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Independent D1-A/D1-B1/D1-B2/D1-B3a..l vector oracle (stdlib only; no production C linkage).
+"""Independent D1-A/D1-B1/D1-B2/D1-B3a..m vector oracle (stdlib only; no production C linkage).
 
 Sole oracle implementation for the checked-in domain-store-v1 vector catalog.
-Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..l
+Uses hashlib + independent encoders only. Body encode oracles for D1-B1/B2/B3a..m
 are hand-written here and intentionally do not import or link production C.
 
 D1 pre-alpha operation identity correction: kind 9/10 identities are exact 42
@@ -8819,6 +8819,730 @@ def build_document():
     assert b3_cov["51"]["mutation"] >= 1
     assert b3_cov["51"]["roundtrip"] >= 9
 
+    # =====================================================================
+    # D1-B3m MANAGEMENT_LEDGER (0x52) — after RETRY_SUMMARY; preserve 1287 B3l.
+    # =====================================================================
+    PRE_B3M_VECTOR_COUNT = len(vectors)
+    PRE_B3M_VECTOR_COUNT_SNAPSHOT = PRE_B3M_VECTOR_COUNT
+    assert PRE_B3M_VECTOR_COUNT == 1287, PRE_B3M_VECTOR_COUNT
+    assert vectors[0]["id"] == "DSK1_SHA256_EMPTY"
+    assert vectors[-1]["id"] == "DSB3_RS_KEY_ID128_KIND"
+    assert all(not v["id"].startswith("DSB3_ML_") for v in vectors)
+    PRE_B3M_FULL_FINGERPRINT = vectors_fingerprint(vectors)
+    # Pin of vectors[0:1287] at B3m cutover (full pre-B3m catalog incl. B3l).
+    PRE_B3M_FULL_FINGERPRINT_PIN = (
+        "f6988e28ef21228ef280522f53373807ec337ff94055a80ccb71e3dff3343531"
+    )
+    assert PRE_B3M_FULL_FINGERPRINT == PRE_B3M_FULL_FINGERPRINT_PIN, (
+        f"pre-B3m full fingerprint drift: got {PRE_B3M_FULL_FINGERPRINT}"
+    )
+
+    ML_KIND_RESUME = 15
+    ML_KIND_DISCARD = 16
+    ML_ALGO_NONE = 0
+    ML_ALGO_SHA256 = 1
+    ML_REPLAY_RESUME = 2  # NINLIL_EVENT_RESUME_ALREADY_RESUMED
+    ML_REPLAY_DISCARD = 2  # NINLIL_EVENT_DISCARD_ALREADY_DISCARDED
+    ML_REASON_NONE = 0
+    ML_REASON_OP_DISCARD = 80  # OPERATOR_DISCARDED_WITHOUT_REQUIRED_RECEIPT
+    ml_head = bytes([0xE1] * 32)
+    ml_pvd = bytes([0xE2] * 32)
+    ml_txn = txn
+    ml_op = bytes([0xB0] + [0] * 14 + [0xB1])
+    ml_event = bytes([0xC0] + [0] * 14 + [0xC1])
+    ml_actor = bytes([0xD0] + [0] * 14 + [0xD1])
+    ml_content = bytes([0x55] * 32)
+    ml_audit_epoch = bytes([0xA0] + [0] * 14 + [0xA1])
+
+    def ml_key(tx: bytes, op: bytes) -> bytes:
+        assert len(tx) == 16 and len(op) == 16
+        return bkey(6, 0x52, 5, composite(0x52, tx + op))
+
+    def ml_resume_digest(
+        tx, op, actor, expected_rev, reason, audit: bytes
+    ) -> bytes:
+        pre = (
+            b"NINLIL-M1A-EVENT-RESUME"
+            + tx
+            + op
+            + actor
+            + be64(expected_rev)
+            + be32(reason)
+            + be32(len(audit))
+            + audit
+        )
+        return sha256(pre)
+
+    def ml_discard_digest(
+        tx, op, actor, expected_event, algorithm, content_dig,
+        expected_rev, reason, ack, audit: bytes
+    ) -> bytes:
+        pre = (
+            b"NINLIL-M1A-EVENT-DISCARD"
+            + tx
+            + op
+            + actor
+            + expected_event
+            + be16(algorithm)
+            + content_dig
+            + be64(expected_rev)
+            + be32(reason)
+            + be32(ack)
+            + be32(len(audit))
+            + audit
+        )
+        return sha256(pre)
+
+    def enc_ml(
+        kind=ML_KIND_RESUME,
+        op=None,
+        reserved0=0,
+        ordered_seq=1,
+        tx=None,
+        event=None,
+        actor=None,
+        digest=None,
+        expected_rev=1,
+        expected_event=None,
+        algorithm=None,
+        reserved1=0,
+        content_dig=None,
+        reason=None,
+        ack=None,
+        audit_len=None,
+        reserved2=0,
+        audit=None,
+        audit_epoch=None,
+        audit_at=None,
+        replay_kind=None,
+        replay_reason=None,
+        replay_cycle=None,
+        replay_rev=None,
+        spool_released=None,
+        reserved3=0,
+        recompute_digest=True,
+    ) -> bytes:
+        if op is None:
+            op = ml_op
+        if tx is None:
+            tx = ml_txn
+        if event is None:
+            event = ml_event
+        if actor is None:
+            actor = ml_actor
+        if kind == ML_KIND_RESUME:
+            if algorithm is None:
+                algorithm = ML_ALGO_NONE
+            if expected_event is None:
+                expected_event = bytes(16)
+            if content_dig is None:
+                content_dig = bytes(32)
+            if reason is None:
+                reason = 1  # CONNECTIVITY_REMEDIATED
+            if ack is None:
+                ack = 0
+            if audit_epoch is None:
+                audit_epoch = bytes(16)
+            if audit_at is None:
+                audit_at = 0
+            if spool_released is None:
+                spool_released = 0
+            if replay_kind is None:
+                replay_kind = ML_REPLAY_RESUME
+            if replay_reason is None:
+                replay_reason = ML_REASON_NONE
+            if replay_cycle is None:
+                replay_cycle = 1
+        else:
+            if algorithm is None:
+                algorithm = ML_ALGO_SHA256
+            if expected_event is None:
+                expected_event = event
+            if content_dig is None:
+                content_dig = ml_content
+            if reason is None:
+                reason = 1  # DEVICE_DECOMMISSIONED
+            if ack is None:
+                ack = 1
+            if audit_epoch is None:
+                audit_epoch = ml_audit_epoch
+            if audit_at is None:
+                audit_at = 1000
+            if spool_released is None:
+                spool_released = 1
+            if replay_kind is None:
+                replay_kind = ML_REPLAY_DISCARD
+            if replay_reason is None:
+                replay_reason = ML_REASON_OP_DISCARD
+            if replay_cycle is None:
+                replay_cycle = 0
+        if audit is None:
+            if audit_len is None:
+                audit_len = 1
+            audit = bytes([0x41] * audit_len) + bytes(128 - audit_len)
+        else:
+            if audit_len is None:
+                audit_len = len(audit)
+            if len(audit) < 128:
+                audit = audit + bytes(128 - len(audit))
+            assert len(audit) == 128
+        if replay_rev is None:
+            replay_rev = expected_rev + 1
+        if recompute_digest or digest is None:
+            audit_used = audit[:audit_len]
+            if kind == ML_KIND_RESUME:
+                digest = ml_resume_digest(
+                    tx, op, actor, expected_rev, reason, audit_used)
+            else:
+                digest = ml_discard_digest(
+                    tx, op, actor, expected_event, algorithm, content_dig,
+                    expected_rev, reason, ack, audit_used)
+        out = bytearray()
+        out += op
+        out += be16(kind)
+        out += be16(reserved0)
+        out += be64(ordered_seq)
+        out += tx
+        out += event
+        out += actor
+        out += digest
+        out += be64(expected_rev)
+        out += expected_event
+        out += be16(algorithm)
+        out += be16(reserved1)
+        out += content_dig
+        out += be32(reason)
+        out += be32(ack)
+        out += be16(audit_len)
+        out += be16(reserved2)
+        out += audit
+        out += audit_epoch
+        out += be64(audit_at)
+        out += be32(replay_kind)
+        out += be32(replay_reason)
+        out += be64(replay_cycle)
+        out += be64(replay_rev)
+        out += be32(spool_released)
+        out += be32(reserved3)
+        assert len(out) == 364, len(out)
+        return bytes(out)
+
+    def management_typed(body=None, rev=1, flags=0, primary_id=None,
+                         head=None, pvd=None, key=None):
+        if body is None:
+            body = enc_ml()
+        body_op = body[0:16]
+        body_tx = body[28:44]
+        if primary_id is None:
+            primary_id = body_tx
+        if head is None:
+            head = ml_head
+        if pvd is None:
+            pvd = ml_pvd
+        if key is None:
+            key = ml_key(body_tx, body_op)
+        val = enc_env_full(6, 0x52, flags, rev, primary_id, head, pvd, body)
+        return key, val, body
+
+    ml_pos = 0
+    ml_neg = 0
+    ml_mut = 0
+    ml_rt = 0
+
+    def add_ml_pos(vid, body, notes=""):
+        nonlocal ml_pos, ml_rt
+        add(id=vid, suite="DSB3", op="body_roundtrip", expected_status="OK",
+            family=6, subtype=0x52, body_length=len(body), body_hex=hx(body),
+            notes=notes)
+        ml_pos += 1
+        ml_rt += 1
+
+    def add_ml_pos_typed(vid, body, notes="", rev=1):
+        nonlocal ml_pos
+        key, val, _ = management_typed(body=body, rev=rev)
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="OK",
+            family=6, subtype=0x52, key_hex=hx(key), value_hex=hx(val),
+            body_hex=hx(body), body_length=len(body),
+            digest_hex=hx(sha256(val)),
+            crc_hex=f"{crc32c(val[:-4]):08x}", notes=notes)
+        ml_pos += 1
+
+    def add_ml_neg(vid, body, notes=""):
+        nonlocal ml_neg
+        add(id=vid, suite="DSB3", op="body_decode", expected_status="CORRUPT",
+            family=6, subtype=0x52, body_hex=hx(body), notes=notes)
+        ml_neg += 1
+
+    def add_ml_neg_typed(vid, key, val, notes=""):
+        nonlocal ml_neg
+        add(id=vid, suite="DSB3", op="typed_record", expected_status="CORRUPT",
+            family=6, subtype=0x52, key_hex=hx(key), value_hex=hx(val),
+            notes=notes)
+        ml_neg += 1
+
+    # --- RESUME positives: every reason 1..5, audit 1/128, rev bounds ---
+    for reason in range(1, 6):
+        b = enc_ml(kind=ML_KIND_RESUME, reason=reason, audit_len=1)
+        add_ml_pos(f"DSB3_ML_R_RSN{reason}", b, f"RESUME reason={reason}")
+        if reason in (1, 5):
+            add_ml_pos_typed(f"DSB3_ML_R_RSN{reason}_TYPED", b)
+
+    b_r_aud128 = enc_ml(
+        kind=ML_KIND_RESUME, reason=2, audit_len=128,
+        audit=bytes([0x42] * 128))
+    add_ml_pos("DSB3_ML_R_AUD128", b_r_aud128, "RESUME audit_length=128")
+    add_ml_pos_typed("DSB3_ML_R_AUD128_TYPED", b_r_aud128)
+
+    b_r_rev1 = enc_ml(kind=ML_KIND_RESUME, expected_rev=1, replay_cycle=7)
+    add_ml_pos("DSB3_ML_R_REV1", b_r_rev1, "RESUME expected_rev=1 replay=2")
+    b_r_revmax = enc_ml(
+        kind=ML_KIND_RESUME, expected_rev=(1 << 64) - 2, replay_cycle=9)
+    add_ml_pos(
+        "DSB3_ML_R_REV_MAXM1", b_r_revmax,
+        "RESUME expected_rev=UINT64_MAX-1 -> replay MAX")
+    add_ml_pos_typed("DSB3_ML_R_REV_MAXM1_TYPED", b_r_revmax)
+
+    b_r_cycle_max = enc_ml(
+        kind=ML_KIND_RESUME, replay_cycle=(1 << 64) - 1, reason=3)
+    add_ml_pos("DSB3_ML_R_CYCLE_MAX", b_r_cycle_max, "RESUME cycle UINT64_MAX")
+
+    # --- DISCARD positives: every reason 1..4, audit time0, bounds ---
+    for reason in range(1, 5):
+        b = enc_ml(kind=ML_KIND_DISCARD, reason=reason, audit_len=1)
+        add_ml_pos(f"DSB3_ML_D_RSN{reason}", b, f"DISCARD reason={reason}")
+        if reason in (1, 4):
+            add_ml_pos_typed(f"DSB3_ML_D_RSN{reason}_TYPED", b)
+
+    b_d_time0 = enc_ml(
+        kind=ML_KIND_DISCARD, reason=2, audit_at=0, audit_len=1)
+    add_ml_pos(
+        "DSB3_ML_D_TIME0", b_d_time0,
+        "DISCARD audit_committed_at_ms=0 with epoch NZ")
+    add_ml_pos_typed("DSB3_ML_D_TIME0_TYPED", b_d_time0)
+
+    b_d_aud128 = enc_ml(
+        kind=ML_KIND_DISCARD, reason=3, audit_len=128,
+        audit=bytes([0x43] * 128))
+    add_ml_pos("DSB3_ML_D_AUD128", b_d_aud128, "DISCARD audit_length=128")
+
+    b_d_rev1 = enc_ml(kind=ML_KIND_DISCARD, expected_rev=1)
+    add_ml_pos("DSB3_ML_D_REV1", b_d_rev1, "DISCARD expected_rev=1")
+    b_d_revmax = enc_ml(
+        kind=ML_KIND_DISCARD, expected_rev=(1 << 64) - 2)
+    add_ml_pos(
+        "DSB3_ML_D_REV_MAXM1", b_d_revmax,
+        "DISCARD expected_rev=UINT64_MAX-1 -> replay MAX")
+    add_ml_pos_typed("DSB3_ML_D_REV_MAXM1_TYPED", b_d_revmax)
+
+    # --- excluded-field OK positives (same hashed fields → same digest) ---
+    # Canonical preimage excludes ordered_sequence, body event_id (resume),
+    # audit_clock_epoch, audit_committed_at_ms, and all replay* fields.
+    # Paired baseline/derived bodies assert only the excluded locus changes and
+    # canonical_request_digest bytes [76:108] remain byte-identical.
+    def _ml_digest(body: bytes) -> bytes:
+        assert len(body) == 364
+        return body[76:108]
+
+    def _assert_only_locus(base: bytes, der: bytes, start: int, end: int):
+        assert len(base) == len(der) == 364
+        assert base[start:end] != der[start:end]
+        assert base[:start] == der[:start]
+        assert base[end:] == der[end:]
+        assert _ml_digest(base) == _ml_digest(der)
+
+    # ordered_sequence 1 → 99 (resume)
+    b_excl_seq_base = enc_ml(kind=ML_KIND_RESUME, ordered_seq=1, reason=1)
+    b_excl_seq = enc_ml(kind=ML_KIND_RESUME, ordered_seq=99, reason=1)
+    _assert_only_locus(b_excl_seq_base, b_excl_seq, 20, 28)
+    assert b_excl_seq[20:28] == be64(99)
+    add_ml_pos(
+        "DSB3_ML_EXCL_SEQ99", b_excl_seq,
+        "excluded ordered_sequence 1->99 same digest")
+
+    # resume body event_id NZ A → different NZ B
+    ml_event_b = bytes([0xC2] + [0] * 14 + [0xC3])
+    b_excl_ev_base = enc_ml(kind=ML_KIND_RESUME, event=ml_event, reason=2)
+    b_excl_ev = enc_ml(kind=ML_KIND_RESUME, event=ml_event_b, reason=2)
+    _assert_only_locus(b_excl_ev_base, b_excl_ev, 44, 60)
+    assert b_excl_ev[44:60] == ml_event_b
+    add_ml_pos(
+        "DSB3_ML_EXCL_R_EVENT", b_excl_ev,
+        "excluded resume event_id A->B same digest")
+
+    # discard audit_committed_at_ms 0 → nonzero (same hashed fields)
+    b_excl_time_base = enc_ml(
+        kind=ML_KIND_DISCARD, reason=2, audit_at=0, audit_len=1)
+    b_excl_time = enc_ml(
+        kind=ML_KIND_DISCARD, reason=2, audit_at=4242, audit_len=1)
+    _assert_only_locus(b_excl_time_base, b_excl_time, 324, 332)
+    assert b_excl_time[324:332] == be64(4242)
+    add_ml_pos(
+        "DSB3_ML_EXCL_D_TIME", b_excl_time,
+        "excluded discard audit_committed_at_ms 0->NZ same digest")
+
+    # discard audit_clock_epoch nonzero A → different nonzero B
+    ml_epoch_b = bytes([0xA2] + [0] * 14 + [0xA3])
+    b_excl_ep_base = enc_ml(
+        kind=ML_KIND_DISCARD, reason=2, audit_at=0, audit_len=1,
+        audit_epoch=ml_audit_epoch)
+    b_excl_ep = enc_ml(
+        kind=ML_KIND_DISCARD, reason=2, audit_at=0, audit_len=1,
+        audit_epoch=ml_epoch_b)
+    _assert_only_locus(b_excl_ep_base, b_excl_ep, 308, 324)
+    assert b_excl_ep[308:324] == ml_epoch_b
+    add_ml_pos(
+        "DSB3_ML_EXCL_D_EPOCH", b_excl_ep,
+        "excluded discard audit_clock_epoch A->B same digest")
+
+    # resume replay_retry_cycle_id 1 → UINT64_MAX (same hashed fields)
+    b_excl_cyc_base = enc_ml(
+        kind=ML_KIND_RESUME, replay_cycle=1, reason=3)
+    b_excl_cyc = enc_ml(
+        kind=ML_KIND_RESUME, replay_cycle=(1 << 64) - 1, reason=3)
+    _assert_only_locus(b_excl_cyc_base, b_excl_cyc, 340, 348)
+    assert b_excl_cyc[340:348] == be64((1 << 64) - 1)
+    add_ml_pos(
+        "DSB3_ML_EXCL_R_CYCLE", b_excl_cyc,
+        "excluded resume replay_retry_cycle_id 1->MAX same digest")
+
+    # --- length ---
+    b_r_ok = enc_ml(kind=ML_KIND_RESUME)
+    b_d_ok = enc_ml(kind=ML_KIND_DISCARD)
+    add_ml_neg("DSB3_ML_LEN363", b_r_ok[:-1], "body 363 short")
+    add_ml_neg("DSB3_ML_LEN365", b_r_ok + b"\x00", "body 365 trailing")
+
+    # --- reserved fields ---
+    add_ml_neg("DSB3_ML_RSV0", enc_ml(reserved0=1), "reserved0 nonzero")
+    add_ml_neg("DSB3_ML_RSV1", enc_ml(reserved1=1), "reserved1 nonzero")
+    add_ml_neg("DSB3_ML_RSV2", enc_ml(reserved2=1), "reserved2 nonzero")
+    add_ml_neg("DSB3_ML_RSV3", enc_ml(reserved3=1), "reserved3 nonzero")
+
+    # --- ID zeros ---
+    add_ml_neg(
+        "DSB3_ML_TX_ZERO",
+        enc_ml(tx=bytes(16)), "transaction_id zero")
+    add_ml_neg(
+        "DSB3_ML_OP_ZERO",
+        enc_ml(op=bytes(16)), "operation_id zero")
+    add_ml_neg(
+        "DSB3_ML_EVENT_ZERO",
+        enc_ml(event=bytes(16)), "event_id zero")
+    add_ml_neg(
+        "DSB3_ML_ACTOR_ZERO",
+        enc_ml(actor=bytes(16)), "actor_id zero")
+
+    # --- kind / sequence ---
+    add_ml_neg("DSB3_ML_KIND14", enc_ml(kind=14), "operation_kind 14")
+    add_ml_neg("DSB3_ML_KIND17", enc_ml(kind=17), "operation_kind 17")
+    add_ml_neg("DSB3_ML_SEQ0", enc_ml(ordered_seq=0), "ordered_sequence 0")
+
+    # --- algorithm / matrix ---
+    add_ml_neg(
+        "DSB3_ML_R_ALGO1",
+        enc_ml(kind=ML_KIND_RESUME, algorithm=1),
+        "RESUME algorithm must be 0")
+    add_ml_neg(
+        "DSB3_ML_D_ALGO0",
+        enc_ml(kind=ML_KIND_DISCARD, algorithm=0),
+        "DISCARD algorithm must be 1")
+    add_ml_neg(
+        "DSB3_ML_R_EXP_EVENT_NZ",
+        enc_ml(kind=ML_KIND_RESUME, expected_event=ml_event),
+        "RESUME expected_event must be zero")
+    add_ml_neg(
+        "DSB3_ML_R_EXP_DIG_NZ",
+        enc_ml(kind=ML_KIND_RESUME, content_dig=ml_content),
+        "RESUME expected_content_digest must be zero")
+    add_ml_neg(
+        "DSB3_ML_D_EXP_EVENT_Z",
+        enc_ml(kind=ML_KIND_DISCARD, expected_event=bytes(16), event=bytes(16)),
+        "DISCARD expected_event zero (and event zero)")
+    # non-zero event but zero expected → mismatch + zero expected
+    add_ml_neg(
+        "DSB3_ML_D_EXP_EVENT_ZERO_ONLY",
+        enc_ml(kind=ML_KIND_DISCARD, expected_event=bytes(16), event=ml_event),
+        "DISCARD expected_event zero with event NZ")
+    add_ml_neg(
+        "DSB3_ML_D_EXP_DIG_Z",
+        enc_ml(kind=ML_KIND_DISCARD, content_dig=bytes(32)),
+        "DISCARD expected_content_digest zero")
+    add_ml_neg(
+        "DSB3_ML_D_EVENT_MISMATCH",
+        enc_ml(
+            kind=ML_KIND_DISCARD,
+            event=ml_event,
+            expected_event=bytes([0xEE] * 16)),
+        "DISCARD event_id != expected_event_id")
+
+    # --- ack ---
+    add_ml_neg(
+        "DSB3_ML_R_ACK1",
+        enc_ml(kind=ML_KIND_RESUME, ack=1), "RESUME ack must be 0")
+    add_ml_neg(
+        "DSB3_ML_D_ACK0",
+        enc_ml(kind=ML_KIND_DISCARD, ack=0), "DISCARD ack must be 1")
+    add_ml_neg(
+        "DSB3_ML_D_ACK2",
+        enc_ml(kind=ML_KIND_DISCARD, ack=2), "DISCARD ack 2")
+
+    # --- audit epoch/time matrix ---
+    add_ml_neg(
+        "DSB3_ML_R_EPOCH_NZ",
+        enc_ml(kind=ML_KIND_RESUME, audit_epoch=ml_audit_epoch),
+        "RESUME audit_clock_epoch must be zero")
+    add_ml_neg(
+        "DSB3_ML_R_TIME_NZ",
+        enc_ml(kind=ML_KIND_RESUME, audit_at=1),
+        "RESUME audit_committed_at_ms must be zero")
+    add_ml_neg(
+        "DSB3_ML_D_EPOCH_Z",
+        enc_ml(kind=ML_KIND_DISCARD, audit_epoch=bytes(16)),
+        "DISCARD audit_clock_epoch must be NZ")
+
+    # --- audit length / tail ---
+    add_ml_neg(
+        "DSB3_ML_AUD_LEN0",
+        enc_ml(audit_len=0, audit=bytes(128)), "audit_length 0")
+    add_ml_neg(
+        "DSB3_ML_AUD_LEN129",
+        # force length 129 into wire by patching after encode of valid body
+        b_r_ok[:176] + be16(129) + b_r_ok[178:],
+        "audit_length 129")
+    b_tail = bytearray(enc_ml(kind=ML_KIND_RESUME, audit_len=1))
+    # audit starts at offset 180; byte at index 181 must be zero for len=1
+    assert b_tail[181] == 0
+    b_tail[181] = 0xFF
+    add_ml_neg(
+        "DSB3_ML_AUD_TAIL", bytes(b_tail), "audit tail byte nonzero")
+
+    # --- expected rev / replay rev ---
+    add_ml_neg(
+        "DSB3_ML_EXP_REV0",
+        enc_ml(expected_rev=0, replay_rev=1), "expected_spool_revision 0")
+    add_ml_neg(
+        "DSB3_ML_EXP_REV_MAX",
+        enc_ml(expected_rev=(1 << 64) - 1, replay_rev=0),
+        "expected_spool_revision UINT64_MAX")
+    add_ml_neg(
+        "DSB3_ML_REPLAY_REV_WRONG",
+        enc_ml(expected_rev=5, replay_rev=5),
+        "replay_spool_revision != expected+1")
+    add_ml_neg(
+        "DSB3_ML_REPLAY_REV_PLUS2",
+        enc_ml(expected_rev=5, replay_rev=7),
+        "replay_spool_revision expected+2")
+
+    # --- replay kind/reason/cycle/released ---
+    add_ml_neg(
+        "DSB3_ML_R_REPLAY_KIND1",
+        enc_ml(kind=ML_KIND_RESUME, replay_kind=1),
+        "RESUME replay kind must be ALREADY_RESUMED(2)")
+    add_ml_neg(
+        "DSB3_ML_R_REPLAY_RSN_NZ",
+        enc_ml(kind=ML_KIND_RESUME, replay_reason=1),
+        "RESUME replay reason must be NONE")
+    add_ml_neg(
+        "DSB3_ML_R_CYCLE0",
+        enc_ml(kind=ML_KIND_RESUME, replay_cycle=0),
+        "RESUME replay_retry_cycle_id zero")
+    add_ml_neg(
+        "DSB3_ML_R_RELEASED1",
+        enc_ml(kind=ML_KIND_RESUME, spool_released=1),
+        "RESUME spool_released must be 0")
+    add_ml_neg(
+        "DSB3_ML_D_REPLAY_KIND1",
+        enc_ml(kind=ML_KIND_DISCARD, replay_kind=1),
+        "DISCARD replay kind must be ALREADY_DISCARDED(2)")
+    add_ml_neg(
+        "DSB3_ML_D_REPLAY_RSN_WRONG",
+        enc_ml(kind=ML_KIND_DISCARD, replay_reason=0),
+        "DISCARD replay reason must be OPERATOR_DISCARDED")
+    add_ml_neg(
+        "DSB3_ML_D_CYCLE_NZ",
+        enc_ml(kind=ML_KIND_DISCARD, replay_cycle=1),
+        "DISCARD replay_retry_cycle_id must be 0")
+    add_ml_neg(
+        "DSB3_ML_D_RELEASED0",
+        enc_ml(kind=ML_KIND_DISCARD, spool_released=0),
+        "DISCARD spool_released must be 1")
+
+    # --- reason bounds ---
+    add_ml_neg(
+        "DSB3_ML_R_RSN0",
+        enc_ml(kind=ML_KIND_RESUME, reason=0), "RESUME reason 0")
+    add_ml_neg(
+        "DSB3_ML_R_RSN6",
+        enc_ml(kind=ML_KIND_RESUME, reason=6), "RESUME reason 6")
+    add_ml_neg(
+        "DSB3_ML_D_RSN0",
+        enc_ml(kind=ML_KIND_DISCARD, reason=0), "DISCARD reason 0")
+    add_ml_neg(
+        "DSB3_ML_D_RSN5",
+        enc_ml(kind=ML_KIND_DISCARD, reason=5), "DISCARD reason 5")
+
+    # --- canonical digest arbitrary wrong ---
+    add_ml_neg(
+        "DSB3_ML_DIGEST_WRONG",
+        enc_ml(digest=bytes([0xDE] * 32), recompute_digest=False),
+        "canonical_request_digest arbitrary wrong")
+
+    # --- material preimage field mutations with stale digest ---
+    # Wire offsets: 0 op, 16 kind, 18 rsv0, 20 seq, 28 tx, 44 event, 60 actor,
+    # 76 digest, 108 expected_rev, 116 expected_event, 132 algo, 136 content,
+    # 168 reason, 172 ack, 176 audit_len, 180 audit, 348 replay_rev.
+    # Pure stale-digest isolations keep every matrix constraint valid so that
+    # only the stored canonical_request_digest (preimage of original fields)
+    # causes CORRUPT. Algorithm (resume0/discard1) and acknowledge_flag
+    # (resume0/discard1) have singleton legal matrix values, so mutating them
+    # cannot isolate digest alone — those are recomputed-digest matrix negatives
+    # only (DSB3_ML_R_ALGO1 / D_ALGO0 / R_ACK1 / D_ACK0 / D_ACK2), not stale-
+    # digest isolations.
+    b = bytearray(enc_ml(kind=ML_KIND_RESUME))
+    b[28:44] = bytes([0x11] * 16)  # transaction_id
+    add_ml_neg("DSB3_ML_R_MUT_TX", bytes(b), "RESUME mutate tx stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_RESUME))
+    b[0:16] = bytes([0x12] * 16)  # operation_id
+    add_ml_neg("DSB3_ML_R_MUT_OP", bytes(b), "RESUME mutate op stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_RESUME))
+    b[60:76] = bytes([0x13] * 16)  # actor_id
+    add_ml_neg(
+        "DSB3_ML_R_MUT_ACTOR", bytes(b), "RESUME mutate actor stale digest")
+    # expected_rev 3→4 with replay_rev fixed to 5 so matrix (replay==expected+1)
+    # remains valid; digest still binds original expected=3.
+    b = bytearray(enc_ml(kind=ML_KIND_RESUME, expected_rev=3))
+    assert b[108:116] == be64(3) and b[348:356] == be64(4)
+    b[108:116] = be64(4)
+    b[348:356] = be64(5)
+    assert b[108:116] == be64(4) and b[348:356] == be64(5)
+    add_ml_neg(
+        "DSB3_ML_R_MUT_EXP_REV", bytes(b),
+        "RESUME mutate expected_rev (+replay fix) stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_RESUME, reason=1))
+    b[168:172] = be32(2)  # request_reason
+    add_ml_neg(
+        "DSB3_ML_R_MUT_REASON", bytes(b),
+        "RESUME mutate reason stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_RESUME, audit_len=1))
+    b[180] = 0x99  # first audit byte
+    add_ml_neg(
+        "DSB3_ML_R_MUT_AUDIT", bytes(b),
+        "RESUME mutate audit byte stale digest")
+    # audit_len 1→2: audit[1] was zero-pad so tail remains legal; digest stale.
+    b = bytearray(enc_ml(kind=ML_KIND_RESUME, audit_len=1))
+    assert b[176:178] == be16(1) and b[181] == 0
+    b[176:178] = be16(2)
+    assert b[176:178] == be16(2)
+    add_ml_neg(
+        "DSB3_ML_R_MUT_AUD_LEN", bytes(b),
+        "RESUME mutate audit_length stale digest")
+
+    # DISCARD material stale-digest isolations (matrix kept valid)
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD))
+    b[28:44] = bytes([0x21] * 16)
+    add_ml_neg(
+        "DSB3_ML_D_MUT_TX", bytes(b), "DISCARD mutate tx stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD))
+    b[0:16] = bytes([0x22] * 16)
+    add_ml_neg(
+        "DSB3_ML_D_MUT_OP", bytes(b), "DISCARD mutate op stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD))
+    b[60:76] = bytes([0x23] * 16)
+    add_ml_neg(
+        "DSB3_ML_D_MUT_ACTOR", bytes(b), "DISCARD mutate actor stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD))
+    b[136:168] = bytes([0x66] * 32)  # expected_content_digest
+    add_ml_neg(
+        "DSB3_ML_D_MUT_CONTENT", bytes(b),
+        "DISCARD mutate content digest stale")
+    # expected_rev 3→9 with replay_rev fixed to 10 (off 348) for matrix validity
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD, expected_rev=3))
+    assert b[108:116] == be64(3) and b[348:356] == be64(4)
+    b[108:116] = be64(9)
+    b[348:356] = be64(10)
+    assert b[108:116] == be64(9) and b[348:356] == be64(10)
+    add_ml_neg(
+        "DSB3_ML_D_MUT_EXP_REV", bytes(b),
+        "DISCARD mutate expected_rev (+replay fix) stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD, reason=1))
+    b[168:172] = be32(2)
+    add_ml_neg(
+        "DSB3_ML_D_MUT_REASON", bytes(b),
+        "DISCARD mutate reason stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD, audit_len=1))
+    b[180] = 0x77
+    add_ml_neg(
+        "DSB3_ML_D_MUT_AUDIT", bytes(b),
+        "DISCARD mutate audit stale digest")
+    # discard audit_len 1→2 with zero pad at audit[1] so tail remains legal
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD, audit_len=1))
+    assert b[176:178] == be16(1) and b[181] == 0
+    b[176:178] = be16(2)
+    assert b[176:178] == be16(2)
+    add_ml_neg(
+        "DSB3_ML_D_MUT_AUD_LEN", bytes(b),
+        "DISCARD mutate audit_length stale digest")
+    b = bytearray(enc_ml(kind=ML_KIND_DISCARD))
+    b[116:132] = bytes([0x24] * 16)  # expected_event
+    b[44:60] = bytes([0x24] * 16)  # keep event==expected (matrix)
+    add_ml_neg(
+        "DSB3_ML_D_MUT_EXP_EVENT", bytes(b),
+        "DISCARD mutate expected_event+event stale digest")
+
+    # mutation: flip kind locus
+    bb_mut = bytearray(b_r_ok)
+    bb_mut[16:18] = be16(99)
+    add(id="DSB3_ML_MUT_KIND", suite="DSB3", op="body_decode",
+        expected_status="CORRUPT", family=6, subtype=0x52,
+        body_hex=hx(bytes(bb_mut)),
+        notes="mutation unknown kind at operation_kind locus")
+    ml_mut += 1
+
+    # typed common header / key negatives
+    k_ok, v_ok, _ = management_typed(body=b_r_ok)
+    v_pvd0 = enc_env_full(6, 0x52, 0, 1, ml_txn, ml_head, bytes(32), b_r_ok)
+    add_ml_neg_typed("DSB3_ML_PVD_ZERO", ml_key(ml_txn, ml_op), v_pvd0,
+                     "secondary PVD zero")
+    v_head0 = enc_env_full(6, 0x52, 0, 1, ml_txn, bytes(32), ml_pvd, b_r_ok)
+    add_ml_neg_typed("DSB3_ML_HEAD_ZERO", ml_key(ml_txn, ml_op), v_head0,
+                     "head zero")
+    v_pm = enc_env_full(
+        6, 0x52, 0, 1, bytes([0x11] * 16), ml_head, ml_pvd, b_r_ok)
+    add_ml_neg_typed("DSB3_ML_PRIMARY_MISMATCH",
+                     ml_key(ml_txn, ml_op), v_pm,
+                     "primary_id mismatch")
+    v_flags = enc_env_full(6, 0x52, 1, 1, ml_txn, ml_head, ml_pvd, b_r_ok)
+    add_ml_neg_typed("DSB3_ML_FLAGS_NZ", ml_key(ml_txn, ml_op), v_flags,
+                     "common flags nonzero")
+    v_rev0 = enc_env_full(6, 0x52, 0, 0, ml_txn, ml_head, ml_pvd, b_r_ok)
+    add_ml_neg_typed("DSB3_ML_REV0", ml_key(ml_txn, ml_op), v_rev0,
+                     "record_revision 0 (must be exact 1)")
+    v_rev2 = enc_env_full(6, 0x52, 0, 2, ml_txn, ml_head, ml_pvd, b_r_ok)
+    add_ml_neg_typed("DSB3_ML_REV2", ml_key(ml_txn, ml_op), v_rev2,
+                     "record_revision 2 (immutable exact 1)")
+    wrong_tx_key = ml_key(bytes([0xEE] * 16), ml_op)
+    add_ml_neg_typed("DSB3_ML_KEY_TX_MISMATCH", wrong_tx_key, v_ok,
+                     "key tx != body transaction_id")
+    wrong_op_key = ml_key(ml_txn, bytes([0xEF] * 16))
+    add_ml_neg_typed("DSB3_ML_KEY_OP_MISMATCH", wrong_op_key, v_ok,
+                     "key op != body operation_id")
+    # Wrong identity kind: direct ID128 instead of SHA256_COMPOSITE.
+    id128_kind_key = bkey(6, 0x52, 2, ml_txn)
+    add_ml_neg_typed(
+        "DSB3_ML_KEY_ID128_KIND", id128_kind_key, v_ok,
+        "key must be SHA256_COMPOSITE not ID128")
+    # Wrong composite subtype tag in key preimage
+    wrong_sub_key = bkey(6, 0x52, 5, composite(0x51, ml_txn + ml_op))
+    add_ml_neg_typed(
+        "DSB3_ML_KEY_COMP_SUBTYPE", wrong_sub_key, v_ok,
+        "composite subtype tag mismatch")
+
+    b3_cov["52"] = add_body_suite(
+        "MANAGEMENT_LEDGER", 6, 0x52, ml_pos, ml_neg, ml_mut, ml_rt)
+    assert b3_cov["52"]["positive"] >= 20
+    assert b3_cov["52"]["negative"] >= 40
+    assert b3_cov["52"]["mutation"] >= 1
+    assert b3_cov["52"]["roundtrip"] >= 12
+
     # Completeness: every D1-B1 subtype has >=1 positive body + typed
     for st in ("01", "60", "62", "64", "7d"):
         assert b1_cov[st]["positive"] >= 2
@@ -8883,6 +9607,7 @@ def build_document():
         "dsb3_subtype_42_positive": b3_cov["42"]["positive"],
         "dsb3_subtype_50_positive": b3_cov["50"]["positive"],
         "dsb3_subtype_51_positive": b3_cov["51"]["positive"],
+        "dsb3_subtype_52_positive": b3_cov["52"]["positive"],
     }
     assert primary_ok == 5
     assert enc_ok == 30  # all EXACT body encodes (service rev2 etc. are not OK)
@@ -8919,6 +9644,7 @@ def build_document():
     assert catalog["dsb3_subtype_42_positive"] > 0
     assert catalog["dsb3_subtype_50_positive"] > 0
     assert catalog["dsb3_subtype_51_positive"] > 0
+    assert catalog["dsb3_subtype_52_positive"] > 0
     assert catalog["dsb3_total_positive"] > 0
     assert catalog["dsb3_total_negative"] > 0
     # Structural: CS/AII/ATT/EV/RC only after their pre-slice.
@@ -8937,6 +9663,10 @@ def build_document():
     assert all(
         not v["id"].startswith("DSB3_RS_")
         for v in vectors[:PRE_B3L_VECTOR_COUNT_SNAPSHOT]
+    )
+    assert all(
+        not v["id"].startswith("DSB3_ML_")
+        for v in vectors[:PRE_B3M_VECTOR_COUNT_SNAPSHOT]
     )
     assert all(
         not v["id"].startswith("DSB3_DLV_")
@@ -8960,6 +9690,11 @@ def build_document():
     )
     # Kind9/10 42-byte re-pin changes early DSO2/DSW1 vectors inside pre-B3h.
     # Full prefix fingerprint is re-pinned at B3i cutover; stable 1025 checked above.
+    _pre_b3m_fp_final = vectors_fingerprint(
+        vectors[:PRE_B3M_VECTOR_COUNT_SNAPSHOT])
+    assert _pre_b3m_fp_final == PRE_B3M_FULL_FINGERPRINT_PIN, (
+        f"post-append pre-B3m full fingerprint drift: got {_pre_b3m_fp_final}"
+    )
     _pre_b3l_fp_final = vectors_fingerprint(
         vectors[:PRE_B3L_VECTOR_COUNT_SNAPSHOT])
     assert _pre_b3l_fp_final == PRE_B3L_FULL_FINGERPRINT_PIN, (
@@ -9032,7 +9767,7 @@ def build_document():
 
     doc = {
         "version": 1,
-        "format": "ninlil-domain-store-v1-d1b3l",
+        "format": "ninlil-domain-store-v1-d1b3m",
         "scope": (
             "D1-A framing + D1-B1 bodies (01/60/62/64/7d) + D1-B2 bodies "
             "(10/11/20-25) + D1-B3a body "
@@ -9045,13 +9780,14 @@ def build_document():
             "correction kind9/10 phase) + D1-B3j body (42 REVERSE_REPLY "
             "exact330/state matrix) + D1-B3k body (50 EVENT_SPOOL "
             "exact300/state-cause matrix) + D1-B3l body (51 RETRY_SUMMARY "
-            "CUMULATIVE84/RECENT80 kind-slot-fold); not full D1 catalog"
+            "CUMULATIVE84/RECENT80 kind-slot-fold) + D1-B3m body "
+            "(52 MANAGEMENT_LEDGER exact364/kind15-16 matrix); not full D1 catalog"
         ),
         "required_workspace_bytes_definition": (
             "Additional caller-provided scratch beyond explicit inputs, outputs, "
             "and state/context objects. Current D1-A/D1-B1/D1-B2/D1-B3a/D1-B3b/"
             "D1-B3c/D1-B3d/D1-B3e/D1-B3f/D1-B3g/D1-B3h/D1-B3i/D1-B3j/D1-B3k/"
-            "D1-B3l APIs "
+            "D1-B3l/D1-B3m APIs "
             "have no workspace parameter; value is 0."
         ),
         "catalog": catalog,

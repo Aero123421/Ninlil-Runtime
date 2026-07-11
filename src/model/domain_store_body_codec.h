@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..l.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..m.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -35,6 +35,8 @@ extern "C" {
  *          (live ANCHOR PVD / grant re-verify / BLOB cardinality are D3)
  *   D1-B3l: family 6 51 RETRY_SUMMARY pure body + same-record kind/slot/fold
  *          (live ANCHOR PVD / cross-row fold/cardinality are D3)
+ *   D1-B3m: family 6 52 MANAGEMENT_LEDGER pure body + same-record kind matrix
+ *          (live SPOOL/STATE/RESERVATION counters / sequence upper bound are D3)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -103,6 +105,15 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_ATTEMPT_MAX \
     NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
 #define NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW ((uint64_t)4u)
+/* MANAGEMENT_LEDGER (0x52): exact fixed 364; subtype max 1024 (§8.6 D1-B3m). */
+#define NINLIL_MODEL_DOMAIN_BODY_MANAGEMENT_LEDGER_BYTES ((uint32_t)364u)
+#define NINLIL_MODEL_DOMAIN_BODY_MANAGEMENT_LEDGER_MAX ((uint32_t)1024u)
+#define NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES ((uint32_t)128u)
+#define NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_RESUME ((uint16_t)15u)
+#define NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_DISCARD ((uint16_t)16u)
+/* Content digest algorithm closed set (docs17 §8.6; 0 NONE / 1 SHA-256). */
+#define NINLIL_MODEL_DOMAIN_CONTENT_DIGEST_NONE ((uint16_t)0u)
+#define NINLIL_MODEL_DOMAIN_CONTENT_DIGEST_SHA256 ((uint16_t)1u)
 #define NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_SERVICE_SLOT_BYTES ((uint32_t)240u)
 #define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
 #define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
@@ -948,6 +959,42 @@ typedef struct ninlil_model_domain_body_retry_summary {
 } ninlil_model_domain_body_retry_summary_t;
 
 /*
+ * MANAGEMENT_LEDGER (0x52). Exact 364-byte fixed body (docs17 §8.6 D1-B3m).
+ * Key COMPOSITE(52, transaction_id[16] || operation_id[16]) plain components
+ * (no RAW16). Immutable record_revision=1. Canonical request digest is
+ * recomputed from body fields only (docs12 §10 / docs17 §5.1). Live
+ * SPOOL/STATE/RESERVATION counters and family-3 sequence upper bound are D3.
+ */
+typedef struct ninlil_model_domain_body_management_ledger {
+    uint8_t operation_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint16_t operation_kind;
+    uint16_t reserved0;
+    uint64_t ordered_sequence;
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t actor_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t canonical_request_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t expected_spool_revision;
+    uint8_t expected_event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint16_t expected_content_digest_algorithm;
+    uint16_t reserved1;
+    uint8_t expected_content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t request_reason;
+    uint32_t acknowledge_flag;
+    uint16_t audit_length;
+    uint16_t reserved2;
+    uint8_t audit_bytes[NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES];
+    uint8_t audit_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t audit_committed_at_ms;
+    uint32_t replay_result_kind;
+    uint32_t replay_result_reason;
+    uint64_t replay_retry_cycle_id;
+    uint64_t replay_spool_revision;
+    uint32_t replay_spool_released;
+    uint32_t reserved3;
+} ninlil_model_domain_body_management_ledger_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -1055,6 +1102,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_reverse_reply_t reverse_reply;
         ninlil_model_domain_body_event_spool_t event_spool;
         ninlil_model_domain_body_retry_summary_t retry_summary;
+        ninlil_model_domain_body_management_ledger_t management_ledger;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -1533,6 +1581,21 @@ ninlil_status_t ninlil_model_domain_decode_body_retry_summary(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_retry_summary_t *out_body);
 
+/* --- MANAGEMENT_LEDGER (0x52) --- */
+/* Returns exact 364, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_management_ledger_encoded_length(
+    const ninlil_model_domain_body_management_ledger_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_management_ledger(
+    const ninlil_model_domain_body_management_ledger_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_management_ledger(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_management_ledger_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -1578,7 +1641,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..l.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..m.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -1638,7 +1701,10 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       RETRY_SUMMARY live TRANSACTION_ANCHOR PVD / CUMULATIVE admission
  *       exact 1 + RECENT 0..4 cardinality / fold-before-replace ordering /
  *       counter overflow→counter_saturated + COUNTER_EXHAUSTED park / slot
- *       uniqueness (B3l proves same-record body/key/kind-slot-fold/bools only)
+ *       uniqueness (B3l proves same-record body/key/kind-slot-fold/bools only);
+ *       MANAGEMENT_LEDGER live SPOOL/STATE/RESERVATION counters / family 3
+ *       sequence upper bound / writer E2E (B3m proves same-record body/key/
+ *       kind15-16 matrix / canonical digest recompute / rev1 only)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

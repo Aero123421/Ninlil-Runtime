@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..l body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..m body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -56,6 +56,8 @@
 
 static const char PREIMAGE_INVARIANT[] = "NINLIL-DOMAIN-INVARIANT-V1";
 static const char PREIMAGE_BLOB_ID[] = "NINLIL-DOMAIN-BLOB-ID-V1";
+static const char PREIMAGE_EVENT_RESUME[] = "NINLIL-M1A-EVENT-RESUME";
+static const char PREIMAGE_EVENT_DISCARD[] = "NINLIL-M1A-EVENT-DISCARD";
 
 static const uint8_t KEY_ROOT[8] = {
     0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x01u
@@ -9373,6 +9375,462 @@ ninlil_status_t ninlil_model_domain_decode_body_retry_summary(
     return NINLIL_OK;
 }
 
+/* --- MANAGEMENT_LEDGER (0x52) docs17 §8.6 D1-B3m / docs12 §10 --- */
+
+/*
+ * Independent streaming SHA-256 of management request preimage from body
+ * fields only (docs17 §5.1 / docs12 §10). Never hashes ABI header/pointer/
+ * reserved/padding. audit_length is widened u16→u32 for metadata_length.
+ */
+static int management_canonical_digest_matches(
+    const ninlil_model_domain_body_management_ledger_t *body)
+{
+    ninlil_model_domain_sha256_ctx_t ctx;
+    ninlil_model_domain_digest_t dig;
+    uint8_t scratch[8];
+    ninlil_status_t status;
+
+    if (body == NULL) {
+        return 0;
+    }
+    ninlil_model_domain_sha256_init(&ctx);
+    if (body->operation_kind
+        == NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_RESUME) {
+        status = ninlil_model_domain_sha256_update(
+            &ctx, (const uint8_t *)PREIMAGE_EVENT_RESUME,
+            (uint32_t)(sizeof(PREIMAGE_EVENT_RESUME) - 1u));
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->transaction_id, 16u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->operation_id, 16u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->actor_id, 16u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        ninlil_model_domain_encode_u64_be(
+            scratch, body->expected_spool_revision);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 8u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        ninlil_model_domain_encode_u32_be(scratch, body->request_reason);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 4u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        /* metadata_length:u32 — widen persist audit_length:u16 (no overflow). */
+        ninlil_model_domain_encode_u32_be(
+            scratch, (uint32_t)body->audit_length);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 4u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        if (body->audit_length > 0u) {
+            status = ninlil_model_domain_sha256_update(
+                &ctx, body->audit_bytes, (uint32_t)body->audit_length);
+            if (status != NINLIL_OK) {
+                return 0;
+            }
+        }
+    } else if (body->operation_kind
+        == NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_DISCARD) {
+        status = ninlil_model_domain_sha256_update(
+            &ctx, (const uint8_t *)PREIMAGE_EVENT_DISCARD,
+            (uint32_t)(sizeof(PREIMAGE_EVENT_DISCARD) - 1u));
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->transaction_id, 16u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->operation_id, 16u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->actor_id, 16u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->expected_event_id, 16u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        ninlil_model_domain_encode_u16_be(
+            scratch, body->expected_content_digest_algorithm);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 2u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        status = ninlil_model_domain_sha256_update(
+            &ctx, body->expected_content_digest, 32u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        ninlil_model_domain_encode_u64_be(
+            scratch, body->expected_spool_revision);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 8u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        ninlil_model_domain_encode_u32_be(scratch, body->request_reason);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 4u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        ninlil_model_domain_encode_u32_be(scratch, body->acknowledge_flag);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 4u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        ninlil_model_domain_encode_u32_be(
+            scratch, (uint32_t)body->audit_length);
+        status = ninlil_model_domain_sha256_update(&ctx, scratch, 4u);
+        if (status != NINLIL_OK) {
+            return 0;
+        }
+        if (body->audit_length > 0u) {
+            status = ninlil_model_domain_sha256_update(
+                &ctx, body->audit_bytes, (uint32_t)body->audit_length);
+            if (status != NINLIL_OK) {
+                return 0;
+            }
+        }
+    } else {
+        return 0;
+    }
+    status = ninlil_model_domain_sha256_final(&ctx, &dig);
+    if (status != NINLIL_OK) {
+        return 0;
+    }
+    return memcmp(
+               dig.bytes, body->canonical_request_digest,
+               NINLIL_MODEL_DOMAIN_DIGEST_BYTES)
+        == 0;
+}
+
+static int management_audit_tail_zero(
+    const ninlil_model_domain_body_management_ledger_t *body)
+{
+    uint32_t i;
+
+    if (body == NULL
+        || body->audit_length < 1u
+        || body->audit_length
+            > NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES) {
+        return 0;
+    }
+    for (i = (uint32_t)body->audit_length;
+         i < NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES;
+         ++i) {
+        if (body->audit_bytes[i] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/*
+ * Kind matrix (docs17 §8.6):
+ * 15 EVENT_RESUME: algo0; expected_event/digest zero; ack0; audit epoch+time
+ *   zero; spool_released0; reason1..5; replay kind2 + reason NONE; cycle NZ;
+ *   revision = expected+1.
+ * 16 EVENT_DISCARD: algo1; expected_event/digest NZ; event==expected; ack1;
+ *   audit epoch NZ (time may0); spool_released1; reason1..4; replay kind2 +
+ *   OPERATOR_DISCARDED; cycle0; revision = expected+1.
+ */
+static int management_ledger_fields_ok(
+    const ninlil_model_domain_body_management_ledger_t *body)
+{
+    uint64_t expect_replay_rev;
+
+    if (body == NULL
+        || body->reserved0 != 0u
+        || body->reserved1 != 0u
+        || body->reserved2 != 0u
+        || body->reserved3 != 0u
+        || id_is_zero(body->operation_id)
+        || id_is_zero(body->transaction_id)
+        || id_is_zero(body->event_id)
+        || id_is_zero(body->actor_id)
+        || body->ordered_sequence < 1u
+        || body->expected_spool_revision < 1u
+        || body->expected_spool_revision == UINT64_MAX
+        || body->audit_length < 1u
+        || body->audit_length > NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES
+        || !management_audit_tail_zero(body)) {
+        return 0;
+    }
+    /* expected_spool_revision exact 1..UINT64_MAX-1; +1 cannot overflow. */
+    expect_replay_rev = body->expected_spool_revision + 1u;
+    if (body->replay_spool_revision != expect_replay_rev) {
+        return 0;
+    }
+
+    if (body->operation_kind
+        == NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_RESUME) {
+        if (body->expected_content_digest_algorithm
+                != NINLIL_MODEL_DOMAIN_CONTENT_DIGEST_NONE
+            || !id_is_zero(body->expected_event_id)
+            || !digest_is_zero(body->expected_content_digest)
+            || body->acknowledge_flag != 0u
+            || !id_is_zero(body->audit_clock_epoch)
+            || body->audit_committed_at_ms != 0u
+            || body->replay_spool_released != 0u
+            || body->request_reason
+                < NINLIL_RESUME_CONNECTIVITY_REMEDIATED
+            || body->request_reason > NINLIL_RESUME_TEST
+            || body->replay_result_kind
+                != NINLIL_EVENT_RESUME_ALREADY_RESUMED
+            || body->replay_result_reason != NINLIL_REASON_NONE
+            || body->replay_retry_cycle_id < 1u) {
+            return 0;
+        }
+    } else if (body->operation_kind
+        == NINLIL_MODEL_DOMAIN_MANAGEMENT_KIND_EVENT_DISCARD) {
+        if (body->expected_content_digest_algorithm
+                != NINLIL_MODEL_DOMAIN_CONTENT_DIGEST_SHA256
+            || id_is_zero(body->expected_event_id)
+            || digest_is_zero(body->expected_content_digest)
+            || memcmp(
+                   body->event_id, body->expected_event_id,
+                   NINLIL_MODEL_DOMAIN_ID_BYTES)
+                != 0
+            || body->acknowledge_flag != 1u
+            || id_is_zero(body->audit_clock_epoch)
+            || body->replay_spool_released != 1u
+            || body->request_reason
+                < NINLIL_DISCARD_DEVICE_DECOMMISSIONED
+            || body->request_reason > NINLIL_DISCARD_TEST_CLEANUP
+            || body->replay_result_kind
+                != NINLIL_EVENT_DISCARD_ALREADY_DISCARDED
+            || body->replay_result_reason
+                != NINLIL_REASON_OPERATOR_DISCARDED_WITHOUT_REQUIRED_RECEIPT
+            || body->replay_retry_cycle_id != 0u) {
+            return 0;
+        }
+    } else {
+        return 0;
+    }
+
+    return management_canonical_digest_matches(body);
+}
+
+uint32_t ninlil_model_domain_body_management_ledger_encoded_length(
+    const ninlil_model_domain_body_management_ledger_t *body)
+{
+    if (body == NULL || !management_ledger_fields_ok(body)) {
+        return 0u;
+    }
+    return NINLIL_MODEL_DOMAIN_BODY_MANAGEMENT_LEDGER_BYTES;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_management_ledger(
+    const ninlil_model_domain_body_management_ledger_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_alias_ok(
+            body, body == NULL ? 0u : sizeof(*body),
+            out_bytes, capacity, out_length)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_management_ledger_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL) || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    o = 0u;
+    (void)memcpy(&out_bytes[o], body->operation_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->operation_kind);
+    o += 2u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->reserved0);
+    o += 2u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->ordered_sequence);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->transaction_id, 16u);
+    o += 16u;
+    (void)memcpy(&out_bytes[o], body->event_id, 16u);
+    o += 16u;
+    (void)memcpy(&out_bytes[o], body->actor_id, 16u);
+    o += 16u;
+    (void)memcpy(
+        &out_bytes[o], body->canonical_request_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->expected_spool_revision);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->expected_event_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u16_be(
+        &out_bytes[o], body->expected_content_digest_algorithm);
+    o += 2u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->reserved1);
+    o += 2u;
+    (void)memcpy(&out_bytes[o], body->expected_content_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->request_reason);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->acknowledge_flag);
+    o += 4u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->audit_length);
+    o += 2u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->reserved2);
+    o += 2u;
+    (void)memcpy(
+        &out_bytes[o], body->audit_bytes,
+        NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES);
+    o += NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES;
+    (void)memcpy(&out_bytes[o], body->audit_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->audit_committed_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->replay_result_kind);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->replay_result_reason);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->replay_retry_cycle_id);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->replay_spool_revision);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->replay_spool_released);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reserved3);
+    o += 4u;
+    if (o != NINLIL_MODEL_DOMAIN_BODY_MANAGEMENT_LEDGER_BYTES) {
+        *out_length = 0u;
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_management_ledger(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_management_ledger_t *out_body)
+{
+    ninlil_model_domain_body_management_ledger_t tmp;
+    uint32_t o = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length
+            != NINLIL_MODEL_DOMAIN_BODY_MANAGEMENT_LEDGER_BYTES) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    (void)memcpy(tmp.operation_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.operation_kind =
+        ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    tmp.reserved0 = ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    tmp.ordered_sequence =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.transaction_id, &encoded.data[o], 16u);
+    o += 16u;
+    (void)memcpy(tmp.event_id, &encoded.data[o], 16u);
+    o += 16u;
+    (void)memcpy(tmp.actor_id, &encoded.data[o], 16u);
+    o += 16u;
+    (void)memcpy(tmp.canonical_request_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.expected_spool_revision =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.expected_event_id, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.expected_content_digest_algorithm =
+        ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    tmp.reserved1 = ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    (void)memcpy(tmp.expected_content_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.request_reason =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.acknowledge_flag =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.audit_length =
+        ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    tmp.reserved2 = ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    (void)memcpy(
+        tmp.audit_bytes, &encoded.data[o],
+        NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES);
+    o += NINLIL_MODEL_DOMAIN_MANAGEMENT_AUDIT_BYTES;
+    (void)memcpy(tmp.audit_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.audit_committed_at_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.replay_result_kind =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.replay_result_reason =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.replay_retry_cycle_id =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.replay_spool_revision =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.replay_spool_released =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reserved3 = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+
+    if (o != NINLIL_MODEL_DOMAIN_BODY_MANAGEMENT_LEDGER_BYTES
+        || !management_ledger_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -9409,6 +9867,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_REVERSE_REPLY:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_SPOOL:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RETRY_SUMMARY:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_MANAGEMENT_LEDGER:
         return 1;
     default:
         return 0;
@@ -10743,6 +11202,49 @@ static ninlil_status_t validate_header_body_local(
                 key->identity_length)
             || !header_primary_id_eq(
                    env, out->retry_summary.transaction_id)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_MANAGEMENT_LEDGER) {
+        uint8_t components[16u + 16u];
+        ninlil_bytes_view_t cv;
+
+        /*
+         * MANAGEMENT_LEDGER same-record (docs17 §8.6 D1-B3m):
+         * - family 6 secondary: flags 0, head NZ, PVD NZ
+         * - immutable record_revision exact 1
+         * - key COMPOSITE(52, tx16||op16) plain components (no RAW16)
+         * - primary_id == body transaction_id
+         * - body kind15/16 matrix + canonical digest recompute above
+         * D3: live SPOOL/STATE/RESERVATION counters / sequence upper bound.
+         */
+        if (env->header.record_revision != 1u
+            || env->header.flags != 0u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_management_ledger(
+            env->body, &out->management_ledger);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        (void)memcpy(
+            components, out->management_ledger.transaction_id, 16u);
+        (void)memcpy(
+            &components[16], out->management_ledger.operation_id, 16u);
+        cv.data = components;
+        cv.length = 32u;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_MANAGEMENT_LEDGER, cv,
+                key->identity, key->identity_length)
+            || !header_primary_id_eq(
+                   env, out->management_ledger.transaction_id)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;
