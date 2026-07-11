@@ -461,15 +461,64 @@ static int expect_validation(
 {
     ninlil_model_runtime_validation_result_t result;
     ninlil_model_capacity_limits_t zero_limits;
+    ninlil_model_runtime_config_projection_t zero_config;
 
     (void)memset(&result, 0xa5, sizeof(result));
     (void)memset(&zero_limits, 0, sizeof(zero_limits));
+    (void)memset(&zero_config, 0, sizeof(zero_config));
     return ninlil_model_runtime_validate_and_derive(
                config, platform, &result) == status
         && result.status == status
         && result.failure_field == field
         && memcmp(&result.capacity_limits, &zero_limits,
-            sizeof(zero_limits)) == 0;
+            sizeof(zero_limits)) == 0
+        && memcmp(&result.accepted_config, &zero_config,
+            sizeof(zero_config)) == 0;
+}
+
+static int accepted_config_matches(
+    const ninlil_model_runtime_config_projection_t *accepted,
+    const ninlil_runtime_config_t *config)
+{
+#define ACCEPTED_LIMIT_MATCHES(field) \
+    (accepted->limits.field == config->limits.field)
+    return accepted->role == config->role
+        && accepted->environment == config->environment
+        && memcmp(accepted->runtime_id.bytes, config->runtime_id.bytes, 16u) == 0
+        && accepted->identity_flags == config->local_identity.flags
+        && memcmp(accepted->device_id.bytes,
+            config->local_identity.device_id.bytes, 16u) == 0
+        && memcmp(accepted->installation_id.bytes,
+            config->local_identity.installation_id.bytes, 16u) == 0
+        && memcmp(accepted->site_domain_id.bytes,
+            config->local_identity.site_domain_id.bytes, 16u) == 0
+        && accepted->binding_epoch == config->local_identity.binding_epoch
+        && accepted->membership_epoch == config->local_identity.membership_epoch
+        && ACCEPTED_LIMIT_MATCHES(max_services)
+        && ACCEPTED_LIMIT_MATCHES(max_nonterminal_transactions)
+        && ACCEPTED_LIMIT_MATCHES(max_targets_per_transaction)
+        && ACCEPTED_LIMIT_MATCHES(max_logical_payload_bytes)
+        && ACCEPTED_LIMIT_MATCHES(max_durable_outbox_payload_bytes)
+        && ACCEPTED_LIMIT_MATCHES(max_attempts_per_target_per_cycle)
+        && ACCEPTED_LIMIT_MATCHES(max_cancel_attempts_per_transaction)
+        && ACCEPTED_LIMIT_MATCHES(max_evidence_per_target)
+        && ACCEPTED_LIMIT_MATCHES(max_retained_terminal_transactions)
+        && ACCEPTED_LIMIT_MATCHES(max_nonterminal_deliveries)
+        && ACCEPTED_LIMIT_MATCHES(max_event_spool_count)
+        && ACCEPTED_LIMIT_MATCHES(max_event_spool_bytes)
+        && ACCEPTED_LIMIT_MATCHES(max_result_cache_entries)
+        && ACCEPTED_LIMIT_MATCHES(max_retained_dispositions)
+        && ACCEPTED_LIMIT_MATCHES(max_ingress_per_step)
+        && ACCEPTED_LIMIT_MATCHES(max_callbacks_per_step)
+        && ACCEPTED_LIMIT_MATCHES(max_state_transitions_per_step)
+        && ACCEPTED_LIMIT_MATCHES(max_bearer_sends_per_step)
+        && ACCEPTED_LIMIT_MATCHES(max_deferred_tokens)
+        && accepted->terminal_retention_ms == config->terminal_retention_ms
+        && accepted->result_cache_retention_ms
+            == config->result_cache_retention_ms
+        && accepted->observation_retention_ms
+            == config->observation_retention_ms;
+#undef ACCEPTED_LIMIT_MATCHES
 }
 
 static int test_validation_and_precedence(void)
@@ -483,6 +532,7 @@ static int test_validation_and_precedence(void)
         &config, &fixture.platform, &result) == NINLIL_OK);
     REQUIRE(result.status == NINLIL_OK
         && result.failure_field == NINLIL_MODEL_RUNTIME_VALIDATION_NONE);
+    REQUIRE(accepted_config_matches(&result.accepted_config, &config));
     REQUIRE(result.capacity_limits.values[
         NINLIL_RESOURCE_SERVICE - 1u] == 16u);
     REQUIRE(result.capacity_limits.values[

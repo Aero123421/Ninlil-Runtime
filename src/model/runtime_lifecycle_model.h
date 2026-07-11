@@ -36,10 +36,49 @@ typedef enum ninlil_model_runtime_validation_failure_field {
     NINLIL_MODEL_RUNTIME_VALIDATION_LIMIT_PROFILE_UPPER = 20
 } ninlil_model_runtime_validation_failure_field_t;
 
+typedef struct ninlil_model_runtime_resource_limits_projection {
+    uint32_t max_services;
+    uint32_t max_nonterminal_transactions;
+    uint32_t max_targets_per_transaction;
+    uint32_t max_logical_payload_bytes;
+    uint64_t max_durable_outbox_payload_bytes;
+    uint32_t max_attempts_per_target_per_cycle;
+    uint32_t max_cancel_attempts_per_transaction;
+    uint32_t max_evidence_per_target;
+    uint32_t max_retained_terminal_transactions;
+    uint32_t max_nonterminal_deliveries;
+    uint32_t max_event_spool_count;
+    uint64_t max_event_spool_bytes;
+    uint32_t max_result_cache_entries;
+    uint32_t max_retained_dispositions;
+    uint32_t max_ingress_per_step;
+    uint32_t max_callbacks_per_step;
+    uint32_t max_state_transitions_per_step;
+    uint32_t max_bearer_sends_per_step;
+    uint32_t max_deferred_tokens;
+} ninlil_model_runtime_resource_limits_projection_t;
+
+typedef struct ninlil_model_runtime_config_projection {
+    ninlil_role_t role;
+    ninlil_environment_t environment;
+    ninlil_id128_t runtime_id;
+    uint32_t identity_flags;
+    ninlil_id128_t device_id;
+    ninlil_id128_t installation_id;
+    ninlil_id128_t site_domain_id;
+    uint64_t binding_epoch;
+    uint64_t membership_epoch;
+    ninlil_model_runtime_resource_limits_projection_t limits;
+    uint64_t terminal_retention_ms;
+    uint64_t result_cache_retention_ms;
+    uint64_t observation_retention_ms;
+} ninlil_model_runtime_config_projection_t;
+
 typedef struct ninlil_model_runtime_validation_result {
     ninlil_status_t status;
     ninlil_model_runtime_validation_failure_field_t failure_field;
     ninlil_model_capacity_limits_t capacity_limits;
+    ninlil_model_runtime_config_projection_t accepted_config;
 } ninlil_model_runtime_validation_result_t;
 
 typedef struct ninlil_model_runtime_create_gate {

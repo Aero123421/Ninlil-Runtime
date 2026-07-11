@@ -626,6 +626,7 @@ Storage contract:
 - 1 handleにつき同時に開けるwrite transactionは1つです。nested transactionは禁止です。
 - read transactionはbegin時点のstable snapshotを提供します。
 - keyは1〜255 byte、valueは0〜`NINLIL_M1A_MAX_STORAGE_VALUE_BYTES`（inclusive）です。Coreもproviderもこれを超えるsingle valueを発行/受理せず、providerはmutation前に`NINLIL_STORAGE_NO_SPACE`を返します。Total entry/byte limitは`capacity.max_entries/max_bytes`で別に検査します。
+- Storage `put`が`OK`を返す場合、providerはreturn前にkey/valueをtransaction-owned stagingへdeep-copy済みでなければなりません。Callerはreturn直後から両bufferを再利用できます。Error時にproviderはcaller bufferのownershipを取得せず、transaction stagingも変更しません。`commit` / `rollback`によるtransaction consume後はstagingを破棄します。SQLite providerはbind時に即時copyまたは`SQLITE_TRANSIENT`相当を用い、caller buffer lifetimeへ依存しません。
 - iteratorはprefix一致keyをunsigned byte lexicographic昇順で1回ずつ返します。
 - `iter_next`終端は`NINLIL_STORAGE_NOT_FOUND`です。
 - `get` / `iter_next`のmutable buffer規則は次のclosed tableに従います。Input `length != 0`、capacity/data nullability違反では`NINLIL_STORAGE_CORRUPT`を返し、length/dataを変更しません。次表はvalid inputにだけ適用します。
@@ -1256,13 +1257,17 @@ Payloadは次のfieldだけをexact order/widthで持ちます。
 - Type 3 counter/cursor、payload 16 bytes: `counter_kind:u32`、`value:u64`、`exhausted_marker:u32`です。Value totalは32 bytesです。Kindはkey suffixと一致し、markerはexact 0/1、kind 4では0必須です。Kind 1..3のmarker 1はvalue `UINT64_MAX`を要求しますが、value MAXだけでmarker 1を推測しません。Initial value/markerは全kind 0です。Live owner/indexとの大小、orphan、wrap痕跡の相互validationはL2b domain recovery scanで行い、codec単体の成功条件へ偽装しません。
 - Type 4 capacity metadata、payload 52 bytes: `resource_kind:u32`、`limit:u64`、`used:u64`、`reserved:u64`、`high_water:u64`、`capacity_epoch:u64`、`blocked:u32`、`counter_exhausted:u32`です。Value totalは68 bytesです。Kindはkey suffix、limitはprofileからのchecked derivationとexact一致し、booleanはexact 0/1、epochはnon-zero、checked `used + reserved <= high_water <= limit`です。`counter_exhausted=1`はepoch MAXかつblocked 0を要求しますが、epoch MAXだけでmarkerを推測しません。Initialは11 kindすべてused/reserved/high-water 0、epoch 1、blocked/exhausted 0で、role非使用kindもrecordを省略しません。
 
-Initial bootstrap groupはprofile 1、identity 1、counter 4、capacity 11のexact 17 recordsです。上記codecではStorage portable usageがexact 17 entries / 1,583 logical bytes（`16 + key_length + value_length`）です。17 recordsをkey unsigned-byte lexicographic順にstageし、`runtime.before_namespace_binding_commit`後に1回だけ`commit(FULL)`します。Commit OK後だけ`runtime.after_namespace_binding_commit`へ到達します。Initial identityはこのHC13 groupに含め、identity-rotation hook occurrenceは0です。
+Initial bootstrap groupはprofile 1、identity 1、counter 4、capacity 11のexact 17 recordsです。上記codecではencoded key+valueがexact 1,311 bytes、Storage portable usageがexact 17 entries / 1,583 logical bytes（`16 + key_length + value_length`）です。17 recordsをkey unsigned-byte lexicographic順にstageし、`runtime.before_namespace_binding_commit`後に1回だけ`commit(FULL)`します。Commit OK後だけ`runtime.after_namespace_binding_commit`へ到達します。Initial identityはこのHC13 groupに含め、identity-rotation hook occurrenceは0です。
 
 同一read snapshotで17/17 presentはexisting、0/17かつnamespace全体にkey 0件だけをnew、1..16/17は`NINLIL_E_STORAGE_CORRUPT`と分類します。0/17でもcurrent keyspaceの別keyまたはunrecognized private dataがあればemptyとみなさずcorrupt、recognizable future keyspace/profile versionは`NINLIL_E_UNSUPPORTED`です。Envelope integrityと17-record completenessをprofile compatibilityより先に検査します。Profile exact mismatchは`NINLIL_E_UNSUPPORTED`、write/recovery mutation/Bearer open 0です。
 
 Initial commitが`COMMIT_UNKNOWN`ならsame transactionをretryせずStorageをclose/fenceし、`NINLIL_E_STORAGE_COMMIT_UNKNOWN`を返します。次createは同一snapshotの17/17をcommitted truth、0/17かつemptyをnon-committed truthとしてauthoritativeに扱い、partialをcorruptにします。Current identity rotationはsingle Type 2 replacementなので、unknown後のold/new exact valueがauthoritative truthです。これはbootstrap/identityだけのclosed recoveryであり、family 6を使うmulti-record business operationのoperation ID、witness、retention、all-present/all-absent read setは別途固定するまで未完了です。
 
 L2aはkey builder、envelope/profile/identity/counter/capacity codec、CRC、17-record presence classification、profile compare、identity forward-rotation判定だけを行うpure modelで、Storage Port callとRuntime bodyを持ちません。L2bはStorage open、single-snapshot load、FULL bootstrap、Stage 5 journal/domain recovery、counter/capacity相互validation、durable health-source scan、identity rotation、cleanup/status mappingを担当します。Clock durable baseline record/sourceはこのkeyspaceへ追加せず、CR8の別未決事項のままです。
+
+L2a2 encoded snapshotの`values[i]`はexact `key_id=i+1`へ対応し、17 viewとそのbyteはvalidation call中だけborrowされます。Validated snapshotは17件すべてのtyped integrity成功後にだけ生成され、profile/identity decisionはこのprovenanceを持つ型だけをstored側入力にします。Compact planはStage1 successが発行したheader/pointer/reserved無しaccepted-config projectionだけから生成し、success後はimmutableです。`record_at`はplanをcall中borrowし、caller-owned単一scratchへ1 recordを生成します。Scratch lifetimeはそのStorage `put` returnまでで、`put: OK`のdeep-copy後に直ちに再利用できます。全object/view byte rangeはpairwise non-overlapで、alias/address overflowは全range不変の`NINLIL_E_INVALID_ARGUMENT`、non-alias failureはoutput all-zeroです。
+
+Existing snapshotを17 encoded valueとvalidated projectionの両方で同時常駐させるか、incremental validationへ縮小するかはL2bのbounded Runtime-owned memory region設計で固定します。L2a2のhost-side aggregate型をそのままESP stackへ置くことは決定していません。Production-private target分離はL2b開始前の必須gateです。
 
 ## 7. Service Descriptorとcallback
 

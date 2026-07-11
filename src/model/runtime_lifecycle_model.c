@@ -50,8 +50,51 @@ static void set_validation_failure(
 {
     (void)memset(&result->capacity_limits, 0,
         sizeof(result->capacity_limits));
+    (void)memset(&result->accepted_config, 0,
+        sizeof(result->accepted_config));
     result->status = status;
     result->failure_field = field;
+}
+
+static void project_accepted_config(
+    const ninlil_runtime_config_t *config,
+    ninlil_model_runtime_config_projection_t *projection)
+{
+    projection->role = config->role;
+    projection->environment = config->environment;
+    projection->runtime_id = config->runtime_id;
+    projection->identity_flags = config->local_identity.flags;
+    projection->device_id = config->local_identity.device_id;
+    projection->installation_id = config->local_identity.installation_id;
+    projection->site_domain_id = config->local_identity.site_domain_id;
+    projection->binding_epoch = config->local_identity.binding_epoch;
+    projection->membership_epoch = config->local_identity.membership_epoch;
+#define COPY_ACCEPTED_LIMIT(field) \
+    projection->limits.field = config->limits.field
+    COPY_ACCEPTED_LIMIT(max_services);
+    COPY_ACCEPTED_LIMIT(max_nonterminal_transactions);
+    COPY_ACCEPTED_LIMIT(max_targets_per_transaction);
+    COPY_ACCEPTED_LIMIT(max_logical_payload_bytes);
+    COPY_ACCEPTED_LIMIT(max_durable_outbox_payload_bytes);
+    COPY_ACCEPTED_LIMIT(max_attempts_per_target_per_cycle);
+    COPY_ACCEPTED_LIMIT(max_cancel_attempts_per_transaction);
+    COPY_ACCEPTED_LIMIT(max_evidence_per_target);
+    COPY_ACCEPTED_LIMIT(max_retained_terminal_transactions);
+    COPY_ACCEPTED_LIMIT(max_nonterminal_deliveries);
+    COPY_ACCEPTED_LIMIT(max_event_spool_count);
+    COPY_ACCEPTED_LIMIT(max_event_spool_bytes);
+    COPY_ACCEPTED_LIMIT(max_result_cache_entries);
+    COPY_ACCEPTED_LIMIT(max_retained_dispositions);
+    COPY_ACCEPTED_LIMIT(max_ingress_per_step);
+    COPY_ACCEPTED_LIMIT(max_callbacks_per_step);
+    COPY_ACCEPTED_LIMIT(max_state_transitions_per_step);
+    COPY_ACCEPTED_LIMIT(max_bearer_sends_per_step);
+    COPY_ACCEPTED_LIMIT(max_deferred_tokens);
+#undef COPY_ACCEPTED_LIMIT
+    projection->terminal_retention_ms = config->terminal_retention_ms;
+    projection->result_cache_retention_ms =
+        config->result_cache_retention_ms;
+    projection->observation_retention_ms = config->observation_retention_ms;
 }
 
 static int required_platform_pointers_are_present(
@@ -435,6 +478,7 @@ ninlil_status_t ninlil_model_runtime_validate_and_derive(
     out_result->status = NINLIL_OK;
     out_result->failure_field = NINLIL_MODEL_RUNTIME_VALIDATION_NONE;
     out_result->capacity_limits = derived;
+    project_accepted_config(config, &out_result->accepted_config);
     return NINLIL_OK;
 }
 

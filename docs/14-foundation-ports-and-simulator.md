@@ -335,6 +335,8 @@ READ_ONLY cleanup rollbackがOK以外ならloaded snapshotを破棄し、Storage
 
 Initial bootstrapはexact 17 entries / 1,583 logical bytesを必要とします。`capacity()`はadvisory preflightに使用できますが、authoritative NO_SPACEはfinal transaction viewに対するFULL commit結果です。Backend journal、flush、fixed replacement headroomはportable logical bytesへ加えずStorage provider preconditionです。
 
+L2bはcompact L2a planからcaller-owned scratchへ1 recordずつencodeして`put`できます。Conformance Storageは各`put: OK`のreturn前にkey/valueをtransaction-owned stagingへdeep-copyし、callerがscratchを直後にpoison/reuseしてもcommit結果が変わらないことを検査します。Error時ownership 0、transaction consume後staging 0です。Production-private target分離とSQLite provider実装はL2b直前の独立変更で行い、L2a2 pure modelの完成をproduction Storage統合と扱いません。
+
 ### Capacity unitとmapping
 
 Storage capacityはportableなlogical unitで表し、filesystem block、SQLite page、allocator overheadを使用しません。
