@@ -1,0 +1,1144 @@
+{
+  "version": 1,
+  "format": "ninlil-domain-scan-v1-d2s1",
+  "scope": "D2-S1 scanner core ownership: DSR1_SCAN transport subset + DSR2_ESP_BOUND skeleton. Does not claim DSR1 complete, DSR2 complete, or D2 complete. Counter overflow is D2-detectable corruption (no wrap).",
+  "workspace": {
+    "key_capacity": 255,
+    "value_capacity": 4096,
+    "previous_key_capacity": 255,
+    "ceiling_bytes": 8192
+  },
+  "vectors": [
+    {
+      "id": "s1-empty-adopt",
+      "kind": "lifecycle",
+      "rows": [],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-family14-current",
+      "kind": "classification",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c0001050101021044444444444444444444444444444444",
+          "value_hex": "4e4c5231000500010000000052242816"
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 4,
+        "current_domain_key_count": 1,
+        "ok_row_count": 5,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-future-then-end-unsupported",
+      "kind": "outcome",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c00021020010100",
+          "value_hex": "4e4c5231000600020000000401020304198f1ebb"
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 8
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "UNSUPPORTED",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 1,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 1,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-budget-1-then-64",
+      "kind": "row_budget",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": ""
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 3,
+        "current_domain_key_count": 0,
+        "ok_row_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-65-rows",
+      "kind": "row_budget",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000000",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000001",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000002",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000003",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000004",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000005",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000006",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000007",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000008",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000009",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000000a",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000000b",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000000c",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000000d",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000000e",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000000f",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000010",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000011",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000012",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000013",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000014",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000015",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000016",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000017",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000018",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000019",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000001a",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000001b",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000001c",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000001d",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000001e",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000001f",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000020",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000021",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000022",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000023",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000024",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000025",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000026",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000027",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000028",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000029",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000002a",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000002b",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000002c",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000002d",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000002e",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000002f",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000030",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000031",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000032",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000033",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000034",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000035",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000036",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000037",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000038",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000039",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000003a",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000003b",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000003c",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000003d",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000003e",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00010627010308000000000000003f",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000106270103080000000000000040",
+          "value_hex": ""
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 64
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 65,
+        "ok_row_count": 65,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-future-then-malformed-corrupt",
+      "kind": "outcome",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c00021020010100",
+          "value_hex": "4e4c5231000600020000000401020304198f1ebb"
+        },
+        {
+          "key_hex": "4e494e4c494c0002ff",
+          "value_hex": ""
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 8
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 1,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 1,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-malformed-stops-before-future",
+      "kind": "outcome",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c00010610",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c00021020010100",
+          "value_hex": "4e4c5231000600020000000401020304198f1ebb"
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 8
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-duplicate-corrupt",
+      "kind": "outcome",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": ""
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 8
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 1,
+        "current_domain_key_count": 0,
+        "ok_row_count": 1,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-out-of-order-corrupt",
+      "kind": "outcome",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": ""
+        },
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": ""
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 8
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 1,
+        "current_domain_key_count": 0,
+        "ok_row_count": 1,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-bts-corrupt",
+      "kind": "call_trace",
+      "rows": [],
+      "faults": [
+        {
+          "op": "iter_next",
+          "on_call": 1,
+          "status": "BUFFER_TOO_SMALL",
+          "shape": "bts",
+          "key_length": 300,
+          "value_length": 5000
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-not-found-poison",
+      "kind": "call_trace",
+      "rows": [],
+      "faults": [
+        {
+          "op": "iter_next",
+          "on_call": 1,
+          "status": "NOT_FOUND",
+          "shape": "not_found_poison",
+          "key_length": 1,
+          "value_length": 0
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-begin-ok-null",
+      "kind": "call_trace",
+      "rows": [],
+      "faults": [
+        {
+          "op": "begin",
+          "on_call": 1,
+          "status": "OK",
+          "shape": "ok_null"
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "close"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 1,
+        "close_count": 1
+      }
+    },
+    {
+      "id": "s1-begin-error-with-handle-fence",
+      "kind": "call_trace",
+      "rows": [],
+      "faults": [
+        {
+          "op": "begin",
+          "on_call": 1,
+          "status": "IO_ERROR",
+          "shape": "error_with_handle"
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "rollback",
+          "close"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 1,
+        "close_count": 1
+      }
+    },
+    {
+      "id": "s1-iter-open-ok-null-fence",
+      "kind": "call_trace",
+      "rows": [],
+      "faults": [
+        {
+          "op": "iter_open",
+          "on_call": 1,
+          "status": "OK",
+          "shape": "ok_null"
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "rollback",
+          "close"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 1,
+        "close_count": 1
+      }
+    },
+    {
+      "id": "s1-iter-open-error-with-handle-fence",
+      "kind": "call_trace",
+      "rows": [],
+      "faults": [
+        {
+          "op": "iter_open",
+          "on_call": 1,
+          "status": "IO_ERROR",
+          "shape": "error_with_handle"
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_close",
+          "rollback",
+          "close"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 1,
+        "close_count": 1
+      }
+    },
+    {
+      "id": "s1-rollback-failure-preserves-primary",
+      "kind": "outcome",
+      "rows": [],
+      "faults": [
+        {
+          "op": "iter_next",
+          "on_call": 1,
+          "status": "IO_ERROR",
+          "shape": "io_error"
+        },
+        {
+          "op": "rollback",
+          "on_call": 1,
+          "status": "IO_ERROR",
+          "shape": "io_error"
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback",
+          "close"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 1,
+        "close_count": 1
+      }
+    },
+    {
+      "id": "s1-abort-open",
+      "kind": "lifecycle",
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": ""
+        }
+      ],
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "abort"
+        }
+      ],
+      "expected": {
+        "final_status": "OK",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 1,
+        "current_domain_key_count": 0,
+        "ok_row_count": 1,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    },
+    {
+      "id": "s1-dsr2-workspace-ceiling",
+      "kind": "dsr2_skeleton",
+      "rows": [],
+      "faults": [
+        {
+          "op": "iter_next",
+          "on_call": 1,
+          "status": "BUFFER_TOO_SMALL",
+          "shape": "bts",
+          "key_length": 256,
+          "value_length": 65536
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin"
+        },
+        {
+          "op": "advance",
+          "row_budget": 1
+        },
+        {
+          "op": "finalize"
+        }
+      ],
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 0,
+        "current_domain_key_count": 0,
+        "ok_row_count": 0,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "mutation_calls": 0,
+        "reopen_required": 0,
+        "close_count": 0
+      }
+    }
+  ]
+}

@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 6)
-    message(FATAL_ERROR "private source count is not 6: ${_private_sources}")
+if(NOT _private_source_count EQUAL 7)
+    message(FATAL_ERROR "private source count is not 7: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -88,6 +88,7 @@ list(SORT _private_source_names)
 set(_expected_private_source_names
     domain_store_body_codec.c
     domain_store_codec.c
+    domain_store_scanner.c
     runtime_lifecycle_model.c
     runtime_store_bootstrap.c
     runtime_store_codec.c
@@ -130,6 +131,12 @@ check_c_source_compiles(
     NINLIL_PRIVATE_DOMAIN_BODY_HEADER_LEAKED)
 if(NINLIL_PRIVATE_DOMAIN_BODY_HEADER_LEAKED)
     message(FATAL_ERROR "private Domain Store body header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"domain_store_scanner.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_DOMAIN_SCANNER_HEADER_LEAKED)
+if(NINLIL_PRIVATE_DOMAIN_SCANNER_HEADER_LEAKED)
+    message(FATAL_ERROR "private Domain Store scanner header is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)
