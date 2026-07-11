@@ -1,0 +1,608 @@
+#ifndef NINLIL_MODEL_DOMAIN_STORE_BODY_CODEC_H
+#define NINLIL_MODEL_DOMAIN_STORE_BODY_CODEC_H
+
+#include "domain_store_codec.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 slices.
+ * Production-private; not installed. Complements domain_store_codec (D1-A)
+ * with exact body encode/decode and same-record typed validation.
+ * Does not implement D2 scan, D3 cross-row, or D4 convergence.
+ *
+ * Scope:
+ *   D1-B1: family 5 01; family 6 60/62/64/7d
+ *   D1-B2: family 6 10/11/20/21/22/23/24/25
+ *          (SERVICE, SERVICE_QUOTA, TRANSACTION_*, RESERVATION, maps)
+ *
+ * Output / alias contract (identical to D1-A domain_store_codec.h):
+ * - All participating input and output ranges must be pairwise disjoint.
+ * - Alias / address overflow: return NINLIL_E_INVALID_ARGUMENT without
+ *   modifying any participating range.
+ * - After alias is ruled out and an output pointer is valid, non-alias
+ *   failures zero all output objects and set *out_length = 0
+ *   (except NINLIL_E_BUFFER_TOO_SMALL, which sets only the documented
+ *   required length).
+ * - NULL output pointers cannot be zeroed (trivial exception).
+ *
+ * No Port/Storage calls, heap, VLA, or recursion. Caller owns all buffers.
+ * Decode views borrow encoded body bytes only while the encoded buffer lives.
+ */
+
+/* Exact fixed body lengths (docs17 section 6 / 8.x). */
+#define NINLIL_MODEL_DOMAIN_BODY_INTERNAL_INVARIANT_BYTES ((uint32_t)96u)
+#define NINLIL_MODEL_DOMAIN_BODY_BEARER_STATE_BYTES ((uint32_t)36u)
+#define NINLIL_MODEL_DOMAIN_BODY_CLOCK_BASELINE_BYTES ((uint32_t)40u)
+#define NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_REUSE_FENCE_BYTES ((uint32_t)16u)
+/* HEAD_INDEX with family 3/4 exact-10 member key (docs17 section 8.6). */
+#define NINLIL_MODEL_DOMAIN_HEAD_INDEX_MEMBER_KEY_BYTES ((uint32_t)10u)
+#define NINLIL_MODEL_DOMAIN_BODY_WITNESS_HEAD_INDEX_BYTES ((uint32_t)114u)
+#define NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_SEQUENCE_INDEX_BYTES ((uint32_t)56u)
+#define NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_STATE_BYTES ((uint32_t)224u)
+#define NINLIL_MODEL_DOMAIN_RESOURCE_VECTOR_BYTES ((uint32_t)176u)
+#define NINLIL_MODEL_DOMAIN_PARTY_BYTES ((uint32_t)100u)
+#define NINLIL_MODEL_DOMAIN_TARGET_BYTES ((uint32_t)100u)
+#define NINLIL_MODEL_DOMAIN_LOCAL_IDENTITY_BYTES ((uint32_t)68u)
+#define NINLIL_MODEL_DOMAIN_TEXT_ID_MAX ((uint32_t)63u)
+#define NINLIL_MODEL_DOMAIN_RAW16_SERVICE_KEY_MAX ((uint32_t)255u)
+#define NINLIL_MODEL_DOMAIN_RAW16_SCOPE_MAX ((uint32_t)255u)
+#define NINLIL_MODEL_DOMAIN_RAW16_OWNER_KEY_MAX ((uint32_t)255u)
+#define NINLIL_MODEL_DOMAIN_RAW16_IDEMPOTENCY_KEY_MAX ((uint32_t)64u)
+#define NINLIL_MODEL_DOMAIN_BODY_SERVICE_MAX ((uint32_t)768u)
+#define NINLIL_MODEL_DOMAIN_BODY_SERVICE_QUOTA_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_BODY_TRANSACTION_ANCHOR_MAX ((uint32_t)1536u)
+#define NINLIL_MODEL_DOMAIN_BODY_RESERVATION_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_BODY_IDEMPOTENCY_MAP_MAX ((uint32_t)512u)
+#define NINLIL_MODEL_DOMAIN_BODY_EVENT_ID_MAP_MAX ((uint32_t)512u)
+
+/* Closed body enums (docs17 section 7.1). */
+#define NINLIL_MODEL_DOMAIN_INDEX_STATE_BASELINE ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_INDEX_STATE_WITNESSED ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_BASELINE_STATE_UNINITIALIZED ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_BASELINE_STATE_TRUSTED ((uint32_t)2u)
+
+#define NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_SERVICE ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_TRANSACTION ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_INGRESS ((uint16_t)3u)
+#define NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_DELIVERY ((uint16_t)4u)
+#define NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_CALLBACK ((uint16_t)5u)
+#define NINLIL_MODEL_DOMAIN_RESERVATION_RELEASED_MASK_KNOWN ((uint32_t)0x000007ffu)
+#define NINLIL_MODEL_DOMAIN_RESOURCE_KIND_COUNT ((uint32_t)11u)
+#define NINLIL_MODEL_DOMAIN_DELIVERY_KEY_CONTENTS_BYTES ((uint32_t)80u)
+
+/* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
+#define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
+#define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_FAMILY3 ((uint16_t)0x0300u)
+#define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_FAMILY4 ((uint16_t)0x0400u)
+#define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_FAMILY6_BASE ((uint16_t)0x0600u)
+
+/* --- reusable private wire types (no public ABI headers) --- */
+
+typedef struct ninlil_model_domain_text_id {
+    uint8_t length; /* 1..63 */
+    uint8_t bytes[63];
+} ninlil_model_domain_text_id_t;
+
+typedef struct ninlil_model_domain_local_identity {
+    uint32_t flags;
+    uint8_t device[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t installation[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t site[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t binding_epoch;
+    uint64_t membership_epoch;
+} ninlil_model_domain_local_identity_t;
+
+typedef struct ninlil_model_domain_party {
+    uint8_t runtime_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t application_instance_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    ninlil_model_domain_local_identity_t local_identity;
+} ninlil_model_domain_party_t;
+
+typedef struct ninlil_model_domain_target {
+    uint32_t flags;
+    uint8_t target_runtime[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t target_application[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t device[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t installation[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t site[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t binding_epoch;
+    uint64_t membership_epoch;
+} ninlil_model_domain_target_t;
+
+typedef struct ninlil_model_domain_service_identity {
+    ninlil_model_domain_text_id_t namespace_id;
+    ninlil_model_domain_text_id_t service_id;
+    ninlil_model_domain_text_id_t schema_id;
+    uint64_t descriptor_revision;
+    uint8_t descriptor_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint16_t schema_major;
+    uint16_t schema_minor;
+    uint32_t family;
+} ninlil_model_domain_service_identity_t;
+
+/* kinds 1..11 stored as used/reserved pairs in declaration order. */
+typedef struct ninlil_model_domain_resource_vector {
+    uint64_t used[NINLIL_MODEL_DOMAIN_RESOURCE_KIND_COUNT];
+    uint64_t reserved[NINLIL_MODEL_DOMAIN_RESOURCE_KIND_COUNT];
+} ninlil_model_domain_resource_vector_t;
+
+/* --- D1-B1 bodies --- */
+
+typedef struct ninlil_model_domain_body_internal_invariant {
+    uint32_t reason;
+    uint16_t subject_kind;
+    uint16_t reserved;
+    uint8_t subject_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t first_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t first_at_ms;
+    uint8_t detail_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_internal_invariant_t;
+
+typedef struct ninlil_model_domain_body_bearer_state {
+    uint64_t availability_epoch;
+    uint32_t available; /* exact 0/1 boolean */
+    uint8_t observation_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t observed_at_ms;
+} ninlil_model_domain_body_bearer_state_t;
+
+typedef struct ninlil_model_domain_body_clock_baseline {
+    uint32_t baseline_state;
+    uint32_t reserved;
+    uint8_t trusted_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t last_trusted_now_ms;
+    uint64_t publish_generation;
+} ninlil_model_domain_body_clock_baseline_t;
+
+typedef struct ninlil_model_domain_body_attempt_reuse_fence {
+    uint32_t active_plan_count;
+    uint32_t reserved;
+    uint64_t fence_generation;
+} ninlil_model_domain_body_attempt_reuse_fence_t;
+
+/*
+ * WITNESS_HEAD_INDEX body. On decode, member_key_bytes borrows encoded body
+ * and remains valid only while the encoded buffer is alive.
+ * Encode requires member_key_bytes to point at caller-owned key bytes of
+ * member_key_length (exact 10 for v1 family 3/4 members).
+ */
+typedef struct ninlil_model_domain_body_witness_head_index {
+    uint16_t index_state;
+    uint16_t reserved0;
+    uint8_t member_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint16_t member_key_length;
+    uint16_t reserved1;
+    const uint8_t *member_key_bytes;
+    uint8_t member_value_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t member_head_witness_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_witness_head_index_t;
+
+/* --- D1-B2 bodies (variable RAW16 fields borrow on decode) --- */
+
+typedef struct ninlil_model_domain_body_service {
+    uint16_t service_key_raw_length;
+    const uint8_t *service_key_raw;
+    uint64_t descriptor_revision;
+    uint8_t descriptor_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t local_application_instance_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    ninlil_model_domain_text_id_t namespace_id;
+    ninlil_model_domain_text_id_t service_id;
+    ninlil_model_domain_text_id_t schema_id;
+    uint16_t schema_major;
+    uint16_t minor_min;
+    uint16_t minor_max;
+    uint32_t family;
+    uint32_t direction;
+    uint32_t admission_authority;
+    uint32_t apply_contract;
+    uint32_t custody_policy;
+    uint32_t supported_evidence_mask;
+    uint32_t logical_payload_limit;
+    uint32_t target_limit;
+    uint32_t inflight_limit;
+    uint32_t attempts_per_cycle;
+    uint32_t admission_window_ms;
+    uint32_t max_admissions_window;
+    uint32_t max_payload_window;
+    uint64_t minimum_deadline_ms;
+    uint64_t maximum_deadline_ms;
+    uint64_t maximum_evidence_grace_ms;
+    uint64_t attempt_receipt_timeout_ms;
+    uint64_t retry_backoff_ms;
+    uint64_t application_completion_timeout_ms;
+    uint64_t required_dedup_window_ms;
+    uint8_t quota_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t reservation_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_service_t;
+
+typedef struct ninlil_model_domain_body_service_quota {
+    uint16_t service_key_raw_length;
+    const uint8_t *service_key_raw;
+    uint8_t service_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t window_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t window_start_ms;
+    uint32_t admissions_in_window;
+    uint64_t payload_bytes_in_window;
+    uint32_t active_transaction_count;
+    uint32_t active_spool_count;
+    uint64_t active_spool_bytes;
+} ninlil_model_domain_body_service_quota_t;
+
+typedef struct ninlil_model_domain_body_transaction_anchor {
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t transaction_sequence;
+    uint64_t scheduler_owner_sequence;
+    uint32_t family;
+    ninlil_model_domain_party_t source;
+    ninlil_model_domain_service_identity_t service;
+    uint8_t content_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t canonical_submission_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t generation;
+    uint8_t admission_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t admitted_at_ms;
+    uint8_t deadline_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t absolute_effect_deadline_ms;
+    uint64_t evidence_grace_ms;
+    uint32_t required_evidence;
+    uint32_t target_count;
+    ninlil_model_domain_target_t target;
+    uint16_t idempotency_scope_raw_length;
+    const uint8_t *idempotency_scope_raw;
+    uint16_t idempotency_key_length;
+    const uint8_t *idempotency_key;
+    uint8_t sequence_index_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t idempotency_map_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t event_map_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t reservation_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint64_t scheduler_owner_key_sequence;
+    uint8_t payload_blob_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_transaction_anchor_t;
+
+typedef struct ninlil_model_domain_body_transaction_sequence_index {
+    uint64_t transaction_sequence;
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t anchor_value_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_transaction_sequence_index_t;
+
+typedef struct ninlil_model_domain_body_transaction_state {
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t anchor_value_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint32_t state;
+    uint32_t outcome;
+    uint32_t deadline_verdict;
+    uint32_t latest_evidence;
+    uint32_t reason;
+    uint32_t event_park_cause;
+    uint64_t retry_cycle_id;
+    uint32_t attempt_in_cycle;
+    uint64_t cumulative_attempts;
+    uint64_t event_spool_revision;
+    uint32_t has_late_evidence;
+    uint32_t explicitly_discarded;
+    ninlil_model_domain_target_t target;
+    uint32_t target_state;
+    uint32_t target_outcome;
+    uint32_t target_reason;
+    uint32_t target_latest_evidence;
+} ninlil_model_domain_body_transaction_state_t;
+
+typedef struct ninlil_model_domain_body_reservation {
+    uint16_t owner_kind;
+    uint16_t reserved;
+    uint16_t owner_key_raw_length;
+    const uint8_t *owner_key_raw;
+    uint8_t primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    ninlil_model_domain_resource_vector_t resources;
+    uint32_t service_inflight;
+    uint32_t grant_active_count;
+    uint64_t grant_active_bytes;
+    uint32_t released_mask;
+} ninlil_model_domain_body_reservation_t;
+
+typedef struct ninlil_model_domain_body_idempotency_map {
+    uint16_t scope_raw_length;
+    const uint8_t *scope_raw;
+    uint16_t idempotency_key_length;
+    const uint8_t *idempotency_key;
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t canonical_submission_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t anchor_value_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_idempotency_map_t;
+
+typedef struct ninlil_model_domain_body_event_id_map {
+    uint16_t scope_raw_length;
+    const uint8_t *scope_raw;
+    uint8_t event_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t canonical_submission_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint16_t idempotency_key_length;
+    const uint8_t *idempotency_key;
+    uint8_t anchor_value_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+} ninlil_model_domain_body_event_id_map_t;
+
+/*
+ * Same-record typed view produced by validate_typed_record.
+ * body is an anonymous union (stack-bounded); only the matching subtype
+ * field is populated. envelope.body and RAW16/member_key borrows remain
+ * valid only while encoded_value lives.
+ */
+typedef struct ninlil_model_domain_typed_record {
+    ninlil_model_domain_key_view_t key;
+    ninlil_model_domain_envelope_t envelope;
+    uint8_t family;
+    uint8_t subtype;
+    union {
+        ninlil_model_domain_body_internal_invariant_t internal_invariant;
+        ninlil_model_domain_body_bearer_state_t bearer_state;
+        ninlil_model_domain_body_clock_baseline_t clock_baseline;
+        ninlil_model_domain_body_attempt_reuse_fence_t attempt_reuse_fence;
+        ninlil_model_domain_body_witness_head_index_t witness_head_index;
+        ninlil_model_domain_body_service_t service;
+        ninlil_model_domain_body_service_quota_t service_quota;
+        ninlil_model_domain_body_transaction_anchor_t transaction_anchor;
+        ninlil_model_domain_body_transaction_sequence_index_t
+            transaction_sequence_index;
+        ninlil_model_domain_body_transaction_state_t transaction_state;
+        ninlil_model_domain_body_reservation_t reservation;
+        ninlil_model_domain_body_idempotency_map_t idempotency_map;
+        ninlil_model_domain_body_event_id_map_t event_id_map;
+    };
+} ninlil_model_domain_typed_record_t;
+
+/* --- reusable field length / validation helpers --- */
+
+uint32_t ninlil_model_domain_text_id_encoded_length(
+    const ninlil_model_domain_text_id_t *text);
+uint32_t ninlil_model_domain_party_encoded_length(void);
+uint32_t ninlil_model_domain_target_encoded_length(void);
+uint32_t ninlil_model_domain_service_identity_encoded_length(
+    const ninlil_model_domain_service_identity_t *identity);
+uint32_t ninlil_model_domain_resource_vector_encoded_length(void);
+
+int ninlil_model_domain_text_id_is_valid(
+    const ninlil_model_domain_text_id_t *text,
+    int namespace_grammar);
+int ninlil_model_domain_party_is_valid(const ninlil_model_domain_party_t *party);
+int ninlil_model_domain_target_is_valid(
+    const ninlil_model_domain_target_t *target);
+int ninlil_model_domain_service_identity_is_valid(
+    const ninlil_model_domain_service_identity_t *identity);
+int ninlil_model_domain_resource_vector_is_valid(
+    const ninlil_model_domain_resource_vector_t *vector,
+    uint32_t released_mask);
+
+/* --- INTERNAL_INVARIANT --- */
+uint32_t ninlil_model_domain_body_internal_invariant_encoded_length(void);
+
+/*
+ * Marker identity (key ID128) =
+ * SHA-256("NINLIL-DOMAIN-INVARIANT-V1" || reason || subject_kind ||
+ *         subject_digest)[0..15]
+ */
+ninlil_status_t ninlil_model_domain_invariant_marker_id(
+    uint32_t reason,
+    uint16_t subject_kind,
+    const uint8_t subject_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES],
+    uint8_t out_marker_id[NINLIL_MODEL_DOMAIN_ID_BYTES]);
+
+ninlil_status_t ninlil_model_domain_encode_body_internal_invariant(
+    const ninlil_model_domain_body_internal_invariant_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_internal_invariant(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_internal_invariant_t *out_body);
+
+/* --- BEARER_STATE --- */
+uint32_t ninlil_model_domain_body_bearer_state_encoded_length(void);
+
+ninlil_status_t ninlil_model_domain_encode_body_bearer_state(
+    const ninlil_model_domain_body_bearer_state_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_bearer_state(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_bearer_state_t *out_body);
+
+/* --- CLOCK_BASELINE --- */
+uint32_t ninlil_model_domain_body_clock_baseline_encoded_length(void);
+
+ninlil_status_t ninlil_model_domain_encode_body_clock_baseline(
+    const ninlil_model_domain_body_clock_baseline_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_clock_baseline(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_clock_baseline_t *out_body);
+
+/* --- ATTEMPT_REUSE_FENCE --- */
+uint32_t ninlil_model_domain_body_attempt_reuse_fence_encoded_length(void);
+
+ninlil_status_t ninlil_model_domain_encode_body_attempt_reuse_fence(
+    const ninlil_model_domain_body_attempt_reuse_fence_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_attempt_reuse_fence(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_attempt_reuse_fence_t *out_body);
+
+/* --- WITNESS_HEAD_INDEX --- */
+/*
+ * v1 only accepts family 3/4 exact member_key_length=10.
+ * Returns 114 for length 10; returns 0 for any other length (including 0).
+ */
+uint32_t ninlil_model_domain_body_witness_head_index_encoded_length(
+    uint16_t member_key_length);
+
+/* Public known ninlil_reason_t values (docs12 / version.h closed registry). */
+int ninlil_model_domain_reason_is_known_public(uint32_t reason);
+
+ninlil_status_t ninlil_model_domain_encode_body_witness_head_index(
+    const ninlil_model_domain_body_witness_head_index_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows member_key_bytes from encoded. Valid only while encoded
+ * remains alive.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_witness_head_index(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_witness_head_index_t *out_body);
+
+/* --- SERVICE (0x10) --- */
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_service_encoded_length(
+    const ninlil_model_domain_body_service_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_service(
+    const ninlil_model_domain_body_service_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_service(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_service_t *out_body);
+
+/* --- SERVICE_QUOTA (0x11) --- */
+uint32_t ninlil_model_domain_body_service_quota_encoded_length(
+    const ninlil_model_domain_body_service_quota_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_service_quota(
+    const ninlil_model_domain_body_service_quota_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_service_quota(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_service_quota_t *out_body);
+
+/* --- TRANSACTION_ANCHOR (0x20) --- */
+uint32_t ninlil_model_domain_body_transaction_anchor_encoded_length(
+    const ninlil_model_domain_body_transaction_anchor_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_transaction_anchor(
+    const ninlil_model_domain_body_transaction_anchor_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_transaction_anchor(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_transaction_anchor_t *out_body);
+
+/* --- TRANSACTION_SEQUENCE_INDEX (0x21) --- */
+uint32_t ninlil_model_domain_body_transaction_sequence_index_encoded_length(
+    void);
+
+ninlil_status_t ninlil_model_domain_encode_body_transaction_sequence_index(
+    const ninlil_model_domain_body_transaction_sequence_index_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_transaction_sequence_index(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_transaction_sequence_index_t *out_body);
+
+/* --- TRANSACTION_STATE (0x22) --- */
+uint32_t ninlil_model_domain_body_transaction_state_encoded_length(void);
+
+ninlil_status_t ninlil_model_domain_encode_body_transaction_state(
+    const ninlil_model_domain_body_transaction_state_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_transaction_state(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_transaction_state_t *out_body);
+
+/* --- RESERVATION (0x23) --- */
+uint32_t ninlil_model_domain_body_reservation_encoded_length(
+    const ninlil_model_domain_body_reservation_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_reservation(
+    const ninlil_model_domain_body_reservation_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_reservation(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_reservation_t *out_body);
+
+/* --- IDEMPOTENCY_MAP (0x24) --- */
+uint32_t ninlil_model_domain_body_idempotency_map_encoded_length(
+    const ninlil_model_domain_body_idempotency_map_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_idempotency_map(
+    const ninlil_model_domain_body_idempotency_map_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_idempotency_map(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_idempotency_map_t *out_body);
+
+/* --- EVENT_ID_MAP (0x25) --- */
+uint32_t ninlil_model_domain_body_event_id_map_encoded_length(
+    const ninlil_model_domain_body_event_id_map_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_event_id_map(
+    const ninlil_model_domain_body_event_id_map_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+ninlil_status_t ninlil_model_domain_decode_body_event_id_map(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_event_id_map_t *out_body);
+
+/*
+ * Same-record typed validation for D1-B1 + D1-B2 subtypes.
+ * Decodes key + envelope (D1-A) and body (this module), then checks
+ * header/body/key invariants decidable from one record alone.
+ *
+ * Not implemented here (deferred with boundary comments in .c):
+ * - D2: domain scan / multi-row presence
+ * - D3: cross-row primary/index/backlink, fence plan counts, head chains,
+ *       live quota recompute from reservations, primary value digest get
+ * - D4: COMMIT_UNKNOWN old/new convergence
+ *
+ * On success, out_record (when non-NULL) is filled; envelope.body and
+ * borrowed body pointers reference encoded_value.
+ * On non-alias failure with valid out_record, *out_record is zeroed.
+ */
+ninlil_status_t ninlil_model_domain_validate_typed_record(
+    ninlil_bytes_view_t encoded_key,
+    ninlil_bytes_view_t encoded_value,
+    ninlil_model_domain_typed_record_t *out_record);
+
+/* Family 3/4 complete key shape: root[8]||family||kind, length exact 10. */
+int ninlil_model_domain_family34_member_key_is_valid(
+    ninlil_bytes_view_t member_key);
+
+/* INTERNAL_INVARIANT subject_kind closed role (docs17 section 6). */
+int ninlil_model_domain_invariant_subject_kind_is_valid(uint16_t subject_kind);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

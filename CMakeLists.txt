@@ -68,6 +68,8 @@ function(ninlil_apply_strict_warnings target)
 endfunction()
 
 add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
+    src/model/domain_store_body_codec.c
+    src/model/domain_store_codec.c
     src/model/runtime_lifecycle_model.c
     src/model/runtime_store_bootstrap.c
     src/model/runtime_store_codec.c
@@ -207,7 +209,9 @@ if(NINLIL_BUILD_TESTS)
     get_target_property(_ninlil_reducer_sources ninlil_reducer_model SOURCES)
     foreach(_source IN LISTS _ninlil_reducer_sources)
         get_filename_component(_source_name "${_source}" NAME)
-        if(_source_name STREQUAL "runtime_lifecycle_model.c"
+        if(_source_name STREQUAL "domain_store_body_codec.c"
+           OR _source_name STREQUAL "domain_store_codec.c"
+           OR _source_name STREQUAL "runtime_lifecycle_model.c"
            OR _source_name STREQUAL "runtime_store_codec.c"
            OR _source_name STREQUAL "runtime_store_bootstrap.c"
            OR _source_name STREQUAL "runtime_store_orchestrator.c")
@@ -378,6 +382,74 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME runtime_store_codec
         COMMAND ninlil_runtime_store_codec_test
+    )
+
+    add_library(ninlil_domain_vector_parse STATIC
+        tests/support/domain_vector_parse.c
+    )
+    target_include_directories(ninlil_domain_vector_parse PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    set_target_properties(ninlil_domain_vector_parse PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_vector_parse)
+
+    add_executable(ninlil_domain_store_codec_test
+        tests/model/domain_store_codec_test.c
+    )
+    target_include_directories(ninlil_domain_store_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_domain_store_codec_test PRIVATE
+        ninlil_runtime_private
+        ninlil_domain_vector_parse
+        ninlil
+    )
+    set_target_properties(ninlil_domain_store_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_store_codec_test)
+
+    add_test(
+        NAME domain_store_codec
+        COMMAND ninlil_domain_store_codec_test
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-store-v1.json
+    )
+
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(
+        NAME domain_store_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-store-v1.json
+    )
+
+    add_executable(ninlil_domain_vector_parse_test
+        tests/model/domain_vector_parse_test.c
+    )
+    target_include_directories(ninlil_domain_vector_parse_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_domain_vector_parse_test PRIVATE
+        ninlil_domain_vector_parse
+    )
+    set_target_properties(ninlil_domain_vector_parse_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_vector_parse_test)
+
+    add_test(
+        NAME domain_vector_parse_negative
+        COMMAND ninlil_domain_vector_parse_test
     )
 
     add_executable(ninlil_runtime_store_bootstrap_test
