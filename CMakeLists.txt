@@ -119,6 +119,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
 
     add_library(ninlil_reducer_model STATIC
         src/model/deadline_projection.c
+        src/model/required_receipt_transition.c
     )
     target_include_directories(ninlil_reducer_model PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
@@ -151,6 +152,28 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_test(
         NAME deadline_projection_model
         COMMAND ninlil_deadline_projection_test
+    )
+
+    add_executable(ninlil_required_receipt_transition_test
+        tests/model/required_receipt_transition_test.c
+    )
+    target_include_directories(ninlil_required_receipt_transition_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_required_receipt_transition_test PRIVATE
+        ninlil_reducer_model
+        ninlil
+    )
+    set_target_properties(ninlil_required_receipt_transition_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_required_receipt_transition_test)
+
+    add_test(
+        NAME required_receipt_transition_model
+        COMMAND ninlil_required_receipt_transition_test
     )
 
     add_executable(ninlil_smoke_c11 tests/smoke/c_consumer.c)
