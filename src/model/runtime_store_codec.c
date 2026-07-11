@@ -19,6 +19,13 @@ _Static_assert(2u * (16u + 9u)
         + 11u * NINLIL_MODEL_RUNTIME_STORE_CAPACITY_VALUE_BYTES
         == NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_LOGICAL_BYTES,
     "bootstrap logical byte total drift");
+_Static_assert(2u * 9u + 15u * 10u
+        + NINLIL_MODEL_RUNTIME_STORE_BINDING_VALUE_BYTES
+        + NINLIL_MODEL_RUNTIME_STORE_IDENTITY_VALUE_BYTES
+        + 4u * NINLIL_MODEL_RUNTIME_STORE_COUNTER_VALUE_BYTES
+        + 11u * NINLIL_MODEL_RUNTIME_STORE_CAPACITY_VALUE_BYTES
+        == NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_ENCODED_KEY_VALUE_BYTES,
+    "bootstrap encoded byte total drift");
 
 static int ranges_are_disjoint(
     const void *left, size_t left_length,

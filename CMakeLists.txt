@@ -143,6 +143,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         src/model/resource_ledger.c
         src/model/resource_ledger_batch.c
         src/model/runtime_lifecycle_model.c
+        src/model/runtime_store_bootstrap.c
         src/model/runtime_store_codec.c
         src/model/submission_admission.c
         src/model/submission_preflight.c
@@ -310,6 +311,28 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_test(
         NAME runtime_store_codec
         COMMAND ninlil_runtime_store_codec_test
+    )
+
+    add_executable(ninlil_runtime_store_bootstrap_test
+        tests/model/runtime_store_bootstrap_test.c
+    )
+    target_include_directories(ninlil_runtime_store_bootstrap_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_runtime_store_bootstrap_test PRIVATE
+        ninlil_reducer_model
+        ninlil
+    )
+    set_target_properties(ninlil_runtime_store_bootstrap_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_runtime_store_bootstrap_test)
+
+    add_test(
+        NAME runtime_store_bootstrap
+        COMMAND ninlil_runtime_store_bootstrap_test
     )
 
     add_executable(ninlil_submission_preflight_test

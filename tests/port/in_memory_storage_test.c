@@ -612,6 +612,40 @@ static int test_fault_validation_nonconsumption_trace_and_shapes(void)
     return 0;
 }
 
+static int test_put_deep_copies_before_return(void)
+{
+    fixture_context_t context = make_fixture(8u, 4096u);
+    ninlil_storage_txn_t writer;
+    ninlil_storage_txn_t reader;
+    uint8_t key[] = {0x10u, 0x20u, 0x30u};
+    uint8_t value[] = {0x40u, 0x50u, 0x60u, 0x70u};
+    static const uint8_t EXPECTED_KEY[] = {0x10u, 0x20u, 0x30u};
+    static const uint8_t EXPECTED_VALUE[] = {0x40u, 0x50u, 0x60u, 0x70u};
+    uint8_t output_data[sizeof(EXPECTED_VALUE)];
+    ninlil_mut_bytes_t output;
+
+    REQUIRE(context.storage != NULL);
+    writer = begin_txn(&context, NINLIL_STORAGE_READ_WRITE);
+    REQUIRE(writer != NULL);
+    REQUIRE(put_value(&context, writer,
+        key, sizeof(key), value, sizeof(value)));
+    (void)memset(key, 0xa5, sizeof(key));
+    (void)memset(value, 0x5a, sizeof(value));
+    REQUIRE(commit_txn(&context, writer));
+
+    reader = begin_txn(&context, NINLIL_STORAGE_READ_ONLY);
+    REQUIRE(reader != NULL);
+    output = mut(output_data, sizeof(output_data));
+    REQUIRE(get_status(&context, reader,
+        EXPECTED_KEY, sizeof(EXPECTED_KEY), &output, NINLIL_STORAGE_OK));
+    REQUIRE(output.length == sizeof(EXPECTED_VALUE));
+    REQUIRE(memcmp(output_data, EXPECTED_VALUE, sizeof(EXPECTED_VALUE)) == 0);
+    REQUIRE(context.ops->rollback(context.ops->user, reader)
+        == NINLIL_STORAGE_OK);
+    destroy_fixture(&context);
+    return 0;
+}
+
 int main(void)
 {
     if (test_configuration_namespace_lease_and_crash() != 0
@@ -620,7 +654,8 @@ int main(void)
         || test_iteration_order_snapshot_and_mb7_mb8() != 0
         || test_value_boundary_net_capacity_and_capacity_output() != 0
         || test_fault_fifo_unknown_truth_and_rollback() != 0
-        || test_fault_validation_nonconsumption_trace_and_shapes() != 0) {
+        || test_fault_validation_nonconsumption_trace_and_shapes() != 0
+        || test_put_deep_copies_before_return() != 0) {
         return 1;
     }
     return 0;
