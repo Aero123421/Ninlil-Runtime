@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..k body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..l body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -9063,6 +9063,316 @@ ninlil_status_t ninlil_model_domain_decode_body_event_spool(
     return NINLIL_OK;
 }
 
+/* --- RETRY_SUMMARY (0x51) docs17 §8.6 D1-B3l --- */
+
+static uint64_t retry_summary_expected_folded(uint64_t total)
+{
+    /* folded = max(total - 4, 0); checked u64; no underflow. */
+    if (total >= NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW) {
+        return total - NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_FOLD_WINDOW;
+    }
+    return 0u;
+}
+
+static int retry_summary_bool_ok(uint32_t v)
+{
+    return v == 0u || v == 1u;
+}
+
+static int retry_summary_cumulative_fields_ok(
+    const ninlil_model_domain_body_retry_summary_t *body)
+{
+    const ninlil_model_domain_body_retry_summary_cumulative_t *c;
+
+    if (body == NULL
+        || body->summary_kind
+            != NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE
+        || id_is_zero(body->transaction_id)
+        || body->slot_index != 0u) {
+        return 0;
+    }
+    c = &body->cumulative;
+    if (c->folded_cycle_count
+            != retry_summary_expected_folded(c->total_completed_cycle_count)
+        || !retry_summary_bool_ok(c->delivery_possible_any)
+        || !retry_summary_bool_ok(c->counter_saturated)) {
+        return 0;
+    }
+    /* folded=0 ⇒ all folded aggregates exact zero (incl. 16-byte clock). */
+    if (c->folded_cycle_count == 0u) {
+        if (c->cumulative_attempt_count != 0u || c->last_outcome != 0u
+            || c->last_reason != 0u || c->last_ended_at_ms != 0u
+            || c->delivery_possible_any != 0u || c->counter_saturated != 0u
+            || !id_is_zero(c->last_ended_clock_epoch)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int retry_summary_recent_fields_ok(
+    const ninlil_model_domain_body_retry_summary_t *body)
+{
+    const ninlil_model_domain_body_retry_summary_recent_t *r;
+    uint64_t expect_slot;
+
+    if (body == NULL
+        || body->summary_kind != NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_RECENT
+        || id_is_zero(body->transaction_id)
+        || body->slot_index > NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_SLOT_MAX) {
+        return 0;
+    }
+    r = &body->recent;
+    if (r->retry_cycle_id < 1u
+        || r->attempt_count < 1u
+        || r->attempt_count > NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_ATTEMPT_MAX
+        || !retry_summary_bool_ok(r->delivery_possible)
+        || r->reserved != 0u) {
+        return 0;
+    }
+    /* slot = (retry_cycle_id - 1) mod 4; no underflow (cycle >= 1). */
+    expect_slot = (r->retry_cycle_id - 1u) % 4u;
+    if ((uint64_t)body->slot_index != expect_slot) {
+        return 0;
+    }
+    return 1;
+}
+
+static int retry_summary_fields_ok(
+    const ninlil_model_domain_body_retry_summary_t *body)
+{
+    if (body == NULL) {
+        return 0;
+    }
+    if (body->summary_kind
+        == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE) {
+        return retry_summary_cumulative_fields_ok(body);
+    }
+    if (body->summary_kind == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_RECENT) {
+        return retry_summary_recent_fields_ok(body);
+    }
+    return 0;
+}
+
+uint32_t ninlil_model_domain_body_retry_summary_encoded_length(
+    const ninlil_model_domain_body_retry_summary_t *body)
+{
+    if (body == NULL || !retry_summary_fields_ok(body)) {
+        return 0u;
+    }
+    if (body->summary_kind
+        == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE) {
+        return NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_CUMULATIVE_BYTES;
+    }
+    return NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_RECENT_BYTES;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_retry_summary(
+    const ninlil_model_domain_body_retry_summary_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_alias_ok(
+            body, body == NULL ? 0u : sizeof(*body),
+            out_bytes, capacity, out_length)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_retry_summary_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL) || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    o = 0u;
+    (void)memcpy(&out_bytes[o], body->transaction_id, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->summary_kind);
+    o += 2u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->slot_index);
+    o += 2u;
+    if (body->summary_kind
+        == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE) {
+        const ninlil_model_domain_body_retry_summary_cumulative_t *c =
+            &body->cumulative;
+
+        ninlil_model_domain_encode_u64_be(
+            &out_bytes[o], c->total_completed_cycle_count);
+        o += 8u;
+        ninlil_model_domain_encode_u64_be(
+            &out_bytes[o], c->folded_cycle_count);
+        o += 8u;
+        ninlil_model_domain_encode_u64_be(
+            &out_bytes[o], c->cumulative_attempt_count);
+        o += 8u;
+        ninlil_model_domain_encode_u32_be(&out_bytes[o], c->last_outcome);
+        o += 4u;
+        ninlil_model_domain_encode_u32_be(&out_bytes[o], c->last_reason);
+        o += 4u;
+        (void)memcpy(&out_bytes[o], c->last_ended_clock_epoch, 16u);
+        o += 16u;
+        ninlil_model_domain_encode_u64_be(
+            &out_bytes[o], c->last_ended_at_ms);
+        o += 8u;
+        ninlil_model_domain_encode_u32_be(
+            &out_bytes[o], c->delivery_possible_any);
+        o += 4u;
+        ninlil_model_domain_encode_u32_be(
+            &out_bytes[o], c->counter_saturated);
+        o += 4u;
+        if (o != NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_CUMULATIVE_BYTES) {
+            *out_length = 0u;
+            return NINLIL_E_INVALID_ARGUMENT;
+        }
+    } else {
+        const ninlil_model_domain_body_retry_summary_recent_t *r =
+            &body->recent;
+
+        ninlil_model_domain_encode_u64_be(&out_bytes[o], r->retry_cycle_id);
+        o += 8u;
+        ninlil_model_domain_encode_u32_be(&out_bytes[o], r->attempt_count);
+        o += 4u;
+        ninlil_model_domain_encode_u32_be(&out_bytes[o], r->last_outcome);
+        o += 4u;
+        ninlil_model_domain_encode_u32_be(&out_bytes[o], r->last_reason);
+        o += 4u;
+        ninlil_model_domain_encode_u64_be(
+            &out_bytes[o], r->availability_epoch);
+        o += 8u;
+        (void)memcpy(&out_bytes[o], r->ended_clock_epoch, 16u);
+        o += 16u;
+        ninlil_model_domain_encode_u64_be(&out_bytes[o], r->ended_at_ms);
+        o += 8u;
+        ninlil_model_domain_encode_u32_be(
+            &out_bytes[o], r->delivery_possible);
+        o += 4u;
+        ninlil_model_domain_encode_u32_be(&out_bytes[o], r->reserved);
+        o += 4u;
+        if (o != NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_RECENT_BYTES) {
+            *out_length = 0u;
+            return NINLIL_E_INVALID_ARGUMENT;
+        }
+    }
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_retry_summary(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_retry_summary_t *out_body)
+{
+    ninlil_model_domain_body_retry_summary_t tmp;
+    uint32_t o = 0u;
+    uint16_t kind;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || (encoded.length
+                != NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_CUMULATIVE_BYTES
+            && encoded.length
+                != NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_RECENT_BYTES)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    (void)memcpy(tmp.transaction_id, &encoded.data[o], 16u);
+    o += 16u;
+    kind = ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    tmp.summary_kind = kind;
+    tmp.slot_index = ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+
+    /* Declared kind must match wire length (variant mismatch = corrupt). */
+    if (kind == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_CUMULATIVE) {
+        ninlil_model_domain_body_retry_summary_cumulative_t *c =
+            &tmp.cumulative;
+
+        if (encoded.length
+            != NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_CUMULATIVE_BYTES) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        c->total_completed_cycle_count =
+            ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+        o += 8u;
+        c->folded_cycle_count =
+            ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+        o += 8u;
+        c->cumulative_attempt_count =
+            ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+        o += 8u;
+        c->last_outcome =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+        c->last_reason =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+        (void)memcpy(c->last_ended_clock_epoch, &encoded.data[o], 16u);
+        o += 16u;
+        c->last_ended_at_ms =
+            ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+        o += 8u;
+        c->delivery_possible_any =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+        c->counter_saturated =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+    } else if (kind == NINLIL_MODEL_DOMAIN_RETRY_SUMMARY_KIND_RECENT) {
+        ninlil_model_domain_body_retry_summary_recent_t *r = &tmp.recent;
+
+        if (encoded.length
+            != NINLIL_MODEL_DOMAIN_BODY_RETRY_SUMMARY_RECENT_BYTES) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        r->retry_cycle_id =
+            ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+        o += 8u;
+        r->attempt_count =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+        r->last_outcome =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+        r->last_reason =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+        r->availability_epoch =
+            ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+        o += 8u;
+        (void)memcpy(r->ended_clock_epoch, &encoded.data[o], 16u);
+        o += 16u;
+        r->ended_at_ms =
+            ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+        o += 8u;
+        r->delivery_possible =
+            ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+        r->reserved = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+        o += 4u;
+    } else {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (o != encoded.length || !retry_summary_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -9098,6 +9408,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_REVERSE_REPLY:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_SPOOL:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_RETRY_SUMMARY:
         return 1;
     default:
         return 0;
@@ -10389,6 +10700,49 @@ static ninlil_status_t validate_header_body_local(
                 != 0
             || !header_primary_id_eq(
                    env, out->event_spool.transaction_id)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_RETRY_SUMMARY) {
+        uint8_t components[16u + 2u + 2u];
+        ninlil_bytes_view_t cv;
+
+        /*
+         * RETRY_SUMMARY same-record (docs17 §8.6 D1-B3l):
+         * - family 6 secondary: flags 0, head NZ, PVD NZ, revision >= 1
+         * - key COMPOSITE(51, tx16||kind:u16||slot:u16) == body fields
+         * - primary_id == body transaction_id
+         * - body kind/slot/fold/bool/reserved closed above
+         * D3: live ANCHOR PVD / cross-row fold cardinality.
+         */
+        if (env->header.record_revision < 1u
+            || env->header.flags != 0u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_retry_summary(
+            env->body, &out->retry_summary);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        (void)memcpy(components, out->retry_summary.transaction_id, 16u);
+        ninlil_model_domain_encode_u16_be(
+            &components[16], out->retry_summary.summary_kind);
+        ninlil_model_domain_encode_u16_be(
+            &components[18], out->retry_summary.slot_index);
+        cv.data = components;
+        cv.length = 20u;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_RETRY_SUMMARY, cv, key->identity,
+                key->identity_length)
+            || !header_primary_id_eq(
+                   env, out->retry_summary.transaction_id)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;
