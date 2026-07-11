@@ -83,6 +83,7 @@ typedef struct body_any {
     ninlil_model_domain_body_blob_manifest_t blob_manifest;
     ninlil_model_domain_body_blob_chunk_t blob_chunk;
     ninlil_model_domain_body_attempt_t attempt;
+    ninlil_model_domain_body_attempt_id_index_t attempt_id_index;
 } body_any_t;
 
 static ninlil_status_t decode_body_any(
@@ -164,6 +165,10 @@ static ninlil_status_t decode_body_any(
     }
     if (family == 6u && subtype == 0x31u) {
         return ninlil_model_domain_decode_body_attempt(body, &any->attempt);
+    }
+    if (family == 6u && subtype == 0x34u) {
+        return ninlil_model_domain_decode_body_attempt_id_index(
+            body, &any->attempt_id_index);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -251,6 +256,10 @@ static ninlil_status_t encode_body_any(
     if (family == 6u && subtype == 0x31u) {
         return ninlil_model_domain_encode_body_attempt(
             &any->attempt, out, capacity, out_len);
+    }
+    if (family == 6u && subtype == 0x34u) {
+        return ninlil_model_domain_encode_body_attempt_id_index(
+            &any->attempt_id_index, out, capacity, out_len);
     }
     return NINLIL_E_INVALID_ARGUMENT;
 }
@@ -1113,6 +1122,26 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 QCHECK(!zeros(rec.attempt.primary_key_digest, 32u));
                 QCHECK(!zeros(rec.attempt.target_digest, 32u));
                 QCHECK(!zeros(rec.envelope.header.primary_id, 16u));
+            } else if (v->subtype == 0x34u) {
+                /* ATTEMPT_ID_INDEX: rev1/flags0, ID128 key, primary=txn. */
+                QCHECK(rec.envelope.header.record_revision == 1u);
+                QCHECK(rec.envelope.header.flags == 0u);
+                QCHECK(!zeros(rec.attempt_id_index.attempt_id, 16u));
+                QCHECK(!zeros(rec.attempt_id_index.transaction_id, 16u));
+                QCHECK(rec.key.identity_kind
+                    == NINLIL_MODEL_DOMAIN_ID_KIND_ID128);
+                QCHECK(rec.key.identity_length == 16u);
+                QCHECK(rec.key.identity != NULL);
+                QCHECK(memcmp(rec.key.identity,
+                           rec.attempt_id_index.attempt_id, 16u)
+                    == 0);
+                QCHECK(memcmp(rec.envelope.header.primary_id,
+                           rec.attempt_id_index.transaction_id, 16u)
+                    == 0);
+                QCHECK(!zeros(
+                    rec.attempt_id_index.attempt_record_key_digest, 32u));
+                QCHECK(!zeros(
+                    rec.attempt_id_index.attempt_creation_value_digest, 32u));
             }
             if (ninlil_dv_str(v->digest_hex)[0] != '\0') {
                 ninlil_model_domain_digest_t d;
@@ -1174,6 +1203,7 @@ static int test_catalog_and_replay(const char *path)
     uint32_t cov27 = 0u;
     uint32_t cov30 = 0u;
     uint32_t cov31 = 0u;
+    uint32_t cov34 = 0u;
     uint32_t unimplemented = 0u;
 
     if (ninlil_dv_load_file(path, &file, err, sizeof(err)) != 0) {
@@ -1285,6 +1315,8 @@ static int test_catalog_and_replay(const char *path)
                     cov30++;
                 } else if (v->subtype == 0x31u) {
                     cov31++;
+                } else if (v->subtype == 0x34u) {
+                    cov34++;
                 }
             } else {
                 dsb3_neg++;
@@ -1328,12 +1360,13 @@ static int test_catalog_and_replay(const char *path)
     REQUIRE(cov27 == file.catalog.dsb3_subtype_27_positive);
     REQUIRE(cov30 == file.catalog.dsb3_subtype_30_positive);
     REQUIRE(cov31 == file.catalog.dsb3_subtype_31_positive);
-    /* D1-B1 + D1-B2 + D1-B3a..d subtype coverage. */
+    REQUIRE(cov34 == file.catalog.dsb3_subtype_34_positive);
+    /* D1-B1 + D1-B2 + D1-B3a..e subtype coverage. */
     if (cov01 == 0u || cov60 == 0u || cov62 == 0u || cov64 == 0u
         || cov7d == 0u || cov10 == 0u || cov11 == 0u || cov20 == 0u
         || cov21 == 0u || cov22 == 0u || cov23 == 0u || cov24 == 0u
         || cov25 == 0u || cov26 == 0u || cov27 == 0u || cov30 == 0u
-        || cov31 == 0u) {
+        || cov31 == 0u || cov34 == 0u) {
         unimplemented = 1u;
     }
     REQUIRE(unimplemented == 0u);
@@ -1342,11 +1375,11 @@ static int test_catalog_and_replay(const char *path)
         "dsb2_pos=%u dsb2_neg=%u dsb3_pos=%u dsb3_neg=%u "
         "cov01=%u cov60=%u cov62=%u cov64=%u cov7d=%u "
         "cov10=%u cov11=%u cov20=%u cov21=%u cov22=%u cov23=%u cov24=%u "
-        "cov25=%u cov26=%u cov27=%u cov30=%u cov31=%u "
+        "cov25=%u cov26=%u cov27=%u cov30=%u cov31=%u cov34=%u "
         "sizeof(ninlil_dv_vector_t)=%zu\n",
         file.vector_count, dsb1_pos, dsb1_neg, dsb2_pos, dsb2_neg, dsb3_pos,
         dsb3_neg, cov01, cov60, cov62, cov64, cov7d, cov10, cov11, cov20,
-        cov21, cov22, cov23, cov24, cov25, cov26, cov27, cov30, cov31,
+        cov21, cov22, cov23, cov24, cov25, cov26, cov27, cov30, cov31, cov34,
         sizeof(ninlil_dv_vector_t));
     ninlil_dv_free(&file);
     return 0;
@@ -1988,7 +2021,7 @@ static int test_body_alias_and_overflow(const char *vector_path)
         REQUIRE(((const uint8_t *)&dec)[0] == 0xA5u);
     }
 
-    /* Every fixed D1-B1 body API obeys the same alias/untouched contract. */
+    /* Every fixed D1 body API obeys the same alias/untouched contract. */
     CHECK_FIXED_BODY_ALIAS(
         ninlil_model_domain_body_internal_invariant_t,
         ninlil_model_domain_encode_body_internal_invariant,
@@ -2004,6 +2037,11 @@ static int test_body_alias_and_overflow(const char *vector_path)
         ninlil_model_domain_encode_body_attempt_reuse_fence,
         ninlil_model_domain_decode_body_attempt_reuse_fence,
         NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_REUSE_FENCE_BYTES);
+    CHECK_FIXED_BODY_ALIAS(
+        ninlil_model_domain_body_attempt_id_index_t,
+        ninlil_model_domain_encode_body_attempt_id_index,
+        ninlil_model_domain_decode_body_attempt_id_index,
+        NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES);
     CHECK_FIXED_BODY_ALIAS(
         ninlil_model_domain_body_witness_head_index_t,
         ninlil_model_domain_encode_body_witness_head_index,
@@ -3558,7 +3596,7 @@ static int test_catalog_format_mutations(const char *path)
     REQUIRE(mut != NULL);
     (void)memcpy(mut, text, (size_t)sz + 1u);
     {
-        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3d\"");
+        char *p = strstr(mut, "\"format\": \"ninlil-domain-store-v1-d1b3e\"");
         REQUIRE(p != NULL);
         /* overwrite to wrong format of same length */
         (void)memcpy(p,
@@ -3917,6 +3955,241 @@ static int test_attempt_contracts(const char *path)
     return 0;
 }
 
+/*
+ * D1-B3e ATTEMPT_ID_INDEX: independent oracle for
+ * attempt_record_key_digest = KEY_DIGEST(complete TX ATTEMPT key), typed
+ * ID128 key == attempt_id, primary_id == transaction_id, rev==1, and
+ * typed-path output-zero on failure. First-777 exact append-only
+ * preservation is the durable Python fingerprint gate
+ * (PRE_B3E_VECTORS_FINGERPRINT).
+ */
+static int test_attempt_id_index_contracts(const char *path)
+{
+    ninlil_dv_file_t file;
+    char err[256];
+    size_t i;
+    int seen_cmd = 0;
+    int seen_evt = 0;
+    int seen_can = 0;
+    int seen_typed = 0;
+    uint32_t aii_count = 0u;
+    uint32_t typed_ok = 0u;
+    ninlil_model_domain_body_attempt_id_index_t body;
+    ninlil_model_domain_typed_record_t rec;
+    ninlil_model_domain_key_view_t kv;
+    ninlil_model_domain_digest_t dig;
+    uint8_t components[2u + 2u + 16u + 16u];
+    uint8_t key_buf[64];
+    uint8_t val_buf[1024];
+    size_t kn = 0u;
+    size_t vn = 0u;
+    uint32_t o;
+    ninlil_bytes_view_t cv;
+    ninlil_model_domain_key_t built;
+
+    REQUIRE(path != NULL);
+    REQUIRE(ninlil_dv_load_file(path, &file, err, sizeof(err)) == 0);
+    /* Non-AII id-prefix guard; exact first-777 bytes gated by Python FP. */
+    REQUIRE(file.vector_count > 777u);
+    for (i = 0u; i < 777u; ++i) {
+        REQUIRE(strncmp(file.vectors[i].id, "DSB3_AII_", 9) != 0);
+    }
+
+    for (i = 0u; i < file.vector_count; ++i) {
+        const ninlil_dv_vector_t *v = &file.vectors[i];
+        uint8_t enc[128];
+        size_t bn = 0u;
+        if (v->subtype != 0x34u) {
+            continue;
+        }
+        aii_count++;
+        if (strcmp(v->op, "body_roundtrip") != 0
+            || strcmp(v->expected_status, "OK") != 0) {
+            continue;
+        }
+        REQUIRE(hex_to(ninlil_dv_str(v->body_hex), enc, sizeof(enc), &bn)
+            == 0);
+        REQUIRE(bn == NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES);
+        REQUIRE(ninlil_model_domain_decode_body_attempt_id_index(
+                (ninlil_bytes_view_t){enc, (uint32_t)bn}, &body)
+            == NINLIL_OK);
+        REQUIRE(!zeros(body.attempt_id, 16u));
+        REQUIRE(!zeros(body.transaction_id, 16u));
+        REQUIRE(!zeros(body.attempt_creation_value_digest, 32u));
+        REQUIRE(body.reserved == 0u);
+        /* Independent KEY_DIGEST(complete TX-owned ATTEMPT key). */
+        ninlil_model_domain_encode_u16_be(
+            components, NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION);
+        o = 2u;
+        ninlil_model_domain_encode_u16_be(
+            &components[o], NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_TX_BYTES);
+        o += 2u;
+        (void)memcpy(&components[o], body.transaction_id, 16u);
+        o += 16u;
+        (void)memcpy(&components[o], body.attempt_id, 16u);
+        o += 16u;
+        cv.data = components;
+        cv.length = o;
+        REQUIRE(ninlil_model_domain_composite_digest(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT, cv, &dig)
+            == NINLIL_OK);
+        {
+            ninlil_bytes_view_t idv;
+            idv.data = dig.bytes;
+            idv.length = 32u;
+            REQUIRE(ninlil_model_domain_build_key(
+                    NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT,
+                    NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE, idv, &built)
+                == NINLIL_OK);
+            REQUIRE(ninlil_model_domain_key_digest(
+                    (ninlil_bytes_view_t){built.bytes, built.length}, &dig)
+                == NINLIL_OK);
+            /* Must equal stored record key digest — do not discard. */
+            REQUIRE(memcmp(body.attempt_record_key_digest, dig.bytes, 32u)
+                == 0);
+            /* Explicit: stored digest is complete-key digest, not bare. */
+            {
+                ninlil_model_domain_digest_t bare;
+                REQUIRE(ninlil_model_domain_composite_digest(
+                        NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT, cv, &bare)
+                    == NINLIL_OK);
+                REQUIRE(memcmp(body.attempt_record_key_digest, bare.bytes, 32u)
+                    != 0);
+            }
+        }
+        if (body.attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_COMMAND) {
+            seen_cmd = 1;
+        } else if (
+            body.attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_EVENT) {
+            seen_evt = 1;
+        } else if (
+            body.attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_CANCEL) {
+            seen_can = 1;
+        }
+    }
+    REQUIRE(aii_count > 0u);
+    REQUIRE(seen_cmd != 0);
+    REQUIRE(seen_evt != 0);
+    REQUIRE(seen_can != 0);
+
+    for (i = 0u; i < file.vector_count; ++i) {
+        const ninlil_dv_vector_t *v = &file.vectors[i];
+        if (v->subtype != 0x34u || strcmp(v->op, "typed_record") != 0
+            || strcmp(v->expected_status, "OK") != 0) {
+            continue;
+        }
+        seen_typed = 1;
+        typed_ok++;
+        REQUIRE(hex_to(ninlil_dv_str(v->key_hex), key_buf, sizeof(key_buf),
+                    &kn)
+            == 0);
+        REQUIRE(hex_to(ninlil_dv_str(v->value_hex), val_buf, sizeof(val_buf),
+                    &vn)
+            == 0);
+        REQUIRE(ninlil_model_domain_parse_key(
+                (ninlil_bytes_view_t){key_buf, (uint32_t)kn}, &kv)
+            == NINLIL_OK);
+        REQUIRE(kv.family == NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN);
+        REQUIRE(kv.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT_ID_INDEX);
+        REQUIRE(kv.identity_kind == NINLIL_MODEL_DOMAIN_ID_KIND_ID128);
+        REQUIRE(kv.identity_length == 16u);
+        REQUIRE(kv.identity != NULL);
+
+        (void)memset(&rec, 0xA5, sizeof(rec));
+        REQUIRE(ninlil_model_domain_validate_typed_record(
+                (ninlil_bytes_view_t){key_buf, (uint32_t)kn},
+                (ninlil_bytes_view_t){val_buf, (uint32_t)vn}, &rec)
+            == NINLIL_OK);
+        REQUIRE(rec.subtype == 0x34u);
+        REQUIRE(rec.envelope.header.record_revision == 1u);
+        REQUIRE(rec.envelope.header.flags == 0u);
+        REQUIRE(!zeros(rec.envelope.header.head_witness_digest, 32u));
+        REQUIRE(!zeros(rec.envelope.header.primary_value_digest, 32u));
+        REQUIRE(memcmp(
+                kv.identity, rec.attempt_id_index.attempt_id, 16u)
+            == 0);
+        REQUIRE(memcmp(
+                rec.key.identity, rec.attempt_id_index.attempt_id, 16u)
+            == 0);
+        REQUIRE(memcmp(
+                rec.envelope.header.primary_id,
+                rec.attempt_id_index.transaction_id, 16u)
+            == 0);
+        REQUIRE(!zeros(rec.attempt_id_index.attempt_record_key_digest, 32u));
+        REQUIRE(
+            !zeros(rec.attempt_id_index.attempt_creation_value_digest, 32u));
+
+        /* Recompute complete-key KEY_DIGEST and bind to body field. */
+        ninlil_model_domain_encode_u16_be(
+            components, NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION);
+        o = 2u;
+        ninlil_model_domain_encode_u16_be(
+            &components[o], NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_TX_BYTES);
+        o += 2u;
+        (void)memcpy(
+            &components[o], rec.attempt_id_index.transaction_id, 16u);
+        o += 16u;
+        (void)memcpy(&components[o], rec.attempt_id_index.attempt_id, 16u);
+        o += 16u;
+        cv.data = components;
+        cv.length = o;
+        REQUIRE(ninlil_model_domain_composite_digest(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT, cv, &dig)
+            == NINLIL_OK);
+        {
+            ninlil_bytes_view_t idv;
+            idv.data = dig.bytes;
+            idv.length = 32u;
+            REQUIRE(ninlil_model_domain_build_key(
+                    NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT,
+                    NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE, idv, &built)
+                == NINLIL_OK);
+            REQUIRE(ninlil_model_domain_key_digest(
+                    (ninlil_bytes_view_t){built.bytes, built.length}, &dig)
+                == NINLIL_OK);
+            REQUIRE(memcmp(
+                    rec.attempt_id_index.attempt_record_key_digest, dig.bytes,
+                    32u)
+                == 0);
+        }
+    }
+    REQUIRE(seen_typed != 0);
+    REQUIRE(typed_ok >= 3u);
+
+    /* Typed path: non-alias failure zeros out_record. */
+    kn = 0u;
+    vn = 0u;
+    for (i = 0u; i < file.vector_count; ++i) {
+        if (strcmp(file.vectors[i].id, "DSB3_AII_CMD_TYPED") == 0) {
+            REQUIRE(hex_to(
+                    ninlil_dv_str(file.vectors[i].key_hex), key_buf,
+                    sizeof(key_buf), &kn)
+                == 0);
+            REQUIRE(hex_to(
+                    ninlil_dv_str(file.vectors[i].value_hex), val_buf,
+                    sizeof(val_buf), &vn)
+                == 0);
+            break;
+        }
+    }
+    REQUIRE(kn > 0u && vn > 0u);
+    (void)memset(&rec, 0xA5, sizeof(rec));
+    val_buf[vn - 1u] ^= 0xFFu;
+    REQUIRE(ninlil_model_domain_validate_typed_record(
+            (ninlil_bytes_view_t){key_buf, (uint32_t)kn},
+            (ninlil_bytes_view_t){val_buf, (uint32_t)vn}, &rec)
+        != NINLIL_OK);
+    REQUIRE(zeros(&rec, sizeof(rec)));
+
+    ninlil_dv_free(&file);
+    (void)fprintf(stdout,
+        "attempt_id_index contracts ok aii_vectors=%u typed_ok=%u\n",
+        aii_count, typed_ok);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path = "spec/vectors/domain-store-v1.json";
@@ -3931,6 +4204,7 @@ int main(int argc, char **argv)
         || test_message_semantic_digest_contracts(path) != 0
         || test_blob_helper_contracts(path) != 0
         || test_attempt_contracts(path) != 0
+        || test_attempt_id_index_contracts(path) != 0
         || test_catalog_and_replay(path) != 0
         || test_mutation_rejects_wrong_digest(path) != 0
         || test_manifest_key_length_mutation(path) != 0

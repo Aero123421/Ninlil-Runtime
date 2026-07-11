@@ -5,7 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a..d body codec. Boundary notes for later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..e body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -21,11 +21,16 @@
  *   0..count-1 enumeration, multi-chunk stream digest, owner semantic content
  *   match, same-owner/kind/content manifest alias, lifecycle erase / capacity
  *   accounting (B3c proves same-record body/key/blob_id/local length only);
- *   ATTEMPT live owner, ATTEMPT_ID_INDEX 0, CANCEL_STATE gate, family
- *   COMMAND/EVENT kind, current/stale attempt, primary value digest,
+ *   ATTEMPT live owner, ATTEMPT_ID_INDEX cardinality, CANCEL_STATE gate,
+ *   family COMMAND/EVENT kind, current/stale attempt, primary value digest,
  *   target/semantic digest recompute, SEND_COUNTER health/cardinality
- *   (B3d proves same-record body/key/matrix only; not ATTEMPT_ID_INDEX or
- *   CANCEL_STATE).
+ *   (B3d proves same-record body/key/matrix only); ATTEMPT_ID_INDEX live
+ *   TRANSACTION_ANCHOR PVD, live/current ATTEMPT binding, CREATE manifest
+ *   new digest equality (not current ATTEMPT value after replacement), local
+ *   ATTEMPT/index cardinality, DELIVERY/remote no-index, reverse reply
+ *   no-index, co-create witness, fenced pair cleanup/fence counts,
+ *   family-kind and CANCEL_STATE cross proofs (B3e proves same-record
+ *   body/key/record-key-digest/primary binding only; not CANCEL_STATE 0x33).
  * - D4: COMMIT_UNKNOWN old/new complete-value digest convergence.
  */
 
@@ -5952,6 +5957,131 @@ ninlil_status_t ninlil_model_domain_decode_body_attempt(
     return NINLIL_OK;
 }
 
+/* --- ATTEMPT_ID_INDEX helpers (D1-B3e) --- */
+
+/*
+ * attempt_record_key_digest must equal KEY_DIGEST(complete ATTEMPT key)
+ * where ATTEMPT identity is COMPOSITE(31, TRANSACTION owner kind u16=1 ||
+ * RAW16(len16, transaction_id) || attempt_id). Bare composite digest alone
+ * is never accepted (docs17 §8.4).
+ */
+static int attempt_id_index_record_key_digest_ok(
+    const ninlil_model_domain_body_attempt_id_index_t *body)
+{
+    uint8_t components[2u + 2u + 16u + 16u];
+    ninlil_bytes_view_t cv;
+    uint32_t o;
+
+    if (body == NULL) {
+        return 0;
+    }
+    ninlil_model_domain_encode_u16_be(
+        components, NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION);
+    o = 2u;
+    o += encode_raw16(
+        &components[o], NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_TX_BYTES,
+        body->transaction_id);
+    (void)memcpy(
+        &components[o], body->attempt_id, NINLIL_MODEL_DOMAIN_ID_BYTES);
+    o += NINLIL_MODEL_DOMAIN_ID_BYTES;
+    cv.data = components;
+    cv.length = o;
+    return digest_eq_composite_key(
+        body->attempt_record_key_digest,
+        NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT,
+        cv);
+}
+
+static int attempt_id_index_fields_ok(
+    const ninlil_model_domain_body_attempt_id_index_t *body)
+{
+    if (body == NULL) {
+        return 0;
+    }
+    if (id_is_zero(body->attempt_id) || id_is_zero(body->transaction_id)) {
+        return 0;
+    }
+    if (!attempt_kind_is_known(body->attempt_kind) || body->reserved != 0u) {
+        return 0;
+    }
+    if (digest_is_zero(body->attempt_creation_value_digest)) {
+        return 0;
+    }
+    return attempt_id_index_record_key_digest_ok(body);
+}
+
+/* --- ATTEMPT_ID_INDEX (0x34) --- */
+
+uint32_t ninlil_model_domain_body_attempt_id_index_encoded_length(void)
+{
+    return NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_attempt_id_index(
+    const ninlil_model_domain_body_attempt_id_index_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    const uint32_t required =
+        NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES;
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_alias_ok(
+            body, body == NULL ? 0u : sizeof(*body),
+            out_bytes, capacity, out_length)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || !attempt_id_index_fields_ok(body)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    (void)memcpy(&out_bytes[0], body->attempt_id, 16u);
+    (void)memcpy(&out_bytes[16], body->transaction_id, 16u);
+    ninlil_model_domain_encode_u16_be(&out_bytes[32], body->attempt_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[34], 0u);
+    (void)memcpy(&out_bytes[36], body->attempt_record_key_digest, 32u);
+    (void)memcpy(&out_bytes[68], body->attempt_creation_value_digest, 32u);
+    *out_length = required;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_attempt_id_index(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_attempt_id_index_t *out_body)
+{
+    ninlil_model_domain_body_attempt_id_index_t tmp;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length
+            != NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_ID_INDEX_BYTES) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    (void)memcpy(tmp.attempt_id, &encoded.data[0], 16u);
+    (void)memcpy(tmp.transaction_id, &encoded.data[16], 16u);
+    tmp.attempt_kind = ninlil_model_domain_decode_u16_be(&encoded.data[32]);
+    tmp.reserved = ninlil_model_domain_decode_u16_be(&encoded.data[34]);
+    (void)memcpy(tmp.attempt_record_key_digest, &encoded.data[36], 32u);
+    (void)memcpy(tmp.attempt_creation_value_digest, &encoded.data[68], 32u);
+    if (!attempt_id_index_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -5980,6 +6110,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_ORDERED_INGRESS:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT_ID_INDEX:
         return 1;
     default:
         return 0;
@@ -6911,6 +7042,42 @@ static ninlil_status_t validate_header_body_local(
             return NINLIL_E_STORAGE_CORRUPT;
         }
         if (!header_primary_id_eq(env, expect_pid)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT_ID_INDEX) {
+        /*
+         * ATTEMPT_ID_INDEX same-record (docs17 §8.4):
+         * - flags 0; revision exact 1; head and PVD non-zero
+         * - key direct ID128 equals body attempt_id
+         * - primary_id equals body transaction_id
+         * - body: nonzero ids/kind/reserved0/creation digest +
+         *   attempt_record_key_digest = KEY_DIGEST(complete TX ATTEMPT key)
+         * D3 deferred: live TRANSACTION_ANCHOR PVD; live/current ATTEMPT
+         * binding; CREATE manifest new digest equality; local ATTEMPT/index
+         * cardinality; DELIVERY/remote no-index; reverse reply no-index;
+         * co-create witness; fenced pair cleanup/fence counts; family-kind
+         * and CANCEL_STATE cross proofs. CANCEL_STATE 0x33 is out of B3e.
+         */
+        if (env->header.record_revision != 1u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind != NINLIL_MODEL_DOMAIN_ID_KIND_ID128
+            || key->identity_length != 16u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_attempt_id_index(
+            env->body, &out->attempt_id_index);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        if (memcmp(
+                key->identity, out->attempt_id_index.attempt_id, 16u)
+                != 0
+            || !header_primary_id_eq(
+                   env, out->attempt_id_index.transaction_id)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         return NINLIL_OK;
