@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /*
- * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a + D1-B3b + D1-B3c.
+ * Domain Store v1 pure body codec — D1-B1 + D1-B2 + D1-B3a..d.
  * Production-private; not installed. Complements domain_store_codec (D1-A)
  * with exact body encode/decode and same-record typed validation.
  * Does not implement D2 scan, D3 cross-row, or D4 convergence.
@@ -20,6 +20,8 @@ extern "C" {
  *   D1-B3a: family 6 26 SCHEDULER_OWNER only
  *   D1-B3b: family 6 27 ORDERED_INGRESS + pure message_semantic_digest helper
  *   D1-B3c: family 6 30 BLOB manifest (flags=1) + chunk (flags=2) pure body
+ *   D1-B3d: family 6 31 ATTEMPT pure body + same-record matrix validation
+ *          (not ATTEMPT_ID_INDEX 0x34, not CANCEL_STATE 0x33)
  *
  * Output / alias contract (identical to D1-A domain_store_codec.h):
  * - All participating input and output ranges must be pairwise disjoint.
@@ -63,13 +65,20 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BODY_SCHEDULER_OWNER_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_BODY_ORDERED_INGRESS_MAX ((uint32_t)1536u)
 #define NINLIL_MODEL_DOMAIN_BODY_BLOB_MAX ((uint32_t)3264u)
+#define NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_MAX ((uint32_t)512u)
 #define NINLIL_MODEL_DOMAIN_RAW16_SUBJECT_KEY_MAX ((uint32_t)255u)
+/* ATTEMPT owner_key_raw content max (docs17 §8.3); TX=16 / DELIVERY=80. */
+#define NINLIL_MODEL_DOMAIN_RAW16_ATTEMPT_OWNER_KEY_MAX ((uint32_t)128u)
 #define NINLIL_MODEL_DOMAIN_EVIDENCE_BYTES_MAX ((uint32_t)128u)
 
 /* BLOB owner_key_raw exact content lengths (docs17 §8.3). */
 #define NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_TX_BYTES ((uint16_t)16u)
 #define NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_INGRESS_BYTES ((uint16_t)8u)
 #define NINLIL_MODEL_DOMAIN_BLOB_OWNER_KEY_DELIVERY_BYTES ((uint16_t)80u)
+
+/* ATTEMPT owner_key_raw exact content lengths (docs17 §8.3). */
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_TX_BYTES ((uint16_t)16u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_DELIVERY_BYTES ((uint16_t)80u)
 
 /* Closed body enums (docs17 section 7.1). */
 #define NINLIL_MODEL_DOMAIN_INDEX_STATE_BASELINE ((uint16_t)1u)
@@ -120,6 +129,28 @@ extern "C" {
 #define NINLIL_MODEL_DOMAIN_BLOB_KIND_INGRESS_PAYLOAD ((uint16_t)3u)
 #define NINLIL_MODEL_DOMAIN_BLOB_KIND_EVIDENCE ((uint16_t)4u)
 #define NINLIL_MODEL_DOMAIN_BLOB_KIND_REPLY ((uint16_t)5u)
+
+/*
+ * ATTEMPT private enums (docs17 §7.1 / §8.3) — distinct from reservation /
+ * scheduler / BLOB / reverse-reply send_state enums.
+ */
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_DELIVERY ((uint16_t)2u)
+
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_COMMAND ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_EVENT ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_CANCEL ((uint16_t)3u)
+
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_PREPARED ((uint16_t)1u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_OBSERVED_SENT ((uint16_t)2u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED ((uint16_t)3u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RECOVERY_REQUIRED ((uint16_t)4u)
+
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_PREPARED ((uint32_t)1u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RETRYABLE_NO_SEND ((uint32_t)2u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_SENT_POSSIBLE ((uint32_t)3u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_CLOSED_DENIED ((uint32_t)4u)
+#define NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RECOVERY_REQUIRED ((uint32_t)5u)
 
 /* subject_kind / record role for INTERNAL_INVARIANT (docs17 section 6). */
 #define NINLIL_MODEL_DOMAIN_SUBJECT_KIND_NAMESPACE ((uint16_t)0u)
@@ -467,6 +498,38 @@ typedef struct ninlil_model_domain_body_blob_chunk {
 } ninlil_model_domain_body_blob_chunk_t;
 
 /*
+ * ATTEMPT (0x31). owner_key_raw borrows encoded body on decode.
+ * Same-record closed matrix + identity (docs17 §8.3). Live owner /
+ * ATTEMPT_ID_INDEX / CANCEL_STATE gate / semantic recompute are D3.
+ */
+typedef struct ninlil_model_domain_body_attempt {
+    uint8_t attempt_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint16_t attempt_owner_kind;
+    uint16_t reserved0;
+    uint16_t owner_key_raw_length;
+    const uint8_t *owner_key_raw;
+    uint8_t primary_key_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint8_t target_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint16_t attempt_kind;
+    uint16_t attempt_state;
+    uint64_t retry_cycle_id;
+    uint32_t attempt_in_cycle;
+    uint64_t cumulative_attempts;
+    uint64_t send_operation_generation;
+    uint64_t send_invocation_count;
+    uint32_t send_counter_exhausted; /* exact 0/1 */
+    uint32_t reserved1;
+    uint8_t message_semantic_digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES];
+    uint8_t prepared_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t prepared_at_ms; /* 0 allowed when epoch non-zero */
+    uint32_t send_state;
+    uint64_t availability_epoch;
+    uint8_t receipt_timeout_clock_epoch[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    uint64_t receipt_timeout_at_ms;
+} ninlil_model_domain_body_attempt_t;
+
+/*
  * Prefix fields for message_semantic_digest (docs17 §5.1). Domain PARTY /
  * TARGET / SERVICE_IDENTITY encodings only — no public ABI headers, pointers,
  * reserved, or padding. payload_length is the declared length (hashed as u32
@@ -565,6 +628,7 @@ typedef struct ninlil_model_domain_typed_record {
         ninlil_model_domain_body_ordered_ingress_t ordered_ingress;
         ninlil_model_domain_body_blob_manifest_t blob_manifest;
         ninlil_model_domain_body_blob_chunk_t blob_chunk;
+        ninlil_model_domain_body_attempt_t attempt;
     };
 } ninlil_model_domain_typed_record_t;
 
@@ -889,6 +953,24 @@ ninlil_status_t ninlil_model_domain_decode_body_blob_chunk(
     ninlil_bytes_view_t encoded,
     ninlil_model_domain_body_blob_chunk_t *out_body);
 
+/* --- ATTEMPT (0x31) --- */
+/* Returns required length, or 0 if body shape is not encodable. */
+uint32_t ninlil_model_domain_body_attempt_encoded_length(
+    const ninlil_model_domain_body_attempt_t *body);
+
+ninlil_status_t ninlil_model_domain_encode_body_attempt(
+    const ninlil_model_domain_body_attempt_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length);
+
+/*
+ * Decode borrows owner_key_raw from encoded. Valid only while encoded lives.
+ */
+ninlil_status_t ninlil_model_domain_decode_body_attempt(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_attempt_t *out_body);
+
 /*
  * Streaming message_semantic_digest (docs17 §5.1). Pure Core helper:
  * no heap, no VLA, no payload||evidence concatenation buffer.
@@ -934,7 +1016,7 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
     ninlil_model_domain_digest_t *out_digest);
 
 /*
- * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a + D1-B3b + D1-B3c.
+ * Same-record typed validation for D1-B1 + D1-B2 + D1-B3a..d.
  * Decodes key + envelope (D1-A) and body (this module), then checks
  * header/body/key invariants decidable from one record alone.
  *
@@ -949,7 +1031,12 @@ ninlil_status_t ninlil_model_domain_message_semantic_digest(
  *       vs receipt_stage; BLOB live owner/manifest get, primary value digest
  *       equality, chunk 0..count-1 enumeration, multi-chunk stream digest,
  *       owner semantic content match, same-owner/kind/content manifest alias,
- *       lifecycle erase / capacity accounting
+ *       lifecycle erase / capacity accounting; ATTEMPT live owner /
+ *       ATTEMPT_ID_INDEX 0 / CANCEL_STATE gate / family COMMAND/EVENT kind /
+ *       current/stale attempt / primary value digest / target/semantic digest
+ *       recompute / SEND_COUNTER health/cardinality (B3d proves same-record
+ *       body/key/matrix only; does not implement ATTEMPT_ID_INDEX or
+ *       CANCEL_STATE)
  * - D4: COMMIT_UNKNOWN old/new convergence
  *
  * On success, out_record (when non-NULL) is filled; envelope.body and

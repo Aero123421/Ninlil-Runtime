@@ -5,8 +5,7 @@
 #include <string.h>
 
 /*
- * D1-B1 + D1-B2 + D1-B3a + D1-B3b + D1-B3c body codec. Boundary notes for
- * later milestones:
+ * D1-B1 + D1-B2 + D1-B3a..d body codec. Boundary notes for later milestones:
  * - D2: bounded recovery scan, row budget, workspace state machine.
  * - D3: cross-row primary/index/backlink, ATTEMPT_REUSE_FENCE vs CLEANUP_PLAN
  *   active_plan_count equality, HEAD_INDEX member get/value mutual proof,
@@ -21,7 +20,12 @@
  *   BLOB live owner/manifest get, primary value digest equality, chunk
  *   0..count-1 enumeration, multi-chunk stream digest, owner semantic content
  *   match, same-owner/kind/content manifest alias, lifecycle erase / capacity
- *   accounting (B3c proves same-record body/key/blob_id/local length only).
+ *   accounting (B3c proves same-record body/key/blob_id/local length only);
+ *   ATTEMPT live owner, ATTEMPT_ID_INDEX 0, CANCEL_STATE gate, family
+ *   COMMAND/EVENT kind, current/stale attempt, primary value digest,
+ *   target/semantic digest recompute, SEND_COUNTER health/cardinality
+ *   (B3d proves same-record body/key/matrix only; not ATTEMPT_ID_INDEX or
+ *   CANCEL_STATE).
  * - D4: COMMIT_UNKNOWN old/new complete-value digest convergence.
  */
 
@@ -5364,6 +5368,590 @@ ninlil_status_t ninlil_model_domain_decode_body_blob_chunk(
     return NINLIL_OK;
 }
 
+/* --- ATTEMPT helpers (D1-B3d) --- */
+
+static int attempt_owner_kind_is_known(uint16_t owner_kind)
+{
+    return owner_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION
+        || owner_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_DELIVERY;
+}
+
+static int attempt_kind_is_known(uint16_t attempt_kind)
+{
+    return attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_COMMAND
+        || attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_EVENT
+        || attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_CANCEL;
+}
+
+static int attempt_state_is_known(uint16_t attempt_state)
+{
+    return attempt_state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_PREPARED
+        || attempt_state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_OBSERVED_SENT
+        || attempt_state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED
+        || attempt_state
+            == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RECOVERY_REQUIRED;
+}
+
+static int attempt_send_state_is_known(uint32_t send_state)
+{
+    return send_state == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_PREPARED
+        || send_state == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RETRYABLE_NO_SEND
+        || send_state == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_SENT_POSSIBLE
+        || send_state == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_CLOSED_DENIED
+        || send_state == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RECOVERY_REQUIRED;
+}
+
+/* Receipt timeout: (0,0) or (epoch non-zero, at_ms non-zero) only. */
+static int attempt_timeout_pair_ok(
+    const uint8_t epoch[NINLIL_MODEL_DOMAIN_ID_BYTES], uint64_t at_ms)
+{
+    if (epoch == NULL) {
+        return 0;
+    }
+    if (id_is_zero(epoch)) {
+        return at_ms == 0u;
+    }
+    return at_ms != 0u;
+}
+
+/*
+ * send_counter_exhausted exact 0/1; =1 iff gen==UINT64_MAX or inv==UINT64_MAX.
+ * Always require inv <= gen.
+ */
+static int attempt_counter_rules_ok(
+    uint64_t gen, uint64_t inv, uint32_t exhausted)
+{
+    int at_max;
+
+    if (inv > gen) {
+        return 0;
+    }
+    if (exhausted != 0u && exhausted != 1u) {
+        return 0;
+    }
+    at_max = (gen == UINT64_MAX) || (inv == UINT64_MAX);
+    if (exhausted == 1u) {
+        return at_max;
+    }
+    return !at_max;
+}
+
+static int attempt_counters_all_zero(
+    uint64_t gen, uint64_t inv, uint32_t exhausted)
+{
+    return gen == 0u && inv == 0u && exhausted == 0u;
+}
+
+/* Local TX COMMAND/EVENT cycle fields (docs17 §8.3). */
+static int attempt_local_cycle_ok(
+    uint16_t attempt_kind,
+    uint64_t retry_cycle_id,
+    uint32_t attempt_in_cycle,
+    uint64_t cumulative_attempts)
+{
+    if (attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_COMMAND) {
+        return retry_cycle_id == 0u && attempt_in_cycle == 0u
+            && cumulative_attempts >= 1u;
+    }
+    if (attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_EVENT) {
+        return retry_cycle_id >= 1u
+            && attempt_in_cycle >= 1u
+            && attempt_in_cycle <= NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
+            && cumulative_attempts >= (uint64_t)attempt_in_cycle;
+    }
+    if (attempt_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_CANCEL) {
+        return retry_cycle_id == 0u && attempt_in_cycle == 0u
+            && cumulative_attempts == 0u;
+    }
+    return 0;
+}
+
+/* DELIVERY remote: cycle always zero (not local COMMAND/EVENT cycle rules). */
+static int attempt_remote_cycle_zero(
+    uint64_t retry_cycle_id,
+    uint32_t attempt_in_cycle,
+    uint64_t cumulative_attempts)
+{
+    return retry_cycle_id == 0u && attempt_in_cycle == 0u
+        && cumulative_attempts == 0u;
+}
+
+/*
+ * TxGate path: gen>=1, inv=0, availability=0.
+ * Bearer path: gen>=1, inv>=1, inv<=gen, availability non-zero.
+ * Exact either for RESOLVED + RETRYABLE_NO_SEND / CLOSED_DENIED (CMD/EVT).
+ */
+static int attempt_txgate_path_ok(uint64_t gen, uint64_t inv, uint64_t avail)
+{
+    return gen >= 1u && inv == 0u && avail == 0u;
+}
+
+static int attempt_bearer_path_ok(uint64_t gen, uint64_t inv, uint64_t avail)
+{
+    return gen >= 1u && inv >= 1u && inv <= gen && avail != 0u;
+}
+
+static int attempt_resolved_path_ok(uint64_t gen, uint64_t inv, uint64_t avail)
+{
+    return attempt_txgate_path_ok(gen, inv, avail)
+        || attempt_bearer_path_ok(gen, inv, avail);
+}
+
+/*
+ * TRANSACTION-owned local closed matrix (docs17 §8.3). Rows outside the table
+ * are corrupt. CANCEL counters always 0; CMD/EVT follow path coupling.
+ */
+static int attempt_local_matrix_ok(
+    const ninlil_model_domain_body_attempt_t *body)
+{
+    uint16_t kind;
+    uint16_t state;
+    uint32_t send;
+    uint64_t gen;
+    uint64_t inv;
+    uint32_t exhausted;
+    uint64_t avail;
+    int timeout_cleared;
+    int timeout_ok;
+
+    if (body == NULL) {
+        return 0;
+    }
+    kind = body->attempt_kind;
+    state = body->attempt_state;
+    send = body->send_state;
+    gen = body->send_operation_generation;
+    inv = body->send_invocation_count;
+    exhausted = body->send_counter_exhausted;
+    avail = body->availability_epoch;
+    timeout_ok = attempt_timeout_pair_ok(
+        body->receipt_timeout_clock_epoch, body->receipt_timeout_at_ms);
+    timeout_cleared = id_is_zero(body->receipt_timeout_clock_epoch)
+        && body->receipt_timeout_at_ms == 0u;
+    if (!timeout_ok) {
+        return 0;
+    }
+    if (!attempt_local_cycle_ok(
+            kind, body->retry_cycle_id, body->attempt_in_cycle,
+            body->cumulative_attempts)) {
+        return 0;
+    }
+
+    if (kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_COMMAND
+        || kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_EVENT) {
+        if (!attempt_counter_rules_ok(gen, inv, exhausted)) {
+            return 0;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_PREPARED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_PREPARED) {
+            return gen == 0u && inv == 0u && exhausted == 0u && avail == 0u
+                && timeout_cleared;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RETRYABLE_NO_SEND) {
+            return timeout_cleared
+                && attempt_resolved_path_ok(gen, inv, avail);
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_CLOSED_DENIED) {
+            return timeout_cleared
+                && attempt_resolved_path_ok(gen, inv, avail);
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_OBSERVED_SENT
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_SENT_POSSIBLE) {
+            /* timeout active or cleared; both exact 2-forms already checked */
+            return gen >= 1u && inv >= 1u && inv <= gen && avail != 0u;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_SENT_POSSIBLE) {
+            return gen >= 1u && inv >= 1u && inv <= gen && avail != 0u
+                && timeout_cleared;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RECOVERY_REQUIRED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RECOVERY_REQUIRED) {
+            /* frozen counters (rules already ok); avail any; timeout 2-form */
+            return 1;
+        }
+        return 0;
+    }
+
+    if (kind == NINLIL_MODEL_DOMAIN_ATTEMPT_KIND_CANCEL) {
+        if (!attempt_counters_all_zero(gen, inv, exhausted)) {
+            return 0;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_PREPARED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_PREPARED) {
+            return avail == 0u && timeout_cleared;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_PREPARED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RETRYABLE_NO_SEND) {
+            return avail != 0u && timeout_cleared;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_SENT_POSSIBLE) {
+            return avail != 0u && timeout_cleared;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_CLOSED_DENIED) {
+            /* avail 0 (TxGate) or non-zero (Bearer) — both legal */
+            return timeout_cleared;
+        }
+        if (state == NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RECOVERY_REQUIRED
+            && send == NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_RECOVERY_REQUIRED) {
+            return 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+/* DELIVERY-owned remote ingress: RESOLVED/SENT_POSSIBLE + all cycle/counters 0. */
+static int attempt_remote_matrix_ok(
+    const ninlil_model_domain_body_attempt_t *body)
+{
+    if (body == NULL) {
+        return 0;
+    }
+    if (body->attempt_state != NINLIL_MODEL_DOMAIN_ATTEMPT_STATE_RESOLVED
+        || body->send_state != NINLIL_MODEL_DOMAIN_ATTEMPT_SEND_SENT_POSSIBLE) {
+        return 0;
+    }
+    if (!attempt_kind_is_known(body->attempt_kind)) {
+        return 0;
+    }
+    if (!attempt_remote_cycle_zero(
+            body->retry_cycle_id, body->attempt_in_cycle,
+            body->cumulative_attempts)) {
+        return 0;
+    }
+    if (!attempt_counters_all_zero(
+            body->send_operation_generation, body->send_invocation_count,
+            body->send_counter_exhausted)) {
+        return 0;
+    }
+    if (body->availability_epoch != 0u) {
+        return 0;
+    }
+    if (!id_is_zero(body->receipt_timeout_clock_epoch)
+        || body->receipt_timeout_at_ms != 0u) {
+        return 0;
+    }
+    return 1;
+}
+
+static int attempt_owner_raw_is_valid(
+    uint16_t owner_kind,
+    uint16_t len,
+    const uint8_t *raw,
+    const uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES])
+{
+    if (raw == NULL || transaction_id == NULL) {
+        return 0;
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION) {
+        return len == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_TX_BYTES
+            && !id_is_zero(raw)
+            && memcmp(raw, transaction_id, 16u) == 0;
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_DELIVERY) {
+        /* Exact 80; txn component [32,48) matches body transaction_id. */
+        if (len != NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_KEY_DELIVERY_BYTES) {
+            return 0;
+        }
+        if (!reservation_owner_raw_is_valid(
+                NINLIL_MODEL_DOMAIN_RESERVATION_OWNER_DELIVERY, len, raw)) {
+            return 0;
+        }
+        return memcmp(raw + 32, transaction_id, 16u) == 0;
+    }
+    return 0;
+}
+
+static int attempt_primary_key_digest_ok(
+    uint16_t owner_kind,
+    uint16_t owner_key_raw_length,
+    const uint8_t *owner_key_raw,
+    const uint8_t transaction_id[NINLIL_MODEL_DOMAIN_ID_BYTES],
+    const uint8_t actual[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    /* 2-byte RAW16 length prefix + attempt owner_key_raw max (TX=16 / DLV=80). */
+    uint8_t raw16[2u + NINLIL_MODEL_DOMAIN_RAW16_ATTEMPT_OWNER_KEY_MAX];
+    ninlil_bytes_view_t components;
+    uint32_t raw16_len = 0u;
+
+    if (actual == NULL || owner_key_raw == NULL || transaction_id == NULL) {
+        return 0;
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION) {
+        if (owner_key_raw_length != 16u) {
+            return 0;
+        }
+        return digest_eq_complete_key(
+            actual,
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_TRANSACTION_ANCHOR,
+            NINLIL_MODEL_DOMAIN_ID_KIND_ID128,
+            transaction_id,
+            16u);
+    }
+    if (owner_kind == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_DELIVERY) {
+        if (!encode_raw16_into(
+                owner_key_raw_length, owner_key_raw, raw16, sizeof(raw16),
+                &raw16_len)) {
+            return 0;
+        }
+        components.data = raw16;
+        components.length = raw16_len;
+        return digest_eq_composite_key(
+            actual, NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY, components);
+    }
+    return 0;
+}
+
+static int attempt_fields_ok(const ninlil_model_domain_body_attempt_t *body)
+{
+    if (body == NULL
+        || id_is_zero(body->attempt_id)
+        || id_is_zero(body->transaction_id)
+        || digest_is_zero(body->target_digest)
+        || digest_is_zero(body->primary_key_digest)
+        || digest_is_zero(body->message_semantic_digest)
+        || body->reserved0 != 0u
+        || body->reserved1 != 0u
+        || id_is_zero(body->prepared_clock_epoch)
+        || !attempt_owner_kind_is_known(body->attempt_owner_kind)
+        || !attempt_kind_is_known(body->attempt_kind)
+        || !attempt_state_is_known(body->attempt_state)
+        || !attempt_send_state_is_known(body->send_state)
+        || !attempt_owner_raw_is_valid(
+            body->attempt_owner_kind, body->owner_key_raw_length,
+            body->owner_key_raw, body->transaction_id)
+        || !attempt_primary_key_digest_ok(
+            body->attempt_owner_kind, body->owner_key_raw_length,
+            body->owner_key_raw, body->transaction_id,
+            body->primary_key_digest)) {
+        return 0;
+    }
+    if (body->attempt_owner_kind
+        == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION) {
+        return attempt_local_matrix_ok(body);
+    }
+    if (body->attempt_owner_kind
+        == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_DELIVERY) {
+        return attempt_remote_matrix_ok(body);
+    }
+    return 0;
+}
+
+uint32_t ninlil_model_domain_body_attempt_encoded_length(
+    const ninlil_model_domain_body_attempt_t *body)
+{
+    uint32_t n;
+    if (body == NULL || !attempt_fields_ok(body)) {
+        return 0u;
+    }
+    /*
+     * attempt_id16 + owner_kind u16 + reserved0 u16 + RAW16 + pkd32 +
+     * txn16 + target32 + kind u16 + state u16 + cycle u64 + in_cycle u32 +
+     * cum u64 + gen u64 + inv u64 + exhausted u32 + reserved1 u32 +
+     * semantic32 + prepared_ep16 + prepared_at u64 + send u32 +
+     * avail u64 + timeout_ep16 + timeout_at u64
+     * = 242 + owner_key_raw_length
+     */
+    n = 242u + (uint32_t)body->owner_key_raw_length;
+    if (n > NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_MAX) {
+        return 0u;
+    }
+    return n;
+}
+
+ninlil_status_t ninlil_model_domain_encode_body_attempt(
+    const ninlil_model_domain_body_attempt_t *body,
+    uint8_t *out_bytes,
+    uint32_t capacity,
+    uint32_t *out_length)
+{
+    uint32_t required;
+    size_t n = 0u;
+    const void *ptrs[4];
+    size_t lens[4];
+    uint32_t o;
+
+    if (out_length == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!encode_body_object_range_ok(body, sizeof(*body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (body != NULL) {
+        ptrs[n] = body;
+        lens[n] = sizeof(*body);
+        n++;
+        if (body->owner_key_raw != NULL && body->owner_key_raw_length != 0u) {
+            ptrs[n] = body->owner_key_raw;
+            lens[n] = body->owner_key_raw_length;
+            n++;
+        }
+    }
+    if (out_bytes != NULL && capacity != 0u) {
+        ptrs[n] = out_bytes;
+        lens[n] = capacity;
+        n++;
+    }
+    ptrs[n] = out_length;
+    lens[n] = sizeof(*out_length);
+    n++;
+    if (!multi_ranges_ok(ptrs, lens, n)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    *out_length = 0u;
+    required = ninlil_model_domain_body_attempt_encoded_length(body);
+    if ((capacity == 0u && out_bytes != NULL)
+        || (capacity > 0u && out_bytes == NULL)
+        || required == 0u) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (capacity < required) {
+        *out_length = required;
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    (void)memcpy(&out_bytes[0], body->attempt_id, 16u);
+    ninlil_model_domain_encode_u16_be(&out_bytes[16], body->attempt_owner_kind);
+    ninlil_model_domain_encode_u16_be(&out_bytes[18], body->reserved0);
+    o = 20u;
+    o += encode_raw16(
+        &out_bytes[o], body->owner_key_raw_length, body->owner_key_raw);
+    (void)memcpy(&out_bytes[o], body->primary_key_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->transaction_id, 16u);
+    o += 16u;
+    (void)memcpy(&out_bytes[o], body->target_digest, 32u);
+    o += 32u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->attempt_kind);
+    o += 2u;
+    ninlil_model_domain_encode_u16_be(&out_bytes[o], body->attempt_state);
+    o += 2u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->retry_cycle_id);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->attempt_in_cycle);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->cumulative_attempts);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->send_operation_generation);
+    o += 8u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->send_invocation_count);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(
+        &out_bytes[o], body->send_counter_exhausted);
+    o += 4u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->reserved1);
+    o += 4u;
+    (void)memcpy(&out_bytes[o], body->message_semantic_digest, 32u);
+    o += 32u;
+    (void)memcpy(&out_bytes[o], body->prepared_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->prepared_at_ms);
+    o += 8u;
+    ninlil_model_domain_encode_u32_be(&out_bytes[o], body->send_state);
+    o += 4u;
+    ninlil_model_domain_encode_u64_be(&out_bytes[o], body->availability_epoch);
+    o += 8u;
+    (void)memcpy(&out_bytes[o], body->receipt_timeout_clock_epoch, 16u);
+    o += 16u;
+    ninlil_model_domain_encode_u64_be(
+        &out_bytes[o], body->receipt_timeout_at_ms);
+    o += 8u;
+    *out_length = o;
+    return NINLIL_OK;
+}
+
+ninlil_status_t ninlil_model_domain_decode_body_attempt(
+    ninlil_bytes_view_t encoded,
+    ninlil_model_domain_body_attempt_t *out_body)
+{
+    ninlil_model_domain_body_attempt_t tmp;
+    uint32_t o = 0u;
+    uint32_t c = 0u;
+
+    if (!decode_body_ranges_ok(encoded, out_body, sizeof(*out_body))) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    (void)memset(out_body, 0, sizeof(*out_body));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded)
+        || encoded.length < 20u + 2u
+        || encoded.length > NINLIL_MODEL_DOMAIN_BODY_ATTEMPT_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memset(&tmp, 0, sizeof(tmp));
+    (void)memcpy(tmp.attempt_id, &encoded.data[0], 16u);
+    tmp.attempt_owner_kind =
+        ninlil_model_domain_decode_u16_be(&encoded.data[16]);
+    tmp.reserved0 = ninlil_model_domain_decode_u16_be(&encoded.data[18]);
+    o = 20u;
+    if (!decode_raw16_view(
+            encoded.data + o, encoded.length - o,
+            (uint16_t)NINLIL_MODEL_DOMAIN_RAW16_ATTEMPT_OWNER_KEY_MAX,
+            &tmp.owner_key_raw_length, &tmp.owner_key_raw, &c)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    o += c;
+    /* After RAW16: 32+16+32+2+2+8+4+8+8+8+4+4+32+16+8+4+8+16+8 = 220 */
+    if (encoded.length - o < 220u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(tmp.primary_key_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.transaction_id, &encoded.data[o], 16u);
+    o += 16u;
+    (void)memcpy(tmp.target_digest, &encoded.data[o], 32u);
+    o += 32u;
+    tmp.attempt_kind = ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    tmp.attempt_state = ninlil_model_domain_decode_u16_be(&encoded.data[o]);
+    o += 2u;
+    tmp.retry_cycle_id = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.attempt_in_cycle = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.cumulative_attempts =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.send_operation_generation =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.send_invocation_count =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.send_counter_exhausted =
+        ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.reserved1 = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    (void)memcpy(tmp.message_semantic_digest, &encoded.data[o], 32u);
+    o += 32u;
+    (void)memcpy(tmp.prepared_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.prepared_at_ms = ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    tmp.send_state = ninlil_model_domain_decode_u32_be(&encoded.data[o]);
+    o += 4u;
+    tmp.availability_epoch =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    (void)memcpy(tmp.receipt_timeout_clock_epoch, &encoded.data[o], 16u);
+    o += 16u;
+    tmp.receipt_timeout_at_ms =
+        ninlil_model_domain_decode_u64_be(&encoded.data[o]);
+    o += 8u;
+    if (o != encoded.length || !attempt_fields_ok(&tmp)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_body = tmp;
+    return NINLIL_OK;
+}
+
 /* --- typed record validation --- */
 
 static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
@@ -5391,6 +5979,7 @@ static int subtype_is_d1b_supported(uint8_t family, uint8_t subtype)
     case NINLIL_MODEL_DOMAIN_SUBTYPE_SCHEDULER_OWNER:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_ORDERED_INGRESS:
     case NINLIL_MODEL_DOMAIN_SUBTYPE_BLOB:
+    case NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT:
         return 1;
     default:
         return 0;
@@ -6257,6 +6846,74 @@ static ninlil_status_t validate_header_body_local(
         }
 
         return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT) {
+        uint8_t expect_pid[NINLIL_MODEL_DOMAIN_ID_BYTES];
+        uint8_t components[2u + 2u + 128u + 16u];
+        ninlil_bytes_view_t cv;
+        uint32_t o;
+
+        /*
+         * ATTEMPT same-record (docs17 §8.3):
+         * - flags 0; revision >= 1; head and PVD non-zero
+         * - key COMPOSITE(31, owner_kind:u16 || owner_key_raw:RAW16 ||
+         *   attempt_id[16])
+         * - primary_id: transaction_id (TX) or DELIVERY composite first 16
+         * D3 deferred: live owner, ATTEMPT_ID_INDEX, CANCEL_STATE gate,
+         * family kind, current/stale, PVD live equality, target/semantic
+         * recompute, SEND_COUNTER health/cardinality.
+         */
+        if (env->header.record_revision < 1u
+            || digest_is_zero(env->header.head_witness_digest)
+            || digest_is_zero(env->header.primary_value_digest)
+            || key->identity_kind
+                != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+            || key->identity_length != 32u || key->identity == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        status = ninlil_model_domain_decode_body_attempt(
+            env->body, &out->attempt);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        ninlil_model_domain_encode_u16_be(
+            components, out->attempt.attempt_owner_kind);
+        o = 2u;
+        o += encode_raw16(
+            &components[o], out->attempt.owner_key_raw_length,
+            out->attempt.owner_key_raw);
+        (void)memcpy(
+            &components[o], out->attempt.attempt_id,
+            NINLIL_MODEL_DOMAIN_ID_BYTES);
+        o += NINLIL_MODEL_DOMAIN_ID_BYTES;
+        cv.data = components;
+        cv.length = o;
+        if (!composite_identity_matches(
+                NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT, cv, key->identity,
+                key->identity_length)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (out->attempt.attempt_owner_kind
+            == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_TRANSACTION) {
+            (void)memcpy(expect_pid, out->attempt.transaction_id, 16u);
+        } else if (
+            out->attempt.attempt_owner_kind
+            == NINLIL_MODEL_DOMAIN_ATTEMPT_OWNER_DELIVERY) {
+            if (primary_id_from_raw_contents_as_raw16(
+                    NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY,
+                    out->attempt.owner_key_raw_length,
+                    out->attempt.owner_key_raw, expect_pid)
+                != NINLIL_OK) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+        } else {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (!header_primary_id_eq(env, expect_pid)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
     }
 
     return NINLIL_E_INVALID_ARGUMENT;
