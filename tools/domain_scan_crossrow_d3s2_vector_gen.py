@@ -26,6 +26,9 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     stream + BIND pair both ways) COMPLETE success, and STATE+ANCHOR+
     ATTEMPT without INDEX peer under CLEANUP_PLAN PRESENT (cleanup_skip)
     BIND_ATTEMPT INDEX ABSENT STORAGE_CORRUPT (note path)
+  * P0-A slice (§18.13.15 cases 2/6): Mode25 two-owner SHA256_COMPOSITE
+    RETRY interleave (CUM+RECENT per owner; non-contiguous owner order)
+    + two CUM carriers SELECT exactly once (no-skip/no-dup) COMPLETE
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -63,6 +66,7 @@ D3S2_MODE24_SLICE_COUNT = 2
 D3S2_MODE23_SLICE_COUNT = 2
 D3S2_MODE22_SLICE_COUNT = 2
 D3S2_MODE21_SLICE_COUNT = 2
+D3S2_P0A_SLICE_COUNT = 1
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -71,8 +75,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_MODE23_SLICE_COUNT
     + D3S2_MODE22_SLICE_COUNT
     + D3S2_MODE21_SLICE_COUNT
-)  # 18
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 112
+    + D3S2_P0A_SLICE_COUNT
+)  # 19
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 113
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -107,6 +112,16 @@ D3S2_110_PREFIX_COUNT = (
     + D3S2_MODE23_SLICE_COUNT
     + D3S2_MODE22_SLICE_COUNT
 )  # 110
+D3S2_112_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+)  # 112 (origin/main freeze before P0-A)
 CEILING = 8192
 
 # Frozen D3-S1 prefix identity (byte-for-byte rebuild pin).
@@ -171,10 +186,35 @@ D3S2_110_FINGERPRINT_HASH = (
     "8cb323608764c52243e75b5978a3e4c7bea904ba846bc72472c6f5f61a165c39"
 )
 
+# Frozen 112-vector append-only prefix (110 + Mode21 slice) — origin/main.
+# content hash + fingerprint chain independently derived from origin/main
+# 112-vector artifact (full document content_sha256 / prior_fingerprint
+# chain of that release; not recomputed by rewriting published objects).
+D3S2_112_CONTENT_SHA256 = (
+    "519bc7465b47bc6da957e8815c112da6445a811c5fcb5b65ff9c3cd3038bff79"
+)
+D3S2_112_FINGERPRINT_HASH = (
+    "0a3653d5b03ad5f22be66bfb24149fe8ed434f1345d391bfb5a3d1ac39c42968"
+)
+
 # D1 authority pins for Mode25 material (independent of production C).
 D1_CUM_ID = "DSB3_RS_CUM_T0_TYPED"
 D1_REC_ID = "DSB3_RS_REC_C1_TYPED"
 D1_ANCHOR_ID = "DSB2_ANCHOR_TYPED"
+# P0-A Mode25 multi-owner: bounded deterministic TX pair pin.
+# Search space = last-byte pairs on D1 base prefix 71||00*14 with TX_A fixed
+# to D1 default (...99). First ascending last-byte B yielding complete-key
+# owner order ABAB among (CUM,REC)×2 is B_last=0x0c. Self-tested.
+MODE25_MULTI_TX_A = bytes.fromhex(
+    "71000000000000000000000000000099"
+)
+MODE25_MULTI_TX_B = bytes.fromhex(
+    "7100000000000000000000000000000c"
+)
+MODE25_MULTI_OWNER_ORDER_PIN = "ABAB"
+MODE25_MULTI_KIND_ORDER_PIN = (1, 1, 2, 2)  # CUM,CUM,REC,REC
+RS_KIND_CUMULATIVE = 1
+RS_KIND_RECENT = 2
 
 # D1 authority pins for Mode26 material (independent of production C).
 D1_ES_ID = "DSB3_ES_ACTIVE_TYPED"
@@ -330,6 +370,11 @@ D3S2_MODE21_KINDS = frozenset(
         "mode21_att_without_aii_index_pair_absent_corrupt",
     }
 )
+D3S2_P0A_KINDS = frozenset(
+    {
+        "mode25_two_owner_sha_interleave_dual_carrier_ok",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -338,6 +383,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_MODE23_KINDS
     | D3S2_MODE22_KINDS
     | D3S2_MODE21_KINDS
+    | D3S2_P0A_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -499,6 +545,14 @@ OWNERSHIP_MODE21 = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(18-vector suffix on frozen 94-prefix only)"
+)
+# P0-A ownership (19-vector suffix at P0-A append time). Hardcoded 19 so a
+# later append does not rewrite published P0-A objects.
+OWNERSHIP_P0A = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(19-vector suffix on frozen 112-prefix only)"
 )
 
 
@@ -996,6 +1050,425 @@ def run_d3s2_mode25_recent_without_cum_corrupt(
         "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
     }
     _ = binding  # same default binding; profile already in rows
+    return calls, expected
+
+
+# ---------------------------------------------------------------------------
+# P0-A Mode25 multi-owner SHA interleave + dual CUM carrier (§18.13.15 #2/#6)
+# ---------------------------------------------------------------------------
+
+
+def _retry_composite_key(tx: bytes, kind: int, slot: int) -> bytes:
+    """Independent SHA256_COMPOSITE complete key for RETRY_SUMMARY (0x51)."""
+    if len(tx) != 16:
+        raise SystemExit("RETRY composite tx must be exact 16")
+    return _d3s1.k_composite(
+        0x51, tx + _d3s1.be16(int(kind)) + _d3s1.be16(int(slot))
+    )
+
+
+def _parse_retry_tx_kind_slot(value: bytes) -> Tuple[bytes, int, int]:
+    """Independent RETRY body parse: (transaction_id, kind, slot)."""
+    st, body, _ = _d3s1.extract_envelope(value)
+    if st != 0x51:
+        raise SystemExit(f"RETRY parse expected subtype 0x51, got {st:#x}")
+    if len(body) not in (80, 84):
+        raise SystemExit(f"RETRY body length must be 80|84, got {len(body)}")
+    tx = bytes(body[0:16])
+    kind = struct.unpack_from(">H", body, 16)[0]
+    slot = struct.unpack_from(">H", body, 18)[0]
+    return tx, int(kind), int(slot)
+
+
+def _rekey_anchor_for_tx(
+    template_value: bytes, tx: bytes
+) -> Tuple[bytes, bytes]:
+    """Rekey D1 ANCHOR template to a new transaction_id (key+body+primary).
+
+    Independent of production C: body transaction_id and envelope primary_id
+    rewritten; reservation_key_digest recomputed for the new txn (docs/17
+    ANCHOR field law); CRC recomputed. Header head bytes retained from D1.
+    """
+    if len(tx) != 16:
+        raise SystemExit("ANCHOR rekey tx must be exact 16")
+    st, body, _ = _d3s1.extract_envelope(template_value)
+    if st != 0x20:
+        raise SystemExit(f"ANCHOR rekey expected subtype 0x20, got {st:#x}")
+    b = bytearray(body)
+    b[0:16] = tx
+    # Walk body to reservation_key_digest (after scope/ikey + 3 digests).
+    # Layout: txn16 + seq8 + sched8 + family4 + party + service + content32
+    # + canon32 + event16 + gen8 + epochs/deadlines + evidence + target
+    # + scope RAW16 + ikey RAW16 + seq_kd32 + im_kd32 + em_kd32 + res_kd32
+    # + sched_owner_seq8 + payload_blob_kd32.
+    o = 16 + 8 + 8 + 4
+    o += _d3s1.PARTY_LEN
+    o = _d3s1.skip_service_identity(bytes(b), o)
+    o += 32 + 32  # content + canon
+    o += 16  # event_id
+    o += 8  # generation
+    o += 16 + 8 + 16 + 8 + 8  # epochs / deadlines / grace
+    o += 4 + 4  # required_evidence + target_count
+    o += _d3s1.TARGET_LEN
+    _scope, o = _d3s1.parse_raw16_at(bytes(b), o)
+    _ikey, o = _d3s1.parse_raw16_at(bytes(b), o)
+    # sequence_index_key_digest[32] + idempotency_map[32] + event_map[32]
+    res_off = o + 32 + 32 + 32
+    if res_off + 32 > len(b):
+        raise SystemExit("ANCHOR body too short for reservation_key_digest")
+    # RESERVATION owner TRANSACTION composite: be16(2) || raw16(tx)
+    # (docs/17 / production transaction_anchor_fields_ok).
+    res_dig = _d3s1.complete_key_digest_composite(
+        _d3s1.ST_RES, _d3s1.be16(2) + _d3s1.raw16(tx)
+    )
+    b[res_off : res_off + 32] = res_dig
+    out = bytearray(template_value)
+    out[24:40] = tx  # primary_id
+    body_off = 108
+    if bytes(out[body_off : body_off + len(body)]) != body:
+        idx = bytes(out).find(body)
+        if idx < 0:
+            raise SystemExit("ANCHOR body not found in envelope value")
+        body_off = idx
+    out[body_off : body_off + len(body)] = b
+    out[-4:] = _d3s1.be32(_d3s1.crc32c(bytes(out[:-4])))
+    key = _d3s1.k_id128(0x20, tx)
+    # Self-check.
+    st2, body2, _ = _d3s1.extract_envelope(bytes(out))
+    if st2 != 0x20 or body2[0:16] != tx:
+        raise SystemExit("ANCHOR rekey did not stick")
+    if body2[res_off : res_off + 32] != res_dig:
+        raise SystemExit("ANCHOR reservation_key_digest rekey did not stick")
+    if key != _d3s1.k_id128(0x20, tx):
+        raise SystemExit("ANCHOR key identity drift")
+    return key, bytes(out)
+
+
+def _rekey_retry_for_tx(
+    template_value: bytes,
+    tx: bytes,
+    *,
+    kind: int,
+    slot: int,
+    anchor_pvd: bytes,
+    cum_total: Optional[int] = None,
+) -> Tuple[bytes, bytes]:
+    """Rekey D1 RETRY template to new tx/kind/slot + PVD→ANCHOR (+ optional CUM total).
+
+    Independent composite rekey; body identity fields rewritten; CRC + PVD via
+    stdlib encoder/parser only (no production C).
+    """
+    if len(tx) != 16 or len(anchor_pvd) != 32:
+        raise SystemExit("RETRY rekey: tx=16 and anchor_pvd=32 required")
+    st, body, _ = _d3s1.extract_envelope(template_value)
+    if st != 0x51:
+        raise SystemExit(f"RETRY rekey expected subtype 0x51, got {st:#x}")
+    b = bytearray(body)
+    b[0:16] = tx
+    struct.pack_into(">H", b, 16, int(kind))
+    struct.pack_into(">H", b, 18, int(slot))
+    if cum_total is not None:
+        if int(kind) != RS_KIND_CUMULATIVE or int(slot) != 0:
+            raise SystemExit("cum_total only valid for CUM kind=1 slot=0")
+        if len(b) != 84:
+            raise SystemExit("CUM body must be exact 84 for total patch")
+        struct.pack_into(">Q", b, 20, int(cum_total))
+        folded = 0 if int(cum_total) < 4 else int(cum_total) - 4
+        struct.pack_into(">Q", b, 28, folded)
+        if folded == 0:
+            b[36:] = bytes(len(b) - 36)
+    out = bytearray(template_value)
+    out[24:40] = tx  # primary_id
+    body_off = 108
+    if bytes(out[body_off : body_off + len(body)]) != body:
+        idx = bytes(out).find(body)
+        if idx < 0:
+            raise SystemExit("RETRY body not found in envelope value")
+        body_off = idx
+    out[body_off : body_off + len(body)] = b
+    out[-4:] = _d3s1.be32(_d3s1.crc32c(bytes(out[:-4])))
+    val = _d3s1.patch_pvd(bytes(out), anchor_pvd)
+    key = _retry_composite_key(tx, kind, slot)
+    got_tx, got_kind, got_slot = _parse_retry_tx_kind_slot(val)
+    if got_tx != tx or got_kind != int(kind) or got_slot != int(slot):
+        raise SystemExit("RETRY rekey identity did not stick")
+    if cum_total is not None:
+        _st2, body2, _ = _d3s1.extract_envelope(val)
+        got_total = struct.unpack_from(">Q", body2, 20)[0]
+        if got_total != int(cum_total):
+            raise SystemExit("RETRY CUM total patch did not stick")
+    _st3, _body3, pvd3 = _d3s1.extract_envelope(val)
+    if pvd3 != anchor_pvd:
+        raise SystemExit("RETRY header PVD must equal ANCHOR VALUE_DIGEST")
+    return key, val
+
+
+def _mode25_multi_owner_retry_order(
+    tx_a: bytes, tx_b: bytes
+) -> Tuple[str, Tuple[int, ...], List[Tuple[str, int, int, bytes]]]:
+    """Complete-key order of 4 RETRY rows for two owners (CUM+REC each)."""
+    rows: List[Tuple[str, int, int, bytes]] = []
+    for owner, tx in (("A", tx_a), ("B", tx_b)):
+        for kind, slot in (
+            (RS_KIND_CUMULATIVE, 0),
+            (RS_KIND_RECENT, 0),
+        ):
+            rows.append(
+                (owner, int(kind), int(slot), _retry_composite_key(tx, kind, slot))
+            )
+    rows.sort(key=lambda r: r[3])
+    owners = "".join(r[0] for r in rows)
+    kinds = tuple(r[1] for r in rows)
+    return owners, kinds, rows
+
+
+def _owners_are_noncontiguous(owner_seq: str) -> bool:
+    """True iff no owner collapses to a single contiguous run of all its rows."""
+    if not owner_seq:
+        return False
+    from collections import Counter
+
+    counts = Counter(owner_seq)
+    if any(c < 2 for c in counts.values()):
+        return False
+    # Collapse runs; each owner must appear in >=2 runs for non-contiguous.
+    runs: List[str] = []
+    for ch in owner_seq:
+        if not runs or runs[-1] != ch:
+            runs.append(ch)
+    run_count = Counter(runs)
+    return all(run_count[o] >= 2 for o in counts)
+
+
+def _select_mode25_multi_owner_tx_pair() -> Tuple[bytes, bytes]:
+    """Bounded deterministic TX pair search with pinned result.
+
+    Search: TX_A fixed to D1 default; TX_B last-byte 0..255 (≠ A). First
+    ascending B that yields owner order ABAB is the pin (B_last=0x0c).
+    Unlimited exploration is forbidden; this table is exact 256 candidates.
+    """
+    base = MODE25_MULTI_TX_A
+    if len(base) != 16 or base[-1] != 0x99:
+        raise SystemExit("MODE25_MULTI_TX_A pin must be D1 default ending 0x99")
+    found: Optional[bytes] = None
+    for last in range(256):
+        if last == base[-1]:
+            continue
+        tx_b = base[:-1] + bytes([last])
+        owners, kinds, _rows = _mode25_multi_owner_retry_order(base, tx_b)
+        if owners == "ABAB" and kinds == MODE25_MULTI_KIND_ORDER_PIN:
+            found = tx_b
+            break
+    if found is None:
+        raise SystemExit("bounded TX pair search failed to find ABAB")
+    if found != MODE25_MULTI_TX_B:
+        raise SystemExit(
+            "MODE25_MULTI_TX_B pin drift vs bounded search "
+            f"(got last=0x{found[-1]:02x} want 0x{MODE25_MULTI_TX_B[-1]:02x})"
+        )
+    owners, kinds, _ = _mode25_multi_owner_retry_order(
+        MODE25_MULTI_TX_A, MODE25_MULTI_TX_B
+    )
+    if owners != MODE25_MULTI_OWNER_ORDER_PIN:
+        raise SystemExit("pinned multi-owner order drift")
+    if kinds != MODE25_MULTI_KIND_ORDER_PIN:
+        raise SystemExit("pinned multi-owner kind order drift")
+    if not _owners_are_noncontiguous(owners):
+        raise SystemExit("pinned multi-owner order is contiguous")
+    return MODE25_MULTI_TX_A, MODE25_MULTI_TX_B
+
+
+def _mode25_multi_owner_material_rows(
+    *, cum_total: int = 1
+) -> Tuple[List[Dict[str, str]], Dict[str, Dict[str, str]], bytes, bytes]:
+    """Build profile + 2 ANCHOR + 2 CUM + 2 RECENT for two TX owners.
+
+    Returns (rows_sorted, named_rows, tx_a, tx_b).
+    """
+    _assert_d1_authority_pin()
+    tx_a, tx_b = _select_mode25_multi_owner_tx_pair()
+    cat = _d1_catalog()
+    anc_t = from_hex(cat[D1_ANCHOR_ID]["value_hex"])
+    cum_t = from_hex(cat[D1_CUM_ID]["value_hex"])
+    rec_t = from_hex(cat[D1_REC_ID]["value_hex"])
+
+    named: Dict[str, Dict[str, str]] = {}
+    domain_rows: List[Dict[str, str]] = []
+    for label, tx in (("A", tx_a), ("B", tx_b)):
+        ak, av = _rekey_anchor_for_tx(anc_t, tx)
+        apvd = _d3s1.value_digest(av)
+        named[f"anchor_{label}"] = {
+            "key_hex": hex_of(ak),
+            "value_hex": hex_of(av),
+        }
+        domain_rows.append(named[f"anchor_{label}"])
+        ck, cv = _rekey_retry_for_tx(
+            cum_t,
+            tx,
+            kind=RS_KIND_CUMULATIVE,
+            slot=0,
+            anchor_pvd=apvd,
+            cum_total=int(cum_total),
+        )
+        named[f"cum_{label}"] = {"key_hex": hex_of(ck), "value_hex": hex_of(cv)}
+        domain_rows.append(named[f"cum_{label}"])
+        rk, rv = _rekey_retry_for_tx(
+            rec_t,
+            tx,
+            kind=RS_KIND_RECENT,
+            slot=0,
+            anchor_pvd=apvd,
+        )
+        named[f"rec_{label}"] = {"key_hex": hex_of(rk), "value_hex": hex_of(rv)}
+        domain_rows.append(named[f"rec_{label}"])
+
+    binding = _d3s1.default_binding_fields()
+    profile = _d3s1.encode_all_profile_rows(binding)
+    all_rows = sorted(
+        list(profile) + list(domain_rows), key=lambda r: from_hex(r["key_hex"])
+    )
+    # Fail-closed: body-parse RETRY owner order must be the pin (not mere count).
+    retry_parsed: List[Tuple[str, int, int]] = []
+    for r in all_rows:
+        key = from_hex(r["key_hex"])
+        if len(key) < 10 or key[8] != 6 or key[9] != 0x51:
+            continue
+        tx, kind, slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+        if tx == tx_a:
+            owner = "A"
+        elif tx == tx_b:
+            owner = "B"
+        else:
+            raise SystemExit("unexpected RETRY owner tx in multi-owner material")
+        retry_parsed.append((owner, kind, slot))
+    if len(retry_parsed) != 4:
+        raise SystemExit(f"multi-owner expects 4 RETRY rows, got {len(retry_parsed)}")
+    owner_seq = "".join(o for o, _k, _s in retry_parsed)
+    kind_seq = tuple(k for _o, k, _s in retry_parsed)
+    if owner_seq != MODE25_MULTI_OWNER_ORDER_PIN:
+        raise SystemExit(
+            f"multi-owner RETRY owner order {owner_seq!r} != pin "
+            f"{MODE25_MULTI_OWNER_ORDER_PIN!r}"
+        )
+    if kind_seq != MODE25_MULTI_KIND_ORDER_PIN:
+        raise SystemExit(
+            f"multi-owner RETRY kind order {kind_seq!r} != pin "
+            f"{MODE25_MULTI_KIND_ORDER_PIN!r}"
+        )
+    if not _owners_are_noncontiguous(owner_seq):
+        raise SystemExit("multi-owner RETRY rows are owner-contiguous")
+    # Carriers (CUM only) must be two distinct owners in complete-key order.
+    cum_owners = [o for o, k, _s in retry_parsed if k == RS_KIND_CUMULATIVE]
+    if cum_owners != ["A", "B"]:
+        raise SystemExit(f"CUM carrier order must be A then B, got {cum_owners}")
+    return all_rows, named, tx_a, tx_b
+
+
+def run_d3s2_mode25_two_owner_sha_interleave_dual_carrier_success(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode25: two CUM carriers + interleaved SHA RETRY + dual FOCUS/BIND COMPLETE.
+
+    Independent reference model (docs/17 §18.13.3/.4/.6/.7/.9/.15 cases 2/6):
+      begin → baseline once → SELECT CUM_A → FOCUS matrix → SELECT CUM_B →
+      FOCUS matrix → SELECT empty → BIND_RETRY (4 secondaries) → COMPLETE.
+    Port-trace pins both FOCUS matrices (5 gets each) and BIND peer gets
+    (2×CUM primary + 2×RECENT carrier+primary = 6) so skip/dup cannot match.
+    """
+    n_ok = len(rows)
+    if n_ok != 23:
+        raise SystemExit(
+            f"mode25 multi-owner expects 23 rows (17+6), got {n_ok}"
+        )
+    # Drives: baseline, SELECT+FOCUS A, SELECT+FOCUS B, SELECT empty→BIND, BIND
+    n_drive = 5
+    n_open = 5
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 25, "expected_status": "OK"}
+    ]
+    for _ in range(n_drive):
+        calls.append(
+            {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+        )
+    calls.append({"op": "finalize", "expected_status": "OK"})
+
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT CUM_A + FOCUS matrix (CUM + RECENT 0..3)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * 5)
+    port_trace.append("iter_close")
+    # drive3 SELECT CUM_B + FOCUS matrix
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * 5)
+    port_trace.append("iter_close")
+    # drive4 SELECT empty → BIND entry
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive5 BIND_RETRY: domain order ANCHOR_B, ANCHOR_A, CUM_A, CUM_B,
+    # REC_A, REC_B (complete-key). CUM self-carrier primary-only; RECENT
+    # carrier companion + primary.
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)  # profile
+    port_trace.append("iter_next")  # ANCHOR_B
+    port_trace.append("iter_next")  # ANCHOR_A
+    port_trace.append("iter_next")  # CUM_A
+    port_trace.append("get")  # true primary ANCHOR_A
+    port_trace.append("iter_next")  # CUM_B
+    port_trace.append("get")  # true primary ANCHOR_B
+    port_trace.append("iter_next")  # REC_A
+    port_trace.append("get")  # carrier companion CUM_A
+    port_trace.append("get")  # true primary ANCHOR_A
+    port_trace.append("iter_next")  # REC_B
+    port_trace.append("get")  # carrier companion CUM_B
+    port_trace.append("get")  # true primary ANCHOR_B
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    # FOCUS 5+5 + BIND 6 = 16 peer exact_gets (baseline 17 profile excluded).
+    expected: Dict[str, Any] = {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 6,  # 2 ANCHOR + 2 CUM + 2 RECENT
+        "ok_row_count": 23,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 16,
+        "d3_mode_applicable_count": 4,  # 4 BIND secondaries
+        "phase": PHASE_COMPLETE,
+        "count_complete_mask": MASK_RETRY,
+        "binding_complete_mask": MASK_RETRY,
+        "flags": FLAG_BASELINE_DONE | FLAG_COMPLETE_READY,
+    }
+    if rows != sorted(rows, key=lambda r: from_hex(r["key_hex"])):
+        raise SystemExit("mode25 multi-owner rows must be key-sorted")
+    encoded = _d3s1.encode_all_profile_rows(binding)
+    if rows[:17] != encoded:
+        prof = [r for r in rows if len(from_hex(r["key_hex"])) <= 10]
+        if prof != encoded:
+            raise SystemExit("mode25 multi-owner profile encoding mismatch")
     return calls, expected
 
 
@@ -3524,6 +3997,97 @@ def build_d3s2_mode25_slice_vectors() -> List[Dict[str, Any]]:
     return vectors
 
 
+def build_d3s2_p0a_slice_vectors() -> List[Dict[str, Any]]:
+    """P0-A append-only slice (1 vector) after the frozen 112-prefix."""
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    rows, named, tx_a, tx_b = _mode25_multi_owner_material_rows(cum_total=1)
+    if tx_a != MODE25_MULTI_TX_A or tx_b != MODE25_MULTI_TX_B:
+        raise SystemExit("P0-A material TX pair pin drift")
+    calls, exp = run_d3s2_mode25_two_owner_sha_interleave_dual_carrier_success(
+        binding, rows
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M25_TWO_OWNER_SHA_INTERLEAVE_DUAL_CARRIER_OK",
+            "kind": "mode25_two_owner_sha_interleave_dual_carrier_ok",
+            "mode": 25,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls,
+            "d1_refs": [D1_CUM_ID, D1_REC_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_CUM_ID,
+                row=named["cum_A"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode25 multi-owner CUM_A total=1 carrier (first SELECT); "
+                    "TX rekeyed from D1 authority; PVD→ANCHOR_A"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_CUM_ID,
+                row=named["cum_B"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode25 multi-owner CUM_B total=1 carrier (second SELECT); "
+                    "TX_B pin last-byte 0x0c; PVD→ANCHOR_B"
+                ),
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_REC_ID,
+                    row=named["rec_A"],
+                    expect_presence="PRESENT",
+                    note="RECENT A cycle1/slot0; PVD→ANCHOR_A",
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_REC_ID,
+                    row=named["rec_B"],
+                    expect_presence="PRESENT",
+                    note="RECENT B cycle1/slot0; PVD→ANCHOR_B",
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named["anchor_A"],
+                    expect_presence="PRESENT",
+                    note="true primary ANCHOR_A (TX D1 default)",
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named["anchor_B"],
+                    expect_presence="PRESENT",
+                    note="true primary ANCHOR_B (TX pin ...0c)",
+                ),
+            ],
+            "notes": (
+                "P0-A formal (§18.13.15 cases 2/6): Mode25 two transaction "
+                "owners each with CUMULATIVE total=1 + RECENT C1 + true ANCHOR. "
+                "Four SHA256_COMPOSITE RETRY secondaries in complete-key order "
+                "ABAB (non-contiguous owners; kinds CUM,CUM,REC,REC). SELECT_"
+                "CARRIER selects both CUM carriers exactly once (A then B) under "
+                "last_carrier_key frontier; each FOCUS known-slot matrix + "
+                "BIND_RETRY complete. Port-trace pins 2×5 FOCUS gets + 6 BIND "
+                "peer gets (d3_peer_get_count=16). Single READ_ONLY txn; "
+                "baseline once; mutation_calls=0. D1 authority rows rekeyed via "
+                "independent Python only. Not D3-S2 complete claim."
+            ),
+            "ownership": OWNERSHIP_P0A,
+            "expected": exp,
+        }
+    )
+
+    if len(vectors) != D3S2_P0A_SLICE_COUNT:
+        raise SystemExit("p0a slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P0A_KINDS:
+        raise SystemExit(f"p0a kinds inventory mismatch: {kinds}")
+    return vectors
+
+
 def build_d3s2_mode26_slice_vectors() -> List[Dict[str, Any]]:
     """Mode26 append-only slice (2 vectors) after the frozen 102-prefix."""
     binding = _d3s1.default_binding_fields()
@@ -3975,6 +4539,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_mode23_slice_vectors()
         + build_d3s2_mode22_slice_vectors()
         + build_d3s2_mode21_slice_vectors()
+        + build_d3s2_p0a_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -4068,6 +4633,7 @@ def build_document() -> Dict[str, Any]:
     mode23_vectors = build_d3s2_mode23_slice_vectors()
     mode22_vectors = build_d3s2_mode22_slice_vectors()
     mode21_vectors = build_d3s2_mode21_slice_vectors()
+    p0a_vectors = build_d3s2_p0a_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -4076,6 +4642,7 @@ def build_document() -> Dict[str, Any]:
         + mode23_vectors
         + mode22_vectors
         + mode21_vectors
+        + p0a_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -4143,6 +4710,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_ten_hash})"
         )
 
+    # Retained 112-vector chain pin (110 + Mode21 = origin/main).
+    hundred_twelve_hash = _chain_hash(
+        prior_fingerprints[:D3S2_112_PREFIX_COUNT]
+    )
+    if hundred_twelve_hash != D3S2_112_FINGERPRINT_HASH:
+        raise SystemExit(
+            "112-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_twelve_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -4160,6 +4737,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_106_prefix_count": D3S2_106_PREFIX_COUNT,
         "d3s2_108_prefix_count": D3S2_108_PREFIX_COUNT,
         "d3s2_110_prefix_count": D3S2_110_PREFIX_COUNT,
+        "d3s2_112_prefix_count": D3S2_112_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -4241,6 +4819,15 @@ def build_document() -> Dict[str, Any]:
                 "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 "
                 "+ Mode26 + Mode24 + Mode23 + Mode22 slices); Mode21 slice "
                 "vectors follow"
+            ),
+        },
+        "d3s2_112_prefix_authority": {
+            "vector_count": D3S2_112_PREFIX_COUNT,
+            "content_sha256": D3S2_112_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_112_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 18 d3s2 suffix "
+                "through Mode21); P0-A multi-owner Mode25 vector follows"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -4338,6 +4925,8 @@ def check(path: Path) -> int:
         return _fail_check("d3s2_108_prefix_count pin mismatch")
     if int(data.get("d3s2_110_prefix_count", -1)) != D3S2_110_PREFIX_COUNT:
         return _fail_check("d3s2_110_prefix_count pin mismatch")
+    if int(data.get("d3s2_112_prefix_count", -1)) != D3S2_112_PREFIX_COUNT:
+        return _fail_check("d3s2_112_prefix_count pin mismatch")
     if data.get("required_kinds") != expected_doc["required_kinds"]:
         return _fail_check("required_kinds inventory mismatch")
     if not data.get("sha256_procedure"):
@@ -4427,6 +5016,17 @@ def check(path: Path) -> int:
         )
     if int(auth110.get("vector_count", -1)) != D3S2_110_PREFIX_COUNT:
         return _fail_check("d3s2_110_prefix_authority vector_count pin mismatch")
+
+    # Frozen 112-vector origin/main pin (includes Mode21; P0-A follows).
+    auth112 = data.get("d3s2_112_prefix_authority") or {}
+    if auth112.get("content_sha256") != D3S2_112_CONTENT_SHA256:
+        return _fail_check("d3s2_112_prefix_authority content_sha256 pin mismatch")
+    if auth112.get("prior_fingerprint_prefix_hash") != D3S2_112_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_112_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth112.get("vector_count", -1)) != D3S2_112_PREFIX_COUNT:
+        return _fail_check("d3s2_112_prefix_authority vector_count pin mismatch")
 
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
@@ -4803,6 +5403,71 @@ def check(path: Path) -> int:
             f"110-prefix fingerprint chain pin fail (got {hundred_ten_chain})"
         )
 
+    # First 112 vectors: full object equality vs rebuild (origin/main freeze).
+    # P0-A must not rewrite any prior ownership/notes/refs/expected byte.
+    mode21_rebuild = build_d3s2_mode21_slice_vectors()
+    expected_112 = list(expected_110) + list(mode21_rebuild)
+    if len(expected_112) != D3S2_112_PREFIX_COUNT:
+        return _fail_check("internal 112-prefix rebuild length drift")
+    for i in range(D3S2_112_PREFIX_COUNT):
+        got = vectors[i]
+        exp = expected_112[i]
+        for key in ("id", "kind", "mode"):
+            if got.get(key) != exp.get(key):
+                return _fail_check(
+                    f"112-prefix[{i}] {key} mismatch: "
+                    f"{got.get(key)!r} vs {exp.get(key)!r}"
+                )
+        if got.get("rows") != exp.get("rows"):
+            return _fail_check(
+                f"112-prefix[{i}] {got.get('id')}: rows not identical"
+            )
+        if got.get("calls") != exp.get("calls"):
+            return _fail_check(
+                f"112-prefix[{i}] {got.get('id')}: calls not identical"
+            )
+        if got.get("expected") != exp.get("expected"):
+            return _fail_check(
+                f"112-prefix[{i}] {got.get('id')}: expected not identical"
+            )
+        if i < D3S1_PREFIX_COUNT:
+            gf = d3s1_vector_fingerprint(got)
+            ef = d3s1_vector_fingerprint(exp)
+        else:
+            gf = d3s2_vector_fingerprint(got)
+            ef = d3s2_vector_fingerprint(exp)
+        if gf != ef:
+            return _fail_check(
+                f"112-prefix[{i}] {got.get('id')}: fingerprint drift"
+            )
+        if got != exp:
+            all_keys = sorted(set(got.keys()) | set(exp.keys()))
+            for key in all_keys:
+                if got.get(key) != exp.get(key):
+                    return _fail_check(
+                        f"112-prefix[{i}] {got.get('id')}: field {key!r} "
+                        f"not identical to rebuild"
+                    )
+            return _fail_check(
+                f"112-prefix[{i}] {got.get('id')}: full object inequality"
+            )
+    hundred_twelve_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_112_PREFIX_COUNT)
+        ]
+    )
+    if hundred_twelve_chain != D3S2_112_FINGERPRINT_HASH:
+        return _fail_check(
+            f"112-prefix fingerprint chain pin fail (got {hundred_twelve_chain})"
+        )
+
     # prior_fingerprints order/identity.
     got_fps = data.get("prior_fingerprints")
     exp_fps = expected_doc["prior_fingerprints"]
@@ -4879,7 +5544,8 @@ def check(path: Path) -> int:
             return _fail_check(f"{vec['id']}: mutation_calls must be 0")
 
     # Suffix-specific pins: smoke [0..6) Mode25 [6..8) Mode26 [8..10)
-    # Mode24 [10..12) Mode23 [12..14) Mode22 [14..16) Mode21 [16..18).
+    # Mode24 [10..12) Mode23 [12..14) Mode22 [14..16) Mode21 [16..18)
+    # P0-A [18..19).
     suffix = vectors[D3S1_PREFIX_COUNT:]
     if len(suffix) != D3S2_SUFFIX_COUNT:
         return _fail_check("suffix length mismatch")
@@ -4893,7 +5559,9 @@ def check(path: Path) -> int:
     mode23 = suffix[mode23_start : mode23_start + D3S2_MODE23_SLICE_COUNT]
     mode22_start = mode23_start + D3S2_MODE23_SLICE_COUNT
     mode22 = suffix[mode22_start : mode22_start + D3S2_MODE22_SLICE_COUNT]
-    mode21 = suffix[mode22_start + D3S2_MODE22_SLICE_COUNT :]
+    mode21_start = mode22_start + D3S2_MODE22_SLICE_COUNT
+    mode21 = suffix[mode21_start : mode21_start + D3S2_MODE21_SLICE_COUNT]
+    p0a = suffix[mode21_start + D3S2_MODE21_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -4906,6 +5574,8 @@ def check(path: Path) -> int:
         return _fail_check("mode22 slice length mismatch")
     if len(mode21) != D3S2_MODE21_SLICE_COUNT:
         return _fail_check("mode21 slice length mismatch")
+    if len(p0a) != D3S2_P0A_SLICE_COUNT:
+        return _fail_check("p0a slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -5824,6 +6494,123 @@ def check(path: Path) -> int:
     if m21_bad["expected"] != exp_expected:
         return _fail_check(f"{m21_bad['id']}: expected != independent model")
 
+    # ---- P0-A multi-owner Mode25 (§18.13.15 cases 2/6) ----
+    p0a_ok = p0a[0]
+    if p0a_ok["kind"] != "mode25_two_owner_sha_interleave_dual_carrier_ok":
+        return _fail_check("p0a[0] kind pin fail")
+    if int(p0a_ok["mode"]) != 25:
+        return _fail_check(f"{p0a_ok['id']}: mode must be 25")
+    if p0a_ok.get("ownership") != OWNERSHIP_P0A:
+        return _fail_check(f"{p0a_ok['id']}: ownership pin fail")
+    if int(p0a_ok["expected"]["phase"]) != PHASE_COMPLETE:
+        return _fail_check(f"{p0a_ok['id']}: phase must be COMPLETE")
+    if int(p0a_ok["expected"]["binding_complete_mask"]) != MASK_RETRY:
+        return _fail_check(f"{p0a_ok['id']}: binding mask pin fail")
+    if int(p0a_ok["expected"]["count_complete_mask"]) != MASK_RETRY:
+        return _fail_check(f"{p0a_ok['id']}: count mask pin fail")
+    if int(p0a_ok["expected"]["d3_peer_get_count"]) != 16:
+        return _fail_check(f"{p0a_ok['id']}: d3_peer_get_count must be 16")
+    if int(p0a_ok["expected"]["d3_mode_applicable_count"]) != 4:
+        return _fail_check(f"{p0a_ok['id']}: d3_mode_applicable_count must be 4")
+    if int(p0a_ok["expected"]["current_domain_key_count"]) != 6:
+        return _fail_check(f"{p0a_ok['id']}: current_domain_key_count must be 6")
+    if int(p0a_ok["expected"]["ok_row_count"]) != 23:
+        return _fail_check(f"{p0a_ok['id']}: ok_row_count must be 23")
+    if int(p0a_ok["expected"]["iter_open_count"]) != 5:
+        return _fail_check(f"{p0a_ok['id']}: iter_open_count must be 5")
+    pt_p0a = p0a_ok["expected"]["port_trace"]
+    if pt_p0a.count("get") != 17 + 16:
+        return _fail_check(
+            f"{p0a_ok['id']}: port_trace get count must be 33 "
+            f"(17 profile + 16 peer), got {pt_p0a.count('get')}"
+        )
+    # Exactly two FOCUS matrix segments of 5 consecutive gets (carrier no-skip).
+    focus_matrix_runs = 0
+    i_pt = 0
+    while i_pt + 4 < len(pt_p0a):
+        if all(pt_p0a[i_pt + k] == "get" for k in range(5)):
+            # Count only after an iter walk (not baseline profile 17 gets).
+            if i_pt > 0 and pt_p0a[i_pt - 1] == "iter_next":
+                focus_matrix_runs += 1
+                i_pt += 5
+                continue
+        i_pt += 1
+    if focus_matrix_runs != 2:
+        return _fail_check(
+            f"{p0a_ok['id']}: expected 2 FOCUS matrix runs of 5 gets, "
+            f"got {focus_matrix_runs}"
+        )
+    # Body-parse RETRY owner order: must be non-contiguous ABAB (not row count).
+    retry_owner_seq: List[str] = []
+    retry_kind_seq: List[int] = []
+    for r in p0a_ok["rows"]:
+        key = from_hex(r["key_hex"])
+        if len(key) < 10 or key[8] != 6 or key[9] != 0x51:
+            continue
+        tx, kind, _slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+        if tx == MODE25_MULTI_TX_A:
+            retry_owner_seq.append("A")
+        elif tx == MODE25_MULTI_TX_B:
+            retry_owner_seq.append("B")
+        else:
+            return _fail_check(
+                f"{p0a_ok['id']}: unexpected RETRY tx {tx.hex()}"
+            )
+        retry_kind_seq.append(int(kind))
+    if len(retry_owner_seq) != 4:
+        return _fail_check(
+            f"{p0a_ok['id']}: body-parse expects 4 RETRY rows, "
+            f"got {len(retry_owner_seq)}"
+        )
+    owner_s = "".join(retry_owner_seq)
+    if owner_s != MODE25_MULTI_OWNER_ORDER_PIN:
+        return _fail_check(
+            f"{p0a_ok['id']}: owner order {owner_s!r} != pin "
+            f"{MODE25_MULTI_OWNER_ORDER_PIN!r}"
+        )
+    if tuple(retry_kind_seq) != MODE25_MULTI_KIND_ORDER_PIN:
+        return _fail_check(
+            f"{p0a_ok['id']}: kind order {tuple(retry_kind_seq)!r} != pin"
+        )
+    if not _owners_are_noncontiguous(owner_s):
+        return _fail_check(
+            f"{p0a_ok['id']}: owners form contiguous runs (interleave fail)"
+        )
+    # Contiguous AA BB would fail the above; also reject if owners are runs.
+    if owner_s in ("AABB", "BBAA"):
+        return _fail_check(f"{p0a_ok['id']}: contiguous-owner order forbidden")
+    # Carrier CUM keys must be two and ordered A then B.
+    cum_txs: List[bytes] = []
+    for r in p0a_ok["rows"]:
+        key = from_hex(r["key_hex"])
+        if len(key) < 10 or key[8] != 6 or key[9] != 0x51:
+            continue
+        tx, kind, slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+        if kind == RS_KIND_CUMULATIVE and slot == 0:
+            cum_txs.append(tx)
+    if cum_txs != [MODE25_MULTI_TX_A, MODE25_MULTI_TX_B]:
+        return _fail_check(
+            f"{p0a_ok['id']}: CUM carrier TX order must be A then B"
+        )
+    # Bounded TX pair pin self-check.
+    try:
+        sel_a, sel_b = _select_mode25_multi_owner_tx_pair()
+    except SystemExit as exc:
+        return _fail_check(f"{p0a_ok['id']}: TX pair select fail: {exc}")
+    if sel_a != MODE25_MULTI_TX_A or sel_b != MODE25_MULTI_TX_B:
+        return _fail_check(f"{p0a_ok['id']}: TX pair pin mismatch")
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode25_two_owner_sha_interleave_dual_carrier_success(
+                p0a_ok["candidate_binding"], p0a_ok["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{p0a_ok['id']}: model reject: {exc}")
+    if p0a_ok["calls"] != exp_calls:
+        return _fail_check(f"{p0a_ok['id']}: calls != independent model")
+    if p0a_ok["expected"] != exp_expected:
+        return _fail_check(f"{p0a_ok['id']}: expected != independent model")
 
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
@@ -6592,6 +7379,128 @@ def self_test() -> int:
                 "mutation_calls", 7
             ),
         )
+        # 112-prefix freeze (includes Mode21; P0-A at 112).
+        t(
+            "hundred_twelve_prefix_row_tamper",
+            lambda d: d["vectors"][111]["rows"].__setitem__(
+                0, {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "hundred_twelve_prefix_expected_tamper",
+            lambda d: d["vectors"][110]["expected"].__setitem__(
+                "ok_row_count", 999
+            ),
+        )
+        t(
+            "hundred_twelve_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_112_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_twelve_prefix_content_authority_tamper",
+            lambda d: d["d3s2_112_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        t(
+            "hundred_twelve_prefix_ownership_tamper",
+            lambda d: d["vectors"][111].__setitem__(
+                "ownership", OWNERSHIP_P0A
+            ),
+        )
+        # P0-A multi-owner tampers (index 112).
+        t(
+            "p0a_ok_count_mask_tamper",
+            lambda d: d["vectors"][112]["expected"].__setitem__(
+                "count_complete_mask", 0
+            ),
+        )
+        t(
+            "p0a_ok_bind_mask_tamper",
+            lambda d: d["vectors"][112]["expected"].__setitem__(
+                "binding_complete_mask", 0
+            ),
+        )
+        t(
+            "p0a_ok_peer_get_tamper",
+            lambda d: d["vectors"][112]["expected"].__setitem__(
+                "d3_peer_get_count", 8
+            ),
+        )
+        t(
+            "p0a_ok_trace_tamper",
+            lambda d: d["vectors"][112]["expected"]["port_trace"].append("put"),
+        )
+        t(
+            "p0a_ok_mutation_tamper",
+            lambda d: d["vectors"][112]["expected"].__setitem__(
+                "mutation_calls", 1
+            ),
+        )
+        # Owner interleave destroy: drop one owner's RECENT (breaks ABAB + count).
+        t(
+            "p0a_owner_interleave_destroy_tamper",
+            lambda d: d["vectors"][112].__setitem__(
+                "rows",
+                [
+                    r
+                    for r in d["vectors"][112]["rows"]
+                    if not (
+                        len(from_hex(r["key_hex"])) >= 10
+                        and from_hex(r["key_hex"])[8] == 6
+                        and from_hex(r["key_hex"])[9] == 0x51
+                        and _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+                        == (MODE25_MULTI_TX_B, RS_KIND_RECENT, 0)
+                    )
+                ],
+            ),
+        )
+        # Contiguous-owner force: not directly reorderable without full rekey;
+        # drop CUM_B so carrier select cannot complete dual-carrier path.
+        t(
+            "p0a_carrier_delete_tamper",
+            lambda d: d["vectors"][112].__setitem__(
+                "rows",
+                [
+                    r
+                    for r in d["vectors"][112]["rows"]
+                    if not (
+                        len(from_hex(r["key_hex"])) >= 10
+                        and from_hex(r["key_hex"])[8] == 6
+                        and from_hex(r["key_hex"])[9] == 0x51
+                        and _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+                        == (MODE25_MULTI_TX_B, RS_KIND_CUMULATIVE, 0)
+                    )
+                ],
+            ),
+        )
+        # Carrier duplicate: append a second copy of CUM_A row (key/value).
+        t(
+            "p0a_carrier_dup_tamper",
+            lambda d: d["vectors"][112]["rows"].append(
+                copy.deepcopy(
+                    next(
+                        r
+                        for r in d["vectors"][112]["rows"]
+                        if len(from_hex(r["key_hex"])) >= 10
+                        and from_hex(r["key_hex"])[8] == 6
+                        and from_hex(r["key_hex"])[9] == 0x51
+                        and _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+                        == (MODE25_MULTI_TX_A, RS_KIND_CUMULATIVE, 0)
+                    )
+                )
+            ),
+        )
+        t(
+            "p0a_get_count_trace_tamper",
+            lambda d: d["vectors"][112]["expected"].__setitem__(
+                "port_trace",
+                [x for x in d["vectors"][112]["expected"]["port_trace"] if x != "get"]
+                + ["get"] * 17,  # baseline-only gets; peer gets wiped
+            ),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -6612,9 +7521,9 @@ def self_test() -> int:
                 print(f, file=sys.stderr)
             return 1
         print(
-            "self-test ok (94+100+102+104+106+108+110 prefix freeze + mode25/"
-            "mode26/mode24/mode23/mode22/mode21 slice pins + forbidden ops + "
-            "clean pass)"
+            "self-test ok (94+100+102+104+106+108+110+112 prefix freeze + "
+            "mode25/mode26/mode24/mode23/mode22/mode21/p0a slice pins + "
+            "forbidden ops + clean pass)"
         )
         return 0
 
