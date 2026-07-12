@@ -719,7 +719,7 @@ Key identityはdirect ID128でbody `transaction_id`とexact一致、common `prim
 
 Admission時のsource/application/service/target authorization tupleは同TRANSACTION_ANCHORのexact snapshotを参照し、decision / grant / availability epoch fieldsと組み合わせた13章grant decisionの完全再検証、provider grantとdescriptor payload-byte quotaの混同禁止、live RESERVATION / STATE / RETRY / MANAGEMENT cardinality、payload BLOB live 0/1は **D3** です。Provider grantにbyte-window fieldはありません。B3kはsame-record body/key/header/state-cause/resume-discard bool/reservation digestまでだけを閉じ、grant/clock truthを追加凍結しません。
 
-**D1-B3k境界**: B3kはEVENT_SPOOL (`0x50`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3k`）。D2-S3 scan到達は still pending（§8.6.1; B3l/B3m/B3n/B3o body implemented）。Live TRANSACTION_ANCHOR PVD、grant re-verify、availability resume path、STATE/RETRY/MANAGEMENT cardinality、payload BLOB、retention/cleanupはD3以降です。
+**D1-B3k境界**: B3kはEVENT_SPOOL (`0x50`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3k`）。**D2-S3 scan path wiring implemented**（exact-profile → `validate_typed_record`）。Live TRANSACTION_ANCHOR PVD、grant re-verify、availability resume path、STATE/RETRY/MANAGEMENT cardinality、payload BLOB、retention/cleanupはD3以降です。
 
 - `RETRY_SUMMARY`（**D1-B3l**）CUMULATIVE: `transaction_id[16] + summary_kind:u16=1 + slot_index:u16=0 + total_completed_cycle_count:u64 + folded_cycle_count:u64 + cumulative_attempt_count:u64 + last_outcome:u32 + last_reason:u32 + last_ended_clock_epoch[16] + last_ended_at_ms:u64 + delivery_possible_any:u32 + counter_saturated:u32`。
 - `RETRY_SUMMARY` RECENT: `transaction_id[16] + summary_kind:u16=2 + slot_index:u16(0..3) + retry_cycle_id:u64 + attempt_count:u32 + last_outcome:u32 + last_reason:u32 + availability_epoch:u64 + ended_clock_epoch[16] + ended_at_ms:u64 + delivery_possible:u32 + reserved:u32=0`。
@@ -736,7 +736,7 @@ Key identityは`COMPOSITE(51, transaction_id[16] || summary_kind:u16 || slot_ind
 
 Cross-row population（CUMULATIVE admission exact 1、RECENT 0..4、`recent_count=min(total,4)`、fold前replace、counter overflow→`counter_saturated=1`とEvent COUNTER_EXHAUSTED park、slot uniqueness）はwriter/D3です。B3lはsingle-row body/key/kind-slot arithmeticとbool/reservedだけを閉じます。
 
-**D1-B3l境界**: B3lはRETRY_SUMMARY (`0x51`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3l`）。D2-S3 scan到達は still pending（§8.6.1; B3m/B3n/B3o body implemented）。Cross-row fold ordering、cardinality、live STATE/SPOOL整合はD3です。
+**D1-B3l境界**: B3lはRETRY_SUMMARY (`0x51`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3l`）。**D2-S3 scan path wiring implemented**。Cross-row fold ordering、cardinality、live STATE/SPOOL整合はD3です。
 
 - `MANAGEMENT_LEDGER`（**D1-B3m**）: `operation_id[16] + operation_kind:u16 + reserved:u16=0 + ordered_sequence:u64 + transaction_id[16] + event_id[16] + actor_id[16] + canonical_request_digest[32] + expected_spool_revision:u64 + expected_event_id[16] + expected_content_digest_algorithm:u16 + reserved:u16=0 + expected_content_digest[32] + request_reason:u32 + acknowledge_flag:u32 + audit_length:u16 + reserved:u16=0 + audit_bytes[128] + audit_clock_epoch[16] + audit_committed_at_ms:u64 + replay_result_kind:u32 + replay_result_reason:u32 + replay_retry_cycle_id:u64 + replay_spool_revision:u64 + replay_spool_released:u32 + reserved:u32=0`。
 
@@ -765,7 +765,7 @@ kind 16ではbody `event_id == expected_event_id`をexactに要求します。ki
 
 MANAGEMENT_LEDGERはEvent admission時に物理slotを作りません。成功したdistinct resume/discardのFULL mutationだけが`transaction_id || operation_id` composite keyのledgerを1件createし、Event spool/count、reservation vector、state/resultを同じwitness groupで更新します。Event spoolはresume最大8、discard最大1をguardし、RESERVATIONは未使用分をlogical `reserved`、作成済みledger分をlogical `used`としてexact 256/512 bytesずつ表します。Ledger hitはcanonical request digestとoperation kindを先に比較し、一致ならpersist済みreplay fieldをcurrent Event state/revisionを再評価せず返します。不一致はpublic conflict resultです。live counter/state/spool整合は **D3** です。
 
-**D1-B3m境界**: B3mはMANAGEMENT_LEDGER (`0x52`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3m`）。D2-S3 scan到達は still pending（§8.6.1; B3n/B3o body implemented）。live SPOOL/STATE/RESERVATION counter、family 3 sequence upper bound、writer E2EはD3です。
+**D1-B3m境界**: B3mはMANAGEMENT_LEDGER (`0x52`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3m`）。**D2-S3 scan path wiring implemented**。live SPOOL/STATE/RESERVATION counter、family 3 sequence upper bound、writer E2EはD3です。
 
 - `BEARER_STATE`: `availability_epoch:u64 + available:u32 + observation_clock_epoch[16] + observed_at_ms:u64`。Absent before first observation、以後non-zero strictly increasing epochだけoperation kind 20 witnessでcreate/replaceします。Same/old epochはwrite 0、same epoch/different availableはcontract failureです。
 - `RETENTION_BASIS`（**D1-B3n**）: `subject_kind:u16 + reserved:u16=0 + subject_key_raw:RAW16(max 255) + subject_primary_key_digest[32] + basis_clock_epoch[16] + basis_at_ms:u64 + exclusive_cleanup_at_ms:u64 + required_window_ms:u64 + retention_state:u32 + basis_pending:u32 + retention_overflow:u32`。
@@ -794,7 +794,7 @@ ACTIVE overflowのpresenceは`basis_clock_epoch`で表し、他のtrusted-clock 
 
 ELIGIBLEはeligibility判定sampleがsame epochかつnow>=delete-atとなるFULL replacementです。CLEANUP_COMMITTEDはPLAN_CREATEと同じwitnessでELIGIBLEからだけ進み、両flag 0とbasis/delete-atを保持してCLEANUP_PLAN `cleanup_generation`へpost-replacement record revisionを保存します。Plan存在中はexact CLEANUP_COMMITTED、FINALIZEでbasisとplanを同時eraseします。Pending/overflowからELIGIBLE/CLEANUP_COMMITTEDへ直接進めず、Clock epoch changeだけがfull windowをnew trusted sampleから再基準化し、same-epoch regressionはcreate/operation failureでrebaseしません。
 
-**D1-B3n境界**: B3nはRETENTION_BASIS (`0x61`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3n`）。D2-S3 scan到達は still pending（§8.6.1; B3o body implemented）。current-now/profile window/plan generation/live primary PVDはD3です。
+**D1-B3n境界**: B3nはRETENTION_BASIS (`0x61`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3n`）。**D2-S3 scan path wiring implemented**。current-now/profile window/plan generation/live primary PVDはD3です。
 
 - `CLOCK_BASELINE`: `baseline_state:u32 + reserved:u32=0 + trusted_clock_epoch[16] + last_trusted_now_ms:u64 + publish_generation:u64`。Metadata初期化はUNINITIALIZED/common revision 1、epoch/time/generation zeroを必ず作り、以後absentはcorruptです。最初のaccepted Stage 7 sampleはTRUSTED/common revision 2/generation 1へreplaceし、以後の各accepted sampleはsame/new epochともcommon revisionとgenerationをchecked +1してStage 8前にreplaceします。同epochでは`now >= last`、new epochでは任意のtrusted `now`を受理します。後続Bearer open等が失敗してpublic handleをpublishしなくてもbaselineを巻き戻さないため、`publish_generation`はpublish済みhandle数ではなくpublish-attempt用trusted sampleのdurable generationです。GenerationまたはrevisionがMAXならwrapせず`NINLIL_E_DEGRADED`、publish 0、Storage mutation 0です。COMMIT_UNKNOWNはold/new complete value digestで収束し、authoritative newを確認できるまでpublishしません。
 
@@ -821,34 +821,34 @@ Phase closed matrix（same-record; §9と同値）:
 
 Retention eligibility commit後にphase 1でcreateし、public query/listはplan存在subjectをlogically absentとして扱いますが、collision lookup/recoveryはphysical primaryをfinalizeまで保持します。Live ATTEMPT/index counts、basis CLEANUP_COMMITTED、ATTEMPT_REUSE_FENCE aggregate、phase batch eraseは **D3** です。
 
-**D1-B3o境界**: B3oはCLEANUP_PLAN (`0x63`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3o`）。size `126+N`、key kind+digest、KEY_DIGEST/PVD bijection、generation/revision、phase remaining/fence matrixまで。**D2-S3 still pending**（§8.6.1; scan path wiringは未完）。live counts/basis/fence aggregateはD3です。
+**D1-B3o境界**: B3oはCLEANUP_PLAN (`0x63`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3o`）。size `126+N`、key kind+digest、KEY_DIGEST/PVD bijection、generation/revision、phase remaining/fence matrixまで。**D2-S3 scan path wiring implemented**（exact-profile → typed same-record）。live counts/basis/fence aggregateはD3です。
 
 - `ATTEMPT_REUSE_FENCE`: `active_plan_count:u32 + reserved:u32=0 + fence_generation:u64`。Active count 1以上だけrecordが存在し、zeroでeraseします。Absent→first createのgenerationは1、present join/leave replacementはchecked +1、count 1→0ではrecordをeraseします。後に別cleanupでabsentから再createする場合もgeneration 1です。Fence単独mutation、MAX replacement、flagged planなしのpresent fence、flagged planがあるabsent fenceはcorruptです。Common primary digestはzeroです。Fence存在中はnew attempt Entropy allocationを`NINLIL_E_WOULD_BLOCK`で停止し、transaction ID allocationやreplay/recoveryは継続します。
 - `WITNESS_HEAD_INDEX`: `index_state:u16 + reserved:u16=0 + member_key_digest[32] + member_key_length:u16 + reserved:u16=0 + member_key_bytes[member_key_length] + member_value_digest[32] + member_head_witness_digest[32]`。Memberはfamily 3 counter 4件またはfamily 4 capacity 11件、key lengthはexact 10です。BASELINEはhead zero/common head zero、WITNESSEDはnon-zero両head exact一致です。Common primary digestはzeroです。これはshared mutable recordにhead chainを与えるmetadataで、単独のsemantic truthではありません。
 
 #### 8.6.1 D1-B3k..B3o status / ownership ledger
 
-**Decision identifier: D1-B3k..B3o。** 本節は5 remaining Domain Store bodiesのsame-record Normative contract freezeを固定する。**D1-B3k / D1-B3l / D1-B3m / D1-B3n / D1-B3o implementation complete**（pure body + same-record + vector `d1b3k` / `d1b3l` / `d1b3m` / `d1b3n` / `d1b3o`）。**D1 complete / D2-S3 complete / Stage 5 complete をclaimしない**。public C ABI / export symbol / public status を追加しない。
+**Decision identifier: D1-B3k..B3o。** 本節は5 remaining Domain Store bodiesのsame-record Normative contract freezeを固定する。**D1-B3k / D1-B3l / D1-B3m / D1-B3n / D1-B3o implementation complete**（pure body + same-record + vector `d1b3k` / `d1b3l` / `d1b3m` / `d1b3n` / `d1b3o`）。**D1 complete / D2 complete / Stage 5 complete をclaimしない**（D2-S3 scan wiringは別ledger §15.9）。public C ABI / export symbol / public status を追加しない。
 
 | Slice | Subtype | Body same-record（本freeze） | Status | Vector format | Implementation / D2-S3 |
 | --- | ---: | --- | --- | --- | --- |
-| **D1-B3k** | `0x50` EVENT_SPOOL | exact 300、ID128=tx、revision=spool_revision、state×cause、resume 0..8、discard iff DISCARDED、reservation KEY_DIGEST | **implementation complete** | `ninlil-domain-store-v1-d1b3k` | implemented; D2-S3 still pending |
-| **D1-B3l** | `0x51` RETRY_SUMMARY | CUMULATIVE 84 / RECENT 80、composite key=body、kind/slot/fold arithmetic、bools | **implementation complete** | `ninlil-domain-store-v1-d1b3l` | implemented; D2-S3 still pending |
-| **D1-B3m** | `0x52` MANAGEMENT_LEDGER | exact 364、tx+op key、immutable rev1、kind15/16 matrix、canonical digest recompute | **implementation complete** | `ninlil-domain-store-v1-d1b3m` | implemented; D2-S3 still pending |
-| **D1-B3n** | `0x61` RETENTION_BASIS | 90+N→106/170、kind+raw key、KEY_DIGEST、pending/trusted/eligible matrix | **implementation complete** | `ninlil-domain-store-v1-d1b3n` | implemented; D2-S3 still pending |
-| **D1-B3o** | `0x63` CLEANUP_PLAN | 126+N→142/206、kind+digest key、PVD bijection、phase/fence matrix | **implementation complete** | `ninlil-domain-store-v1-d1b3o` | implemented; **D2-S3 still pending** |
+| **D1-B3k** | `0x50` EVENT_SPOOL | exact 300、ID128=tx、revision=spool_revision、state×cause、resume 0..8、discard iff DISCARDED、reservation KEY_DIGEST | **implementation complete** | `ninlil-domain-store-v1-d1b3k` | body + **D2-S3 scan path** |
+| **D1-B3l** | `0x51` RETRY_SUMMARY | CUMULATIVE 84 / RECENT 80、composite key=body、kind/slot/fold arithmetic、bools | **implementation complete** | `ninlil-domain-store-v1-d1b3l` | body + **D2-S3 scan path** |
+| **D1-B3m** | `0x52` MANAGEMENT_LEDGER | exact 364、tx+op key、immutable rev1、kind15/16 matrix、canonical digest recompute | **implementation complete** | `ninlil-domain-store-v1-d1b3m` | body + **D2-S3 scan path** |
+| **D1-B3n** | `0x61` RETENTION_BASIS | 90+N→106/170、kind+raw key、KEY_DIGEST、pending/trusted/eligible matrix | **implementation complete** | `ninlil-domain-store-v1-d1b3n` | body + **D2-S3 scan path** |
+| **D1-B3o** | `0x63` CLEANUP_PLAN | 126+N→142/206、kind+digest key、PVD bijection、phase/fence matrix | **implementation complete** | `ninlil-domain-store-v1-d1b3o` | body + **D2-S3 scan path** |
 
-**Acceptance ownership（implementation complete for pure body slices; D2-S3 scan path still pending）:**
+**Acceptance ownership（pure body + D2-S3 scan path wiring）:**
 
 1. pure body encode/decode + same-record validator（Port call 0）が§8.6各slice閉包を満たす
 2. independent generatorが上表format stringのoracleをappend-only生成し、production bridgeがbyte equality
 3. **module alias / unchanged-output規則（B3a..oと同じ）**: 既存`domain_store_body_codec` module aliasへprivate helperを追加しpublic ABIを増やさない。`spec/vectors/domain-store-v1.json`は **prior format objectsをbyte-for-byte保持** したappend-onlyでformatを`d1b3k`→`d1b3l`→…→`d1b3o`へ順に進める。prior fingerprint / prefix guardを壊すin-place rewrite禁止
-4. D2-S3 scan pathが当該subtype body local validationへ到達できること（scan wiringが揃うまでS3 complete禁止）
+4. D2-S3 scan pathが当該subtype body local validationへ到達できること（§15.9 / §17.1.3）
 
 **Explicit non-completion / non-claims:**
 
-- B3k/B3l/B3m/B3n/B3o pure body + same-record are **implementation complete**; **D2-S3 still pending**（bounded scanner scan path wiring）
-- **D1 complete / D2-S3 complete / D2 complete / Stage 5 complete / public Runtime complete をclaimしない**
+- B3k/B3l/B3m/B3n/B3o pure body + same-record are **implementation complete**; **D2-S3 scan path wiring is implementation complete**（exact-profile structural only）
+- **D1 complete / D2 complete / Stage 5 complete / public Runtime complete をclaimしない**（D2-S3はbounded scannerの1ピースのみ）
 - B3n overflowはepoch non-zeroでpresenceを表し、`basis_at_ms=0`を合法とする。current-now/profile/plan整合はD3
 - cross-row / grant / profile now / fence aggregate / writer E2E / live CLEANUP countsはD3/D4
 
@@ -1457,7 +1457,7 @@ D2全slice（S1〜S6）は次を必須とします。
 - public ABI追加 0
 - **第二の4096-byte value bufferを追加しない**（S2 get pathはtyped fixed capacity。§15.10）
 
-Caller-owned固定scratch（Runtime arena）。**D2-S2以降のNormative packed workspace**（natural alignment padding可。`sizeof(workspace) <= 8192`を**every target**で`_Static_assert`）:
+Caller-owned固定scratch（Runtime arena）。**D2-S3以降のNormative packed workspace**（natural alignment padding可。`sizeof(workspace) <= 8192`を**every target**で`_Static_assert`）:
 
 | Region | Exact capacity / meaning |
 | --- | --- |
@@ -1469,8 +1469,9 @@ Caller-owned固定scratch（Runtime arena）。**D2-S2以降のNormative packed 
 | encoded snapshot views | 17 × `ninlil_bytes_view_t`（上記encoded valuesへborrow。call-localではない固定領域） |
 | validated snapshot | `ninlil_model_runtime_store_validated_snapshot_t`（get-path `validate_snapshot`出力） |
 | candidate binding copy | `ninlil_model_runtime_store_binding_t`（begin prevalidation後・Port前にcopy。以後read-only） |
+| **row_validate_scratch（S3）** | **union** of `ninlil_model_domain_typed_record_t` / `ninlil_model_domain_witness_header_t` / `ninlil_model_domain_witness_chunk_t`（exact-profile family 5/6 CURRENT structural path only）。**scanner stackへlarge typed/witness bodyを置かない**。第二4096 value bufferではない |
 
-S1 transport adapterは上記S2領域を触らなくてよいが、**同一workspace type**のsizeof上限8192は共有する（S2 fieldsがゼロ初期化で存在する）。
+S1 transport adapterは上記S2/S3領域を触らなくてよいが、**同一workspace type**のsizeof上限8192は共有する（S2/S3 fieldsがゼロ初期化で存在する）。
 
 Scanner session/control objectの固定フィールド（state、txn/iterator opaque、sticky **terminal** primary status、non-terminal candidate flags、`profile_exact_active`、`profile_get_present_mask` / `family14_iter_seen_mask`（各 legal 17-bit `0x1ffff`）、coarse counters/flags、`has_previous`、reopen flag等）もRuntime-owned固定領域に置き、heapへ逃がしません。
 
@@ -1568,12 +1569,12 @@ L2b1 successはStage 5完了でもD2完了でもありません（14章L2b1 boun
 | **D2-S0** | 本節のNormative contract freeze。実装/vector変更なし | 否 |
 | **D2-S1** | scanner core: state machine、begin binds Port/handle/workspace、advance(row_budget)/finalize|abort(result) only、iter buffer、`has_previous` lex、§15.4 coarse class、mutation 0、uint64 checked counters。独立oracle + production bridge。**実装済み（D2 incomplete）** | 否 |
 | **D2-S2** | **実装済み（D2 incomplete）:** production profiled begin only（required candidate; TEST transport beginはtest macro専用）、same-txn 17 exact get + completeness/validate/compare、typed get capacities、iterator reconciliation masks、mismatch/future mode skip、private result diagnostics、sibling profile oracle `domain-scan-profile-v1.json` / `ninlil-domain-scan-profile-v1-d2s2` + independent generator + production bridge。D2 complete / DSR1/DSR2 complete / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
-| **D2-S3** | 全current domain structural / same-record validation（envelope、4096、subtype body local、duplicate/order接続）。**step 5 same-record/local: witness header+chunk framing/matrix のscan到達**（D1 pure witness codecに依存。member old/new・partial group・successor chainはD3）。**D1-B3k (`0x50`) / D1-B3l (`0x51`) / D1-B3m (`0x52`) / D1-B3n (`0x61`) / D1-B3o (`0x63`) pure body implemented; S3 scan path wiring is still pending（§8.6.1）** | 否 |
+| **D2-S3** | **実装済み（D2 incomplete）:** exact-profile時 family 5/6 CURRENT structural same-recordをscan pathから到達。closed catalog family5 `01`+family6 §7 全29 current subtypes（`10,11,20-27,30-34,40-42,50-52,60-64,7d-7f`）REQUIRED。business+`7d` → `ninlil_model_domain_validate_typed_record`（workspace typed scratch; public APIに large local 無し）。`7e`/`7f` → parse key + envelope + pure witness decode + key/body/header bijection + independent header mutates（flags/PVD/primary/identity/subtype/rev0/rtype）scan到達。status: `UNSUPPORTED` future non-terminal、後続current corrupt precedence（record_version/domain_format）; profile mismatch/future_profile skip S3 decode; BTS 4097/unknown subtype/lex OOO。sibling oracle `domain-scan-structural-v1.json` / `ninlil-domain-scan-structural-v1-d2s3` + D1 d1b3o SHA/count pin composition + S1 transport body-nonvalidation hash/ID pin + independent generator + production bridge。**member old/new・partial group・successor chain・cross-row PVD/cardinalityはD3。S4 exact-get追加なし。** D2 complete / DSR1/DSR2 / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
 | **D2-S4** | same-snapshot exact `get`とfixed-memory cross-reference seam（全ID集合非保持） | 否 |
 | **D2-S5** | S1〜S4および依存（不足D1 body含む）と必須vector/oracleが揃ったうえでの`DSR1_SCAN` / `DSR2_ESP_BOUND` complete。restart先頭、**D2-detectable** corrupt>future、D3 corruption投入用のexact seam/mechanism、rollback failure/fence、workspace天井、allocation 0。partial group/orphan/counter/capacity/health自体は証明しない | **S1〜S5完了の総称としてだけD2（bounded scanner）を証明。Stage 5全体は証明しない** |
 | **D2-S6** | Stage 5 orchestration hookup。scannerをcreate Stage 5へ接続。なおmutation 0（recovery mutation本体はD4） | D2を統合するだけで、S5未完了をD2完了に置換せず、D3/D4未完了をStage 5完了に置換しない |
 
-**「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S2/S3/S4が未完了のまま（§8.6.1; B3k/B3l/B3m/B3n/B3o pure body implementedだが **D2-S3 still pending**）、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vector、body-only completeもD2完了宣言に使ってはなりません。
+**「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S4が未完了のまま（S1/S2/S3はimplementation completeでも **D2 incomplete**）、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vector、body-only completeもD2完了宣言に使ってはなりません。
 
 D3（cross-row semantic / cardinality / capacity / health / **witness member old/new・partial group・successor chain**）とD4（operation別mutation / convergence / FULL writer）は本ledgerの外です。§15 steps 1〜11の最終Stage 5 closed orderと§1 publish gateはD1+D2+D3+D4 compositionのRuntime objectiveのままです。
 
@@ -1797,7 +1798,7 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 | D2-S0 | vector/oracle追加なし。本ledgerと§15 contractだけ | spec freeze ≠ implementation |
 | D2-S1 | `DSR1_SCAN` transport subset + `DSR2_ESP_BOUND` skeleton の**ownership**。独立machine-readable oracle artifactを **`spec/vectors/domain-scan-v1.json`**、format **`ninlil-domain-scan-v1-d2s1`** として固定（schemaは§17.1.1）。**S2以降も本artifactはbyte-for-byte frozen regression**。D1 JSONへscanner fieldを追加しない | S1 ownershipのみ。**DSR1/DSR2 completeおよびD2 completeをclaimしない** |
 | D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator reconciliation。sibling oracle **`spec/vectors/domain-scan-profile-v1.json`**、format **`ninlil-domain-scan-profile-v1-d2s2`**（§17.1.2）+ independent generator + production profiled-begin bridge + unit acceptance。**実装済み（D2 incomplete）** | domain structural全体はS3。**DSR1/DSR2/D2 completeをclaimしない** |
-| D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）依存D1 body hexは当該subtype D1 deliverableが正本。format `ninlil-domain-store-v1-d1b3o` is current authority | **D2-S3 still pending**（§8.6.1; B3k/B3l/B3m/B3n/B3o pure body implemented; scan path wiring incomplete） |
+| D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）。sibling oracle **`spec/vectors/domain-scan-structural-v1.json`**、format **`ninlil-domain-scan-structural-v1-d2s3`**（§17.1.3）。依存D1 body hexは `ninlil-domain-store-v1-d1b3o` authority（byte-for-byte frozen; S3は同fileへscanner fieldを追加しない） | **D2-S3 implementation complete**（S1–S5の1ピース。**D2/DSR1/DSR2/Stage5 completeをclaimしない**） |
 | D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference（`DSI1_BACKLINK`のscan接続部など） | 全ID集合RAM保持テストを合法化しない |
 | D2-S5 | `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。かつS1〜S4 ownership vectorと依存D1 bodyが揃っていること | **S1〜S5+depsが揃って初めてD2（bounded scanner）証明。Stage 5証明ではない。S2/S3/S4または5 D1 body欠落のままS5 complete禁止** |
 | D2-S6 | 新規D2 oracleを必須化しない。Stage 5 orchestration integration testはD2完了の代替にもStage 5完了の代替にもならない | S5未完了のままS6 successでD2 claim禁止 |
@@ -1883,3 +1884,71 @@ Each vector object（required keys; schema ownership）:
 **CI gate（implementation PR）:** independent generator `check` + production bridge over every vector; S1 `domain-scan-v1.json` remains a separate frozen regression job. A mere ID list is insufficient.
 
 **Explicit non-claims:** filling this schema does not complete DSR1/DSR2/D2 or Stage 5. S3 domain structural vectors remain separate.
+
+### 17.1.3 D2-S3 structural oracle artifact schema ownership（Normative freeze）
+
+**Decision identifier: D2-S3（oracle schema + implementation ownership）。** S1/S2 artifactは**sibling**のままbyte-for-byte frozen。D1 `domain-store-v1.json`へscanner call-traceを押し込まない。
+
+| Field | Exact value |
+| --- | --- |
+| path | `spec/vectors/domain-scan-structural-v1.json` |
+| format | `ninlil-domain-scan-structural-v1-d2s3` |
+| version | `1` |
+| independent generator | `tools/domain_scan_structural_vector_gen.py`（production Cをinvoke/translateしない。profile/NLR1/CRC/SHA-256/typed hexはoracle側。D1 authority hexのliteral再利用可） |
+| production bridge | production **profiled** begin + exact candidate + 17 profile rows + domain row(s) をoracle literalに対して実行（全negativeを含む every vector で port trace / counters / budget / status をassert） |
+
+Top-level object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | exact `1` |
+| `format` | string | exact `ninlil-domain-scan-structural-v1-d2s3` |
+| `scope` | string | S3 ownership prose; must not claim DSR1/DSR2/D2/Stage5 complete |
+| `workspace` | object | S1 capacities + `ceiling_bytes=8192` + `row_validate_scratch` note（typed/witness union） |
+| `d1_authority` | object | D1 d1b3o pin: `path` / `format=ninlil-domain-store-v1-d1b3o` / full `sha256` / `vector_count` / composition note |
+| `s1_authority` | object | S1 d2s1 pin: full `sha256` + transport body-nonvalidation vector ids（sibling frozen regression） |
+| `catalog_coverage` | object | **closed** subtype list（docs §7 table literal）+ required + covered（scan到達 assertion; `required==covered` self-definition alone is insufficient — closed list must match §7） |
+| `vectors` | array | structural / witness-local / precedence / profile-skip / bts / lex / s1_evidence cases |
+
+**Closed catalog（REQUIRED; family5 `01` + family6 §7 current）:**
+`01,10,11,20-27,30-34,40-42,50-52,60-64,7d-7f`（exact 30）。business+`7d` は各 positive scan到達。可能な限り各subtypeの D1 CORRUPT typed negative も scan replay。`7e`/`7f` は local witness path。
+
+Each vector object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | stable case id |
+| `kind` | string | closed set includes at least: `structural_positive`, `structural_corrupt`, `structural_unsupported`, `witness_header_local`, `witness_chunk_local`, `precedence`, `profile_skip`, `lex_regression`, `dsr2_ceiling`, `bts_corrupt`, `s1_evidence` |
+| `candidate_binding` | object | typed binding for profiled begin（oracle-owned） |
+| `rows` | array | `{key_hex,value_hex}` snapshot; **17 profile rows + domain row(s)** in storage order |
+| `faults` | array | scripted Port faults（BTS value_length=4097 等） |
+| `calls` | array | **profiled begin** + `advance`/`finalize`/`abort` |
+| `expected` | object | `final_status`, `adopted`, `state_after`, coarse counts, profile diagnostics, `port_trace`, `mutation_calls=0`, reopen/close |
+
+**Composition design（D1 authority + oracle framing; not D1 reimplementation）:**
+
+1. Generator pins D1 artifact as **independent authority**: format `ninlil-domain-store-v1-d1b3o`、full SHA-256、vector count。Selected typed vectors assert `id` / `expected_status` / `op` / `subtype` / key+value presence。
+2. Business+`7d` same-record outcome is **composed** from D1 `expected_status`（OK→scan continue、non-OK→terminal CORRUPT）。S3 does **not** reimplement D1 body matrices。
+3. Synthetic envelope / common-header / future / witness mutations derive framing/status **independently on the oracle**（CRC、record_version、domain_format、flags/PVD/revision/primary_id/identity/subtype/record_type）。Mere good/bad whitelist of full row hex is not the sole derivation path。
+4. `7e`/`7f` body matrix negatives may embed D1 pure-body authority bytes; header-local mutates are oracle-derived。Head zero and nonzero are both legal positives for witness subtypes。
+5. Generator production C invoke/translate remains **forbidden**。
+
+**Status semantics（exact-profile path only）:**
+
+1. `ninlil_model_domain_validate_typed_record` / witness local helper → `OK` → count + continue
+2. → `NINLIL_E_UNSUPPORTED`（safe record_version/domain_format future）→ non-terminal `recognizable_future_seen`、scan継続
+3. → `NINLIL_E_STORAGE_CORRUPT` / `NINLIL_E_INVALID_ARGUMENT` / other structural failure → terminal sticky `STORAGE_CORRUPT`
+4. profile mismatch / `future_profile_candidate` → **S3 decode 0**（malformed domain row skipped; S2 skip維持）
+5. S1 transport begin（`profile_exact_active=0`）→ body validate 0
+
+**Precedence:** `record_version` future on an earlier current key then later current CORRUPT wins terminal; `domain_format` future→corrupt 同型。Future-root key is lexically after current root, so current-corrupt-then-future-root is the storage-order reality（not a misnamed future-then-corrupt root pair）。
+
+**Gap coverage（scan evidence）:** value length 4097 iter `BUFFER_TOO_SMALL`→CORRUPT; current-root unknown subtype→CORRUPT; lex out-of-order/duplicate; profile mismatch skip; future_profile skip of malformed domain。
+
+**S1 transport body nonvalidation evidence:** sibling `spec/vectors/domain-scan-v1.json` format `ninlil-domain-scan-v1-d2s1` full SHA pin + vector ids `s1-65-rows`（empty-value domain CURRENT counted without body validate）and `s1-family14-current`。S3 profiled path does not execute transport begin; S1 remains frozen regression。
+
+**Typed stack:** public `ninlil_model_domain_validate_typed_record` has **no large typed_record local** in its function body; `out_record==NULL` uses separate no-output helper. Scanner non-NULL path uses workspace scratch only. Alias/failure zero/NULL tests maintained. Source gate may assert helper separation without nonportable stack attributes。
+
+**CI gate:** independent generator `check` + production bridge over every vector; S1/S2 JSON and D1 d1b3o JSON remain frozen regressions. Representative matrix is sufficient（全1549 typed vectorsの複製は不要）; closed catalog coverage assertion required。
+
+**Explicit non-claims:** D2 complete / DSR1_SCAN complete / DSR2_ESP_BOUND complete / Stage 5 / public Runtime / S4 exact-get / D3 cross-row / ESP hardware。

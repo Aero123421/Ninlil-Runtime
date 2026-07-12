@@ -2,17 +2,19 @@
 #define NINLIL_DOMAIN_STORE_SCANNER_H
 
 /*
- * D2-S2 private Domain Store bounded scanner core.
+ * D2-S3 private Domain Store bounded scanner core.
  * Production-private; not installed. Not a public C ABI.
  *
- * Implements docs/17-foundation-domain-store.md §15.1–15.7 / §15.10.
+ * Implements docs/17-foundation-domain-store.md §15.1–15.7 / §15.10 / §15.9 S3.
  * Production path: ninlil_domain_scan_begin_profiled (required candidate,
  * same-txn 17 get + validate/compare + one zero-prefix iterator).
- * S1 transport-only begin is TEST-build only
- * (NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN).
+ * Exact-profile CURRENT family 5/6 rows: typed same-record (business+7d)
+ * or witness header/chunk local framing (7e/7f). S1 transport-only begin is
+ * TEST-build only (NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN) and does
+ * not run domain body structural validation.
  *
- * No domain body structural (S3), cross-row (D3), recovery mutation (D4),
- * or Stage 5 orchestration (S6). Does not claim D2 / DSR1 / DSR2 complete.
+ * No cross-row (D3), S4 exact-get seam, recovery mutation (D4), or Stage 5
+ * orchestration (S6). Does not claim D2 / DSR1 / DSR2 complete.
  *
  * Ownership binding:
  *   begin binds non-owning pointers to storage ops, handle slot, and
@@ -37,6 +39,8 @@
 #include <ninlil/platform.h>
 #include <ninlil/runtime.h>
 
+#include "domain_store_body_codec.h"
+#include "domain_store_codec.h"
 #include "runtime_store_bootstrap.h"
 #include "runtime_store_codec.h"
 
@@ -63,10 +67,23 @@ typedef enum ninlil_domain_scan_state {
 } ninlil_domain_scan_state_t;
 
 /*
+ * S3 exact-profile structural scratch: large typed/witness bodies live here,
+ * never as large scanner-stack locals. Union keeps sizeof(workspace)<=8192.
+ * Not a second 4096 value buffer.
+ */
+typedef union ninlil_domain_scan_row_scratch {
+    ninlil_model_domain_typed_record_t typed;
+    ninlil_model_domain_witness_header_t witness_header;
+    ninlil_model_domain_witness_chunk_t witness_chunk;
+} ninlil_domain_scan_row_scratch_t;
+
+/*
  * Caller-owned fixed scratch (Runtime arena).
  * S1: key + value + previous-key.
  * S2: packed encoded family1-4 values + views + validated snapshot +
- *     candidate binding copy. No second 4096 value buffer.
+ *     candidate binding copy.
+ * S3: row_validate_scratch union for typed/witness same-record path.
+ * No second 4096 value buffer.
  * Has-previous is an explicit session flag; length 0 is never a first-row
  * sentinel.
  */
@@ -79,18 +96,19 @@ typedef struct ninlil_domain_scan_workspace {
         NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_RECORD_COUNT];
     ninlil_model_runtime_store_validated_snapshot_t validated;
     ninlil_model_runtime_store_binding_t candidate;
+    ninlil_domain_scan_row_scratch_t row_validate_scratch;
 } ninlil_domain_scan_workspace_t;
 
 #if defined(__cplusplus)
 static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S2 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S3 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #else
 _Static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S2 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S3 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #endif
 
 /*

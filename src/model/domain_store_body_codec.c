@@ -12064,13 +12064,78 @@ static ninlil_status_t validate_header_body_local(
     return NINLIL_E_INVALID_ARGUMENT;
 }
 
+static ninlil_status_t validate_typed_record_into(
+    ninlil_bytes_view_t encoded_key,
+    ninlil_bytes_view_t encoded_value,
+    ninlil_model_domain_typed_record_t *target)
+{
+    ninlil_status_t status;
+
+    (void)memset(target, 0, sizeof(*target));
+    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded_key)
+        || !ninlil_model_domain_bytes_view_shape_is_valid(encoded_value)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+
+    status = ninlil_model_domain_parse_key(encoded_key, &target->key);
+    if (status != NINLIL_OK) {
+        (void)memset(target, 0, sizeof(*target));
+        return status;
+    }
+    status = ninlil_model_domain_decode_envelope(
+        encoded_value, &target->envelope);
+    if (status != NINLIL_OK) {
+        (void)memset(target, 0, sizeof(*target));
+        return status;
+    }
+
+    target->family = target->key.family;
+    target->subtype = target->key.subtype;
+
+    if (!subtype_is_d1b_supported(target->family, target->subtype)) {
+        (void)memset(target, 0, sizeof(*target));
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+
+    status = validate_header_body_local(
+        target->family,
+        target->subtype,
+        &target->key,
+        &target->envelope,
+        target);
+    if (status != NINLIL_OK) {
+        (void)memset(target, 0, sizeof(*target));
+        return status;
+    }
+    return NINLIL_OK;
+}
+
+/*
+ * No-output path only: owns the large typed_record local so the public
+ * validate_typed_record function body never declares it. Scanner calls with
+ * non-NULL out_record (workspace scratch) therefore have no large local in
+ * the public function source.
+ */
+static ninlil_status_t validate_typed_record_no_output(
+    ninlil_bytes_view_t encoded_key,
+    ninlil_bytes_view_t encoded_value)
+{
+    ninlil_model_domain_typed_record_t local;
+
+    return validate_typed_record_into(encoded_key, encoded_value, &local);
+}
+
 ninlil_status_t ninlil_model_domain_validate_typed_record(
     ninlil_bytes_view_t encoded_key,
     ninlil_bytes_view_t encoded_value,
     ninlil_model_domain_typed_record_t *out_record)
 {
-    ninlil_model_domain_typed_record_t local;
-    ninlil_status_t status;
+    /*
+     * Prefer caller-owned scratch (scanner workspace) when provided so the
+     * scan path does not stack a second large typed_record. The no-output
+     * unit path uses validate_typed_record_no_output (separate helper) so
+     * this public function declares no large local.
+     */
     size_t n = 0u;
     const void *ptrs[4];
     size_t lens[4];
@@ -12094,45 +12159,9 @@ ninlil_status_t ninlil_model_domain_validate_typed_record(
         return NINLIL_E_INVALID_ARGUMENT;
     }
 
-    (void)memset(&local, 0, sizeof(local));
     if (out_record != NULL) {
-        (void)memset(out_record, 0, sizeof(*out_record));
+        return validate_typed_record_into(
+            encoded_key, encoded_value, out_record);
     }
-    if (!ninlil_model_domain_bytes_view_shape_is_valid(encoded_key)
-        || !ninlil_model_domain_bytes_view_shape_is_valid(encoded_value)) {
-        return NINLIL_E_INVALID_ARGUMENT;
-    }
-
-    status = ninlil_model_domain_parse_key(encoded_key, &local.key);
-    if (status != NINLIL_OK) {
-        return status;
-    }
-    status = ninlil_model_domain_decode_envelope(encoded_value, &local.envelope);
-    if (status != NINLIL_OK) {
-        return status;
-    }
-
-    local.family = local.key.family;
-    local.subtype = local.key.subtype;
-
-    if (!subtype_is_d1b_supported(local.family, local.subtype)) {
-        if (out_record != NULL) {
-            (void)memset(out_record, 0, sizeof(*out_record));
-        }
-        return NINLIL_E_INVALID_ARGUMENT;
-    }
-
-    status = validate_header_body_local(
-        local.family, local.subtype, &local.key, &local.envelope, &local);
-    if (status != NINLIL_OK) {
-        if (out_record != NULL) {
-            (void)memset(out_record, 0, sizeof(*out_record));
-        }
-        return status;
-    }
-
-    if (out_record != NULL) {
-        *out_record = local;
-    }
-    return NINLIL_OK;
+    return validate_typed_record_no_output(encoded_key, encoded_value);
 }

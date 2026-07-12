@@ -649,6 +649,59 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_domain_store_scanner_profile_oracle_bridge_test
     )
 
+    # D2-S3 independent structural oracle + production profiled-begin bridge.
+    add_test(
+        NAME domain_scan_structural_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_structural_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-structural-v1.json
+    )
+    set(_ninlil_dss_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_structural_vector_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_dss_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_structural_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-structural-v1.json
+            ${_ninlil_dss_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_structural_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-structural-v1.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-store-v1.json
+        COMMENT "Generate domain-scan-structural production bridge fixture"
+        VERBATIM
+    )
+    add_executable(ninlil_domain_store_scanner_structural_oracle_bridge_test
+        tests/runtime/domain_store_scanner_structural_oracle_bridge_test.c
+        ${_ninlil_dss_fixture}
+    )
+    target_include_directories(
+        ninlil_domain_store_scanner_structural_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(
+        ninlil_domain_store_scanner_structural_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(
+        ninlil_domain_store_scanner_structural_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_domain_store_scanner_structural_oracle_bridge_test)
+    add_test(
+        NAME domain_store_scanner_structural_oracle_bridge
+        COMMAND ninlil_domain_store_scanner_structural_oracle_bridge_test
+    )
+
     # Release absence: transport-only begin must not appear in tests-OFF private
     # object symbols (nm). Production profiled begin remains present.
     add_test(
@@ -668,6 +721,15 @@ if(NINLIL_BUILD_TESTS)
         NAME domain_scan_dsr2_source_skeleton
         COMMAND ${Python3_EXECUTABLE} -c
             "import pathlib,re,sys; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}/src/runtime'); files=[root/'domain_store_scanner.c', root/'domain_store_scanner.h']; t='\\n'.join(p.read_text() for p in files); bad=[]; patterns=[(r'\\bmalloc\\b','malloc'),(r'\\bcalloc\\b','calloc'),(r'\\brealloc\\b','realloc'),(r'\\bfree\\b','free'),(r'\\balloca\\b','alloca'),(r'\\[65536\\]','stack65536'),(r'\\[ *4096 *\\]','stack4096_literal')]; [bad.append(n) for p,n in patterns if re.search(p,t)]; c=(root/'domain_store_scanner.c').read_text(); fns=['ninlil_domain_scan_begin_profiled','ninlil_domain_scan_begin','ninlil_domain_scan_advance','ninlil_domain_scan_finalize','ninlil_domain_scan_abort']; [bad.append('self_or_recursive_call:'+fn) for fn in fns if len(list(re.finditer(r'\\b'+fn+r'\\s*\\(', c)))>1]; sys.exit(0 if not bad else (print('DSR2 source skeleton failed:', bad) or 1))"
+    )
+
+    # D2-S3 typed stack source gate: public validate_typed_record must not
+    # declare a large typed_record local; no-output path is a separate helper.
+    # No nonportable stack-usage attributes required. Pure expression form.
+    add_test(
+        NAME domain_scan_typed_stack_source_gate
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,re,sys; t=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}/src/model/domain_store_body_codec.c').read_text(); m=re.search(r'ninlil_status_t\\s+ninlil_model_domain_validate_typed_record\\s*\\(', t); sys.exit(print('public validate_typed_record not found') or 1) if not m else None; i=t.find('{', m.end()); depth=0; end=next((j+1 for j,ch in enumerate(t[i:], i) if (depth:=depth+(1 if ch=='{' else -1 if ch=='}' else 0))==0), None); body=t[i:end]; bad=(['large_local_in_public'] if re.search(r'ninlil_model_domain_typed_record_t\\s+\\w+\\s*;', body) else [])+([] if 'validate_typed_record_no_output' in t else ['missing_no_output_helper'])+([] if 'validate_typed_record_no_output' in body else ['public_does_not_call_no_output']); sys.exit(0 if not bad else (print('typed stack source gate failed:', bad) or 1))"
     )
 
     add_executable(ninlil_submission_preflight_test
