@@ -1250,7 +1250,7 @@ Scanは1 READ_ONLY snapshot上で行う。Current rootだけのprefix scanは禁
 | --- | --- |
 | **D1** | Port call 0のpure key/record/**witness** codecとgolden。witness header/chunk/memberのbyte layout・local encode/decode正本 |
 | **D2** | mutation 0 bounded traversal、Port/shape/transport、lex order、framing/coarse classification、scanner-detectable status集約、same-snapshot exact `get` seam、adopt/finalize/fence。steps 2〜4のscanner到達可能な部分、**step 5のうち same-record/local witness header+chunk framing/matrix のscan到達（D2-S3）**、step 11のtxn/iterator lifetime |
-| **D3** | cross-row semantic / partial group / orphan / cardinality / counter / capacity / health の相互validation。**step 5のうち witness member old/new・partial witness group・successor/supersede chain および他cross-row witness validation**。そのfindingを§16 precedenceへ投入 |
+| **D3** | cross-row semantic / partial group / orphan / cardinality / counter / capacity / health の相互validation。**step 5のうち witness member old/new・partial witness group・successor/supersede chain および他cross-row witness validation**。そのfindingを§16 precedenceへ投入。**Normative architecture / slice ledger 正本は §18（D3-S0 freeze; implementation pending）** |
 | **D4** | recovery mutation / convergence / FULL writer。snapshot終了後の1 item mutationとfresh re-scan接続 |
 
 必要なrecovery mutationはsnapshot終了後、1 item / 1 specific FULL transactionで行い、fresh READ_ONLY scanを先頭から再実行します（D4）。Durable scan cursorは作りません。Crash/reopenは常に先頭からです。Identity比較/rotationは最終scan成功後だけです。
@@ -1576,7 +1576,7 @@ C11実装が満たすべきpublication / unchanged / alias規則:
 
 **「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S4が未完了のまま（S1/S2/S3はimplementation completeでも **D2 incomplete**）、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vector、body-only completeもD2完了宣言に使ってはなりません。
 
-D3（cross-row semantic / cardinality / capacity / health / **witness member old/new・partial group・successor chain**）とD4（operation別mutation / convergence / FULL writer）は本ledgerの外です。§15 steps 1〜11の最終Stage 5 closed orderと§1 publish gateはD1+D2+D3+D4 compositionのRuntime objectiveのままです。
+D3（cross-row semantic / cardinality / capacity / health / **witness member old/new・partial group・successor chain**）とD4（operation別mutation / convergence / FULL writer）は本ledgerの外です。**D3 の architecture / ordered slice ledger（D3-S0..S12）/ hybrid / corruption / outcome ladder 正本は §18。** D3-S0 は docs freeze only であり D3 implementation / Stage 5 complete を claim しない。§15 steps 1〜11の最終Stage 5 closed orderと§1 publish gateはD1+D2+D3+D4 compositionのRuntime objectiveのままです。
 
 ### 15.10 D2-S2 profile gateとone-iterator互換（D2-S2 Normative freeze）
 
@@ -1881,6 +1881,8 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 
 ## 17. Mandatory D0/D1/D2 vectors
 
+D3 invariant / vector の slice ownership 表は **§18.6**（D3-S0）。本節の DSI1 / DSW* / DSC* / DSH1 行は mandatory case 名の正本であり、D3-S0 単独で green にはならない。
+
 - `DSK1_KEY_CATALOG`: 全subtype exact key golden、unknown kind/subtype/root version
 - `DSV1_RECORD_BOUNDARY`: 各body min/max、4096/4097、chunk 3072/3073、trailing/short/CRC
 - `DSI1_BACKLINK`: primary/index exact、missing、orphan、collision raw mismatch、revision conflict
@@ -1910,7 +1912,7 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 | D2-S5 | **実装済み:** `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。sibling oracle **`spec/vectors/domain-scan-composition-v1.json`** / format **`ninlil-domain-scan-composition-v1-d2s5`**（§17.1.5）+ independent generator + production bridge + unit acceptance。S1〜S4 ownership vectorと依存D1 body pin | **S1〜S5+deps で D2（bounded scanner）証明。Stage 5 / D3 / D4 / public Runtime / ESP-IDF / hardware は証明しない**（S6 seam は §15.13 の partial integration） |
 | D2-S6 | **S6a/S6b 実装済み（Stage 5 incomplete）:** 新規D2 oracleを必須化しない。private seam integration matrix + source gates。Stage 5 orchestration integration testはD2完了の代替にもStage 5完了の代替にもならない | S6 successでStage 5 / public Runtime claim禁止 |
 
-D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、**D2 completionはS1〜S5および依存が揃ったmutation 0 bounded scanner composition証明**です（partial group / orphan / counter / capacity / health の正しさは含まない）。D2-S0はNormative固定のみでimplementation pendingです。**Stage 5全体・public Runtime・SQLite recoveryの完成はD2完了後も、D3/D4および§1残gateが揃うまで主張しません。**
+D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、**D2 completionはS1〜S5および依存が揃ったmutation 0 bounded scanner composition証明**です（partial group / orphan / counter / capacity / health の正しさは含まない）。D2-S0はNormative固定のみでimplementation pendingです（historical; 現在 D2 は S1–S5 で complete）。**D3-S0（§18）は D3 architecture docs freeze only であり、D3 implementation complete ではない。** **Stage 5全体・public Runtime・SQLite recoveryの完成はD2完了後も、D3/D4および§1残gateが揃うまで主張しません。**
 
 D1は上記case名だけで完了扱いせず、`spec/vectors/domain-store-v1.json`をmachine-readable正本として追加します。各caseはinput semantic fields、expected complete key/value hex、全SHA-256/CRC、expected status、required workspace bytesを持ち、production codecとは独立したvector generatorとのbyte equalityをCI gateにします。D0はformat contract、実hex oracleの追加はD1 deliverableです。**既存`domain-store-v1.json`はD1 authorityのまま残し、D2 scanner/fault/call-trace vectorを同schemaへ押し込めない。**
 
@@ -2291,7 +2293,7 @@ Scanner UNSUPPORTED / CORRUPT / Port / fence status は **exactly propagate**。
 
 #### 15.13.4 Explicit non-claims（必須）
 
-1. **D3** finding correctness（cardinality / orphan / backlink / PVD / health reconstruction）
+1. **D3** finding correctness（cardinality / orphan / backlink / PVD / health reconstruction）。architecture freeze は §18（D3-S0 docs only; implementation pending）
 2. **D4** recovery / metadata mutation / FULL writer beyond L2b1 bootstrap
 3. **identity** comparison / rotation
 4. **health** reconstruction / Stage 9 publish
@@ -2303,3 +2305,251 @@ Scanner UNSUPPORTED / CORRUPT / Port / fence status は **exactly propagate**。
 #### 15.13.5 Integration matrix（minimum）
 
 exact existing 17 clean → `EXISTING_SCAN_ADOPTED_D3_PENDING`; new empty → `NEW_BOOTSTRAP_STAGE5_PENDING` + scanner not invoked; exact profile + structurally valid family5/6 domain row → adopt + exact `current_domain`/`ok` counters + scanner-phase mutation0; recognizable future → UNSUPPORTED; corrupt structural/BTS/lex / partial 1..16 → CORRUPT; profile mismatch → UNSUPPORTED; L2b1→scanner second-snapshot race revalidates; scanner-phase Port faults（IO no-fence / unknown fence）; candidate handoff outside phase union; poison-retention prevalidation; fixed workspace/source gates（`tools/runtime_store_stage5_gate.py` + self-tests）; frozen S1–S5/D1 vector hashes unchanged。
+
+## 18. Normative D3-S0 architecture freeze
+
+**Decision identifier: D3-S0。** 本節は Domain Store **D3 cross-row finding correctness** の Normative architecture freeze である。**docs only**: implementation / test / CMake / vector JSON の追加・変更は本sliceで行わない。
+
+**Historical S0 freeze status:** S0 alone does **not** complete D3 / Stage 5 / public Runtime / D4。Current main behavior（D2 complete + D2-S6 private seam → `EXISTING_SCAN_ADOPTED_D3_PENDING` / `storage_recovery_complete=0`）を変更しない。
+
+**前提 evidence（現行 code/docs）:**
+
+- D1 pure/same-record: `src/model/domain_store_{codec,body_codec}.*` + `spec/vectors/domain-store-v1.json`（format `ninlil-domain-store-v1-d1b3o`）
+- D2 traversal / structural / exact_get / note mechanism: `src/runtime/domain_store_scanner.*` + S1–S5 sibling oracles + §15.1–§15.12
+- D2-S6 Stage 5 private seam: `src/runtime/runtime_store_stage5_seam.*` — `note_terminal_corrupt` を real D3 なしで呼ばない（§15.13）
+- Cross-row cardinality / backlink / counter / capacity / health の正本は本章 §9 / §10 / §12 / §13 / §14。本節はその **finding 実行方式** と **slice 分割** を閉じる
+
+### 18.1 Ownership close（D1 / D2 / D3 / D4）
+
+| Owner | Closed scope | Non-claims |
+| --- | --- | --- |
+| **D1** | Port call 0 の pure key/record/**witness** codec と same-record validation / golden。authority は **grammar（key/body/witness layout と same-record 閉包）** と既存 pure helpers（`ninlil_model_domain_build_key` / `key_digest` および関連 pure digest helpers）。body が保持する raw identity は peer key の **forward 材料** として存在するが、typed peer rebuild helpers の production 接続は **D3 work items**（§18.10）であり D1 complete の言い換えではない | live exact_get、cross-row cardinality、mutation、typed peer rebuild production helpers の complete 主張 |
+| **D2** | mutation 0 bounded traversal、Port/shape/transport、lex、framing、family1-4 + profile gate、same-record structural（S3）、same-snapshot exact `get` **mechanism**（S4）、`note_terminal_corrupt` **injection/aggregation seam only**（S5）、S6 private fail-closed integration | D3 finding correctness、D4 writes、Stage 5 complete、public Runtime |
+| **D3** | Stage 5 closed order **steps 5–10** の **cross-row finding correctness**: step 5 の witness member old/new・partial group・successor/supersede chain；step 6 primary/index/backlink/BLOB 参照；step 7 4-counter；**step 8 の ownership は §18.2 に map**（ingress-owner と attempt/delivery/result/event ledger → **S1/S2**；**SERVICE_QUOTA → S9**）；step 9 11-capacity recompute；step 10 durable health reconstruction。finding を §16 precedence へ sticky CORRUPT として投入 | D4 recovery mutation / FULL writer / convergence；identity rotation；Stage 7 clock；public Runtime publish；ESP-IDF/hardware |
+| **D4** | snapshot 終了後の recovery mutation / operation 別 convergence / FULL writer と fresh re-scan 接続 | D3 finding の正しさ自体 |
+
+**Stage 5 steps 1–4 / 11** は D2（+ L2b1）が scanner 到達可能な部分を供給する。**steps 5–10 の cross-row 事実**は D3 が証明するまで Stage 5 は incomplete のまま（§15 / §1）。
+
+### 18.2 Ordered D3 slice ledger（D3-S0..S12）
+
+**Slice order の意味:** 本表の S0..S12 順序は **implementation dependency / deliverable 分割** の ledger である。Stage 5 closed scan order（§15 steps 1–11）そのものでも、Runtime が単一 iterator でこの順に固定走査する義務でもない。各 slice の finding は hybrid（§18.3）の下で、local per-row と fresh multi-pass を組み合わせてよい。
+
+**Stage 5 step 8 ownership map（explicit）:**
+
+| Step 8 concern | Primary D3 slice(s) |
+| --- | --- |
+| ingress-owner ledger / exact-1 backlink・PVD | **S1**（core）、関連 multi は **S2** |
+| attempt / delivery / result / event ledger（declared-count graph・cardinality・state 照合） | **S2**（exact-1 部分は **S1** と共有可） |
+| **SERVICE_QUOTA**（service-key focus multi-pass / contribution cross-check） | **S9** |
+
+| Slice | Exact scope | Non-claims |
+| --- | --- | --- |
+| **D3-S0** | 本節の Normative architecture freeze。docs のみ。vector/code 変更 0 | D3 implementation / Stage 5 complete |
+| **D3-S1** | exact-1 known-key backlinks + live primary value digest（PVD）照合。**`DSI1_BACKLINK` core**。raw body から peer complete key を rebuild → same-snapshot `exact_get` → presence + PVD / raw bijection。typed peer rebuild helpers の **D3 側接続** を含む | declared-count multi-row、BLOB stream、witness chain、capacity/health、D4、D1 grammar の再定義 |
+| **D3-S2** | declared-count graph families（ATTEMPT / EVIDENCE_CELL `L+1` / REVERSE_REPLY / RETRY / MANAGEMENT 等）および attempt/delivery/result/event ledger の multi-row 部分。streaming subtype count + secondary→primary exact_get + declared count/state 照合 | BLOB chunk lifecycle、witness old/new、global capacity、health、SERVICE_QUOTA multi-pass（S9） |
+| **D3-S3** | BLOB lifecycle / chunks / multi-chunk stream digest / owner 0·1 cardinality。manifest→chunk exact `chunk_count`、stream `content_digest` recompute | witness member old/new、DSW*、capacity double-count 回避以外の global ledger |
+| **D3-S4** | **`DSW1_ALL_OLD_NEW`**: witness member all-old / all-new / mixed / partial group detection（§10 Recovery 表） | successor chain walk（S5）、retire/cleanup（S6）、D4 mutation |
+| **D3-S5** | **`DSW2_SUPERSEDE_CHAIN`**: ACTIVE/SUPERSEDED successor chain、bounded walk、cycle/missing successor | retire/cleanup physical erase truth（S6）、D4 |
+| **D3-S6** | **`DSW3_RETIRE_CLEANUP`**: SUPERSEDED→RETIRED、incoming successor 参照 0、oldest-first chunk partial cleanup eligibility、ACTIVE partial 拒否 | D4 actual erase/replace commits |
+| **D3-S7** | **`DSC1_COUNTERS`**: 4 family-3 counter upper-bound / unique / orphan / visited gap 規則（§12） | capacity 11-kind（S8）、health source set（S10） |
+| **D3-S8** | **`DSC2_CAPACITY`**: 11-kind used/reserved recompute vs family-4 + owner formula cross-check（§13）。reservation vector が唯一加算元 | SERVICE_QUOTA multi-pass focus（S9）、health |
+| **D3-S9** | **SERVICE_QUOTA focus multi-pass**: service-key で group した inflight/spool/grant contribution を QUOTA record と exact cross-check（§13）。fresh scanner sessions / multi-pass。cost は **O(S·N)**（S は selected profile の SERVICE / service-quota capacity で bound；§18.5） | undocumented/unbounded all-pairs default、full-ID set、false O(N) one-pass claim |
+| **D3-S10** | **`DSH1_HEALTH`**: durable health source set reconstruction（§14）。priority 1..8 source IDs、dedup、publish-gate inputs の再構成だけ | Stage 9 publish、instance-local cause copy、public health API |
+| **D3-S11** | CLEANUP_PLAN overlay: plan present 時の phase-specific decreasing cardinality / fence aggregate / remaining counts vs live ATTEMPT·INDEX（§9 / §11） | D4 phase batch erase writer |
+| **D3-S12** | Stage 5 integration: D3 slices S1–S11 green を private seam へ接続し、private outcome を **`EXISTING_SCAN_ADOPTED_D3_PENDING` から private `D4_PENDING` へ transition** する（**implementation name は S12 で freeze**）。**`storage_recovery_complete` は 0 のまま** | public Runtime、identity rotation、Bearer/clock/entropy open、Stage 9、ESP-IDF/hardware、D4 mutation complete、Stage 5 complete |
+
+**「S12 proves D3」:** S1–S11 本体と依存 oracle/helpers がすべて green のときだけ D3 finding correctness complete。S0 単独・部分 slice・D2-S6 adopt 成功を D3 complete や Stage 5 complete に置換してはならない。S12 は private `EXISTING_SCAN_ADOPTED_D3_PENDING` → private `D4_PENDING` の outcome transition だけを閉じ、`storage_recovery_complete` を 1 にしない。
+
+### 18.3 Hybrid architecture freeze
+
+D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 と整合）:
+
+1. **Per-row private evaluator（local exact-get checks）**
+   production scanner が exact-profile で **S3 structural success** した **current row** の直後に限り、同一 session / 同一 READ_ONLY snapshot 上で private evaluator が local exact-1 / known-key backlink / local PVD を実行してよい。
+   順序は §15.11.6 Future internal ordering に従う: structural success → copy needed descriptor → optional `exact_get`（value overwrite）→ consume borrowed result **before** next exact_get / advance。
+
+2. **Fresh scanner sessions / multi-pass（nonlocal aggregates）**
+   declared-count graph、SERVICE_QUOTA、BLOB stream digest matching（nonlocal）、retire refcount、capacity/health の nonlocal aggregate は、**sole iterator を第二 iterator と並行させず**、必要なら session を cleanup→`DONE` 後に **fresh session で先頭から** multi-pass する（D2 restart 規則と同じ。same-session budget resume を restart と呼ばない）。
+
+3. **絶対禁止**
+   - **second concurrent iterator**（zero-prefix を含む second live iterator）
+   - **full-ID set** を RAM に保持（全 transaction/delivery/blob ID の可変集合）
+   - **D4 writes**（`put` / `erase` / `commit` / `READ_WRITE`）を D3 が行うこと
+   - heap / VLA / 関数 stack 上の record buffer / 65,536 temporary value path
+
+4. Scanner session に unused xref digest/kind/count の「D3 専用 shadow 全集合」を追加してはならない。D3 が保持してよいのは **fixed-size D3 context**（§18.4）と checked counters / O(1) aggregates のみ。
+
+### 18.4 Descriptor lifetime / order freeze
+
+| Rule | Exact contract |
+| --- | --- |
+| Value overwrite | `exact_get` success は `workspace->value` を上書きし、typed/borrowed views を invalid にする（§15.11.2） |
+| Copy-before-get | peer key rebuild に必要な **raw IDs / digests / declared counts / presence bits** は、exact_get の **前** に fixed D3 descriptor / context へ **copy** する |
+| D3 context | scanner workspace とは **separate fixed-size object**（Runtime arena）。session に可変長 ID list をぶら下げない |
+| Borrowed consume | borrowed present value / PVD bytes は **次の** advance / exact_get / finalize / abort 前に消費し終える |
+| Ceiling（既存） | `DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES`（現行 8192）および Stage5 seam workspace ceiling（現行 **8704**）の変更は **doc-first**（本章 Normative 更新が実装/vector より先）。silent raise 禁止 |
+| **D3 fixed context size** | **TBD at D3-S1**。S0 は具体 byte 数を **guess しない**。S1 が doc-first で ceiling を本章へ書き、その object は **Stage5 workspace 8704** および **DSR2**（scanner workspace 8192 / single 4096 value / no second 4096 / no full-ID / no VLA/heap record buffer）規則の下で **compose** しなければならない（D3 context が seam/scanner ceiling を silent に押し上げてはならない） |
+| Mutation | D3 path の Storage mutation 0（D2 と同） |
+
+### 18.5 Algorithm categories（closed）+ rejected claims
+
+| Category | Used for | Cost model / mitigation |
+| --- | --- | --- |
+| **A. exact-1 key rebuild / reverse / PVD** | §9 exact-1 secondaries（QUOTA、STATE、RESULT_CACHE、1:1 digest fields 等）。body raw → complete peer key → `exact_get` → PVD/raw bijection | O(1) Port get / relationship。**undocumented all-pairs 禁止** |
+| **B. contiguous run streaming counts** | same-primary / same-subtype の lex 連続 run を advance で数え、declared count と checked 照合 | O(N_subtype) single pass per focused family。必要なら fresh multi-pass |
+| **C. O(1) global aggregates** | family-3 observed max、fence active plan count、checked add of reservation vectors の running totals | O(N) one pass + O(1) state。full-ID set 不要 |
+| **D. focused multi-pass（profile/data-bounded）** | SERVICE_QUOTA service-key grouping、BLOB digest matching、retire incoming-successor refcount 等 | 複数 fresh sessions。focus key/digest は fixed context に 1 件ずつ。**固定関係種別 k** と **データ依存 focus 数 F/S** を混同しない（下記） |
+| **E. bounded successor walk** | witness SUPERSEDED chain（§10.1）。起点 header から successor exact_get、visited step ≤ witness row count | O(chain length) ≤ O(witness headers)。cycle → corrupt |
+
+**Fixed relationship-type `k` と data-dependent focus `F` / `S` の区別（必須）:**
+
+| Symbol | Meaning | Bound |
+| --- | --- | --- |
+| **`k`** | **固定** relationship-type / category 数（本節 A–E と Normative が列挙する closed 関係種別）。実装が「関係種別を増やした」ときの doc 上の focus 回数 | Normative が閉じた固定数。data size `N` に連動して勝手に増えない |
+| **`F`** | ある multi-pass 検査における **data-dependent** focus 件数（例: distinct BLOB digest、retire 対象 successor 起点） | その検査の domain data と profile 規則で bound。実装が unbounded set を RAM に積んではならない |
+| **`S`** | **SERVICE_QUOTA（S9）** の service-key focus 件数 | **selected profile の SERVICE / service-quota capacity** で upper-bound。S0 は具体 profile 定数を再掲しないが、**profile capacity 外の unbounded S** は禁止 |
+
+**Honest cost（偽 O(N) 禁止）:**
+
+1. **SERVICE_QUOTA（S9）** は focused multi-pass で **O(S·N)**。`S` は上記 profile capacity で bound。`S` が data と共に `N` へ scale する profile では wall time は **quadratic-class（O(N²) 級）** になり得る。
+2. 他の per-focus multi-pass は **O(F·N)** になり得る。同様に `F` が `N` と共に scale すれば wall time は quadratic-class。
+3. それでも **memory は fixed**（fixed D3 context + O(1) aggregates；**full-ID set なし**；second concurrent iterator なし）。quadratic-class **wall time** を認めても、可変 ID 集合の RAM 保持や undocumented all-pairs を合法化しない。
+4. **固定 `k` だけ**の関係を「O(k·N) かつ k≪N だから実質 O(N)」と書いて、**data-dependent F/S** のコストを隠してはならない。
+
+**Explicit rejections（実装禁止 / 偽 claim 禁止）:**
+
+1. **`KEY_DIGEST` の不可能な reverse**: `KEY_DIGEST(complete_key)` は SHA-256 one-way。digest 32 bytes **だけ**から complete key / raw identity を復元してはならない。peer lookup は body が保存する **raw components** から key を **forward rebuild** し、digest は再計算一致にだけ使う（§5.1 / §9）。
+2. **False one-pass / false O(N) claim**: steps 5–10 全体を「iterator 1 回で全 cross-row 完了」または「全体が O(N)」と claim しない。local exact-1 は per-row、nonlocal は multi-pass を許す。**O(S·N) / O(F·N) を O(N) と偽らない**。
+3. **False full-ID claim**: 整合性のために全 ID 集合の RAM 保持を合法化しない（§9 / §15.5 / DSR2）。
+4. **Undocumented / unbounded all-pairs**: primary×secondary の **無制限・未文書** 二重全走査を default にしない。worst-case を隠したまま「O(N)」と称する実装も禁止。
+5. **本節が文書化した profile-bounded multipass は禁止しない**: S9 の **O(S·N)**（S = profile SERVICE/service-quota capacity bound）および他の **O(F·N)** focused multi-pass は、上記 honest cost・fixed memory・no full-ID set を守る限り **合法**。doc-first なしに F/S bound を外す変更、または未文書の unbounded all-pairs 追加だけを禁ずる。
+
+### 18.6 Complete D3 invariant / vector ownership table
+
+| Vector / invariant | D3 ownership | Primary slices | Shared / non-D3-alone |
+| --- | --- | --- | --- |
+| **`DSI1_BACKLINK`** | primary↔secondary exact-1 / orphan / missing / collision raw / revision / PVD | **S1**（core）、S2 で multi | D1 same-record raw/digest local only |
+| **`DSW1_ALL_OLD_NEW`** | member old/new/mixed/partial group | **S4** | D1 witness pure codec + D2-S3 header/chunk local framing |
+| **`DSW2_SUPERSEDE_CHAIN`** | successor/supersede chain | **S5** | header local: D1/D2-S3 |
+| **`DSW3_RETIRE_CLEANUP`** | retire eligibility / partial chunk rules | **S6** | physical erase commits: **D4** |
+| **`DSC1_COUNTERS`** | 4-counter validation（§12） | **S7** | family-3 codec: D1；scan reach: D2 |
+| **`DSC2_CAPACITY`** | 11-kind recompute + owner formula（§13） | **S8** | family-4 codec: D1 |
+| **`DSH1_HEALTH`** | durable source set reconstruction（§14） | **S10** | Stage 9 project/publish: **not D3 complete** |
+| **`DSC3_CLEANUP_PHASES`** | phase remaining/fence/live count の **finding** 部分 | **S11**（overlay） | phase batch erase / COMMIT_UNKNOWN convergence: **D4** 共有 |
+| **`DSD1_LOGICAL_DELIVERY`** | APPLICATION_FIRST / CANCEL_FIRST / later APPLICATION / binding conflict の **cross-row finding** | S2 + delivery graph | public ABSENT projection / writer E2E: **D4** 共有 |
+| **`DSH2_HEALTH_GOLDEN`** | numeric registry / exact source ID golden の **finding 側** | S10 companion | full registry mirror / Stage9: 後続 |
+| **`DSO1_OPERATION_BUILDERS`** | subject/retention/member ceiling の **recovery-time consistency finding** に必要な範囲のみ | 参照のみ（S4–S6） | builder 実装本体: **D4 / writers** 共有 |
+| **`DSO2_AUTOMATIC_TRANSITIONS`** | send/timeout/park 等 automatic transition の **durable shape finding** に必要な範囲のみ | 参照のみ | transition writer: **D4** 共有 |
+| **`DSR1_SCAN` / `DSR2_ESP_BOUND`** | D3 は D2 complete を前提利用 | — | **D2-S5 ownership**（D3 が再 claim しない） |
+
+### 18.7 D3 sibling oracle schema ownership（architecture level; JSON は S0 で追加しない）
+
+**S0 は oracle JSON / generator / bridge を追加しない。** 後続実装 slice が従う schema ownership だけを固定する。**S0 時点で crossrow sibling file が存在するとは claim しない**（proposed path は後続 slice が従う契約名）。
+
+| Field | Exact architecture contract |
+| --- | --- |
+| Proposed path | `spec/vectors/domain-scan-crossrow-v1.json`（S1–S5 / D1 の **sibling**; merge 禁止）。**S0 では未作成** |
+| Proposed format | `ninlil-domain-scan-crossrow-v1-d3sN`（slice 進行で suffix を更新してよいが、**単一 sibling file** を破壊的 fork しない） |
+| Independent generator | `tools/domain_scan_crossrow_vector_gen.py`（名称は実装で確定可）。**production C を invoke/translate しない** |
+| Production bridge | real private D3 evaluator + existing production scanner（profiled begin / exact_get / note_terminal_corrupt / advance / finalize）を oracle literal に対して実行 |
+| Frozen authority pins | 各 D3 oracle は少なくとも D1 + S1–S5 の **path / format / full sha256 / vector_count** を pin する（byte-for-byte frozen regression） |
+| Per-call statuses | 各 call に `expected_status`（scanner status または harness `VOID`） |
+| Mutation | `mutation_calls=0` |
+| Restart rules | cleanup `DONE` 後の `session_init` + fresh profiled begin；first post-restart `advance` budget=1 可；same-session budget resume を restart と偽らない |
+
+**D1 および S1–S5 JSON は read-only pins（S0 freeze）:**
+
+下記 path / format / `vector_count` / full sha256 は **read-only authority pins** である。D3-S0 および通常の D3 実装 slice はこれらを **rewrite しない**。byte-for-byte regression の基準としてのみ参照する。
+
+| Authority | Path | Format | vector_count | sha256 |
+| --- | --- | --- | ---: | --- |
+| S1 | `spec/vectors/domain-scan-v1.json` | `ninlil-domain-scan-v1-d2s1` | 18 | `5705363e8f8890849e41476013eab3cd4ac1a20b6c33efb54ab65f300d40a165` |
+| S2 | `spec/vectors/domain-scan-profile-v1.json` | `ninlil-domain-scan-profile-v1-d2s2` | 32 | `b0ecac1d4d56e0abb63c53277ed5b1ab86a3e3c1377ad2393de6f4d74edcd0a5` |
+| S3 | `spec/vectors/domain-scan-structural-v1.json` | `ninlil-domain-scan-structural-v1-d2s3` | 89 | `f8e75437202c90476aa93fb0a336c86ad03e7e4820510e15074a69cbc6041684` |
+| S4 | `spec/vectors/domain-scan-exact-get-v1.json` | `ninlil-domain-scan-exact-get-v1-d2s4` | 30 | `5f458424a2f2adc1fd421285853b7567a9cc6fbf9ba43808b4d8dec69e4b9a8a` |
+| S5 | `spec/vectors/domain-scan-composition-v1.json` | `ninlil-domain-scan-composition-v1-d2s5` | 22 | `9492b40771d4e30a3a24e0e23110da2ecb91ceaa286d169cc90186545085d549` |
+| D1 | `spec/vectors/domain-store-v1.json` | `ninlil-domain-store-v1-d1b3o` | 1549 | `b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4` |
+
+**Crossrow authority の append-only 進化（d3sN）:**
+
+1. 後続 D3 slice が sibling oracle を導入・拡張するとき、authority は **append-only** で進む: prior vectors を削除・改竄せず、**prior fingerprint prefix**（既存 vector の identity / 期待値の安定接頭）を retain する。
+2. format suffix は `…-d3sN` へ進められるが、**単一 sibling path** を破壊的 fork しない（別 schema へ silent 分岐しない）。
+3. **意図的 revision**（prior vector の意味変更・削除・pin の付け替え）は、その authority の **Normative owner 変更と同時** にだけ許す（本章または当該 owner 節の Normative 更新と同一 change set）。単独の JSON rewrite は禁止。
+
+**Pin update procedure（format / vector_count / full sha256; ファイル存在 claim なし）:**
+
+後続 slice が crossrow sibling を **初めて作成** するか、append-only で拡張するとき、次を **同一 change set** で行う（S0 は手順だけを固定し、file を作らない）:
+
+1. **Normative**: 本章（または slice 固有 owner 節）で schema / case 追加の意味を更新する。
+2. **Generator**: independent generator が expected hex/status を決定論生成する（production C 非 invoke）。
+3. **Artifact**: proposed path に JSON を作成または append（prior vectors retain）。
+4. **Pins を同時更新**: 少なくとも次を document / CI / generator self-check の正本として更新する:
+   - `format`（`ninlil-domain-scan-crossrow-v1-d3sN`）
+   - `vector_count`（全 vector の exact 件数）
+   - **full sha256**（file 全体の SHA-256）
+5. **Upstream D1/S1–S5 pins**: 通常は **read-only のまま**。D1 または S1–S5 authority 自体を意図改訂する場合のみ、その owner の Normative 変更と同時に上表 pin を改訂する（D3 単独では触らない）。
+6. **禁止**: pin だけ先に書く、Normative なしの JSON 改変、prior vectors の silent rewrite、full sha256 未更新の format/count 変更。
+
+### 18.8 Corruption reporting freeze
+
+| Rule | Exact contract |
+| --- | --- |
+| Who may note | **real D3 finding** だけが `ninlil_domain_scan_note_terminal_corrupt` を呼ぶ。D2-S6 seam / 偽 positive / profile mismatch だけでは呼ばない（§15.12.2 / §15.13） |
+| First sticky | 既に sticky terminal がある場合は **first sticky を保持**（S5 note 契約） |
+| Future precedence | sticky `STORAGE_CORRUPT` は recognizable future / profile candidate より **常に上位**（§15.2 / §16） |
+| Skip D3 | `profile_mismatch` / `future_profile_candidate`（exact-profile inactive）では **D3 cross-row evaluator を起動しない**（S2 skip と同型: domain structural 0 のまま transport/f1-4 のみ） |
+| Future then current D3 corrupt | recognizable future 観測後でも、後続で **current** D3 finding が立てば outcome は **corrupt** |
+| Non-finding | Port/shape/lex/S3 structural の terminal は D2 既存経路。D3 はそれを再実装せず、cross-row finding だけを note する |
+
+### 18.9 Stage 5 outcome ladder freeze
+
+| Stage | Private outcome / flag | Meaning |
+| --- | --- | --- |
+| D2-S6 existing adopt（現行 main） | `EXISTING_SCAN_ADOPTED_D3_PENDING` + `storage_recovery_complete=0` | D2 scan adopted only。private **`EXISTING_SCAN_ADOPTED_D3_PENDING` を S12 完了まで retained** |
+| D3 incomplete | 同上 outcome を維持してよい | 部分 D3 slice green を Stage 5 complete にしない |
+| D3 complete（**S12**） | private **`EXISTING_SCAN_ADOPTED_D3_PENDING` → private `D4_PENDING`** へ transition（**implementation name は S12 で freeze**） | D3 finding green。**`storage_recovery_complete` は 0 のまま** |
+| D4 / remaining gates | （D4 ledger 外） | identity / clock / health publish / public Runtime は別 gate |
+
+**Closed non-claims for D3-S0 and all D3 implementation slices until §1 full gate:**
+
+1. Stage 5 complete / `storage_recovery_complete == 1`
+2. public Runtime / `runtime_create` publish
+3. D4 mutation / convergence complete
+4. Bearer / clock / entropy open
+5. Stage 9 health publish
+6. ESP-IDF compile / hardware
+7. public C ABI / public status / new ADR（本 freeze は ADR を新設しない）
+
+### 18.10 Missing D3 helper needs（code を装わない）
+
+S0 時点で **存在する** D1 evidence（欠落 claim 禁止）:
+
+- grammar 正本（本章 key/body/witness layout と same-record 閉包）
+- pure helpers: `ninlil_model_domain_build_key` / `parse_key` / `key_digest` / `composite_digest` / `value_digest`
+- typed body codecs と same-record validators（D1-A..B3o）
+- body 内 raw identity fields（peer key rebuild の入力になる **forward** 材料）
+
+**D1 authority の境界:** D1 は grammar + 上記 pure `build_key` / `key_digest` まで。typed peer rebuild helpers は **D3 work items** であり、D1 complete や「D1 に helper が無い＝D1 incomplete」の言い換えに使わない（§18.1）。
+
+S0 時点で **D3 が必要とし、production helper として未接続 / 未固定のもの**（実装を claim しない; 後続 slice の work item）:
+
+| Needed helper | Purpose | Notes |
+| --- | --- | --- |
+| **Peer-key rebuild helpers**（**D3 work items**） | typed body raw → complete secondary/primary key bytes（exact-1 / backlink） | `KEY_DIGEST` reverse ではない。D1 raw fields と `build_key`/`key_digest` は evidence 上存在する。typed 接続は D3 |
+| **Fixed D3 descriptor / context object** | exact_get 前に raw IDs/digests/counts を copy する fixed-size context | **size は TBD at S1**（§18.4）。guessed byte 数禁止。S1 が doc-first ceiling を定め、**Stage5 8704 / DSR2** 下で compose |
+| **Witness member streaming consumer** | header+chunk members を fixed scratch で stream し old/new presence/digest を照合 | D1 pure witness decode は存在; cross-row member set consumer は D3 |
+| **Reservation contribution pure helper** | owner state → §13 exact live vector / quota contribution を pure 計算 | D1 RESERVATION body は存在; §13 formula pure helper は D3 所有で追加可 |
+
+**Do not state** that D1 fields are missing unless a later audit proves a concrete body field gap。cross-row absence は D3 finding であり D1 incomplete の言い換えではない。
+
+### 18.11 Completion boundary / historical truth
+
+| Claim | After D3-S0 docs freeze |
+| --- | --- |
+| D3-S0 Normative freeze | **yes**（本節） |
+| D3 implementation complete | **no**（S1–S12 pending） |
+| Stage 5 complete | **no** |
+| D2 complete / D2-S6 seam | **unchanged**（既存） |
+| public Runtime / ESP-IDF / hardware | **no** |
+
+S0 historical row は後から「implementation complete」へ書き換えてはならない。S12 完了時も S0 行は **docs freeze only** のまま残す。
