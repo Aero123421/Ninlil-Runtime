@@ -601,10 +601,11 @@ int main(void)
     size_t p0b_n = 0u;
     size_t p0c_n = 0u;
     size_t p0d_n = 0u;
+    size_t p1a_n = 0u;
 
     /* Both pins live in the shared append-only fixture. */
     REQUIRE(NINLIL_D3S1_VECTOR_COUNT == 94u);
-    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 25u);
+    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 31u);
     REQUIRE(NINLIL_D3S1_WORKSPACE_CEILING_BYTES == 8192u);
     REQUIRE(sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES);
@@ -690,7 +691,7 @@ int main(void)
             REQUIRE(strcmp(ninlil_d3s2_vectors[i].faults[0].status, "IO_ERROR")
                 == 0);
             p0c_n += 1u;
-        } else {
+        } else if (i < 25u) {
             /* P0-D: Mode22 unexpected INDEX / true-primary ABSENT /
              * Mode21 PVD / Mode21 pair subject — STORAGE_CORRUPT note path.
              * Pair subject is not true-primary raw coverage. */
@@ -734,6 +735,67 @@ int main(void)
                     == 5u);
             }
             p0d_n += 1u;
+        } else {
+            /* P1-A: ordinary CLEANUP ABSENT stream count under/over + empty
+             * secondary declared>0 — STORAGE_CORRUPT FOCUS H2 path. */
+            REQUIRE(ninlil_d3s2_vectors[i].mode == 21u
+                || ninlil_d3s2_vectors[i].mode == 22u
+                || ninlil_d3s2_vectors[i].mode == 26u);
+            REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.final_status,
+                        "STORAGE_CORRUPT")
+                == 0);
+            REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.sticky_primary,
+                        "STORAGE_CORRUPT")
+                == 0);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.phase
+                == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.binding_complete_mask
+                == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.mutation_calls == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].fault_count == 0u);
+            if (i == 25u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M21_APP_ATTEMPT_STREAM_OVERCOUNT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 2u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.count_complete_mask
+                    == 0u);
+            } else if (i == 26u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M21_CANCEL_ATTEMPT_STREAM_OVERCOUNT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 2u);
+            } else if (i == 27u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M21_INDEX_STREAM_UNDERCOUNT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 2u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.count_complete_mask
+                    == 0x01u);
+            } else if (i == 28u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M22_APP_FIRST_EMPTY_SECONDARY_UNDERCOUNT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 2u);
+            } else if (i == 29u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M22_CANCEL_FIRST_CANCEL_UNDERCOUNT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 2u);
+            } else {
+                REQUIRE(i == 30u);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M26_MGMT_STREAM_OVERCOUNT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 0u);
+            }
+            p1a_n += 1u;
         }
 
         /* Mode21 success: BIND_INDEX no STATE companion (case15 pin). */
@@ -764,5 +826,6 @@ int main(void)
     REQUIRE(p0b_n == 1u);
     REQUIRE(p0c_n == 1u);
     REQUIRE(p0d_n == 4u);
+    REQUIRE(p1a_n == 6u);
     return 0;
 }
