@@ -4,8 +4,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#define TEMP_VALUE_ALIGNMENT ((uint32_t)1u)
-
 typedef struct read_result {
     ninlil_model_runtime_store_presence_class_t presence;
 } read_result_t;
@@ -126,9 +124,13 @@ static uint8_t *value_buffer_for_index(
     return &workspace->phase.existing.encoded_values[cursor];
 }
 
+/*
+ * Empty-namespace row scan. Private namespace contract: key 1..255 and value
+ * 0..4096 only. BUFFER_TOO_SMALL (key>255 or value>4096 / current workspace)
+ * is terminal STORAGE_CORRUPT with no reread and no allocation (S6a).
+ */
 static ninlil_status_t scan_one_row(
     const ninlil_storage_ops_t *storage,
-    const ninlil_allocator_ops_t *allocator,
     ninlil_storage_iter_t iterator,
     ninlil_runtime_store_bootstrap_workspace_t *workspace,
     ninlil_model_runtime_store_scan_result_t *inout_scan,
@@ -139,9 +141,6 @@ static ninlil_status_t scan_one_row(
     ninlil_mut_bytes_t key;
     ninlil_mut_bytes_t value;
     ninlil_storage_status_t status;
-    uint8_t *temporary = NULL;
-    uint32_t required_key = 0u;
-    uint32_t required_value = 0u;
     ninlil_bytes_view_t key_view;
     ninlil_model_runtime_store_key_id_t key_id;
     ninlil_status_t key_status;
@@ -162,45 +161,13 @@ static ninlil_status_t scan_one_row(
         return NINLIL_OK;
     }
     if (status == NINLIL_STORAGE_BUFFER_TOO_SMALL) {
-        required_key = key.length;
-        required_value = value.length;
-        if (required_key < 1u
-            || required_key > (uint32_t)sizeof(workspace->phase.scan.key)
-            || required_value
-                <= (uint32_t)sizeof(workspace->phase.scan.value)
-            || required_value > NINLIL_M1A_MAX_STORAGE_VALUE_BYTES) {
-            return NINLIL_E_STORAGE_CORRUPT;
-        }
-        temporary = (uint8_t *)allocator->allocate(
-            allocator->user, required_value, TEMP_VALUE_ALIGNMENT);
-        if (temporary == NULL) {
-            return NINLIL_E_CAPACITY_EXHAUSTED;
-        }
-        key.length = 0u;
-        value.data = temporary;
-        value.capacity = required_value;
-        value.length = 0u;
-        status = storage->iter_next(storage->user, iterator, &key, &value);
-        if (status != NINLIL_STORAGE_OK) {
-            allocator->deallocate(allocator->user, temporary,
-                required_value, TEMP_VALUE_ALIGNMENT);
-            if (storage_status_requires_fence(status)) {
-                *out_fence = 1u;
-            }
-            if (status == NINLIL_STORAGE_BUFFER_TOO_SMALL
-                || status == NINLIL_STORAGE_NOT_FOUND
-                || !storage_status_is_known(status)
-                || key.length != 0u || value.length != 0u) {
-                return NINLIL_E_STORAGE_CORRUPT;
-            }
-            return map_storage_status(status);
-        }
-        if (key.length != required_key || value.length != required_value) {
-            allocator->deallocate(allocator->user, temporary,
-                required_value, TEMP_VALUE_ALIGNMENT);
-            return NINLIL_E_STORAGE_CORRUPT;
-        }
-    } else if (status == NINLIL_STORAGE_OK) {
+        /*
+         * ch12-valid BTS may set non-zero required lengths. Do not adopt
+         * key/value data, do not reread, do not allocate (S6a / docs/17 §15.8).
+         */
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (status == NINLIL_STORAGE_OK) {
         if (key.length < 1u || key.length > key.capacity
             || value.length > value.capacity) {
             return NINLIL_E_STORAGE_CORRUPT;
@@ -224,10 +191,6 @@ static ninlil_status_t scan_one_row(
             key.data, common);
         if (order > 0
             || (order == 0 && *inout_previous_key_length >= key.length)) {
-            if (temporary != NULL) {
-                allocator->deallocate(allocator->user, temporary,
-                    required_value, TEMP_VALUE_ALIGNMENT);
-            }
             return NINLIL_E_STORAGE_CORRUPT;
         }
     }
@@ -236,10 +199,6 @@ static ninlil_status_t scan_one_row(
     *inout_previous_key_length = key.length;
     key_status = ninlil_model_runtime_store_parse_key(key_view, &key_id);
     future = key_status == NINLIL_E_UNSUPPORTED;
-    if (temporary != NULL) {
-        allocator->deallocate(allocator->user, temporary,
-            required_value, TEMP_VALUE_ALIGNMENT);
-    }
     if (future) {
         if (*inout_scan
                 == NINLIL_MODEL_RUNTIME_STORE_SCAN_CURRENT_OR_UNKNOWN_EXTRA) {
@@ -263,7 +222,6 @@ static ninlil_status_t scan_one_row(
 
 static ninlil_status_t scan_empty_namespace(
     const ninlil_storage_ops_t *storage,
-    const ninlil_allocator_ops_t *allocator,
     ninlil_storage_txn_t transaction,
     ninlil_runtime_store_bootstrap_workspace_t *workspace,
     ninlil_model_runtime_store_scan_result_t *out_scan,
@@ -298,7 +256,7 @@ static ninlil_status_t scan_empty_namespace(
         return map_storage_status(status);
     }
     while (end == 0u && api_status == NINLIL_OK) {
-        api_status = scan_one_row(storage, allocator, iterator,
+        api_status = scan_one_row(storage, iterator,
             workspace, out_scan, &previous_key_length, out_fence, &end);
     }
     storage->iter_close(storage->user, iterator);
@@ -307,7 +265,6 @@ static ninlil_status_t scan_empty_namespace(
 
 static ninlil_status_t load_snapshot(
     const ninlil_storage_ops_t *storage,
-    const ninlil_allocator_ops_t *allocator,
     ninlil_storage_handle_t *inout_handle,
     ninlil_runtime_store_bootstrap_workspace_t *workspace,
     ninlil_runtime_store_bootstrap_result_t *result,
@@ -392,7 +349,7 @@ static ninlil_status_t load_snapshot(
         }
     }
     if (primary == NINLIL_OK && presence.present_mask == 0u) {
-        primary = scan_empty_namespace(storage, allocator, transaction,
+        primary = scan_empty_namespace(storage, transaction,
             workspace, &presence.zero_record_scan, &shape_violation,
             &fence_after_cleanup);
     }
@@ -510,7 +467,6 @@ static ninlil_status_t commit_new_bootstrap(
 
 ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
     const ninlil_storage_ops_t *storage,
-    const ninlil_allocator_ops_t *allocator,
     ninlil_storage_handle_t *inout_handle,
     const ninlil_model_runtime_validation_result_t *validation,
     const ninlil_runtime_store_hook_dispatcher_t *hooks,
@@ -527,8 +483,6 @@ ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
     if (!ranges_are_disjoint(out_result, sizeof(*out_result),
             storage, storage == NULL ? 0u : sizeof(*storage))
         || !ranges_are_disjoint(out_result, sizeof(*out_result),
-            allocator, allocator == NULL ? 0u : sizeof(*allocator))
-        || !ranges_are_disjoint(out_result, sizeof(*out_result),
             inout_handle,
             inout_handle == NULL ? 0u : sizeof(*inout_handle))
         || !ranges_are_disjoint(out_result, sizeof(*out_result),
@@ -540,7 +494,7 @@ ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
         return NINLIL_E_INVALID_ARGUMENT;
     }
     (void)memset(out_result, 0, sizeof(*out_result));
-    if (storage == NULL || allocator == NULL || inout_handle == NULL
+    if (storage == NULL || inout_handle == NULL
         || validation == NULL || workspace == NULL
         || !ranges_are_disjoint(workspace, sizeof(*workspace),
             inout_handle, sizeof(*inout_handle))
@@ -551,10 +505,6 @@ ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
         || !ranges_are_disjoint(storage, sizeof(*storage),
             workspace, sizeof(*workspace))
         || !ranges_are_disjoint(storage, sizeof(*storage),
-            inout_handle, sizeof(*inout_handle))
-        || !ranges_are_disjoint(allocator, sizeof(*allocator),
-            workspace, sizeof(*workspace))
-        || !ranges_are_disjoint(allocator, sizeof(*allocator),
             inout_handle, sizeof(*inout_handle))
         || (hooks != NULL
             && !ranges_are_disjoint(hooks, sizeof(*hooks),
@@ -568,8 +518,7 @@ ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
         || storage->begin == NULL || storage->get == NULL
         || storage->put == NULL || storage->iter_open == NULL
         || storage->iter_next == NULL || storage->iter_close == NULL
-        || storage->commit == NULL || storage->rollback == NULL
-        || allocator->allocate == NULL || allocator->deallocate == NULL) {
+        || storage->commit == NULL || storage->rollback == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     (void)memset(workspace, 0, sizeof(*workspace));
@@ -581,7 +530,7 @@ ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
     workspace->candidate_binding = workspace->phase.bootstrap.plan.binding;
     (void)memset(&workspace->phase, 0, sizeof(workspace->phase));
     (void)memset(&read, 0, sizeof(read));
-    status = load_snapshot(storage, allocator, inout_handle,
+    status = load_snapshot(storage, inout_handle,
         workspace, out_result, &read);
     if (status != NINLIL_OK) {
         return status;
