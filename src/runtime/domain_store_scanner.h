@@ -2,24 +2,27 @@
 #define NINLIL_DOMAIN_STORE_SCANNER_H
 
 /*
- * D2-S4 private Domain Store bounded scanner core.
+ * D2-S5 private Domain Store bounded scanner core.
  * Production-private; not installed. Not a public C ABI.
  *
  * Implements docs/17-foundation-domain-store.md §15.1–15.7 / §15.10 / §15.11
- * / §15.9 S3–S4.
+ * / §15.12 / §15.9 S1–S5.
  * Production path: ninlil_domain_scan_begin_profiled (required candidate,
  * same-txn 17 get + validate/compare + one zero-prefix iterator).
  * Exact-profile CURRENT family 5/6 rows: typed same-record (business+7d)
- * or witness header/chunk local framing (7e/7f). S4 adds same-snapshot
+ * or witness header/chunk local framing (7e/7f). S4 same-snapshot
  * production-private exact_get while the sole iterator remains live.
+ * S5 composition: note_terminal_corrupt D3 injection seam + DSR1/DSR2
+ * complete gates (D2 bounded scanner only).
  * S1 transport-only begin is TEST-build only
  * (NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN) and does not run domain
  * body structural validation.
  *
- * No cross-row relationship/cardinality/orphan/backlink (D3), recovery
- * mutation (D4), or Stage 5 orchestration (S6). Does not claim D2 / DSR1 /
- * DSR2 complete. Session does not retain full ID sets or unused xref
- * digest/kind/count fields.
+ * Claims D2 (bounded scanner) / DSR1_SCAN / DSR2_ESP_BOUND complete only.
+ * No cross-row relationship/cardinality/orphan/backlink finding correctness
+ * (D3), recovery mutation (D4), Stage 5 orchestration (S6), public Runtime,
+ * ESP-IDF compile, or hardware. Session does not retain full ID sets or
+ * unused xref digest/kind/count fields.
  *
  * Ownership binding:
  *   begin binds non-owning pointers to storage ops, handle slot, and
@@ -109,12 +112,12 @@ typedef struct ninlil_domain_scan_workspace {
 static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S4 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S5 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #else
 _Static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S4 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S5 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #endif
 
 /*
@@ -258,6 +261,24 @@ ninlil_status_t ninlil_domain_scan_exact_get(
     ninlil_domain_scan_session_t *session,
     ninlil_bytes_view_t key,
     ninlil_domain_scan_exact_get_result_t *out_result);
+
+/*
+ * D2-S5 D3 corruption injection / aggregation seam (docs/17 §15.12.2).
+ * Production-private. No status argument. No public include change.
+ *
+ * NULL session -> INVALID_ARGUMENT (Port 0).
+ * Legal only in OPEN or EXHAUSTED:
+ *   Port call 0; set first sticky primary to STORAGE_CORRUPT; state FAILED;
+ *   preserve candidate/future flags, counters, previous key, workspace,
+ *   iter/txn ownership, binding, fence_pending; no cleanup/fence;
+ *   return STORAGE_CORRUPT.
+ * IDLE / DONE / FAILED -> INVALID_STATE with no mutation and Port 0.
+ *
+ * D3 supplies finding correctness; this API only injects sticky terminal
+ * corruption so finalize/abort aggregation outranks future/profile candidates.
+ */
+ninlil_status_t ninlil_domain_scan_note_terminal_corrupt(
+    ninlil_domain_scan_session_t *session);
 
 /*
  * Cleanup tree + outcome aggregation on bound Port/handle. out_result must be

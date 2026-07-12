@@ -1529,6 +1529,28 @@ ninlil_status_t ninlil_domain_scan_exact_get(
     return mapped;
 }
 
+ninlil_status_t ninlil_domain_scan_note_terminal_corrupt(
+    ninlil_domain_scan_session_t *session)
+{
+    if (session == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_OPEN
+        && session->state != NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED) {
+        /* IDLE / DONE / FAILED: no mutation, Port 0. */
+        return NINLIL_E_INVALID_STATE;
+    }
+
+    /*
+     * Legal OPEN/EXHAUSTED: Port 0, no cleanup/fence. First sticky only.
+     * Preserve all candidate/future flags, counters, previous key, workspace,
+     * iter/txn ownership, and binding authority (§15.12.2).
+     */
+    set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+    session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+    return NINLIL_E_STORAGE_CORRUPT;
+}
+
 ninlil_status_t ninlil_domain_scan_finalize(
     ninlil_domain_scan_session_t *session,
     ninlil_domain_scan_result_t *out_result)

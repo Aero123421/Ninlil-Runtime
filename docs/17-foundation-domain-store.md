@@ -1568,12 +1568,12 @@ L2b1 successはStage 5完了でもD2完了でもありません（14章L2b1 boun
 
 | Slice | 内容 | D2完了証明 |
 | --- | --- | --- |
-| **D2-S0** | 本節のNormative contract freeze。実装/vector変更なし | 否 |
+| **D2-S0** | 本節のNormative contract freeze。実装/vector変更なし。**Historical S0 freeze status:** S0 alone did not complete D2 / DSR1 / DSR2 at freeze time（spec only）。**Current status after S5:** D2 bounded scanner / DSR1_SCAN / DSR2_ESP_BOUND are complete via S1–S5 composition; this S0 row remains the historical freeze record and is not retroactively rewritten as implementation-complete | 否（S0単独） |
 | **D2-S1** | scanner core: state machine、begin binds Port/handle/workspace、advance(row_budget)/finalize|abort(result) only、iter buffer、`has_previous` lex、§15.4 coarse class、mutation 0、uint64 checked counters。独立oracle + production bridge。**実装済み（D2 incomplete）** | 否 |
 | **D2-S2** | **実装済み（D2 incomplete）:** production profiled begin only（required candidate; TEST transport beginはtest macro専用）、same-txn 17 exact get + completeness/validate/compare、typed get capacities、iterator reconciliation masks、mismatch/future mode skip、private result diagnostics、sibling profile oracle `domain-scan-profile-v1.json` / `ninlil-domain-scan-profile-v1-d2s2` + independent generator + production bridge。D2 complete / DSR1/DSR2 complete / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
 | **D2-S3** | **実装済み（D2 incomplete）:** exact-profile時 family 5/6 CURRENT structural same-recordをscan pathから到達。closed catalog family5 `01`+family6 §7 全29 current subtypes（`10,11,20-27,30-34,40-42,50-52,60-64,7d-7f`）REQUIRED。business+`7d` → `ninlil_model_domain_validate_typed_record`（workspace typed scratch; public APIに large local 無し）。`7e`/`7f` → parse key + envelope + pure witness decode + key/body/header bijection + independent header mutates（flags/PVD/primary/identity/subtype/rev0/rtype）scan到達。status: `UNSUPPORTED` future non-terminal、後続current corrupt precedence（record_version/domain_format）; profile mismatch/future_profile skip S3 decode; BTS 4097/unknown subtype/lex OOO。sibling oracle `domain-scan-structural-v1.json` / `ninlil-domain-scan-structural-v1-d2s3` + D1 d1b3o SHA/count pin composition + S1 transport body-nonvalidation hash/ID pin + independent generator + production bridge。**member old/new・partial group・successor chain・cross-row PVD/cardinalityはD3。S4 exact-get追加なし。** D2 complete / DSR1/DSR2 / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
 | **D2-S4** | **実装済み（D2 incomplete）:** same-snapshot production-private exact `get`（`OPEN`/`EXHAUSTED`、sole iterator live、row_budget/counters 不変）+ presence enum / borrowed value view + fixed-memory proof（single 4096 value buffer reuse; session に unused xref digest/kind/count なし; 全ID集合非保持）。sibling oracle `domain-scan-exact-get-v1.json` / `ninlil-domain-scan-exact-get-v1-d2s4` + independent generator + production bridge。D3 relationship/cardinality/orphan/backlink semantics は所有しない。D2 complete / DSR1/DSR2 / Stage 5 / public Runtime / ESP hardware を claim しない | 否 |
-| **D2-S5** | S1〜S4および依存（不足D1 body含む）と必須vector/oracleが揃ったうえでの`DSR1_SCAN` / `DSR2_ESP_BOUND` complete。restart先頭、**D2-detectable** corrupt>future、D3 corruption投入用のexact seam/mechanism、rollback failure/fence、workspace天井、allocation 0。partial group/orphan/counter/capacity/health自体は証明しない | **S1〜S5完了の総称としてだけD2（bounded scanner）を証明。Stage 5全体は証明しない** |
+| **D2-S5** | **実装済み（D2 bounded scanner complete; Stage 5 incomplete）:** S1〜S4 + deps composition。`DSR1_SCAN` complete + `DSR2_ESP_BOUND` complete。production-private `ninlil_domain_scan_note_terminal_corrupt`（D3 corruption injection/aggregation seam only; D3 finding correctness is D3）。profiled budget 1/64、same-snapshot exact_get lifecycle（per-call status + counter/previous/get snapshots）、fresh-session restart from front with first post-restart `advance` budget=1 + front-key assert（not same-session budget resume）、changed-snapshot restart asserts new front key、FAILED cleanup restart、rollback failure sticky + unknown rollback fence-once、handle drift closes original only、future/mismatch/structural candidates then note → sticky CORRUPT outranks、state gates、`note_then_reject` / `note_exhausted`、note then advance/exact_get reject Port0、close/fence once、mutation0、full Port-trace equality。sibling oracle `domain-scan-composition-v1.json` / `ninlil-domain-scan-composition-v1-d2s5`（22 vectors / 21 kinds）+ independent generator（per-call `expected_status` / anti-false-pass / exact kind set）+ production bridge + `tools/domain_scan_dsr2_gate.py` complete + compiler `-Wvla`。S1–S4 and D1 JSON byte-for-byte frozen。**Does not claim Stage 5 / D3 semantics / D4 mutation / S6 orchestration / public Runtime / ESP-IDF compile / hardware** | **S1〜S5+deps で D2（bounded scanner）のみ証明。Stage 5全体は証明しない** |
 | **D2-S6** | Stage 5 orchestration hookup。scannerをcreate Stage 5へ接続。なおmutation 0（recovery mutation本体はD4） | D2を統合するだけで、S5未完了をD2完了に置換せず、D3/D4未完了をStage 5完了に置換しない |
 
 **「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S4が未完了のまま（S1/S2/S3はimplementation completeでも **D2 incomplete**）、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vector、body-only completeもD2完了宣言に使ってはなりません。
@@ -1909,7 +1909,7 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 | D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator reconciliation。sibling oracle **`spec/vectors/domain-scan-profile-v1.json`**、format **`ninlil-domain-scan-profile-v1-d2s2`**（§17.1.2）+ independent generator + production profiled-begin bridge + unit acceptance。**実装済み（D2 incomplete）** | domain structural全体はS3。**DSR1/DSR2/D2 completeをclaimしない** |
 | D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）。sibling oracle **`spec/vectors/domain-scan-structural-v1.json`**、format **`ninlil-domain-scan-structural-v1-d2s3`**（§17.1.3）。依存D1 body hexは `ninlil-domain-store-v1-d1b3o` authority（byte-for-byte frozen; S3は同fileへscanner fieldを追加しない） | **D2-S3 implementation complete**（S1–S5の1ピース。**D2/DSR1/DSR2/Stage5 completeをclaimしない**） |
 | D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference mechanism（§15.11; full-ID set 禁止）。sibling oracle **`spec/vectors/domain-scan-exact-get-v1.json`** / format **`ninlil-domain-scan-exact-get-v1-d2s4`**（§17.1.4）+ independent generator + production bridge + unit acceptance。**実装済み（D2 incomplete）** | 全ID集合RAM保持テストを合法化しない。D3 semantics は所有しない |
-| D2-S5 | `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。かつS1〜S4 ownership vectorと依存D1 bodyが揃っていること | **S1〜S5+depsが揃って初めてD2（bounded scanner）証明。Stage 5証明ではない。S2/S3/S4または5 D1 body欠落のままS5 complete禁止** |
+| D2-S5 | **実装済み:** `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。sibling oracle **`spec/vectors/domain-scan-composition-v1.json`** / format **`ninlil-domain-scan-composition-v1-d2s5`**（§17.1.5）+ independent generator + production bridge + unit acceptance。S1〜S4 ownership vectorと依存D1 body pin | **S1〜S5+deps で D2（bounded scanner）証明。Stage 5 / D3 / D4 / S6 / public Runtime / ESP-IDF / hardware は証明しない** |
 | D2-S6 | 新規D2 oracleを必須化しない。Stage 5 orchestration integration testはD2完了の代替にもStage 5完了の代替にもならない | S5未完了のままS6 successでD2 claim禁止 |
 
 D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、**D2 completionはS1〜S5および依存が揃ったmutation 0 bounded scanner composition証明**です（partial group / orphan / counter / capacity / health の正しさは含まない）。D2-S0はNormative固定のみでimplementation pendingです。**Stage 5全体・public Runtime・SQLite recoveryの完成はD2完了後も、D3/D4および§1残gateが揃うまで主張しません。**
@@ -2104,3 +2104,149 @@ Each vector object（required keys）:
 **CI gate:** independent generator `check` + production bridge over every vector; S1/S2/S3 JSON and D1 d1b3o remain frozen. known-answer/hash/count pins on this artifact after generate.
 
 **Explicit non-claims:** D2 complete / DSR1_SCAN complete / DSR2_ESP_BOUND complete / Stage 5 / public Runtime / D3 relationship semantics / full-ID set / ESP hardware。
+
+### 15.12 D2-S5 composition freeze（`DSR1_SCAN` + `DSR2_ESP_BOUND` complete）
+
+**Decision identifier: D2-S5。** 本節は S1〜S4 および依存 D1 body authority が揃ったうえでの **mutation 0 bounded scanner composition** の Normative freeze である。**D2-S5 completes `DSR1_SCAN` and `DSR2_ESP_BOUND` and therefore D2 (bounded scanner) only.**
+
+#### 15.12.1 Explicit non-claims（必須）
+
+本 freeze / implementation は次を **claim しない**:
+
+1. **Stage 5** completion / public Runtime publish gate / §1 full gate
+2. **D3** cross-row relationship / cardinality / orphan / backlink / partial group / counter upper-bound / capacity recompute / health reconstruction の **finding correctness**（S5 は injection/aggregation **mechanism** のみ）
+3. **D4** recovery mutation / convergence / FULL writer
+4. **S6** Stage 5 orchestration hookup
+5. **public Runtime** ABI / public status / installed public scanner API
+6. **ESP-IDF** toolchain compile / component / **hardware** end-to-end
+
+No new ADR. public C ABI / public include / public status を追加しない。
+
+#### 15.12.2 D3 corruption injection seam（production-private）
+
+Exactly one minimal production-private API:
+
+```text
+ninlil_status_t ninlil_domain_scan_note_terminal_corrupt(
+    ninlil_domain_scan_session_t *session);
+```
+
+| Rule | Exact contract |
+| --- | --- |
+| `session == NULL` | `NINLIL_E_INVALID_ARGUMENT`。Port 0。mutation 0 |
+| Legal states | `OPEN` または `EXHAUSTED` のみ |
+| Legal call effect | Port call **0**。first sticky primary を `NINLIL_E_STORAGE_CORRUPT` に set（既に sticky があれば first を保持）。`state = FAILED`。return `NINLIL_E_STORAGE_CORRUPT` |
+| Preserved on legal call | 全 candidate/future flags（`recognizable_future_seen` / `profile_mismatch` / `future_profile_candidate` / `profile_exact_active` 等）、全 counters、`has_previous` / previous key、workspace contents、iter/txn live ownership、bound Port/handle/workspace、`original_handle_authority`、`fence_pending` |
+| Forbidden on legal call | cleanup tree、iter_close、rollback、fence/close、row_budget consume、iterator advance、exact get |
+| `IDLE` / `DONE` / `FAILED` | `NINLIL_E_INVALID_STATE`。**no mutation / Port 0**（`FAILED` 再 note も状態・sticky を変えない） |
+| Status argument | **none**（status を引数に取らない） |
+| Public include | **no change** |
+
+**D3 finding correctness remains D3.** S5 only supplies the injection/aggregation mechanism: after note, `advance` / `exact_get` reject with sticky/`FAILED` authority rules; `finalize` / `abort` use the existing cleanup tree; sticky `STORAGE_CORRUPT` **outranks** future/profile candidates in finalize aggregation（§15.2 / §15.10.7）。
+
+#### 15.12.3 `DSR1_SCAN` composition requirements
+
+Production bridge + focused units **must** close:
+
+1. profiled budget **1** and **64**（same-session multi-advance resume is **not** labeled restart）
+2. same-snapshot `exact_get` inside lifecycle（S4 seam; counters/iterator position unchanged）
+3. **fresh-session restart from front** after partial `abort` / after partial path then `finalize`（new `session_init` + profiled begin; counters restart; first row is snapshot front）
+4. restart against **changed** snapshot（different rows after prior cleanup）
+5. restart after **FAILED** cleanup（sticky terminal path cleaned to `DONE` then new session）
+6. rollback failure preserving sticky primary
+7. unknown rollback cleanup status → fence **exactly once**
+8. handle drift closes **original** handle, never foreign slot contents
+9. future then note → sticky CORRUPT outranks future on finalize
+10. exhausted + future then note → same corrupt outrank
+11. profile mismatch candidate then note → corrupt mechanism（mismatch flags preserved; outcome CORRUPT）
+12. structural/future candidate composition as applicable under exact profile
+13. state gates for note / post-note advance/exact_get
+14. note then `advance` / `exact_get` rejected（Port 0 on those rejects when state is `FAILED`）
+15. close/fence exactly once when required; mutation calls **0**
+
+Production path uses **profiled begin** only. TEST transport-only begin remains frozen S1 regression only and is absent from tests-OFF release symbols.
+
+#### 15.12.4 `DSR2_ESP_BOUND` complete gates
+
+1. **Current Normative ceiling** is **8192** bytes（**not** forever-8192 claim; ceiling may change only by later Normative amendment）
+2. **Live `sizeof(ninlil_domain_scan_workspace_t) <= 8192`** asserted in tests / oracle kinds
+3. **Single** 4096 value buffer; **no** second 4096 / full-ID set / unused session xref digest/kind/count fields
+4. **No** heap `malloc`/`calloc`/`realloc`/`free`、`alloca`、VLA、recursion among **all** defined scanner functions（direct or mutual; call graph）、large automatic workspace/row_scratch/typed-record buffers、`65536` temporary allocation or reread path in scanner `.c`/`.h`
+5. **Complete source gate** is `tools/domain_scan_dsr2_gate.py`（CTest `domain_scan_dsr2_complete_gate`）: strip comments/strings before analysis; fail-closed if function bodies cannot be parsed; negative self-tests（VLA / mutual recursion / allocator / automatic workspace / second 4096）via `domain_scan_dsr2_gate_self_test`
+6. **Compiler VLA gate** on `domain_store_scanner.c`（`-Wvla` under existing `-Werror` for GNU/Clang/AppleClang; C11 extensions OFF）. **No** permanent stack-byte ceiling is claimed; forbidden large automatic record objects are proved by the source gate. Residual honesty: source analysis is pattern/structural, not a full C abstract interpreter
+7. **ESP-IDF toolchain build is not required in S5**
+8. tests-OFF private symbol gate: `note_terminal_corrupt` **present**; transport-only `ninlil_domain_scan_begin` **absent**; profiled begin + exact_get remain present
+9. Oracle kind `dsr2_source` is **composition** of static assert/live sizeof + bridge + complete source/VLA gate + mutation0 — **not** proved by a success-path clone alone
+
+#### 15.12.5 Frozen sibling authority
+
+S5 must pin full SHA-256 / format / vector_count of:
+
+| Authority | Path | Format |
+| --- | --- | --- |
+| S1 | `spec/vectors/domain-scan-v1.json` | `ninlil-domain-scan-v1-d2s1` |
+| S2 | `spec/vectors/domain-scan-profile-v1.json` | `ninlil-domain-scan-profile-v1-d2s2` |
+| S3 | `spec/vectors/domain-scan-structural-v1.json` | `ninlil-domain-scan-structural-v1-d2s3` |
+| S4 | `spec/vectors/domain-scan-exact-get-v1.json` | `ninlil-domain-scan-exact-get-v1-d2s4` |
+| D1 | `spec/vectors/domain-store-v1.json` | `ninlil-domain-store-v1-d1b3o` |
+
+S1–S4 and D1 artifacts remain **byte-for-byte frozen**. S5 adds only the composition sibling.
+
+#### 15.12.6 Completion boundary
+
+| Claim | Status after S5 implementation |
+| --- | --- |
+| D2-S5 Normative freeze（本節） | this doc |
+| D2-S5 implementation / `DSR1_SCAN` complete / `DSR2_ESP_BOUND` complete | implementation PR |
+| **D2 (bounded scanner) complete** | **yes** when S1–S5 + deps + vectors/oracles all present |
+| Stage 5 / D3 / D4 / S6 / public Runtime / ESP-IDF / hardware | **still pending** |
+
+### 17.1.5 D2-S5 composition oracle artifact schema ownership（Normative freeze）
+
+**Decision identifier: D2-S5（oracle schema + implementation ownership）。** S1/S2/S3/S4 JSON および D1 `domain-store-v1.json` は **sibling frozen**（byte-for-byte; 本sliceはそれらを書き換えない）。
+
+| Field | Exact value |
+| --- | --- |
+| path | `spec/vectors/domain-scan-composition-v1.json`（S1–S4 の **sibling**; merge 禁止） |
+| format | `ninlil-domain-scan-composition-v1-d2s5` |
+| version | `1` |
+| independent generator | `tools/domain_scan_composition_vector_gen.py`（production C を invoke/translate しない。profile/NLR1/CRC は oracle 側。authority pin は full SHA/format/count） |
+| production bridge | production **profiled** begin + real private `note_terminal_corrupt` / `exact_get` / `advance` / `finalize` / `abort` を oracle literal に対して実行（**every vector**） |
+
+Top-level object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | exact `1` |
+| `format` | string | exact `ninlil-domain-scan-composition-v1-d2s5` |
+| `scope` | string | S5 composition ownership; claims D2/`DSR1_SCAN`/`DSR2_ESP_BOUND` complete only; must not claim Stage 5 / D3 finding correctness / D4 / S6 / public Runtime / ESP-IDF / hardware |
+| `workspace` | object | S1 capacities + `ceiling_bytes=8192` + single 4096 value buffer note |
+| `s1_authority` | object | path / format / full `sha256` / `vector_count` |
+| `s2_authority` | object | path / format / full `sha256` / `vector_count` |
+| `s3_authority` | object | path / format / full `sha256` / `vector_count` |
+| `s4_authority` | object | path / format / full `sha256` / `vector_count` |
+| `d1_authority` | object | path / format=`ninlil-domain-store-v1-d1b3o` / full `sha256` / `vector_count` |
+| `vectors` | array | DSR1 composition + DSR2 bound cases |
+
+Each vector object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | stable case id |
+| `kind` | string | **closed set**（required coverage; exact equality not subset）: `budget_1`, `budget_64`, `same_snapshot_exact_get`, `restart_after_abort`, `restart_after_finalize`, `restart_changed_snapshot`, `restart_after_failed`, `rollback_failure_sticky`, `unknown_rollback_fence`, `handle_drift_original`, `future_then_note`, `exhausted_future_then_note`, `mismatch_then_note`, `structural_future_composition`, `state_gate`, `note_then_reject`, `note_exhausted`, `close_fence_once`, `mutation_zero`, `dsr2_ceiling`, `dsr2_source` |
+| `candidate_binding` | object | typed binding for profiled begin（oracle-owned） |
+| `rows` | array | primary snapshot `{key_hex,value_hex}` |
+| `alt_rows` | object | optional named alternate snapshots for restart-changed cases（map name → row array） |
+| `faults` | array | scripted Port faults（`get`/`iter_next`/`rollback`/…） |
+| `calls` | array | scanner/harness sequence; **every call** carries `expected_status`（scanner ninlil status name, or `VOID` for harness ops） |
+| `expected` | object | `final_status`, `adopted`, `state_after`, coarse counts, profile/future diagnostics, `port_trace`（full Port equality; no dropped enum category）, `mutation_calls=0`, reopen/close, `iter_open_count`, sticky fields |
+
+**Call ops（closed）:** scanner: `begin_profiled`, `advance`, `exact_get`, `note_terminal_corrupt`, `finalize`, `abort`. Harness（Port 0; `expected_status=VOID`）: `session_init`（fresh session object only after cleanup `DONE`; not budget resume）, `use_rows`（switch to `alt_rows[name]` only in `IDLE`）, `handle_drift`（oracle/bridge handle-slot drift; not a scanner API）. TEST transport `begin` is **forbidden** in this artifact.
+
+**Call outcomes:** every call has an immediate expected result. Bridge compares scanner status after **each** call (not final only). Harness ops validate legal ordering. `note_then_reject` proves note then `advance`/`exact_get` are `INVALID_STATE` with Port 0. Restart vectors: cleanup `DONE` before `session_init`; first post-restart `advance` has `row_budget=1`; bridge asserts `previous_key` equals lexicographically first active-snapshot row and counters reset to 1, then a later advance completes. Same-snapshot `exact_get`: bridge snapshots ok/family/current counters, iter_next/iter_open counts, previous-key/has_previous before get and asserts unchanged after success with get count exactly +1. `dsr2_source` is composition of live sizeof/bridge + `tools/domain_scan_dsr2_gate.py` complete gate + compiler `-Wvla` + mutation0 — not a success-path clone alone.
+
+**CI gate:** independent generator `check` requires **full deterministic document equality** with regenerated output（not ID-list only）+ known-answer hash/count pins + **real anti-false-pass**（closed call-op set including `handle_drift`; expected_status presence; restart ordering; budget resume has no `session_init`; no TEST transport begin; `note_then_reject` structure; exact required kind set）; production bridge executes **every** vector and proves **all** required kinds（bitmask/exact set）; S1–S4 and D1 remain frozen regressions.
+
+**Explicit claims after green gates:** D2 bounded scanner complete; `DSR1_SCAN` complete; `DSR2_ESP_BOUND` complete.
+
+**Explicit non-claims:** Stage 5 / D3 finding correctness / D4 mutation / S6 orchestration / public Runtime / ESP-IDF compile / hardware。
