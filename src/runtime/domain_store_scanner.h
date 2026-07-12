@@ -20,8 +20,10 @@
  *
  * Claims D2 (bounded scanner) / DSR1_SCAN / DSR2_ESP_BOUND complete and hosts
  * the completed D3-S1 private begin_profiled_d3s1 + Modes 1–20 evaluator.
- * D3-S1 alone does not complete D3 / Stage 5 / D4 / public Runtime / ESP-IDF
- * / hardware.
+ * Private D3-S2 (begin_profiled_d3s2 / multipass) is under development and
+ * not claimed complete. D3 overall / Stage 5 / D4 / public Runtime / ESP-IDF
+ * / hardware remain incomplete. S1 and S2 contexts are mutually exclusive
+ * per session when S2 is bound.
  * Session does not retain full ID sets or unused xref digest/kind/count fields.
  *
  * Ownership binding:
@@ -132,8 +134,14 @@ _Static_assert(
  * Counter overflow (ok/family14/current-domain) is D2-detectable corruption
  * (sticky STORAGE_CORRUPT); increments never wrap.
  */
-/* Incomplete: full layout in domain_store_d3s1.h (not installed). */
+/* Incomplete: full layouts in domain_store_d3s1.h / d3s2.h (not installed). */
 struct ninlil_domain_scan_d3s1_context;
+struct ninlil_domain_scan_d3s2_context;
+
+/* bound_d3_kind: exclusive S1/S2 (or none). Not a public ABI. */
+#define NINLIL_DOMAIN_SCAN_D3_KIND_NONE ((uint8_t)0u)
+#define NINLIL_DOMAIN_SCAN_D3_KIND_S1 ((uint8_t)1u)
+#define NINLIL_DOMAIN_SCAN_D3_KIND_S2 ((uint8_t)2u)
 
 typedef struct ninlil_domain_scan_session {
     ninlil_domain_scan_state_t state;
@@ -142,18 +150,25 @@ typedef struct ninlil_domain_scan_session {
     ninlil_storage_handle_t *bound_handle_slot;
     ninlil_domain_scan_workspace_t *bound_workspace;
     /*
-     * D3-S1: non-owning pointer to caller-owned fixed context.
-     * NULL after D2-only begin_profiled (D3 inactive). Set only by
-     * ninlil_domain_scan_begin_profiled_d3s1 after prevalidation.
+     * D3 context binding (non-owning). S1 and S2 are mutually exclusive and
+     * share one pointer slot so session future sizeof stays within the S1a
+     * 144-byte pin (docs/17 §18.12). Dual-bound is forbidden.
+     * Active type is bound_d3_kind (packed with other u8s below):
+     *   0 = none (D2-only), 1 = S1, 2 = S2.
      * Stage5 does not bind/run D3 until S12.
      */
-    struct ninlil_domain_scan_d3s1_context *bound_d3_context;
+    union {
+        struct ninlil_domain_scan_d3s1_context *bound_d3_context;
+        struct ninlil_domain_scan_d3s2_context *bound_d3s2_context;
+    };
     ninlil_storage_handle_t bound_handle_value;
     /*
      * Scanner still holds fence authority over bound_handle_value (has not
      * yet closed it). Independent of the caller slot's current contents.
      */
     uint8_t original_handle_authority;
+    /* Packed with adjacent u8s; not between pointers (keeps session ≤144). */
+    uint8_t bound_d3_kind;
     ninlil_storage_txn_t txn;
     ninlil_storage_iter_t iter;
     uint8_t txn_live;
