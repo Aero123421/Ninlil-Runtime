@@ -56,7 +56,15 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     future_profile_candidate evaluator-off — baseline EXHAUSTED only (phase
     BASELINE + BASELINE_DONE; no COMPLETE/COMPLETE_READY authority); no
     INTERNAL reopen / BIND / peer get; finalize UNSUPPORTED/adopted0. Not
-    recognizable_future_seen. Count-green-without-BIND is P1-D2 (out of slice).
+    recognizable_future_seen.
+  * P1-D2 slice (§18.13.15 case 10): Mode21 count-green without BIND set —
+    FOCUS ATTEMPT+INDEX count_complete_mask full, binding_complete_mask 0,
+    phase BIND_ATTEMPT (BIND started, not COMPLETE), no sticky; call-level
+    checkpoint freezes that exact shape; test-only false-terminal probe
+    (session/context copy, copy.state=EXHAUSTED) must see finalize
+    INVALID_STATE / Port0 / no cleanup / no output mutation; original
+    session resumes BIND→COMPLETE/adopt1. Not missing-peer CORRUPT, not
+    Port fault, not evaluator-off, not metadata-only.
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -100,6 +108,7 @@ D3S2_P0C_SLICE_COUNT = 1
 D3S2_P0D_SLICE_COUNT = 4
 D3S2_P1A_SLICE_COUNT = 6
 D3S2_P1D_SLICE_COUNT = 2
+D3S2_P1D2_SLICE_COUNT = 1
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -114,8 +123,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_P0D_SLICE_COUNT
     + D3S2_P1A_SLICE_COUNT
     + D3S2_P1D_SLICE_COUNT
-)  # 33
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 127
+    + D3S2_P1D2_SLICE_COUNT
+)  # 34
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 128
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -351,6 +361,32 @@ D3S2_125_CONTENT_SHA256 = (
 D3S2_125_FINGERPRINT_HASH = (
     "e0bd3628dc5a2f85bb0b1abca7499008b82861ecc2047000fc124be6075293f0"
 )
+# Frozen 127-vector append-only prefix (125 + P1-D) — origin/main before P1-D2.
+# content hash + fingerprint chain independently derived from origin/main
+# 127-vector artifact (full document content_sha256 / prior_fingerprint
+# chain of that release; not recomputed by rewriting published objects).
+D3S2_127_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+    + D3S2_P0C_SLICE_COUNT
+    + D3S2_P0D_SLICE_COUNT
+    + D3S2_P1A_SLICE_COUNT
+    + D3S2_P1D_SLICE_COUNT
+)  # 127 (origin/main freeze before P1-D2)
+D3S2_127_CONTENT_SHA256 = (
+    "58deba31f6378872493117f0cd644d655fdb5ed6d4d5ca50cb6d387c70b21001"
+)
+D3S2_127_FINGERPRINT_HASH = (
+    "1215ad1e34a9c11e81e122bb980233a2b9898b73e6c5f6f3994af01106b028c4"
+)
 
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -461,6 +497,7 @@ MODE23_ACCEPTED_L = 3
 # Phase / mask constants (docs/17 §18.13; match domain_store_d3s2.h).
 PHASE_BASELINE = 1
 PHASE_FOCUS_MANAGEMENT = 8
+PHASE_BIND_ATTEMPT = 9
 PHASE_COMPLETE = 15
 PHASE_FAILED = 16
 PASS_BASELINE = 0
@@ -573,6 +610,11 @@ D3S2_P1D_KINDS = frozenset(
         "mode21_future_profile_evaluator_off_unsupported",
     }
 )
+D3S2_P1D2_KINDS = frozenset(
+    {
+        "mode21_count_green_bind_incomplete_false_terminal_ok",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -587,6 +629,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_P0D_KINDS
     | D3S2_P1A_KINDS
     | D3S2_P1D_KINDS
+    | D3S2_P1D2_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -602,8 +645,10 @@ SCANNER_CALL_OPS = frozenset(
         "abort",
     }
 )
+# Test-bridge-only call ops (not production public API; expected_status real).
+TEST_BRIDGE_CALL_OPS = frozenset({"probe_false_terminal_finalize"})
 HARNESS_CALL_OPS = frozenset({"session_init", "use_rows", "handle_drift"})
-CLOSED_CALL_OPS = SCANNER_CALL_OPS | HARNESS_CALL_OPS
+CLOSED_CALL_OPS = SCANNER_CALL_OPS | HARNESS_CALL_OPS | TEST_BRIDGE_CALL_OPS
 FORBIDDEN_CALL_OPS = frozenset({"begin", "begin_transport", "transport_begin"})
 
 VECTOR_KEYS = frozenset(
@@ -781,6 +826,16 @@ SCOPE = (
     "semantic findings; faults=[]; single READ_ONLY txn; mutation 0. "
     "Same-txn: every d3s2 suffix port_trace has exactly one begin:READ_ONLY; "
     "two-txn list-then-count models fail closed (self-test tamper). "
+    "Frozen 127-vector origin/main pin retained (125 + P1-D evaluator-off). "
+    "P1-D2 appends Mode21 count-green without BIND set: FOCUS count "
+    "complete (bit0|bit1) while binding_complete_mask=0 at BIND_ATTEMPT "
+    "entry (BIND_PHASE_ACTIVE, no COMPLETE_READY, sticky 0); call-level "
+    "checkpoint freezes phase/masks/flags/pass_kind/last_carrier_key + spy "
+    "begin/iter_open/iter_close/trace_count; test-only "
+    "probe_false_terminal_finalize on session/context copy with "
+    "copy.state=EXHAUSTED expects INVALID_STATE Port0 no cleanup/output "
+    "mutation; original session resumes BIND→COMPLETE/adopt1. Not orphan "
+    "CORRUPT / Port fault / evaluator-off / metadata-only. "
     "Does not claim full D3-S2 oracle complete, "
     "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
     "transport begin forbidden. Independent generator — production C not "
@@ -795,8 +850,9 @@ SHA256_PROCEDURE = (
     "102-vector prior main, the 104-vector prior main, the 106-vector "
     "prior main, the 108-vector prior main, the 110-vector prior main, "
     "the 112-vector prior main, the 113-vector origin/main, the "
-    "114-vector origin/main, the 115-vector origin/main, and the "
-    "119-vector origin/main "
+    "114-vector origin/main, the 115-vector origin/main, the "
+    "119-vector origin/main, the 125-vector origin/main, and the "
+    "127-vector origin/main "
     "(fingerprint/order/expected/rows/calls/full object equality). "
     "content_sha256 "
     "covers the document with sha256_procedure/content_sha256 fields set "
@@ -885,6 +941,14 @@ OWNERSHIP_P1D = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(33-vector suffix on frozen 125-prefix only)"
+)
+# P1-D2 ownership (34-vector suffix at P1-D2 append time). Hardcoded 34 so a
+# later append does not rewrite published P1-D2 objects.
+OWNERSHIP_P1D2 = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(34-vector suffix on frozen 127-prefix only)"
 )
 
 
@@ -5374,6 +5438,8 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_p0c_slice_vectors()
         + build_d3s2_p0d_slice_vectors()
         + build_d3s2_p1a_slice_vectors()
+        + build_d3s2_p1d_slice_vectors()
+        + build_d3s2_p1d2_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -5473,6 +5539,7 @@ def build_document() -> Dict[str, Any]:
     p0d_vectors = build_d3s2_p0d_slice_vectors()
     p1a_vectors = build_d3s2_p1a_slice_vectors()
     p1d_vectors = build_d3s2_p1d_slice_vectors()
+    p1d2_vectors = build_d3s2_p1d2_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -5487,6 +5554,7 @@ def build_document() -> Dict[str, Any]:
         + p0d_vectors
         + p1a_vectors
         + p1d_vectors
+        + p1d2_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -5614,6 +5682,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_twenty_five_hash})"
         )
 
+    # Retained 127-vector chain pin (125 + P1-D = origin/main before P1-D2).
+    hundred_twenty_seven_hash = _chain_hash(
+        prior_fingerprints[:D3S2_127_PREFIX_COUNT]
+    )
+    if hundred_twenty_seven_hash != D3S2_127_FINGERPRINT_HASH:
+        raise SystemExit(
+            "127-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_twenty_seven_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -5637,6 +5715,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_115_prefix_count": D3S2_115_PREFIX_COUNT,
         "d3s2_119_prefix_count": D3S2_119_PREFIX_COUNT,
         "d3s2_125_prefix_count": D3S2_125_PREFIX_COUNT,
+        "d3s2_127_prefix_count": D3S2_127_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -5775,6 +5854,16 @@ def build_document() -> Dict[str, Any]:
                 "append-only freeze of origin/main (94 D3S1 + 31 d3s2 suffix "
                 "through P1-A); P1-D profile mismatch / future_profile "
                 "evaluator-off UNSUPPORTED vectors follow"
+            ),
+        },
+        "d3s2_127_prefix_authority": {
+            "vector_count": D3S2_127_PREFIX_COUNT,
+            "content_sha256": D3S2_127_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_127_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 33 d3s2 suffix "
+                "through P1-D); P1-D2 Mode21 count-green BIND-incomplete "
+                "false-terminal probe vector follows"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -6036,6 +6125,18 @@ def check(path: Path) -> int:
     if int(auth125.get("vector_count", -1)) != D3S2_125_PREFIX_COUNT:
         return _fail_check("d3s2_125_prefix_authority vector_count pin mismatch")
 
+    if int(data.get("d3s2_127_prefix_count", -1)) != D3S2_127_PREFIX_COUNT:
+        return _fail_check("d3s2_127_prefix_count pin mismatch")
+    auth127 = data.get("d3s2_127_prefix_authority") or {}
+    if auth127.get("content_sha256") != D3S2_127_CONTENT_SHA256:
+        return _fail_check("d3s2_127_prefix_authority content_sha256 pin mismatch")
+    if auth127.get("prior_fingerprint_prefix_hash") != D3S2_127_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_127_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth127.get("vector_count", -1)) != D3S2_127_PREFIX_COUNT:
+        return _fail_check("d3s2_127_prefix_authority vector_count pin mismatch")
+
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
         return _fail_check(
@@ -6124,6 +6225,40 @@ def check(path: Path) -> int:
         return _fail_check(
             f"125-prefix fingerprint chain pin fail "
             f"(got {hundred_twenty_five_chain})"
+        )
+
+    # Full-object 127-prefix equality (125 + P1-D; origin/main before P1-D2).
+    expected_127 = expected_doc["vectors"][:D3S2_127_PREFIX_COUNT]
+    if vectors[:D3S2_127_PREFIX_COUNT] != expected_127:
+        for i in range(D3S2_127_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_127[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_127[i])
+            if vectors[i] != expected_127[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"127-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("127-prefix full-object mismatch")
+    hundred_twenty_seven_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_127_PREFIX_COUNT)
+        ]
+    )
+    if hundred_twenty_seven_chain != D3S2_127_FINGERPRINT_HASH:
+        return _fail_check(
+            f"127-prefix fingerprint chain pin fail "
+            f"(got {hundred_twenty_seven_chain})"
         )
 
     err = _assert_prefix_identity(vectors, prefix_doc)
@@ -6856,7 +6991,9 @@ def check(path: Path) -> int:
     p0d = suffix[p0d_start : p0d_start + D3S2_P0D_SLICE_COUNT]
     p1a_start = p0d_start + D3S2_P0D_SLICE_COUNT
     p1a = suffix[p1a_start : p1a_start + D3S2_P1A_SLICE_COUNT]
-    p1d = suffix[p1a_start + D3S2_P1A_SLICE_COUNT :]
+    p1d_start = p1a_start + D3S2_P1A_SLICE_COUNT
+    p1d = suffix[p1d_start : p1d_start + D3S2_P1D_SLICE_COUNT]
+    p1d2 = suffix[p1d_start + D3S2_P1D_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -6881,6 +7018,8 @@ def check(path: Path) -> int:
         return _fail_check("p1a slice length mismatch")
     if len(p1d) != D3S2_P1D_SLICE_COUNT:
         return _fail_check("p1d slice length mismatch")
+    if len(p1d2) != D3S2_P1D2_SLICE_COUNT:
+        return _fail_check("p1d2 slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -8535,6 +8674,129 @@ def check(path: Path) -> int:
     if m21_mm["rows"][0]["value_hex"] == m21_fp["rows"][0]["value_hex"]:
         return _fail_check("p1d mismatch/future stored binding must differ")
 
+    # ---- P1-D2 count-green without BIND false-terminal (#10) ----
+    p1d2_kinds_got = {v["kind"] for v in p1d2}
+    if p1d2_kinds_got != D3S2_P1D2_KINDS:
+        return _fail_check(f"p1d2 kinds inventory mismatch: {p1d2_kinds_got}")
+    p1d2_vec = p1d2[0]
+    if p1d2_vec["kind"] != "mode21_count_green_bind_incomplete_false_terminal_ok":
+        return _fail_check("p1d2[0] kind pin fail")
+    if int(p1d2_vec["mode"]) != 21:
+        return _fail_check(f"{p1d2_vec['id']}: mode must be 21")
+    if p1d2_vec.get("ownership") != OWNERSHIP_P1D2:
+        return _fail_check(f"{p1d2_vec['id']}: ownership pin fail")
+    if p1d2_vec.get("faults"):
+        return _fail_check(f"{p1d2_vec['id']}: faults must be empty")
+    exp_p1d2 = p1d2_vec["expected"]
+    if exp_p1d2.get("final_status") != "OK":
+        return _fail_check(f"{p1d2_vec['id']}: final_status must be OK (resume COMPLETE)")
+    if int(exp_p1d2.get("adopted", -1)) != 1:
+        return _fail_check(f"{p1d2_vec['id']}: adopted must be 1 after resume")
+    if int(exp_p1d2.get("phase", -1)) != PHASE_COMPLETE:
+        return _fail_check(f"{p1d2_vec['id']}: terminal phase must be COMPLETE")
+    if int(exp_p1d2.get("count_complete_mask", -1)) != (MASK_ATTEMPT | MASK_INDEX):
+        return _fail_check(f"{p1d2_vec['id']}: terminal count mask pin fail")
+    if int(exp_p1d2.get("binding_complete_mask", -1)) != (MASK_ATTEMPT | MASK_INDEX):
+        return _fail_check(f"{p1d2_vec['id']}: terminal binding mask pin fail")
+    if (int(exp_p1d2.get("flags", 0)) & FLAG_COMPLETE_READY) == 0:
+        return _fail_check(f"{p1d2_vec['id']}: terminal COMPLETE_READY required")
+    if int(exp_p1d2.get("has_sticky_primary", -1)) != 0:
+        return _fail_check(f"{p1d2_vec['id']}: sticky must be 0")
+    if int(exp_p1d2.get("mutation_calls", -1)) != 0:
+        return _fail_check(f"{p1d2_vec['id']}: mutation_calls must be 0")
+    if int(exp_p1d2.get("d3_peer_get_count", -1)) != 7:
+        return _fail_check(f"{p1d2_vec['id']}: d3_peer_get_count must be 7")
+    if int(exp_p1d2.get("iter_open_count", -1)) != 7:
+        return _fail_check(f"{p1d2_vec['id']}: iter_open_count must be 7")
+    pt_p1d2 = exp_p1d2.get("port_trace") or []
+    if pt_p1d2.count("begin:READ_ONLY") != 1:
+        return _fail_check(f"{p1d2_vec['id']}: single-txn begin pin fail")
+    # Exactly one checkpoint + probe; no COMPLETE_READY at checkpoint.
+    cp_p1d2 = [
+        c
+        for c in p1d2_vec["calls"]
+        if int(c.get("has_checkpoint", 0)) == 1
+    ]
+    if len(cp_p1d2) != 1:
+        return _fail_check(f"{p1d2_vec['id']}: exactly one checkpoint required")
+    cp = cp_p1d2[0]
+    if int(cp["cp_phase"]) != PHASE_BIND_ATTEMPT:
+        return _fail_check(f"{p1d2_vec['id']}: cp_phase must be BIND_ATTEMPT")
+    if int(cp["cp_count_complete_mask"]) != (MASK_ATTEMPT | MASK_INDEX):
+        return _fail_check(f"{p1d2_vec['id']}: cp count mask must be green")
+    if int(cp["cp_binding_complete_mask"]) != 0:
+        return _fail_check(f"{p1d2_vec['id']}: cp binding mask must be 0")
+    if (int(cp["cp_flags"]) & FLAG_COMPLETE_READY) != 0:
+        return _fail_check(f"{p1d2_vec['id']}: COMPLETE_READY forbidden at probe")
+    if (int(cp["cp_flags"]) & FLAG_BIND_PHASE_ACTIVE) == 0:
+        return _fail_check(f"{p1d2_vec['id']}: BIND_PHASE_ACTIVE required at probe")
+    if int(cp["cp_focus_live"]) != 0:
+        return _fail_check(f"{p1d2_vec['id']}: focus_live must be 0 at BIND entry")
+    if int(cp["cp_begin_calls"]) != 1:
+        return _fail_check(f"{p1d2_vec['id']}: begin_calls must be 1")
+    if int(cp["cp_iter_open_calls"]) != 6:
+        return _fail_check(f"{p1d2_vec['id']}: iter_open_calls at BIND entry must be 6")
+    if int(cp["cp_iter_close_calls"]) != 5:
+        return _fail_check(f"{p1d2_vec['id']}: iter_close_calls at BIND entry must be 5")
+    if int(cp["cp_trace_count"]) != 141:
+        return _fail_check(f"{p1d2_vec['id']}: cp_trace_count must be 141")
+    if int(cp["cp_last_carrier_key_len"]) <= 0:
+        return _fail_check(f"{p1d2_vec['id']}: last_carrier_key_len must be > 0")
+    probe_calls = [
+        c
+        for c in p1d2_vec["calls"]
+        if c.get("op") == "probe_false_terminal_finalize"
+    ]
+    if len(probe_calls) != 1:
+        return _fail_check(
+            f"{p1d2_vec['id']}: exactly one probe_false_terminal_finalize"
+        )
+    if probe_calls[0].get("expected_status") != "INVALID_STATE":
+        return _fail_check(
+            f"{p1d2_vec['id']}: probe expected_status must be INVALID_STATE"
+        )
+    ops_p1d2 = [c.get("op") for c in p1d2_vec["calls"]]
+    if ops_p1d2[0] != "begin_profiled_d3s2" or ops_p1d2[-1] != "finalize":
+        return _fail_check(f"{p1d2_vec['id']}: calls must begin … finalize")
+    if ops_p1d2.count("d3s2_drive") != 7:
+        return _fail_check(f"{p1d2_vec['id']}: exactly 7 d3s2_drive")
+    if any(c.get("op") == "begin_profiled_d3s1" for c in p1d2_vec["calls"]):
+        return _fail_check(f"{p1d2_vec['id']}: dual-bound S1 begin forbidden")
+    # Probe must follow checkpoint immediately; READY must not appear mid-path.
+    cp_i = next(
+        i
+        for i, c in enumerate(p1d2_vec["calls"])
+        if int(c.get("has_checkpoint", 0)) == 1
+    )
+    if ops_p1d2[cp_i + 1] != "probe_false_terminal_finalize":
+        return _fail_check(
+            f"{p1d2_vec['id']}: probe must immediately follow checkpoint"
+        )
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode21_count_green_bind_incomplete_false_terminal(
+                p1d2_vec["candidate_binding"], p1d2_vec["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{p1d2_vec['id']}: model reject: {exc}")
+    if p1d2_vec["calls"] != exp_calls:
+        return _fail_check(f"{p1d2_vec['id']}: calls != independent model")
+    if p1d2_vec["expected"] != exp_expected:
+        return _fail_check(f"{p1d2_vec['id']}: expected != independent model")
+    # Port-trace must match ordinary Mode21 success (probe is Port 0).
+    try:
+        _sc, success_exp = run_d3s2_mode21_state_cum1_att_aii_success(
+            p1d2_vec["candidate_binding"], p1d2_vec["rows"]
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{p1d2_vec['id']}: success-model reject: {exc}")
+    if pt_p1d2 != success_exp.get("port_trace"):
+        return _fail_check(
+            f"{p1d2_vec['id']}: port_trace must equal Mode21 success "
+            f"(probe Port 0; no extra/missing Port ops)"
+        )
+
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
             f"missing d3s2 kinds {D3S2_REQUIRED_KINDS - kinds}"
@@ -9818,6 +10080,141 @@ def self_test() -> int:
                 "future_profile_candidate", 1
             ),
         )
+        # 127-prefix freeze (includes P1-D; P1-D2 follows at 127).
+        t(
+            "hundred_twenty_seven_prefix_row_tamper",
+            lambda d: d["vectors"][126]["rows"].__setitem__(
+                0, {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "hundred_twenty_seven_prefix_expected_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__(
+                "ok_row_count", 999
+            ),
+        )
+        t(
+            "hundred_twenty_seven_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_127_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_twenty_seven_prefix_content_authority_tamper",
+            lambda d: d["d3s2_127_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        # P1-D2 count-green without BIND anti-pass (index 127).
+        t(
+            "p1d2_probe_delete_tamper",
+            lambda d: d["vectors"][127].__setitem__(
+                "calls",
+                [
+                    c
+                    for c in d["vectors"][127]["calls"]
+                    if c.get("op") != "probe_false_terminal_finalize"
+                ],
+            ),
+        )
+        t(
+            "p1d2_count_non_green_tamper",
+            lambda d: d["vectors"][127]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][127]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][127]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_count_complete_mask": MASK_ATTEMPT,
+                },
+            ),
+        )
+        t(
+            "p1d2_bind_already_complete_tamper",
+            lambda d: d["vectors"][127]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][127]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][127]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_binding_complete_mask": MASK_ATTEMPT | MASK_INDEX,
+                },
+            ),
+        )
+        t(
+            "p1d2_complete_ready_mid_tamper",
+            lambda d: d["vectors"][127]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][127]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][127]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_flags": FLAG_BASELINE_DONE
+                    | FLAG_BIND_PHASE_ACTIVE
+                    | FLAG_COMPLETE_READY,
+                },
+            ),
+        )
+        t(
+            "p1d2_phase_not_bind_tamper",
+            lambda d: d["vectors"][127]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][127]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][127]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_phase": PHASE_COMPLETE,
+                },
+            ),
+        )
+        t(
+            "p1d2_probe_status_ok_tamper",
+            lambda d: d["vectors"][127]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][127]["calls"])
+                    if c.get("op") == "probe_false_terminal_finalize"
+                ),
+                {
+                    "op": "probe_false_terminal_finalize",
+                    "expected_status": "OK",
+                },
+            ),
+        )
+        t(
+            "p1d2_terminal_bind_incomplete_tamper",
+            lambda d: d["vectors"][127]["expected"].__setitem__(
+                "binding_complete_mask", 0
+            ),
+        )
+        t(
+            "p1d2_ownership_tamper",
+            lambda d: d["vectors"][127].__setitem__("ownership", OWNERSHIP_P1D),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -9838,10 +10235,10 @@ def self_test() -> int:
                 print(f, file=sys.stderr)
             return 1
         print(
-            "self-test ok (94+100+102+104+106+108+110+112+113+114+115+119+125 "
-            "prefix freeze + mode25/mode26/mode24/mode23/mode22/mode21/p0a/p0b/"
-            "p0c/p0d/p1a/p1d slice pins + two-txn anti-pass + forbidden ops + "
-            "clean pass)"
+            "self-test ok (94+100+102+104+106+108+110+112+113+114+115+119+125+"
+            "127 prefix freeze + mode25/mode26/mode24/mode23/mode22/mode21/p0a/"
+            "p0b/p0c/p0d/p1a/p1d/p1d2 slice pins + two-txn anti-pass + "
+            "forbidden ops + clean pass)"
         )
         return 0
 
@@ -12298,6 +12695,339 @@ def build_d3s2_p1d_slice_vectors() -> List[Dict[str, Any]]:
     # Fail-closed: mismatch vs future must not share stored binding shape.
     if vectors[0]["rows"][0]["value_hex"] == vectors[1]["rows"][0]["value_hex"]:
         raise SystemExit("p1d mismatch/future stored binding must differ")
+    return vectors
+
+
+def run_d3s2_mode21_count_green_bind_incomplete_false_terminal(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode21 count-green without BIND set + false-terminal probe then COMPLETE.
+
+    Independent reference model (docs/17 §18.13.4/.9/.10/.15 case10):
+      Same success material as Mode21 STATE+ATT+AII+ANCHOR. Drive through
+      FOCUS_ATTEMPT+FOCUS_INDEX (count bit0|bit1) and empty SELECT → enter
+      BIND_ATTEMPT with binding_complete_mask=0, BIND_PHASE_ACTIVE,
+      COMPLETE_READY clear, sticky 0. Call-level checkpoint freezes that
+      exact shape. Test-only probe_false_terminal_finalize (not a Port op)
+      expects INVALID_STATE (bridge: session/context copy + EXHAUSTED).
+      Resume original BIND_ATTEMPT+BIND_INDEX → COMPLETE → finalize adopt1.
+      Port-trace equals ordinary Mode21 success (probe is Port 0).
+    """
+    n_ok = len(rows)
+    if n_ok != 21:
+        raise SystemExit(
+            f"mode21 count-green bind-incomplete expects 21 rows, got {n_ok}"
+        )
+    # STATE carrier complete key (last_carrier_key at BIND entry).
+    state_rows = [
+        r
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x22
+    ]
+    if len(state_rows) != 1:
+        raise SystemExit(
+            f"mode21 count-green expects exact 1 STATE carrier, got "
+            f"{len(state_rows)}"
+        )
+    state_key = from_hex(state_rows[0]["key_hex"])
+    state_key_len = len(state_key)
+    if state_key_len == 0 or state_key_len > 45:
+        raise SystemExit(f"STATE carrier key_len invalid: {state_key_len}")
+
+    n_drive = 7
+    n_open = 7
+    walk = _walk_trace_segment(n_ok)
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT carrier + setup gets + reopen FOCUS
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    port_trace.append("get")  # CANCEL_STATE ABSENT
+    port_trace.append("get")  # CLEANUP_PLAN ABSENT
+    port_trace.append("iter_next")  # ATTEMPT residual
+    port_trace.append("iter_next")  # AII residual
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")
+    # drive3 FOCUS_ATTEMPT H2
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive4 FOCUS_INDEX H2 → count bit0|bit1 complete
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive5 SELECT empty → BIND_ATTEMPT entry reopen (count green, bind 0)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")  # BIND stream reopen (still pre-walk)
+    cp_trace_count = len(port_trace)
+    # drive6 BIND_ATTEMPT
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    port_trace.append("iter_next")  # ATTEMPT secondary
+    port_trace.append("get")  # STATE carrier
+    port_trace.append("get")  # ANCHOR primary
+    port_trace.append("get")  # INDEX pair PRESENT
+    port_trace.append("iter_next")  # AII
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")
+    # drive7 BIND_INDEX
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    port_trace.append("iter_next")  # ATTEMPT
+    port_trace.append("iter_next")  # AII secondary
+    port_trace.append("get")  # ANCHOR primary
+    port_trace.append("get")  # ATTEMPT pair PRESENT
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")  # finalize cleanup
+    port_trace.append("rollback")
+
+    # Spy counts at BIND entry checkpoint (after drive5 + BIND reopen):
+    # begin open + SELECT + FOCUS_ATT + FOCUS_IDX + SELECT empty + BIND = 6;
+    # five closes (baseline/SELECT/FOCUS×2/SELECT empty); begin_calls=1.
+    checkpoint_drive: Dict[str, Any] = {
+        "op": "d3s2_drive",
+        "row_budget": 256,
+        "expected_status": "OK",
+        "has_checkpoint": 1,
+        "cp_phase": PHASE_BIND_ATTEMPT,
+        "cp_focus_live": 0,
+        "cp_observed_a": 0,
+        "cp_observed_b": 0,
+        "cp_observed_c": 0,
+        "cp_count_complete_mask": MASK_ATTEMPT | MASK_INDEX,
+        "cp_binding_complete_mask": 0,
+        "cp_flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+        "cp_pass_kind": PASS_INTERNAL,
+        "cp_cleanup_skip": 0,
+        "cp_last_carrier_key_len": state_key_len,
+        "cp_last_carrier_key_hex": hex_of(state_key),
+        "cp_begin_calls": 1,
+        "cp_iter_open_calls": 6,
+        "cp_iter_close_calls": 5,
+        "cp_trace_count": cp_trace_count,
+    }
+    if (int(checkpoint_drive["cp_flags"]) & FLAG_COMPLETE_READY) != 0:
+        raise SystemExit("count-green checkpoint must not set COMPLETE_READY")
+    if int(checkpoint_drive["cp_count_complete_mask"]) != (
+        MASK_ATTEMPT | MASK_INDEX
+    ):
+        raise SystemExit("count-green checkpoint count mask must be full mode21")
+    if int(checkpoint_drive["cp_binding_complete_mask"]) != 0:
+        raise SystemExit("count-green checkpoint binding mask must be 0")
+    if int(checkpoint_drive["cp_phase"]) != PHASE_BIND_ATTEMPT:
+        raise SystemExit("count-green checkpoint phase must be BIND_ATTEMPT")
+    if int(checkpoint_drive["cp_trace_count"]) != 141:
+        raise SystemExit(
+            f"count-green cp_trace_count pin fail: "
+            f"{checkpoint_drive['cp_trace_count']}"
+        )
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 21, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        checkpoint_drive,
+        {
+            "op": "probe_false_terminal_finalize",
+            "expected_status": "INVALID_STATE",
+        },
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "finalize", "expected_status": "OK"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("mode21 count-green drive count drift")
+    if sum(1 for c in calls if c["op"] == "probe_false_terminal_finalize") != 1:
+        raise SystemExit("mode21 count-green requires exactly one false-terminal probe")
+    # Probe must sit after BIND-entry checkpoint and before BIND walks resume.
+    ops = [c["op"] for c in calls]
+    cp_i = next(
+        i
+        for i, c in enumerate(calls)
+        if c["op"] == "d3s2_drive" and int(c.get("has_checkpoint", 0)) == 1
+    )
+    probe_i = ops.index("probe_false_terminal_finalize")
+    if probe_i != cp_i + 1:
+        raise SystemExit("false-terminal probe must immediately follow checkpoint")
+    if ops.count("finalize") != 1 or ops[-1] != "finalize":
+        raise SystemExit("must end with single success finalize")
+
+    expected: Dict[str, Any] = {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 4,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 7,
+        "d3_mode_applicable_count": 2,
+        "phase": PHASE_COMPLETE,
+        "count_complete_mask": MASK_ATTEMPT | MASK_INDEX,
+        "binding_complete_mask": MASK_ATTEMPT | MASK_INDEX,
+        "flags": FLAG_BASELINE_DONE | FLAG_COMPLETE_READY,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("count-green port_trace must be single-txn")
+    if rows != sorted(rows, key=lambda r: from_hex(r["key_hex"])):
+        raise SystemExit("count-green rows must be key-sorted")
+    aii_n = sum(
+        1
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x34
+    )
+    cp_n = sum(
+        1
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x63
+    )
+    if aii_n != 1:
+        raise SystemExit(f"count-green must ship exact 1 AII, got {aii_n}")
+    if cp_n != 0:
+        raise SystemExit("count-green ordinary path must not ship CLEANUP_PLAN")
+    _ = binding
+    return calls, expected
+
+
+def build_d3s2_p1d2_slice_vectors() -> List[Dict[str, Any]]:
+    """Append-only P1-D2 Mode21 count-green without BIND finalize anti-pass."""
+    _assert_d1_authority_pin()
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    rows, named, _pvd = _mode21_material_rows(
+        include_aii=True, include_cleanup_plan=False
+    )
+    calls, exp = run_d3s2_mode21_count_green_bind_incomplete_false_terminal(
+        binding, rows
+    )
+    # Fail-closed structural pins before publish.
+    cp_calls = [
+        c for c in calls if int(c.get("has_checkpoint", 0)) == 1
+    ]
+    if len(cp_calls) != 1:
+        raise SystemExit("P1-D2 expects exactly one checkpoint call")
+    cp = cp_calls[0]
+    if int(cp["cp_count_complete_mask"]) != (MASK_ATTEMPT | MASK_INDEX):
+        raise SystemExit("P1-D2 checkpoint count mask must be green")
+    if int(cp["cp_binding_complete_mask"]) != 0:
+        raise SystemExit("P1-D2 checkpoint binding mask must be incomplete")
+    if int(cp["cp_phase"]) != PHASE_BIND_ATTEMPT:
+        raise SystemExit("P1-D2 checkpoint phase must be BIND_ATTEMPT")
+    if (int(cp["cp_flags"]) & FLAG_COMPLETE_READY) != 0:
+        raise SystemExit("P1-D2 checkpoint must not set COMPLETE_READY")
+    if (int(cp["cp_flags"]) & FLAG_BIND_PHASE_ACTIVE) == 0:
+        raise SystemExit("P1-D2 checkpoint must set BIND_PHASE_ACTIVE")
+    if sum(1 for c in calls if c["op"] == "probe_false_terminal_finalize") != 1:
+        raise SystemExit("P1-D2 requires probe_false_terminal_finalize")
+    if exp.get("final_status") != "OK" or int(exp.get("adopted", 0)) != 1:
+        raise SystemExit("P1-D2 must resume to COMPLETE/adopt1")
+    if int(exp.get("binding_complete_mask", 0)) != (MASK_ATTEMPT | MASK_INDEX):
+        raise SystemExit("P1-D2 terminal binding mask must be complete")
+    if int(exp.get("phase", -1)) != PHASE_COMPLETE:
+        raise SystemExit("P1-D2 terminal phase must be COMPLETE")
+
+    vectors.append(
+        {
+            "id": "D3S2_M21_COUNT_GREEN_BIND_INCOMPLETE_FALSE_TERMINAL_OK",
+            "kind": "mode21_count_green_bind_incomplete_false_terminal_ok",
+            "mode": 21,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls,
+            "d1_refs": [D1_STATE_ID, D1_ATT_TX_ID, D1_AII_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=named["state"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode21 carrier TRANSACTION_STATE cum=1; last_carrier_key "
+                    "at count-green BIND_ATTEMPT entry checkpoint"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR; BIND not yet complete at probe",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ATT_TX_ID,
+                    row=named["att"],
+                    expect_presence="PRESENT",
+                    note="TX COMMAND ATTEMPT; FOCUS count green before BIND",
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_AII_ID,
+                    row=named["aii"],
+                    expect_presence="PRESENT",
+                    note="INDEX secondary; FOCUS count green before BIND",
+                ),
+            ],
+            "notes": (
+                "P1-D2 formal (§18.13.15 case10): Mode21 count-green without "
+                "BIND set. Same ordinary success material as "
+                "D3S2_M21_STATE_CUM1_ATT_TX_AII_ANCHOR_OK. After FOCUS_"
+                "ATTEMPT+FOCUS_INDEX H2, count_complete_mask=bit0|bit1 while "
+                "binding_complete_mask=0; phase=BIND_ATTEMPT with "
+                "BIND_PHASE_ACTIVE (no COMPLETE_READY), sticky 0, "
+                "focus_live 0. Call-level checkpoint freezes phase/masks/"
+                "flags/pass_kind/cleanup_skip/last_carrier_key (STATE) and "
+                "spy begin/iter_open/iter_close/trace_count. Test-only "
+                "probe_false_terminal_finalize (session/context copy, "
+                "copy.state=EXHAUSTED) expects finalize INVALID_STATE with "
+                "Port 0 / no cleanup / no out_result mutation — proves "
+                "incomplete COMPLETE gate, not OPEN-state reject alone. "
+                "Original session resumes BIND_ATTEMPT+BIND_INDEX → "
+                "COMPLETE/adopt1. Not missing-peer CORRUPT, not Port "
+                "fault, not evaluator-off, not metadata-only. Single "
+                "READ_ONLY txn; mutation_calls=0; faults=[]. Independent "
+                "Python only."
+            ),
+            "ownership": OWNERSHIP_P1D2,
+            "expected": exp,
+        }
+    )
+
+    if len(vectors) != D3S2_P1D2_SLICE_COUNT:
+        raise SystemExit("p1d2 slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P1D2_KINDS:
+        raise SystemExit(f"p1d2 kinds inventory mismatch: {kinds}")
     return vectors
 
 

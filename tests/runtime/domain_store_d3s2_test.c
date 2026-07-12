@@ -1845,6 +1845,135 @@ static int test_d3s2_p1_mode21_bind_valid_pair_success(void)
 }
 
 /*
+ * P1-D2 unit (§18.13.15 case10): Mode21 FOCUS counts green + BIND incomplete
+ * → false-terminal finalize on EXHAUSTED copy rejects; original resumes to
+ * COMPLETE/adopt1. Complements formal crossrow bridge vector.
+ */
+static int test_d3s2_count_green_bind_incomplete_false_terminal(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_session_t session_copy;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_d3s2_context_t context_copy;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_result_t result_probe;
+    ninlil_domain_scan_result_t result_canary;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t state_val[400];
+    uint32_t state_len = 0u;
+    uint8_t att_val[400];
+    uint8_t aii_val[256];
+    uint8_t anchor_pvd[32];
+    uint8_t session_canary[sizeof(session)];
+    uint8_t context_canary[sizeof(context)];
+    uint8_t session_copy_canary[sizeof(session_copy)];
+    uint8_t context_copy_canary[sizeof(context_copy)];
+    uint64_t before;
+    uint8_t need;
+    int guard;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    REQUIRE(encode_state_cum_attempts(
+        1u, state_val, (uint32_t)sizeof(state_val), &state_len));
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+    REQUIRE(sizeof(att_val) >= DSB3_ATT_TX_CMD_PREP_TYPED_VALUE_LEN);
+    REQUIRE(sizeof(aii_val) >= DSB3_AII_CMD_TYPED_VALUE_LEN);
+    (void)memcpy(
+        att_val, DSB3_ATT_TX_CMD_PREP_TYPED_VALUE,
+        DSB3_ATT_TX_CMD_PREP_TYPED_VALUE_LEN);
+    (void)memcpy(
+        aii_val, DSB3_AII_CMD_TYPED_VALUE, DSB3_AII_CMD_TYPED_VALUE_LEN);
+    REQUIRE(patch_pvd_crc(
+        att_val, (uint32_t)DSB3_ATT_TX_CMD_PREP_TYPED_VALUE_LEN, anchor_pvd));
+    REQUIRE(patch_pvd_crc(
+        aii_val, (uint32_t)DSB3_AII_CMD_TYPED_VALUE_LEN, anchor_pvd));
+
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_STATE_TYPED_KEY, DSB2_STATE_TYPED_KEY_LEN, state_val,
+        state_len));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_ATT_TX_CMD_PREP_TYPED_KEY, DSB3_ATT_TX_CMD_PREP_TYPED_KEY_LEN,
+        att_val, (uint32_t)DSB3_ATT_TX_CMD_PREP_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_AII_CMD_TYPED_KEY, DSB3_AII_CMD_TYPED_KEY_LEN, aii_val,
+        (uint32_t)DSB3_AII_CMD_TYPED_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    (void)memset(&result, 0x5Au, sizeof(result));
+
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 21u, &context);
+    REQUIRE(st == NINLIL_OK);
+
+    /* Drive until BIND_ATTEMPT with count green and bind incomplete. */
+    guard = 0;
+    while (guard < 64
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_BIND_ATTEMPT) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        REQUIRE(st == NINLIL_OK);
+        guard += 1;
+    }
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BIND_ATTEMPT);
+    need = ninlil_domain_scan_d3s2_required_count_mask(21u);
+    REQUIRE((context.count_complete_mask & need) == need);
+    REQUIRE((context.binding_complete_mask & need) != need);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_BIND_PHASE_ACTIVE) != 0u);
+    REQUIRE(session.has_sticky_primary == 0u);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN);
+
+    before = spy.trace_count;
+    (void)memcpy(session_canary, &session, sizeof(session));
+    (void)memcpy(context_canary, &context, sizeof(context));
+    (void)memcpy(&session_copy, &session, sizeof(session_copy));
+    (void)memcpy(&context_copy, &context, sizeof(context_copy));
+    session_copy.bound_d3s2_context = &context_copy;
+    session_copy.state = NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED;
+    (void)memcpy(session_copy_canary, &session_copy, sizeof(session_copy));
+    (void)memcpy(context_copy_canary, &context_copy, sizeof(context_copy));
+    (void)memset(&result_probe, 0xA5, sizeof(result_probe));
+    (void)memcpy(&result_canary, &result_probe, sizeof(result_canary));
+
+    st = ninlil_domain_scan_finalize(&session_copy, &result_probe);
+    REQUIRE(st == NINLIL_E_INVALID_STATE);
+    REQUIRE(spy.trace_count == before);
+    REQUIRE(memcmp(&session, session_canary, sizeof(session)) == 0);
+    REQUIRE(memcmp(&context, context_canary, sizeof(context)) == 0);
+    REQUIRE(memcmp(&session_copy, session_copy_canary, sizeof(session_copy)) == 0);
+    REQUIRE(memcmp(&context_copy, context_copy_canary, sizeof(context_copy)) == 0);
+    REQUIRE(memcmp(&result_probe, &result_canary, sizeof(result_probe)) == 0);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN);
+
+    /* Resume original to COMPLETE/adopt1. */
+    REQUIRE(drive_s2_to_complete_exact(&session, &context));
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) != 0u);
+    REQUIRE((context.binding_complete_mask & need) == need);
+    st = ninlil_domain_scan_finalize(&session, &result);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(result.adopted == 1u);
+    return 0;
+}
+
+/*
  * P1-1 closest: ATT header PVD does not match live ANCHOR VALUE_DIGEST →
  * BIND true-primary fails (note STORAGE_CORRUPT). D1 does not enforce
  * live-primary PVD; this is the constructible primary-proof fail path.
@@ -3473,6 +3602,9 @@ int ninlil_d3s2_run_all_tests(void)
         return 1;
     }
     if (test_d3s2_incomplete_finalize_reject_then_abort() != 0) {
+        return 1;
+    }
+    if (test_d3s2_count_green_bind_incomplete_false_terminal() != 0) {
         return 1;
     }
     if (test_d3s2_p0_1_focus_primary_true_primary() != 0) {
