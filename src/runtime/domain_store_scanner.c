@@ -2027,18 +2027,39 @@ ninlil_status_t ninlil_domain_scan_finalize(
 
     /*
      * D3-S2 incomplete machine: EXHAUSTED alone is not adopt-ready.
-     * Require phase COMPLETE + COMPLETE_READY before cleanup. Port 0;
-     * session/context/out_result unchanged. FAILED cleanup still proceeds
-     * (sticky/failed paths are not a false-green adopt path).
+     * Ordinary path requires phase COMPLETE + COMPLETE_READY before cleanup
+     * (count+BIND proof). Narrow evaluator-off exemption (not a wide
+     * !profile_exact_active bypass): baseline-only shape after true D2
+     * EXHAUSTED with profile_mismatch or future_profile_candidate set —
+     * S2 evaluator was never applicable; finalize continues to cleanup and
+     * aggregate UNSUPPORTED/adopted0. recognizable_future_seen alone is not
+     * an exemption. Port 0; session/context/out_result unchanged on reject.
+     * FAILED cleanup still proceeds (sticky/failed paths are not false-green).
      */
     if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S2
         && session->state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED) {
         const ninlil_domain_scan_d3s2_context_t *s2 =
             session->bound_d3s2_context;
-        if (s2 == NULL
-            || s2->phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
-            || (s2->flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY)
-                == 0u) {
+        int ordinary_complete;
+        int evaluator_off_exempt;
+
+        ordinary_complete = (s2 != NULL
+            && s2->phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+            && (s2->flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY)
+                != 0u);
+        evaluator_off_exempt = (s2 != NULL
+            && session->has_sticky_primary == 0u
+            && session->profile_exact_active == 0u
+            && ((session->profile_mismatch == 1u
+                    && session->future_profile_candidate == 0u)
+                || (session->profile_mismatch == 0u
+                    && session->future_profile_candidate == 1u))
+            && s2->phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE
+            && s2->pass_kind == NINLIL_DOMAIN_SCAN_D3S2_PASS_BASELINE
+            && s2->flags == NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE
+            && s2->count_complete_mask == 0u
+            && s2->binding_complete_mask == 0u);
+        if (!ordinary_complete && !evaluator_off_exempt) {
             return NINLIL_E_INVALID_STATE;
         }
     }

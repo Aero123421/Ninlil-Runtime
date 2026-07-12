@@ -2604,9 +2604,26 @@ ninlil_status_t ninlil_domain_scan_d3s2_drive(
             return st;
         }
         if (session->state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED) {
-            ctx->pass_kind = NINLIL_DOMAIN_SCAN_D3S2_PASS_INTERNAL;
+            /*
+             * Baseline done. Profile mismatch / future_profile candidate
+             * (exact inactive) → S2 evaluator off entire machine (§18.13.10
+             * ladder 3 / §15.10.6 / §18.13.15 case12). Do not reopen a second
+             * zero-prefix iterator, do not enter PASS_INTERNAL / SELECT /
+             * FOCUS / BIND, and do not clear baseline D2 counters or profile
+             * flags. Stay phase BASELINE with BASELINE_DONE only — not
+             * COMPLETE/COMPLETE_READY (those mean count+BIND proof). Finalize
+             * uses a narrow evaluator-off exemption for this exact shape.
+             * Ordinary exact-profile path is unchanged below.
+             */
             ctx->flags = (uint8_t)(ctx->flags
                 | NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE);
+            if (session->profile_exact_active == 0u
+                && (session->profile_mismatch != 0u
+                    || session->future_profile_candidate != 0u)) {
+                /* pass_kind stays BASELINE; masks/flags already zeroed at begin. */
+                return NINLIL_OK;
+            }
+            ctx->pass_kind = NINLIL_DOMAIN_SCAN_D3S2_PASS_INTERNAL;
             ctx->phase = NINLIL_DOMAIN_SCAN_D3S2_PHASE_SELECT_CARRIER;
             st = ninlil_domain_scan_reopen_zero_prefix_iter(session);
             if (st != NINLIL_OK) {
