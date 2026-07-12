@@ -37,7 +37,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Bearer、Tx Gate、Origin Authorizationのprovider/Runtime統合
 - restart-safe SQLite portとproduction durable storage
 - Runtime Storeのdomain journal recovery、counter/capacity相互検証、identity rotationとpublic Runtime bodyへの統合
-- Domain Store D3相互validation の残 slice（EVIDENCE live L/cardinality multi-row / witness chain / capacity / health 等; **D3-S0 architecture freeze is docs-only complete**; **D3-S1a closed-mode/context freeze is docs-only complete**; **D3-S1 exact-1 implementation complete**; **D3-S2..S12 / D3 overall / Stage 5 D3 bind still pending**）、D4 operation別commit-unknown convergence
+- Domain Store D3相互validation の残 slice（EVIDENCE live L/cardinality multi-row / witness chain / capacity / health 等; **D3-S0 architecture freeze is docs-only complete**; **D3-S1a closed-mode/context freeze is docs-only complete**; **D3-S1 exact-1 implementation complete**; **D3-S2a declared multi-count freeze is docs-only complete**; **D3-S2 implementation / D3-S3..S12 / D3 overall / Stage 5 D3 bind still pending**）、D4 operation別commit-unknown convergence
 - Stage 5 completion / public Runtime publish / Bearer・clock・entropy open / identity rotation / health reconstruction（**D2-S6 private fail-closed seam は実装済み; Stage 5 と public Runtime は still pending**）
 - end-to-endのReliable Command / Durable Event path
 - ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent

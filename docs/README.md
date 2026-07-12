@@ -1,7 +1,7 @@
 # Ninlil Documentation
 
-状態: M0 public baseline complete。M1a Domain StoreはD1-A〜D1-B3o、D2-S1〜S6を実装済み。**D2 bounded scanner / DSR1_SCAN / DSR2_ESP_BOUND complete**、**D2-S6 private fail-closed seam implemented**、**D3-S0 Normative architecture freeze complete（docs only; [17章 §18](17-foundation-domain-store.md)）**、**D3-S1a closed-mode/context Normative freeze complete（docs only; [17章 §18.12](17-foundation-domain-store.md)）**、**D3-S1 exact-1 implementation complete**（crossrow authority `ninlil-domain-scan-crossrow-v1-d3s1` / vector_count 94; [17章 §18.2 / §18.7 / §18.12.9](17-foundation-domain-store.md)）。**D3-S2..S12、D3 overall、Stage 5 D3 bind、D4、public Runtime、ESP-IDF、hardwareは未完了。** D3–D4 otherwise pre-alpha。<br>
-**D3-S0 + D3-S1a docs freeze complete / D3-S1 implementation complete / D3-S2..S12 pending**（Stage 5 / public Runtime still pending）。対象release: Foundation / pre-alpha
+状態: M0 public baseline complete。M1a Domain StoreはD1-A〜D1-B3o、D2-S1〜S6を実装済み。**D2 bounded scanner / DSR1_SCAN / DSR2_ESP_BOUND complete**、**D2-S6 private fail-closed seam implemented**、**D3-S0 Normative architecture freeze complete（docs only; [17章 §18](17-foundation-domain-store.md)）**、**D3-S1a closed-mode/context Normative freeze complete（docs only; [17章 §18.12](17-foundation-domain-store.md)）**、**D3-S1 exact-1 implementation complete**（crossrow authority `ninlil-domain-scan-crossrow-v1-d3s1` / vector_count 94; [17章 §18.2 / §18.7 / §18.12.9](17-foundation-domain-store.md)）、**D3-S2a declared multi-count / same-txn multipass Normative freeze complete（docs only; [17章 §18.13](17-foundation-domain-store.md)）**。**D3-S2 implementation / D3-S3..S12、D3 overall、Stage 5 D3 bind、D4、public Runtime、ESP-IDF、hardwareは未完了。** D3–D4 otherwise pre-alpha。<br>
+**D3-S0 + D3-S1a + D3-S2a docs freeze complete / D3-S1 implementation complete / D3-S2 implementation + D3-S3..S12 pending**（Stage 5 / public Runtime still pending）。対象release: Foundation / pre-alpha
 
 ## 正本と優先順位
 
