@@ -1,5 +1,6 @@
 #include "domain_store_scanner.h"
 
+#include "domain_store_body_codec.h"
 #include "domain_store_codec.h"
 
 #include <stdint.h>
@@ -429,6 +430,256 @@ static void publish_result(
     out_result->family14_iter_seen_mask = session->family14_iter_seen_mask;
 }
 
+static int digest_is_zero_bytes(
+    const uint8_t digest[NINLIL_MODEL_DOMAIN_DIGEST_BYTES])
+{
+    uint32_t i;
+    for (i = 0u; i < NINLIL_MODEL_DOMAIN_DIGEST_BYTES; ++i) {
+        if (digest[i] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/*
+ * S3-2: WITNESS_HEADER (7f) / WITNESS_MANIFEST_CHUNK (7e) same-record local
+ * only — parse key + envelope + pure decode + key/body/header bijection.
+ * No member old/new live match, partial group, or successor chain (D3).
+ * Large witness bodies use workspace row_validate_scratch only.
+ */
+static ninlil_status_t validate_witness_row_local(
+    ninlil_domain_scan_workspace_t *workspace,
+    ninlil_bytes_view_t encoded_key,
+    ninlil_bytes_view_t encoded_value)
+{
+    ninlil_model_domain_key_view_t key_view;
+    ninlil_model_domain_envelope_t envelope;
+    ninlil_model_domain_digest_t expected_identity;
+    uint8_t expect_primary_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    ninlil_status_t status;
+    ninlil_bytes_view_t op_identity;
+    uint8_t components[34];
+    ninlil_bytes_view_t components_view;
+
+    (void)memset(&key_view, 0, sizeof(key_view));
+    (void)memset(&envelope, 0, sizeof(envelope));
+    (void)memset(&expected_identity, 0, sizeof(expected_identity));
+    (void)memset(expect_primary_id, 0, sizeof(expect_primary_id));
+
+    status = ninlil_model_domain_parse_key(encoded_key, &key_view);
+    if (status == NINLIL_E_UNSUPPORTED) {
+        return NINLIL_E_UNSUPPORTED;
+    }
+    if (status != NINLIL_OK) {
+        return status == NINLIL_E_INVALID_ARGUMENT
+            ? NINLIL_E_STORAGE_CORRUPT
+            : status;
+    }
+    if (key_view.family != NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN
+        || (key_view.subtype != NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_HEADER
+            && key_view.subtype
+                != NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_MANIFEST_CHUNK)
+        || key_view.identity_kind
+            != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+        || key_view.identity_length != NINLIL_MODEL_DOMAIN_DIGEST_BYTES
+        || key_view.identity == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    status = ninlil_model_domain_decode_envelope(encoded_value, &envelope);
+    if (status == NINLIL_E_UNSUPPORTED) {
+        return NINLIL_E_UNSUPPORTED;
+    }
+    if (status != NINLIL_OK) {
+        return status == NINLIL_E_INVALID_ARGUMENT
+            ? NINLIL_E_STORAGE_CORRUPT
+            : status;
+    }
+    if (envelope.record_type != NINLIL_MODEL_DOMAIN_RECORD_TYPE_DOMAIN
+        || envelope.header.subtype != key_view.subtype
+        || envelope.header.flags != 0u
+        || !digest_is_zero_bytes(envelope.header.primary_value_digest)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (key_view.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_HEADER) {
+        ninlil_model_domain_witness_header_t *header =
+            &workspace->row_validate_scratch.witness_header;
+
+        status = ninlil_model_domain_decode_witness_header(
+            envelope.body, header);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        op_identity.data = header->operation_identity_length == 0u
+            ? NULL
+            : header->operation_identity;
+        op_identity.length = header->operation_identity_length;
+        status = ninlil_model_domain_witness_identity_digest(
+            header->operation_kind, op_identity, &expected_identity);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        if (memcmp(
+                key_view.identity,
+                expected_identity.bytes,
+                NINLIL_MODEL_DOMAIN_DIGEST_BYTES)
+            != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        {
+            ninlil_bytes_view_t id_view;
+
+            id_view.data = key_view.identity;
+            id_view.length = key_view.identity_length;
+            if (ninlil_model_domain_primary_id_from_identity(
+                    key_view.identity_kind, id_view, expect_primary_id)
+                != NINLIL_OK
+                || memcmp(
+                       envelope.header.primary_id,
+                       expect_primary_id,
+                       NINLIL_MODEL_DOMAIN_ID_BYTES)
+                    != 0) {
+                return NINLIL_E_STORAGE_CORRUPT;
+            }
+        }
+        return NINLIL_OK;
+    }
+
+    /* WITNESS_MANIFEST_CHUNK 7e */
+    {
+        ninlil_model_domain_witness_chunk_t *chunk =
+            &workspace->row_validate_scratch.witness_chunk;
+        ninlil_bytes_view_t id_view;
+
+        status = ninlil_model_domain_decode_witness_chunk(
+            envelope.body, chunk);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        (void)memcpy(components, chunk->witness_digest, 32u);
+        components[32] = (uint8_t)((chunk->chunk_index >> 8) & 0xffu);
+        components[33] = (uint8_t)(chunk->chunk_index & 0xffu);
+        components_view.data = components;
+        components_view.length = 34u;
+        status = ninlil_model_domain_composite_digest(
+            NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_MANIFEST_CHUNK,
+            components_view,
+            &expected_identity);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        if (memcmp(
+                key_view.identity,
+                expected_identity.bytes,
+                NINLIL_MODEL_DOMAIN_DIGEST_BYTES)
+            != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        id_view.data = key_view.identity;
+        id_view.length = key_view.identity_length;
+        if (ninlil_model_domain_primary_id_from_identity(
+                key_view.identity_kind, id_view, expect_primary_id)
+            != NINLIL_OK
+            || memcmp(
+                   envelope.header.primary_id,
+                   expect_primary_id,
+                   NINLIL_MODEL_DOMAIN_ID_BYTES)
+                != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        return NINLIL_OK;
+    }
+}
+
+static ninlil_status_t map_structural_status(ninlil_status_t status)
+{
+    if (status == NINLIL_OK || status == NINLIL_E_UNSUPPORTED) {
+        return status;
+    }
+    /* INVALID_ARGUMENT and any other non-OK structural result: terminal. */
+    return NINLIL_E_STORAGE_CORRUPT;
+}
+
+/*
+ * S3-1: exact-profile CURRENT family 5/6 same-record structural validation.
+ * Business subtypes + 7d → validate_typed_record (workspace typed scratch).
+ * 7e/7f → validate_witness_row_local.
+ * UNSUPPORTED (record_version/domain_format future) is non-terminal.
+ */
+static ninlil_status_t validate_current_domain_structural(
+    ninlil_domain_scan_session_t *session,
+    ninlil_domain_scan_workspace_t *workspace,
+    uint32_t key_length,
+    uint32_t value_length)
+{
+    ninlil_bytes_view_t key_view;
+    ninlil_bytes_view_t value_view;
+    ninlil_model_domain_key_class_t row_class;
+    ninlil_status_t status;
+    uint8_t family;
+    uint8_t subtype;
+
+    key_view.data = workspace->key;
+    key_view.length = key_length;
+    value_view.data = value_length == 0u ? NULL : workspace->value;
+    value_view.length = value_length;
+
+    status = ninlil_model_domain_classify_row(key_view, value_view, &row_class);
+    if (status != NINLIL_OK) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (row_class == NINLIL_MODEL_DOMAIN_KEY_CLASS_RECOGNIZABLE_FUTURE) {
+        session->recognizable_future_seen = 1u;
+        return NINLIL_OK;
+    }
+    if (row_class != NINLIL_MODEL_DOMAIN_KEY_CLASS_CURRENT) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (key_length < NINLIL_MODEL_DOMAIN_KEY_MIN_BYTES) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    family = workspace->key[8];
+    subtype = workspace->key[9];
+
+    if (family != NINLIL_MODEL_DOMAIN_FAMILY_HEALTH
+        && family != NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (family == NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN
+        && (subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_HEADER
+            || subtype
+                == NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_MANIFEST_CHUNK)) {
+        status = validate_witness_row_local(workspace, key_view, value_view);
+    } else {
+        status = ninlil_model_domain_validate_typed_record(
+            key_view,
+            value_view,
+            &workspace->row_validate_scratch.typed);
+    }
+    status = map_structural_status(status);
+    if (status == NINLIL_E_UNSUPPORTED) {
+        session->recognizable_future_seen = 1u;
+        return checked_inc_u64(&session->current_domain_key_count);
+    }
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    return checked_inc_u64(&session->current_domain_key_count);
+}
+
+/* S1 transport path: coarse class only (no body structural). */
 static ninlil_status_t classify_ok_row(
     ninlil_domain_scan_session_t *session,
     const ninlil_domain_scan_workspace_t *workspace,
@@ -533,9 +784,14 @@ static ninlil_status_t process_ok_row(
         class_status = NINLIL_E_STORAGE_CORRUPT;
     } else if (session->profile_mismatch != 0u
         || session->future_profile_candidate != 0u) {
-        /* Non-family1-4 skip: no classify_row / domain body decode. */
+        /* Non-family1-4 skip: no classify_row / domain body decode (S3 off). */
         class_status = NINLIL_OK;
+    } else if (session->profile_exact_active != 0u) {
+        /* D2-S3: exact profile → family 5/6 structural same-record. */
+        class_status = validate_current_domain_structural(
+            session, workspace, key_length, value_length);
     } else {
+        /* S1 transport begin: coarse class only; no body validation. */
         class_status = classify_ok_row(
             session, workspace, key_length, value_length);
     }
