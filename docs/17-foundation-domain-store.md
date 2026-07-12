@@ -3178,6 +3178,8 @@ S2 **may** reuse S1 **pure** reverse-key rebuild / VALUE_DIGEST helpers。S2 **m
 
 **Ordering invariant:** all FOCUS missing|extra for `focus_mode` **and** all BIND carrier|primary|pair findings for BIND set(`focus_mode`) complete **before** `COMPLETE`。Count match without BIND success is **corrupt**。True-primary-only success without carrier companion success is **corrupt**。
 
+**Count-green incomplete BIND finalize gate（Normative; §18.13.15 case 10）:** when `count_complete_mask` already has every bit required by `focus_mode`（FOCUS count green）but `binding_complete_mask` does **not** yet have every required BIND bit, the machine is **not** `COMPLETE` and must **not** set `COMPLETE_READY`。`phase` remains in BIND set(`focus_mode`)（or earlier）with sticky absent。If `session.state` is `EXHAUSTED` in that incomplete shape（including a test-only copy forced to `EXHAUSTED` while the live session is still `OPEN` mid-BIND）, `ninlil_domain_scan_finalize` **must** return `NINLIL_E_INVALID_STATE` with **Port 0**, no cleanup tree, and no `out_result` / session / context mutation — the ordinary incomplete-machine gate（not the evaluator-off exemption, not a sticky CORRUPT note path）。Ordinary drive must still finish BIND set(`focus_mode`) before `COMPLETE` / adopt。This is mode-scoped（that mode’s BIND set only; not “all six modes”）。
+
 #### 18.13.10 H2 EXHAUSTED hook / Port / future / cleanup precedence
 
 | Hook | When | Duty |
