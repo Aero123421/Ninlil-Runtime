@@ -964,38 +964,43 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_domain_store_scanner_composition_oracle_bridge_test
     )
 
-    # D3-S1 independent crossrow oracle + production begin_profiled_d3s1 bridge.
-    # Direct scanner bridge only; Stage5 D3 remains unbound.
+    # Append-only D3-S2 crossrow sibling oracle (docs/17 §18.13.15):
+    # frozen 94-vector D3-S1 prefix + first 6-session Mode21..26 product smoke.
+    # Independent generator rebuilds prefix from domain_scan_crossrow_vector_gen
+    # and fails closed on prefix fingerprint/order/expected/rows/calls drift.
+    # Does not claim full D3-S2 oracle complete. Stage5 D3 remains unbound.
     add_test(
         NAME domain_scan_crossrow_vector_oracle
         COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
             check
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
     )
     add_test(
         NAME domain_scan_crossrow_vector_oracle_self_test
         COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
             self-test
     )
     # Fixture freshness + determinism: emit twice (byte-identical) and equal
-    # the build-dir artifact consumed by the production bridge.
+    # the build-dir artifact consumed by the production bridges.
+    # Fail-closed pins: D3-S1 count=94 and D3-S2 suffix count=6.
     set(_ninlil_d3s1_fixture
         ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_crossrow_vector_fixture.h)
     add_test(
         NAME domain_scan_crossrow_fixture_freshness
         COMMAND ${Python3_EXECUTABLE} -c
-            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_D3S1_VECTOR_COUNT ((size_t)94u)' in ta, 'vector count pin missing'; print('crossrow fixture freshness+determinism ok', len(ta), 'bytes')"
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s2_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_D3S1_VECTOR_COUNT ((size_t)94u)' in ta, 'd3s1 vector count pin missing'; assert b'NINLIL_D3S2_VECTOR_COUNT ((size_t)6u)' in ta, 'd3s2 vector count pin missing'; print('crossrow fixture freshness+determinism ok', len(ta), 'bytes')"
     )
     add_custom_command(
         OUTPUT ${_ninlil_d3s1_fixture}
         COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
             emit-c-fixture
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
             ${_ninlil_d3s1_fixture}
         DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_vector_gen.py
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-v1.json
@@ -1004,9 +1009,10 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-exact-get-v1.json
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-composition-v1.json
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-store-v1.json
-        COMMENT "Generate domain-scan-crossrow production bridge fixture"
+        COMMENT "Generate domain-scan-crossrow production bridge fixture (d3s1+d3s2)"
         VERBATIM
     )
+    # D3-S1 production bridge: still executes the frozen 94-vector prefix only.
     add_executable(ninlil_domain_store_scanner_crossrow_oracle_bridge_test
         tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c
         ${_ninlil_d3s1_fixture}
@@ -1035,9 +1041,39 @@ if(NINLIL_BUILD_TESTS)
         NAME domain_store_scanner_crossrow_oracle_bridge
         COMMAND ninlil_domain_store_scanner_crossrow_oracle_bridge_test
     )
+    # D3-S2 first product-smoke bridge: 6 empty-carrier/empty-secondary sessions.
+    # Not a full D3-S2 oracle complete claim.
+    add_executable(ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test
+        tests/runtime/domain_store_scanner_crossrow_d3s2_oracle_bridge_test.c
+        ${_ninlil_d3s1_fixture}
+    )
+    target_include_directories(
+        ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(
+        ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(
+        ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test)
+    add_test(
+        NAME domain_store_scanner_crossrow_d3s2_oracle_bridge
+        COMMAND ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test
+    )
     # Freshness compares against the build artifact; ensure it is generated.
     set_tests_properties(domain_scan_crossrow_fixture_freshness PROPERTIES
-        DEPENDS domain_store_scanner_crossrow_oracle_bridge
+        DEPENDS "domain_store_scanner_crossrow_oracle_bridge;domain_store_scanner_crossrow_d3s2_oracle_bridge"
     )
 
     # Supplemental D3-S2 close-semantics matrix. This is not the Normative
