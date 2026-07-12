@@ -1,0 +1,866 @@
+{
+  "content_sha256": "1ffc787c7c95d691bc63180dfca59fff3583b598bbefda650e53db19221463a6",
+  "format": "ninlil-domain-scan-declared-multicount-semantics-v1-d3s2",
+  "scope": "Independent D3-S2 \u00a718.13 close semantics for modes 21..26. Wire rows, exact Port trace, and production bridge remain a later gate.",
+  "vector_count": 31,
+  "vectors": [
+    {
+      "declared": [
+        2,
+        1,
+        3
+      ],
+      "expected": {
+        "binding_complete_mask": 3,
+        "complete_ready": 1,
+        "count_complete_mask": 3,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 3,
+        "required_count_mask": 3,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode21_counts_ok",
+      "mode": 21,
+      "observed": [
+        2,
+        1,
+        3
+      ]
+    },
+    {
+      "declared": [
+        2,
+        1,
+        3
+      ],
+      "expected": {
+        "binding_complete_mask": 3,
+        "complete_ready": 0,
+        "count_complete_mask": 3,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 3,
+        "required_count_mask": 3,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode21_index_mismatch",
+      "mode": 21,
+      "observed": [
+        2,
+        1,
+        2
+      ]
+    },
+    {
+      "cleanup_skip": true,
+      "declared": [
+        2,
+        1,
+        3
+      ],
+      "expected": {
+        "binding_complete_mask": 3,
+        "complete_ready": 1,
+        "count_complete_mask": 3,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 3,
+        "required_count_mask": 3,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode21_cleanup_skip_ok",
+      "mode": 21,
+      "observed": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "declared": [
+        2,
+        1,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 1,
+        "complete_ready": 1,
+        "count_complete_mask": 1,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 1,
+        "required_count_mask": 1,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode22_app_first_ok",
+      "mode": 22,
+      "observed": [
+        2,
+        1,
+        0
+      ]
+    },
+    {
+      "declared": [
+        2,
+        1,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 1,
+        "complete_ready": 0,
+        "count_complete_mask": 1,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 1,
+        "required_count_mask": 1,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode22_index_lane_mbz",
+      "mode": 22,
+      "observed": [
+        2,
+        1,
+        1
+      ]
+    },
+    {
+      "declared": [
+        2,
+        1,
+        1
+      ],
+      "evidence_l": 1,
+      "evidence_slot_mask": 3,
+      "expected": {
+        "binding_complete_mask": 4,
+        "complete_ready": 1,
+        "count_complete_mask": 4,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 4,
+        "required_count_mask": 4,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode23_slots_equation_ok",
+      "mode": 23,
+      "observed": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "declared": [
+        2,
+        1,
+        1
+      ],
+      "evidence_l": 1,
+      "evidence_slot_mask": 1,
+      "expected": {
+        "binding_complete_mask": 4,
+        "complete_ready": 0,
+        "count_complete_mask": 4,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 4,
+        "required_count_mask": 4,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode23_slot_missing",
+      "mode": 23,
+      "observed": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "declared": [
+        1,
+        0,
+        0
+      ],
+      "evidence_l": 1,
+      "evidence_slot_mask": 3,
+      "expected": {
+        "binding_complete_mask": 4,
+        "complete_ready": 0,
+        "count_complete_mask": 4,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 4,
+        "required_count_mask": 4,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode23_late_bound_fail",
+      "mode": 23,
+      "observed": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "declared": [
+        0,
+        0,
+        0
+      ],
+      "evidence_empty_set": true,
+      "evidence_l": 0,
+      "evidence_slot_mask": 0,
+      "expected": {
+        "binding_complete_mask": 4,
+        "complete_ready": 1,
+        "count_complete_mask": 4,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 4,
+        "required_count_mask": 4,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode23_cancel_first_empty_success",
+      "mode": 23,
+      "observed": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "declared": [
+        0,
+        0,
+        0
+      ],
+      "evidence_l": 3,
+      "evidence_slot_mask": 15,
+      "expected": {
+        "binding_complete_mask": 4,
+        "complete_ready": 1,
+        "count_complete_mask": 4,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 4,
+        "required_count_mask": 4,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode23_nonempty_success",
+      "mode": 23,
+      "observed": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "declared": [
+        2,
+        0,
+        0
+      ],
+      "declared_reply_count": 2,
+      "expected": {
+        "binding_complete_mask": 8,
+        "complete_ready": 1,
+        "count_complete_mask": 8,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 8,
+        "required_count_mask": 8,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode24_two_kinds_ok",
+      "mode": 24,
+      "observed": [
+        2,
+        0,
+        0
+      ],
+      "observed_reply_mask": 5
+    },
+    {
+      "declared": [
+        2,
+        0,
+        0
+      ],
+      "declared_reply_count": 2,
+      "expected": {
+        "binding_complete_mask": 8,
+        "complete_ready": 0,
+        "count_complete_mask": 8,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 8,
+        "required_count_mask": 8,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode24_popcount_mismatch",
+      "mode": 24,
+      "observed": [
+        2,
+        0,
+        0
+      ],
+      "observed_reply_mask": 1
+    },
+    {
+      "declared": [
+        0,
+        0,
+        0
+      ],
+      "declared_reply_count": 0,
+      "expected": {
+        "binding_complete_mask": 8,
+        "complete_ready": 1,
+        "count_complete_mask": 8,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 8,
+        "required_count_mask": 8,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode24_reply_zero_empty_success",
+      "mode": 24,
+      "observed": [
+        0,
+        0,
+        0
+      ],
+      "observed_reply_mask": 0
+    },
+    {
+      "declared": [
+        1,
+        0,
+        0
+      ],
+      "declared_reply_count": 1,
+      "expected": {
+        "binding_complete_mask": 8,
+        "complete_ready": 1,
+        "count_complete_mask": 8,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 8,
+        "required_count_mask": 8,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode24_reply_one_success",
+      "mode": 24,
+      "observed": [
+        1,
+        0,
+        0
+      ],
+      "observed_reply_mask": 1
+    },
+    {
+      "declared": [
+        1,
+        0,
+        0
+      ],
+      "declared_reply_count": 1,
+      "expected": {
+        "binding_complete_mask": 8,
+        "complete_ready": 0,
+        "count_complete_mask": 8,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 8,
+        "required_count_mask": 8,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode24_reply_one_missing",
+      "mode": 24,
+      "observed": [
+        0,
+        0,
+        0
+      ],
+      "observed_reply_mask": 0
+    },
+    {
+      "declared": [
+        5,
+        4,
+        1
+      ],
+      "declared_retry_recent_n": 4,
+      "expected": {
+        "binding_complete_mask": 16,
+        "complete_ready": 1,
+        "count_complete_mask": 16,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 16,
+        "required_count_mask": 16,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode25_retry_ok",
+      "mode": 25,
+      "observed": [
+        4,
+        0,
+        1
+      ]
+    },
+    {
+      "declared": [
+        3,
+        3,
+        1
+      ],
+      "declared_retry_recent_n": 3,
+      "expected": {
+        "binding_complete_mask": 16,
+        "complete_ready": 0,
+        "count_complete_mask": 16,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 16,
+        "required_count_mask": 16,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode25_recent_missing",
+      "mode": 25,
+      "observed": [
+        2,
+        0,
+        1
+      ]
+    },
+    {
+      "declared": [
+        1,
+        1,
+        1
+      ],
+      "declared_retry_recent_n": 1,
+      "expected": {
+        "binding_complete_mask": 16,
+        "complete_ready": 0,
+        "count_complete_mask": 16,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 16,
+        "required_count_mask": 16,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode25_cumulative_missing",
+      "mode": 25,
+      "observed": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "declared": [
+        0,
+        0,
+        1
+      ],
+      "declared_retry_recent_n": 0,
+      "expected": {
+        "binding_complete_mask": 16,
+        "complete_ready": 1,
+        "count_complete_mask": 16,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 16,
+        "required_count_mask": 16,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode25_retry_zero_success",
+      "mode": 25,
+      "observed": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "declared": [
+        1,
+        1,
+        1
+      ],
+      "declared_retry_recent_n": 1,
+      "expected": {
+        "binding_complete_mask": 16,
+        "complete_ready": 1,
+        "count_complete_mask": 16,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 16,
+        "required_count_mask": 16,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode25_retry_one_success",
+      "mode": 25,
+      "observed": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "carrier_present": false,
+      "expected": {
+        "binding_complete_mask": 0,
+        "complete_ready": 0,
+        "count_complete_mask": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 16,
+        "required_count_mask": 0,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode25_recent_without_cumulative_fail",
+      "mode": 25,
+      "secondary_present": true
+    },
+    {
+      "declared": [
+        3,
+        0,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 32,
+        "complete_ready": 1,
+        "count_complete_mask": 32,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 32,
+        "required_count_mask": 32,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode26_management_ok",
+      "mode": 26,
+      "observed": [
+        3,
+        0,
+        0
+      ]
+    },
+    {
+      "declared": [
+        3,
+        0,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 32,
+        "complete_ready": 0,
+        "count_complete_mask": 32,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 32,
+        "required_count_mask": 32,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode26_management_mismatch",
+      "mode": 26,
+      "observed": [
+        2,
+        0,
+        0
+      ]
+    },
+    {
+      "declared": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 32,
+        "complete_ready": 1,
+        "count_complete_mask": 32,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 32,
+        "required_count_mask": 32,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode26_management_zero_success",
+      "mode": 26,
+      "observed": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "declared": [
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 32,
+        "complete_ready": 1,
+        "count_complete_mask": 32,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 32,
+        "required_count_mask": 32,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "mode26_management_one_success",
+      "mode": 26,
+      "observed": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "carrier_present": false,
+      "expected": {
+        "binding_complete_mask": 0,
+        "complete_ready": 0,
+        "count_complete_mask": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 32,
+        "required_count_mask": 0,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode26_management_without_spool_fail",
+      "mode": 26,
+      "secondary_present": true
+    },
+    {
+      "carrier_present": false,
+      "expected": {
+        "binding_complete_mask": 3,
+        "complete_ready": 1,
+        "count_complete_mask": 0,
+        "final_status": "OK",
+        "has_sticky_primary": 0,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "COMPLETE",
+        "required_binding_mask": 3,
+        "required_count_mask": 0,
+        "state_after": "DONE",
+        "sticky_primary": "OK"
+      },
+      "id": "empty_carrier_empty_secondary_ok",
+      "mode": 21,
+      "secondary_present": false
+    },
+    {
+      "carrier_present": false,
+      "expected": {
+        "binding_complete_mask": 0,
+        "complete_ready": 0,
+        "count_complete_mask": 0,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 3,
+        "required_count_mask": 0,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "empty_carrier_orphan_fail",
+      "mode": 21,
+      "secondary_present": true
+    },
+    {
+      "bind_ok": false,
+      "declared": [
+        0,
+        0,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 0,
+        "complete_ready": 0,
+        "count_complete_mask": 8,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 8,
+        "required_count_mask": 8,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "bind_primary_or_carrier_fail",
+      "mode": 24,
+      "observed": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "expected": {
+        "binding_complete_mask": 16,
+        "complete_ready": 0,
+        "count_complete_mask": 16,
+        "final_status": "STORAGE",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 0,
+        "phase_after": "FAILED",
+        "required_binding_mask": 16,
+        "required_count_mask": 16,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE"
+      },
+      "id": "port_failure_no_note",
+      "mode": 25,
+      "port_status": "STORAGE"
+    },
+    {
+      "bind_ok": false,
+      "cleanup_skip": true,
+      "declared": [
+        9,
+        1,
+        0
+      ],
+      "expected": {
+        "binding_complete_mask": 0,
+        "complete_ready": 0,
+        "count_complete_mask": 1,
+        "final_status": "STORAGE_CORRUPT",
+        "has_sticky_primary": 1,
+        "mutation_calls": 0,
+        "note_count": 1,
+        "phase_after": "FAILED",
+        "required_binding_mask": 1,
+        "required_count_mask": 1,
+        "state_after": "FAILED",
+        "sticky_primary": "STORAGE_CORRUPT"
+      },
+      "id": "mode22_cleanup_still_binds",
+      "mode": 22,
+      "observed": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "version": 1
+}
