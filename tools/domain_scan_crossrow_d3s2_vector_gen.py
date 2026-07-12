@@ -29,6 +29,8 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
   * P0-A slice (§18.13.15 cases 2/6): Mode25 two-owner SHA256_COMPOSITE
     RETRY interleave (CUM+RECENT per owner; non-contiguous owner order)
     + two CUM carriers SELECT exactly once (no-skip/no-dup) COMPLETE
+  * P0-B slice (§18.13.15 case 13 / §18.13.5 B5/B6/B11): Mode26 ES+MGMT
+    mid-FOCUS stream budget stop then same-iterator resume (not B11 restart)
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -67,6 +69,7 @@ D3S2_MODE23_SLICE_COUNT = 2
 D3S2_MODE22_SLICE_COUNT = 2
 D3S2_MODE21_SLICE_COUNT = 2
 D3S2_P0A_SLICE_COUNT = 1
+D3S2_P0B_SLICE_COUNT = 1
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -76,8 +79,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_MODE22_SLICE_COUNT
     + D3S2_MODE21_SLICE_COUNT
     + D3S2_P0A_SLICE_COUNT
-)  # 19
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 113
+    + D3S2_P0B_SLICE_COUNT
+)  # 20
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 114
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -121,7 +125,18 @@ D3S2_112_PREFIX_COUNT = (
     + D3S2_MODE23_SLICE_COUNT
     + D3S2_MODE22_SLICE_COUNT
     + D3S2_MODE21_SLICE_COUNT
-)  # 112 (origin/main freeze before P0-A)
+)  # 112 (prior freeze before P0-A)
+D3S2_113_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+)  # 113 (origin/main freeze before P0-B)
 CEILING = 8192
 
 # Frozen D3-S1 prefix identity (byte-for-byte rebuild pin).
@@ -186,15 +201,26 @@ D3S2_110_FINGERPRINT_HASH = (
     "8cb323608764c52243e75b5978a3e4c7bea904ba846bc72472c6f5f61a165c39"
 )
 
-# Frozen 112-vector append-only prefix (110 + Mode21 slice) — origin/main.
-# content hash + fingerprint chain independently derived from origin/main
-# 112-vector artifact (full document content_sha256 / prior_fingerprint
-# chain of that release; not recomputed by rewriting published objects).
+# Frozen 112-vector append-only prefix (110 + Mode21 slice) — prior main.
+# content hash + fingerprint chain independently derived from that release
+# (full document content_sha256 / prior_fingerprint chain; not recomputed
+# by rewriting published objects).
 D3S2_112_CONTENT_SHA256 = (
     "519bc7465b47bc6da957e8815c112da6445a811c5fcb5b65ff9c3cd3038bff79"
 )
 D3S2_112_FINGERPRINT_HASH = (
     "0a3653d5b03ad5f22be66bfb24149fe8ed434f1345d391bfb5a3d1ac39c42968"
+)
+
+# Frozen 113-vector append-only prefix (112 + P0-A) — origin/main.
+# content hash + fingerprint chain independently derived from origin/main
+# 113-vector artifact (full document content_sha256 / prior_fingerprint
+# chain of that release; not recomputed by rewriting published objects).
+D3S2_113_CONTENT_SHA256 = (
+    "e47daa2aa251f36b8ad1d3d9621e6f41ebe0066b2420f8a9e87c3481f14566b7"
+)
+D3S2_113_FINGERPRINT_HASH = (
+    "d3f044ede266118ec9237ae3e01b539ff5c5fdfd85aaec3b7a31791f3c326057"
 )
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -300,9 +326,13 @@ EV_CELL_STATE_MATERIALIZED = 2
 MODE23_ACCEPTED_L = 3
 
 # Phase / mask constants (docs/17 §18.13; match domain_store_d3s2.h).
+PHASE_FOCUS_MANAGEMENT = 8
 PHASE_COMPLETE = 15
 PHASE_FAILED = 16
+PASS_BASELINE = 0
+PASS_INTERNAL = 1
 FLAG_BASELINE_DONE = 0x01
+FLAG_FOCUS_LIVE = 0x02
 FLAG_BIND_PHASE_ACTIVE = 0x04
 FLAG_COMPLETE_READY = 0x08
 MASK_ATTEMPT = 0x01
@@ -375,6 +405,11 @@ D3S2_P0A_KINDS = frozenset(
         "mode25_two_owner_sha_interleave_dual_carrier_ok",
     }
 )
+D3S2_P0B_KINDS = frozenset(
+    {
+        "mode26_es_mgmt_budget_mid_focus_resume_ok",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -384,6 +419,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_MODE22_KINDS
     | D3S2_MODE21_KINDS
     | D3S2_P0A_KINDS
+    | D3S2_P0B_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -468,6 +504,47 @@ CALL_KEYS = frozenset(
         "expected_status",
         "mode",
         "context",
+        # Optional call-level production context/spy checkpoint (P0-B).
+        # Absent or has_checkpoint=0 ⇒ no post-call context compare.
+        "has_checkpoint",
+        "cp_phase",
+        "cp_focus_live",
+        "cp_observed_a",
+        "cp_observed_b",
+        "cp_observed_c",
+        "cp_count_complete_mask",
+        "cp_binding_complete_mask",
+        "cp_flags",
+        "cp_pass_kind",
+        "cp_cleanup_skip",
+        "cp_last_carrier_key_len",
+        "cp_last_carrier_key_hex",
+        "cp_begin_calls",
+        "cp_iter_open_calls",
+        "cp_iter_close_calls",
+        "cp_trace_count",
+    }
+)
+
+# Required scalar fields when has_checkpoint == 1 (closed; no name-string abuse).
+CHECKPOINT_REQUIRED_KEYS = frozenset(
+    {
+        "has_checkpoint",
+        "cp_phase",
+        "cp_focus_live",
+        "cp_observed_a",
+        "cp_observed_b",
+        "cp_observed_c",
+        "cp_count_complete_mask",
+        "cp_binding_complete_mask",
+        "cp_flags",
+        "cp_pass_kind",
+        "cp_cleanup_skip",
+        "cp_last_carrier_key_len",
+        "cp_begin_calls",
+        "cp_iter_open_calls",
+        "cp_iter_close_calls",
+        "cp_trace_count",
     }
 )
 
@@ -492,7 +569,16 @@ SCOPE = (
     "vector is one mode per independent READ_ONLY txn; baseline once + "
     "sequential zero-prefix reopen; stream FOCUS closes only on true "
     "iterator EXHAUSTED; SHA256_COMPOSITE ATTEMPT rows complete-key lex "
-    "sorted; mutation_calls=0. Does not claim full D3-S2 oracle complete, "
+    "sorted; mutation_calls=0. Frozen 113-vector origin/main pin retained "
+    "(112 + P0-A multi-owner Mode25). P0-B appends Mode26 EVENT_SPOOL "
+    "resume=1 + MANAGEMENT RESUME mid-FOCUS stream budget stop (B5): "
+    "FOCUS_MANAGEMENT row_budget derived from fixture OK-row count so the "
+    "last MANAGEMENT OK is observed then advance stops before NOT_FOUND; "
+    "call-level checkpoint freezes phase/focus_live/observed/masks/flags/"
+    "pass_kind/cleanup_skip/last_carrier_key_len + spy begin/iter_open/"
+    "iter_close/trace_count; next drive resumes same iterator (B6 close; "
+    "not B11 restart); final SELECT empty→BIND→COMPLETE matches one-shot "
+    "Mode26 success semantics. Does not claim full D3-S2 oracle complete, "
     "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
     "transport begin forbidden. Independent generator — production C not "
     "invoked for expected generation."
@@ -504,7 +590,8 @@ SHA256_PROCEDURE = (
     "tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes "
     "the exact 94-vector D3-S1 prefix, the 100-vector prior main, the "
     "102-vector prior main, the 104-vector prior main, the 106-vector "
-    "prior main, the 108-vector prior main, and the 110-vector prior main "
+    "prior main, the 108-vector prior main, the 110-vector prior main, "
+    "the 112-vector prior main, and the 113-vector origin/main "
     "(fingerprint/order/expected/rows/calls/full object equality). "
     "content_sha256 "
     "covers the document with sha256_procedure/content_sha256 fields set "
@@ -553,6 +640,14 @@ OWNERSHIP_P0A = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(19-vector suffix on frozen 112-prefix only)"
+)
+# P0-B ownership (20-vector suffix at P0-B append time). Hardcoded 20 so a
+# later append does not rewrite published P0-B objects.
+OWNERSHIP_P0B = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(20-vector suffix on frozen 113-prefix only)"
 )
 
 
@@ -1774,6 +1869,221 @@ def run_d3s2_mode26_mgmt_without_es_corrupt(
         "binding_complete_mask": 0,  # BIND did not complete
         "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
     }
+    _ = binding
+    return calls, expected
+
+
+
+def _fixture_ok_row_count(rows: List[Dict[str, str]]) -> int:
+    """Count successful OK rows from fixture material (independent of production).
+
+    Profile catalog keys (len <= 10) and domain body keys (len > 10) are both
+    successful OK visits under zero-prefix full-band walks. Rejects empty keys
+    and oversize keys (peer capacity 45).
+    """
+    n_profile = 0
+    n_domain = 0
+    for r in rows:
+        key = from_hex(r["key_hex"])
+        if len(key) < 1 or len(key) > 45:
+            raise SystemExit(
+                f"fixture row key length out of domain 1..45: {len(key)}"
+            )
+        if len(key) <= 10:
+            n_profile += 1
+        else:
+            n_domain += 1
+    total = n_profile + n_domain
+    if total != len(rows):
+        raise SystemExit("fixture OK-row classification length drift")
+    if n_profile != 17:
+        raise SystemExit(f"fixture profile OK rows must be 17, got {n_profile}")
+    return total
+
+
+def run_d3s2_mode26_es_mgmt_budget_mid_focus_resume(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode26 B5 mid-FOCUS stream budget stop + same-iterator B6 resume.
+
+    Independent reference model (docs/17 §18.13.5 B5/B6/B11, §18.13.15 case13):
+      begin → baseline → SELECT EVENT_SPOOL → reopen FOCUS_MANAGEMENT →
+      drive with row_budget == n_ok (derived from fixture OK rows) so the last
+      MANAGEMENT OK is observed then budget stops before NOT_FOUND (B5:
+      phase stays FOCUS_MANAGEMENT, focus_live, observed_a=1, count bit 0) →
+      next drive resumes same iterator, sees NOT_FOUND, H2 closes focus (B6) →
+      SELECT empty → BIND_MANAGEMENT → COMPLETE. Not a B11 session restart
+      (begin_calls remains 1; no iter close/open between last OK and NOT_FOUND).
+
+    Drive chunks (same READ_ONLY txn):
+      1 BASELINE; 2 SELECT+reopen FOCUS; 3 FOCUS budget stop (checkpoint);
+      4 FOCUS resume NOT_FOUND H2+reopen SELECT; 5 SELECT empty→BIND;
+      6 BIND COMPLETE.
+    """
+    n_ok = _fixture_ok_row_count(rows)
+    if n_ok != 20:
+        raise SystemExit(
+            f"mode26 budget-resume expects 20 OK rows (17+3), got {n_ok}"
+        )
+    # Derive FOCUS budget from OK-row count: stop after last OK, before NOT_FOUND.
+    focus_budget = n_ok
+    # ES carrier complete key length from fixture (Mode26 live EVENT_SPOOL).
+    es_rows = [
+        r
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x50  # EVENT_SPOOL subtype
+    ]
+    if len(es_rows) != 1:
+        raise SystemExit(
+            f"mode26 budget-resume expects exactly 1 ES carrier, got {len(es_rows)}"
+        )
+    es_key = from_hex(es_rows[0]["key_hex"])
+    es_key_len = len(es_key)
+    if es_key_len == 0 or es_key_len > 45:
+        raise SystemExit(f"ES carrier key_len invalid: {es_key_len}")
+
+    n_drive = 6
+    n_open = 5
+
+    walk = _walk_trace_segment(n_ok)  # n_ok OK + terminal NOT_FOUND
+    walk_ok_only = ["iter_next"] * n_ok
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT carrier → reopen FOCUS stream
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive3 FOCUS_MANAGEMENT budget stop (B5): n_ok OK, no NOT_FOUND, no close
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk_ok_only)
+    cp_trace_count = len(port_trace)
+    # drive4 resume same iterator: NOT_FOUND → H2 B6 close → reopen SELECT
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    # drive5 SELECT empty → BIND entry reopen
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive6 BIND_MANAGEMENT
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)  # profile
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # EVENT_SPOOL
+    port_trace.append("iter_next")  # MANAGEMENT
+    port_trace.append("get")  # carrier companion ES
+    port_trace.append("get")  # true primary ANCHOR
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")  # finalize cleanup
+    port_trace.append("rollback")
+
+    # Spy counts at budget-stop checkpoint (after drive3):
+    # begin open + SELECT reopen open + FOCUS reopen open = 3 opens;
+    # baseline close + SELECT close = 2 closes; begin_calls = 1.
+    cp_begin_calls = 1
+    cp_iter_open_calls = 3
+    cp_iter_close_calls = 2
+
+    checkpoint_drive: Dict[str, Any] = {
+        "op": "d3s2_drive",
+        "row_budget": focus_budget,
+        "expected_status": "OK",
+        "has_checkpoint": 1,
+        "cp_phase": PHASE_FOCUS_MANAGEMENT,
+        "cp_focus_live": 1,
+        "cp_observed_a": 1,
+        "cp_observed_b": 0,
+        "cp_observed_c": 0,
+        "cp_count_complete_mask": 0,
+        "cp_binding_complete_mask": 0,
+        "cp_flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        "cp_pass_kind": PASS_INTERNAL,
+        "cp_cleanup_skip": 0,
+        "cp_last_carrier_key_len": es_key_len,
+        "cp_last_carrier_key_hex": hex_of(es_key),
+        "cp_begin_calls": cp_begin_calls,
+        "cp_iter_open_calls": cp_iter_open_calls,
+        "cp_iter_close_calls": cp_iter_close_calls,
+        "cp_trace_count": cp_trace_count,
+    }
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 26, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        checkpoint_drive,
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "finalize", "expected_status": "OK"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("mode26 budget-resume drive count drift")
+
+    # B5 boundary: no iter_close / iter_open / begin between last FOCUS OK and
+    # the resume NOT_FOUND (same-iterator mid-pass; distinguishes B11 restart).
+    # Port positions: ... open, next* n_ok | next(NF), close, open ...
+    focus_open_idx = None
+    for i, t in enumerate(port_trace):
+        if t == "iter_open:prefix0":
+            # third open is FOCUS stream (after begin-attributed open #1, SELECT #2)
+            opens_before = port_trace[:i].count("iter_open:prefix0")
+            if opens_before == 2:
+                focus_open_idx = i
+                break
+    if focus_open_idx is None:
+        raise SystemExit("mode26 budget-resume FOCUS open not found in trace")
+    focus_ok_end = focus_open_idx + 1 + n_ok
+    if port_trace[focus_open_idx + 1 : focus_ok_end] != walk_ok_only:
+        raise SystemExit("mode26 budget-resume FOCUS OK segment mismatch")
+    if port_trace[focus_ok_end] != "iter_next":
+        raise SystemExit("mode26 budget-resume expected NOT_FOUND after budget stop")
+    boundary = port_trace[focus_ok_end - 1 : focus_ok_end + 1]
+    if boundary != ["iter_next", "iter_next"]:
+        raise SystemExit("mode26 budget-resume boundary must be two consecutive next")
+    if any(
+        x in port_trace[focus_ok_end - 1 : focus_ok_end + 1]
+        for x in ("iter_close", "iter_open:prefix0", "begin:READ_ONLY")
+    ):
+        raise SystemExit("mode26 budget-resume B5 boundary polluted")
+    # Strict: no close/open/begin between last OK and NOT_FOUND (they are adjacent).
+    if focus_ok_end - (focus_open_idx + n_ok) != 1:
+        raise SystemExit("mode26 budget-resume index arithmetic drift")
+
+    expected: Dict[str, Any] = {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,  # ANCHOR + ES + MANAGEMENT
+        "ok_row_count": 20,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 2,
+        "d3_mode_applicable_count": 1,
+        "phase": PHASE_COMPLETE,
+        "count_complete_mask": MASK_MANAGEMENT,
+        "binding_complete_mask": MASK_MANAGEMENT,
+        "flags": FLAG_BASELINE_DONE | FLAG_COMPLETE_READY,
+    }
+    if rows != sorted(rows, key=lambda r: from_hex(r["key_hex"])):
+        raise SystemExit("mode26 budget-resume rows must be key-sorted")
     _ = binding
     return calls, expected
 
@@ -4088,6 +4398,101 @@ def build_d3s2_p0a_slice_vectors() -> List[Dict[str, Any]]:
     return vectors
 
 
+
+def build_d3s2_p0b_slice_vectors() -> List[Dict[str, Any]]:
+    """P0-B append-only slice (1 vector) after the frozen 113-prefix."""
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    rows, named, _pvd = _mode26_material_rows(
+        include_es=True, resume=1, discard=0
+    )
+    es_r, es_d = _parse_es_resume_discard(from_hex(named["es"]["value_hex"]))
+    if es_r != 1 or es_d != 0:
+        raise SystemExit(
+            f"P0-B Mode26 ES must declare resume=1 discard=0, got {es_r}/{es_d}"
+        )
+    n_ok = _fixture_ok_row_count(rows)
+    if n_ok != 20:
+        raise SystemExit(f"P0-B fixture OK rows must be 20, got {n_ok}")
+    calls, exp = run_d3s2_mode26_es_mgmt_budget_mid_focus_resume(binding, rows)
+    # Fail-closed: focus budget must equal derived OK-row count (not a magic 20).
+    focus_drives = [
+        c for c in calls if c["op"] == "d3s2_drive" and int(c.get("has_checkpoint", 0)) == 1
+    ]
+    if len(focus_drives) != 1:
+        raise SystemExit("P0-B expects exactly one checkpoint drive")
+    if int(focus_drives[0]["row_budget"]) != n_ok:
+        raise SystemExit(
+            f"P0-B focus row_budget {focus_drives[0]['row_budget']} != n_ok {n_ok}"
+        )
+    vectors.append(
+        {
+            "id": "D3S2_M26_ES_MGMT_BUDGET_MID_FOCUS_RESUME_OK",
+            "kind": "mode26_es_mgmt_budget_mid_focus_resume_ok",
+            "mode": 26,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls,
+            "d1_refs": [D1_ES_ID, D1_ML_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_ES_ID,
+                row=named["es"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode26 carrier EVENT_SPOOL successful_resume_count=1 "
+                    "discard_committed=0; last_carrier_key at B5 checkpoint"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR for MANAGEMENT BIND PVD/raw",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ML_ID,
+                    row=named["mgmt"],
+                    expect_presence="PRESENT",
+                    note=(
+                        "MANAGEMENT RESUME secondary; last OK under FOCUS "
+                        "budget stop (observed_a=1) before NOT_FOUND"
+                    ),
+                )
+            ],
+            "notes": (
+                "P0-B formal (§18.13.15 case13 / §18.13.5 B5/B6/B11): Mode26 "
+                "stream success material (ES resume=1 + MANAGEMENT RESUME + "
+                "true ANCHOR). BASELINE+SELECT complete with large budget; "
+                "FOCUS_MANAGEMENT uses row_budget=n_ok (derived from fixture "
+                "OK-row classification, not a magic constant) so advance "
+                "observes the last MANAGEMENT OK then budget-stops before "
+                "NOT_FOUND. Call-level checkpoint compares production phase/"
+                "focus_live/observed/masks/flags/pass_kind/cleanup_skip/"
+                "last_carrier_key_len (+ exact ES complete key) and spy "
+                "begin/iter_open/iter_close/trace_count. Next d3s2_drive "
+                "resumes the same iterator (B6 H2 close); no mid-boundary "
+                "iter_close/iter_open/begin (not B11 restart). Final SELECT "
+                "empty→BIND→COMPLETE matches one-shot Mode26 success. Single "
+                "READ_ONLY txn; mutation_calls=0. Independent Python only. "
+                "Not D3-S2 complete claim."
+            ),
+            "ownership": OWNERSHIP_P0B,
+            "expected": exp,
+        }
+    )
+
+    if len(vectors) != D3S2_P0B_SLICE_COUNT:
+        raise SystemExit("p0b slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P0B_KINDS:
+        raise SystemExit(f"p0b kinds inventory mismatch: {kinds}")
+    return vectors
+
+
 def build_d3s2_mode26_slice_vectors() -> List[Dict[str, Any]]:
     """Mode26 append-only slice (2 vectors) after the frozen 102-prefix."""
     binding = _d3s1.default_binding_fields()
@@ -4540,6 +4945,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_mode22_slice_vectors()
         + build_d3s2_mode21_slice_vectors()
         + build_d3s2_p0a_slice_vectors()
+        + build_d3s2_p0b_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -4634,6 +5040,7 @@ def build_document() -> Dict[str, Any]:
     mode22_vectors = build_d3s2_mode22_slice_vectors()
     mode21_vectors = build_d3s2_mode21_slice_vectors()
     p0a_vectors = build_d3s2_p0a_slice_vectors()
+    p0b_vectors = build_d3s2_p0b_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -4643,6 +5050,7 @@ def build_document() -> Dict[str, Any]:
         + mode22_vectors
         + mode21_vectors
         + p0a_vectors
+        + p0b_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -4710,7 +5118,7 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_ten_hash})"
         )
 
-    # Retained 112-vector chain pin (110 + Mode21 = origin/main).
+    # Retained 112-vector chain pin (110 + Mode21 = prior main).
     hundred_twelve_hash = _chain_hash(
         prior_fingerprints[:D3S2_112_PREFIX_COUNT]
     )
@@ -4718,6 +5126,16 @@ def build_document() -> Dict[str, Any]:
         raise SystemExit(
             "112-prefix fingerprint chain drift after suffix assembly "
             f"(got {hundred_twelve_hash})"
+        )
+
+    # Retained 113-vector chain pin (112 + P0-A = origin/main).
+    hundred_thirteen_hash = _chain_hash(
+        prior_fingerprints[:D3S2_113_PREFIX_COUNT]
+    )
+    if hundred_thirteen_hash != D3S2_113_FINGERPRINT_HASH:
+        raise SystemExit(
+            "113-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_thirteen_hash})"
         )
 
     required_kinds = sorted(
@@ -4738,6 +5156,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_108_prefix_count": D3S2_108_PREFIX_COUNT,
         "d3s2_110_prefix_count": D3S2_110_PREFIX_COUNT,
         "d3s2_112_prefix_count": D3S2_112_PREFIX_COUNT,
+        "d3s2_113_prefix_count": D3S2_113_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -4826,8 +5245,17 @@ def build_document() -> Dict[str, Any]:
             "content_sha256": D3S2_112_CONTENT_SHA256,
             "prior_fingerprint_prefix_hash": D3S2_112_FINGERPRINT_HASH,
             "note": (
-                "append-only freeze of origin/main (94 D3S1 + 18 d3s2 suffix "
+                "append-only freeze of prior main (94 D3S1 + 18 d3s2 suffix "
                 "through Mode21); P0-A multi-owner Mode25 vector follows"
+            ),
+        },
+        "d3s2_113_prefix_authority": {
+            "vector_count": D3S2_113_PREFIX_COUNT,
+            "content_sha256": D3S2_113_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_113_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 19 d3s2 suffix "
+                "through P0-A); P0-B Mode26 budget mid-focus resume vector follows"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -4927,6 +5355,8 @@ def check(path: Path) -> int:
         return _fail_check("d3s2_110_prefix_count pin mismatch")
     if int(data.get("d3s2_112_prefix_count", -1)) != D3S2_112_PREFIX_COUNT:
         return _fail_check("d3s2_112_prefix_count pin mismatch")
+    if int(data.get("d3s2_113_prefix_count", -1)) != D3S2_113_PREFIX_COUNT:
+        return _fail_check("d3s2_113_prefix_count pin mismatch")
     if data.get("required_kinds") != expected_doc["required_kinds"]:
         return _fail_check("required_kinds inventory mismatch")
     if not data.get("sha256_procedure"):
@@ -5017,7 +5447,7 @@ def check(path: Path) -> int:
     if int(auth110.get("vector_count", -1)) != D3S2_110_PREFIX_COUNT:
         return _fail_check("d3s2_110_prefix_authority vector_count pin mismatch")
 
-    # Frozen 112-vector origin/main pin (includes Mode21; P0-A follows).
+    # Frozen 112-vector prior pin (includes Mode21; P0-A follows).
     auth112 = data.get("d3s2_112_prefix_authority") or {}
     if auth112.get("content_sha256") != D3S2_112_CONTENT_SHA256:
         return _fail_check("d3s2_112_prefix_authority content_sha256 pin mismatch")
@@ -5027,6 +5457,17 @@ def check(path: Path) -> int:
         )
     if int(auth112.get("vector_count", -1)) != D3S2_112_PREFIX_COUNT:
         return _fail_check("d3s2_112_prefix_authority vector_count pin mismatch")
+
+    # Frozen 113-vector origin/main pin (includes P0-A; P0-B follows).
+    auth113 = data.get("d3s2_113_prefix_authority") or {}
+    if auth113.get("content_sha256") != D3S2_113_CONTENT_SHA256:
+        return _fail_check("d3s2_113_prefix_authority content_sha256 pin mismatch")
+    if auth113.get("prior_fingerprint_prefix_hash") != D3S2_113_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_113_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth113.get("vector_count", -1)) != D3S2_113_PREFIX_COUNT:
+        return _fail_check("d3s2_113_prefix_authority vector_count pin mismatch")
 
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
@@ -5468,6 +5909,71 @@ def check(path: Path) -> int:
             f"112-prefix fingerprint chain pin fail (got {hundred_twelve_chain})"
         )
 
+    # First 113 vectors: full object equality vs rebuild (origin/main freeze).
+    # P0-B must not rewrite any prior ownership/notes/refs/expected byte.
+    p0a_rebuild = build_d3s2_p0a_slice_vectors()
+    expected_113 = list(expected_112) + list(p0a_rebuild)
+    if len(expected_113) != D3S2_113_PREFIX_COUNT:
+        return _fail_check("internal 113-prefix rebuild length drift")
+    for i in range(D3S2_113_PREFIX_COUNT):
+        got = vectors[i]
+        exp = expected_113[i]
+        for key in ("id", "kind", "mode"):
+            if got.get(key) != exp.get(key):
+                return _fail_check(
+                    f"113-prefix[{i}] {key} mismatch: "
+                    f"{got.get(key)!r} vs {exp.get(key)!r}"
+                )
+        if got.get("rows") != exp.get("rows"):
+            return _fail_check(
+                f"113-prefix[{i}] {got.get('id')}: rows not identical"
+            )
+        if got.get("calls") != exp.get("calls"):
+            return _fail_check(
+                f"113-prefix[{i}] {got.get('id')}: calls not identical"
+            )
+        if got.get("expected") != exp.get("expected"):
+            return _fail_check(
+                f"113-prefix[{i}] {got.get('id')}: expected not identical"
+            )
+        if i < D3S1_PREFIX_COUNT:
+            gf = d3s1_vector_fingerprint(got)
+            ef = d3s1_vector_fingerprint(exp)
+        else:
+            gf = d3s2_vector_fingerprint(got)
+            ef = d3s2_vector_fingerprint(exp)
+        if gf != ef:
+            return _fail_check(
+                f"113-prefix[{i}] {got.get('id')}: fingerprint drift"
+            )
+        if got != exp:
+            all_keys = sorted(set(got.keys()) | set(exp.keys()))
+            for key in all_keys:
+                if got.get(key) != exp.get(key):
+                    return _fail_check(
+                        f"113-prefix[{i}] {got.get('id')}: field {key!r} "
+                        f"not identical to rebuild"
+                    )
+            return _fail_check(
+                f"113-prefix[{i}] {got.get('id')}: full object inequality"
+            )
+    hundred_thirteen_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_113_PREFIX_COUNT)
+        ]
+    )
+    if hundred_thirteen_chain != D3S2_113_FINGERPRINT_HASH:
+        return _fail_check(
+            f"113-prefix fingerprint chain pin fail (got {hundred_thirteen_chain})"
+        )
+
     # prior_fingerprints order/identity.
     got_fps = data.get("prior_fingerprints")
     exp_fps = expected_doc["prior_fingerprints"]
@@ -5516,6 +6022,44 @@ def check(path: Path) -> int:
                 )
             if "expected_status" not in c:
                 return _fail_check(f"{vec['id']}: call missing expected_status")
+            # Call-level checkpoint: explicit has_checkpoint only; no sentinel
+            # defaults or name-string abuse. Existing calls omit the field (=0).
+            has_cp = int(c.get("has_checkpoint", 0))
+            if has_cp not in (0, 1):
+                return _fail_check(
+                    f"{vec['id']}: has_checkpoint must be 0|1, got {has_cp}"
+                )
+            if has_cp == 1:
+                missing_cp = CHECKPOINT_REQUIRED_KEYS - set(c.keys())
+                if missing_cp:
+                    return _fail_check(
+                        f"{vec['id']}: checkpoint missing fields {sorted(missing_cp)}"
+                    )
+                if int(c["cp_last_carrier_key_len"]) <= 0:
+                    return _fail_check(
+                        f"{vec['id']}: cp_last_carrier_key_len must be > 0"
+                    )
+                if "cp_last_carrier_key_hex" in c:
+                    ck = from_hex(c["cp_last_carrier_key_hex"])
+                    if len(ck) != int(c["cp_last_carrier_key_len"]):
+                        return _fail_check(
+                            f"{vec['id']}: cp_last_carrier_key_hex len mismatch"
+                        )
+            else:
+                # has=0: forbid nonzero checkpoint payload (implicit defaults).
+                for k in CHECKPOINT_REQUIRED_KEYS:
+                    if k == "has_checkpoint":
+                        continue
+                    if k in c and int(c[k]) != 0:
+                        return _fail_check(
+                            f"{vec['id']}: {k} must be 0/absent when "
+                            f"has_checkpoint=0"
+                        )
+                if "cp_last_carrier_key_hex" in c and c["cp_last_carrier_key_hex"]:
+                    return _fail_check(
+                        f"{vec['id']}: cp_last_carrier_key_hex forbidden when "
+                        f"has_checkpoint=0"
+                    )
             st = c["expected_status"]
             if op in HARNESS_CALL_OPS:
                 if st != "VOID":
@@ -5545,7 +6089,7 @@ def check(path: Path) -> int:
 
     # Suffix-specific pins: smoke [0..6) Mode25 [6..8) Mode26 [8..10)
     # Mode24 [10..12) Mode23 [12..14) Mode22 [14..16) Mode21 [16..18)
-    # P0-A [18..19).
+    # P0-A [18..19) P0-B [19..20).
     suffix = vectors[D3S1_PREFIX_COUNT:]
     if len(suffix) != D3S2_SUFFIX_COUNT:
         return _fail_check("suffix length mismatch")
@@ -5561,7 +6105,9 @@ def check(path: Path) -> int:
     mode22 = suffix[mode22_start : mode22_start + D3S2_MODE22_SLICE_COUNT]
     mode21_start = mode22_start + D3S2_MODE22_SLICE_COUNT
     mode21 = suffix[mode21_start : mode21_start + D3S2_MODE21_SLICE_COUNT]
-    p0a = suffix[mode21_start + D3S2_MODE21_SLICE_COUNT :]
+    p0a_start = mode21_start + D3S2_MODE21_SLICE_COUNT
+    p0a = suffix[p0a_start : p0a_start + D3S2_P0A_SLICE_COUNT]
+    p0b = suffix[p0a_start + D3S2_P0A_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -5576,6 +6122,8 @@ def check(path: Path) -> int:
         return _fail_check("mode21 slice length mismatch")
     if len(p0a) != D3S2_P0A_SLICE_COUNT:
         return _fail_check("p0a slice length mismatch")
+    if len(p0b) != D3S2_P0B_SLICE_COUNT:
+        return _fail_check("p0b slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -6612,6 +7160,105 @@ def check(path: Path) -> int:
     if p0a_ok["expected"] != exp_expected:
         return _fail_check(f"{p0a_ok['id']}: expected != independent model")
 
+    # ---- P0-B Mode26 budget mid-focus resume (§18.13.15 case13) ----
+    p0b_ok = p0b[0]
+    if p0b_ok["kind"] != "mode26_es_mgmt_budget_mid_focus_resume_ok":
+        return _fail_check("p0b[0] kind pin fail")
+    if int(p0b_ok["mode"]) != 26:
+        return _fail_check(f"{p0b_ok['id']}: mode must be 26")
+    if p0b_ok.get("ownership") != OWNERSHIP_P0B:
+        return _fail_check(f"{p0b_ok['id']}: ownership pin fail")
+    if int(p0b_ok["expected"]["phase"]) != PHASE_COMPLETE:
+        return _fail_check(f"{p0b_ok['id']}: phase must be COMPLETE")
+    if int(p0b_ok["expected"]["count_complete_mask"]) != MASK_MANAGEMENT:
+        return _fail_check(f"{p0b_ok['id']}: count mask pin fail")
+    if int(p0b_ok["expected"]["binding_complete_mask"]) != MASK_MANAGEMENT:
+        return _fail_check(f"{p0b_ok['id']}: binding mask pin fail")
+    if int(p0b_ok["expected"]["d3_peer_get_count"]) != 2:
+        return _fail_check(f"{p0b_ok['id']}: d3_peer_get_count must be 2")
+    if int(p0b_ok["expected"]["iter_open_count"]) != 5:
+        return _fail_check(f"{p0b_ok['id']}: iter_open_count must be 5")
+    if int(p0b_ok["expected"]["ok_row_count"]) != 20:
+        return _fail_check(f"{p0b_ok['id']}: ok_row_count must be 20")
+    # Independent OK-row classification must re-derive focus budget (not magic).
+    n_ok_re = _fixture_ok_row_count(p0b_ok["rows"])
+    if n_ok_re != 20:
+        return _fail_check(f"{p0b_ok['id']}: OK-row reclassify must be 20")
+    cp_calls = [
+        c
+        for c in p0b_ok["calls"]
+        if int(c.get("has_checkpoint", 0)) == 1
+    ]
+    if len(cp_calls) != 1:
+        return _fail_check(f"{p0b_ok['id']}: exactly one checkpoint call required")
+    cp = cp_calls[0]
+    if int(cp["row_budget"]) != n_ok_re:
+        return _fail_check(
+            f"{p0b_ok['id']}: focus row_budget {cp['row_budget']} != "
+            f"derived n_ok {n_ok_re}"
+        )
+    if int(cp["cp_phase"]) != PHASE_FOCUS_MANAGEMENT:
+        return _fail_check(f"{p0b_ok['id']}: cp_phase must be FOCUS_MANAGEMENT")
+    if int(cp["cp_focus_live"]) != 1:
+        return _fail_check(f"{p0b_ok['id']}: cp_focus_live must be 1")
+    if int(cp["cp_observed_a"]) != 1:
+        return _fail_check(f"{p0b_ok['id']}: cp_observed_a must be 1")
+    if int(cp["cp_observed_b"]) != 0 or int(cp["cp_observed_c"]) != 0:
+        return _fail_check(f"{p0b_ok['id']}: non-a observed lanes must be 0")
+    if int(cp["cp_count_complete_mask"]) != 0:
+        return _fail_check(f"{p0b_ok['id']}: count_complete_mask must be 0 at B5")
+    if int(cp["cp_binding_complete_mask"]) != 0:
+        return _fail_check(f"{p0b_ok['id']}: binding_complete_mask must be 0 at B5")
+    if (int(cp["cp_flags"]) & FLAG_COMPLETE_READY) != 0:
+        return _fail_check(f"{p0b_ok['id']}: COMPLETE_READY must be 0 at B5")
+    if (int(cp["cp_flags"]) & FLAG_FOCUS_LIVE) == 0:
+        return _fail_check(f"{p0b_ok['id']}: FOCUS_LIVE must be set at B5")
+    if int(cp["cp_pass_kind"]) != PASS_INTERNAL:
+        return _fail_check(f"{p0b_ok['id']}: pass_kind must be PASS_INTERNAL")
+    if int(cp["cp_cleanup_skip"]) != 0:
+        return _fail_check(f"{p0b_ok['id']}: cleanup_skip must be 0")
+    if int(cp["cp_last_carrier_key_len"]) <= 0:
+        return _fail_check(f"{p0b_ok['id']}: last_carrier_key_len must be > 0")
+    if int(cp["cp_begin_calls"]) != 1:
+        return _fail_check(f"{p0b_ok['id']}: begin_calls must be 1 (not B11)")
+    if int(cp["cp_iter_open_calls"]) != 3:
+        return _fail_check(f"{p0b_ok['id']}: iter_open_calls at B5 must be 3")
+    if int(cp["cp_iter_close_calls"]) != 2:
+        return _fail_check(f"{p0b_ok['id']}: iter_close_calls at B5 must be 2")
+    # Port-trace B5 boundary: no close/open/begin between last FOCUS OK and NF.
+    pt = p0b_ok["expected"]["port_trace"]
+    if pt.count("begin:READ_ONLY") != 1:
+        return _fail_check(f"{p0b_ok['id']}: exactly one begin in port_trace")
+    # Locate third open (FOCUS) then n_ok consecutive next, then NF next.
+    open_idxs = [i for i, t in enumerate(pt) if t == "iter_open:prefix0"]
+    if len(open_idxs) != 5:
+        return _fail_check(
+            f"{p0b_ok['id']}: port_trace iter_open count must be 5, got {len(open_idxs)}"
+        )
+    focus_open = open_idxs[2]
+    focus_ok_end = focus_open + 1 + n_ok_re
+    if pt[focus_open + 1 : focus_ok_end] != ["iter_next"] * n_ok_re:
+        return _fail_check(f"{p0b_ok['id']}: FOCUS OK segment mismatch")
+    if pt[focus_ok_end] != "iter_next":
+        return _fail_check(f"{p0b_ok['id']}: NOT_FOUND must follow budget stop")
+    if any(
+        x in ("iter_close", "iter_open:prefix0", "begin:READ_ONLY")
+        for x in pt[focus_ok_end - 1 : focus_ok_end + 1]
+    ):
+        return _fail_check(
+            f"{p0b_ok['id']}: B5 boundary must not insert close/open/begin"
+        )
+    try:
+        exp_calls, exp_expected = run_d3s2_mode26_es_mgmt_budget_mid_focus_resume(
+            p0b_ok["candidate_binding"], p0b_ok["rows"]
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{p0b_ok['id']}: model reject: {exc}")
+    if p0b_ok["calls"] != exp_calls:
+        return _fail_check(f"{p0b_ok['id']}: calls != independent model")
+    if p0b_ok["expected"] != exp_expected:
+        return _fail_check(f"{p0b_ok['id']}: expected != independent model")
+
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
             f"missing d3s2 kinds {D3S2_REQUIRED_KINDS - kinds}"
@@ -6633,6 +7280,16 @@ def check(path: Path) -> int:
         f"content_sha256={data.get('content_sha256')}"
     )
     return 0
+
+
+
+def _p0b_focus_ok_end(port_trace: List[str]) -> int:
+    """Index just after last FOCUS OK iter_next under P0-B budget stop model."""
+    open_idxs = [i for i, t in enumerate(port_trace) if t == "iter_open:prefix0"]
+    if len(open_idxs) < 3:
+        raise SystemExit("p0b focus open not found for self-test helper")
+    # third open is FOCUS; n_ok=20 fixed for Mode26 success material
+    return open_idxs[2] + 1 + 20
 
 
 def self_test() -> int:
@@ -7501,6 +8158,114 @@ def self_test() -> int:
                 + ["get"] * 17,  # baseline-only gets; peer gets wiped
             ),
         )
+        # 113-prefix freeze (includes P0-A; P0-B at 113).
+        t(
+            "hundred_thirteen_prefix_row_tamper",
+            lambda d: d["vectors"][112]["rows"].__setitem__(
+                0, {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "hundred_thirteen_prefix_expected_tamper",
+            lambda d: d["vectors"][112]["expected"].__setitem__(
+                "ok_row_count", 999
+            ),
+        )
+        t(
+            "hundred_thirteen_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_113_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_thirteen_prefix_content_authority_tamper",
+            lambda d: d["d3s2_113_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        t(
+            "hundred_thirteen_prefix_ownership_tamper",
+            lambda d: d["vectors"][112].__setitem__(
+                "ownership", OWNERSHIP_P0B
+            ),
+        )
+        # P0-B budget mid-focus resume tampers (index 113).
+        t(
+            "p0b_checkpoint_phase_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][113]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_phase", PHASE_COMPLETE),
+        )
+        t(
+            "p0b_checkpoint_focus_live_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][113]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_focus_live", 0),
+        )
+        t(
+            "p0b_checkpoint_observed_a_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][113]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_observed_a", 0),
+        )
+        t(
+            "p0b_checkpoint_count_mask_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][113]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_count_complete_mask", MASK_MANAGEMENT),
+        )
+        t(
+            "p0b_checkpoint_begin_calls_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][113]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_begin_calls", 2),
+        )
+        t(
+            "p0b_budget_19_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][113]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("row_budget", 19),
+        )
+        t(
+            "p0b_budget_21_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][113]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("row_budget", 21),
+        )
+        def _tamper_p0b_mid_boundary(d):
+            pt = list(d["vectors"][113]["expected"]["port_trace"])
+            end = _p0b_focus_ok_end(pt)
+            d["vectors"][113]["expected"]["port_trace"] = (
+                pt[:end] + ["iter_close", "iter_open:prefix0"] + pt[end:]
+            )
+
+        t("p0b_mid_boundary_iter_reopen_tamper", _tamper_p0b_mid_boundary)
+        t(
+            "p0b_ok_phase_final_tamper",
+            lambda d: d["vectors"][113]["expected"].__setitem__(
+                "phase", PHASE_FAILED
+            ),
+        )
+        t(
+            "p0b_ok_mutation_tamper",
+            lambda d: d["vectors"][113]["expected"].__setitem__(
+                "mutation_calls", 1
+            ),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -7521,8 +8286,8 @@ def self_test() -> int:
                 print(f, file=sys.stderr)
             return 1
         print(
-            "self-test ok (94+100+102+104+106+108+110+112 prefix freeze + "
-            "mode25/mode26/mode24/mode23/mode22/mode21/p0a slice pins + "
+            "self-test ok (94+100+102+104+106+108+110+112+113 prefix freeze + "
+            "mode25/mode26/mode24/mode23/mode22/mode21/p0a/p0b slice pins + "
             "forbidden ops + clean pass)"
         )
         return 0
@@ -7633,6 +8398,24 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
     lines.append("    uint8_t mode;")
     lines.append("    const char *context; /* NULL, \"null\", or \"alias_session\" */")
     lines.append("    const char *expected_status;")
+    lines.append("    /* Call-level production context/spy checkpoint (P0-B). */")
+    lines.append("    uint8_t has_checkpoint; /* 0 = no compare; 1 = compare after call */")
+    lines.append("    uint8_t cp_phase;")
+    lines.append("    uint8_t cp_focus_live;")
+    lines.append("    uint64_t cp_observed_a;")
+    lines.append("    uint64_t cp_observed_b;")
+    lines.append("    uint64_t cp_observed_c;")
+    lines.append("    uint8_t cp_count_complete_mask;")
+    lines.append("    uint8_t cp_binding_complete_mask;")
+    lines.append("    uint8_t cp_flags;")
+    lines.append("    uint8_t cp_pass_kind;")
+    lines.append("    uint8_t cp_cleanup_skip;")
+    lines.append("    uint8_t cp_last_carrier_key_len;")
+    lines.append("    const uint8_t *cp_last_carrier_key; /* NULL if len 0 */")
+    lines.append("    uint32_t cp_begin_calls;")
+    lines.append("    uint32_t cp_iter_open_calls;")
+    lines.append("    uint32_t cp_iter_close_calls;")
+    lines.append("    uint64_t cp_trace_count;")
     lines.append("} ninlil_d3s1_call_t;")
     lines.append("")
     lines.append("typedef ninlil_d3s1_call_t ninlil_d3s2_call_t;")
@@ -7809,14 +8592,32 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
         lines.append(
             f"static const ninlil_d3s1_call_t ninlil_d3s1_calls_{vi}[] = {{"
         )
-        for c in vec["calls"]:
+        for ci, c in enumerate(vec["calls"]):
             mode_c = int(c.get("mode", vec.get("mode", 0)))
             ctx = c.get("context")
             ctx_s = f'"{ctx}"' if ctx else "NULL"
+            has_cp = int(c.get("has_checkpoint", 0))
             lines.append(
                 f'    {{ "{c["op"]}", {int(c.get("row_budget", 0))}u, NULL, 0u, '
                 f'"{c.get("name", "")}", {mode_c}u, {ctx_s}, '
-                f'"{c.get("expected_status", "")}" }},'
+                f'"{c.get("expected_status", "")}", '
+                f'{has_cp}u, '
+                f'{int(c.get("cp_phase", 0))}u, '
+                f'{int(c.get("cp_focus_live", 0))}u, '
+                f'{int(c.get("cp_observed_a", 0))}ull, '
+                f'{int(c.get("cp_observed_b", 0))}ull, '
+                f'{int(c.get("cp_observed_c", 0))}ull, '
+                f'0x{int(c.get("cp_count_complete_mask", 0)):02x}u, '
+                f'0x{int(c.get("cp_binding_complete_mask", 0)):02x}u, '
+                f'0x{int(c.get("cp_flags", 0)):02x}u, '
+                f'{int(c.get("cp_pass_kind", 0))}u, '
+                f'{int(c.get("cp_cleanup_skip", 0))}u, '
+                f'{int(c.get("cp_last_carrier_key_len", 0))}u, '
+                f'NULL, '
+                f'{int(c.get("cp_begin_calls", 0))}u, '
+                f'{int(c.get("cp_iter_open_calls", 0))}u, '
+                f'{int(c.get("cp_iter_close_calls", 0))}u, '
+                f'{int(c.get("cp_trace_count", 0))}ull }},'
             )
         lines.append("};")
         exp = vec["expected"]
@@ -7909,17 +8710,48 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
         if not vec.get("faults"):
             lines.append('    { "", 0u, "", "", 0u, 0u },')
         lines.append("};")
+        # Optional last_carrier_key bytes for checkpoint calls.
+        for ci, c in enumerate(vec["calls"]):
+            if int(c.get("has_checkpoint", 0)) == 1 and c.get(
+                "cp_last_carrier_key_hex"
+            ):
+                kb = from_hex(c["cp_last_carrier_key_hex"])
+                lines.extend(
+                    c_bytes_literal(kb, f"ninlil_d3s2_{vi}_cpkey_{ci}")
+                )
         lines.append(
             f"static const ninlil_d3s2_call_t ninlil_d3s2_calls_{vi}[] = {{"
         )
-        for c in vec["calls"]:
+        for ci, c in enumerate(vec["calls"]):
             mode_c = int(c.get("mode", vec.get("mode", 0)))
             ctx = c.get("context")
             ctx_s = f'"{ctx}"' if ctx else "NULL"
+            has_cp = int(c.get("has_checkpoint", 0))
+            if has_cp == 1 and c.get("cp_last_carrier_key_hex"):
+                key_ptr = f"ninlil_d3s2_{vi}_cpkey_{ci}"
+            else:
+                key_ptr = "NULL"
             lines.append(
                 f'    {{ "{c["op"]}", {int(c.get("row_budget", 0))}u, NULL, 0u, '
                 f'"{c.get("name", "")}", {mode_c}u, {ctx_s}, '
-                f'"{c.get("expected_status", "")}" }},'
+                f'"{c.get("expected_status", "")}", '
+                f'{has_cp}u, '
+                f'{int(c.get("cp_phase", 0))}u, '
+                f'{int(c.get("cp_focus_live", 0))}u, '
+                f'{int(c.get("cp_observed_a", 0))}ull, '
+                f'{int(c.get("cp_observed_b", 0))}ull, '
+                f'{int(c.get("cp_observed_c", 0))}ull, '
+                f'0x{int(c.get("cp_count_complete_mask", 0)):02x}u, '
+                f'0x{int(c.get("cp_binding_complete_mask", 0)):02x}u, '
+                f'0x{int(c.get("cp_flags", 0)):02x}u, '
+                f'{int(c.get("cp_pass_kind", 0))}u, '
+                f'{int(c.get("cp_cleanup_skip", 0))}u, '
+                f'{int(c.get("cp_last_carrier_key_len", 0))}u, '
+                f'{key_ptr}, '
+                f'{int(c.get("cp_begin_calls", 0))}u, '
+                f'{int(c.get("cp_iter_open_calls", 0))}u, '
+                f'{int(c.get("cp_iter_close_calls", 0))}u, '
+                f'{int(c.get("cp_trace_count", 0))}ull }},'
             )
         lines.append("};")
         exp = vec["expected"]
