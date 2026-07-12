@@ -52,6 +52,11 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     APPLICATION_FIRST empty-secondary undercount; Mode22 CANCEL_FIRST cancel
     undercount; Mode26 MANAGEMENT overcount. Independent formal + production
     bridge; not CLEANUP_PLAN skip as ordinary mismatch substitute.
+  * P1-D slice (§18.13.15 case 12): Mode21 profile_mismatch and
+    future_profile_candidate evaluator-off — baseline EXHAUSTED only (phase
+    BASELINE + BASELINE_DONE; no COMPLETE/COMPLETE_READY authority); no
+    INTERNAL reopen / BIND / peer get; finalize UNSUPPORTED/adopted0. Not
+    recognizable_future_seen. Count-green-without-BIND is P1-D2 (out of slice).
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -94,6 +99,7 @@ D3S2_P0B_SLICE_COUNT = 1
 D3S2_P0C_SLICE_COUNT = 1
 D3S2_P0D_SLICE_COUNT = 4
 D3S2_P1A_SLICE_COUNT = 6
+D3S2_P1D_SLICE_COUNT = 2
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -107,8 +113,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_P0C_SLICE_COUNT
     + D3S2_P0D_SLICE_COUNT
     + D3S2_P1A_SLICE_COUNT
-)  # 31
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 125
+    + D3S2_P1D_SLICE_COUNT
+)  # 33
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 127
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -319,6 +326,31 @@ D3S2_119_CONTENT_SHA256 = (
 D3S2_119_FINGERPRINT_HASH = (
     "7be397142432bedc2784ebd87fba4ef590b6b1a0129ba6e2d6e81b87a50ab9d7"
 )
+# Frozen 125-vector append-only prefix (119 + P1-A) — origin/main before P1-D.
+# content hash + fingerprint chain independently derived from origin/main
+# 125-vector artifact (full document content_sha256 / prior_fingerprint
+# chain of that release; not recomputed by rewriting published objects).
+D3S2_125_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+    + D3S2_P0C_SLICE_COUNT
+    + D3S2_P0D_SLICE_COUNT
+    + D3S2_P1A_SLICE_COUNT
+)  # 125 (origin/main freeze before P1-D)
+D3S2_125_CONTENT_SHA256 = (
+    "6043e624047f1036efd1b1a2936eadefc9123b8661e454077320bfb22ceebb00"
+)
+D3S2_125_FINGERPRINT_HASH = (
+    "e0bd3628dc5a2f85bb0b1abca7499008b82861ecc2047000fc124be6075293f0"
+)
 
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -427,6 +459,7 @@ EV_CELL_STATE_MATERIALIZED = 2
 MODE23_ACCEPTED_L = 3
 
 # Phase / mask constants (docs/17 §18.13; match domain_store_d3s2.h).
+PHASE_BASELINE = 1
 PHASE_FOCUS_MANAGEMENT = 8
 PHASE_COMPLETE = 15
 PHASE_FAILED = 16
@@ -534,6 +567,12 @@ D3S2_P1A_KINDS = frozenset(
         "mode26_mgmt_stream_overcount_corrupt",
     }
 )
+D3S2_P1D_KINDS = frozenset(
+    {
+        "mode21_profile_mismatch_evaluator_off_unsupported",
+        "mode21_future_profile_evaluator_off_unsupported",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -547,6 +586,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_P0C_KINDS
     | D3S2_P0D_KINDS
     | D3S2_P1A_KINDS
+    | D3S2_P1D_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -837,6 +877,14 @@ OWNERSHIP_P1A = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(31-vector suffix on frozen 119-prefix only)"
+)
+# P1-D ownership (33-vector suffix at P1-D append time). Hardcoded 33 so a
+# later append does not rewrite published P1-D objects.
+OWNERSHIP_P1D = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(33-vector suffix on frozen 125-prefix only)"
 )
 
 
@@ -5424,6 +5472,7 @@ def build_document() -> Dict[str, Any]:
     p0c_vectors = build_d3s2_p0c_slice_vectors()
     p0d_vectors = build_d3s2_p0d_slice_vectors()
     p1a_vectors = build_d3s2_p1a_slice_vectors()
+    p1d_vectors = build_d3s2_p1d_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -5437,6 +5486,7 @@ def build_document() -> Dict[str, Any]:
         + p0c_vectors
         + p0d_vectors
         + p1a_vectors
+        + p1d_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -5554,6 +5604,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_nineteen_hash})"
         )
 
+    # Retained 125-vector chain pin (119 + P1-A = origin/main before P1-D).
+    hundred_twenty_five_hash = _chain_hash(
+        prior_fingerprints[:D3S2_125_PREFIX_COUNT]
+    )
+    if hundred_twenty_five_hash != D3S2_125_FINGERPRINT_HASH:
+        raise SystemExit(
+            "125-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_twenty_five_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -5576,6 +5636,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_114_prefix_count": D3S2_114_PREFIX_COUNT,
         "d3s2_115_prefix_count": D3S2_115_PREFIX_COUNT,
         "d3s2_119_prefix_count": D3S2_119_PREFIX_COUNT,
+        "d3s2_125_prefix_count": D3S2_125_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -5704,6 +5765,16 @@ def build_document() -> Dict[str, Any]:
                 "append-only freeze of origin/main (94 D3S1 + 25 d3s2 suffix "
                 "through P0-D); P1-A ordinary stream count under/over + empty-"
                 "secondary declared>0 vectors follow"
+            ),
+        },
+        "d3s2_125_prefix_authority": {
+            "vector_count": D3S2_125_PREFIX_COUNT,
+            "content_sha256": D3S2_125_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_125_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 31 d3s2 suffix "
+                "through P1-A); P1-D profile mismatch / future_profile "
+                "evaluator-off UNSUPPORTED vectors follow"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -5953,6 +6024,18 @@ def check(path: Path) -> int:
     if int(auth119.get("vector_count", -1)) != D3S2_119_PREFIX_COUNT:
         return _fail_check("d3s2_119_prefix_authority vector_count pin mismatch")
 
+    if int(data.get("d3s2_125_prefix_count", -1)) != D3S2_125_PREFIX_COUNT:
+        return _fail_check("d3s2_125_prefix_count pin mismatch")
+    auth125 = data.get("d3s2_125_prefix_authority") or {}
+    if auth125.get("content_sha256") != D3S2_125_CONTENT_SHA256:
+        return _fail_check("d3s2_125_prefix_authority content_sha256 pin mismatch")
+    if auth125.get("prior_fingerprint_prefix_hash") != D3S2_125_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_125_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth125.get("vector_count", -1)) != D3S2_125_PREFIX_COUNT:
+        return _fail_check("d3s2_125_prefix_authority vector_count pin mismatch")
+
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
         return _fail_check(
@@ -6007,6 +6090,40 @@ def check(path: Path) -> int:
     if hundred_nineteen_chain != D3S2_119_FINGERPRINT_HASH:
         return _fail_check(
             f"119-prefix fingerprint chain pin fail (got {hundred_nineteen_chain})"
+        )
+
+    # Full-object 125-prefix equality (119 + P1-A; origin/main before P1-D).
+    expected_125 = expected_doc["vectors"][:D3S2_125_PREFIX_COUNT]
+    if vectors[:D3S2_125_PREFIX_COUNT] != expected_125:
+        for i in range(D3S2_125_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_125[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_125[i])
+            if vectors[i] != expected_125[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"125-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("125-prefix full-object mismatch")
+    hundred_twenty_five_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_125_PREFIX_COUNT)
+        ]
+    )
+    if hundred_twenty_five_chain != D3S2_125_FINGERPRINT_HASH:
+        return _fail_check(
+            f"125-prefix fingerprint chain pin fail "
+            f"(got {hundred_twenty_five_chain})"
         )
 
     err = _assert_prefix_identity(vectors, prefix_doc)
@@ -6737,7 +6854,9 @@ def check(path: Path) -> int:
     p0c = suffix[p0c_start : p0c_start + D3S2_P0C_SLICE_COUNT]
     p0d_start = p0c_start + D3S2_P0C_SLICE_COUNT
     p0d = suffix[p0d_start : p0d_start + D3S2_P0D_SLICE_COUNT]
-    p1a = suffix[p0d_start + D3S2_P0D_SLICE_COUNT :]
+    p1a_start = p0d_start + D3S2_P0D_SLICE_COUNT
+    p1a = suffix[p1a_start : p1a_start + D3S2_P1A_SLICE_COUNT]
+    p1d = suffix[p1a_start + D3S2_P1A_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -6760,6 +6879,8 @@ def check(path: Path) -> int:
         return _fail_check("p0d slice length mismatch")
     if len(p1a) != D3S2_P1A_SLICE_COUNT:
         return _fail_check("p1a slice length mismatch")
+    if len(p1d) != D3S2_P1D_SLICE_COUNT:
+        return _fail_check("p1d slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -8305,6 +8426,115 @@ def check(path: Path) -> int:
         if vec["expected"] != exp_expected:
             return _fail_check(f"{vec['id']}: expected != independent model")
 
+    # ---- P1-D profile mismatch / future_profile evaluator-off (#12) ----
+    p1d_kinds_got = {v["kind"] for v in p1d}
+    if p1d_kinds_got != D3S2_P1D_KINDS:
+        return _fail_check(f"p1d kinds inventory mismatch: {p1d_kinds_got}")
+    p1d_by_kind = {v["kind"]: v for v in p1d}
+
+    def _p1d_common(vec: Dict[str, Any], *, mismatch: int, future: int) -> Optional[str]:
+        if int(vec["mode"]) != 21:
+            return f"{vec['id']}: mode must be 21"
+        if vec.get("ownership") != OWNERSHIP_P1D:
+            return f"{vec['id']}: ownership pin fail"
+        if vec.get("faults"):
+            return f"{vec['id']}: faults must be empty"
+        exp = vec["expected"]
+        if exp.get("final_status") != "UNSUPPORTED":
+            return f"{vec['id']}: final_status must be UNSUPPORTED"
+        if int(exp.get("adopted", -1)) != 0:
+            return f"{vec['id']}: adopted must be 0"
+        if int(exp.get("phase", -1)) != PHASE_BASELINE:
+            return f"{vec['id']}: phase must stay BASELINE (not COMPLETE)"
+        if int(exp.get("flags", -1)) != FLAG_BASELINE_DONE:
+            return f"{vec['id']}: flags must be BASELINE_DONE only"
+        if int(exp.get("flags", 0)) & FLAG_COMPLETE_READY:
+            return f"{vec['id']}: COMPLETE_READY forbidden (false authority)"
+        if int(exp.get("count_complete_mask", -1)) != 0:
+            return f"{vec['id']}: count mask must be 0"
+        if int(exp.get("binding_complete_mask", -1)) != 0:
+            return f"{vec['id']}: binding mask must be 0"
+        if int(exp.get("profile_exact_active", -1)) != 0:
+            return f"{vec['id']}: profile_exact_active must be 0"
+        if int(exp.get("profile_mismatch", -1)) != mismatch:
+            return f"{vec['id']}: profile_mismatch pin fail"
+        if int(exp.get("future_profile_candidate", -1)) != future:
+            return f"{vec['id']}: future_profile_candidate pin fail"
+        if int(exp.get("recognizable_future_seen", -1)) != 0:
+            return f"{vec['id']}: recognizable_future_seen must be 0"
+        if int(exp.get("iter_open_count", -1)) != 1:
+            return f"{vec['id']}: iter_open_count must be 1 (no INTERNAL reopen)"
+        if int(exp.get("d3_peer_get_count", -1)) != 0:
+            return f"{vec['id']}: peer_get must be 0"
+        if int(exp.get("mutation_calls", -1)) != 0:
+            return f"{vec['id']}: mutation_calls must be 0"
+        if int(exp.get("has_sticky_primary", -1)) != 0:
+            return f"{vec['id']}: sticky must be 0"
+        if int(exp.get("family14_row_count", -1)) != 17:
+            return f"{vec['id']}: family14_row_count must be 17"
+        if int(exp.get("current_domain_key_count", -1)) != 0:
+            return f"{vec['id']}: current_domain_key_count must be 0"
+        pt = exp.get("port_trace") or []
+        if pt.count("begin:READ_ONLY") != 1:
+            return f"{vec['id']}: single-txn begin pin fail"
+        if pt.count("iter_open:prefix0") != 1:
+            return f"{vec['id']}: single baseline iter_open only"
+        if pt.count("get") != 17:
+            return f"{vec['id']}: exact 17 profile gets"
+        # No peer gets after first iter_open.
+        first_open = pt.index("iter_open:prefix0")
+        if any(t == "get" for t in pt[first_open + 1 :]):
+            return f"{vec['id']}: INTERNAL/BIND get after iter_open forbidden"
+        ops = [c.get("op") for c in vec["calls"]]
+        if ops[0] != "begin_profiled_d3s2" or ops[-1] != "finalize":
+            return f"{vec['id']}: calls must begin_profiled_d3s2 … finalize"
+        if ops.count("d3s2_drive") != 1:
+            return f"{vec['id']}: exactly one baseline d3s2_drive"
+        if any(c.get("op") == "begin_profiled_d3s1" for c in vec["calls"]):
+            return f"{vec['id']}: dual-bound S1 begin forbidden"
+        if int(exp.get("ok_row_count", -1)) < 18:
+            return f"{vec['id']}: domain rows required (ok_row_count>=18)"
+        return None
+
+    m21_mm = p1d_by_kind["mode21_profile_mismatch_evaluator_off_unsupported"]
+    err = _p1d_common(m21_mm, mismatch=1, future=0)
+    if err:
+        return _fail_check(err)
+    try:
+        exp_calls, exp_expected = run_d3s2_profile_evaluator_off(
+            m21_mm["candidate_binding"],
+            m21_mm["rows"],
+            profile_mismatch=1,
+            future_profile_candidate=0,
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m21_mm['id']}: model reject: {exc}")
+    if m21_mm["calls"] != exp_calls:
+        return _fail_check(f"{m21_mm['id']}: calls != independent model")
+    if m21_mm["expected"] != exp_expected:
+        return _fail_check(f"{m21_mm['id']}: expected != independent model")
+
+    m21_fp = p1d_by_kind["mode21_future_profile_evaluator_off_unsupported"]
+    err = _p1d_common(m21_fp, mismatch=0, future=1)
+    if err:
+        return _fail_check(err)
+    try:
+        exp_calls, exp_expected = run_d3s2_profile_evaluator_off(
+            m21_fp["candidate_binding"],
+            m21_fp["rows"],
+            profile_mismatch=0,
+            future_profile_candidate=1,
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m21_fp['id']}: model reject: {exc}")
+    if m21_fp["calls"] != exp_calls:
+        return _fail_check(f"{m21_fp['id']}: calls != independent model")
+    if m21_fp["expected"] != exp_expected:
+        return _fail_check(f"{m21_fp['id']}: expected != independent model")
+    # Fail-closed: mismatch and future stored profiles must not be identical.
+    if m21_mm["rows"][0]["value_hex"] == m21_fp["rows"][0]["value_hex"]:
+        return _fail_check("p1d mismatch/future stored binding must differ")
+
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
             f"missing d3s2 kinds {D3S2_REQUIRED_KINDS - kinds}"
@@ -9486,6 +9716,108 @@ def self_test() -> int:
                 "ownership", OWNERSHIP_P0D
             ),
         )
+        # 125-prefix freeze (includes P1-A; P1-D follows at 125+).
+        t(
+            "hundred_twenty_five_prefix_row_tamper",
+            lambda d: d["vectors"][124]["rows"].__setitem__(
+                0, {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "hundred_twenty_five_prefix_expected_tamper",
+            lambda d: d["vectors"][119]["expected"].__setitem__(
+                "ok_row_count", 999
+            ),
+        )
+        t(
+            "hundred_twenty_five_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_125_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_twenty_five_prefix_content_authority_tamper",
+            lambda d: d["d3s2_125_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        # P1-D evaluator-off anti-pass (indices 125, 126).
+        t(
+            "p1d_mismatch_complete_ready_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__(
+                "flags", FLAG_BASELINE_DONE | FLAG_COMPLETE_READY
+            ),
+        )
+        t(
+            "p1d_mismatch_phase_complete_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__(
+                "phase", PHASE_COMPLETE
+            ),
+        )
+        t(
+            "p1d_mismatch_internal_reopen_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__(
+                "iter_open_count", 2
+            ),
+        )
+        t(
+            "p1d_mismatch_port_trace_second_open_tamper",
+            lambda d: d["vectors"][125]["expected"]["port_trace"].insert(
+                -1, "iter_open:prefix0"
+            ),
+        )
+        t(
+            "p1d_mismatch_bind_mask_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__(
+                "binding_complete_mask", MASK_ATTEMPT | MASK_INDEX
+            ),
+        )
+        t(
+            "p1d_mismatch_peer_get_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__(
+                "d3_peer_get_count", 1
+            ),
+        )
+        t(
+            "p1d_mismatch_adopt1_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__("adopted", 1),
+        )
+        t(
+            "p1d_mismatch_post_open_get_tamper",
+            lambda d: d["vectors"][125]["expected"]["port_trace"].insert(
+                d["vectors"][125]["expected"]["port_trace"].index(
+                    "iter_open:prefix0"
+                )
+                + 2,
+                "get",
+            ),
+        )
+        t(
+            "p1d_future_complete_ready_tamper",
+            lambda d: d["vectors"][126]["expected"].__setitem__(
+                "flags", FLAG_BASELINE_DONE | FLAG_COMPLETE_READY
+            ),
+        )
+        t(
+            "p1d_future_bind_mask_tamper",
+            lambda d: d["vectors"][126]["expected"].__setitem__(
+                "binding_complete_mask", MASK_ATTEMPT
+            ),
+        )
+        t(
+            "p1d_future_adopt1_tamper",
+            lambda d: d["vectors"][126]["expected"].__setitem__("adopted", 1),
+        )
+        t(
+            "p1d_future_ownership_tamper",
+            lambda d: d["vectors"][126].__setitem__("ownership", OWNERSHIP_P1A),
+        )
+        t(
+            "p1d_mismatch_future_confuse_tamper",
+            lambda d: d["vectors"][125]["expected"].__setitem__(
+                "future_profile_candidate", 1
+            ),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -9506,9 +9838,10 @@ def self_test() -> int:
                 print(f, file=sys.stderr)
             return 1
         print(
-            "self-test ok (94+100+102+104+106+108+110+112+113+114+115+119 prefix "
-            "freeze + mode25/mode26/mode24/mode23/mode22/mode21/p0a/p0b/p0c/p0d/"
-            "p1a slice pins + two-txn anti-pass + forbidden ops + clean pass)"
+            "self-test ok (94+100+102+104+106+108+110+112+113+114+115+119+125 "
+            "prefix freeze + mode25/mode26/mode24/mode23/mode22/mode21/p0a/p0b/"
+            "p0c/p0d/p1a/p1d slice pins + two-txn anti-pass + forbidden ops + "
+            "clean pass)"
         )
         return 0
 
@@ -11736,6 +12069,236 @@ def build_d3s2_p1a_slice_vectors() -> List[Dict[str, Any]]:
         raise SystemExit(f"p1a kinds inventory mismatch: {kinds}")
     return vectors
 
+
+# ---------------------------------------------------------------------------
+# P1-D: profile mismatch / future_profile evaluator-off (§18.13.15 case12)
+# ---------------------------------------------------------------------------
+
+
+def _from_hex_local(h: str) -> bytes:
+    return _d3s1.from_hex(h)
+
+
+def _be32_local(v: int) -> bytes:
+    return _d3s1.be32(v)
+
+
+def _crc32c_local(b: bytes) -> int:
+    return _d3s1.crc32c(b)
+
+
+def _hex_of_local(b: bytes) -> str:
+    return _d3s1.hex_of(b)
+
+
+def run_d3s2_profile_evaluator_off(
+    binding: Dict[str, Any],
+    rows: List[Dict[str, str]],
+    *,
+    profile_mismatch: int,
+    future_profile_candidate: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Independent reference model: Mode21 baseline-only evaluator-off.
+
+    begin → one baseline drive to true EXHAUSTED → finalize UNSUPPORTED.
+    phase stays BASELINE; flags == BASELINE_DONE only; masks 0; no INTERNAL
+    reopen / BIND / peer get. Not COMPLETE/COMPLETE_READY (false authority).
+    Does not invoke production C.
+    """
+    if profile_mismatch not in (0, 1) or future_profile_candidate not in (0, 1):
+        raise SystemExit("profile flags must be 0|1")
+    if profile_mismatch == future_profile_candidate:
+        raise SystemExit("exactly one of mismatch/future must be set")
+    if profile_mismatch + future_profile_candidate != 1:
+        raise SystemExit("profile flag mutual exclusion")
+    n_ok = len(rows)
+    if n_ok < 18:
+        raise SystemExit("evaluator-off rows must include domain material")
+    # 17 catalog + ≥1 domain; family14 ok count is 17; domain not decoded.
+    domain_n = n_ok - 17
+    if domain_n < 1:
+        raise SystemExit("domain rows required")
+
+    calls: List[Dict[str, Any]] = [
+        {
+            "op": "begin_profiled_d3s2",
+            "mode": 21,
+            "expected_status": "OK",
+        },
+        {
+            "op": "d3s2_drive",
+            "row_budget": 256,
+            "expected_status": "OK",
+        },
+        {"op": "finalize", "expected_status": "UNSUPPORTED"},
+    ]
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(_walk_trace_segment(n_ok))
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    expected: Dict[str, Any] = {
+        "final_status": "UNSUPPORTED",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 0,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 0,
+        "profile_mismatch": profile_mismatch,
+        "future_profile_candidate": future_profile_candidate,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 1,
+        "port_trace": port_trace,
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": PHASE_BASELINE,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE,
+    }
+    # Material sanity: candidate encoding is always exact binding fields;
+    # stored rows differ by mismatch mutation or future version.
+    if binding is None:
+        raise SystemExit("binding required")
+    return calls, expected
+
+
+def build_d3s2_p1d_slice_vectors() -> List[Dict[str, Any]]:
+    """Append-only P1-D Mode21 profile mismatch / future evaluator-off."""
+    _assert_d1_authority_pin()
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    # Domain material (D1 STATE + ANCHOR) so ordinary S2 would have work.
+    state_row = _d3s1.row_from_d1(D1_STATE_ID)
+    anchor_row = _d3s1.row_from_d1(D1_ANCHOR_ID)
+
+    # 1) profile_mismatch: stored binding byte flip + CRC (candidate exact).
+    mismatch_rows = _d3s1.encode_all_profile_rows(binding)
+    bind = bytearray(_from_hex_local(mismatch_rows[0]["value_hex"]))
+    bind[50] ^= 0x01
+    body = bytes(bind[:-4])
+    bind[-4:] = _be32_local(_crc32c_local(body))
+    mismatch_rows[0]["value_hex"] = _hex_of_local(bytes(bind))
+    rows_mm = _d3s1.merge_rows(mismatch_rows, [state_row, anchor_row])
+    calls_mm, exp_mm = run_d3s2_profile_evaluator_off(
+        binding,
+        rows_mm,
+        profile_mismatch=1,
+        future_profile_candidate=0,
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M21_PROFILE_MISMATCH_EVALUATOR_OFF",
+            "kind": "mode21_profile_mismatch_evaluator_off_unsupported",
+            "mode": 21,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_mm),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_mm,
+            "d1_refs": [D1_STATE_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=state_row,
+                expect_presence="PRESENT",
+                note=(
+                    "domain STATE present; S2 evaluator never starts under "
+                    "profile_mismatch"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=anchor_row,
+                expect_presence="PRESENT",
+                note="domain ANCHOR present; no BIND/peer get",
+            ),
+            "row_refs": [],
+            "notes": (
+                "P1-D formal (§18.13.15 case12): Mode21 profile_mismatch "
+                "evaluator-off — stored binding semantic mismatch (CRC-valid) "
+                "vs exact candidate; domain STATE+ANCHOR present. Baseline "
+                "zero-prefix once → EXHAUSTED; phase stays BASELINE with "
+                "BASELINE_DONE only (not COMPLETE/COMPLETE_READY); masks 0; "
+                "no INTERNAL reopen/BIND/peer get; finalize UNSUPPORTED "
+                "adopted0. Not future_profile_candidate / not "
+                "recognizable_future_seen. mutation_calls=0; faults=[]."
+            ),
+            "ownership": OWNERSHIP_P1D,
+            "expected": exp_mm,
+        }
+    )
+
+    # 2) future_profile_candidate: stored binding record_version=2.
+    future_rows = _d3s1.encode_all_profile_rows(binding, binding_version=2)
+    rows_fp = _d3s1.merge_rows(future_rows, [state_row, anchor_row])
+    calls_fp, exp_fp = run_d3s2_profile_evaluator_off(
+        binding,
+        rows_fp,
+        profile_mismatch=0,
+        future_profile_candidate=1,
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M21_FUTURE_PROFILE_EVALUATOR_OFF",
+            "kind": "mode21_future_profile_evaluator_off_unsupported",
+            "mode": 21,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_fp),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_fp,
+            "d1_refs": [D1_STATE_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=state_row,
+                expect_presence="PRESENT",
+                note=(
+                    "domain STATE present; S2 evaluator never starts under "
+                    "future_profile_candidate"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=anchor_row,
+                expect_presence="PRESENT",
+                note="domain ANCHOR present; no BIND/peer get",
+            ),
+            "row_refs": [],
+            "notes": (
+                "P1-D formal (§18.13.15 case12): Mode21 future_profile_candidate "
+                "evaluator-off — stored binding NLR1 record_version=2 "
+                "(validate_snapshot UNSUPPORTED class); candidate exact v1; "
+                "domain STATE+ANCHOR present. Baseline zero-prefix once → "
+                "EXHAUSTED; phase BASELINE + BASELINE_DONE only; masks 0; no "
+                "INTERNAL reopen/BIND/peer get; finalize UNSUPPORTED "
+                "adopted0. Distinct from profile_mismatch and from "
+                "recognizable_future_seen. mutation_calls=0; faults=[]."
+            ),
+            "ownership": OWNERSHIP_P1D,
+            "expected": exp_fp,
+        }
+    )
+
+    if len(vectors) != D3S2_P1D_SLICE_COUNT:
+        raise SystemExit("p1d slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P1D_KINDS:
+        raise SystemExit(f"p1d kinds inventory mismatch: {kinds}")
+    # Fail-closed: mismatch vs future must not share stored binding shape.
+    if vectors[0]["rows"][0]["value_hex"] == vectors[1]["rows"][0]["value_hex"]:
+        raise SystemExit("p1d mismatch/future stored binding must differ")
+    return vectors
 
 
 def main(argv: List[str]) -> int:

@@ -3093,6 +3093,362 @@ static int test_d3s2_p0c_mid_focus_iter_next_port_failure_note0(void)
     return 0;
 }
 
+/*
+ * P1-D1: profile_mismatch / future_profile_candidate evaluator-off.
+ * Baseline true EXHAUSTED with exact inactive + mismatch|future → stay phase
+ * BASELINE + BASELINE_DONE only (not COMPLETE/COMPLETE_READY). No INTERNAL
+ * reopen / SELECT / FOCUS / BIND. Finalize exemption → UNSUPPORTED/adopted0.
+ * Second drive → INVALID_STATE / Port 0 / state frozen. Domain rows present
+ * prove S2 material is ignored. Count-green-without-BIND is P1-D2 (out of slice).
+ */
+static int patch_stored_binding_record_version_future(
+    ninlil_scripted_storage_spy_t *spy)
+{
+    size_t i;
+    uint32_t payload_len;
+    uint32_t crc;
+    uint8_t *value;
+    uint32_t value_len;
+
+    for (i = 0u; i < spy->row_count; ++i) {
+        /* Catalog binding key id1: NINLIL\\0\\1\\1 (9 bytes). */
+        if (spy->rows[i].key_length == 9u
+            && spy->rows[i].key[0] == (uint8_t)'N'
+            && spy->rows[i].key[1] == (uint8_t)'I'
+            && spy->rows[i].key[2] == (uint8_t)'N'
+            && spy->rows[i].key[3] == (uint8_t)'L'
+            && spy->rows[i].key[4] == (uint8_t)'I'
+            && spy->rows[i].key[5] == (uint8_t)'L'
+            && spy->rows[i].key[6] == 0x00u
+            && spy->rows[i].key[7] == 0x01u
+            && spy->rows[i].key[8] == 0x01u) {
+            value = spy->rows[i].value;
+            value_len = spy->rows[i].value_length;
+            if (value_len < 16u) {
+                return 0;
+            }
+            /* NLR1 record_version at bytes 6..7 → future 2. */
+            value[6] = 0x00u;
+            value[7] = 0x02u;
+            payload_len = ((uint32_t)value[8] << 24)
+                | ((uint32_t)value[9] << 16) | ((uint32_t)value[10] << 8)
+                | (uint32_t)value[11];
+            if (12u + payload_len + 4u != value_len) {
+                return 0;
+            }
+            crc = ninlil_model_domain_crc32c(value, 12u + payload_len);
+            value[12u + payload_len] = (uint8_t)((crc >> 24) & 0xffu);
+            value[12u + payload_len + 1u] = (uint8_t)((crc >> 16) & 0xffu);
+            value[12u + payload_len + 2u] = (uint8_t)((crc >> 8) & 0xffu);
+            value[12u + payload_len + 3u] = (uint8_t)(crc & 0xffu);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int run_profile_evaluator_off_unit(
+    int want_mismatch,
+    int want_future)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    int guard;
+    uint32_t iter_open_after_begin;
+    uint64_t ok_after;
+    uint64_t fam14_after;
+    uint64_t cur_after;
+    uint8_t pm_after;
+    uint8_t fp_after;
+    uint8_t pe_after;
+    uint8_t rfs_after;
+    uint8_t phase_snap;
+    uint8_t flags_snap;
+    uint8_t pass_snap;
+    uint8_t count_snap;
+    uint8_t bind_snap;
+    uint64_t trace_before_second;
+    uint32_t begin_before_second;
+    uint32_t iter_open_before_second;
+    uint32_t get_before_second;
+    ninlil_domain_scan_state_t state_before_second;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    if (want_future != 0) {
+        REQUIRE(patch_stored_binding_record_version_future(&spy));
+    }
+    if (want_mismatch != 0) {
+        /* Stored profile exact for original candidate; diverge at begin. */
+        candidate.limits.max_services =
+            (uint32_t)(candidate.limits.max_services + 1u);
+    }
+    /* Domain material so ordinary S2 would have work; evaluator-off ignores it. */
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_STATE_TYPED_KEY, DSB2_STATE_TYPED_KEY_LEN,
+        DSB2_STATE_TYPED_VALUE, DSB2_STATE_TYPED_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 21u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(session.profile_exact_active == 0u);
+    if (want_mismatch != 0) {
+        REQUIRE(session.profile_mismatch == 1u);
+        REQUIRE(session.future_profile_candidate == 0u);
+    }
+    if (want_future != 0) {
+        REQUIRE(session.future_profile_candidate == 1u);
+        REQUIRE(session.profile_mismatch == 0u);
+    }
+    REQUIRE(session.recognizable_future_seen == 0u);
+    REQUIRE(context.pass_kind == NINLIL_DOMAIN_SCAN_D3S2_PASS_BASELINE);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(spy.iter_open_calls == 1u);
+    iter_open_after_begin = spy.iter_open_calls;
+
+    guard = 0;
+    while (session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN
+        && session.has_sticky_primary == 0u
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        REQUIRE(st == NINLIL_OK);
+        guard += 1;
+    }
+
+    /* After: evaluator-not-applicable terminal candidate — not S2 COMPLETE. */
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE);
+    REQUIRE(context.pass_kind == NINLIL_DOMAIN_SCAN_D3S2_PASS_BASELINE);
+    REQUIRE(context.flags == NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
+    REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_FOCUS_LIVE) == 0u);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_BIND_PHASE_ACTIVE) == 0u);
+    REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_NEED_REOPEN) == 0u);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_CARRIER_INSTALLED) == 0u);
+    REQUIRE(context.count_complete_mask == 0u);
+    REQUIRE(context.binding_complete_mask == 0u);
+    REQUIRE(session.txn_live == 1u);
+    REQUIRE(session.has_sticky_primary == 0u);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(spy.iter_open_calls == iter_open_after_begin);
+    REQUIRE(spy.iter_open_calls == 1u);
+    REQUIRE(spy.get_calls == 17u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+
+    /* D2 baseline counters: family14 full; domain rows visited, not decoded. */
+    ok_after = session.ok_row_count;
+    fam14_after = session.family14_row_count;
+    cur_after = session.current_domain_key_count;
+    pe_after = session.profile_exact_active;
+    pm_after = session.profile_mismatch;
+    fp_after = session.future_profile_candidate;
+    rfs_after = session.recognizable_future_seen;
+    REQUIRE(fam14_after == 17u);
+    REQUIRE(cur_after == 0u);
+    REQUIRE(ok_after == 19u); /* 17 family1-4 + ANCHOR + STATE */
+    REQUIRE(pe_after == 0u);
+    if (want_mismatch != 0) {
+        REQUIRE(pm_after == 1u);
+        REQUIRE(fp_after == 0u);
+    }
+    if (want_future != 0) {
+        REQUIRE(fp_after == 1u);
+        REQUIRE(pm_after == 0u);
+    }
+    REQUIRE(rfs_after == 0u);
+    REQUIRE(session.profile_get_present_mask == 0x1ffffu);
+    REQUIRE(session.family14_iter_seen_mask == 0x1ffffu);
+
+    /*
+     * Second drive after evaluator-off baseline EXHAUSTED: INVALID_STATE,
+     * Port 0, session/context/spy counters unchanged.
+     */
+    phase_snap = context.phase;
+    flags_snap = context.flags;
+    pass_snap = context.pass_kind;
+    count_snap = context.count_complete_mask;
+    bind_snap = context.binding_complete_mask;
+    state_before_second = session.state;
+    trace_before_second = spy.trace_count;
+    begin_before_second = spy.begin_calls;
+    iter_open_before_second = spy.iter_open_calls;
+    get_before_second = spy.get_calls;
+    st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+    REQUIRE(st == NINLIL_E_INVALID_STATE);
+    REQUIRE(session.state == state_before_second);
+    REQUIRE(context.phase == phase_snap);
+    REQUIRE(context.flags == flags_snap);
+    REQUIRE(context.pass_kind == pass_snap);
+    REQUIRE(context.count_complete_mask == count_snap);
+    REQUIRE(context.binding_complete_mask == bind_snap);
+    REQUIRE(session.ok_row_count == ok_after);
+    REQUIRE(session.profile_mismatch == pm_after);
+    REQUIRE(session.future_profile_candidate == fp_after);
+    REQUIRE(spy.trace_count == trace_before_second);
+    REQUIRE(spy.begin_calls == begin_before_second);
+    REQUIRE(spy.iter_open_calls == iter_open_before_second);
+    REQUIRE(spy.get_calls == get_before_second);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+
+    /* Fail closed if the mutually-exclusive candidate flags are corrupted. */
+    if (want_mismatch != 0) {
+        session.future_profile_candidate = 1u;
+    } else {
+        session.profile_mismatch = 1u;
+    }
+    st = ninlil_domain_scan_finalize(&session, &result);
+    REQUIRE(st == NINLIL_E_INVALID_STATE);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
+    REQUIRE(spy.rollback_calls == 0u);
+    REQUIRE(spy.trace_count == trace_before_second);
+    if (want_mismatch != 0) {
+        session.future_profile_candidate = 0u;
+    } else {
+        session.profile_mismatch = 0u;
+    }
+
+    st = ninlil_domain_scan_finalize(&session, &result);
+    REQUIRE(st == NINLIL_E_UNSUPPORTED);
+    REQUIRE(result.status == NINLIL_E_UNSUPPORTED);
+    REQUIRE(result.adopted == 0u);
+    REQUIRE(result.profile_exact_active == 0u);
+    if (want_mismatch != 0) {
+        REQUIRE(result.profile_mismatch == 1u);
+        REQUIRE(result.future_profile_candidate == 0u);
+    }
+    if (want_future != 0) {
+        REQUIRE(result.future_profile_candidate == 1u);
+        REQUIRE(result.profile_mismatch == 0u);
+    }
+    REQUIRE(result.recognizable_future_seen == 0u);
+    REQUIRE(result.family14_row_count == 17u);
+    REQUIRE(result.current_domain_key_count == 0u);
+    REQUIRE(result.ok_row_count == 19u);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_DONE);
+    /* Phase stays BASELINE — not false COMPLETE authority. */
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE);
+    REQUIRE(context.pass_kind == NINLIL_DOMAIN_SCAN_D3S2_PASS_BASELINE);
+    REQUIRE(context.flags == NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
+    REQUIRE(context.count_complete_mask == 0u);
+    REQUIRE(context.binding_complete_mask == 0u);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(spy.iter_open_calls == 1u);
+    REQUIRE(spy.rollback_calls == 1u);
+    REQUIRE(spy.mutation_calls == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
+static int test_d3s2_profile_mismatch_evaluator_off(void)
+{
+    return run_profile_evaluator_off_unit(/*want_mismatch=*/1, /*want_future=*/0);
+}
+
+static int test_d3s2_future_profile_evaluator_off(void)
+{
+    return run_profile_evaluator_off_unit(/*want_mismatch=*/0, /*want_future=*/1);
+}
+
+/*
+ * Family1-4 noncatalog terminal CORRUPT overrides profile_mismatch candidate
+ * (existing scanner seam; D3S2 drive path). Exemption must not apply; finalize
+ * publishes STORAGE_CORRUPT, not UNSUPPORTED.
+ */
+static int test_d3s2_profile_mismatch_family14_noncatalog_corrupt_precedence(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t bad_key[10];
+    int guard;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    candidate.limits.max_services =
+        (uint32_t)(candidate.limits.max_services + 1u);
+    /* family=0x03 length-10 noncatalog counter suffix 0 → terminal CORRUPT. */
+    bad_key[0] = (uint8_t)'N';
+    bad_key[1] = (uint8_t)'I';
+    bad_key[2] = (uint8_t)'N';
+    bad_key[3] = (uint8_t)'L';
+    bad_key[4] = (uint8_t)'I';
+    bad_key[5] = (uint8_t)'L';
+    bad_key[6] = 0x00u;
+    bad_key[7] = 0x01u;
+    bad_key[8] = 0x03u;
+    bad_key[9] = 0x00u;
+    REQUIRE(ninlil_spy_add_row(&spy, bad_key, 10u, NULL, 0u));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 21u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(session.profile_mismatch == 1u);
+    REQUIRE(session.profile_exact_active == 0u);
+    REQUIRE(session.future_profile_candidate == 0u);
+
+    guard = 0;
+    st = NINLIL_OK;
+    while (session.has_sticky_primary == 0u
+        && session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        guard += 1;
+    }
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
+    /* Candidate flags remain frozen under sticky; CORRUPT outranks at finalize. */
+    REQUIRE(session.profile_mismatch == 1u);
+    REQUIRE(spy.iter_open_calls == 1u);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+
+    st = ninlil_domain_scan_finalize(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.adopted == 0u);
+    REQUIRE(result.profile_mismatch == 1u);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_DONE);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    return 0;
+}
+
 int ninlil_d3s2_run_all_tests(void)
 {
     if (test_d3s2_context_size_session_and_masks() != 0) {
@@ -3204,6 +3560,16 @@ int ninlil_d3s2_run_all_tests(void)
         return 1;
     }
     if (test_d3s2_p0d_mode22_true_primary_delivery_absent() != 0) {
+        return 1;
+    }
+    if (test_d3s2_profile_mismatch_evaluator_off() != 0) {
+        return 1;
+    }
+    if (test_d3s2_future_profile_evaluator_off() != 0) {
+        return 1;
+    }
+    if (test_d3s2_profile_mismatch_family14_noncatalog_corrupt_precedence()
+        != 0) {
         return 1;
     }
     return 0;

@@ -370,14 +370,29 @@ static int run_vector(const ninlil_d3s2_vector_t *vec)
     const char *last_op;
     uint32_t begin_calls_seen = 0u;
     int expect_complete;
+    int expect_evaluator_off;
     uint64_t observed_get_total;
     uint64_t observed_peer_gets;
     uint64_t baseline_gets;
 
     current_id = vec->id;
     expected_final = status_from_name(vec->expected.final_status);
+    /*
+     * Three closed branches from expected profile diagnostics + phase
+     * (no dedicated boolean): ordinary COMPLETE/adopt1; sticky FAILED;
+     * evaluator-off terminal candidate (BASELINE + mismatch|future →
+     * UNSUPPORTED/adopt0). Candidate is never treated as COMPLETE or FAILED.
+     */
+    expect_evaluator_off =
+        (vec->expected.profile_exact_active == 0u
+            && (vec->expected.profile_mismatch != 0u
+                || vec->expected.future_profile_candidate != 0u)
+            && vec->expected.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE
+            && expected_final == NINLIL_E_UNSUPPORTED
+            && vec->expected.adopted == 0u);
     expect_complete =
-        (vec->expected.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE);
+        (vec->expected.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+            && !expect_evaluator_off);
 
     ninlil_spy_init(&spy);
     ops = ninlil_spy_ops(&spy);
@@ -491,7 +506,27 @@ static int run_vector(const ninlil_d3s2_vector_t *vec)
     REQUIRE((d3s2_context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE)
         != 0u);
 
-    if (expect_complete) {
+    if (expect_evaluator_off) {
+        REQUIRE(d3s2_context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE);
+        REQUIRE(d3s2_context.pass_kind == NINLIL_DOMAIN_SCAN_D3S2_PASS_BASELINE);
+        REQUIRE(d3s2_context.flags == NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE);
+        REQUIRE(
+            (d3s2_context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY)
+            == 0u);
+        REQUIRE(
+            (d3s2_context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_FOCUS_LIVE) == 0u);
+        REQUIRE((d3s2_context.flags
+                    & NINLIL_DOMAIN_SCAN_D3S2_FLAG_BIND_PHASE_ACTIVE)
+            == 0u);
+        REQUIRE(d3s2_context.count_complete_mask == 0u);
+        REQUIRE(d3s2_context.binding_complete_mask == 0u);
+        REQUIRE(session.has_sticky_primary == 0u);
+        REQUIRE(vec->expected.has_sticky_primary == 0u);
+        REQUIRE(vec->expected.adopted == 0u);
+        REQUIRE(expected_final == NINLIL_E_UNSUPPORTED);
+        REQUIRE(vec->expected.iter_open_count == 1u);
+        REQUIRE(vec->expected.d3_peer_get_count == 0u);
+    } else if (expect_complete) {
         REQUIRE(d3s2_context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE);
         REQUIRE(
             (d3s2_context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY)
@@ -602,10 +637,11 @@ int main(void)
     size_t p0c_n = 0u;
     size_t p0d_n = 0u;
     size_t p1a_n = 0u;
+    size_t p1d_n = 0u;
 
     /* Both pins live in the shared append-only fixture. */
     REQUIRE(NINLIL_D3S1_VECTOR_COUNT == 94u);
-    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 31u);
+    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 33u);
     REQUIRE(NINLIL_D3S1_WORKSPACE_CEILING_BYTES == 8192u);
     REQUIRE(sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES);
@@ -735,7 +771,7 @@ int main(void)
                     == 5u);
             }
             p0d_n += 1u;
-        } else {
+        } else if (i < 31u) {
             /* P1-A: ordinary CLEANUP ABSENT stream count under/over + empty
              * secondary declared>0 — STORAGE_CORRUPT FOCUS H2 path. */
             REQUIRE(ninlil_d3s2_vectors[i].mode == 21u
@@ -796,6 +832,54 @@ int main(void)
                     == 0u);
             }
             p1a_n += 1u;
+        } else {
+            /* P1-D: profile mismatch / future_profile evaluator-off
+             * (§18.13.15 case12) — BASELINE + BASELINE_DONE only;
+             * UNSUPPORTED/adopted0; not COMPLETE/FAILED. */
+            REQUIRE(i < 33u);
+            REQUIRE(ninlil_d3s2_vectors[i].mode == 21u);
+            REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.final_status,
+                        "UNSUPPORTED")
+                == 0);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.adopted == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.phase
+                == NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.flags
+                == NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE);
+            REQUIRE((ninlil_d3s2_vectors[i].expected.flags
+                        & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY)
+                == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.count_complete_mask == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.binding_complete_mask
+                == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.profile_exact_active
+                == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.iter_open_count == 1u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.mutation_calls == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.has_sticky_primary == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].fault_count == 0u);
+            if (i == 31u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M21_PROFILE_MISMATCH_EVALUATOR_OFF")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.profile_mismatch
+                    == 1u);
+                REQUIRE(
+                    ninlil_d3s2_vectors[i].expected.future_profile_candidate
+                    == 0u);
+            } else {
+                REQUIRE(i == 32u);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M21_FUTURE_PROFILE_EVALUATOR_OFF")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.profile_mismatch
+                    == 0u);
+                REQUIRE(
+                    ninlil_d3s2_vectors[i].expected.future_profile_candidate
+                    == 1u);
+            }
+            p1d_n += 1u;
         }
 
         /* Mode21 success: BIND_INDEX no STATE companion (case15 pin). */
@@ -827,5 +911,6 @@ int main(void)
     REQUIRE(p0c_n == 1u);
     REQUIRE(p0d_n == 4u);
     REQUIRE(p1a_n == 6u);
+    REQUIRE(p1d_n == 2u);
     return 0;
 }
