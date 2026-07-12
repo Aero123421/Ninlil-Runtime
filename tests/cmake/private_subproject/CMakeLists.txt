@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 7)
-    message(FATAL_ERROR "private source count is not 7: ${_private_sources}")
+if(NOT _private_source_count EQUAL 8)
+    message(FATAL_ERROR "private source count is not 8: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -93,6 +93,7 @@ set(_expected_private_source_names
     runtime_store_bootstrap.c
     runtime_store_codec.c
     runtime_store_orchestrator.c
+    runtime_store_stage5_seam.c
 )
 list(SORT _expected_private_source_names)
 if(NOT _private_source_names STREQUAL _expected_private_source_names)
@@ -137,6 +138,12 @@ check_c_source_compiles(
     NINLIL_PRIVATE_DOMAIN_SCANNER_HEADER_LEAKED)
 if(NINLIL_PRIVATE_DOMAIN_SCANNER_HEADER_LEAKED)
     message(FATAL_ERROR "private Domain Store scanner header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"runtime_store_stage5_seam.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_STAGE5_SEAM_HEADER_LEAKED)
+if(NINLIL_PRIVATE_STAGE5_SEAM_HEADER_LEAKED)
+    message(FATAL_ERROR "private Stage5 seam header is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)

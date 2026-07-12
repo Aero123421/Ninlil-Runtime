@@ -75,6 +75,7 @@ add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     src/model/runtime_store_codec.c
     src/runtime/domain_store_scanner.c
     src/runtime/runtime_store_orchestrator.c
+    src/runtime/runtime_store_stage5_seam.c
 )
 set_property(TARGET ninlil_runtime_private
     PROPERTY NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE)
@@ -95,9 +96,18 @@ ninlil_apply_strict_warnings(ninlil_runtime_private)
 # C11 extensions remain OFF; -Wvla under existing -Werror for this source only.
 # Does not invent a permanent stack-byte ceiling — large automatic record
 # objects are proved absent by tools/domain_scan_dsr2_gate.py source analysis.
+# S6 seam also rejects VLAs (bounded workspace only).
 if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     set_property(
         SOURCE src/runtime/domain_store_scanner.c
+        APPEND PROPERTY COMPILE_OPTIONS -Wvla
+    )
+    set_property(
+        SOURCE src/runtime/runtime_store_stage5_seam.c
+        APPEND PROPERTY COMPILE_OPTIONS -Wvla
+    )
+    set_property(
+        SOURCE src/runtime/runtime_store_orchestrator.c
         APPEND PROPERTY COMPILE_OPTIONS -Wvla
     )
 endif()
@@ -232,7 +242,8 @@ if(NINLIL_BUILD_TESTS)
            OR _source_name STREQUAL "runtime_store_codec.c"
            OR _source_name STREQUAL "runtime_store_bootstrap.c"
            OR _source_name STREQUAL "domain_store_scanner.c"
-           OR _source_name STREQUAL "runtime_store_orchestrator.c")
+           OR _source_name STREQUAL "runtime_store_orchestrator.c"
+           OR _source_name STREQUAL "runtime_store_stage5_seam.c")
             message(FATAL_ERROR
                 "private Runtime source duplicated in reducer: ${_source}")
         endif()
@@ -514,6 +525,30 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME runtime_store_orchestrator
         COMMAND ninlil_runtime_store_orchestrator_test
+    )
+
+    add_executable(ninlil_runtime_store_stage5_seam_test
+        tests/runtime/runtime_store_stage5_seam_test.c
+    )
+    target_include_directories(ninlil_runtime_store_stage5_seam_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_runtime_store_stage5_seam_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_storage_fixture
+        ninlil_test_platform_fixtures
+        ninlil
+    )
+    set_target_properties(ninlil_runtime_store_stage5_seam_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_runtime_store_stage5_seam_test)
+    add_test(
+        NAME runtime_store_stage5_seam
+        COMMAND ninlil_runtime_store_stage5_seam_test
     )
 
     add_library(ninlil_test_scripted_storage_spy STATIC
@@ -861,6 +896,24 @@ if(NINLIL_BUILD_TESTS)
         NAME domain_scan_typed_stack_source_gate
         COMMAND ${Python3_EXECUTABLE} -c
             "import pathlib,re,sys; t=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}/src/model/domain_store_body_codec.c').read_text(); m=re.search(r'ninlil_status_t\\s+ninlil_model_domain_validate_typed_record\\s*\\(', t); sys.exit(print('public validate_typed_record not found') or 1) if not m else None; i=t.find('{', m.end()); depth=0; end=next((j+1 for j,ch in enumerate(t[i:], i) if (depth:=depth+(1 if ch=='{' else -1 if ch=='}' else 0))==0), None); body=t[i:end]; bad=(['large_local_in_public'] if re.search(r'ninlil_model_domain_typed_record_t\\s+\\w+\\s*;', body) else [])+([] if 'validate_typed_record_no_output' in t else ['missing_no_output_helper'])+([] if 'validate_typed_record_no_output' in body else ['public_does_not_call_no_output']); sys.exit(0 if not bad else (print('typed stack source gate failed:', bad) or 1))"
+    )
+
+    # D2-S6 source/release gates: production seam uses begin_profiled only
+    # (never TEST transport begin); no 65536 allocator reread remains in
+    # L2b1 orchestrator; stage5 workspace is bounded (no VLA / large stack).
+    # tools/runtime_store_stage5_gate.py: comment/string strip, fail-closed
+    # parse, negative self-tests. Complements compiler -Wvla on seam/orch.
+    add_test(
+        NAME runtime_store_stage5_seam_source_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_store_stage5_gate.py
+            check
+    )
+    add_test(
+        NAME runtime_store_stage5_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_store_stage5_gate.py
+            self-test
     )
 
     add_executable(ninlil_submission_preflight_test

@@ -45,7 +45,9 @@ typedef enum adversarial_mode {
     ADVERSARIAL_BEGIN_OK_NULL = 6,
     ADVERSARIAL_BEGIN_ERROR_WITH_TXN = 7,
     ADVERSARIAL_ITER_OPEN_OK_NULL = 8,
-    ADVERSARIAL_ITER_OPEN_ERROR_WITH_ITER = 9
+    ADVERSARIAL_ITER_OPEN_ERROR_WITH_ITER = 9,
+    /* First iter_next reports key-required >255 BTS (S6a no-reread). */
+    ADVERSARIAL_ITER_KEY_BTS_OVER_255 = 10
 } adversarial_mode_t;
 
 static adversarial_mode_t adversarial_mode;
@@ -106,6 +108,20 @@ static ninlil_storage_status_t adversarial_iter_next(
 {
     ninlil_storage_status_t status;
     adversarial_iter_calls += 1u;
+    if (adversarial_mode == ADVERSARIAL_ITER_KEY_BTS_OVER_255
+        && adversarial_iter_calls == 1u) {
+        /*
+         * ch12-valid BTS may report required key length > workspace (255).
+         * L2b1 must not reread/allocate (S6a).
+         */
+        if (key != NULL) {
+            key->length = 256u;
+        }
+        if (value != NULL) {
+            value->length = 0u;
+        }
+        return NINLIL_STORAGE_BUFFER_TOO_SMALL;
+    }
     if ((adversarial_mode == ADVERSARIAL_ITER_RETRY_IO
             || adversarial_mode == ADVERSARIAL_ITER_RETRY_UNKNOWN)
         && adversarial_iter_calls == 2u) {
@@ -331,7 +347,7 @@ static int context_destroy(test_context_t *context)
 static ninlil_status_t run(test_context_t *context)
 {
     return ninlil_runtime_store_orchestrate_bootstrap(
-        context->storage, context->allocator, &context->handle,
+        context->storage, &context->handle,
         &context->validation, &context->hooks, &context->workspace,
         &context->result);
 }
@@ -341,7 +357,7 @@ static ninlil_status_t run_with_storage(
     const ninlil_storage_ops_t *storage)
 {
     return ninlil_runtime_store_orchestrate_bootstrap(
-        storage, context->allocator, &context->handle,
+        storage, &context->handle,
         &context->validation, &context->hooks, &context->workspace,
         &context->result);
 }
@@ -525,33 +541,34 @@ static int test_extra_rows_and_oversized_scan(void)
     static const uint8_t FUTURE_KEY_2[] = {
         0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x02u, 0x02u
     };
-    uint8_t oversized[300];
+    uint8_t midsize[300];
     ninlil_bytes_view_t key;
     ninlil_bytes_view_t value;
     test_context_t context;
     ninlil_test_allocator_diagnostics_t diagnostics;
 
-    (void)memset(oversized, 0x5au, sizeof(oversized));
+    (void)memset(midsize, 0x5au, sizeof(midsize));
+    /* Value 300 fits private 4096 workspace: future classifies, no alloc. */
     REQUIRE(context_init(&context));
     key.data = FUTURE_KEY;
     key.length = sizeof(FUTURE_KEY);
-    value.data = oversized;
-    value.length = sizeof(oversized);
+    value.data = midsize;
+    value.length = sizeof(midsize);
     REQUIRE(raw_put(&context, key, value));
     REQUIRE(run(&context) == NINLIL_E_UNSUPPORTED);
     diagnostics = ninlil_test_allocator_diagnostics(
         context.allocator_fixture);
-    REQUIRE(diagnostics.allocate_calls == 1u);
-    REQUIRE(diagnostics.deallocate_calls == 1u);
+    REQUIRE(diagnostics.allocate_calls == 0u);
+    REQUIRE(diagnostics.deallocate_calls == 0u);
     REQUIRE(diagnostics.live_allocations == 0u);
     REQUIRE(ninlil_test_storage_call_count(context.storage_fixture,
-        NINLIL_TEST_STORAGE_OP_ITER_NEXT) == 3u);
+        NINLIL_TEST_STORAGE_OP_ITER_NEXT) == 2u);
     REQUIRE(context_destroy(&context));
 
     REQUIRE(context_init(&context));
     key.data = UNKNOWN_KEY;
     key.length = sizeof(UNKNOWN_KEY);
-    value.data = oversized;
+    value.data = midsize;
     value.length = 1u;
     REQUIRE(raw_put(&context, key, value));
     REQUIRE(run(&context) == NINLIL_E_STORAGE_CORRUPT);
@@ -560,7 +577,7 @@ static int test_extra_rows_and_oversized_scan(void)
     REQUIRE(context_init(&context));
     key.data = FUTURE_KEY;
     key.length = sizeof(FUTURE_KEY);
-    value.data = oversized;
+    value.data = midsize;
     value.length = 1u;
     REQUIRE(raw_put(&context, key, value));
     key.data = FUTURE_KEY_2;
@@ -584,27 +601,9 @@ static int test_extra_rows_and_oversized_scan(void)
     return 0;
 }
 
-static int test_allocator_failure_and_rollback_precedence(void)
+static int test_rollback_precedence(void)
 {
-    static const uint8_t FUTURE_KEY[] = {
-        0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x02u, 0x01u
-    };
-    uint8_t oversized[300];
-    ninlil_bytes_view_t key;
-    ninlil_bytes_view_t value;
     test_context_t context;
-
-    (void)memset(oversized, 0x11, sizeof(oversized));
-    REQUIRE(context_init(&context));
-    key.data = FUTURE_KEY;
-    key.length = sizeof(FUTURE_KEY);
-    value.data = oversized;
-    value.length = sizeof(oversized);
-    REQUIRE(raw_put(&context, key, value));
-    ninlil_test_allocator_fail_next(context.allocator_fixture, 1u);
-    REQUIRE(run(&context) == NINLIL_E_CAPACITY_EXHAUSTED);
-    REQUIRE(context.handle != NULL);
-    REQUIRE(context_destroy(&context));
 
     REQUIRE(context_init(&context));
     REQUIRE(ninlil_test_storage_fault_next(context.storage_fixture,
@@ -630,34 +629,112 @@ static int test_allocator_failure_and_rollback_precedence(void)
     return 0;
 }
 
-static int test_maximum_scan_value_is_transient(void)
+/*
+ * S6a: private 4096 exact boundary OK (future classify, no alloc);
+ * value 4097, Storage ABI 65536, and key length >255 BTS → CORRUPT,
+ * allocate/deallocate 0, no reread (iter_next once per oversized row).
+ * No temporary allocation API remains on the private L2b1 path.
+ */
+static int test_bts_no_reread_boundaries(void)
 {
     static const uint8_t FUTURE_KEY[] = {
         0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x02u, 0x01u
     };
-    static uint8_t maximum_value[NINLIL_M1A_MAX_STORAGE_VALUE_BYTES];
+    static uint8_t key_over_255[256];
+    static uint8_t value_4096[4096];
+    static uint8_t value_4097[4097];
+    static uint8_t value_65536[NINLIL_M1A_MAX_STORAGE_VALUE_BYTES];
+    static const uint8_t SMALL_VALUE[] = {0x01u};
     ninlil_bytes_view_t key;
     ninlil_bytes_view_t value;
     ninlil_test_allocator_diagnostics_t diagnostics;
     test_context_t context;
+    uint64_t iter_next_before;
 
-    (void)memset(maximum_value, 0x6cu, sizeof(maximum_value));
+    (void)memset(key_over_255, 0x7au, sizeof(key_over_255));
+    (void)memset(value_4096, 0x6cu, sizeof(value_4096));
+    (void)memset(value_4097, 0x6du, sizeof(value_4097));
+    (void)memset(value_65536, 0x6eu, sizeof(value_65536));
+
+    /* Exact private max 4096: accepted, classifies as future, no alloc. */
     REQUIRE(context_init(&context));
     key.data = FUTURE_KEY;
     key.length = sizeof(FUTURE_KEY);
-    value.data = maximum_value;
-    value.length = sizeof(maximum_value);
+    value.data = value_4096;
+    value.length = sizeof(value_4096);
     REQUIRE(raw_put(&context, key, value));
     REQUIRE(run(&context) == NINLIL_E_UNSUPPORTED);
     diagnostics = ninlil_test_allocator_diagnostics(
         context.allocator_fixture);
-    REQUIRE(diagnostics.allocate_calls == 1u);
-    REQUIRE(diagnostics.deallocate_calls == 1u);
-    REQUIRE(diagnostics.peak_live_bytes
-        == NINLIL_M1A_MAX_STORAGE_VALUE_BYTES);
+    REQUIRE(diagnostics.allocate_calls == 0u);
+    REQUIRE(diagnostics.deallocate_calls == 0u);
     REQUIRE(diagnostics.live_allocations == 0u);
-    REQUIRE(diagnostics.live_bytes == 0u);
     REQUIRE(context_destroy(&context));
+
+    /* 4097 → BTS → CORRUPT, no reread, no alloc. */
+    REQUIRE(context_init(&context));
+    key.data = FUTURE_KEY;
+    key.length = sizeof(FUTURE_KEY);
+    value.data = value_4097;
+    value.length = sizeof(value_4097);
+    REQUIRE(raw_put(&context, key, value));
+    iter_next_before = ninlil_test_storage_call_count(
+        context.storage_fixture, NINLIL_TEST_STORAGE_OP_ITER_NEXT);
+    REQUIRE(run(&context) == NINLIL_E_STORAGE_CORRUPT);
+    diagnostics = ninlil_test_allocator_diagnostics(
+        context.allocator_fixture);
+    REQUIRE(diagnostics.allocate_calls == 0u);
+    REQUIRE(diagnostics.deallocate_calls == 0u);
+    /* One BTS attempt only: no second reread iter_next. */
+    REQUIRE(ninlil_test_storage_call_count(context.storage_fixture,
+        NINLIL_TEST_STORAGE_OP_ITER_NEXT) == iter_next_before + 1u);
+    REQUIRE(context_destroy(&context));
+
+    /* Storage ABI max 65536 → BTS → CORRUPT, no reread, no alloc. */
+    REQUIRE(context_init(&context));
+    key.data = FUTURE_KEY;
+    key.length = sizeof(FUTURE_KEY);
+    value.data = value_65536;
+    value.length = sizeof(value_65536);
+    REQUIRE(raw_put(&context, key, value));
+    iter_next_before = ninlil_test_storage_call_count(
+        context.storage_fixture, NINLIL_TEST_STORAGE_OP_ITER_NEXT);
+    REQUIRE(run(&context) == NINLIL_E_STORAGE_CORRUPT);
+    diagnostics = ninlil_test_allocator_diagnostics(
+        context.allocator_fixture);
+    REQUIRE(diagnostics.allocate_calls == 0u);
+    REQUIRE(diagnostics.deallocate_calls == 0u);
+    REQUIRE(ninlil_test_storage_call_count(context.storage_fixture,
+        NINLIL_TEST_STORAGE_OP_ITER_NEXT) == iter_next_before + 1u);
+    REQUIRE(context_destroy(&context));
+
+    /*
+     * key required length >255 BTS (provider reports 256) → CORRUPT,
+     * single iter_next, no reread, no alloc, no fence. Storage put cannot
+     * seed key>255 (fixture max 255); inject via adversarial iter_next.
+     */
+    {
+        ninlil_storage_ops_t ops;
+        static const uint8_t KEY_A[] = {0x10u};
+        REQUIRE(context_init(&context));
+        key.data = KEY_A;
+        key.length = sizeof(KEY_A);
+        value.data = SMALL_VALUE;
+        value.length = sizeof(SMALL_VALUE);
+        REQUIRE(raw_put(&context, key, value));
+        ops = adversarial_ops(context.storage, ADVERSARIAL_ITER_KEY_BTS_OVER_255);
+        REQUIRE(run_with_storage(&context, &ops) == NINLIL_E_STORAGE_CORRUPT);
+        diagnostics = ninlil_test_allocator_diagnostics(
+            context.allocator_fixture);
+        REQUIRE(diagnostics.allocate_calls == 0u);
+        REQUIRE(diagnostics.deallocate_calls == 0u);
+        REQUIRE(adversarial_iter_calls == 1u);
+        REQUIRE(context.result.outcome
+            == NINLIL_RUNTIME_STORE_BOOTSTRAP_OUTCOME_NONE);
+        REQUIRE(context.handle != NULL);
+        REQUIRE(context_destroy(&context));
+    }
+    (void)key_over_255;
     return 0;
 }
 
@@ -848,16 +925,11 @@ static int test_adversarial_provider_shapes_and_order(void)
 {
     static const uint8_t KEY_A[] = {0x10u};
     static const uint8_t KEY_B[] = {0x20u};
-    static const uint8_t FUTURE_KEY[] = {
-        0x4eu, 0x49u, 0x4eu, 0x4cu, 0x49u, 0x4cu, 0x00u, 0x02u, 0x01u
-    };
     static const uint8_t VALUE[] = {0x01u};
-    uint8_t oversized[300];
     ninlil_bytes_view_t key;
     ninlil_bytes_view_t value;
     ninlil_storage_ops_t ops;
     test_context_t context;
-    ninlil_test_allocator_diagnostics_t diagnostics;
     adversarial_mode_t order_modes[] = {
         ADVERSARIAL_ITER_DUPLICATE,
         ADVERSARIAL_ITER_OUT_OF_ORDER
@@ -884,52 +956,7 @@ static int test_adversarial_provider_shapes_and_order(void)
         REQUIRE(context_destroy(&context));
     }
 
-    (void)memset(oversized, 0x33, sizeof(oversized));
-    REQUIRE(context_init(&context));
-    key.data = FUTURE_KEY;
-    key.length = sizeof(FUTURE_KEY);
-    value.data = oversized;
-    value.length = sizeof(oversized);
-    REQUIRE(raw_put(&context, key, value));
-    ops = adversarial_ops(context.storage,
-        ADVERSARIAL_ITER_RETRY_LENGTH_CHANGE);
-    REQUIRE(run_with_storage(&context, &ops) == NINLIL_E_STORAGE_CORRUPT);
-    diagnostics = ninlil_test_allocator_diagnostics(
-        context.allocator_fixture);
-    REQUIRE(diagnostics.allocate_calls == 1u);
-    REQUIRE(diagnostics.deallocate_calls == 1u);
-    REQUIRE(diagnostics.live_allocations == 0u);
-    REQUIRE(context_destroy(&context));
-
-    REQUIRE(context_init(&context));
-    key.data = FUTURE_KEY;
-    key.length = sizeof(FUTURE_KEY);
-    value.data = oversized;
-    value.length = sizeof(oversized);
-    REQUIRE(raw_put(&context, key, value));
-    ops = adversarial_ops(context.storage, ADVERSARIAL_ITER_RETRY_IO);
-    REQUIRE(run_with_storage(&context, &ops) == NINLIL_E_STORAGE);
-    diagnostics = ninlil_test_allocator_diagnostics(
-        context.allocator_fixture);
-    REQUIRE(diagnostics.allocate_calls == 1u);
-    REQUIRE(diagnostics.deallocate_calls == 1u);
-    REQUIRE(context.handle != NULL);
-    REQUIRE(context_destroy(&context));
-
-    REQUIRE(context_init(&context));
-    key.data = FUTURE_KEY;
-    key.length = sizeof(FUTURE_KEY);
-    value.data = oversized;
-    value.length = sizeof(oversized);
-    REQUIRE(raw_put(&context, key, value));
-    ops = adversarial_ops(context.storage, ADVERSARIAL_ITER_RETRY_UNKNOWN);
-    REQUIRE(run_with_storage(&context, &ops) == NINLIL_E_STORAGE_CORRUPT);
-    diagnostics = ninlil_test_allocator_diagnostics(
-        context.allocator_fixture);
-    REQUIRE(diagnostics.allocate_calls == 1u);
-    REQUIRE(diagnostics.deallocate_calls == 1u);
-    REQUIRE(context.handle == NULL);
-    REQUIRE(context_destroy(&context));
+    /* S6a: reread path removed; RETRY_* adversarial modes no longer apply. */
 
     REQUIRE(context_init(&context));
     ops = adversarial_ops(context.storage, ADVERSARIAL_BEGIN_OK_NULL);
@@ -965,7 +992,7 @@ static int test_invalid_arguments_do_not_destroy_handle(void)
     REQUIRE(context_init(&context));
     (void)memset(&context.result, 0xa5, sizeof(context.result));
     REQUIRE(ninlil_runtime_store_orchestrate_bootstrap(
-        NULL, context.allocator, &context.handle,
+        NULL, &context.handle,
         &context.validation, &context.hooks, &context.workspace,
         &context.result) == NINLIL_E_INVALID_ARGUMENT);
     REQUIRE(context.result.outcome
@@ -976,7 +1003,7 @@ static int test_invalid_arguments_do_not_destroy_handle(void)
     context.workspace.candidate_binding.storage_schema =
         UINT32_C(0x11223344);
     REQUIRE(ninlil_runtime_store_orchestrate_bootstrap(
-        context.storage, context.allocator, &context.handle,
+        context.storage, &context.handle,
         &context.validation, &context.hooks, &context.workspace,
         (ninlil_runtime_store_bootstrap_result_t *)&context.workspace)
         == NINLIL_E_INVALID_ARGUMENT);
@@ -984,19 +1011,19 @@ static int test_invalid_arguments_do_not_destroy_handle(void)
         == UINT32_C(0x11223344));
     REQUIRE(context.handle != NULL);
     REQUIRE(ninlil_runtime_store_orchestrate_bootstrap(
-        context.storage, context.allocator,
+        context.storage,
         (ninlil_storage_handle_t *)&context.workspace,
         &context.validation, &context.hooks, &context.workspace,
         &context.result) == NINLIL_E_INVALID_ARGUMENT);
     REQUIRE(context.handle != NULL);
     REQUIRE(ninlil_runtime_store_orchestrate_bootstrap(
         (const ninlil_storage_ops_t *)&context.workspace,
-        context.allocator, &context.handle, &context.validation,
+        &context.handle, &context.validation,
         &context.hooks, &context.workspace, &context.result)
         == NINLIL_E_INVALID_ARGUMENT);
     REQUIRE(context.handle != NULL);
     REQUIRE(ninlil_runtime_store_orchestrate_bootstrap(
-        context.storage, context.allocator, &context.handle,
+        context.storage, &context.handle,
         &context.validation,
         (const ninlil_runtime_store_hook_dispatcher_t *)&context.result,
         &context.workspace, &context.result)
@@ -1011,8 +1038,8 @@ int main(void)
     if (test_new_then_existing_exact() != 0
         || test_partial_and_profile_mismatch() != 0
         || test_extra_rows_and_oversized_scan() != 0
-        || test_allocator_failure_and_rollback_precedence() != 0
-        || test_maximum_scan_value_is_transient() != 0
+        || test_rollback_precedence() != 0
+        || test_bts_no_reread_boundaries() != 0
         || test_commit_unknown_convergence() != 0
         || test_closed_status_mapping_and_fencing() != 0
         || test_operation_status_matrix() != 0

@@ -15,6 +15,14 @@ extern "C" {
 #define NINLIL_RUNTIME_STORE_HOOK_AFTER_NAMESPACE_BINDING_COMMIT \
     "runtime.after_namespace_binding_commit"
 
+/*
+ * L2b1 empty-namespace scan uses a private key 255 / value 4096 workspace.
+ * BUFFER_TOO_SMALL (required key>255 or value>4096) is STORAGE_CORRUPT with
+ * no reread and no temporary allocation (D2-S6a; docs/17 §15.8 removed).
+ */
+#define NINLIL_RUNTIME_STORE_L2B1_SCAN_KEY_CAPACITY ((uint32_t)255u)
+#define NINLIL_RUNTIME_STORE_L2B1_SCAN_VALUE_CAPACITY ((uint32_t)4096u)
+
 typedef enum ninlil_runtime_store_bootstrap_outcome {
     NINLIL_RUNTIME_STORE_BOOTSTRAP_OUTCOME_NONE = 0,
     NINLIL_RUNTIME_STORE_NEW_BOOTSTRAP_COMMITTED = 1,
@@ -34,8 +42,8 @@ typedef struct ninlil_runtime_store_bootstrap_result {
 
 /*
  * Caller-owned bounded memory. It is intended for a Runtime-owned arena, not
- * an ESP32 task stack. Oversized iterator values use the Runtime allocator
- * transiently and are never retained here.
+ * an ESP32 task stack. Oversized iterator rows (key>255 or value>4096) fail
+ * closed as STORAGE_CORRUPT; no heap allocation is performed by L2b1.
  */
 typedef struct ninlil_runtime_store_bootstrap_workspace {
     ninlil_model_runtime_store_binding_t candidate_binding;
@@ -51,20 +59,31 @@ typedef struct ninlil_runtime_store_bootstrap_workspace {
             ninlil_model_runtime_store_bootstrap_record_t record;
         } bootstrap;
         struct {
-            uint8_t key[255];
-            uint8_t previous_key[255];
-            uint8_t value[
-                NINLIL_MODEL_RUNTIME_STORE_BINDING_VALUE_BYTES];
+            uint8_t key[NINLIL_RUNTIME_STORE_L2B1_SCAN_KEY_CAPACITY];
+            uint8_t previous_key[NINLIL_RUNTIME_STORE_L2B1_SCAN_KEY_CAPACITY];
+            uint8_t value[NINLIL_RUNTIME_STORE_L2B1_SCAN_VALUE_CAPACITY];
         } scan;
     } phase;
 } ninlil_runtime_store_bootstrap_workspace_t;
 
+/*
+ * Current layout ceiling after S6a (key255 + value4096 empty-ns scan).
+ * Not a permanent ESP stack budget; Runtime arena only.
+ */
+#define NINLIL_RUNTIME_STORE_L2B1_WORKSPACE_CEILING_BYTES ((uint32_t)5120u)
+
 #if defined(__cplusplus)
-static_assert(sizeof(ninlil_runtime_store_bootstrap_workspace_t) <= 2560u,
+static_assert(sizeof(ninlil_runtime_store_bootstrap_workspace_t)
+        <= NINLIL_RUNTIME_STORE_L2B1_WORKSPACE_CEILING_BYTES,
     "Runtime Store bootstrap workspace exceeds the L2b1 bound");
+static_assert(NINLIL_RUNTIME_STORE_L2B1_SCAN_VALUE_CAPACITY == 4096u,
+    "L2b1 scan value capacity must match private namespace 4096 bound");
 #else
-_Static_assert(sizeof(ninlil_runtime_store_bootstrap_workspace_t) <= 2560u,
+_Static_assert(sizeof(ninlil_runtime_store_bootstrap_workspace_t)
+        <= NINLIL_RUNTIME_STORE_L2B1_WORKSPACE_CEILING_BYTES,
     "Runtime Store bootstrap workspace exceeds the L2b1 bound");
+_Static_assert(NINLIL_RUNTIME_STORE_L2B1_SCAN_VALUE_CAPACITY == 4096u,
+    "L2b1 scan value capacity must match private namespace 4096 bound");
 #endif
 
 /*
@@ -75,10 +94,12 @@ _Static_assert(sizeof(ninlil_runtime_store_bootstrap_workspace_t) <= 2560u,
  * When out_result does not overlap another participating range, outcome and
  * diagnostics are reset to NONE/zero before remaining validation continues.
  * An out_result-overlap failure leaves every participating range unchanged.
+ *
+ * Allocator is not accepted: private namespace BUFFER_TOO_SMALL is always
+ * STORAGE_CORRUPT with no reread/allocation (S6a). No public ABI impact.
  */
 ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
     const ninlil_storage_ops_t *storage,
-    const ninlil_allocator_ops_t *allocator,
     ninlil_storage_handle_t *inout_handle,
     const ninlil_model_runtime_validation_result_t *validation,
     const ninlil_runtime_store_hook_dispatcher_t *hooks,
