@@ -2867,6 +2867,292 @@ static int test_s4_exact_get_ok_bad_and_nonempty_length(void)
     return 0;
 }
 
+/* D2-S5: note_terminal_corrupt state gates + preserve flags/Port0. */
+static int test_s5_note_terminal_corrupt_gates(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    ninlil_model_runtime_store_key_t ck;
+    uint64_t before_trace;
+    uint8_t future_before;
+    uint64_t ok_before;
+    uint8_t has_prev_before;
+    uint32_t prev_len_before;
+    uint8_t prev_canary[255];
+
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(NULL)
+        == NINLIL_E_INVALID_ARGUMENT);
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+
+    /* IDLE */
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(&session)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_IDLE);
+    REQUIRE(session.has_sticky_primary == 0u);
+
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN);
+    before_trace = spy.trace_count;
+    ok_before = session.ok_row_count;
+    future_before = session.recognizable_future_seen;
+    has_prev_before = session.has_previous;
+    prev_len_before = session.previous_key_length;
+    (void)memcpy(prev_canary, workspace.previous_key, sizeof(prev_canary));
+    REQUIRE(session.iter_live == 1u);
+    REQUIRE(session.txn_live == 1u);
+
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(&session)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.ok_row_count == ok_before);
+    REQUIRE(session.recognizable_future_seen == future_before);
+    REQUIRE(session.has_previous == has_prev_before);
+    REQUIRE(session.previous_key_length == prev_len_before);
+    REQUIRE(memcmp(workspace.previous_key, prev_canary, sizeof(prev_canary))
+        == 0);
+    REQUIRE(session.iter_live == 1u);
+    REQUIRE(session.txn_live == 1u);
+    REQUIRE(spy.trace_count == before_trace); /* Port 0 */
+
+    /* FAILED re-note: no mutation */
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(&session)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(spy.trace_count == before_trace);
+
+    /* advance/exact_get rejected after note */
+    REQUIRE(ninlil_domain_scan_advance(&session, 1u)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &ck)
+        == NINLIL_OK);
+    key.data = ck.bytes;
+    key.length = ck.length;
+    (void)memset(&exact, 0xA5, sizeof(exact));
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(spy.trace_count == before_trace);
+
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.adopted == 0u);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_DONE);
+
+    /* DONE */
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(&session)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
+/* D2-S5: sticky CORRUPT from note outranks future/mismatch candidates. */
+static int test_s5_note_outranks_future_and_mismatch(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_model_runtime_store_binding_t stored;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    uint8_t future_key[16];
+    uint8_t future_value[64];
+    uint32_t future_key_len = 0u;
+    uint32_t future_value_len = 0u;
+
+    /* future then note */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    REQUIRE(make_future_key(future_key, &future_key_len));
+    REQUIRE(make_future_value(future_value, &future_value_len));
+    REQUIRE(ninlil_spy_add_row(
+        &spy, future_key, future_key_len, future_value, future_value_len));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(scan_to_end(&session, 64u) == 0);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
+    REQUIRE(session.recognizable_future_seen == 1u);
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(&session)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.recognizable_future_seen == 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.recognizable_future_seen == 1u);
+    REQUIRE(result.adopted == 0u);
+
+    /* mismatch then note */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &stored));
+    s2_default_binding(&candidate);
+    candidate.limits.max_services = 99u;
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(session.profile_mismatch == 1u);
+    REQUIRE(scan_to_end(&session, 64u) == 0);
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(&session)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.profile_mismatch == 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.profile_mismatch == 1u);
+    REQUIRE(result.status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
+/*
+ * D2-S5: fresh-session restart from front after partial abort.
+ * Same-session budget resume is NOT labeled restart.
+ */
+static int test_s5_fresh_session_restart_from_front(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    uint64_t first_ok;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_domain_scan_advance(&session, 1u) == NINLIL_OK);
+    first_ok = session.ok_row_count;
+    REQUIRE(first_ok == 1u);
+    REQUIRE(ninlil_domain_scan_abort(&session, &result) == NINLIL_OK);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_DONE);
+
+    /* Fresh session — not same-session budget resume. */
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(session.ok_row_count == 0u);
+    REQUIRE(session.has_previous == 0u);
+    REQUIRE(ninlil_domain_scan_advance(&session, 1u) == NINLIL_OK);
+    REQUIRE(session.ok_row_count == 1u); /* from front again */
+    REQUIRE(scan_to_end(&session, 64u) == 0);
+    REQUIRE(session.ok_row_count == 17u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result) == NINLIL_OK);
+    REQUIRE(result.adopted == 1u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
+/*
+ * D2-S5 invariant-only: first sticky is preserved across note.
+ *
+ * Seeds a legal private OPEN session with a pre-existing non-CORRUPT sticky
+ * (simulating a prior Port-path primary), then calls note:
+ *   return STORAGE_CORRUPT, but stored first sticky remains unchanged;
+ *   finalize result preserves the first sticky (not overwritten by note).
+ *
+ * Label: INVARIANT-ONLY / not reachable D3 semantics. Production note never
+ * invents a non-CORRUPT sticky itself; this unit only proves first-sticky
+ * hold when one is already present before note.
+ */
+static int test_s5_first_sticky_preserved_on_note_invariant_only(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    uint64_t before_trace;
+    uint64_t ok_before;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN);
+    REQUIRE(session.has_sticky_primary == 0u);
+
+    /* Seed a pre-existing non-CORRUPT sticky while still OPEN (private). */
+    session.has_sticky_primary = 1u;
+    session.sticky_primary = NINLIL_E_STORAGE;
+    ok_before = session.ok_row_count;
+    before_trace = spy.trace_count;
+
+    REQUIRE(ninlil_domain_scan_note_terminal_corrupt(&session)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    /* Return is CORRUPT, but first sticky remains NINLIL_E_STORAGE. */
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE);
+    REQUIRE(session.ok_row_count == ok_before);
+    REQUIRE(spy.trace_count == before_trace); /* Port 0 */
+
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result) == NINLIL_E_STORAGE);
+    REQUIRE(result.status == NINLIL_E_STORAGE);
+    REQUIRE(result.adopted == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
+/* D2-S5: live sizeof + single 4096 value buffer + ceiling. */
+static int test_s5_dsr2_live_sizeof_and_single_value(void)
+{
+    ninlil_domain_scan_workspace_t workspace;
+
+    REQUIRE(NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES == 8192u);
+    REQUIRE(sizeof(ninlil_domain_scan_workspace_t)
+        <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES);
+    REQUIRE(sizeof(workspace.value) == 4096u);
+    REQUIRE(sizeof(workspace.key) == 255u);
+    REQUIRE(sizeof(workspace.previous_key) == 255u);
+    /* No second value-class buffer field in the workspace object. */
+    REQUIRE(sizeof(workspace)
+        == sizeof(ninlil_domain_scan_workspace_t));
+    (void)memset(&workspace, 0, sizeof(workspace));
+    return 0;
+}
+
 int main(void)
 {
     if (test_empty_namespace() != 0) {
@@ -2987,6 +3273,21 @@ int main(void)
         return 1;
     }
     if (test_s4_exact_get_ok_bad_and_nonempty_length() != 0) {
+        return 1;
+    }
+    if (test_s5_note_terminal_corrupt_gates() != 0) {
+        return 1;
+    }
+    if (test_s5_note_outranks_future_and_mismatch() != 0) {
+        return 1;
+    }
+    if (test_s5_fresh_session_restart_from_front() != 0) {
+        return 1;
+    }
+    if (test_s5_first_sticky_preserved_on_note_invariant_only() != 0) {
+        return 1;
+    }
+    if (test_s5_dsr2_live_sizeof_and_single_value() != 0) {
         return 1;
     }
     return 0;
