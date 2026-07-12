@@ -1,10 +1,11 @@
 {
   "version": 1,
   "format": "ninlil-domain-scan-crossrow-v1-d3s2",
-  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; first D3-S2 product-smoke suffix = Mode21..26 empty-carrier/empty-secondary COMPLETE (one mode per independent session; single READ_ONLY txn; baseline once + sequential zero-prefix reopen; mode-scoped BIND set; mutation_calls=0). Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked.",
-  "vector_count": 100,
+  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen 100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained as append-only prefix; Mode25 slice appends CUM total=1+RECENT C1+true ANCHOR COMPLETE success and RECENT-without-CUM BIND carrier-ABSENT STORAGE_CORRUPT (note path, not Port fail). Each vector is one mode per independent READ_ONLY txn; baseline once + sequential zero-prefix reopen; mutation_calls=0. Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked for expected generation.",
+  "vector_count": 102,
   "d3s1_prefix_count": 94,
-  "d3s2_suffix_count": 6,
+  "d3s2_suffix_count": 8,
+  "d3s2_100_prefix_count": 100,
   "required_kinds": [
     "begin_alias_poison",
     "begin_context_null",
@@ -88,7 +89,9 @@
     "mode22_empty_carrier_empty_secondary_ok",
     "mode23_empty_carrier_empty_secondary_ok",
     "mode24_empty_carrier_empty_secondary_ok",
+    "mode25_cum_total1_recent_slot1_anchor_ok",
     "mode25_empty_carrier_empty_secondary_ok",
+    "mode25_recent_without_cum_carrier_absent_corrupt",
     "mode26_empty_carrier_empty_secondary_ok",
     "mode2_present_ok",
     "mode3_present_ok",
@@ -156,6 +159,12 @@
     "content_sha256": "76b28d847be8cd7a95e8f1879400403abf702931a3de170a473c7c0f76d95468",
     "prior_fingerprint_prefix_hash": "2c99af3c9b3aea228e4478c0d2739352f111fdd8c42303bf07177f8bb8ee8c58",
     "generator": "tools/domain_scan_crossrow_vector_gen.py"
+  },
+  "d3s2_100_prefix_authority": {
+    "vector_count": 100,
+    "content_sha256": "880e4b62cf62eb667397b9c58e547298290df92c87a4308400274e9db090fc89",
+    "prior_fingerprint_prefix_hash": "0d769bba784c0f2250f27d382d4150c22570095da6f12b237b9e49d2bd6c9a0c",
+    "note": "append-only freeze of prior main (94 D3S1 + 6 Mode21..26 empty-carrier smoke); Mode25 slice vectors follow"
   },
   "prior_fingerprints": [
     {
@@ -757,11 +766,23 @@
       "kind": "mode26_empty_carrier_empty_secondary_ok",
       "mode": 26,
       "fingerprint": "ba2f1243ee1c66ac01e82c31f51b905a981203e606410d0e6617a864a9ba7c0f"
+    },
+    {
+      "id": "D3S2_M25_CUM_T1_REC_S1_ANCHOR_OK",
+      "kind": "mode25_cum_total1_recent_slot1_anchor_ok",
+      "mode": 25,
+      "fingerprint": "7ff5415cf1c0617971cd9174f7e873f224903735057383cce2e8a681604e488d"
+    },
+    {
+      "id": "D3S2_M25_REC_WITHOUT_CUM_CARRIER_ABSENT",
+      "kind": "mode25_recent_without_cum_carrier_absent_corrupt",
+      "mode": 25,
+      "fingerprint": "6876eb90fa2bcec3362d12ce822827505e51f4059e6a495fb44be57f65f484e0"
     }
   ],
-  "prior_fingerprint_prefix_hash": "0d769bba784c0f2250f27d382d4150c22570095da6f12b237b9e49d2bd6c9a0c",
-  "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix (fingerprint/order/expected/rows/calls) rebuilt from tools/domain_scan_crossrow_vector_gen.py. content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
-  "content_sha256": "880e4b62cf62eb667397b9c58e547298290df92c87a4308400274e9db090fc89",
+  "prior_fingerprint_prefix_hash": "c399e6d7a39de7792c7782ee70468f5508d984df509ed3a2b602baa8fb39e246",
+  "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix and the 100-vector prior main (fingerprint/order/expected/rows/calls). content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
+  "content_sha256": "31bee901f9ab613cf7fe1d8e58b28a1c28ea174e8869a859d0a6c756c2ec88ea",
   "vectors": [
     {
       "id": "D3S1_M01_SERVICE_QUOTA_PRESENT",
@@ -23267,7 +23288,7 @@
       },
       "row_refs": [],
       "notes": "D3-S2 product smoke Mode21: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(21) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
-      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
       "expected": {
         "final_status": "OK",
         "adopted": 1,
@@ -23549,7 +23570,7 @@
       },
       "row_refs": [],
       "notes": "D3-S2 product smoke Mode22: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(22) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
-      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
       "expected": {
         "final_status": "OK",
         "adopted": 1,
@@ -23811,7 +23832,7 @@
       },
       "row_refs": [],
       "notes": "D3-S2 product smoke Mode23: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(23) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
-      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
       "expected": {
         "final_status": "OK",
         "adopted": 1,
@@ -24073,7 +24094,7 @@
       },
       "row_refs": [],
       "notes": "D3-S2 product smoke Mode24: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(24) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
-      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
       "expected": {
         "final_status": "OK",
         "adopted": 1,
@@ -24335,7 +24356,7 @@
       },
       "row_refs": [],
       "notes": "D3-S2 product smoke Mode25: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(25) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
-      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
       "expected": {
         "final_status": "OK",
         "adopted": 1,
@@ -24597,7 +24618,7 @@
       },
       "row_refs": [],
       "notes": "D3-S2 product smoke Mode26: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(26) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
-      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
       "expected": {
         "final_status": "OK",
         "adopted": 1,
@@ -24704,6 +24725,652 @@
         "count_complete_mask": 0,
         "binding_complete_mask": 32,
         "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M25_CUM_T1_REC_S1_ANCHOR_OK",
+      "kind": "mode25_cum_total1_recent_slot1_anchor_ok",
+      "mode": 25,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c00010651010520b0fefa6373b8f83f3fbf7a54f70fd2ff6069ac92464e79af7ad9ef4c6874850f",
+          "value_hex": "4e4c523100060001000000b400015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000054710000000000000000000000000000990001000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a101ceea"
+        },
+        {
+          "key_hex": "4e494e4c494c00010651010520d1bd61a00c6083fab179c503e5e884a5f2445e0a13b7969a4a1edc63c2c80192",
+          "value_hex": "4e4c523100060001000000b000015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000050710000000000000000000000000000990002000000000000000000010000000100000001000000020000000000000001a10000000000000000000000000000a2000000000000006400000001000000008e6dfabf"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 25,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [
+        "DSB3_RS_CUM_T0_TYPED",
+        "DSB3_RS_REC_C1_TYPED",
+        "DSB2_ANCHOR_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB3_RS_CUM_T0_TYPED",
+        "key_hex": "4e494e4c494c00010651010520b0fefa6373b8f83f3fbf7a54f70fd2ff6069ac92464e79af7ad9ef4c6874850f",
+        "value_hex": "4e4c523100060001000000b400015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000054710000000000000000000000000000990001000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a101ceea",
+        "mutations": [
+          {
+            "offset": 0,
+            "old_hex": "4e4c523100060001000000b400015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f200000054710000000000000000000000000000990001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b14b1981",
+            "new_hex": "4e4c523100060001000000b400015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000054710000000000000000000000000000990001000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a101ceea",
+            "recompute": "crc32c_trailer",
+            "directive": "replace_complete_value_recrc"
+          }
+        ],
+        "expect_presence": "PRESENT",
+        "note": "Mode25 carrier CUM total=1 (body total field patched; PVD\u2192ANCHOR)"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB2_ANCHOR_TYPED",
+        "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "true primary ANCHOR for CUM/RECENT BIND PVD/raw"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB3_RS_REC_C1_TYPED",
+          "key_hex": "4e494e4c494c00010651010520d1bd61a00c6083fab179c503e5e884a5f2445e0a13b7969a4a1edc63c2c80192",
+          "value_hex": "4e4c523100060001000000b000015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000050710000000000000000000000000000990002000000000000000000010000000100000001000000020000000000000001a10000000000000000000000000000a2000000000000006400000001000000008e6dfabf",
+          "mutations": [
+            {
+              "offset": 72,
+              "old_hex": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+              "new_hex": "f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea",
+              "recompute": "crc32c_trailer",
+              "directive": "write_pvd_then_crc32c"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "RECENT cycle1/slot0 companion; PVD\u2192ANCHOR"
+        }
+      ],
+      "notes": "Mode25 FOCUS known-slot + BIND_RETRY success: CUMULATIVE total_completed_cycle_count=1 carrier, RECENT C1 (slot0) companion, true ANCHOR primary. Single READ_ONLY txn; baseline once; sequential zero-prefix reopen; CUM self-carrier; RECENT carrier companion; both rows primary PVD/raw; COMPLETE; mutation_calls=0. D1 authority rows patched via independent Python encoder/parser only.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,
+        "ok_row_count": 20,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 4,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 8,
+        "d3_mode_applicable_count": 2,
+        "phase": 15,
+        "count_complete_mask": 16,
+        "binding_complete_mask": 16,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M25_REC_WITHOUT_CUM_CARRIER_ABSENT",
+      "kind": "mode25_recent_without_cum_carrier_absent_corrupt",
+      "mode": 25,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c00010651010520d1bd61a00c6083fab179c503e5e884a5f2445e0a13b7969a4a1edc63c2c80192",
+          "value_hex": "4e4c523100060001000000b000015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000050710000000000000000000000000000990002000000000000000000010000000100000001000000020000000000000001a10000000000000000000000000000a2000000000000006400000001000000008e6dfabf"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 25,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE_CORRUPT"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE_CORRUPT"
+        }
+      ],
+      "d1_refs": [
+        "DSB3_RS_REC_C1_TYPED",
+        "DSB2_ANCHOR_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB3_RS_REC_C1_TYPED",
+        "key_hex": "4e494e4c494c00010651010520d1bd61a00c6083fab179c503e5e884a5f2445e0a13b7969a4a1edc63c2c80192",
+        "value_hex": "4e4c523100060001000000b000015100000000000000000171000000000000000000000000000099f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000050710000000000000000000000000000990002000000000000000000010000000100000001000000020000000000000001a10000000000000000000000000000a2000000000000006400000001000000008e6dfabf",
+        "mutations": [
+          {
+            "offset": 72,
+            "old_hex": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+            "new_hex": "f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea",
+            "recompute": "crc32c_trailer",
+            "directive": "write_pvd_then_crc32c"
+          }
+        ],
+        "expect_presence": "PRESENT",
+        "note": "RECENT secondary without same-tx CUM carrier"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "CUM carrier companion exact_get ABSENT (real S2 orphan finding)"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB2_ANCHOR_TYPED",
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+          "mutations": [],
+          "expect_presence": "PRESENT",
+          "note": "true ANCHOR present but unused after carrier ABSENT note"
+        }
+      ],
+      "notes": "Mode25 empty-carrier SELECT (no CUMULATIVE) then BIND_RETRY on live RECENT: carrier companion exact_get ABSENT is a real S2 orphan finding via note_terminal_corrupt \u2192 STORAGE_CORRUPT. Not a Port failure path. abort; mutation_calls=0. Independent reference model \u2014 production C not used for expected.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (8-vector suffix on frozen 94-prefix only)",
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 2,
+        "ok_row_count": 19,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 1,
+        "d3_mode_applicable_count": 1,
+        "phase": 16,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": 5
       }
     }
   ]

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Independent D3-S2 crossrow sibling oracle (append-only; stdlib only).
 
-Appends the first D3-S2 product-smoke suffix (Mode21..26 empty-carrier /
-empty-secondary COMPLETE, one mode per session) onto the frozen D3-S1
-94-vector prefix produced by tools/domain_scan_crossrow_vector_gen.py.
+Appends D3-S2 suffix vectors onto the frozen D3-S1 94-vector prefix
+produced by tools/domain_scan_crossrow_vector_gen.py:
+
+  * 6 Mode21..26 empty-carrier / empty-secondary COMPLETE product smoke
+  * Mode25 slice: CUM total=1 + RECENT C1 + true ANCHOR success, and
+    RECENT-without-CUM carrier-ABSENT STORAGE_CORRUPT (note path)
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
-Does NOT claim full D3-S2 oracle complete — only the first 6-session
-product smoke (docs/17 §18.13.4 / .5 / .9 / .15).
+Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
 
 Usage:
   python3 tools/domain_scan_crossrow_d3s2_vector_gen.py generate <path>
@@ -22,6 +24,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import struct
 import sys
 import tempfile
 from pathlib import Path
@@ -34,8 +37,11 @@ DEFAULT_JSON = REPO_ROOT / "spec" / "vectors" / "domain-scan-crossrow-v1.json"
 FORMAT = "ninlil-domain-scan-crossrow-v1-d3s2"
 VERSION = 1
 D3S1_PREFIX_COUNT = 94
-D3S2_SUFFIX_COUNT = 6
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 100
+D3S2_SMOKE_COUNT = 6
+D3S2_MODE25_SLICE_COUNT = 2
+D3S2_SUFFIX_COUNT = D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT  # 8
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 102
+D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 CEILING = 8192
 
 # Frozen D3-S1 prefix identity (byte-for-byte rebuild pin).
@@ -47,9 +53,24 @@ D3S1_PREFIX_FINGERPRINT_HASH = (
     "2c99af3c9b3aea228e4478c0d2739352f111fdd8c42303bf07177f8bb8ee8c58"
 )
 
+# Frozen 100-vector append-only prefix (94 D3S1 + 6 D3S2 smoke) — prior main.
+D3S2_100_CONTENT_SHA256 = (
+    "880e4b62cf62eb667397b9c58e547298290df92c87a4308400274e9db090fc89"
+)
+D3S2_100_FINGERPRINT_HASH = (
+    "0d769bba784c0f2250f27d382d4150c22570095da6f12b237b9e49d2bd6c9a0c"
+)
+
+# D1 authority pins for Mode25 material (independent of production C).
+D1_CUM_ID = "DSB3_RS_CUM_T0_TYPED"
+D1_REC_ID = "DSB3_RS_REC_C1_TYPED"
+D1_ANCHOR_ID = "DSB2_ANCHOR_TYPED"
+
 # Phase / mask constants (docs/17 §18.13; match domain_store_d3s2.h).
 PHASE_COMPLETE = 15
+PHASE_FAILED = 16
 FLAG_BASELINE_DONE = 0x01
+FLAG_BIND_PHASE_ACTIVE = 0x04
 FLAG_COMPLETE_READY = 0x08
 MASK_ATTEMPT = 0x01
 MASK_INDEX = 0x02
@@ -66,11 +87,11 @@ MODE_BIND_MASK = {
     25: MASK_RETRY,
     26: MASK_MANAGEMENT,
 }
-# Drive chunks: baseline + SELECT + BIND set (Mode21 BIND has two subtypes).
+# Empty-carrier smoke drive chunks (Mode21 BIND has two subtypes).
 MODE_DRIVE_COUNT = {21: 4, 22: 3, 23: 3, 24: 3, 25: 3, 26: 3}
 MODE_ITER_OPEN = {21: 4, 22: 3, 23: 3, 24: 3, 25: 3, 26: 3}
 
-D3S2_REQUIRED_KINDS = frozenset(
+D3S2_SMOKE_KINDS = frozenset(
     {
         "mode21_empty_carrier_empty_secondary_ok",
         "mode22_empty_carrier_empty_secondary_ok",
@@ -80,6 +101,13 @@ D3S2_REQUIRED_KINDS = frozenset(
         "mode26_empty_carrier_empty_secondary_ok",
     }
 )
+D3S2_MODE25_KINDS = frozenset(
+    {
+        "mode25_cum_total1_recent_slot1_anchor_ok",
+        "mode25_recent_without_cum_carrier_absent_corrupt",
+    }
+)
+D3S2_REQUIRED_KINDS = D3S2_SMOKE_KINDS | D3S2_MODE25_KINDS
 
 SCANNER_CALL_OPS = frozenset(
     {
@@ -168,29 +196,33 @@ CALL_KEYS = frozenset(
 
 SCOPE = (
     "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): "
-    "frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; first "
-    "D3-S2 product-smoke suffix = Mode21..26 empty-carrier/empty-secondary "
-    "COMPLETE (one mode per independent session; single READ_ONLY txn; "
-    "baseline once + sequential zero-prefix reopen; mode-scoped BIND set; "
-    "mutation_calls=0). Does not claim full D3-S2 oracle complete, Stage5 "
-    "D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin "
-    "forbidden. Independent generator — production C not invoked."
+    "frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen "
+    "100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained as "
+    "append-only prefix; Mode25 slice appends CUM total=1+RECENT C1+true "
+    "ANCHOR COMPLETE success and RECENT-without-CUM BIND carrier-ABSENT "
+    "STORAGE_CORRUPT (note path, not Port fail). Each vector is one mode "
+    "per independent READ_ONLY txn; baseline once + sequential zero-prefix "
+    "reopen; mutation_calls=0. Does not claim full D3-S2 oracle complete, "
+    "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
+    "transport begin forbidden. Independent generator — production C not "
+    "invoked for expected generation."
 )
 
 SHA256_PROCEDURE = (
     "Do not embed full-file sha256 inside this artifact. Generator `check` "
     "proves deterministic rebuild equality against "
-    "tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the "
-    "exact 94-vector D3-S1 prefix (fingerprint/order/expected/rows/calls) "
-    "rebuilt from tools/domain_scan_crossrow_vector_gen.py. content_sha256 "
-    "covers the document with sha256_procedure/content_sha256 fields set to "
-    "empty strings before hashing."
+    "tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes "
+    "the exact 94-vector D3-S1 prefix and the 100-vector prior main "
+    "(fingerprint/order/expected/rows/calls). content_sha256 covers the "
+    "document with sha256_procedure/content_sha256 fields set to empty "
+    "strings before hashing."
 )
 
 OWNERSHIP_DEFAULT = (
     "D3-S2 independent crossrow oracle "
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
-    "not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)"
+    "not Stage5 bridge; not D3-S2 complete claim "
+    f"({D3S2_SUFFIX_COUNT}-vector suffix on frozen 94-prefix only)"
 )
 
 
@@ -273,9 +305,14 @@ def d3s2_vector_fingerprint(vec: Dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _walk_trace_segment() -> List[str]:
-    """One zero-prefix full-band walk over 17 catalog rows (17 OK + NOT_FOUND)."""
-    return ["iter_next"] * 18
+def _walk_trace_segment(n_ok_rows: int) -> List[str]:
+    """One zero-prefix full-band walk: n_ok_rows OK visits + terminal NOT_FOUND."""
+    return ["iter_next"] * (n_ok_rows + 1)
+
+
+def _begin_profile_port_prefix() -> List[str]:
+    """begin(RO) + 17 family1–4 profile gets (docs/17 §18.13.4 baseline)."""
+    return ["begin:READ_ONLY"] + ["get"] * 17
 
 
 def run_d3s2_empty_carrier_case(
@@ -300,6 +337,7 @@ def run_d3s2_empty_carrier_case(
     n_drive = MODE_DRIVE_COUNT[mode]
     n_open = MODE_ITER_OPEN[mode]
     bind_mask = MODE_BIND_MASK[mode]
+    n_ok = 17
 
     calls: List[Dict[str, Any]] = [
         {
@@ -318,11 +356,11 @@ def run_d3s2_empty_carrier_case(
         )
     calls.append({"op": "finalize", "expected_status": "OK"})
 
-    # Port trace: begin + 17 profile gets + n_open *(open + 18 next + close) + rollback
-    port_trace: List[str] = ["begin:READ_ONLY"] + ["get"] * 17
-    for i in range(n_open):
+    # Port trace: begin + 17 profile gets + n_open *(open + walk + close) + rollback
+    port_trace: List[str] = _begin_profile_port_prefix()
+    for _ in range(n_open):
         port_trace.append("iter_open:prefix0")
-        port_trace.extend(_walk_trace_segment())
+        port_trace.extend(_walk_trace_segment(n_ok))
         port_trace.append("iter_close")
     port_trace.append("rollback")
 
@@ -365,7 +403,310 @@ def run_d3s2_empty_carrier_case(
     return calls, expected
 
 
-def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
+# ---------------------------------------------------------------------------
+# Mode25 material (D1 authority + independent Python encoder/parser)
+# ---------------------------------------------------------------------------
+
+
+def _d1_catalog() -> Dict[str, Dict[str, Any]]:
+    return _d3s1.load_d1()
+
+
+def _assert_d1_authority_pin() -> None:
+    """Fail-closed: D1 catalog pin must match the D3-S1 generator's pin."""
+    cat = _d1_catalog()
+    for vid in (D1_CUM_ID, D1_REC_ID, D1_ANCHOR_ID):
+        if vid not in cat:
+            raise SystemExit(f"D1 authority missing required vector {vid}")
+        v = cat[vid]
+        if not v.get("key_hex") or not v.get("value_hex"):
+            raise SystemExit(f"D1 {vid} missing key_hex/value_hex")
+    if getattr(_d3s1, "D1_SHA256", None) is None:
+        raise SystemExit("d3s1 module missing D1_SHA256 pin")
+    raw = _d3s1.D1_VECTORS.read_bytes()
+    got = hashlib.sha256(raw).hexdigest()
+    if got != _d3s1.D1_SHA256:
+        raise SystemExit(
+            f"D1 authority pin mismatch: got {got} want {_d3s1.D1_SHA256}"
+        )
+    data = json.loads(_d3s1.D1_VECTORS.read_text(encoding="utf-8"))
+    if data.get("format") != _d3s1.D1_FORMAT:
+        raise SystemExit(f"D1 format pin mismatch: {data.get('format')}")
+    if len(data["vectors"]) != _d3s1.D1_COUNT:
+        raise SystemExit("D1 vector_count pin mismatch")
+
+
+def _patch_cum_total_completed(value: bytes, total: int) -> bytes:
+    """Independent body field patch: CUM total_completed_cycle_count + folded.
+
+    RETRY CUM body (docs/17 §8.6 D1-B3l): tx16 | kind u16 | slot u16 |
+    total u64 | folded u64 | … . folded = max(total-4, 0). Same-length
+    envelope body replace + CRC32C trailer recompute (stdlib). Does not
+    call production C.
+    """
+    st, body, _pvd = _d3s1.extract_envelope(value)
+    if st != 0x51:
+        raise SystemExit(f"CUM patch expected subtype 0x51, got {st:#x}")
+    if len(body) != 84:
+        raise SystemExit(f"CUM body must be exact 84, got {len(body)}")
+    kind = struct.unpack_from(">H", body, 16)[0]
+    slot = struct.unpack_from(">H", body, 18)[0]
+    if kind != 1 or slot != 0:
+        raise SystemExit(f"CUM kind/slot must be 1/0, got {kind}/{slot}")
+    b = bytearray(body)
+    struct.pack_into(">Q", b, 20, int(total))
+    folded = 0 if total < 4 else int(total) - 4
+    struct.pack_into(">Q", b, 28, folded)
+    # admission-style zeros for folded==0 remain as in D1 base when total<=4
+    if folded == 0:
+        # cumulative_attempt..counter_saturated must be exact 0 (§8.6)
+        b[36:] = bytes(len(b) - 36)
+    out = bytearray(value)
+    # body at fixed envelope offset 108 for current NLR1 domain framing
+    body_off = 108
+    if bytes(out[body_off : body_off + len(body)]) != body:
+        # fall back to search (should not happen for D1 typed values)
+        idx = bytes(out).find(body)
+        if idx < 0:
+            raise SystemExit("CUM body not found in envelope value")
+        body_off = idx
+    out[body_off : body_off + len(body)] = b
+    out[-4:] = _d3s1.be32(_d3s1.crc32c(bytes(out[:-4])))
+    # re-parse to confirm
+    _st2, body2, _ = _d3s1.extract_envelope(bytes(out))
+    got_total = struct.unpack_from(">Q", body2, 20)[0]
+    got_folded = struct.unpack_from(">Q", body2, 28)[0]
+    if got_total != total or got_folded != folded:
+        raise SystemExit("CUM total/folded patch did not stick")
+    return bytes(out)
+
+
+def _mode25_material_rows(
+    *, include_cum: bool, cum_total: int
+) -> Tuple[List[Dict[str, str]], Dict[str, Dict[str, str]], bytes]:
+    """Build profile + ANCHOR [+ CUM] + RECENT rows with independent PVD patch.
+
+    Returns (rows_sorted, named_rows, anchor_pvd).
+    """
+    _assert_d1_authority_pin()
+    cat = _d1_catalog()
+    anchor = cat[D1_ANCHOR_ID]
+    rec = cat[D1_REC_ID]
+    cum = cat[D1_CUM_ID]
+
+    anchor_key = from_hex(anchor["key_hex"])
+    anchor_val = from_hex(anchor["value_hex"])
+    anchor_pvd = _d3s1.value_digest(anchor_val)
+
+    rec_key = from_hex(rec["key_hex"])
+    rec_val = _d3s1.patch_pvd(from_hex(rec["value_hex"]), anchor_pvd)
+
+    named: Dict[str, Dict[str, str]] = {
+        "anchor": {"key_hex": hex_of(anchor_key), "value_hex": hex_of(anchor_val)},
+        "recent": {"key_hex": hex_of(rec_key), "value_hex": hex_of(rec_val)},
+    }
+    domain_rows: List[Dict[str, str]] = [
+        named["anchor"],
+        named["recent"],
+    ]
+    if include_cum:
+        cum_key = from_hex(cum["key_hex"])
+        cum_val = _patch_cum_total_completed(from_hex(cum["value_hex"]), cum_total)
+        cum_val = _d3s1.patch_pvd(cum_val, anchor_pvd)
+        named["cum"] = {
+            "key_hex": hex_of(cum_key),
+            "value_hex": hex_of(cum_val),
+        }
+        domain_rows.append(named["cum"])
+
+    binding = _d3s1.default_binding_fields()
+    profile = _d3s1.encode_all_profile_rows(binding)
+    # Lex order: profile family1–4 then domain family6 (ANCHOR 0x20 < RETRY 0x51).
+    all_rows = list(profile) + sorted(
+        domain_rows, key=lambda r: from_hex(r["key_hex"])
+    )
+    # Stable sorted full set
+    all_rows = sorted(all_rows, key=lambda r: from_hex(r["key_hex"]))
+    return all_rows, named, anchor_pvd
+
+
+def run_d3s2_mode25_cum_total1_success(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode25: CUM total=1 carrier + RECENT slot0 (C1) + true ANCHOR COMPLETE.
+
+    Independent reference model (docs/17 §18.13.4/.5/.7/.9/.10):
+      begin → baseline once (freeze D2) → SELECT finds CUM → FOCUS known-slot
+      matrix (CUM + RECENT 0..3 presence exact_gets) → SELECT empty →
+      BIND_RETRY (CUM self-carrier primary-only; RECENT carrier companion +
+      primary) → COMPLETE → finalize adopt. mutation_calls=0.
+    """
+    n_ok = len(rows)
+    if n_ok != 20:
+        raise SystemExit(f"mode25 success expects 20 rows (17+3), got {n_ok}")
+    # Drives: baseline, SELECT+FOCUS matrix, SELECT empty→BIND, BIND COMPLETE
+    n_drive = 4
+    n_open = 4  # begin open + 3 reopens
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 25, "expected_status": "OK"}
+    ]
+    for _ in range(n_drive):
+        calls.append(
+            {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+        )
+    calls.append({"op": "finalize", "expected_status": "OK"})
+
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE: open(from begin) + full walk + reopen(close+open)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT+FOCUS: open + full walk + 5 known-slot gets + reopen
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * 5)  # CUM + RECENT slots 0..3
+    port_trace.append("iter_close")
+    # drive3 SELECT empty → BIND entry: open + full walk + reopen
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive4 BIND_RETRY: open + walk with interleaved peer gets
+    # Order: 17 profile + ANCHOR (next only) + CUM (next+primary get) +
+    #        RECENT (next+carrier get+primary get) + NOT_FOUND
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)  # profile
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # CUM
+    port_trace.append("get")  # true primary ANCHOR (CUM self-carrier)
+    port_trace.append("iter_next")  # RECENT
+    port_trace.append("get")  # carrier companion CUM
+    port_trace.append("get")  # true primary ANCHOR
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")  # finalize cleanup
+    port_trace.append("rollback")
+
+    expected: Dict[str, Any] = {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,  # ANCHOR + CUM + RECENT
+        "ok_row_count": 20,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        # FOCUS matrix 5 + BIND 3 peer exact_gets
+        "d3_peer_get_count": 8,
+        "d3_mode_applicable_count": 2,  # CUM + RECENT BIND secondaries
+        "phase": PHASE_COMPLETE,
+        "count_complete_mask": MASK_RETRY,
+        "binding_complete_mask": MASK_RETRY,
+        "flags": FLAG_BASELINE_DONE | FLAG_COMPLETE_READY,
+    }
+    if rows != sorted(rows, key=lambda r: from_hex(r["key_hex"])):
+        raise SystemExit("mode25 success rows must be key-sorted")
+    encoded = _d3s1.encode_all_profile_rows(binding)
+    if rows[:17] != encoded:
+        # profile subset must match (may interleave if sort differs — force check)
+        prof = [r for r in rows if len(from_hex(r["key_hex"])) <= 10]
+        if prof != encoded:
+            raise SystemExit("mode25 success profile encoding mismatch")
+    return calls, expected
+
+
+def run_d3s2_mode25_recent_without_cum_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode25: RECENT + ANCHOR, no same-tx CUM → empty-carrier SELECT then
+    BIND_RETRY carrier exact_get ABSENT → note_terminal_corrupt STORAGE_CORRUPT.
+
+    Not a Port failure. abort consumes sticky. mutation_calls=0.
+    """
+    n_ok = len(rows)
+    if n_ok != 19:
+        raise SystemExit(
+            f"mode25 recent-without-cum expects 19 rows (17+2), got {n_ok}"
+        )
+    # Drives: baseline OK, SELECT empty→BIND OK, BIND fail
+    n_drive = 3
+    n_open = 3
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 25, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {
+            "op": "d3s2_drive",
+            "row_budget": 256,
+            "expected_status": "STORAGE_CORRUPT",
+        },
+        {"op": "abort", "expected_status": "STORAGE_CORRUPT"},
+    ]
+
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT empty → BIND entry reopen
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive3 BIND: walk until RECENT; carrier CUM ABSENT → note stop
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)  # profile
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # RECENT
+    port_trace.append("get")  # carrier companion CUM → ABSENT finding
+    port_trace.append("iter_close")  # abort cleanup
+    port_trace.append("rollback")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 2,  # ANCHOR + RECENT
+        "ok_row_count": 19,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 1,  # sole carrier ABSENT get before note
+        "d3_mode_applicable_count": 1,  # RECENT BIND secondary
+        "phase": PHASE_FAILED,
+        "count_complete_mask": 0,  # empty-carrier: no FOCUS close
+        "binding_complete_mask": 0,  # BIND did not complete
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    _ = binding  # same default binding; profile already in rows
+    return calls, expected
+
+
+def build_d3s2_smoke_vectors() -> List[Dict[str, Any]]:
+    """First 6-session Mode21..26 empty-carrier product smoke (frozen pin)."""
     binding = _d3s1.default_binding_fields()
     rows = _d3s1.encode_all_profile_rows(binding)
     vectors: List[Dict[str, Any]] = []
@@ -399,6 +740,122 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
             "expected": expected,
         }
         vectors.append(vec)
+    if len(vectors) != D3S2_SMOKE_COUNT:
+        raise SystemExit("smoke suffix count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_SMOKE_KINDS:
+        raise SystemExit(f"smoke kinds inventory mismatch: {kinds}")
+    return vectors
+
+
+def build_d3s2_mode25_slice_vectors() -> List[Dict[str, Any]]:
+    """Mode25 append-only slice (2 vectors) after the frozen 100-prefix."""
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    # A) CUM total=1 + RECENT C1 + true ANCHOR full success
+    rows_a, named_a, _pvd_a = _mode25_material_rows(include_cum=True, cum_total=1)
+    calls_a, exp_a = run_d3s2_mode25_cum_total1_success(binding, rows_a)
+    vectors.append(
+        {
+            "id": "D3S2_M25_CUM_T1_REC_S1_ANCHOR_OK",
+            "kind": "mode25_cum_total1_recent_slot1_anchor_ok",
+            "mode": 25,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_a),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_a,
+            "d1_refs": [D1_CUM_ID, D1_REC_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_CUM_ID,
+                row=named_a["cum"],
+                expect_presence="PRESENT",
+                note="Mode25 carrier CUM total=1 (body total field patched; PVD→ANCHOR)",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named_a["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR for CUM/RECENT BIND PVD/raw",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_REC_ID,
+                    row=named_a["recent"],
+                    expect_presence="PRESENT",
+                    note="RECENT cycle1/slot0 companion; PVD→ANCHOR",
+                )
+            ],
+            "notes": (
+                "Mode25 FOCUS known-slot + BIND_RETRY success: CUMULATIVE "
+                "total_completed_cycle_count=1 carrier, RECENT C1 (slot0) "
+                "companion, true ANCHOR primary. Single READ_ONLY txn; baseline "
+                "once; sequential zero-prefix reopen; CUM self-carrier; RECENT "
+                "carrier companion; both rows primary PVD/raw; COMPLETE; "
+                "mutation_calls=0. D1 authority rows patched via independent "
+                "Python encoder/parser only."
+            ),
+            "ownership": OWNERSHIP_DEFAULT,
+            "expected": exp_a,
+        }
+    )
+
+    # B) RECENT + ANCHOR, CUM absent → BIND carrier ABSENT note corrupt
+    rows_b, named_b, _pvd_b = _mode25_material_rows(
+        include_cum=False, cum_total=0
+    )
+    calls_b, exp_b = run_d3s2_mode25_recent_without_cum_corrupt(binding, rows_b)
+    vectors.append(
+        {
+            "id": "D3S2_M25_REC_WITHOUT_CUM_CARRIER_ABSENT",
+            "kind": "mode25_recent_without_cum_carrier_absent_corrupt",
+            "mode": 25,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_b),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_b,
+            "d1_refs": [D1_REC_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_REC_ID,
+                row=named_b["recent"],
+                expect_presence="PRESENT",
+                note="RECENT secondary without same-tx CUM carrier",
+            ),
+            "peer_ref": _d3s1.none_ref(
+                "CUM carrier companion exact_get ABSENT (real S2 orphan finding)"
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named_b["anchor"],
+                    expect_presence="PRESENT",
+                    note="true ANCHOR present but unused after carrier ABSENT note",
+                )
+            ],
+            "notes": (
+                "Mode25 empty-carrier SELECT (no CUMULATIVE) then BIND_RETRY on "
+                "live RECENT: carrier companion exact_get ABSENT is a real S2 "
+                "orphan finding via note_terminal_corrupt → STORAGE_CORRUPT. "
+                "Not a Port failure path. abort; mutation_calls=0. Independent "
+                "reference model — production C not used for expected."
+            ),
+            "ownership": OWNERSHIP_DEFAULT,
+            "expected": exp_b,
+        }
+    )
+
+    if len(vectors) != D3S2_MODE25_SLICE_COUNT:
+        raise SystemExit("mode25 slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_MODE25_KINDS:
+        raise SystemExit(f"mode25 kinds inventory mismatch: {kinds}")
+    return vectors
+
+
+def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
+    vectors = build_d3s2_smoke_vectors() + build_d3s2_mode25_slice_vectors()
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
     kinds = {v["kind"] for v in vectors}
@@ -428,16 +885,12 @@ def freeze_d3s1_prefix() -> Dict[str, Any]:
     return doc
 
 
-def build_document() -> Dict[str, Any]:
-    prefix_doc = freeze_d3s1_prefix()
-    prefix_vectors = prefix_doc["vectors"]
-    suffix_vectors = build_d3s2_suffix_vectors()
-    vectors = list(prefix_vectors) + list(suffix_vectors)
-
-    # prior_fingerprints: prefix keeps d3s1 hashes; suffix uses extended hash.
-    prior_fingerprints: List[Dict[str, Any]] = []
-    for v in prefix_vectors:
-        prior_fingerprints.append(
+def _fingerprint_entries_for(
+    d3s1_vectors: List[Dict[str, Any]], d3s2_vectors: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    entries: List[Dict[str, Any]] = []
+    for v in d3s1_vectors:
+        entries.append(
             {
                 "id": v["id"],
                 "kind": v["kind"],
@@ -445,8 +898,8 @@ def build_document() -> Dict[str, Any]:
                 "fingerprint": d3s1_vector_fingerprint(v),
             }
         )
-    for v in suffix_vectors:
-        prior_fingerprints.append(
+    for v in d3s2_vectors:
+        entries.append(
             {
                 "id": v["id"],
                 "kind": v["kind"],
@@ -454,22 +907,67 @@ def build_document() -> Dict[str, Any]:
                 "fingerprint": d3s2_vector_fingerprint(v),
             }
         )
+    return entries
 
-    # Full prefix-hash over all fingerprints (append-only evolution).
-    prefix_material = "".join(e["fingerprint"] for e in prior_fingerprints).encode(
-        "utf-8"
-    )
-    prior_prefix_hash = hashlib.sha256(prefix_material).hexdigest()
+
+def _chain_hash(entries: List[Dict[str, Any]]) -> str:
+    material = "".join(e["fingerprint"] for e in entries).encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
+
+
+def freeze_d3s2_100_prefix(
+    d3s1_vectors: List[Dict[str, Any]], smoke_vectors: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Fail-closed freeze of the prior 100-vector main artifact identity."""
+    if len(d3s1_vectors) != D3S1_PREFIX_COUNT:
+        raise SystemExit("100-prefix d3s1 length drift")
+    if len(smoke_vectors) != D3S2_SMOKE_COUNT:
+        raise SystemExit("100-prefix smoke length drift")
+    entries = _fingerprint_entries_for(d3s1_vectors, smoke_vectors)
+    chain = _chain_hash(entries)
+    if chain != D3S2_100_FINGERPRINT_HASH:
+        raise SystemExit(
+            "100-prefix fingerprint chain drift vs frozen main pin "
+            f"(got {chain})"
+        )
+    # Rebuild the historical 100-vector document content hash (scope of that
+    # release used the prior SCOPE text; pin content_sha256 of the on-disk
+    # prior main artifact by recomputing fingerprints+vector identity only).
+    # Vector id/order/rows/calls/expected are re-checked in check() against
+    # the rebuilt smoke+d3s1 material; chain pin above is the strong freeze.
+    return entries
+
+
+def build_document() -> Dict[str, Any]:
+    prefix_doc = freeze_d3s1_prefix()
+    prefix_vectors = prefix_doc["vectors"]
+    smoke_vectors = build_d3s2_smoke_vectors()
+    mode25_vectors = build_d3s2_mode25_slice_vectors()
+    suffix_vectors = smoke_vectors + mode25_vectors
+    if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
+        raise SystemExit("suffix assembly count drift")
+    vectors = list(prefix_vectors) + list(suffix_vectors)
+
+    # Fail-closed: first 100 == prior main (94 D3S1 + 6 smoke).
+    freeze_d3s2_100_prefix(prefix_vectors, smoke_vectors)
+
+    prior_fingerprints = _fingerprint_entries_for(prefix_vectors, suffix_vectors)
+    prior_prefix_hash = _chain_hash(prior_fingerprints)
 
     # Retained D3-S1-only fingerprint chain pin (first 94).
-    d3s1_only_material = "".join(
-        e["fingerprint"] for e in prior_fingerprints[:D3S1_PREFIX_COUNT]
-    ).encode("utf-8")
-    d3s1_only_hash = hashlib.sha256(d3s1_only_material).hexdigest()
+    d3s1_only_hash = _chain_hash(prior_fingerprints[:D3S1_PREFIX_COUNT])
     if d3s1_only_hash != D3S1_PREFIX_FINGERPRINT_HASH:
         raise SystemExit(
             "prefix fingerprint chain drift vs frozen D3-S1 pin "
             f"(got {d3s1_only_hash})"
+        )
+
+    # Retained 100-vector chain pin.
+    hundred_hash = _chain_hash(prior_fingerprints[:D3S2_100_PREFIX_COUNT])
+    if hundred_hash != D3S2_100_FINGERPRINT_HASH:
+        raise SystemExit(
+            "100-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_hash})"
         )
 
     required_kinds = sorted(
@@ -483,6 +981,7 @@ def build_document() -> Dict[str, Any]:
         "vector_count": len(vectors),
         "d3s1_prefix_count": D3S1_PREFIX_COUNT,
         "d3s2_suffix_count": D3S2_SUFFIX_COUNT,
+        "d3s2_100_prefix_count": D3S2_100_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -506,6 +1005,15 @@ def build_document() -> Dict[str, Any]:
             "content_sha256": D3S1_PREFIX_CONTENT_SHA256,
             "prior_fingerprint_prefix_hash": D3S1_PREFIX_FINGERPRINT_HASH,
             "generator": "tools/domain_scan_crossrow_vector_gen.py",
+        },
+        "d3s2_100_prefix_authority": {
+            "vector_count": D3S2_100_PREFIX_COUNT,
+            "content_sha256": D3S2_100_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_100_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of prior main (94 D3S1 + 6 Mode21..26 "
+                "empty-carrier smoke); Mode25 slice vectors follow"
+            ),
         },
         "prior_fingerprints": prior_fingerprints,
         "prior_fingerprint_prefix_hash": prior_prefix_hash,
@@ -590,6 +1098,8 @@ def check(path: Path) -> int:
         return _fail_check("d3s1_prefix_count pin mismatch")
     if int(data.get("d3s2_suffix_count", -1)) != D3S2_SUFFIX_COUNT:
         return _fail_check("d3s2_suffix_count pin mismatch")
+    if int(data.get("d3s2_100_prefix_count", -1)) != D3S2_100_PREFIX_COUNT:
+        return _fail_check("d3s2_100_prefix_count pin mismatch")
     if data.get("required_kinds") != expected_doc["required_kinds"]:
         return _fail_check("required_kinds inventory mismatch")
     if not data.get("sha256_procedure"):
@@ -614,6 +1124,17 @@ def check(path: Path) -> int:
     if int(auth.get("vector_count", -1)) != D3S1_PREFIX_COUNT:
         return _fail_check("d3s1_prefix_authority vector_count pin mismatch")
 
+    # Frozen 100-vector prior-main pin.
+    auth100 = data.get("d3s2_100_prefix_authority") or {}
+    if auth100.get("content_sha256") != D3S2_100_CONTENT_SHA256:
+        return _fail_check("d3s2_100_prefix_authority content_sha256 pin mismatch")
+    if auth100.get("prior_fingerprint_prefix_hash") != D3S2_100_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_100_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth100.get("vector_count", -1)) != D3S2_100_PREFIX_COUNT:
+        return _fail_check("d3s2_100_prefix_authority vector_count pin mismatch")
+
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
         return _fail_check(
@@ -623,6 +1144,59 @@ def check(path: Path) -> int:
     err = _assert_prefix_identity(vectors, prefix_doc)
     if err:
         return _fail_check(err)
+
+    # First 100 vectors: id/order/rows/calls/expected/fingerprint vs rebuild.
+    smoke_rebuild = build_d3s2_smoke_vectors()
+    expected_100 = list(prefix_doc["vectors"]) + list(smoke_rebuild)
+    if len(expected_100) != D3S2_100_PREFIX_COUNT:
+        return _fail_check("internal 100-prefix rebuild length drift")
+    for i in range(D3S2_100_PREFIX_COUNT):
+        got = vectors[i]
+        exp = expected_100[i]
+        for key in ("id", "kind", "mode"):
+            if got.get(key) != exp.get(key):
+                return _fail_check(
+                    f"100-prefix[{i}] {key} mismatch: "
+                    f"{got.get(key)!r} vs {exp.get(key)!r}"
+                )
+        if got.get("rows") != exp.get("rows"):
+            return _fail_check(
+                f"100-prefix[{i}] {got.get('id')}: rows not identical"
+            )
+        if got.get("calls") != exp.get("calls"):
+            return _fail_check(
+                f"100-prefix[{i}] {got.get('id')}: calls not identical"
+            )
+        if got.get("expected") != exp.get("expected"):
+            return _fail_check(
+                f"100-prefix[{i}] {got.get('id')}: expected not identical"
+            )
+        if i < D3S1_PREFIX_COUNT:
+            gf = d3s1_vector_fingerprint(got)
+            ef = d3s1_vector_fingerprint(exp)
+        else:
+            gf = d3s2_vector_fingerprint(got)
+            ef = d3s2_vector_fingerprint(exp)
+        if gf != ef:
+            return _fail_check(
+                f"100-prefix[{i}] {got.get('id')}: fingerprint drift"
+            )
+    hundred_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_100_PREFIX_COUNT)
+        ]
+    )
+    if hundred_chain != D3S2_100_FINGERPRINT_HASH:
+        return _fail_check(
+            f"100-prefix fingerprint chain pin fail (got {hundred_chain})"
+        )
 
     # prior_fingerprints order/identity.
     got_fps = data.get("prior_fingerprints")
@@ -699,16 +1273,21 @@ def check(path: Path) -> int:
         if int(vec["expected"].get("mutation_calls", -1)) != 0:
             return _fail_check(f"{vec['id']}: mutation_calls must be 0")
 
-    # Suffix-specific pins.
+    # Suffix-specific pins: smoke [0..6) then Mode25 slice [6..8).
     suffix = vectors[D3S1_PREFIX_COUNT:]
     if len(suffix) != D3S2_SUFFIX_COUNT:
         return _fail_check("suffix length mismatch")
-    for j, vec in enumerate(suffix):
+    smoke = suffix[:D3S2_SMOKE_COUNT]
+    mode25 = suffix[D3S2_SMOKE_COUNT:]
+    if len(mode25) != D3S2_MODE25_SLICE_COUNT:
+        return _fail_check("mode25 slice length mismatch")
+
+    for j, vec in enumerate(smoke):
         mode = 21 + j
         if int(vec["mode"]) != mode:
-            return _fail_check(f"suffix[{j}] mode order pin fail")
+            return _fail_check(f"smoke[{j}] mode order pin fail")
         if vec["kind"] != f"mode{mode}_empty_carrier_empty_secondary_ok":
-            return _fail_check(f"suffix[{j}] kind pin fail")
+            return _fail_check(f"smoke[{j}] kind pin fail")
         ops = [c["op"] for c in vec["calls"]]
         if ops[0] != "begin_profiled_d3s2":
             return _fail_check(f"{vec['id']}: must begin with begin_profiled_d3s2")
@@ -724,7 +1303,6 @@ def check(path: Path) -> int:
                 f"{vec['id']}: d3s2_drive count {drive_n} != "
                 f"{MODE_DRIVE_COUNT[mode]}"
             )
-        # Single-session product smoke: no multi-mode.
         if any(int(c.get("mode", mode)) != mode for c in vec["calls"] if "mode" in c):
             return _fail_check(f"{vec['id']}: multi-mode session forbidden")
         exp = vec["expected"]
@@ -738,7 +1316,6 @@ def check(path: Path) -> int:
             return _fail_check(f"{vec['id']}: iter_open_count pin fail")
         if int(exp["adopted"]) != 1:
             return _fail_check(f"{vec['id']}: adopted must be 1")
-        # Rebuild equality vs generator model.
         exp_calls, exp_expected = run_d3s2_empty_carrier_case(
             mode, vec["candidate_binding"], vec["rows"]
         )
@@ -746,6 +1323,80 @@ def check(path: Path) -> int:
             return _fail_check(f"{vec['id']}: calls != independent model")
         if vec["expected"] != exp_expected:
             return _fail_check(f"{vec['id']}: expected != independent model")
+
+    # Mode25 slice pins.
+    m25_ok = mode25[0]
+    m25_bad = mode25[1]
+    if m25_ok["kind"] != "mode25_cum_total1_recent_slot1_anchor_ok":
+        return _fail_check("mode25[0] kind pin fail")
+    if m25_bad["kind"] != "mode25_recent_without_cum_carrier_absent_corrupt":
+        return _fail_check("mode25[1] kind pin fail")
+    for vec in mode25:
+        if int(vec["mode"]) != 25:
+            return _fail_check(f"{vec['id']}: mode must be 25")
+        ops = [c["op"] for c in vec["calls"]]
+        if ops[0] != "begin_profiled_d3s2":
+            return _fail_check(f"{vec['id']}: must begin with begin_profiled_d3s2")
+        if "begin_profiled_d3s1" in ops:
+            return _fail_check(f"{vec['id']}: dual-bound S1 begin forbidden")
+        if ops.count("begin_profiled_d3s2") != 1:
+            return _fail_check(f"{vec['id']}: exactly one begin_profiled_d3s2")
+        if any(
+            int(c.get("mode", 25)) != 25 for c in vec["calls"] if "mode" in c
+        ):
+            return _fail_check(f"{vec['id']}: multi-mode session forbidden")
+        if int(vec["expected"].get("mutation_calls", -1)) != 0:
+            return _fail_check(f"{vec['id']}: mutation_calls must be 0")
+
+    if m25_ok["calls"][-1]["op"] != "finalize":
+        return _fail_check(f"{m25_ok['id']}: success must end with finalize")
+    if int(m25_ok["expected"]["phase"]) != PHASE_COMPLETE:
+        return _fail_check(f"{m25_ok['id']}: phase must be COMPLETE")
+    if int(m25_ok["expected"]["count_complete_mask"]) != MASK_RETRY:
+        return _fail_check(f"{m25_ok['id']}: count_complete_mask pin fail")
+    if int(m25_ok["expected"]["binding_complete_mask"]) != MASK_RETRY:
+        return _fail_check(f"{m25_ok['id']}: binding_complete_mask pin fail")
+    if int(m25_ok["expected"]["adopted"]) != 1:
+        return _fail_check(f"{m25_ok['id']}: adopted must be 1")
+    if int(m25_ok["expected"]["has_sticky_primary"]) != 0:
+        return _fail_check(f"{m25_ok['id']}: sticky must be clear")
+    try:
+        exp_calls, exp_expected = run_d3s2_mode25_cum_total1_success(
+            m25_ok["candidate_binding"], m25_ok["rows"]
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m25_ok['id']}: model reject: {exc}")
+    if m25_ok["calls"] != exp_calls:
+        return _fail_check(f"{m25_ok['id']}: calls != independent model")
+    if m25_ok["expected"] != exp_expected:
+        return _fail_check(f"{m25_ok['id']}: expected != independent model")
+
+    if m25_bad["calls"][-1]["op"] != "abort":
+        return _fail_check(f"{m25_bad['id']}: fail path must end with abort")
+    if int(m25_bad["expected"]["phase"]) != PHASE_FAILED:
+        return _fail_check(f"{m25_bad['id']}: phase must be FAILED")
+    if m25_bad["expected"]["final_status"] != "STORAGE_CORRUPT":
+        return _fail_check(f"{m25_bad['id']}: final_status must be STORAGE_CORRUPT")
+    if int(m25_bad["expected"]["adopted"]) != 0:
+        return _fail_check(f"{m25_bad['id']}: adopted must be 0")
+    if int(m25_bad["expected"]["has_sticky_primary"]) != 1:
+        return _fail_check(f"{m25_bad['id']}: sticky must be set")
+    if m25_bad["expected"]["sticky_primary"] != "STORAGE_CORRUPT":
+        return _fail_check(f"{m25_bad['id']}: sticky_primary pin fail")
+    if int(m25_bad["expected"]["binding_complete_mask"]) != 0:
+        return _fail_check(f"{m25_bad['id']}: binding mask must stay 0")
+    if int(m25_bad["expected"]["count_complete_mask"]) != 0:
+        return _fail_check(f"{m25_bad['id']}: count mask must stay 0")
+    try:
+        exp_calls, exp_expected = run_d3s2_mode25_recent_without_cum_corrupt(
+            m25_bad["candidate_binding"], m25_bad["rows"]
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m25_bad['id']}: model reject: {exc}")
+    if m25_bad["calls"] != exp_calls:
+        return _fail_check(f"{m25_bad['id']}: calls != independent model")
+    if m25_bad["expected"] != exp_expected:
+        return _fail_check(f"{m25_bad['id']}: expected != independent model")
 
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
@@ -835,6 +1486,25 @@ def self_test() -> int:
                 "op", "begin_profiled_d3s2"
             ),
         )
+        # 100-prefix freeze (smoke Mode21 + last smoke Mode26).
+        t(
+            "hundred_prefix_row_tamper",
+            lambda d: d["vectors"][99]["rows"].__setitem__(
+                0, {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "hundred_prefix_expected_tamper",
+            lambda d: d["vectors"][94]["expected"].__setitem__(
+                "ok_row_count", 999
+            ),
+        )
+        t(
+            "hundred_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_100_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
         t(
             "suffix_mode_order",
             lambda d: d["vectors"][94].__setitem__("mode", 22),
@@ -866,6 +1536,69 @@ def self_test() -> int:
                 0, {"op": "begin", "expected_status": "OK"}
             ),
         )
+        # New Mode25 slice tampers (indices 100, 101).
+        t(
+            "mode25_ok_count_mask_tamper",
+            lambda d: d["vectors"][100]["expected"].__setitem__(
+                "count_complete_mask", 0
+            ),
+        )
+        t(
+            "mode25_ok_bind_mask_tamper",
+            lambda d: d["vectors"][100]["expected"].__setitem__(
+                "binding_complete_mask", 0
+            ),
+        )
+        t(
+            "mode25_ok_carrier_row_tamper",
+            lambda d: d["vectors"][100]["rows"].pop(),
+        )
+        t(
+            "mode25_ok_trace_tamper",
+            lambda d: d["vectors"][100]["expected"]["port_trace"].append("put"),
+        )
+        t(
+            "mode25_ok_mutation_tamper",
+            lambda d: d["vectors"][100]["expected"].__setitem__(
+                "mutation_calls", 1
+            ),
+        )
+        t(
+            "mode25_bad_count_mask_tamper",
+            lambda d: d["vectors"][101]["expected"].__setitem__(
+                "count_complete_mask", MASK_RETRY
+            ),
+        )
+        t(
+            "mode25_bad_bind_mask_tamper",
+            lambda d: d["vectors"][101]["expected"].__setitem__(
+                "binding_complete_mask", MASK_RETRY
+            ),
+        )
+        t(
+            "mode25_bad_carrier_insert_tamper",
+            lambda d: d["vectors"][101]["rows"].append(
+                {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "mode25_bad_trace_tamper",
+            lambda d: d["vectors"][101]["expected"].__setitem__(
+                "port_trace", []
+            ),
+        )
+        t(
+            "mode25_bad_mutation_tamper",
+            lambda d: d["vectors"][101]["expected"].__setitem__(
+                "mutation_calls", 7
+            ),
+        )
+        t(
+            "mode25_bad_sticky_tamper",
+            lambda d: d["vectors"][101]["expected"].__setitem__(
+                "sticky_primary", "STORAGE"
+            ),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -886,13 +1619,14 @@ def self_test() -> int:
                 print(f, file=sys.stderr)
             return 1
         print(
-            "self-test ok (prefix freeze + suffix pins + forbidden ops + clean pass)"
+            "self-test ok (94+100 prefix freeze + mode25 slice pins + "
+            "forbidden ops + clean pass)"
         )
         return 0
 
 
 def emit_c_fixture(json_path: Path, header_path: Path) -> None:
-    """Emit D3-S1 94-array (compat) + separate D3-S2 suffix array/type/count=6."""
+    """Emit D3-S1 94-array (compat) + separate D3-S2 suffix array/type/count=8."""
     data = json.loads(json_path.read_text(encoding="utf-8"))
     vectors = data["vectors"]
     if len(vectors) < D3S1_PREFIX_COUNT:
