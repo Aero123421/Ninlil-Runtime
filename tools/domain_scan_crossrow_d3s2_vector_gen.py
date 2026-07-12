@@ -1283,8 +1283,18 @@ def _d1_catalog() -> Dict[str, Dict[str, Any]]:
     return _d3s1.load_d1()
 
 
+# Process-local: D1 authority is a read-only on-disk pin (see load_d1 cache).
+# Callers only read catalog entries (key_hex/value_hex/body_hex); they never
+# mutate the shared catalog dict. Safe to verify once per process. Never
+# shared across external CLI invocations (each process starts cold).
+_D1_AUTHORITY_PIN_OK = False
+
+
 def _assert_d1_authority_pin() -> None:
     """Fail-closed: D1 catalog pin must match the D3-S1 generator's pin."""
+    global _D1_AUTHORITY_PIN_OK
+    if _D1_AUTHORITY_PIN_OK:
+        return
     cat = _d1_catalog()
     for vid in (
         D1_CUM_ID,
@@ -1324,6 +1334,7 @@ def _assert_d1_authority_pin() -> None:
         raise SystemExit(f"D1 format pin mismatch: {data.get('format')}")
     if len(data["vectors"]) != _d3s1.D1_COUNT:
         raise SystemExit("D1 vector_count pin mismatch")
+    _D1_AUTHORITY_PIN_OK = True
 
 
 def _patch_cum_total_completed(value: bytes, total: int) -> bytes:
@@ -7681,12 +7692,50 @@ def _assert_prefix_identity(
     return None
 
 
-def check(path: Path) -> int:
+def check(
+    path: Path,
+    *,
+    _expected_doc: Optional[Dict[str, Any]] = None,
+    _prefix_doc: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Validate on-disk oracle JSON against a fresh rebuild.
+
+    Public CLI `check <path>` always rebuilds (default kwargs). Private
+    optional kwargs are for self_test only: inject a previously generated
+    and verified read-only expected_doc / prefix_doc so each tamper does
+    not re-run build_document / freeze_d3s1_prefix. Callers must not mutate
+    the injected docs.
+    """
     if not path.is_file():
         return _fail_check(f"missing {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
-    expected_doc = build_document()
-    prefix_doc = freeze_d3s1_prefix()
+    return check_data(
+        data,
+        path=path,
+        expected_doc=_expected_doc,
+        prefix_doc=_prefix_doc,
+    )
+
+
+def check_data(
+    data: Dict[str, Any],
+    *,
+    path: Path,
+    expected_doc: Optional[Dict[str, Any]] = None,
+    prefix_doc: Optional[Dict[str, Any]] = None,
+) -> int:
+    """Core check body. None expected/prefix → independent rebuild (CLI path)."""
+    if (expected_doc is None) != (prefix_doc is None):
+        return _fail_check(
+            "internal expected_doc/prefix_doc injection must be paired"
+        )
+    # When both are injected (self_test), reuse them and skip independent
+    # slice rebuilds that only re-derive the same expected_doc vectors.
+    reuse_expected = expected_doc is not None
+    if expected_doc is None:
+        expected_doc = build_document()
+    if prefix_doc is None:
+        prefix_doc = freeze_d3s1_prefix()
 
     if not data.get("vectors"):
         return _fail_check("vectors empty")
@@ -8111,8 +8160,11 @@ def check(path: Path) -> int:
         return _fail_check(err)
 
     # First 100 vectors: id/order/rows/calls/expected/fingerprint vs rebuild.
-    smoke_rebuild = build_d3s2_smoke_vectors()
-    expected_100 = list(prefix_doc["vectors"]) + list(smoke_rebuild)
+    if reuse_expected:
+        expected_100 = expected_doc["vectors"][:D3S2_100_PREFIX_COUNT]
+    else:
+        smoke_rebuild = build_d3s2_smoke_vectors()
+        expected_100 = list(prefix_doc["vectors"]) + list(smoke_rebuild)
     if len(expected_100) != D3S2_100_PREFIX_COUNT:
         return _fail_check("internal 100-prefix rebuild length drift")
     for i in range(D3S2_100_PREFIX_COUNT):
@@ -8165,8 +8217,11 @@ def check(path: Path) -> int:
 
     # First 102 vectors: id/order/rows/calls/expected/fingerprint vs rebuild
     # (94 D3S1 + 6 smoke + Mode25 slice = frozen prior main).
-    mode25_rebuild = build_d3s2_mode25_slice_vectors()
-    expected_102 = list(expected_100) + list(mode25_rebuild)
+    if reuse_expected:
+        expected_102 = expected_doc["vectors"][:D3S2_102_PREFIX_COUNT]
+    else:
+        mode25_rebuild = build_d3s2_mode25_slice_vectors()
+        expected_102 = list(expected_100) + list(mode25_rebuild)
     if len(expected_102) != D3S2_102_PREFIX_COUNT:
         return _fail_check("internal 102-prefix rebuild length drift")
     for i in range(D3S2_102_PREFIX_COUNT):
@@ -8219,8 +8274,11 @@ def check(path: Path) -> int:
 
     # First 104 vectors: id/order/rows/calls/expected/fingerprint vs rebuild
     # (94 D3S1 + 6 smoke + Mode25 + Mode26 = frozen prior main).
-    mode26_rebuild = build_d3s2_mode26_slice_vectors()
-    expected_104 = list(expected_102) + list(mode26_rebuild)
+    if reuse_expected:
+        expected_104 = expected_doc["vectors"][:D3S2_104_PREFIX_COUNT]
+    else:
+        mode26_rebuild = build_d3s2_mode26_slice_vectors()
+        expected_104 = list(expected_102) + list(mode26_rebuild)
     if len(expected_104) != D3S2_104_PREFIX_COUNT:
         return _fail_check("internal 104-prefix rebuild length drift")
     for i in range(D3S2_104_PREFIX_COUNT):
@@ -8275,8 +8333,11 @@ def check(path: Path) -> int:
     # (94 D3S1 + 6 smoke + Mode25 + Mode26 + Mode24 = frozen prior main).
     # Per-field diagnostics retained first; then full object equality so
     # ownership/notes/refs/etc. cannot silently drift (append-only pin).
-    mode24_rebuild = build_d3s2_mode24_slice_vectors()
-    expected_106 = list(expected_104) + list(mode24_rebuild)
+    if reuse_expected:
+        expected_106 = expected_doc["vectors"][:D3S2_106_PREFIX_COUNT]
+    else:
+        mode24_rebuild = build_d3s2_mode24_slice_vectors()
+        expected_106 = list(expected_104) + list(mode24_rebuild)
     if len(expected_106) != D3S2_106_PREFIX_COUNT:
         return _fail_check("internal 106-prefix rebuild length drift")
     for i in range(D3S2_106_PREFIX_COUNT):
@@ -8345,8 +8406,11 @@ def check(path: Path) -> int:
     # object equality vs rebuild (94 D3S1 + 6 smoke + Mode25 + Mode26 +
     # Mode24 + Mode23 = frozen prior main). Mode22 must not rewrite any
     # prior ownership/notes/refs byte.
-    mode23_rebuild = build_d3s2_mode23_slice_vectors()
-    expected_108 = list(expected_106) + list(mode23_rebuild)
+    if reuse_expected:
+        expected_108 = expected_doc["vectors"][:D3S2_108_PREFIX_COUNT]
+    else:
+        mode23_rebuild = build_d3s2_mode23_slice_vectors()
+        expected_108 = list(expected_106) + list(mode23_rebuild)
     if len(expected_108) != D3S2_108_PREFIX_COUNT:
         return _fail_check("internal 108-prefix rebuild length drift")
     for i in range(D3S2_108_PREFIX_COUNT):
@@ -8412,8 +8476,11 @@ def check(path: Path) -> int:
     # object equality vs rebuild (94 D3S1 + 6 smoke + Mode25 + Mode26 +
     # Mode24 + Mode23 + Mode22 = frozen prior main). Mode21 must not rewrite
     # any prior ownership/notes/refs byte.
-    mode22_rebuild = build_d3s2_mode22_slice_vectors()
-    expected_110 = list(expected_108) + list(mode22_rebuild)
+    if reuse_expected:
+        expected_110 = expected_doc["vectors"][:D3S2_110_PREFIX_COUNT]
+    else:
+        mode22_rebuild = build_d3s2_mode22_slice_vectors()
+        expected_110 = list(expected_108) + list(mode22_rebuild)
     if len(expected_110) != D3S2_110_PREFIX_COUNT:
         return _fail_check("internal 110-prefix rebuild length drift")
     for i in range(D3S2_110_PREFIX_COUNT):
@@ -8477,8 +8544,11 @@ def check(path: Path) -> int:
 
     # First 112 vectors: full object equality vs rebuild (origin/main freeze).
     # P0-A must not rewrite any prior ownership/notes/refs/expected byte.
-    mode21_rebuild = build_d3s2_mode21_slice_vectors()
-    expected_112 = list(expected_110) + list(mode21_rebuild)
+    if reuse_expected:
+        expected_112 = expected_doc["vectors"][:D3S2_112_PREFIX_COUNT]
+    else:
+        mode21_rebuild = build_d3s2_mode21_slice_vectors()
+        expected_112 = list(expected_110) + list(mode21_rebuild)
     if len(expected_112) != D3S2_112_PREFIX_COUNT:
         return _fail_check("internal 112-prefix rebuild length drift")
     for i in range(D3S2_112_PREFIX_COUNT):
@@ -8542,8 +8612,11 @@ def check(path: Path) -> int:
 
     # First 113 vectors: full object equality vs rebuild (origin/main freeze).
     # P0-B must not rewrite any prior ownership/notes/refs/expected byte.
-    p0a_rebuild = build_d3s2_p0a_slice_vectors()
-    expected_113 = list(expected_112) + list(p0a_rebuild)
+    if reuse_expected:
+        expected_113 = expected_doc["vectors"][:D3S2_113_PREFIX_COUNT]
+    else:
+        p0a_rebuild = build_d3s2_p0a_slice_vectors()
+        expected_113 = list(expected_112) + list(p0a_rebuild)
     if len(expected_113) != D3S2_113_PREFIX_COUNT:
         return _fail_check("internal 113-prefix rebuild length drift")
     for i in range(D3S2_113_PREFIX_COUNT):
@@ -8607,8 +8680,11 @@ def check(path: Path) -> int:
 
     # First 114 vectors: full object equality vs rebuild (origin/main freeze).
     # P0-C must not rewrite any prior ownership/notes/refs/expected byte.
-    p0b_rebuild = build_d3s2_p0b_slice_vectors()
-    expected_114 = list(expected_113) + list(p0b_rebuild)
+    if reuse_expected:
+        expected_114 = expected_doc["vectors"][:D3S2_114_PREFIX_COUNT]
+    else:
+        p0b_rebuild = build_d3s2_p0b_slice_vectors()
+        expected_114 = list(expected_113) + list(p0b_rebuild)
     if len(expected_114) != D3S2_114_PREFIX_COUNT:
         return _fail_check("internal 114-prefix rebuild length drift")
     for i in range(D3S2_114_PREFIX_COUNT):
@@ -11075,8 +11151,49 @@ def self_test() -> int:
         root = Path(td)
         clean = root / "clean.json"
         generate(clean)
+        # One independent generate+check (full rebuild) to prove the clean
+        # artifact. Then freeze read-only expected/prefix for all tampers so
+        # check does not re-run build_document/freeze_d3s1_prefix each time.
         if check(clean) != 0:
             print("self-test: clean generate+check failed", file=sys.stderr)
+            return 1
+        expected_doc = build_document()
+        prefix_doc = freeze_d3s1_prefix()
+        expected_doc_canary = hashlib.sha256(
+            json.dumps(
+                expected_doc, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).digest()
+        prefix_doc_canary = hashlib.sha256(
+            json.dumps(
+                prefix_doc, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).digest()
+        if check(clean, _expected_doc=expected_doc) == 0:
+            print(
+                "self-test: unpaired expected_doc injection accepted",
+                file=sys.stderr,
+            )
+            return 1
+        if check(clean, _prefix_doc=prefix_doc) == 0:
+            print(
+                "self-test: unpaired prefix_doc injection accepted",
+                file=sys.stderr,
+            )
+            return 1
+        # Re-validate clean via the injected path (same acceptance criteria).
+        if (
+            check(
+                clean,
+                _expected_doc=expected_doc,
+                _prefix_doc=prefix_doc,
+            )
+            != 0
+        ):
+            print(
+                "self-test: clean check with injected expected/prefix failed",
+                file=sys.stderr,
+            )
             return 1
 
         # Historical D3-S1 generator must not downgrade the shared append-only
@@ -11093,12 +11210,18 @@ def self_test() -> int:
 
         def mut(name: str, fn) -> Optional[str]:
             p = root / f"{name}.json"
+            # Independent deep load from clean JSON — never mutate expected_doc
+            # / prefix_doc or share the clean in-memory tree across tampers.
             data = json.loads(clean.read_text(encoding="utf-8"))
             fn(data)
             p.write_text(
                 json.dumps(data, indent=2, sort_keys=False) + "\n", encoding="utf-8"
             )
-            rc = check(p)
+            rc = check(
+                p,
+                _expected_doc=expected_doc,
+                _prefix_doc=prefix_doc,
+            )
             if rc == 0:
                 return f"self-test {name}: expected check failure, got pass"
             return None
@@ -12813,9 +12936,31 @@ def self_test() -> int:
             ),
         )
 
-        # Clean re-check still passes.
-        if check(clean) != 0:
+        # Clean re-check still passes (injected expected/prefix; clean JSON
+        # reloaded from disk, expected_doc left untouched by tampers).
+        if (
+            check(
+                clean,
+                _expected_doc=expected_doc,
+                _prefix_doc=prefix_doc,
+            )
+            != 0
+        ):
             failures.append("self-test: clean re-check failed")
+
+        # Cached authority documents are immutable across all 232 tampers.
+        if hashlib.sha256(
+            json.dumps(
+                expected_doc, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).digest() != expected_doc_canary:
+            failures.append("self-test: cached expected_doc mutated")
+        if hashlib.sha256(
+            json.dumps(
+                prefix_doc, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).digest() != prefix_doc_canary:
+            failures.append("self-test: cached prefix_doc mutated")
 
         if failures:
             for f in failures:
