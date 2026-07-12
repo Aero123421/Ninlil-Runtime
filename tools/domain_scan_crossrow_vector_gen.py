@@ -5171,6 +5171,20 @@ def build_document() -> Dict[str, Any]:
 
 
 def generate(path: Path) -> None:
+    # This generator is the frozen D3-S1 prefix authority. Once the shared
+    # sibling artifact has advanced to D3-S2, refuse to destructively replace
+    # it with the historical 94-vector document. Use the D3-S2 append-only
+    # generator for the shared path instead.
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+        if existing.get("format") == "ninlil-domain-scan-crossrow-v1-d3s2":
+            raise SystemExit(
+                "refusing D3-S2 sibling downgrade; use "
+                "tools/domain_scan_crossrow_d3s2_vector_gen.py"
+            )
     doc = build_document()
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(doc, indent=2, sort_keys=False) + "\n"

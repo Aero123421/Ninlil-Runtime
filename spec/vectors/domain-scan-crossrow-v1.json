@@ -1,8 +1,10 @@
 {
   "version": 1,
-  "format": "ninlil-domain-scan-crossrow-v1-d3s1",
-  "scope": "D3-S1 exact-1 crossrow sibling oracle: modes 1..20 peer rebuild + presence/PVD/raw bijection + Mode17 reverse table + local gates 18\u201320. Does not claim Stage 5 D3 bind, D3-S2 multi-row counts, D4 mutation, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Mode20 RECONCILE_WAIT has no legal body in D1 (kind mode20_reconcile_wait_impossible documents skip). Oracle/generator only \u2014 independent peer-key rebuild; production bridge and D3-S1 complete are out of scope.",
-  "vector_count": 94,
+  "format": "ninlil-domain-scan-crossrow-v1-d3s2",
+  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; first D3-S2 product-smoke suffix = Mode21..26 empty-carrier/empty-secondary COMPLETE (one mode per independent session; single READ_ONLY txn; baseline once + sequential zero-prefix reopen; mode-scoped BIND set; mutation_calls=0). Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked.",
+  "vector_count": 100,
+  "d3s1_prefix_count": 94,
+  "d3s2_suffix_count": 6,
   "required_kinds": [
     "begin_alias_poison",
     "begin_context_null",
@@ -82,6 +84,12 @@
     "mode20_tx_active_absent_ok",
     "mode20_tx_terminal_missing_corrupt",
     "mode20_tx_terminal_present_ok",
+    "mode21_empty_carrier_empty_secondary_ok",
+    "mode22_empty_carrier_empty_secondary_ok",
+    "mode23_empty_carrier_empty_secondary_ok",
+    "mode24_empty_carrier_empty_secondary_ok",
+    "mode25_empty_carrier_empty_secondary_ok",
+    "mode26_empty_carrier_empty_secondary_ok",
     "mode2_present_ok",
     "mode3_present_ok",
     "mode4_present_ok",
@@ -104,7 +112,7 @@
     "value_capacity": 4096,
     "previous_key_capacity": 255,
     "ceiling_bytes": 8192,
-    "note": "single 4096 value buffer; D3 context separate (421/448); no second 4096; no KEY_DIGEST reverse; mutation_calls always 0"
+    "note": "single 4096 value buffer; D3-S1 context 421/448; D3-S2 context 306/320; no second 4096; mutation_calls always 0; 1 session = 1 mode"
   },
   "s1_authority": {
     "path": "spec/vectors/domain-scan-v1.json",
@@ -141,6 +149,13 @@
     "format": "ninlil-domain-store-v1-d1b3o",
     "sha256": "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4",
     "vector_count": 1549
+  },
+  "d3s1_prefix_authority": {
+    "format": "ninlil-domain-scan-crossrow-v1-d3s1",
+    "vector_count": 94,
+    "content_sha256": "76b28d847be8cd7a95e8f1879400403abf702931a3de170a473c7c0f76d95468",
+    "prior_fingerprint_prefix_hash": "2c99af3c9b3aea228e4478c0d2739352f111fdd8c42303bf07177f8bb8ee8c58",
+    "generator": "tools/domain_scan_crossrow_vector_gen.py"
   },
   "prior_fingerprints": [
     {
@@ -706,11 +721,47 @@
       "kind": "mutation_zero",
       "mode": 1,
       "fingerprint": "6bf143b41a5ad840288ea43a8e58c8535f46481c6db69f833404d45cab6be9a2"
+    },
+    {
+      "id": "D3S2_M21_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode21_empty_carrier_empty_secondary_ok",
+      "mode": 21,
+      "fingerprint": "53599835da06acf2540169397cd43ac6d6c5f5abff62ab73079a8cf3ff9ac399"
+    },
+    {
+      "id": "D3S2_M22_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode22_empty_carrier_empty_secondary_ok",
+      "mode": 22,
+      "fingerprint": "128af70f073e751392ed13f5602cfd621adfbcdf471cecf71e56237d41868963"
+    },
+    {
+      "id": "D3S2_M23_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode23_empty_carrier_empty_secondary_ok",
+      "mode": 23,
+      "fingerprint": "70a9d3df42d80e8eb23111aeb74b90a730880c17a00281502903d87f4ec52de1"
+    },
+    {
+      "id": "D3S2_M24_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode24_empty_carrier_empty_secondary_ok",
+      "mode": 24,
+      "fingerprint": "5c33671e0aecd7d5b10a42b0a64e2a41690c48694d9e74baef717f9b4ac888f4"
+    },
+    {
+      "id": "D3S2_M25_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode25_empty_carrier_empty_secondary_ok",
+      "mode": 25,
+      "fingerprint": "a073b31295c7a68aa52ef25bdf0981b46c794aa613cec32ccadf2cbf40877e4e"
+    },
+    {
+      "id": "D3S2_M26_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode26_empty_carrier_empty_secondary_ok",
+      "mode": 26,
+      "fingerprint": "ba2f1243ee1c66ac01e82c31f51b905a981203e606410d0e6617a864a9ba7c0f"
     }
   ],
-  "prior_fingerprint_prefix_hash": "2c99af3c9b3aea228e4478c0d2739352f111fdd8c42303bf07177f8bb8ee8c58",
-  "sha256_procedure": "Do not embed full-file sha256 inside this artifact (self-referential hash is impossible without a placeholder dance). Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_vector_gen.py. After intentional extension, compute `sha256sum spec/vectors/domain-scan-crossrow-v1.json` and pin the full artifact hash in Normative docs/CI later. content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
-  "content_sha256": "76b28d847be8cd7a95e8f1879400403abf702931a3de170a473c7c0f76d95468",
+  "prior_fingerprint_prefix_hash": "0d769bba784c0f2250f27d382d4150c22570095da6f12b237b9e49d2bd6c9a0c",
+  "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix (fingerprint/order/expected/rows/calls) rebuilt from tools/domain_scan_crossrow_vector_gen.py. content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
+  "content_sha256": "880e4b62cf62eb667397b9c58e547298290df92c87a4308400274e9db090fc89",
   "vectors": [
     {
       "id": "D3S1_M01_SERVICE_QUOTA_PRESENT",
@@ -23056,6 +23107,1603 @@
         "sticky_primary": "",
         "d3_peer_get_count": 1,
         "d3_mode_applicable_count": 1
+      }
+    },
+    {
+      "id": "D3S2_M21_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode21_empty_carrier_empty_secondary_ok",
+      "mode": 21,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 21,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [],
+      "source_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no source secondary"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no peer get"
+      },
+      "row_refs": [],
+      "notes": "D3-S2 product smoke Mode21: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(21) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 0,
+        "ok_row_count": 17,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 4,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": 15,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 3,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M22_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode22_empty_carrier_empty_secondary_ok",
+      "mode": 22,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 22,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [],
+      "source_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no source secondary"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no peer get"
+      },
+      "row_refs": [],
+      "notes": "D3-S2 product smoke Mode22: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(22) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 0,
+        "ok_row_count": 17,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": 15,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 1,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M23_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode23_empty_carrier_empty_secondary_ok",
+      "mode": 23,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 23,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [],
+      "source_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no source secondary"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no peer get"
+      },
+      "row_refs": [],
+      "notes": "D3-S2 product smoke Mode23: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(23) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 0,
+        "ok_row_count": 17,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": 15,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 4,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M24_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode24_empty_carrier_empty_secondary_ok",
+      "mode": 24,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 24,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [],
+      "source_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no source secondary"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no peer get"
+      },
+      "row_refs": [],
+      "notes": "D3-S2 product smoke Mode24: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(24) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 0,
+        "ok_row_count": 17,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": 15,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 8,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M25_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode25_empty_carrier_empty_secondary_ok",
+      "mode": 25,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 25,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [],
+      "source_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no source secondary"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no peer get"
+      },
+      "row_refs": [],
+      "notes": "D3-S2 product smoke Mode25: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(25) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 0,
+        "ok_row_count": 17,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": 15,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 16,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M26_EMPTY_CARRIER_EMPTY_SECONDARY",
+      "kind": "mode26_empty_carrier_empty_secondary_ok",
+      "mode": 26,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 26,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [],
+      "source_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no source secondary"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "empty-carrier: no peer get"
+      },
+      "row_refs": [],
+      "notes": "D3-S2 product smoke Mode26: empty-carrier + empty-secondary success session. Single begin_profiled_d3s2; one READ_ONLY txn; baseline once; sequential zero-prefix reopen; BIND set(26) empty walks then COMPLETE; mutation_calls=0. Independent of other modes (not a 6-mode single session).",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (6-session product smoke only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 0,
+        "ok_row_count": 17,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": 15,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 32,
+        "flags": 9
       }
     }
   ]
