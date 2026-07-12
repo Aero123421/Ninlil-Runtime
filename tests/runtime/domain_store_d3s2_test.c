@@ -2776,6 +2776,11 @@ int test_d3s2_empty_carrier_empty_secondary_success(void)
     return 0;
 }
 
+/*
+ * Early Port path: sticky STORAGE / FAILED (semantic bridge id
+ * port_failure_no_note). Does not measure note_terminal_corrupt call count.
+ * Mid-FOCUS / BIND Port paths: dedicated P0-C units + formal crossrow vector.
+ */
 int test_d3s2_port_failure_no_note(void)
 {
     ninlil_scripted_storage_spy_t spy;
@@ -2804,12 +2809,209 @@ int test_d3s2_port_failure_no_note(void)
     REQUIRE(st == NINLIL_E_STORAGE);
     REQUIRE(session.has_sticky_primary == 1u);
     REQUIRE(session.sticky_primary == NINLIL_E_STORAGE);
+    /* This Port IO_ERROR path is STORAGE, not CORRUPT outcome. */
+    REQUIRE(session.sticky_primary != NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
     REQUIRE(
         (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
     REQUIRE(ninlil_spy_assert_no_mutations(&spy));
     st = ninlil_domain_scan_abort(&session, &result);
     REQUIRE(st == NINLIL_E_STORAGE);
+    REQUIRE(result.status == NINLIL_E_STORAGE);
+    REQUIRE(result.adopted == 0u);
+    return 0;
+}
+
+/*
+ * P0-C production: Port IO_ERROR on BIND exact_get after FOCUS close.
+ * Observes real spy get fault + STORAGE sticky/FAILED/incomplete BIND.
+ * Formal JSON note_count remains generator-only (no call-count seam).
+ */
+static int test_d3s2_p0c_bind_exact_get_port_failure_note0(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t cumulative_value[256];
+    uint32_t cumulative_length = 0u;
+    uint8_t recent_value[256];
+    uint8_t anchor_pvd[32];
+    int guard;
+    uint32_t get_before_bind;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+    REQUIRE(encode_retry_cumulative_total_one(
+        cumulative_value, (uint32_t)sizeof(cumulative_value),
+        &cumulative_length));
+    REQUIRE(patch_pvd_crc(cumulative_value, cumulative_length, anchor_pvd));
+    (void)memcpy(recent_value, NINLIL_D3S2_WIRE_RETRY_RECENT_C1_VALUE,
+        NINLIL_D3S2_WIRE_RETRY_RECENT_C1_VALUE_LEN);
+    REQUIRE(patch_pvd_crc(recent_value,
+        (uint32_t)NINLIL_D3S2_WIRE_RETRY_RECENT_C1_VALUE_LEN, anchor_pvd));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_RS_CUM_T0_TYPED_KEY, DSB3_RS_CUM_T0_TYPED_KEY_LEN,
+        cumulative_value, cumulative_length));
+    REQUIRE(add_domain_row(&spy, NINLIL_D3S2_WIRE_RETRY_RECENT_C1_KEY,
+        NINLIL_D3S2_WIRE_RETRY_RECENT_C1_KEY_LEN, recent_value,
+        (uint32_t)NINLIL_D3S2_WIRE_RETRY_RECENT_C1_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 25u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    /* Drive until BIND phase is live; FOCUS count bit may already be set. */
+    guard = 0;
+    while ((context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_BIND_PHASE_ACTIVE)
+            == 0u
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        REQUIRE(st == NINLIL_OK);
+        guard += 1;
+    }
+    REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_BIND_PHASE_ACTIVE)
+        != 0u);
+    REQUIRE(session.has_sticky_primary == 0u);
+    get_before_bind = spy.get_calls;
+
+    /* Next peer exact_get is BIND path; inject real Port IO_ERROR. */
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, get_before_bind + 1u,
+        NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
+    st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+    REQUIRE(st == NINLIL_E_STORAGE);
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE);
+    /* No fabricated CORRUPT outcome on this Port IO_ERROR path. */
+    REQUIRE(session.sticky_primary != NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
+    /* BIND incomplete; not undercount-CORRUPT. */
+    REQUIRE((context.binding_complete_mask & NINLIL_DOMAIN_SCAN_D3S2_MASK_RETRY)
+        == 0u);
+    REQUIRE(spy.get_calls == get_before_bind + 1u);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE);
+    REQUIRE(result.status == NINLIL_E_STORAGE);
+    REQUIRE(result.adopted == 0u);
+    return 0;
+}
+
+/*
+ * P0-C production: Port IO_ERROR mid-FOCUS stream (Mode26).
+ * Real spy iter_next fault after at least one FOCUS OK; no CORRUPT outcome.
+ */
+static int test_d3s2_p0c_mid_focus_iter_next_port_failure_note0(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t management_value[512];
+    uint8_t anchor_pvd[32];
+    int guard;
+    uint32_t next_before;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+    (void)memcpy(management_value, NINLIL_D3S2_WIRE_MANAGEMENT_RESUME_VALUE,
+        NINLIL_D3S2_WIRE_MANAGEMENT_RESUME_VALUE_LEN);
+    REQUIRE(patch_pvd_crc(management_value,
+        (uint32_t)NINLIL_D3S2_WIRE_MANAGEMENT_RESUME_VALUE_LEN, anchor_pvd));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(&spy,
+        NINLIL_D3S2_WIRE_EVENT_SPOOL_PARKED_CYCLE_KEY,
+        NINLIL_D3S2_WIRE_EVENT_SPOOL_PARKED_CYCLE_KEY_LEN,
+        NINLIL_D3S2_WIRE_EVENT_SPOOL_PARKED_CYCLE_VALUE,
+        NINLIL_D3S2_WIRE_EVENT_SPOOL_PARKED_CYCLE_VALUE_LEN));
+    REQUIRE(add_domain_row(&spy, NINLIL_D3S2_WIRE_MANAGEMENT_RESUME_KEY,
+        NINLIL_D3S2_WIRE_MANAGEMENT_RESUME_KEY_LEN, management_value,
+        (uint32_t)NINLIL_D3S2_WIRE_MANAGEMENT_RESUME_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 26u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    /* Enter FOCUS_MANAGEMENT stream with focus_live. */
+    guard = 0;
+    while (context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FOCUS_MANAGEMENT
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        REQUIRE(st == NINLIL_OK);
+        guard += 1;
+    }
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FOCUS_MANAGEMENT);
+    REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_FOCUS_LIVE) != 0u);
+    REQUIRE(session.has_sticky_primary == 0u);
+
+    /* Progress one OK row so the fault is mid-FOCUS, not the first next. */
+    st = ninlil_domain_scan_d3s2_drive(&session, 1u);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FOCUS_MANAGEMENT);
+    REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_FOCUS_LIVE) != 0u);
+    REQUIRE(session.has_sticky_primary == 0u);
+    next_before = spy.iter_next_calls;
+
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_ITER_NEXT,
+        next_before + 1u, NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL,
+        0u, 0u));
+    st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+    REQUIRE(st == NINLIL_E_STORAGE);
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE);
+    REQUIRE(session.sticky_primary != NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
+    /* Incomplete observed is not corrupt-by-undercount (H3 / B9). */
+    REQUIRE((context.count_complete_mask
+                & NINLIL_DOMAIN_SCAN_D3S2_MASK_MANAGEMENT)
+        == 0u);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE);
+    REQUIRE(result.adopted == 0u);
     return 0;
 }
 
@@ -2903,6 +3105,12 @@ int ninlil_d3s2_run_all_tests(void)
         return 1;
     }
     if (test_d3s2_port_failure_no_note() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p0c_bind_exact_get_port_failure_note0() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p0c_mid_focus_iter_next_port_failure_note0() != 0) {
         return 1;
     }
     if (test_d3s2_p1_mode21_bind_valid_pair_success() != 0) {

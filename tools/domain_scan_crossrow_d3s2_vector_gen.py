@@ -31,6 +31,12 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     + two CUM carriers SELECT exactly once (no-skip/no-dup) COMPLETE
   * P0-B slice (§18.13.15 case 13 / §18.13.5 B5/B6/B11): Mode26 ES+MGMT
     mid-FOCUS stream budget stop then same-iterator resume (not B11 restart)
+  * P0-C slice (§18.13.15 cases 7 remaining / 11): Mode25 BIND exact_get
+    Port IO_ERROR → sticky STORAGE / FAILED; formal note_count=0 in JSON
+    (reference model only; not a production call counter); production bridge
+    proves Port fault + STORAGE outcome + exact trace (no fabricated CORRUPT).
+    Two-txn list-then-count anti-pass: check + self-test port_trace tamper
+    (production bridge enforces begin_calls==1 per vector)
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -70,6 +76,7 @@ D3S2_MODE22_SLICE_COUNT = 2
 D3S2_MODE21_SLICE_COUNT = 2
 D3S2_P0A_SLICE_COUNT = 1
 D3S2_P0B_SLICE_COUNT = 1
+D3S2_P0C_SLICE_COUNT = 1
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -80,8 +87,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_MODE21_SLICE_COUNT
     + D3S2_P0A_SLICE_COUNT
     + D3S2_P0B_SLICE_COUNT
-)  # 20
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 114
+    + D3S2_P0C_SLICE_COUNT
+)  # 21
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 115
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -137,6 +145,18 @@ D3S2_113_PREFIX_COUNT = (
     + D3S2_MODE21_SLICE_COUNT
     + D3S2_P0A_SLICE_COUNT
 )  # 113 (origin/main freeze before P0-B)
+D3S2_114_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+)  # 114 (origin/main freeze before P0-C)
 CEILING = 8192
 
 # Frozen D3-S1 prefix identity (byte-for-byte rebuild pin).
@@ -221,6 +241,17 @@ D3S2_113_CONTENT_SHA256 = (
 )
 D3S2_113_FINGERPRINT_HASH = (
     "d3f044ede266118ec9237ae3e01b539ff5c5fdfd85aaec3b7a31791f3c326057"
+)
+
+# Frozen 114-vector append-only prefix (113 + P0-B) — origin/main.
+# content hash + fingerprint chain independently derived from origin/main
+# 114-vector artifact (full document content_sha256 / prior_fingerprint
+# chain of that release; not recomputed by rewriting published objects).
+D3S2_114_CONTENT_SHA256 = (
+    "e1c1cd329f2ce817a49a461d2b86af25adda30573b4af83d3ba6d24cc00c49fe"
+)
+D3S2_114_FINGERPRINT_HASH = (
+    "caadacfe3a26a86c71661d656908d65eec3133355db9ab7fb4d5df6f0b388fd7"
 )
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -410,6 +441,11 @@ D3S2_P0B_KINDS = frozenset(
         "mode26_es_mgmt_budget_mid_focus_resume_ok",
     }
 )
+D3S2_P0C_KINDS = frozenset(
+    {
+        "mode25_bind_exact_get_port_failure_note0",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -420,6 +456,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_MODE21_KINDS
     | D3S2_P0A_KINDS
     | D3S2_P0B_KINDS
+    | D3S2_P0C_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -494,6 +531,11 @@ D3S2_EXPECTED_EXTRA = frozenset(
     }
 )
 D3S2_EXPECTED_KEYS = D3S1_EXPECTED_KEYS | D3S2_EXPECTED_EXTRA
+# Optional formal field only on new vectors (P0-C+). Existing suffix objects
+# omit it. Independent reference-model expectation (generator check/self-test);
+# not a production note_terminal_corrupt call counter and not emitted to the
+# production bridge C fixture.
+D3S2_EXPECTED_OPTIONAL_KEYS = frozenset({"note_count"})
 
 CALL_KEYS = frozenset(
     {
@@ -578,7 +620,16 @@ SCOPE = (
     "pass_kind/cleanup_skip/last_carrier_key_len + spy begin/iter_open/"
     "iter_close/trace_count; next drive resumes same iterator (B6 close; "
     "not B11 restart); final SELECT empty→BIND→COMPLETE matches one-shot "
-    "Mode26 success semantics. Does not claim full D3-S2 oracle complete, "
+    "Mode26 success semantics. Frozen 114-vector origin/main pin retained "
+    "(113 + P0-B). P0-C appends Mode25 BIND exact_get Port IO_ERROR mid-"
+    "BIND (after FOCUS known-slot matrix): sticky NINLIL_E_STORAGE / phase "
+    "FAILED; formal JSON note_count=0 is reference-model only (not a "
+    "production note_terminal_corrupt call counter); production bridge proves "
+    "Port fault + STORAGE sticky/FAILED + incomplete BIND + exact trace. "
+    "Fault is real spy get on_call after baseline 17 + FOCUS 5 peer gets. "
+    "Same-txn: every d3s2 suffix port_trace has exactly one begin:READ_ONLY; "
+    "two-txn list-then-count models fail closed (self-test tamper). "
+    "Does not claim full D3-S2 oracle complete, "
     "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
     "transport begin forbidden. Independent generator — production C not "
     "invoked for expected generation."
@@ -591,7 +642,8 @@ SHA256_PROCEDURE = (
     "the exact 94-vector D3-S1 prefix, the 100-vector prior main, the "
     "102-vector prior main, the 104-vector prior main, the 106-vector "
     "prior main, the 108-vector prior main, the 110-vector prior main, "
-    "the 112-vector prior main, and the 113-vector origin/main "
+    "the 112-vector prior main, the 113-vector origin/main, and the "
+    "114-vector origin/main "
     "(fingerprint/order/expected/rows/calls/full object equality). "
     "content_sha256 "
     "covers the document with sha256_procedure/content_sha256 fields set "
@@ -648,6 +700,14 @@ OWNERSHIP_P0B = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(20-vector suffix on frozen 113-prefix only)"
+)
+# P0-C ownership (21-vector suffix at P0-C append time). Hardcoded 21 so a
+# later append does not rewrite published P0-C objects.
+OWNERSHIP_P0C = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(21-vector suffix on frozen 114-prefix only)"
 )
 
 
@@ -726,6 +786,9 @@ def d3s2_vector_fingerprint(vec: Dict[str, Any]) -> str:
             "flags": exp.get("flags"),
         },
     }
+    # Optional note_count only when present so legacy fingerprints stay fixed.
+    if "note_count" in exp:
+        payload["expected"]["note_count"] = exp.get("note_count")
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
@@ -1151,6 +1214,112 @@ def run_d3s2_mode25_recent_without_cum_corrupt(
 # ---------------------------------------------------------------------------
 # P0-A Mode25 multi-owner SHA interleave + dual CUM carrier (§18.13.15 #2/#6)
 # ---------------------------------------------------------------------------
+
+
+def run_d3s2_mode25_bind_exact_get_port_failure_note0(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode25 BIND exact_get Port terminal → sticky STORAGE, note_count=0 (H3).
+
+    Independent reference model (docs/17 §18.13.5 B9 / §18.13.15 case11):
+      Same material as Mode25 CUM+RECENT+ANCHOR success through FOCUS known-slot
+      close, then BIND_RETRY first peer exact_get (CUM self-carrier true primary)
+      returns IO_ERROR. Sticky NINLIL_E_STORAGE / phase FAILED; note_terminal_
+      corrupt is NOT used (no undercount/orphan CORRUPT note). abort.
+
+    Fault: get on_call = 17 baseline profile + 5 FOCUS matrix + 1 = 23.
+    Peer get count includes the failed BIND get (production spy records it).
+    """
+    n_ok = len(rows)
+    if n_ok != 20:
+        raise SystemExit(
+            f"mode25 bind port-fail expects 20 rows (17+3), got {n_ok}"
+        )
+    n_drive = 4
+    n_open = 4  # begin open + 3 reopens (abort cleanup closes last)
+    # Fault on first BIND peer get after FOCUS matrix (5) and baseline (17).
+    get_on_call = 17 + 5 + 1
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 25, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {
+            "op": "d3s2_drive",
+            "row_budget": 256,
+            "expected_status": "STORAGE",
+        },
+        {"op": "abort", "expected_status": "STORAGE"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("mode25 bind port-fail drive count drift")
+
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT+FOCUS matrix (5 gets) → reopen
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * 5)
+    port_trace.append("iter_close")
+    # drive3 SELECT empty → BIND entry reopen
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive4 BIND: walk to CUM then first true-primary get fails (Port)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)  # profile
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # CUM
+    port_trace.append("get")  # true primary ANCHOR — Port IO_ERROR
+    port_trace.append("iter_close")  # abort cleanup
+    port_trace.append("rollback")
+
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("mode25 bind port-fail must be single-txn")
+    if port_trace.count("get") != 17 + 5 + 1:
+        raise SystemExit(
+            f"mode25 bind port-fail get count drift: {port_trace.count('get')}"
+        )
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,  # ANCHOR + CUM + RECENT (baseline freeze)
+        "ok_row_count": 20,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE",
+        # FOCUS matrix 5 + failed BIND primary get 1 (spy still records get)
+        "d3_peer_get_count": 6,
+        "d3_mode_applicable_count": 1,  # CUM secondary reached before Port stop
+        "phase": PHASE_FAILED,
+        # FOCUS known-slot already closed before BIND Port fail
+        "count_complete_mask": MASK_RETRY,
+        "binding_complete_mask": 0,  # BIND incomplete; no note undercount
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+        # Formal reference-model only (not production call-count).
+        "note_count": 0,
+    }
+    _ = binding
+    _ = get_on_call  # mirrored in vector faults[]
+    return calls, expected
 
 
 def _retry_composite_key(tx: bytes, kind: int, slot: int) -> bytes:
@@ -4493,6 +4662,85 @@ def build_d3s2_p0b_slice_vectors() -> List[Dict[str, Any]]:
     return vectors
 
 
+def build_d3s2_p0c_slice_vectors() -> List[Dict[str, Any]]:
+    """P0-C append-only slice (1 vector) after the frozen 114-prefix."""
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    rows, named, _pvd = _mode25_material_rows(include_cum=True, cum_total=1)
+    calls, exp = run_d3s2_mode25_bind_exact_get_port_failure_note0(binding, rows)
+    if int(exp.get("note_count", -1)) != 0:
+        raise SystemExit("P0-C expected note_count must be 0")
+    if exp.get("sticky_primary") != "STORAGE":
+        raise SystemExit("P0-C sticky must be STORAGE (not CORRUPT note path)")
+    if exp["port_trace"].count("begin:READ_ONLY") != 1:
+        raise SystemExit("P0-C port_trace must be single-txn")
+    get_on_call = 17 + 5 + 1
+    vectors.append(
+        {
+            "id": "D3S2_M25_BIND_EXACT_GET_PORT_FAILURE_NOTE0",
+            "kind": "mode25_bind_exact_get_port_failure_note0",
+            "mode": 25,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows),
+            "alt_rows": {},
+            "faults": [
+                {
+                    "op": "get",
+                    "on_call": get_on_call,
+                    "status": "IO_ERROR",
+                    "shape": "natural",
+                }
+            ],
+            "calls": calls,
+            "d1_refs": [D1_CUM_ID, D1_REC_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_CUM_ID,
+                row=named["cum"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode25 CUM carrier; BIND first peer get is true-primary "
+                    "ANCHOR (self-carrier path) where Port IO_ERROR injects"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named["anchor"],
+                expect_presence="PRESENT",
+                note="true primary target of failing BIND exact_get (Port path)",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_REC_ID,
+                    row=named["recent"],
+                    expect_presence="PRESENT",
+                    note="RECENT present after FOCUS close; not reached in BIND",
+                )
+            ],
+            "notes": (
+                "P0-C formal (§18.13.15 cases 7 remaining / 11 / §18.13.5 B9 H3): "
+                "Mode25 success material through FOCUS known-slot close, then "
+                "BIND exact_get Port IO_ERROR on first peer get (CUM self-carrier "
+                "true primary). sticky STORAGE / phase FAILED / note_count=0 — "
+                "must not fabricate undercount or orphan via note_terminal_corrupt "
+                "(sticky is STORAGE not STORAGE_CORRUPT). Real spy fault "
+                "get on_call=23 (17 profile + 5 FOCUS + 1). Single READ_ONLY "
+                "txn; abort; mutation_calls=0. Independent Python only. Not "
+                "D3-S2 complete claim."
+            ),
+            "ownership": OWNERSHIP_P0C,
+            "expected": exp,
+        }
+    )
+
+    if len(vectors) != D3S2_P0C_SLICE_COUNT:
+        raise SystemExit("p0c slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P0C_KINDS:
+        raise SystemExit(f"p0c kinds inventory mismatch: {kinds}")
+    return vectors
+
+
 def build_d3s2_mode26_slice_vectors() -> List[Dict[str, Any]]:
     """Mode26 append-only slice (2 vectors) after the frozen 102-prefix."""
     binding = _d3s1.default_binding_fields()
@@ -4946,6 +5194,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_mode21_slice_vectors()
         + build_d3s2_p0a_slice_vectors()
         + build_d3s2_p0b_slice_vectors()
+        + build_d3s2_p0c_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -5041,6 +5290,7 @@ def build_document() -> Dict[str, Any]:
     mode21_vectors = build_d3s2_mode21_slice_vectors()
     p0a_vectors = build_d3s2_p0a_slice_vectors()
     p0b_vectors = build_d3s2_p0b_slice_vectors()
+    p0c_vectors = build_d3s2_p0c_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -5051,6 +5301,7 @@ def build_document() -> Dict[str, Any]:
         + mode21_vectors
         + p0a_vectors
         + p0b_vectors
+        + p0c_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -5138,6 +5389,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_thirteen_hash})"
         )
 
+    # Retained 114-vector chain pin (113 + P0-B = origin/main before P0-C).
+    hundred_fourteen_hash = _chain_hash(
+        prior_fingerprints[:D3S2_114_PREFIX_COUNT]
+    )
+    if hundred_fourteen_hash != D3S2_114_FINGERPRINT_HASH:
+        raise SystemExit(
+            "114-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_fourteen_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -5157,6 +5418,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_110_prefix_count": D3S2_110_PREFIX_COUNT,
         "d3s2_112_prefix_count": D3S2_112_PREFIX_COUNT,
         "d3s2_113_prefix_count": D3S2_113_PREFIX_COUNT,
+        "d3s2_114_prefix_count": D3S2_114_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -5258,6 +5520,15 @@ def build_document() -> Dict[str, Any]:
                 "through P0-A); P0-B Mode26 budget mid-focus resume vector follows"
             ),
         },
+        "d3s2_114_prefix_authority": {
+            "vector_count": D3S2_114_PREFIX_COUNT,
+            "content_sha256": D3S2_114_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_114_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 20 d3s2 suffix "
+                "through P0-B); P0-C Mode25 BIND Port terminal note0 vector follows"
+            ),
+        },
         "prior_fingerprints": prior_fingerprints,
         "prior_fingerprint_prefix_hash": prior_prefix_hash,
         "sha256_procedure": SHA256_PROCEDURE,
@@ -5357,6 +5628,8 @@ def check(path: Path) -> int:
         return _fail_check("d3s2_112_prefix_count pin mismatch")
     if int(data.get("d3s2_113_prefix_count", -1)) != D3S2_113_PREFIX_COUNT:
         return _fail_check("d3s2_113_prefix_count pin mismatch")
+    if int(data.get("d3s2_114_prefix_count", -1)) != D3S2_114_PREFIX_COUNT:
+        return _fail_check("d3s2_114_prefix_count pin mismatch")
     if data.get("required_kinds") != expected_doc["required_kinds"]:
         return _fail_check("required_kinds inventory mismatch")
     if not data.get("sha256_procedure"):
@@ -5468,6 +5741,16 @@ def check(path: Path) -> int:
         )
     if int(auth113.get("vector_count", -1)) != D3S2_113_PREFIX_COUNT:
         return _fail_check("d3s2_113_prefix_authority vector_count pin mismatch")
+
+    auth114 = data.get("d3s2_114_prefix_authority") or {}
+    if auth114.get("content_sha256") != D3S2_114_CONTENT_SHA256:
+        return _fail_check("d3s2_114_prefix_authority content_sha256 pin mismatch")
+    if auth114.get("prior_fingerprint_prefix_hash") != D3S2_114_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_114_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth114.get("vector_count", -1)) != D3S2_114_PREFIX_COUNT:
+        return _fail_check("d3s2_114_prefix_authority vector_count pin mismatch")
 
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
@@ -5974,6 +6257,71 @@ def check(path: Path) -> int:
             f"113-prefix fingerprint chain pin fail (got {hundred_thirteen_chain})"
         )
 
+    # First 114 vectors: full object equality vs rebuild (origin/main freeze).
+    # P0-C must not rewrite any prior ownership/notes/refs/expected byte.
+    p0b_rebuild = build_d3s2_p0b_slice_vectors()
+    expected_114 = list(expected_113) + list(p0b_rebuild)
+    if len(expected_114) != D3S2_114_PREFIX_COUNT:
+        return _fail_check("internal 114-prefix rebuild length drift")
+    for i in range(D3S2_114_PREFIX_COUNT):
+        got = vectors[i]
+        exp = expected_114[i]
+        for key in ("id", "kind", "mode"):
+            if got.get(key) != exp.get(key):
+                return _fail_check(
+                    f"114-prefix[{i}] {key} mismatch: "
+                    f"{got.get(key)!r} vs {exp.get(key)!r}"
+                )
+        if got.get("rows") != exp.get("rows"):
+            return _fail_check(
+                f"114-prefix[{i}] {got.get('id')}: rows not identical"
+            )
+        if got.get("calls") != exp.get("calls"):
+            return _fail_check(
+                f"114-prefix[{i}] {got.get('id')}: calls not identical"
+            )
+        if got.get("expected") != exp.get("expected"):
+            return _fail_check(
+                f"114-prefix[{i}] {got.get('id')}: expected not identical"
+            )
+        if i < D3S1_PREFIX_COUNT:
+            gf = d3s1_vector_fingerprint(got)
+            ef = d3s1_vector_fingerprint(exp)
+        else:
+            gf = d3s2_vector_fingerprint(got)
+            ef = d3s2_vector_fingerprint(exp)
+        if gf != ef:
+            return _fail_check(
+                f"114-prefix[{i}] {got.get('id')}: fingerprint drift"
+            )
+        if got != exp:
+            all_keys = sorted(set(got.keys()) | set(exp.keys()))
+            for key in all_keys:
+                if got.get(key) != exp.get(key):
+                    return _fail_check(
+                        f"114-prefix[{i}] {got.get('id')}: field {key!r} "
+                        f"not identical to rebuild"
+                    )
+            return _fail_check(
+                f"114-prefix[{i}] {got.get('id')}: full object inequality"
+            )
+    hundred_fourteen_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_114_PREFIX_COUNT)
+        ]
+    )
+    if hundred_fourteen_chain != D3S2_114_FINGERPRINT_HASH:
+        return _fail_check(
+            f"114-prefix fingerprint chain pin fail (got {hundred_fourteen_chain})"
+        )
+
     # prior_fingerprints order/identity.
     got_fps = data.get("prior_fingerprints")
     exp_fps = expected_doc["prior_fingerprints"]
@@ -6079,17 +6427,42 @@ def check(path: Path) -> int:
                     f"{exp_keys ^ D3S1_EXPECTED_KEYS}"
                 )
         else:
-            if exp_keys != D3S2_EXPECTED_KEYS:
+            optional = exp_keys & D3S2_EXPECTED_OPTIONAL_KEYS
+            base = exp_keys - D3S2_EXPECTED_OPTIONAL_KEYS
+            if base != D3S2_EXPECTED_KEYS:
                 return _fail_check(
                     f"suffix expected keys drift in {vec['id']}: "
-                    f"{exp_keys ^ D3S2_EXPECTED_KEYS}"
+                    f"{base ^ D3S2_EXPECTED_KEYS}"
                 )
+            if optional - D3S2_EXPECTED_OPTIONAL_KEYS:
+                return _fail_check(
+                    f"suffix unexpected optional keys in {vec['id']}: {optional}"
+                )
+            # Formal field only (reference model). Do not infer call count from
+            # sticky status: Port shape poison can also produce CORRUPT without
+            # note_terminal_corrupt. Slice-specific checks below own the exact
+            # expected count for vectors that publish this field.
+            if "note_count" in exp_keys:
+                nc = int(vec["expected"]["note_count"])
+                if nc < 0:
+                    return _fail_check(
+                        f"{vec['id']}: formal note_count must be non-negative"
+                    )
         if int(vec["expected"].get("mutation_calls", -1)) != 0:
             return _fail_check(f"{vec['id']}: mutation_calls must be 0")
+        # Same-txn multipass contract: exactly one begin in every d3s2 suffix.
+        if i >= D3S1_PREFIX_COUNT:
+            pt = vec["expected"].get("port_trace") or []
+            begin_n = pt.count("begin:READ_ONLY")
+            if begin_n != 1:
+                return _fail_check(
+                    f"{vec['id']}: same-txn requires exactly 1 begin:READ_ONLY "
+                    f"in port_trace, got {begin_n} (two-txn list/count fail closed)"
+                )
 
     # Suffix-specific pins: smoke [0..6) Mode25 [6..8) Mode26 [8..10)
     # Mode24 [10..12) Mode23 [12..14) Mode22 [14..16) Mode21 [16..18)
-    # P0-A [18..19) P0-B [19..20).
+    # P0-A [18..19) P0-B [19..20) P0-C [20..21).
     suffix = vectors[D3S1_PREFIX_COUNT:]
     if len(suffix) != D3S2_SUFFIX_COUNT:
         return _fail_check("suffix length mismatch")
@@ -6107,7 +6480,9 @@ def check(path: Path) -> int:
     mode21 = suffix[mode21_start : mode21_start + D3S2_MODE21_SLICE_COUNT]
     p0a_start = mode21_start + D3S2_MODE21_SLICE_COUNT
     p0a = suffix[p0a_start : p0a_start + D3S2_P0A_SLICE_COUNT]
-    p0b = suffix[p0a_start + D3S2_P0A_SLICE_COUNT :]
+    p0b_start = p0a_start + D3S2_P0A_SLICE_COUNT
+    p0b = suffix[p0b_start : p0b_start + D3S2_P0B_SLICE_COUNT]
+    p0c = suffix[p0b_start + D3S2_P0B_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -6124,6 +6499,8 @@ def check(path: Path) -> int:
         return _fail_check("p0a slice length mismatch")
     if len(p0b) != D3S2_P0B_SLICE_COUNT:
         return _fail_check("p0b slice length mismatch")
+    if len(p0c) != D3S2_P0C_SLICE_COUNT:
+        return _fail_check("p0c slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -7259,6 +7636,66 @@ def check(path: Path) -> int:
     if p0b_ok["expected"] != exp_expected:
         return _fail_check(f"{p0b_ok['id']}: expected != independent model")
 
+    # ---- P0-C Mode25 BIND Port terminal note 0 (§18.13.15 #7/#11) ----
+    p0c_vec = p0c[0]
+    if p0c_vec["kind"] != "mode25_bind_exact_get_port_failure_note0":
+        return _fail_check("p0c[0] kind pin fail")
+    if int(p0c_vec["mode"]) != 25:
+        return _fail_check(f"{p0c_vec['id']}: mode must be 25")
+    if p0c_vec.get("ownership") != OWNERSHIP_P0C:
+        return _fail_check(f"{p0c_vec['id']}: ownership pin fail")
+    if p0c_vec["expected"].get("final_status") != "STORAGE":
+        return _fail_check(f"{p0c_vec['id']}: final_status must be STORAGE")
+    if p0c_vec["expected"].get("sticky_primary") != "STORAGE":
+        return _fail_check(f"{p0c_vec['id']}: sticky must be STORAGE (Port path)")
+    if int(p0c_vec["expected"].get("note_count", -1)) != 0:
+        return _fail_check(f"{p0c_vec['id']}: note_count must be 0")
+    if int(p0c_vec["expected"]["phase"]) != PHASE_FAILED:
+        return _fail_check(f"{p0c_vec['id']}: phase must be FAILED")
+    if int(p0c_vec["expected"]["count_complete_mask"]) != MASK_RETRY:
+        return _fail_check(
+            f"{p0c_vec['id']}: count mask must retain FOCUS close (MASK_RETRY)"
+        )
+    if int(p0c_vec["expected"]["binding_complete_mask"]) != 0:
+        return _fail_check(f"{p0c_vec['id']}: binding mask must be 0")
+    if int(p0c_vec["expected"]["d3_peer_get_count"]) != 6:
+        return _fail_check(f"{p0c_vec['id']}: d3_peer_get_count must be 6")
+    faults = p0c_vec.get("faults") or []
+    if len(faults) != 1 or faults[0].get("op") != "get":
+        return _fail_check(f"{p0c_vec['id']}: exactly one get fault required")
+    if int(faults[0].get("on_call", -1)) != 23:
+        return _fail_check(
+            f"{p0c_vec['id']}: get on_call must be 23 (17+5+1), got "
+            f"{faults[0].get('on_call')}"
+        )
+    if faults[0].get("status") != "IO_ERROR":
+        return _fail_check(f"{p0c_vec['id']}: fault status must be IO_ERROR")
+    pt_p0c = p0c_vec["expected"]["port_trace"]
+    if pt_p0c.count("begin:READ_ONLY") != 1:
+        return _fail_check(f"{p0c_vec['id']}: single-txn begin pin fail")
+    if pt_p0c.count("get") != 23:
+        return _fail_check(
+            f"{p0c_vec['id']}: port_trace get count must be 23, got "
+            f"{pt_p0c.count('get')}"
+        )
+    # Last get is the Port failure; no further peer gets or CORRUPT note path.
+    if pt_p0c[-3:] != ["get", "iter_close", "rollback"]:
+        return _fail_check(
+            f"{p0c_vec['id']}: port_trace must end get,iter_close,rollback"
+        )
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode25_bind_exact_get_port_failure_note0(
+                p0c_vec["candidate_binding"], p0c_vec["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{p0c_vec['id']}: model reject: {exc}")
+    if p0c_vec["calls"] != exp_calls:
+        return _fail_check(f"{p0c_vec['id']}: calls != independent model")
+    if p0c_vec["expected"] != exp_expected:
+        return _fail_check(f"{p0c_vec['id']}: expected != independent model")
+
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
             f"missing d3s2 kinds {D3S2_REQUIRED_KINDS - kinds}"
@@ -8266,6 +8703,106 @@ def self_test() -> int:
                 "mutation_calls", 1
             ),
         )
+        # 114-prefix freeze (includes P0-B; P0-C at 114).
+        t(
+            "hundred_fourteen_prefix_row_tamper",
+            lambda d: d["vectors"][113]["rows"].__setitem__(
+                0, {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "hundred_fourteen_prefix_expected_tamper",
+            lambda d: d["vectors"][113]["expected"].__setitem__(
+                "ok_row_count", 999
+            ),
+        )
+        t(
+            "hundred_fourteen_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_114_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_fourteen_prefix_content_authority_tamper",
+            lambda d: d["d3s2_114_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        t(
+            "hundred_fourteen_prefix_ownership_tamper",
+            lambda d: d["vectors"][113].__setitem__(
+                "ownership", OWNERSHIP_P0C
+            ),
+        )
+        # P0-C Port BIND note0 tampers (index 114).
+        t(
+            "p0c_sticky_corrupt_tamper",
+            lambda d: d["vectors"][114]["expected"].__setitem__(
+                "sticky_primary", "STORAGE_CORRUPT"
+            ),
+        )
+        t(
+            "p0c_note_count_tamper",
+            lambda d: d["vectors"][114]["expected"].__setitem__(
+                "note_count", 1
+            ),
+        )
+        t(
+            "p0c_final_status_tamper",
+            lambda d: d["vectors"][114]["expected"].__setitem__(
+                "final_status", "STORAGE_CORRUPT"
+            ),
+        )
+        t(
+            "p0c_fault_on_call_tamper",
+            lambda d: d["vectors"][114]["faults"][0].__setitem__(
+                "on_call", 1
+            ),
+        )
+        t(
+            "p0c_count_mask_zero_tamper",
+            lambda d: d["vectors"][114]["expected"].__setitem__(
+                "count_complete_mask", 0
+            ),
+        )
+        t(
+            "p0c_bind_mask_green_tamper",
+            lambda d: d["vectors"][114]["expected"].__setitem__(
+                "binding_complete_mask", MASK_RETRY
+            ),
+        )
+        t(
+            "p0c_mutation_tamper",
+            lambda d: d["vectors"][114]["expected"].__setitem__(
+                "mutation_calls", 1
+            ),
+        )
+        # Two-txn list-then-count anti-pass: insert second begin between
+        # FOCUS and BIND on Mode25 success while claiming COMPLETE.
+        def _two_txn_list_count_split(d):
+            # Index 100 = Mode25 CUM success (formal single-txn COMPLETE).
+            pt = list(d["vectors"][100]["expected"]["port_trace"] )
+            # Insert second begin after first full walk close (list txn end)
+            # and before next iter_open (count/BIND txn start).
+            try:
+                first_close = pt.index("iter_close")
+            except ValueError:
+                first_close = 20
+            d["vectors"][100]["expected"]["port_trace"] = (
+                pt[: first_close + 1]
+                + ["begin:READ_ONLY"]
+                + pt[first_close + 1 :]
+            )
+
+        t("two_txn_list_count_port_trace_tamper", _two_txn_list_count_split)
+        # Also reject COMPLETE smoke when port_trace claims two begins.
+        def _two_txn_smoke(d):
+            pt = list(d["vectors"][94]["expected"]["port_trace"])
+            d["vectors"][94]["expected"]["port_trace"] = (
+                pt[:1] + ["begin:READ_ONLY"] + pt[1:]
+            )
+
+        t("two_txn_smoke_begin_double_tamper", _two_txn_smoke)
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -8286,9 +8823,9 @@ def self_test() -> int:
                 print(f, file=sys.stderr)
             return 1
         print(
-            "self-test ok (94+100+102+104+106+108+110+112+113 prefix freeze + "
-            "mode25/mode26/mode24/mode23/mode22/mode21/p0a/p0b slice pins + "
-            "forbidden ops + clean pass)"
+            "self-test ok (94+100+102+104+106+108+110+112+113+114 prefix freeze + "
+            "mode25/mode26/mode24/mode23/mode22/mode21/p0a/p0b/p0c slice pins + "
+            "two-txn anti-pass + forbidden ops + clean pass)"
         )
         return 0
 
@@ -8478,6 +9015,9 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
     lines.append("    uint8_t count_complete_mask;")
     lines.append("    uint8_t binding_complete_mask;")
     lines.append("    uint8_t flags;")
+    # note_count is formal JSON/oracle only (generator check/self-test).
+    # Not emitted to the production bridge C fixture: no note_terminal_corrupt
+    # call-count seam exists without session/context ABI growth.
     lines.append("} ninlil_d3s2_expected_t;")
     lines.append("")
     lines.append("typedef struct ninlil_d3s1_vector {")
