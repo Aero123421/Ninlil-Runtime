@@ -1,7 +1,7 @@
 # Ninlil Documentation
 
-状態: M0 public baseline complete。M1a Domain StoreはD1-A〜D1-B3o、D2-S1〜S6を実装済み。**D2 bounded scanner / DSR1_SCAN / DSR2_ESP_BOUND complete**、**D2-S6 private fail-closed seam implemented**、**D3-S0 Normative architecture freeze complete（docs only; [17章 §18](17-foundation-domain-store.md)）**。Stage 5、D3 finding correctness implementation、D4、public Runtime、ESP-IDF、hardwareは未完了。D3–D4 otherwise pre-alpha。<br>
-**D3-S0 docs freeze complete / D3 implementation pending**（Stage 5 / public Runtime still pending）。対象release: Foundation / pre-alpha
+状態: M0 public baseline complete。M1a Domain StoreはD1-A〜D1-B3o、D2-S1〜S6を実装済み。**D2 bounded scanner / DSR1_SCAN / DSR2_ESP_BOUND complete**、**D2-S6 private fail-closed seam implemented**、**D3-S0 Normative architecture freeze complete（docs only; [17章 §18](17-foundation-domain-store.md)）**、**D3-S1a closed-mode/context Normative freeze complete（docs only; [17章 §18.12](17-foundation-domain-store.md)）**。Stage 5、D3 finding correctness implementation、D4、public Runtime、ESP-IDF、hardwareは未完了。D3–D4 otherwise pre-alpha。<br>
+**D3-S0 + D3-S1a docs freeze complete / D3-S1 implementation pending**（Stage 5 / public Runtime still pending）。対象release: Foundation / pre-alpha
 
 ## 正本と優先順位
 
