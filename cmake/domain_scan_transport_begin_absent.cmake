@@ -71,6 +71,12 @@ if(_prof_pos EQUAL -1)
         "profiled begin missing from tests-OFF private archive")
 endif()
 
+string(FIND "${_text}" "ninlil_domain_scan_exact_get" _exact_pos)
+if(_exact_pos EQUAL -1)
+    message(FATAL_ERROR
+        "exact_get missing from tests-OFF private archive")
+endif()
+
 string(REGEX MATCH
     "ninlil_domain_scan_begin([^_]|$)"
     _transport_hit
@@ -93,4 +99,5 @@ if(_transport_hit)
 endif()
 
 file(REMOVE_RECURSE "${_work}")
-message(STATUS "transport begin absent from tests-OFF private archive")
+message(STATUS
+    "transport begin absent; profiled begin + exact_get present (tests-OFF)")

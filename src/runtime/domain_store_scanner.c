@@ -1293,6 +1293,242 @@ ninlil_status_t ninlil_domain_scan_advance(
     return NINLIL_OK;
 }
 
+/*
+ * S4: key may borrow external storage or workspace->key / previous_key only.
+ * Must be disjoint from workspace->value (output) and from out_result.
+ * Other workspace regions are not legal key aliases (§15.11.3).
+ */
+static int exact_get_key_region_ok(
+    const ninlil_domain_scan_workspace_t *workspace,
+    ninlil_bytes_view_t key)
+{
+    uintptr_t key_start;
+    uintptr_t key_end;
+    uintptr_t ws_start;
+    uintptr_t ws_end;
+    uintptr_t allow_key_start;
+    uintptr_t allow_key_end;
+    uintptr_t allow_prev_start;
+    uintptr_t allow_prev_end;
+
+    if (key.data == NULL || key.length == 0u
+        || key.length > NINLIL_DOMAIN_SCAN_KEY_CAPACITY) {
+        return 0;
+    }
+    key_start = (uintptr_t)key.data;
+    if (key.length > UINTPTR_MAX - key_start) {
+        return 0;
+    }
+    key_end = key_start + key.length;
+    ws_start = (uintptr_t)workspace;
+    ws_end = ws_start + sizeof(*workspace);
+    allow_key_start = (uintptr_t)workspace->key;
+    allow_key_end = allow_key_start + NINLIL_DOMAIN_SCAN_KEY_CAPACITY;
+    allow_prev_start = (uintptr_t)workspace->previous_key;
+    allow_prev_end =
+        allow_prev_start + NINLIL_DOMAIN_SCAN_PREVIOUS_KEY_CAPACITY;
+
+    if (!ranges_are_disjoint(
+            key.data,
+            key.length,
+            workspace->value,
+            NINLIL_DOMAIN_SCAN_VALUE_CAPACITY)) {
+        return 0;
+    }
+
+    /* Outside full workspace object: external storage is fine. */
+    if (key_end <= ws_start || key_start >= ws_end) {
+        return 1;
+    }
+
+    /* Inside workspace: only key[] or previous_key[] are legal. */
+    if (key_start >= allow_key_start && key_end <= allow_key_end) {
+        return 1;
+    }
+    if (key_start >= allow_prev_start && key_end <= allow_prev_end) {
+        return 1;
+    }
+    return 0;
+}
+
+/*
+ * Caller key/out alias only. Live-session authority (null bound_* / ops /
+ * txn_live / iter_live) is checked before this and maps to STORAGE_CORRUPT.
+ * Requires non-null bound fields established by that earlier gate.
+ */
+static int exact_get_alias_ok(
+    const ninlil_domain_scan_session_t *session,
+    ninlil_bytes_view_t key,
+    const ninlil_domain_scan_exact_get_result_t *out_result)
+{
+    const size_t result_bytes = sizeof(*out_result);
+    const ninlil_storage_ops_t *storage = session->bound_storage;
+    ninlil_storage_handle_t *handle_slot = session->bound_handle_slot;
+    ninlil_domain_scan_workspace_t *workspace = session->bound_workspace;
+
+    if (!exact_get_key_region_ok(workspace, key)) {
+        return 0;
+    }
+    if (!ranges_are_disjoint(key.data, key.length, out_result, result_bytes)) {
+        return 0;
+    }
+    if (!ranges_are_disjoint(
+            session, sizeof(*session), out_result, result_bytes)
+        || !ranges_are_disjoint(
+            workspace, sizeof(*workspace), out_result, result_bytes)
+        || !ranges_are_disjoint(
+            storage, sizeof(*storage), out_result, result_bytes)
+        || !ranges_are_disjoint(
+            handle_slot, sizeof(*handle_slot), out_result, result_bytes)) {
+        return 0;
+    }
+    return 1;
+}
+
+static void publish_exact_get_success(
+    ninlil_domain_scan_exact_get_result_t *out_result,
+    ninlil_domain_scan_exact_presence_t presence,
+    const uint8_t *value_data,
+    uint32_t value_length)
+{
+    out_result->presence = presence;
+    if (presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT && value_length > 0u) {
+        out_result->value.data = value_data;
+        out_result->value.length = value_length;
+    } else {
+        /* ABSENT, or PRESENT with zero length: empty view. */
+        out_result->value.data = NULL;
+        out_result->value.length = 0u;
+    }
+}
+
+ninlil_status_t ninlil_domain_scan_exact_get(
+    ninlil_domain_scan_session_t *session,
+    ninlil_bytes_view_t key,
+    ninlil_domain_scan_exact_get_result_t *out_result)
+{
+    const ninlil_storage_ops_t *storage;
+    ninlil_domain_scan_workspace_t *workspace;
+    ninlil_mut_bytes_t value;
+    ninlil_storage_status_t storage_status;
+    ninlil_status_t mapped;
+
+    if (session == NULL || out_result == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_OPEN
+        && session->state != NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    if (key.data == NULL || key.length < 1u
+        || key.length > NINLIL_DOMAIN_SCAN_KEY_CAPACITY) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+
+    /*
+     * Live-session authority (OPEN/EXHAUSTED): null/missing bound fields,
+     * missing required ops, or txn_live/iter_live=0 is corrupted authority.
+     * Checked before alias validation so sticky STORAGE_CORRUPT is not masked
+     * as INVALID_ARGUMENT (same Port-0 sticky FAILED policy as advance).
+     */
+    storage = session->bound_storage;
+    workspace = session->bound_workspace;
+    if (storage == NULL || workspace == NULL
+        || session->bound_handle_slot == NULL
+        || !storage_ops_required_nonnull(storage)
+        || session->iter_live == 0u || session->txn_live == 0u) {
+        set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+        session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (handle_slot_exact_match(session) == 0) {
+        set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+        session->fence_pending = 1u;
+        session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    /* Invalid caller key/out alias: session and out_result unchanged. */
+    if (!exact_get_alias_ok(session, key, out_result)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+
+    (void)memset(&value, 0, sizeof(value));
+    value.data = workspace->value;
+    value.capacity = NINLIL_DOMAIN_SCAN_VALUE_CAPACITY;
+    value.length = 0u;
+
+    storage_status = storage->get(storage->user, session->txn, key, &value);
+
+    /*
+     * inout_value.data/capacity are caller-owned for this get. Provider rewrite
+     * is unsafe shape: terminal CORRUPT + always fence after cleanup (§15.11.5).
+     */
+    if (value.data != workspace->value
+        || value.capacity != NINLIL_DOMAIN_SCAN_VALUE_CAPACITY) {
+        session->fence_pending = 1u;
+        set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+        session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    if (storage_status == NINLIL_STORAGE_OK) {
+        if (value.length > value.capacity
+            || value.length > NINLIL_DOMAIN_SCAN_VALUE_CAPACITY
+            || (value.length > 0u && value.data == NULL)) {
+            set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+            session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        publish_exact_get_success(
+            out_result,
+            NINLIL_DOMAIN_SCAN_EXACT_PRESENT,
+            workspace->value,
+            value.length);
+        return NINLIL_OK;
+    }
+
+    if (storage_status == NINLIL_STORAGE_NOT_FOUND) {
+        if (value.length != 0u) {
+            set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+            session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        publish_exact_get_success(
+            out_result, NINLIL_DOMAIN_SCAN_EXACT_ABSENT, NULL, 0u);
+        return NINLIL_OK;
+    }
+
+    if (storage_status == NINLIL_STORAGE_BUFFER_TOO_SMALL) {
+        /* BTS: no reread / no allocation. Do not second-count length shape. */
+        set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+        session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+
+    /*
+     * Combined raw-status / shape precedence (§15.11.5):
+     * - Status that requires fence (COMMIT_UNKNOWN or unknown) sets
+     *   fence_pending even when length shape is also malformed.
+     * - Shape poison (non-zero length on non-OK, BTS excluded) yields
+     *   STORAGE_CORRUPT rather than the mapped port status.
+     * - Descriptor rewrite always fences (handled above).
+     */
+    if (storage_status_requires_fence(storage_status)
+        || !storage_status_is_known(storage_status)) {
+        session->fence_pending = 1u;
+    }
+    if (!storage_status_is_known(storage_status) || value.length != 0u) {
+        set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
+        session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    mapped = map_storage_status(storage_status);
+    set_sticky_primary(session, mapped);
+    session->state = NINLIL_DOMAIN_SCAN_STATE_FAILED;
+    return mapped;
+}
+
 ninlil_status_t ninlil_domain_scan_finalize(
     ninlil_domain_scan_session_t *session,
     ninlil_domain_scan_result_t *out_result)
