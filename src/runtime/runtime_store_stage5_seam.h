@@ -104,7 +104,8 @@ typedef struct ninlil_runtime_store_stage5_workspace {
 
 /*
  * Documented current ceiling from actual layout:
- *   candidate (144) + session (~136) + max(L2b1 ws, scanner ws 8192)
+ *   candidate (144) + session (144 with optional D3 ptr; Stage5 does not bind D3)
+ *   + max(L2b1 ws, scanner ws 8192)
  * Round headroom for alignment/padding. Not a permanent ESP stack budget.
  */
 #define NINLIL_RUNTIME_STORE_STAGE5_WORKSPACE_CEILING_BYTES ((uint32_t)8704u)

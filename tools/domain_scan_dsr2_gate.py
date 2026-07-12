@@ -31,6 +31,8 @@ from typing import Dict, List, Optional, Set, Tuple
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCANNER_C = REPO_ROOT / "src" / "runtime" / "domain_store_scanner.c"
 SCANNER_H = REPO_ROOT / "src" / "runtime" / "domain_store_scanner.h"
+D3S1_C = REPO_ROOT / "src" / "runtime" / "domain_store_d3s1.c"
+D3S1_H = REPO_ROOT / "src" / "runtime" / "domain_store_d3s1.h"
 
 ALLOC_CALL_RE = re.compile(
     r"\b(malloc|calloc|realloc|free|alloca)\s*\("
@@ -351,15 +353,33 @@ def check_production() -> int:
     if not SCANNER_C.is_file() or not SCANNER_H.is_file():
         print("missing scanner sources", file=sys.stderr)
         return 1
+    if not D3S1_C.is_file() or not D3S1_H.is_file():
+        print("missing D3-S1 sources", file=sys.stderr)
+        return 1
     c_text = SCANNER_C.read_text(encoding="utf-8")
     h_text = SCANNER_H.read_text(encoding="utf-8")
     bad = analyze_sources(c_text, h_text, label="scanner")
     if bad:
         print("DSR2 complete source gate failed:", bad, file=sys.stderr)
         return 1
+    # D3-S1 chunk-A/B/C TU: same DSR2 bans (no heap/VLA/second 4096/full-ID).
+    # Header is not the scanner workspace header — analyze .c alone with a
+    # stub header that satisfies the single-value-buffer check without
+    # inventing a second workspace value buffer.
+    d3_c = D3S1_C.read_text(encoding="utf-8")
+    d3_h_stub = (
+        "typedef struct ninlil_domain_scan_workspace {\n"
+        "    uint8_t value[NINLIL_DOMAIN_SCAN_VALUE_CAPACITY];\n"
+        "} ninlil_domain_scan_workspace_t;\n"
+    )
+    d3_bad = analyze_sources(d3_c, d3_h_stub, label="snippet")
+    if d3_bad:
+        print("DSR2 D3-S1 source gate failed:", d3_bad, file=sys.stderr)
+        return 1
     print(
         f"ok domain_scan_dsr2_complete_gate "
-        f"c={SCANNER_C.name} h={SCANNER_H.name}"
+        f"c={SCANNER_C.name} h={SCANNER_H.name} "
+        f"d3s1={D3S1_C.name}"
     )
     return 0
 
