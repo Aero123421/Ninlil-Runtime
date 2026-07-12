@@ -37,6 +37,15 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     proves Port fault + STORAGE outcome + exact trace (no fabricated CORRUPT).
     Two-txn list-then-count anti-pass: check + self-test port_trace tamper
     (production bridge enforces begin_calls==1 per vector)
+  * P0-D slice (§18.13.15 cases 8 / 15): Mode22 DELIVERY-owned ATTEMPT with
+    unexpected ATTEMPT_ID_INDEX PRESENT → BIND_ATTEMPT ABSENT-peer fail;
+    Mode22 true-primary DELIVERY ABSENT; Mode21 primary PVD mismatch;
+    Mode21 INDEX pair PRESENT subject/raw mismatch (constructible BIND pair
+    subject residual after primary proven). True-primary raw after D1
+    PRESENT+typed validate is identity-tautological/unconstructible under
+    D1 same-record + same READ_ONLY snapshot — not claimed as coverage.
+    Mode21 success BIND_INDEX no-STATE companion re-get pinned via existing
+    d3_peer_get_count / exact Port-trace.
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -77,6 +86,7 @@ D3S2_MODE21_SLICE_COUNT = 2
 D3S2_P0A_SLICE_COUNT = 1
 D3S2_P0B_SLICE_COUNT = 1
 D3S2_P0C_SLICE_COUNT = 1
+D3S2_P0D_SLICE_COUNT = 4
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -88,8 +98,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_P0A_SLICE_COUNT
     + D3S2_P0B_SLICE_COUNT
     + D3S2_P0C_SLICE_COUNT
-)  # 21
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 115
+    + D3S2_P0D_SLICE_COUNT
+)  # 25
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 119
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -157,6 +168,19 @@ D3S2_114_PREFIX_COUNT = (
     + D3S2_P0A_SLICE_COUNT
     + D3S2_P0B_SLICE_COUNT
 )  # 114 (origin/main freeze before P0-C)
+D3S2_115_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+    + D3S2_P0C_SLICE_COUNT
+)  # 115 (origin/main freeze before P0-D)
 CEILING = 8192
 
 # Frozen D3-S1 prefix identity (byte-for-byte rebuild pin).
@@ -253,6 +277,17 @@ D3S2_114_CONTENT_SHA256 = (
 D3S2_114_FINGERPRINT_HASH = (
     "caadacfe3a26a86c71661d656908d65eec3133355db9ab7fb4d5df6f0b388fd7"
 )
+# Frozen 115-vector append-only prefix (114 + P0-C) — origin/main.
+# content hash + fingerprint chain independently derived from origin/main
+# 115-vector artifact (full document content_sha256 / prior_fingerprint
+# chain of that release; not recomputed by rewriting published objects).
+D3S2_115_CONTENT_SHA256 = (
+    "605a77d256e5bcadddba5a5973ab2d59d86687d5988a5e686d6e4a093dcd8059"
+)
+D3S2_115_FINGERPRINT_HASH = (
+    "0d272c1a7d25f4dc0c299964872870e77e1ba5de8a4844da7fe8d584928623fa"
+)
+
 
 # D1 authority pins for Mode25 material (independent of production C).
 D1_CUM_ID = "DSB3_RS_CUM_T0_TYPED"
@@ -446,6 +481,14 @@ D3S2_P0C_KINDS = frozenset(
         "mode25_bind_exact_get_port_failure_note0",
     }
 )
+D3S2_P0D_KINDS = frozenset(
+    {
+        "mode22_att_unexpected_aii_index_present_corrupt",
+        "mode22_att_true_primary_delivery_absent_corrupt",
+        "mode21_att_primary_pvd_mismatch_corrupt",
+        "mode21_att_index_pair_subject_raw_mismatch_corrupt",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -457,6 +500,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_P0A_KINDS
     | D3S2_P0B_KINDS
     | D3S2_P0C_KINDS
+    | D3S2_P0D_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -627,6 +671,18 @@ SCOPE = (
     "production note_terminal_corrupt call counter); production bridge proves "
     "Port fault + STORAGE sticky/FAILED + incomplete BIND + exact trace. "
     "Fault is real spy get on_call after baseline 17 + FOCUS 5 peer gets. "
+    "Frozen 115-vector origin/main pin retained (114 + P0-C). P0-D appends "
+    "Mode22 unexpected ATTEMPT_ID_INDEX PRESENT (BIND_ATTEMPT ABSENT-peer "
+    "fail after carrier+primary proven), Mode22 true-primary DELIVERY "
+    "ABSENT (carrier RC proven first), Mode21 primary PVD mismatch, and "
+    "Mode21 INDEX pair PRESENT subject/raw mismatch under CLEANUP_PLAN "
+    "(constructible BIND pair subject residual after primary proven). "
+    "True-primary raw after PRESENT+typed validate remains identity-"
+    "tautological/unconstructible under D1 same-record + same READ_ONLY "
+    "snapshot and is not claimed as P0-D coverage. Mode21 success "
+    "BIND_INDEX no-STATE companion re-get remains pinned by "
+    "d3_peer_get_count=7 and exact Port-trace (BIND_INDEX segment exact "
+    "2 gets). "
     "Same-txn: every d3s2 suffix port_trace has exactly one begin:READ_ONLY; "
     "two-txn list-then-count models fail closed (self-test tamper). "
     "Does not claim full D3-S2 oracle complete, "
@@ -708,6 +764,14 @@ OWNERSHIP_P0C = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(21-vector suffix on frozen 114-prefix only)"
+)
+# P0-D ownership (25-vector suffix at P0-D append time). Hardcoded 25 so a
+# later append does not rewrite published P0-D objects.
+OWNERSHIP_P0D = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(25-vector suffix on frozen 115-prefix only)"
 )
 
 
@@ -5195,6 +5259,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_p0a_slice_vectors()
         + build_d3s2_p0b_slice_vectors()
         + build_d3s2_p0c_slice_vectors()
+        + build_d3s2_p0d_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -5291,6 +5356,7 @@ def build_document() -> Dict[str, Any]:
     p0a_vectors = build_d3s2_p0a_slice_vectors()
     p0b_vectors = build_d3s2_p0b_slice_vectors()
     p0c_vectors = build_d3s2_p0c_slice_vectors()
+    p0d_vectors = build_d3s2_p0d_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -5302,6 +5368,7 @@ def build_document() -> Dict[str, Any]:
         + p0a_vectors
         + p0b_vectors
         + p0c_vectors
+        + p0d_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -5399,6 +5466,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_fourteen_hash})"
         )
 
+    # Retained 115-vector chain pin (114 + P0-C = origin/main before P0-D).
+    hundred_fifteen_hash = _chain_hash(
+        prior_fingerprints[:D3S2_115_PREFIX_COUNT]
+    )
+    if hundred_fifteen_hash != D3S2_115_FINGERPRINT_HASH:
+        raise SystemExit(
+            "115-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_fifteen_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -5419,6 +5496,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_112_prefix_count": D3S2_112_PREFIX_COUNT,
         "d3s2_113_prefix_count": D3S2_113_PREFIX_COUNT,
         "d3s2_114_prefix_count": D3S2_114_PREFIX_COUNT,
+        "d3s2_115_prefix_count": D3S2_115_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -5529,6 +5607,16 @@ def build_document() -> Dict[str, Any]:
                 "through P0-B); P0-C Mode25 BIND Port terminal note0 vector follows"
             ),
         },
+        "d3s2_115_prefix_authority": {
+            "vector_count": D3S2_115_PREFIX_COUNT,
+            "content_sha256": D3S2_115_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_115_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 21 d3s2 suffix "
+                "through P0-C); P0-D Mode22 unexpected INDEX / true-primary "
+                "ABSENT / primary PVD / pair subject residual vectors follow"
+            ),
+        },
         "prior_fingerprints": prior_fingerprints,
         "prior_fingerprint_prefix_hash": prior_prefix_hash,
         "sha256_procedure": SHA256_PROCEDURE,
@@ -5630,6 +5718,8 @@ def check(path: Path) -> int:
         return _fail_check("d3s2_113_prefix_count pin mismatch")
     if int(data.get("d3s2_114_prefix_count", -1)) != D3S2_114_PREFIX_COUNT:
         return _fail_check("d3s2_114_prefix_count pin mismatch")
+    if int(data.get("d3s2_115_prefix_count", -1)) != D3S2_115_PREFIX_COUNT:
+        return _fail_check("d3s2_115_prefix_count pin mismatch")
     if data.get("required_kinds") != expected_doc["required_kinds"]:
         return _fail_check("required_kinds inventory mismatch")
     if not data.get("sha256_procedure"):
@@ -5752,11 +5842,38 @@ def check(path: Path) -> int:
     if int(auth114.get("vector_count", -1)) != D3S2_114_PREFIX_COUNT:
         return _fail_check("d3s2_114_prefix_authority vector_count pin mismatch")
 
+    auth115 = data.get("d3s2_115_prefix_authority") or {}
+    if auth115.get("content_sha256") != D3S2_115_CONTENT_SHA256:
+        return _fail_check("d3s2_115_prefix_authority content_sha256 pin mismatch")
+    if auth115.get("prior_fingerprint_prefix_hash") != D3S2_115_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_115_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth115.get("vector_count", -1)) != D3S2_115_PREFIX_COUNT:
+        return _fail_check("d3s2_115_prefix_authority vector_count pin mismatch")
+
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
         return _fail_check(
             f"vector count {len(vectors)} != pin {EXPECTED_VECTOR_COUNT}"
         )
+    # Full-object prefix equality: first 115 vectors must match rebuild of
+    # frozen origin/main (94 d3s1 + 21 d3s2 through P0-C).
+    expected_115 = expected_doc["vectors"][:D3S2_115_PREFIX_COUNT]
+    if vectors[:D3S2_115_PREFIX_COUNT] != expected_115:
+        for i in range(D3S2_115_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_115[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_115[i])
+            if vectors[i] != expected_115[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"115-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("115-prefix full-object mismatch")
 
     err = _assert_prefix_identity(vectors, prefix_doc)
     if err:
@@ -6462,7 +6579,7 @@ def check(path: Path) -> int:
 
     # Suffix-specific pins: smoke [0..6) Mode25 [6..8) Mode26 [8..10)
     # Mode24 [10..12) Mode23 [12..14) Mode22 [14..16) Mode21 [16..18)
-    # P0-A [18..19) P0-B [19..20) P0-C [20..21).
+    # P0-A [18..19) P0-B [19..20) P0-C [20..21) P0-D [21..25).
     suffix = vectors[D3S1_PREFIX_COUNT:]
     if len(suffix) != D3S2_SUFFIX_COUNT:
         return _fail_check("suffix length mismatch")
@@ -6482,7 +6599,9 @@ def check(path: Path) -> int:
     p0a = suffix[p0a_start : p0a_start + D3S2_P0A_SLICE_COUNT]
     p0b_start = p0a_start + D3S2_P0A_SLICE_COUNT
     p0b = suffix[p0b_start : p0b_start + D3S2_P0B_SLICE_COUNT]
-    p0c = suffix[p0b_start + D3S2_P0B_SLICE_COUNT :]
+    p0c_start = p0b_start + D3S2_P0B_SLICE_COUNT
+    p0c = suffix[p0c_start : p0c_start + D3S2_P0C_SLICE_COUNT]
+    p0d = suffix[p0c_start + D3S2_P0C_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -6501,6 +6620,8 @@ def check(path: Path) -> int:
         return _fail_check("p0b slice length mismatch")
     if len(p0c) != D3S2_P0C_SLICE_COUNT:
         return _fail_check("p0c slice length mismatch")
+    if len(p0d) != D3S2_P0D_SLICE_COUNT:
+        return _fail_check("p0d slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -7349,6 +7470,67 @@ def check(path: Path) -> int:
             f"{m21_ok['id']}: port_trace get count must be 24 "
             f"(17 profile + 7 peer), got {pt.count('get')}"
         )
+    # P0-D / case15: BIND_INDEX has no STATE companion re-get.
+    # Independent of new fields: pin the last BIND open segment has exact 2
+    # peer gets (ANCHOR + ATTEMPT pair). A third get would mean illegal STATE
+    # companion or unbounded pair budget.
+    open_idxs_m21 = [i for i, t in enumerate(pt) if t == "iter_open:prefix0"]
+    if len(open_idxs_m21) != 7:
+        return _fail_check(
+            f"{m21_ok['id']}: success port_trace must have 7 iter_open, got "
+            f"{len(open_idxs_m21)}"
+        )
+    # opens: 0 baseline, 1 SELECT, 2 FOCUS_ATT, 3 FOCUS_IDX, 4 SELECT empty,
+    # 5 BIND_ATTEMPT, 6 BIND_INDEX
+    bind_att_seg = pt[open_idxs_m21[5] : open_idxs_m21[6]]
+    bind_idx_seg = pt[open_idxs_m21[6] :]
+    if bind_att_seg.count("get") != 3:
+        return _fail_check(
+            f"{m21_ok['id']}: BIND_ATTEMPT segment must have exact 3 gets "
+            f"(carrier+primary+pair), got {bind_att_seg.count('get')}"
+        )
+    if bind_idx_seg.count("get") != 2:
+        return _fail_check(
+            f"{m21_ok['id']}: BIND_INDEX segment must have exact 2 gets "
+            f"(ANCHOR primary + ATTEMPT pair; no STATE companion), got "
+            f"{bind_idx_seg.count('get')}"
+        )
+    # Exact order pin: BIND_INDEX secondary then get,get (no third get).
+    try:
+        aii_i = bind_idx_seg.index("iter_next")  # first domain after profile
+        # walk: 17 profile nexts then ANCHOR STATE ATT AII-secondary
+        # Find the three consecutive gets after AII secondary by scanning
+        # the last get-run of length 2 before iter_close.
+        get_runs = 0
+        i_seg = 0
+        last_two_gets_at = -1
+        while i_seg < len(bind_idx_seg):
+            if (
+                i_seg + 1 < len(bind_idx_seg)
+                and bind_idx_seg[i_seg] == "get"
+                and bind_idx_seg[i_seg + 1] == "get"
+            ):
+                # reject length-3 get run
+                if (
+                    i_seg + 2 < len(bind_idx_seg)
+                    and bind_idx_seg[i_seg + 2] == "get"
+                ):
+                    return _fail_check(
+                        f"{m21_ok['id']}: BIND_INDEX must not have 3 consecutive "
+                        "gets (STATE companion forbidden)"
+                    )
+                last_two_gets_at = i_seg
+                get_runs += 1
+                i_seg += 2
+                continue
+            i_seg += 1
+        if get_runs != 1 or last_two_gets_at < 0:
+            return _fail_check(
+                f"{m21_ok['id']}: BIND_INDEX must have exactly one get,get run"
+            )
+        _ = aii_i
+    except ValueError:
+        return _fail_check(f"{m21_ok['id']}: BIND_INDEX segment parse fail")
     try:
         exp_calls, exp_expected = run_d3s2_mode21_state_cum1_att_aii_success(
             m21_ok["candidate_binding"], m21_ok["rows"]
@@ -7695,6 +7877,181 @@ def check(path: Path) -> int:
         return _fail_check(f"{p0c_vec['id']}: calls != independent model")
     if p0c_vec["expected"] != exp_expected:
         return _fail_check(f"{p0c_vec['id']}: expected != independent model")
+
+    # ---- P0-D Mode22 INDEX/ABSENT + PVD + pair subject residual (#8/#15) ----
+    p0d_kinds_got = {v["kind"] for v in p0d}
+    if p0d_kinds_got != D3S2_P0D_KINDS:
+        return _fail_check(f"p0d kinds inventory mismatch: {p0d_kinds_got}")
+    p0d_by_kind = {v["kind"]: v for v in p0d}
+
+    def _p0d_common_fail(vec: Dict[str, Any], *, peer_gets: int) -> Optional[str]:
+        if vec.get("ownership") != OWNERSHIP_P0D:
+            return f"{vec['id']}: ownership pin fail"
+        if int(vec["expected"].get("mutation_calls", -1)) != 0:
+            return f"{vec['id']}: mutation_calls must be 0"
+        if int(vec["expected"]["phase"]) != PHASE_FAILED:
+            return f"{vec['id']}: phase must be FAILED"
+        if vec["expected"]["final_status"] != "STORAGE_CORRUPT":
+            return f"{vec['id']}: final_status must be STORAGE_CORRUPT"
+        if int(vec["expected"]["has_sticky_primary"]) != 1:
+            return f"{vec['id']}: sticky must be set"
+        if vec["expected"]["sticky_primary"] != "STORAGE_CORRUPT":
+            return f"{vec['id']}: sticky_primary pin fail"
+        if int(vec["expected"]["binding_complete_mask"]) != 0:
+            return f"{vec['id']}: binding mask must stay 0"
+        if int(vec["expected"]["adopted"]) != 0:
+            return f"{vec['id']}: adopted must be 0"
+        if int(vec["expected"]["d3_peer_get_count"]) != peer_gets:
+            return (
+                f"{vec['id']}: d3_peer_get_count must be {peer_gets}, got "
+                f"{vec['expected']['d3_peer_get_count']}"
+            )
+        if (vec["expected"].get("port_trace") or []).count("begin:READ_ONLY") != 1:
+            return f"{vec['id']}: single-txn begin pin fail"
+        if vec["calls"][-1]["op"] != "abort":
+            return f"{vec['id']}: fail path must end with abort"
+        if any(c.get("op") == "begin_profiled_d3s1" for c in vec["calls"]):
+            return f"{vec['id']}: dual-bound S1 begin forbidden"
+        return None
+
+    m22_idx = p0d_by_kind["mode22_att_unexpected_aii_index_present_corrupt"]
+    err = _p0d_common_fail(m22_idx, peer_gets=5)
+    if err:
+        return _fail_check(err)
+    if int(m22_idx["mode"]) != 22:
+        return _fail_check(f"{m22_idx['id']}: mode must be 22")
+    if int(m22_idx["expected"]["count_complete_mask"]) != MASK_ATTEMPT:
+        return _fail_check(f"{m22_idx['id']}: count mask must be ATTEMPT only")
+    if int(m22_idx["expected"]["count_complete_mask"]) & MASK_INDEX:
+        return _fail_check(f"{m22_idx['id']}: INDEX count bit must stay 0")
+    aii_rows = [r for r in m22_idx["rows"] if _domain_subtype(r) == 0x34]
+    if len(aii_rows) != 1:
+        return _fail_check(f"{m22_idx['id']}: exact 1 unexpected AII required")
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode22_att_unexpected_aii_index_present_corrupt(
+                m22_idx["candidate_binding"], m22_idx["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m22_idx['id']}: model reject: {exc}")
+    if m22_idx["calls"] != exp_calls:
+        return _fail_check(f"{m22_idx['id']}: calls != independent model")
+    if m22_idx["expected"] != exp_expected:
+        return _fail_check(f"{m22_idx['id']}: expected != independent model")
+    pt_idx = m22_idx["expected"]["port_trace"]
+    if pt_idx[-4:] != ["get", "get", "get", "iter_close"] and not (
+        pt_idx[-5:]
+        == ["get", "get", "get", "iter_close", "rollback"]
+    ):
+        # allow rollback after close
+        if pt_idx[-5:] != ["get", "get", "get", "iter_close", "rollback"]:
+            return _fail_check(
+                f"{m22_idx['id']}: must end carrier+primary+INDEX PRESENT "
+                "gets then abort close"
+            )
+
+    m22_pri = p0d_by_kind["mode22_att_true_primary_delivery_absent_corrupt"]
+    err = _p0d_common_fail(m22_pri, peer_gets=4)
+    if err:
+        return _fail_check(err)
+    if int(m22_pri["mode"]) != 22:
+        return _fail_check(f"{m22_pri['id']}: mode must be 22")
+    if any(_domain_subtype(r) == 0x40 for r in m22_pri["rows"]):
+        return _fail_check(f"{m22_pri['id']}: DELIVERY must be absent")
+    if any(_domain_subtype(r) == 0x34 for r in m22_pri["rows"]):
+        return _fail_check(f"{m22_pri['id']}: AII must be absent")
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode22_att_true_primary_delivery_absent_corrupt(
+                m22_pri["candidate_binding"], m22_pri["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m22_pri['id']}: model reject: {exc}")
+    if m22_pri["calls"] != exp_calls:
+        return _fail_check(f"{m22_pri['id']}: calls != independent model")
+    if m22_pri["expected"] != exp_expected:
+        return _fail_check(f"{m22_pri['id']}: expected != independent model")
+
+    m21_pvd = p0d_by_kind["mode21_att_primary_pvd_mismatch_corrupt"]
+    err = _p0d_common_fail(m21_pvd, peer_gets=4)
+    if err:
+        return _fail_check(err)
+    if int(m21_pvd["mode"]) != 21:
+        return _fail_check(f"{m21_pvd['id']}: mode must be 21")
+    if int(m21_pvd["expected"]["count_complete_mask"]) != (
+        MASK_ATTEMPT | MASK_INDEX
+    ):
+        return _fail_check(f"{m21_pvd['id']}: count mask must be ATTEMPT|INDEX")
+    # Independent: ATT PVD must not equal live ANCHOR VALUE_DIGEST.
+    anc_rows = [r for r in m21_pvd["rows"] if _domain_subtype(r) == 0x20]
+    att_rows = [r for r in m21_pvd["rows"] if _domain_subtype(r) == 0x31]
+    if len(anc_rows) != 1 or len(att_rows) != 1:
+        return _fail_check(f"{m21_pvd['id']}: need exact 1 ANCHOR and 1 ATT")
+    anc_dig = _d3s1.value_digest(from_hex(anc_rows[0]["value_hex"]))
+    att_pvd = _d3s1.extract_envelope(from_hex(att_rows[0]["value_hex"]))[2]
+    if att_pvd == anc_dig:
+        return _fail_check(
+            f"{m21_pvd['id']}: ATT PVD must differ from live ANCHOR digest"
+        )
+    try:
+        exp_calls, exp_expected = run_d3s2_mode21_att_primary_pvd_mismatch_corrupt(
+            m21_pvd["candidate_binding"], m21_pvd["rows"]
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m21_pvd['id']}: model reject: {exc}")
+    if m21_pvd["calls"] != exp_calls:
+        return _fail_check(f"{m21_pvd['id']}: calls != independent model")
+    if m21_pvd["expected"] != exp_expected:
+        return _fail_check(f"{m21_pvd['id']}: expected != independent model")
+
+    m21_raw = p0d_by_kind["mode21_att_index_pair_subject_raw_mismatch_corrupt"]
+    err = _p0d_common_fail(m21_raw, peer_gets=5)
+    if err:
+        return _fail_check(err)
+    if int(m21_raw["mode"]) != 21:
+        return _fail_check(f"{m21_raw['id']}: mode must be 21")
+    if int(m21_raw["expected"]["count_complete_mask"]) != (
+        MASK_ATTEMPT | MASK_INDEX
+    ):
+        return _fail_check(f"{m21_raw['id']}: count mask must be ATTEMPT|INDEX")
+    aii_raw_rows = [r for r in m21_raw["rows"] if _domain_subtype(r) == 0x34]
+    att_raw_rows = [r for r in m21_raw["rows"] if _domain_subtype(r) == 0x31]
+    cp_raw_rows = [r for r in m21_raw["rows"] if _domain_subtype(r) == 0x63]
+    if len(aii_raw_rows) != 1 or len(att_raw_rows) != 1 or len(cp_raw_rows) != 1:
+        return _fail_check(
+            f"{m21_raw['id']}: need exact 1 AII + 1 ATT + 1 CLEANUP_PLAN"
+        )
+    try:
+        _aid_a, aii_txn, _k, _rkd, _p = _parse_attempt_id_index(
+            from_hex(aii_raw_rows[0]["value_hex"])
+        )
+        _ok, _or, att_id, att_txn, _ak, _pk, _ap = _parse_attempt_tx(
+            from_hex(att_raw_rows[0]["value_hex"])
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m21_raw['id']}: parse fail: {exc}")
+    if aii_txn == att_txn:
+        return _fail_check(
+            f"{m21_raw['id']}: AII txn must mismatch ATT for subject/raw fail"
+        )
+    if _aid_a != att_id:
+        return _fail_check(
+            f"{m21_raw['id']}: AII attempt_id must match ATT (pair key PRESENT)"
+        )
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode21_att_index_pair_subject_raw_mismatch_corrupt(
+                m21_raw["candidate_binding"], m21_raw["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m21_raw['id']}: model reject: {exc}")
+    if m21_raw["calls"] != exp_calls:
+        return _fail_check(f"{m21_raw['id']}: calls != independent model")
+    if m21_raw["expected"] != exp_expected:
+        return _fail_check(f"{m21_raw['id']}: expected != independent model")
 
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
@@ -9363,6 +9720,855 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
         f"wrote {header_path} "
         f"(d3s1={len(d3s1_vectors)} d3s2={len(d3s2_vectors)} vectors)"
     )
+
+
+# ---------------------------------------------------------------------------
+# P0-D Mode22 INDEX/ABSENT + PVD + pair subject residual (§18.13.15 #8/#15)
+# True-primary raw after D1 PRESENT is unconstructible — not covered here.
+# ---------------------------------------------------------------------------
+
+
+def _domain_subtype(row: Dict[str, str]) -> Optional[int]:
+    k = from_hex(row["key_hex"])
+    if len(k) >= 10 and k[8] == 6:
+        return int(k[9])
+    return None
+
+
+def _mode22_add_unexpected_aii(
+    rows: List[Dict[str, str]], named: Dict[str, Dict[str, str]], dlv_pvd: bytes
+) -> Tuple[List[Dict[str, str]], Dict[str, Dict[str, str]]]:
+    """Append D1 ATTEMPT_ID_INDEX (same attempt_id) for Mode22 PRESENT fail.
+
+    Mode22 BIND_ATTEMPT only requires INDEX ABSENT at the pair peer key.
+    D1 AII is TX-form record_kd (not DLV ATTEMPT complete-key); that is
+    fine — presence alone is the Mode22 corrupt finding.
+    """
+    _assert_d1_authority_pin()
+    cat = _d1_catalog()
+    aii = cat[D1_AII_ID]
+    att_okind, _oraw, att_id, att_txn, _kind, _pkd, _pvd = _parse_attempt_dlv(
+        from_hex(named["att"]["value_hex"])
+    )
+    if att_okind != ATT_OWNER_KIND_DELIVERY:
+        raise SystemExit("unexpected AII material requires DELIVERY ATT")
+    aii_key = from_hex(aii["key_hex"])
+    aii_val = _d3s1.patch_pvd(from_hex(aii["value_hex"]), dlv_pvd)
+    aii_id, aii_txn, _aii_kind, _rkd, aii_pvd = _parse_attempt_id_index(aii_val)
+    if aii_id != att_id or aii_txn != att_txn:
+        raise SystemExit("D1 AII attempt_id/txn must match DLV ATT for pair key")
+    if aii_pvd != dlv_pvd:
+        raise SystemExit("unexpected AII PVD must equal DELIVERY VALUE_DIGEST")
+    if _d3s1.domain_value_framing(aii_val) != "current":
+        raise SystemExit("unexpected AII envelope framing not current")
+    named = dict(named)
+    named["aii"] = {
+        "key_hex": hex_of(aii_key),
+        "value_hex": hex_of(aii_val),
+    }
+    out = list(rows) + [named["aii"]]
+    out = sorted(out, key=lambda r: from_hex(r["key_hex"]))
+    return out, named
+
+
+def run_d3s2_mode22_att_unexpected_aii_index_present_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode22: RC+DLV+ATT with unexpected ATTEMPT_ID_INDEX PRESENT.
+
+    Carrier RC + true DELIVERY proven, then pair peer INDEX PRESENT →
+    note_terminal_corrupt STORAGE_CORRUPT. BIND incomplete; mutation 0.
+    """
+    n_ok = len(rows)
+    if n_ok != 21:
+        raise SystemExit(
+            f"mode22 unexpected INDEX expects 21 rows (17+4), got {n_ok}"
+        )
+    aii_n = sum(1 for r in rows if _domain_subtype(r) == 0x34)
+    if aii_n != 1:
+        raise SystemExit(
+            f"mode22 unexpected INDEX must ship exact 1 AII, got {aii_n}"
+        )
+    n_drive = 5
+    n_open = 5
+    walk = _walk_trace_segment(n_ok)
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 22, "expected_status": "OK"}
+    ]
+    for i in range(n_drive):
+        if i + 1 == n_drive:
+            calls.append(
+                {
+                    "op": "d3s2_drive",
+                    "row_budget": 256,
+                    "expected_status": "STORAGE_CORRUPT",
+                }
+            )
+        else:
+            calls.append(
+                {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+            )
+    calls.append({"op": "abort", "expected_status": "STORAGE_CORRUPT"})
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT: profile + ATT + AII + DLV + RC install + setup gets
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ATTEMPT
+    port_trace.append("iter_next")  # AII residual
+    port_trace.append("iter_next")  # DELIVERY
+    port_trace.append("iter_next")  # RESULT_CACHE carrier
+    port_trace.append("get")  # CANCEL_STATE ABSENT
+    port_trace.append("get")  # CLEANUP_PLAN ABSENT
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")
+    # drive3 FOCUS_ATTEMPT
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive4 SELECT empty → BIND
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive5 BIND_ATTEMPT: RC + DELIVERY then INDEX PRESENT → note stop
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ATTEMPT secondary
+    port_trace.append("get")  # carrier RESULT_CACHE
+    port_trace.append("get")  # true primary DELIVERY
+    port_trace.append("get")  # pair peer ATTEMPT_ID_INDEX PRESENT → note
+    port_trace.append("iter_close")  # abort cleanup
+    port_trace.append("rollback")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 4,  # ATT + AII + DLV + RC
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        # SELECT setup 2 + BIND 3 (carrier + primary + INDEX PRESENT)
+        "d3_peer_get_count": 5,
+        "d3_mode_applicable_count": 1,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": MASK_ATTEMPT,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    _ = binding
+    return calls, expected
+
+
+def run_d3s2_mode22_att_true_primary_delivery_absent_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode22: RC+ATT without DELIVERY → BIND true-primary ABSENT note.
+
+    Carrier companion RESULT_CACHE is proven first; primary DELIVERY
+    exact_get ABSENT → note_terminal_corrupt. INDEX probe must not run.
+    """
+    n_ok = len(rows)
+    if n_ok != 19:
+        raise SystemExit(
+            f"mode22 primary-absent expects 19 rows (17+2: ATT+RC), got {n_ok}"
+        )
+    if any(_domain_subtype(r) == 0x40 for r in rows):
+        raise SystemExit("mode22 primary-absent must not ship DELIVERY")
+    if sum(1 for r in rows if _domain_subtype(r) == 0x41) != 1:
+        raise SystemExit("mode22 primary-absent must ship exact 1 RESULT_CACHE")
+    n_drive = 5
+    n_open = 5
+    walk = _walk_trace_segment(n_ok)
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 22, "expected_status": "OK"}
+    ]
+    for i in range(n_drive):
+        if i + 1 == n_drive:
+            calls.append(
+                {
+                    "op": "d3s2_drive",
+                    "row_budget": 256,
+                    "expected_status": "STORAGE_CORRUPT",
+                }
+            )
+        else:
+            calls.append(
+                {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+            )
+    calls.append({"op": "abort", "expected_status": "STORAGE_CORRUPT"})
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # SELECT: profile + ATT + RC (no DLV)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ATTEMPT
+    port_trace.append("iter_next")  # RESULT_CACHE carrier
+    port_trace.append("get")  # CANCEL_STATE
+    port_trace.append("get")  # CLEANUP_PLAN
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # BIND: ATT → RC OK → DELIVERY ABSENT note (INDEX not probed)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ATTEMPT
+    port_trace.append("get")  # carrier RESULT_CACHE
+    port_trace.append("get")  # true primary DELIVERY → ABSENT
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 2,  # ATT + RC
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        # SELECT setup 2 + BIND carrier + primary ABSENT
+        "d3_peer_get_count": 4,
+        "d3_mode_applicable_count": 1,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": MASK_ATTEMPT,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    _ = binding
+    return calls, expected
+
+
+def run_d3s2_mode21_att_primary_pvd_mismatch_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode21: ANCHOR+STATE+ATT+AII with ATT header PVD ≠ live ANCHOR digest.
+
+    Carrier STATE proven; true-primary PRESENT; VALUE_DIGEST mismatch →
+    note_terminal_corrupt. Pair probe must not run. Unit promotion of
+    test_d3s2_p1_mode21_bind_primary_pvd_mismatch.
+    """
+    n_ok = len(rows)
+    if n_ok != 21:
+        raise SystemExit(
+            f"mode21 pvd-mismatch expects 21 rows (17+4), got {n_ok}"
+        )
+    n_drive = 6
+    n_open = 6
+    walk = _walk_trace_segment(n_ok)
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 21, "expected_status": "OK"}
+    ]
+    for i in range(n_drive):
+        if i + 1 == n_drive:
+            calls.append(
+                {
+                    "op": "d3s2_drive",
+                    "row_budget": 256,
+                    "expected_status": "STORAGE_CORRUPT",
+                }
+            )
+        else:
+            calls.append(
+                {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+            )
+    calls.append({"op": "abort", "expected_status": "STORAGE_CORRUPT"})
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # SELECT carrier
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    port_trace.append("get")  # CANCEL
+    port_trace.append("get")  # CLEANUP
+    port_trace.append("iter_next")  # ATT
+    port_trace.append("iter_next")  # AII
+    port_trace.append("iter_next")  # NF
+    port_trace.append("iter_close")
+    # FOCUS_ATTEMPT
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # FOCUS_INDEX
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # SELECT empty → BIND
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # BIND_ATTEMPT: STATE + ANCHOR PVD fail (pair not reached)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    port_trace.append("iter_next")  # ATT
+    port_trace.append("get")  # carrier STATE
+    port_trace.append("get")  # true primary ANCHOR → PVD mismatch note
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 4,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        # SELECT setup 2 + BIND carrier + primary PVD fail
+        "d3_peer_get_count": 4,
+        "d3_mode_applicable_count": 1,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": MASK_ATTEMPT | MASK_INDEX,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    _ = binding
+    return calls, expected
+
+
+def run_d3s2_mode21_att_index_pair_subject_raw_mismatch_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode21: INDEX PRESENT at pair key but body txn/subject mismatches ATT.
+
+    CLEANUP_PLAN PRESENT so wrong-txn AII does not undercount FOCUS_INDEX.
+    BIND_ATTEMPT proves STATE carrier + ANCHOR primary, then pair body
+    subject mismatch → note. This is pair ATTEMPT_ID_INDEX subject/raw
+    mismatch only — not true-primary raw mismatch. True-primary raw after
+    D1 PRESENT+typed validate is identity-tautological/unconstructible
+    under same-record + same READ_ONLY snapshot (case 8 residual closed
+    only for constructible pair subject; primary raw left unclaimed).
+    """
+    n_ok = len(rows)
+    if n_ok != 22:
+        raise SystemExit(
+            f"mode21 pair-subject expects 22 rows (17+5: ANCHOR+STATE+ATT+"
+            f"AII+CP), got {n_ok}"
+        )
+    n_drive = 6
+    n_open = 6
+    walk = _walk_trace_segment(n_ok)
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 21, "expected_status": "OK"}
+    ]
+    for i in range(n_drive):
+        if i + 1 == n_drive:
+            calls.append(
+                {
+                    "op": "d3s2_drive",
+                    "row_budget": 256,
+                    "expected_status": "STORAGE_CORRUPT",
+                }
+            )
+        else:
+            calls.append(
+                {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+            )
+    calls.append({"op": "abort", "expected_status": "STORAGE_CORRUPT"})
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # SELECT: ANCHOR STATE ATT AII CP; CLEANUP PRESENT → cleanup_skip
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    port_trace.append("get")  # CANCEL
+    port_trace.append("get")  # CLEANUP PRESENT
+    port_trace.append("iter_next")  # ATT
+    port_trace.append("iter_next")  # AII (wrong txn; stream may skip)
+    port_trace.append("iter_next")  # CP
+    port_trace.append("iter_next")  # NF
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # BIND_ATTEMPT: STATE + ANCHOR + INDEX PRESENT body subject fail
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    port_trace.append("iter_next")  # ATT
+    port_trace.append("get")  # carrier STATE
+    port_trace.append("get")  # true primary ANCHOR
+    port_trace.append("get")  # pair INDEX PRESENT subject/raw fail
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 5,  # ANCHOR+STATE+ATT+AII+CP
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        # SELECT setup 2 + BIND 3 (carrier + primary + pair subject fail)
+        "d3_peer_get_count": 5,
+        "d3_mode_applicable_count": 1,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": MASK_ATTEMPT | MASK_INDEX,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    _ = binding
+    return calls, expected
+
+
+def _rekey_aii_wrong_txn_for_pair_subject(
+    aii_value: bytes, *, att_id: bytes, att_txn: bytes, anchor_pvd: bytes
+) -> bytes:
+    """D1-valid AII at same attempt_id key with flipped transaction_id.
+
+    record_kd recomputed for TX-form (wrong_txn || aid). PVD → ANCHOR.
+    """
+    st, body, _ = _d3s1.extract_envelope(aii_value)
+    if st != 0x34 or len(body) != AII_BODY_LEN:
+        raise SystemExit("AII rekey: not typed ATTEMPT_ID_INDEX body 100")
+    if bytes(body[0:16]) != att_id:
+        raise SystemExit("AII rekey: attempt_id must match ATT for pair key")
+    wrong_txn = bytearray(att_txn)
+    wrong_txn[-1] = wrong_txn[-1] ^ 0x01
+    wrong_txn_b = bytes(wrong_txn)
+    if wrong_txn_b == att_txn:
+        raise SystemExit("AII rekey: txn flip produced identity")
+    kind = struct.unpack_from(">H", body, 32)[0]
+    rkd = _d3s1.key_digest(
+        _attempt_composite_key(ATT_OWNER_KIND_TRANSACTION, wrong_txn_b, att_id)
+    )
+    b = bytearray(body)
+    b[0:16] = att_id
+    b[16:32] = wrong_txn_b
+    struct.pack_into(">H", b, 32, int(kind))
+    struct.pack_into(">H", b, 34, 0)
+    b[AII_ATTEMPT_RECORD_KEY_DIGEST_OFF : AII_ATTEMPT_RECORD_KEY_DIGEST_OFF + 32] = (
+        rkd
+    )
+    out = bytearray(aii_value)
+    body_off = 108
+    if bytes(out[body_off : body_off + len(body)]) != body:
+        idx = bytes(out).find(body)
+        if idx < 0:
+            raise SystemExit("AII body not found in envelope")
+        body_off = idx
+    out[body_off : body_off + len(body)] = b
+    out[24:40] = wrong_txn_b  # primary_id
+    out[-4:] = _d3s1.be32(_d3s1.crc32c(bytes(out[:-4])))
+    val = _d3s1.patch_pvd(bytes(out), anchor_pvd)
+    aii_id, aii_txn, _k, aii_rkd, aii_pvd = _parse_attempt_id_index(val)
+    if aii_id != att_id or aii_txn != wrong_txn_b:
+        raise SystemExit("AII rekey identity did not stick")
+    if aii_rkd != rkd or aii_pvd != anchor_pvd:
+        raise SystemExit("AII rekey digest/PVD did not stick")
+    if _d3s1.domain_value_framing(val) != "current":
+        raise SystemExit("AII rekey framing not current")
+    return val
+
+
+def build_d3s2_p0d_slice_vectors() -> List[Dict[str, Any]]:
+    """P0-D append-only slice (4 vectors) after the frozen 115-prefix."""
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    # 1) Mode22 unexpected ATTEMPT_ID_INDEX PRESENT
+    rows1, named1, pvd1 = _mode22_material_rows(include_rc=True)
+    rows1, named1 = _mode22_add_unexpected_aii(rows1, named1, pvd1)
+    calls1, exp1 = run_d3s2_mode22_att_unexpected_aii_index_present_corrupt(
+        binding, rows1
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M22_ATT_UNEXPECTED_AII_INDEX_PRESENT",
+            "kind": "mode22_att_unexpected_aii_index_present_corrupt",
+            "mode": 22,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows1),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls1,
+            "d1_refs": [D1_RC_ID, D1_ATT_DLV_ID, D1_DLV_ID, D1_AII_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_ATT_DLV_ID,
+                row=named1["att"],
+                expect_presence="PRESENT",
+                note=(
+                    "DELIVERY-owned COMMAND ATTEMPT; Mode22 INDEX expect 0 via "
+                    "BIND_ATTEMPT ABSENT peer only"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_AII_ID,
+                row=named1["aii"],
+                expect_presence="PRESENT",
+                note=(
+                    "unexpected ATTEMPT_ID_INDEX PRESENT at pair peer key "
+                    "(Mode22 ABSENT-peer fail)"
+                ),
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_RC_ID,
+                    row=named1["rc"],
+                    expect_presence="PRESENT",
+                    note="carrier RESULT_CACHE proven before INDEX pair",
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_DLV_ID,
+                    row=named1["delivery"],
+                    expect_presence="PRESENT",
+                    note="true primary DELIVERY proven before INDEX pair",
+                ),
+            ],
+            "notes": (
+                "P0-D formal (§18.13.15 cases 8/15): Mode22 DELIVERY-owned "
+                "ATTEMPT with live RESULT_CACHE app=1 and true DELIVERY; "
+                "ATTEMPT_ID_INDEX is PRESENT though Mode22 INDEX expect 0 "
+                "and has no FOCUS_INDEX/BIND_INDEX. BIND_ATTEMPT proves "
+                "carrier RC subject + DELIVERY PVD/raw then pair peer "
+                "INDEX PRESENT → note_terminal_corrupt STORAGE_CORRUPT. "
+                "Single READ_ONLY txn; abort; mutation_calls=0; binding "
+                "mask incomplete. Independent Python only."
+            ),
+            "ownership": OWNERSHIP_P0D,
+            "expected": exp1,
+        }
+    )
+
+    # 2) Mode22 true-primary DELIVERY ABSENT (carrier RC present)
+    rows2, named2, _pvd2 = _mode22_material_rows(include_rc=True)
+    rows2 = [r for r in rows2 if _domain_subtype(r) != 0x40]
+    if "delivery" in named2:
+        del named2["delivery"]
+    calls2, exp2 = run_d3s2_mode22_att_true_primary_delivery_absent_corrupt(
+        binding, rows2
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M22_ATT_TRUE_PRIMARY_DELIVERY_ABSENT",
+            "kind": "mode22_att_true_primary_delivery_absent_corrupt",
+            "mode": 22,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows2),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls2,
+            "d1_refs": [D1_RC_ID, D1_ATT_DLV_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_ATT_DLV_ID,
+                row=named2["att"],
+                expect_presence="PRESENT",
+                note="DELIVERY-owned ATTEMPT secondary; true primary missing",
+            ),
+            "peer_ref": _d3s1.none_ref(
+                "true primary DELIVERY exact_get ABSENT after carrier RC proven "
+                "(INDEX probe must not run)"
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_RC_ID,
+                    row=named2["rc"],
+                    expect_presence="PRESENT",
+                    note="carrier RESULT_CACHE present and subject-matched first",
+                )
+            ],
+            "notes": (
+                "P0-D formal (§18.13.15 case 8): Mode22 true-primary ABSENT — "
+                "RESULT_CACHE carrier PRESENT (app=1) and DELIVERY-owned "
+                "ATTEMPT PRESENT, but DELIVERY primary row is missing. "
+                "BIND_ATTEMPT proves carrier then notes true-primary ABSENT "
+                "via note_terminal_corrupt. Pair INDEX ABSENT probe must not "
+                "run. abort; mutation_calls=0. Independent of production C."
+            ),
+            "ownership": OWNERSHIP_P0D,
+            "expected": exp2,
+        }
+    )
+
+    # 3) Mode21 primary PVD mismatch (unit promotion)
+    rows3, named3, anchor_pvd3 = _mode21_material_rows(
+        include_aii=True, include_cleanup_plan=False
+    )
+    cat = _d1_catalog()
+    # Replace ATT with unpatched D1 value (placeholder PVD ≠ live ANCHOR).
+    att_key = from_hex(named3["att"]["key_hex"])
+    att_unpatched = from_hex(cat[D1_ATT_TX_ID]["value_hex"])
+    if _d3s1.extract_envelope(att_unpatched)[2] == anchor_pvd3:
+        raise SystemExit("mode21 pvd-mismatch requires unpatched PVD != ANCHOR")
+    named3["att"] = {
+        "key_hex": hex_of(att_key),
+        "value_hex": hex_of(att_unpatched),
+    }
+    rows3 = []
+    for r in _mode21_material_rows(include_aii=True, include_cleanup_plan=False)[0]:
+        if _domain_subtype(r) == 0x31:
+            rows3.append(named3["att"])
+        else:
+            rows3.append(r)
+    rows3 = sorted(rows3, key=lambda r: from_hex(r["key_hex"]))
+    # Re-fetch named anchor/state/aii from rebuilt rows
+    named3_full = dict(named3)
+    for r in rows3:
+        st = _domain_subtype(r)
+        if st == 0x20:
+            named3_full["anchor"] = r
+        elif st == 0x22:
+            named3_full["state"] = r
+        elif st == 0x34:
+            named3_full["aii"] = r
+    calls3, exp3 = run_d3s2_mode21_att_primary_pvd_mismatch_corrupt(
+        binding, rows3
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M21_ATT_PRIMARY_PVD_MISMATCH",
+            "kind": "mode21_att_primary_pvd_mismatch_corrupt",
+            "mode": 21,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows3),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls3,
+            "d1_refs": [D1_STATE_ID, D1_ATT_TX_ID, D1_AII_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_ATT_TX_ID,
+                row=named3_full["att"],
+                expect_presence="PRESENT",
+                note=(
+                    "TX ATTEMPT with unpatched header PVD (≠ live ANCHOR "
+                    "VALUE_DIGEST); unit-test promotion"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named3_full["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR PRESENT; PVD mismatch is the fail",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_STATE_ID,
+                    row=named3_full["state"],
+                    expect_presence="PRESENT",
+                    note="carrier STATE proven before primary PVD fail",
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_AII_ID,
+                    row=named3_full["aii"],
+                    expect_presence="PRESENT",
+                    note="AII present for FOCUS count; BIND_INDEX must not run",
+                ),
+            ],
+            "notes": (
+                "P0-D formal (§18.13.15 case 8): Mode21 primary PVD mismatch — "
+                "STATE+ANCHOR+ATT+AII live; ATT header primary_value_digest "
+                "is the D1 placeholder (not patched to live ANCHOR "
+                "VALUE_DIGEST). BIND_ATTEMPT proves STATE carrier then notes "
+                "true-primary PVD mismatch. Pair INDEX get must not run. "
+                "Promotes unit test_d3s2_p1_mode21_bind_primary_pvd_mismatch. "
+                "abort; mutation_calls=0."
+            ),
+            "ownership": OWNERSHIP_P0D,
+            "expected": exp3,
+        }
+    )
+
+    # 4) Mode21 INDEX pair PRESENT subject mismatch (not true-primary raw)
+    rows4, named4, anchor_pvd4 = _mode21_material_rows(
+        include_aii=True, include_cleanup_plan=True
+    )
+    (
+        _okind,
+        _oraw,
+        att_id4,
+        att_txn4,
+        _akind,
+        _pkd,
+        _apvd,
+    ) = _parse_attempt_tx(from_hex(named4["att"]["value_hex"]))
+    aii_bad = _rekey_aii_wrong_txn_for_pair_subject(
+        from_hex(named4["aii"]["value_hex"]),
+        att_id=att_id4,
+        att_txn=att_txn4,
+        anchor_pvd=anchor_pvd4,
+    )
+    named4["aii"] = {
+        "key_hex": named4["aii"]["key_hex"],
+        "value_hex": hex_of(aii_bad),
+    }
+    rows4 = []
+    base4, named4b, _ = _mode21_material_rows(
+        include_aii=True, include_cleanup_plan=True
+    )
+    for r in base4:
+        if _domain_subtype(r) == 0x34:
+            rows4.append(named4["aii"])
+        else:
+            rows4.append(r)
+    rows4 = sorted(rows4, key=lambda r: from_hex(r["key_hex"]))
+    for r in rows4:
+        st = _domain_subtype(r)
+        if st == 0x20:
+            named4["anchor"] = r
+        elif st == 0x22:
+            named4["state"] = r
+        elif st == 0x31:
+            named4["att"] = r
+        elif st == 0x63:
+            named4["cp"] = r
+    calls4, exp4 = run_d3s2_mode21_att_index_pair_subject_raw_mismatch_corrupt(
+        binding, rows4
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M21_ATT_INDEX_PAIR_SUBJECT_RAW_MISMATCH",
+            "kind": "mode21_att_index_pair_subject_raw_mismatch_corrupt",
+            "mode": 21,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows4),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls4,
+            "d1_refs": [
+                D1_STATE_ID,
+                D1_ATT_TX_ID,
+                D1_AII_ID,
+                D1_ANCHOR_ID,
+                D1_CP_TX_ID,
+            ],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_ATT_TX_ID,
+                row=named4["att"],
+                expect_presence="PRESENT",
+                note="TX ATTEMPT; primary proven before pair subject fail",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_AII_ID,
+                row=named4["aii"],
+                expect_presence="PRESENT",
+                note=(
+                    "ATTEMPT_ID_INDEX PRESENT at attempt_id key but body "
+                    "transaction_id/subject mismatches ATT (pair raw/subject)"
+                ),
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named4["anchor"],
+                    expect_presence="PRESENT",
+                    note="true primary ANCHOR proven before pair fail",
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_CP_TX_ID,
+                    row=named4["cp"],
+                    expect_presence="PRESENT",
+                    note=(
+                        "CLEANUP_PLAN PRESENT → cleanup_skip so wrong-txn AII "
+                        "FOCUS undercount does not preempt BIND pair proof"
+                    ),
+                ),
+            ],
+            "notes": (
+                "P0-D formal (§18.13.15 case 8 pair subject residual): Mode21 "
+                "BIND_ATTEMPT proves STATE carrier + ANCHOR primary PVD/raw, "
+                "then pair peer ATTEMPT_ID_INDEX is PRESENT at the attempt_id "
+                "key but body transaction_id (and record_kd) mismatch the "
+                "ATTEMPT subject → note_terminal_corrupt. CLEANUP_PLAN "
+                "PRESENT so ordinary INDEX undercount is skipped. This is "
+                "pair subject/raw mismatch only — not true-primary raw "
+                "mismatch. Under D1 same-record validation and same "
+                "READ_ONLY snapshot BIND, true-primary raw after "
+                "PRESENT+typed validate is identity-tautological/"
+                "unconstructible and is not claimed as P0-D coverage. "
+                "BIND_INDEX must not run. abort; mutation_calls=0."
+            ),
+            "ownership": OWNERSHIP_P0D,
+            "expected": exp4,
+        }
+    )
+
+    if len(vectors) != D3S2_P0D_SLICE_COUNT:
+        raise SystemExit("p0d slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P0D_KINDS:
+        raise SystemExit(f"p0d kinds inventory mismatch: {kinds}")
+    return vectors
 
 
 def main(argv: List[str]) -> int:

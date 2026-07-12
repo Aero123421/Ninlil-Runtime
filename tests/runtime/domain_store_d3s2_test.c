@@ -2069,6 +2069,84 @@ static int test_d3s2_p1_mode21_bind_index_pair_absent(void)
     return 0;
 }
 
+/*
+ * P0-D unit: Mode22 true-primary DELIVERY ABSENT after carrier RESULT_CACHE.
+ * Formal vector D3S2_M22_ATT_TRUE_PRIMARY_DELIVERY_ABSENT + production bridge
+ * pin the same case with exact Port-trace / d3_peer_get_count=4.
+ */
+static int test_d3s2_p0d_mode22_true_primary_delivery_absent(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t att_val[512];
+    uint8_t rc_val[512];
+    uint8_t dlv_pvd[32];
+    int guard;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    REQUIRE(compute_value_digest(
+        DSB3_DLV_APP_DS_TYPED_VALUE, (uint32_t)DSB3_DLV_APP_DS_TYPED_VALUE_LEN,
+        dlv_pvd));
+    REQUIRE(sizeof(att_val) >= DSB3_ATT_DLV_CMD_REMOTE_TYPED_VALUE_LEN);
+    REQUIRE(sizeof(rc_val) >= DSB3_RC_RESULT_POS_TYPED_VALUE_LEN);
+    (void)memcpy(
+        att_val, DSB3_ATT_DLV_CMD_REMOTE_TYPED_VALUE,
+        DSB3_ATT_DLV_CMD_REMOTE_TYPED_VALUE_LEN);
+    (void)memcpy(
+        rc_val, DSB3_RC_RESULT_POS_TYPED_VALUE,
+        DSB3_RC_RESULT_POS_TYPED_VALUE_LEN);
+    REQUIRE(patch_pvd_crc(
+        att_val, (uint32_t)DSB3_ATT_DLV_CMD_REMOTE_TYPED_VALUE_LEN, dlv_pvd));
+    REQUIRE(patch_pvd_crc(
+        rc_val, (uint32_t)DSB3_RC_RESULT_POS_TYPED_VALUE_LEN, dlv_pvd));
+    /* No DELIVERY row: true primary ABSENT after carrier RC. */
+    REQUIRE(add_domain_row(
+        &spy, DSB3_ATT_DLV_CMD_REMOTE_TYPED_KEY,
+        DSB3_ATT_DLV_CMD_REMOTE_TYPED_KEY_LEN, att_val,
+        (uint32_t)DSB3_ATT_DLV_CMD_REMOTE_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_RC_RESULT_POS_TYPED_KEY, DSB3_RC_RESULT_POS_TYPED_KEY_LEN,
+        rc_val, (uint32_t)DSB3_RC_RESULT_POS_TYPED_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 22u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    guard = 0;
+    st = NINLIL_OK;
+    while (session.has_sticky_primary == 0u
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        guard += 1;
+    }
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(context.binding_complete_mask == 0u);
+    REQUIRE(spy.mutation_calls == 0u);
+
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    return 0;
+}
+
 /* Mode23 CANCEL_FIRST is the exact empty evidence-set path. */
 int test_d3s2_mode23_cancel_first_empty_success(void)
 {
@@ -3123,6 +3201,9 @@ int ninlil_d3s2_run_all_tests(void)
         return 1;
     }
     if (test_d3s2_p1_mode21_bind_index_pair_absent() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p0d_mode22_true_primary_delivery_absent() != 0) {
         return 1;
     }
     return 0;
