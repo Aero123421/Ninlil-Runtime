@@ -2129,6 +2129,744 @@ static int test_s2_iter_descriptor_rewrite_rejected(void)
     return 0;
 }
 
+/* ---- D2-S4 exact-get direct unit tests (§15.11) ---- */
+
+static int test_s4_exact_get_present_absent_zero_exhausted(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    uint8_t absent_key[11];
+    uint8_t zero_key[11];
+    uint64_t ok_before;
+    uint64_t f14_before;
+    uint32_t iter_open_before;
+    uint32_t get_before;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    /* Zero-length present key: exact_get only; abort without advancing it
+     * (non-catalog empty value is S3-corrupt if visited under exact profile). */
+    (void)memcpy(zero_key, ROOT_V1, 8u);
+    zero_key[8] = 0x7Fu;
+    zero_key[9] = 0x00u;
+    zero_key[10] = 0x99u;
+    REQUIRE(ninlil_spy_add_row(&spy, zero_key, 11u, NULL, 0u));
+    (void)memcpy(absent_key, ROOT_V1, 8u);
+    absent_key[8] = 0x7Fu;
+    absent_key[9] = 0x00u;
+    absent_key[10] = 0xAAu;
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN);
+    iter_open_before = spy.iter_open_calls;
+    get_before = spy.get_calls;
+    ok_before = session.ok_row_count;
+    f14_before = session.family14_row_count;
+
+    /* Present: catalog key 1 while iterator live. */
+    {
+        ninlil_model_runtime_store_key_t ck;
+        REQUIRE(ninlil_model_runtime_store_build_key(
+                NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &ck)
+            == NINLIL_OK);
+        key.data = ck.bytes;
+        key.length = ck.length;
+        (void)memset(&exact, 0xA5, sizeof(exact));
+        REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+            == NINLIL_OK);
+        REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT);
+        REQUIRE(exact.value.length == 183u);
+        REQUIRE(exact.value.data == workspace.value);
+        REQUIRE(session.ok_row_count == ok_before);
+        REQUIRE(session.family14_row_count == f14_before);
+        REQUIRE(spy.get_calls == get_before + 1u);
+        REQUIRE(spy.iter_open_calls == iter_open_before);
+    }
+
+    /* Absent. */
+    key.data = absent_key;
+    key.length = 11u;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact) == NINLIL_OK);
+    REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_ABSENT);
+    REQUIRE(exact.value.data == NULL);
+    REQUIRE(exact.value.length == 0u);
+
+    /* Present zero-length. */
+    key.data = zero_key;
+    key.length = 11u;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact) == NINLIL_OK);
+    REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT);
+    REQUIRE(exact.value.length == 0u);
+    REQUIRE(exact.value.data == NULL);
+    REQUIRE(ninlil_domain_scan_abort(&session, &result) == NINLIL_OK);
+    REQUIRE(result.adopted == 0u);
+    REQUIRE(spy.iter_open_calls == 1u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+
+    /* EXHAUSTED exact_get on catalog-only snapshot. */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(scan_to_end(&session, 64u) == 0);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
+    {
+        ninlil_model_runtime_store_key_t ck;
+        REQUIRE(ninlil_model_runtime_store_build_key(
+                NINLIL_MODEL_RUNTIME_STORE_KEY_IDENTITY, &ck)
+            == NINLIL_OK);
+        key.data = ck.bytes;
+        key.length = ck.length;
+        REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+            == NINLIL_OK);
+        REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT);
+        REQUIRE(exact.value.length == 84u);
+    }
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result) == NINLIL_OK);
+    REQUIRE(result.adopted == 1u);
+    REQUIRE(spy.iter_open_calls == 1u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
+static int test_s4_exact_get_key_alias_and_shape(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_domain_scan_exact_get_result_t prior;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    ninlil_model_runtime_store_key_t ck;
+    uint64_t before_gets;
+    ninlil_domain_scan_state_t before_state;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &ck)
+        == NINLIL_OK);
+    (void)memcpy(workspace.key, ck.bytes, ck.length);
+    (void)memcpy(workspace.previous_key, ck.bytes, ck.length);
+    before_gets = spy.get_calls;
+    before_state = session.state;
+    (void)memset(&exact, 0x3C, sizeof(exact));
+    prior = exact;
+
+    /* NULL key / length 0 / length >255 */
+    key.data = NULL;
+    key.length = 1u;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    REQUIRE(session.state == before_state);
+
+    key.data = ck.bytes;
+    key.length = 0u;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+
+    key.data = ck.bytes;
+    key.length = 256u;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+
+    /* Alias into workspace->value is illegal. */
+    key.data = workspace.value;
+    key.length = ck.length;
+    (void)memcpy(workspace.value, ck.bytes, ck.length);
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+
+    /* Alias into encoded_values is illegal. */
+    key.data = workspace.encoded_values;
+    key.length = ck.length;
+    (void)memcpy(workspace.encoded_values, ck.bytes, ck.length);
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(spy.get_calls == before_gets);
+
+    /* Borrow workspace->key is legal (S4 exception). */
+    key.data = workspace.key;
+    key.length = ck.length;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact) == NINLIL_OK);
+    REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT);
+    REQUIRE(exact.value.length == 183u);
+
+    /* Borrow workspace->previous_key is legal. */
+    key.data = workspace.previous_key;
+    key.length = ck.length;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact) == NINLIL_OK);
+    REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT);
+
+    /* out_result overlapping session is illegal. */
+    {
+        ninlil_domain_scan_exact_get_result_t *alias =
+            (ninlil_domain_scan_exact_get_result_t *)(void *)&session;
+        key.data = ck.bytes;
+        key.length = ck.length;
+        before_gets = spy.get_calls;
+        REQUIRE(ninlil_domain_scan_exact_get(&session, key, alias)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(spy.get_calls == before_gets);
+        REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN);
+    }
+    return 0;
+}
+
+static int test_s4_exact_get_state_gates_and_sticky(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_domain_scan_exact_get_result_t prior;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    ninlil_model_runtime_store_key_t ck;
+    uint64_t before_gets;
+
+    /* IDLE reject */
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&exact, 0x11, sizeof(exact));
+    prior = exact;
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &ck)
+        == NINLIL_OK);
+    key.data = ck.bytes;
+    key.length = ck.length;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, spy.get_calls + 1u,
+        NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
+    before_gets = spy.get_calls;
+    (void)memset(&exact, 0x22, sizeof(exact));
+    prior = exact;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets + 1u);
+
+    /* Sticky FAILED → exact_get rejected Port 0. */
+    before_gets = spy.get_calls;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(spy.get_calls == before_gets);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result) == NINLIL_E_STORAGE);
+    REQUIRE(result.adopted == 0u);
+
+    /* DONE reject */
+    before_gets = spy.get_calls;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_STATE);
+    REQUIRE(spy.get_calls == before_gets);
+    return 0;
+}
+
+static int test_s4_exact_get_handle_drift_and_resume(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    ninlil_storage_handle_t original;
+    ninlil_storage_handle_t foreign;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    ninlil_model_runtime_store_key_t ck;
+    uint64_t ok_mid;
+    int foreign_token = 99;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    original = handle;
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_domain_scan_advance(&session, 3u) == NINLIL_OK);
+    ok_mid = session.ok_row_count;
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &ck)
+        == NINLIL_OK);
+    key.data = ck.bytes;
+    key.length = ck.length;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact) == NINLIL_OK);
+    REQUIRE(session.ok_row_count == ok_mid);
+    /* Iterator resumes after exact_get. */
+    REQUIRE(scan_to_end(&session, 64u) == 0);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
+    REQUIRE(session.family14_row_count == 17u);
+    REQUIRE(session.ok_row_count == 17u);
+    REQUIRE(spy.iter_open_calls == 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result) == NINLIL_OK);
+    REQUIRE(result.adopted == 1u);
+
+    /* Fresh session: handle drift on exact_get. */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    original = handle;
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    foreign = (ninlil_storage_handle_t)&foreign_token;
+    handle = foreign;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(session.fence_pending == 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.reopen_required == 1u);
+    REQUIRE(ninlil_spy_close_count_for_handle(&spy, original) == 1u);
+    REQUIRE(ninlil_spy_close_count_for_handle(&spy, foreign) == 0u);
+    return 0;
+}
+
+static int test_s4_exact_get_bts_and_repeat_overwrite(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    ninlil_model_runtime_store_key_t k1;
+    ninlil_model_runtime_store_key_t k2;
+    uint8_t first_byte;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &k1)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_IDENTITY, &k2)
+        == NINLIL_OK);
+    key.data = k1.bytes;
+    key.length = k1.length;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact) == NINLIL_OK);
+    REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT);
+    first_byte = exact.value.data[0];
+    REQUIRE(first_byte == (uint8_t)'N');
+    key.data = k2.bytes;
+    key.length = k2.length;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact) == NINLIL_OK);
+    REQUIRE(exact.presence == NINLIL_DOMAIN_SCAN_EXACT_PRESENT);
+    REQUIRE(exact.value.length == 84u);
+    /* Prior borrow is overwritten in the single value buffer. */
+    REQUIRE(workspace.value[0] == (uint8_t)'N');
+    REQUIRE(exact.value.data == workspace.value);
+    REQUIRE(ninlil_domain_scan_abort(&session, &result) == NINLIL_OK);
+
+    /* BTS no reread. */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, spy.get_calls + 1u,
+        NINLIL_STORAGE_BUFFER_TOO_SMALL, NINLIL_SPY_SHAPE_BTS_LENGTHS, 0u,
+        4097u));
+    key.data = k1.bytes;
+    key.length = k1.length;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(spy.allocator_calls == 0u);
+    REQUIRE(spy.get_calls == 18u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
+/*
+ * OPEN/EXHAUSTED with corrupted live-session authority must sticky
+ * STORAGE_CORRUPT + FAILED, Port 0, out_result unchanged — before alias maps
+ * the same condition to INVALID_ARGUMENT.
+ */
+static int test_s4_exact_get_live_authority_corrupt(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_domain_scan_exact_get_result_t prior;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    ninlil_model_runtime_store_key_t ck;
+    uint64_t before_gets;
+    ninlil_storage_ops_t broken_ops;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &ck)
+        == NINLIL_OK);
+    key.data = ck.bytes;
+    key.length = ck.length;
+    (void)memset(&exact, 0x5A, sizeof(exact));
+    prior = exact;
+    before_gets = spy.get_calls;
+
+    /* null bound_storage */
+    session.bound_storage = NULL;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    /* Restore authority for cleanup/alias after the Port-0 observation. */
+    session.bound_storage = ops;
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.adopted == 0u);
+
+    /* Fresh OPEN: null bound_workspace */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    before_gets = spy.get_calls;
+    prior = exact;
+    session.bound_workspace = NULL;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    session.bound_workspace = &workspace;
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+
+    /* Fresh OPEN: null bound_handle_slot */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    before_gets = spy.get_calls;
+    prior = exact;
+    session.bound_handle_slot = NULL;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    session.bound_handle_slot = &handle;
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+
+    /* Fresh OPEN: missing required get op */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    before_gets = spy.get_calls;
+    prior = exact;
+    broken_ops = *ops;
+    broken_ops.get = NULL;
+    session.bound_storage = &broken_ops;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    session.bound_storage = ops;
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+
+    /* Fresh OPEN: txn_live=0 */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    before_gets = spy.get_calls;
+    prior = exact;
+    session.txn_live = 0u;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    /* Restore for cleanup so finalize does not double-fault port paths. */
+    session.txn_live = 1u;
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+
+    /* Fresh OPEN: iter_live=0 */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    before_gets = spy.get_calls;
+    prior = exact;
+    session.iter_live = 0u;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    session.iter_live = 1u;
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+
+    /* Alias invalid remains INVALID_ARGUMENT with session/output unchanged. */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    before_gets = spy.get_calls;
+    (void)memset(&exact, 0x3C, sizeof(exact));
+    prior = exact;
+    key.data = workspace.value;
+    key.length = ck.length;
+    (void)memcpy(workspace.value, ck.bytes, ck.length);
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_OPEN);
+    REQUIRE(session.has_sticky_primary == 0u);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets);
+    REQUIRE(ninlil_domain_scan_abort(&session, &result) == NINLIL_OK);
+    return 0;
+}
+
+static int test_s4_exact_get_ok_bad_and_nonempty_length(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_result_t result;
+    ninlil_domain_scan_exact_get_result_t exact;
+    ninlil_domain_scan_exact_get_result_t prior;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    ninlil_storage_handle_t original;
+    const ninlil_storage_ops_t *ops;
+    ninlil_bytes_view_t key;
+    ninlil_model_runtime_store_key_t ck;
+    uint64_t before_gets;
+
+    REQUIRE(ninlil_model_runtime_store_build_key(
+            NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, &ck)
+        == NINLIL_OK);
+    key.data = ck.bytes;
+    key.length = ck.length;
+
+    /* OK + length > capacity */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, spy.get_calls + 1u,
+        NINLIL_STORAGE_OK, NINLIL_SPY_SHAPE_OK_BAD_LENGTH, 0u, 4097u));
+    before_gets = spy.get_calls;
+    (void)memset(&exact, 0xA5, sizeof(exact));
+    prior = exact;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(session.fence_pending == 0u);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets + 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.reopen_required == 0u);
+    REQUIRE(spy.close_calls == 0u);
+
+    /* IO + nonempty length → CORRUPT, no fence */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, spy.get_calls + 1u,
+        NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NON_OK_NONEMPTY_LENGTH, 0u,
+        1u));
+    before_gets = spy.get_calls;
+    prior = exact;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(session.fence_pending == 0u);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets + 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.reopen_required == 0u);
+
+    /* COMMIT_UNKNOWN + nonempty: shape → CORRUPT, fence still set */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    original = handle;
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, spy.get_calls + 1u,
+        NINLIL_STORAGE_COMMIT_UNKNOWN, NINLIL_SPY_SHAPE_NON_OK_NONEMPTY_LENGTH,
+        0u, 1u));
+    before_gets = spy.get_calls;
+    prior = exact;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_FAILED);
+    REQUIRE(session.fence_pending == 1u);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets + 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.reopen_required == 1u);
+    REQUIRE(ninlil_spy_close_count_for_handle(&spy, original) == 1u);
+    REQUIRE(handle == NULL);
+
+    /* Unknown + poison length: fence + CORRUPT */
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    original = handle;
+    REQUIRE(s2_install_full_profile(&spy, &candidate));
+    ninlil_domain_scan_session_init(&session);
+    REQUIRE(ninlil_domain_scan_begin_profiled(
+            &session, ops, &handle, &workspace, &candidate)
+        == NINLIL_OK);
+    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, spy.get_calls + 1u,
+        (ninlil_storage_status_t)99u, NINLIL_SPY_SHAPE_NON_OK_NONEMPTY_LENGTH,
+        0u, 2u));
+    before_gets = spy.get_calls;
+    prior = exact;
+    REQUIRE(ninlil_domain_scan_exact_get(&session, key, &exact)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.fence_pending == 1u);
+    REQUIRE(memcmp(&exact, &prior, sizeof(exact)) == 0);
+    REQUIRE(spy.get_calls == before_gets + 1u);
+    REQUIRE(ninlil_domain_scan_finalize(&session, &result)
+        == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(result.reopen_required == 1u);
+    REQUIRE(ninlil_spy_close_count_for_handle(&spy, original) == 1u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    return 0;
+}
+
 int main(void)
 {
     if (test_empty_namespace() != 0) {
@@ -2228,6 +2966,27 @@ int main(void)
         return 1;
     }
     if (test_s2_iter_descriptor_rewrite_rejected() != 0) {
+        return 1;
+    }
+    if (test_s4_exact_get_present_absent_zero_exhausted() != 0) {
+        return 1;
+    }
+    if (test_s4_exact_get_key_alias_and_shape() != 0) {
+        return 1;
+    }
+    if (test_s4_exact_get_state_gates_and_sticky() != 0) {
+        return 1;
+    }
+    if (test_s4_exact_get_handle_drift_and_resume() != 0) {
+        return 1;
+    }
+    if (test_s4_exact_get_bts_and_repeat_overwrite() != 0) {
+        return 1;
+    }
+    if (test_s4_exact_get_live_authority_corrupt() != 0) {
+        return 1;
+    }
+    if (test_s4_exact_get_ok_bad_and_nonempty_length() != 0) {
         return 1;
     }
     return 0;

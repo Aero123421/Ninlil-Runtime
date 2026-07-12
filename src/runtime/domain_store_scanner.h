@@ -2,28 +2,33 @@
 #define NINLIL_DOMAIN_STORE_SCANNER_H
 
 /*
- * D2-S3 private Domain Store bounded scanner core.
+ * D2-S4 private Domain Store bounded scanner core.
  * Production-private; not installed. Not a public C ABI.
  *
- * Implements docs/17-foundation-domain-store.md §15.1–15.7 / §15.10 / §15.9 S3.
+ * Implements docs/17-foundation-domain-store.md §15.1–15.7 / §15.10 / §15.11
+ * / §15.9 S3–S4.
  * Production path: ninlil_domain_scan_begin_profiled (required candidate,
  * same-txn 17 get + validate/compare + one zero-prefix iterator).
  * Exact-profile CURRENT family 5/6 rows: typed same-record (business+7d)
- * or witness header/chunk local framing (7e/7f). S1 transport-only begin is
- * TEST-build only (NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN) and does
- * not run domain body structural validation.
+ * or witness header/chunk local framing (7e/7f). S4 adds same-snapshot
+ * production-private exact_get while the sole iterator remains live.
+ * S1 transport-only begin is TEST-build only
+ * (NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN) and does not run domain
+ * body structural validation.
  *
- * No cross-row (D3), S4 exact-get seam, recovery mutation (D4), or Stage 5
- * orchestration (S6). Does not claim D2 / DSR1 / DSR2 complete.
+ * No cross-row relationship/cardinality/orphan/backlink (D3), recovery
+ * mutation (D4), or Stage 5 orchestration (S6). Does not claim D2 / DSR1 /
+ * DSR2 complete. Session does not retain full ID sets or unused xref
+ * digest/kind/count fields.
  *
  * Ownership binding:
  *   begin binds non-owning pointers to storage ops, handle slot, and
  *   workspace plus a snapshot of the original handle value into the session.
  *   Profiled begin also exact-copies the candidate binding into workspace
  *   before the first Port call and never retains the caller pointer.
- *   advance/finalize/abort use only those bound fields for Port calls and
- *   cleanup; callers cannot substitute a different Port/handle/workspace
- *   mid-session via the API surface.
+ *   advance/exact_get/finalize/abort use only those bound fields for Port
+ *   calls and cleanup; callers cannot substitute a different
+ *   Port/handle/workspace mid-session via the API surface.
  *
  * Private precondition while the session is live (OPEN/EXHAUSTED/FAILED):
  *   the caller must not mutate the bound handle slot contents, replace the
@@ -83,7 +88,8 @@ typedef union ninlil_domain_scan_row_scratch {
  * S2: packed encoded family1-4 values + views + validated snapshot +
  *     candidate binding copy.
  * S3: row_validate_scratch union for typed/witness same-record path.
- * No second 4096 value buffer.
+ * S4: exact_get reuses the single value buffer (capacity NINLIL_DOMAIN_SCAN_VALUE_CAPACITY).
+ * No second max-value buffer. No full-ID set.
  * Has-previous is an explicit session flag; length 0 is never a first-row
  * sentinel.
  */
@@ -103,12 +109,12 @@ typedef struct ninlil_domain_scan_workspace {
 static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S3 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S4 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #else
 _Static_assert(
     sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES,
-    "D2-S3 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
+    "D2-S4 domain scan workspace exceeds DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES");
 #endif
 
 /*
@@ -221,6 +227,37 @@ ninlil_status_t ninlil_domain_scan_begin(
 ninlil_status_t ninlil_domain_scan_advance(
     ninlil_domain_scan_session_t *session,
     uint32_t row_budget);
+
+/*
+ * D2-S4 same-snapshot exact get (docs/17 §15.11).
+ * Legal only in OPEN and EXHAUSTED. Performs exactly one Storage get on the
+ * bound READ_ONLY txn while the sole iterator remains live. Never consumes
+ * row_budget or changes ok-row counters / iterator position.
+ *
+ * key: length 1..255, non-NULL. May borrow external storage or
+ * workspace->key / workspace->previous_key (S4 exception to generic
+ * readonly-input alias). Must be address-safe and disjoint from
+ * workspace->value (output area) and from out_result.
+ *
+ * On OK+PRESENT: out_result borrows workspace->value until the next
+ * advance / exact_get / finalize / abort. Present zero-length uses
+ * presence=PRESENT with empty view. Clean NOT_FOUND returns OK+ABSENT.
+ * Port-path failure leaves *out_result unchanged and sets sticky/FAILED.
+ */
+typedef enum ninlil_domain_scan_exact_presence {
+    NINLIL_DOMAIN_SCAN_EXACT_ABSENT = 0,
+    NINLIL_DOMAIN_SCAN_EXACT_PRESENT = 1
+} ninlil_domain_scan_exact_presence_t;
+
+typedef struct ninlil_domain_scan_exact_get_result {
+    ninlil_domain_scan_exact_presence_t presence;
+    ninlil_bytes_view_t value;
+} ninlil_domain_scan_exact_get_result_t;
+
+ninlil_status_t ninlil_domain_scan_exact_get(
+    ninlil_domain_scan_session_t *session,
+    ninlil_bytes_view_t key,
+    ninlil_domain_scan_exact_get_result_t *out_result);
 
 /*
  * Cleanup tree + outcome aggregation on bound Port/handle. out_result must be

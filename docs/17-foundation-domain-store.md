@@ -1282,9 +1282,9 @@ Scannerは成功したproduction profiled `begin`（またはTEST-build transpor
 | State | 意味 |
 | --- | --- |
 | `IDLE` | 資源0。唯一の`begin`合法起点。**明示初期化済みのfresh sessionだけ**がこの状態を持つ |
-| `OPEN` | READ_ONLY txn live、かつzero-prefix iterator live。`advance`可能。**non-terminal candidate flag（`profile_mismatch` / `future_profile_candidate` / `recognizable_future_seen`）があっても`OPEN`のまま** |
-| `EXHAUSTED` | 終端`NOT_FOUND`（両length 0）到達**かつ**production profiled pathではiterator reconciliation mask条件を満たす（§15.10）。iterator/txnはまだlive。candidate flagは保持してよい。mask不一致は`EXHAUSTED`ではなくterminal `STORAGE_CORRUPT` |
-| `FAILED` | **terminal primary failure**後、**live資源が残る間だけ**のpoison状態。`advance`不可 |
+| `OPEN` | READ_ONLY txn live、かつzero-prefix iterator live。`advance`可能。**S4 exact-get 合法**（§15.11）。**non-terminal candidate flag（`profile_mismatch` / `future_profile_candidate` / `recognizable_future_seen`）があっても`OPEN`のまま** |
+| `EXHAUSTED` | 終端`NOT_FOUND`（両length 0）到達**かつ**production profiled pathではiterator reconciliation mask条件を満たす（§15.10）。iterator/txnはまだlive。**S4 exact-get 合法**（§15.11）。candidate flagは保持してよい。mask不一致は`EXHAUSTED`ではなくterminal `STORAGE_CORRUPT` |
+| `FAILED` | **terminal primary failure**後、**live資源が残る間だけ**のpoison状態。`advance`不可。**exact-get も `INVALID_STATE`（Port 0）** |
 | `DONE` | 当該sessionの終端。cleanup完了（live Port資源0）。result採用の有無は§15.6。**`begin`再入不可** |
 
 #### 観察の二分類（D2-S0 closed）
@@ -1317,12 +1317,13 @@ Scan observationは次の2集合だけに属する。混同禁止。
 1. production / TEST adapterの`begin`はいずれも`IDLE`だけ合法。成功で`OPEN`（**TEST-build S1 transport adapter:** txn+iterator確立後。**production profiled begin（S2）:** §15.10のbind→`begin(READ_ONLY)`→17 exact `get`→completeness/validate/compare→zero-prefix `iter_open`の後にだけ`OPEN`）
 2. `advance`は`OPEN`だけ合法。
 3. 終端条件を満たす`advance`は`EXHAUSTED`へ進む（§15.3 / §15.10）。candidate flagは保持する。production profiled pathでiterator seen maskがall-present maskと不一致ならterminal CORRUPTであり`EXHAUSTED` successへは進まない。
-4. **Terminal primary failure**だけが、live資源が残る間`FAILED`へsticky遷移する。Non-terminal candidateでは`FAILED`へ遷移しない。
-5. `finalize`は`EXHAUSTED`または`FAILED`で合法。
-6. `abort`は`OPEN` / `EXHAUSTED` / `FAILED`で合法。
-7. 第二回cleanup（既に`DONE`）および上記以外のillegal callは`NINLIL_E_INVALID_STATE`、**Port call 0**、状態/workspace/outputs不変。`IDLE`への`finalize`/`abort`もillegal（資源0でcleanup不要）。
-8. **`DONE`は当該scanner session/control objectの終端である。`DONE → IDLE`の暗黙遷移も、同一session objectへの`begin`再呼出も禁止。** 再scanするcallerは、prior sessionが`DONE`（または未使用）でlive Port資源0であることを確認したうえで、**新しいsession/control objectを明示初期化して`IDLE`にする**。将来private init APIがworkspace byte領域の再利用を許す場合でも、それは明示初期化であり、`DONE` sessionのreuseではない。途中状態（`OPEN` / `EXHAUSTED` / `FAILED`）からのsession再利用は禁止。
-9. **`FAILED`はlive資源が残る間だけ存在する。** cleanup tree（§15.6）でchildrenをconsumeし終わったfailureは`DONE`（unadopted）へ進む。fully cleaned failureを`FAILED`に残してはならない。
+4. **S4 exact-get**は`OPEN` / `EXHAUSTED`だけ合法（§15.11）。成功でも state / counters / iterator position を変えない。terminal Port-path failure は sticky primary + `FAILED`（`advance` と同型）。
+5. **Terminal primary failure**だけが、live資源が残る間`FAILED`へsticky遷移する。Non-terminal candidateでは`FAILED`へ遷移しない。
+6. `finalize`は`EXHAUSTED`または`FAILED`で合法。
+7. `abort`は`OPEN` / `EXHAUSTED` / `FAILED`で合法。
+8. 第二回cleanup（既に`DONE`）および上記以外のillegal callは`NINLIL_E_INVALID_STATE`、**Port call 0**、状態/workspace/outputs不変。`IDLE`への`finalize`/`abort`もillegal（資源0でcleanup不要）。
+9. **`DONE`は当該scanner session/control objectの終端である。`DONE → IDLE`の暗黙遷移も、同一session objectへの`begin`再呼出も禁止。** 再scanするcallerは、prior sessionが`DONE`（または未使用）でlive Port資源0であることを確認したうえで、**新しいsession/control objectを明示初期化して`IDLE`にする**。将来private init APIがworkspace byte領域の再利用を許す場合でも、それは明示初期化であり、`DONE` sessionのreuseではない。途中状態（`OPEN` / `EXHAUSTED` / `FAILED`）からのsession再利用は禁止。
+10. **`FAILED`はlive資源が残る間だけ存在する。** cleanup tree（§15.6）でchildrenをconsumeし終わったfailureは`DONE`（unadopted）へ進む。fully cleaned failureを`FAILED`に残してはならない。
 
 ### 15.3 `begin` / `advance` / `row_budget` / `iter_next`（D2-S0）
 
@@ -1548,6 +1549,7 @@ C11実装が満たすべきpublication / unchanged / alias規則:
    - **candidate copy後:** caller `candidate` pointerのlifetimeを要求しない。sessionが保持するのはworkspace内candidate copyのみ。後続`advance`/`finalize`/`abort`はcaller candidate pointerを再検査しない。
    - **`finalize` / `abort`:** 当該callの`out_result`を、session、**bound** workspace（candidate copyを含む全域）、**bound** ops table object、**bound** handle slotとpairwise non-overlapで検査する。違反はPort 0・`INVALID_ARGUMENT`・live state/workspace不変。expired caller candidate pointerは**検査対象外**（begin時点でlifetime終了済みであり、finalize/abortがそれをinspectできない・する必要もない）。
    - readonly input viewがworkspaceとaliasすることも禁止（当該callが受け取るreadonly引数がある場合のみ）。
+   - **S4 exact-get 例外（§15.11.3）:** exact-get の key readonly input は `workspace->value` と disjoint 必須だが、`key[]` / `previous_key[]` への borrow は合法（Storage Port が call 中に key を copyするため）。workspace 他領域との key alias は禁止のまま。
 6. **NULL/length shape**: zero lengthはdata NULLを許すview規則に12章/ D1 helperと同じく従う。non-zero length + NULL dataは`INVALID_ARGUMENT`またはcorruptionのclosed側へ倒し、silent skipしない。
 7. **単一thread / owner**: scanner sessionは同時に1 owner contextだけが操作する。re-entrancyはpublic Runtime規則に従いD2 scanner APIをcallbackから再入させない。
 8. **non-OK data**: §15.3のとおりdata bytesは無視・非採用。shadow比較による「部分書込検出」を実装要件にしない。
@@ -1570,7 +1572,7 @@ L2b1 successはStage 5完了でもD2完了でもありません（14章L2b1 boun
 | **D2-S1** | scanner core: state machine、begin binds Port/handle/workspace、advance(row_budget)/finalize|abort(result) only、iter buffer、`has_previous` lex、§15.4 coarse class、mutation 0、uint64 checked counters。独立oracle + production bridge。**実装済み（D2 incomplete）** | 否 |
 | **D2-S2** | **実装済み（D2 incomplete）:** production profiled begin only（required candidate; TEST transport beginはtest macro専用）、same-txn 17 exact get + completeness/validate/compare、typed get capacities、iterator reconciliation masks、mismatch/future mode skip、private result diagnostics、sibling profile oracle `domain-scan-profile-v1.json` / `ninlil-domain-scan-profile-v1-d2s2` + independent generator + production bridge。D2 complete / DSR1/DSR2 complete / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
 | **D2-S3** | **実装済み（D2 incomplete）:** exact-profile時 family 5/6 CURRENT structural same-recordをscan pathから到達。closed catalog family5 `01`+family6 §7 全29 current subtypes（`10,11,20-27,30-34,40-42,50-52,60-64,7d-7f`）REQUIRED。business+`7d` → `ninlil_model_domain_validate_typed_record`（workspace typed scratch; public APIに large local 無し）。`7e`/`7f` → parse key + envelope + pure witness decode + key/body/header bijection + independent header mutates（flags/PVD/primary/identity/subtype/rev0/rtype）scan到達。status: `UNSUPPORTED` future non-terminal、後続current corrupt precedence（record_version/domain_format）; profile mismatch/future_profile skip S3 decode; BTS 4097/unknown subtype/lex OOO。sibling oracle `domain-scan-structural-v1.json` / `ninlil-domain-scan-structural-v1-d2s3` + D1 d1b3o SHA/count pin composition + S1 transport body-nonvalidation hash/ID pin + independent generator + production bridge。**member old/new・partial group・successor chain・cross-row PVD/cardinalityはD3。S4 exact-get追加なし。** D2 complete / DSR1/DSR2 / Stage 5 / public Runtime / ESP hardwareをclaimしない | 否 |
-| **D2-S4** | same-snapshot exact `get`とfixed-memory cross-reference seam（全ID集合非保持） | 否 |
+| **D2-S4** | **実装済み（D2 incomplete）:** same-snapshot production-private exact `get`（`OPEN`/`EXHAUSTED`、sole iterator live、row_budget/counters 不変）+ presence enum / borrowed value view + fixed-memory proof（single 4096 value buffer reuse; session に unused xref digest/kind/count なし; 全ID集合非保持）。sibling oracle `domain-scan-exact-get-v1.json` / `ninlil-domain-scan-exact-get-v1-d2s4` + independent generator + production bridge。D3 relationship/cardinality/orphan/backlink semantics は所有しない。D2 complete / DSR1/DSR2 / Stage 5 / public Runtime / ESP hardware を claim しない | 否 |
 | **D2-S5** | S1〜S4および依存（不足D1 body含む）と必須vector/oracleが揃ったうえでの`DSR1_SCAN` / `DSR2_ESP_BOUND` complete。restart先頭、**D2-detectable** corrupt>future、D3 corruption投入用のexact seam/mechanism、rollback failure/fence、workspace天井、allocation 0。partial group/orphan/counter/capacity/health自体は証明しない | **S1〜S5完了の総称としてだけD2（bounded scanner）を証明。Stage 5全体は証明しない** |
 | **D2-S6** | Stage 5 orchestration hookup。scannerをcreate Stage 5へ接続。なおmutation 0（recovery mutation本体はD4） | D2を統合するだけで、S5未完了をD2完了に置換せず、D3/D4未完了をStage 5完了に置換しない |
 
@@ -1747,6 +1749,113 @@ private result diagnostics（§15.6）: `profile_exact_active`、`profile_mismat
 | D2 complete | S1–S5 + deps（§15.9） |
 | Stage 5 / public Runtime / ESP hardware | D3/D4/§1残gate後。S2 successで置換禁止 |
 
+### 15.11 D2-S4 same-snapshot exact `get` seam（Normative freeze）
+
+**Decision identifier: D2-S4。** 本節はsame READ_ONLY snapshot上の**production-private exact-get API**とfixed-memory cross-reference **mechanism**のNormative freezeである。全ID集合のRAM保持は禁止。D3 relationship / cardinality / orphan / backlink semantics、public Runtime ABI/status、S5/S6、ESP hardwareは**out of scope**。**S4 implementation complete ≠ D2 completion ≠ Stage 5 / public Runtime / ESP hardware completion。** D2はS1〜S5が揃うまでincompleteのまま。
+
+#### 15.11.1 Production-private API / no public ABI
+
+1. **tests-OFF release private artifact**に露出する exact-get は production-private だけである。public `include/ninlil/*` header / export symbol / new public status / public workspace type / new ADRを**追加しない**。
+2. 推奨private symbol名: `ninlil_domain_scan_exact_get`。既存 scanner session 上の API であり、second session / second txn / second iterator を開かない。
+3. 合法状態は **`OPEN` と `EXHAUSTED` のみ**（いずれも bound READ_ONLY txn live かつ sole zero-prefix iterator live）。`IDLE` / `DONE` / `FAILED` は `NINLIL_E_INVALID_STATE`、**Port call 0**、session/caller output 不変。
+4. sticky terminal primary 後（`FAILED`）の exact-get は **reject**（`INVALID_STATE`、Port 0）。cleanup / fence は finalize/abort の所有。
+5. 本APIは **row_budget を消費しない**。`ok_row_count` / `family14_row_count` / `current_domain_key_count` / previous-key / iterator position / `has_previous` を成功 path で変更しない。iterator は live のまま。`iter_open` は session lifetime 中 exact 1 のまま。
+
+#### 15.11.2 Presence enum / observation result（not full-ID set）
+
+private presence と observation/result を次のとおり固定する（session に unused xref digest/kind/count を**持たない**; D3 が semantic aggregation を所有）:
+
+| Field | Meaning |
+| --- | --- |
+| presence enum | exact closed: `ABSENT` / `PRESENT` |
+| value view | `PRESENT` 時のみ `workspace->value` を borrow する read-only view。`ABSENT` は empty view（length 0、data NULL） |
+| present zero-length | `PRESENT` + length 0。presence enum で `ABSENT` と区別する（value length だけに依存しない） |
+
+**成功 shape（Port path 成功後だけ caller output を書く）:**
+
+1. clean `NOT_FOUND` + `inout_value.length == 0` → return `NINLIL_OK` + `ABSENT` + empty view
+2. `OK` + length ≤ 4096 +（length>0 ⇒ data non-NULL）→ return `NINLIL_OK` + `PRESENT` + view（length>0 は `data=workspace->value`、length 0 は empty view でも presence=`PRESENT`）
+3. **Port-path failure**（terminal）: caller `out_result` は **不変**。scanner は sticky primary を記録し state=`FAILED`（`advance` と同じ）。cleanup tree は呼ばない
+
+**Borrowed lifetime:** 成功 view は **次の** `advance` / `exact_get` / `finalize` / `abort` まで有効。それ以降の参照は caller contract 違反。反復 exact-get は value buffer を上書きし、過去 ID/value を session に保持しない（full-ID set 禁止の固定メモリ証明）。
+
+#### 15.11.3 Key input shape / S4 alias exception
+
+1. key: `data` non-NULL、`length` exact `1..255`。NULL / length 0 / length>255 は `INVALID_ARGUMENT`、Port 0、session/output 不変。
+2. Storage Port は call 中に key を copy する前提で、key は **external storage**、または scanner workspace の **`key[]` / `previous_key[]` 領域**を borrow してよい。
+3. key range は **address-safe**（overflow なし）かつ **`workspace->value`（exact-get 出力領域）と disjoint** 必須。value 領域との alias は `INVALID_ARGUMENT`。
+4. **S4 狭い例外 / 明確化（§15.7 generic readonly-input alias 規則）:** exact-get の key readonly input が workspace 全体と一律禁止ではなく、**`key[]` / `previous_key[]` への borrow だけを合法**とする。workspace の他領域（`value[]` / `encoded_values[]` / views / validated / candidate / row_validate_scratch 等）への key alias は `INVALID_ARGUMENT`。second max-key buffer への copy は **evidence が必要と証明するまで禁止**（S4 既定は copy しない）。
+5. `out_result` は session / bound workspace / bound ops table object / bound handle slot と pairwise non-overlap。違反は `INVALID_ARGUMENT`、Port 0、session/output 不変。key と `out_result` も non-overlap。
+
+#### 15.11.4 Prevalidation / live binding gates
+
+Port 呼び出し前（失敗時 Port 0）:
+
+1. session / out_result non-NULL
+2. state ∈ {`OPEN`,`EXHAUSTED`}（上記以外は `INVALID_STATE`。bound field を読まない）
+3. key basic shape（data non-NULL、length 1..255。違反は `INVALID_ARGUMENT`）
+4. legal live state における bound storage ops / handle slot / workspace non-NULL、required ops（`get` 含む）non-NULL、`txn_live` かつ `iter_live`。違反は caller argument error へ丸めず sticky `STORAGE_CORRUPT` + `FAILED`
+5. handle slot **exact match**（begin-time original; authority live 中）。不一致は sticky `STORAGE_CORRUPT` + `FAILED` + `fence_pending`
+6. key range / alias（§15.11.3。違反は `INVALID_ARGUMENT`、session/output 不変）
+
+#### 15.11.5 Single storage `get` / descriptor / status matrix
+
+**Port 順序:** 各成功 prevalidation 後、**exact 1** 回の Storage `get` を bound READ_ONLY txn に対して行う。iterator は閉じない・進めない。allocation / reread / cleanup tree は exact-get call 内で **0**。
+
+**call 前 mutable output descriptor（唯一の 4096 value buffer）:**
+
+1. `inout_value.data = workspace->value`
+2. `inout_value.capacity = 4096`
+3. `inout_value.length = 0`
+
+`data`/`capacity` は caller-owned descriptor。provider rewrite は unsafe shape。
+
+| Status + observable shape | Outcome |
+| --- | --- |
+| `OK` + length ≤ 4096 + (length>0 ⇒ data non-NULL) + descriptor intact | success PRESENT |
+| `OK` + length > capacity / length>0 with NULL data | terminal `STORAGE_CORRUPT` |
+| `NOT_FOUND` + length == 0 | success ABSENT |
+| `NOT_FOUND` + length != 0 | terminal `STORAGE_CORRUPT`（poison） |
+| `BUFFER_TOO_SMALL` | terminal `STORAGE_CORRUPT`。**reread 0 / allocation 0**。ch12-valid required length 非0を第二 shape に数えない |
+| other known non-OK + length == 0 | 14章 closed mapping（BUSY→`WOULD_BLOCK`、NO_SPACE→`CAPACITY_EXHAUSTED`、IO→`STORAGE`、`UNSUPPORTED_SCHEMA`→`UNSUPPORTED`、`COMMIT_UNKNOWN`→`STORAGE_COMMIT_UNKNOWN`、CORRUPT→`STORAGE_CORRUPT`） |
+| other non-OK + length != 0（BTS 除外） | terminal `STORAGE_CORRUPT` |
+| unknown raw status / descriptor rewrite（data/capacity） | terminal `STORAGE_CORRUPT` + **fence_pending**（cleanup は finalize/abort） |
+| `COMMIT_UNKNOWN`（known fence status） | map + **fence_pending** |
+
+terminal path: sticky primary、state=`FAILED`、`out_result` 不変。Finalize/abort が cleanup tree を所有し sticky primary を保持する（§15.6）。
+
+#### 15.11.6 No automatic D3 / future internal ordering contract
+
+1. S4 は D3 relationship / cardinality / orphan / backlink を **自動実行しない**。peer key 導出・aggregate も行わない。
+2. profile mismatch / `future_profile_candidate` / recognizable future でも scanner が **自動 exact-get を起動しない**（seam は caller が明示呼出するときだけ）。
+3. **Future internal ordering contract（D3 以降が従う; S4 が mechanism だけを固定）:**
+   1. S3 structural success on current row（or transport coarse accept）
+   2. copy required descriptor / commit lex state（previous-key 等; advance 側）
+   3. optional exact-get overwrites `workspace->value`（borrowed）
+   4. consume borrowed result **before** next exact-get / advance
+4. Fixed-memory proof in S4 = exact lookup mechanism + borrowed result + **既存 single 4096-byte value buffer の reuse**。xref digest/kind/count session fields は D3 まで追加しない。
+
+#### 15.11.7 Non-claims / workspace
+
+1. heap / VLA / recursion / second 4096 value buffer / full-ID set 禁止
+2. workspace `sizeof <= 8192` 維持
+3. mutation Port calls 0（`put`/`erase`/`commit`/`open` 0）
+4. D2 / DSR1 / DSR2 / Stage 5 / public Runtime / ESP hardware を claim しない
+
+#### 15.11.8 Acceptance ownership（implementation + oracle）
+
+最低限の conformance（unit + sibling oracle/bridge）:
+
+- present while iterator live; missing; present zero-length; get in `EXHAUSTED`
+- 4096 boundary; `BUFFER_TOO_SMALL`/4097 without reread
+- pointer/capacity rewrite; `NOT_FOUND` poison
+- known IO / BUSY / CORRUPT / UNSUPPORTED / COMMIT_UNKNOWN と unknown raw status
+- state gates; key length/null/alias; handle drift
+- repeated gets overwrite borrowed value without retaining IDs
+- row_budget/counters unchanged; iterator resumes; `iter_open` remains 1
+- profile mismatch/future no automatic get; sticky failure then exact_get rejected
+- rollback/close/fence precedence; mutation0; workspace/source gates
+
 ## 16. Status precedence
 
 Port call/shapeのearlier primary failureは14章closed mappingを維持します。Precedenceはphase境界ごとにclosedです。次の四段は**最終Stage 5 composition**（D2 scanner + D3 cross-row/health + 残gate）が守る順序です。D2単独・D2-S5単独が全段を証明するわけではありません。
@@ -1799,7 +1908,7 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 | D2-S1 | `DSR1_SCAN` transport subset + `DSR2_ESP_BOUND` skeleton の**ownership**。独立machine-readable oracle artifactを **`spec/vectors/domain-scan-v1.json`**、format **`ninlil-domain-scan-v1-d2s1`** として固定（schemaは§17.1.1）。**S2以降も本artifactはbyte-for-byte frozen regression**。D1 JSONへscanner fieldを追加しない | S1 ownershipのみ。**DSR1/DSR2 completeおよびD2 completeをclaimしない** |
 | D2-S2 | family 1〜4 integrity + exact profile gate + §15.10 one-iterator reconciliation。sibling oracle **`spec/vectors/domain-scan-profile-v1.json`**、format **`ninlil-domain-scan-profile-v1-d2s2`**（§17.1.2）+ independent generator + production profiled-begin bridge + unit acceptance。**実装済み（D2 incomplete）** | domain structural全体はS3。**DSR1/DSR2/D2 completeをclaimしない** |
 | D2-S3 | current domain structural/same-recordをscan pathから到達させるvectors。**witness header+chunk same-record framing/matrixのscan到達**（D1 witness pure codec依存。member old/new・chainはD3）。sibling oracle **`spec/vectors/domain-scan-structural-v1.json`**、format **`ninlil-domain-scan-structural-v1-d2s3`**（§17.1.3）。依存D1 body hexは `ninlil-domain-store-v1-d1b3o` authority（byte-for-byte frozen; S3は同fileへscanner fieldを追加しない） | **D2-S3 implementation complete**（S1–S5の1ピース。**D2/DSR1/DSR2/Stage5 completeをclaimしない**） |
-| D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference（`DSI1_BACKLINK`のscan接続部など） | 全ID集合RAM保持テストを合法化しない |
+| D2-S4 | same-snapshot exact `get` seam、fixed-memory cross-reference mechanism（§15.11; full-ID set 禁止）。sibling oracle **`spec/vectors/domain-scan-exact-get-v1.json`** / format **`ninlil-domain-scan-exact-get-v1-d2s4`**（§17.1.4）+ independent generator + production bridge + unit acceptance。**実装済み（D2 incomplete）** | 全ID集合RAM保持テストを合法化しない。D3 semantics は所有しない |
 | D2-S5 | `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。かつS1〜S4 ownership vectorと依存D1 bodyが揃っていること | **S1〜S5+depsが揃って初めてD2（bounded scanner）証明。Stage 5証明ではない。S2/S3/S4または5 D1 body欠落のままS5 complete禁止** |
 | D2-S6 | 新規D2 oracleを必須化しない。Stage 5 orchestration integration testはD2完了の代替にもStage 5完了の代替にもならない | S5未完了のままS6 successでD2 claim禁止 |
 
@@ -1952,3 +2061,46 @@ Each vector object（required keys）:
 **CI gate:** independent generator `check` + production bridge over every vector; S1/S2 JSON and D1 d1b3o JSON remain frozen regressions. Representative matrix is sufficient（全1549 typed vectorsの複製は不要）; closed catalog coverage assertion required。
 
 **Explicit non-claims:** D2 complete / DSR1_SCAN complete / DSR2_ESP_BOUND complete / Stage 5 / public Runtime / S4 exact-get / D3 cross-row / ESP hardware。
+
+### 17.1.4 D2-S4 exact-get oracle artifact schema ownership（Normative freeze）
+
+**Decision identifier: D2-S4（oracle schema + implementation ownership）。** S1/S2/S3 JSON および D1 `domain-store-v1.json` は **sibling frozen**（byte-for-byte; 本sliceはそれらを書き換えない）。全ID集合RAM保持テストを合法化しない。
+
+| Field | Exact value |
+| --- | --- |
+| path | `spec/vectors/domain-scan-exact-get-v1.json`（S1/S2/S3 の **sibling**; merge 禁止） |
+| format | `ninlil-domain-scan-exact-get-v1-d2s4` |
+| version | `1` |
+| independent generator | `tools/domain_scan_exact_get_vector_gen.py`（production C を invoke/translate しない。profile/NLR1 は oracle 側） |
+| production bridge | production **profiled** begin + real private `ninlil_domain_scan_exact_get` を oracle literal に対して実行（every vector） |
+
+Top-level object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `version` | number | exact `1` |
+| `format` | string | exact `ninlil-domain-scan-exact-get-v1-d2s4` |
+| `scope` | string | S4 ownership prose; must not claim DSR1/DSR2/D2/Stage5 complete |
+| `workspace` | object | S1 capacities + `ceiling_bytes=8192` + note: single 4096 value buffer reuse（second buffer 禁止） |
+| `s1_authority` | object | S1 d2s1 pin: full `sha256`（sibling frozen regression） |
+| `s2_authority` | object | S2 d2s2 pin: full `sha256` |
+| `s3_authority` | object | S3 d2s3 pin: full `sha256` |
+| `vectors` | array | exact-get seam / shape / fence / state / counter-stability cases |
+
+Each vector object（required keys）:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | stable case id |
+| `kind` | string | closed set includes at least: `present_live`, `absent`, `present_zero`, `exhausted_get`, `value_boundary`, `bts_corrupt`, `descriptor_rewrite`, `not_found_poison`, `known_port_fault`, `unknown_status`, `state_gate`, `key_shape`, `counter_stable`, `repeat_overwrite`, `profile_no_auto`, `dsr2_ceiling`, `mutation_zero` |
+| `candidate_binding` | object | typed binding for profiled begin（oracle-owned） |
+| `rows` | array | `{key_hex,value_hex}` snapshot; typically 17 profile rows + optional target row(s) |
+| `faults` | array | scripted Port faults; `op` may be `get` with 1-based `on_call` over **all** get occurrences（profile 17 + exact-get） |
+| `calls` | array | scanner API sequence: `begin_profiled` / `advance`+`row_budget` / `exact_get`+`key_hex` / `finalize` / `abort` |
+| `expected` | object | `final_status`, `adopted`, `state_after`, coarse counts, profile diagnostics, `exact_observations`（ordered list of `{status,presence,value_hex}` for each exact_get success or prevalidation reject shape as needed）, `port_trace`, `mutation_calls=0`, reopen/close, `iter_open_count` |
+
+**exact_get call object fields:** `op` exact `"exact_get"`、`key_hex`（non-empty for legal keys; may be empty/absent only for invalid-shape vectors that assert `INVALID_ARGUMENT` without Port）。
+
+**CI gate:** independent generator `check` + production bridge over every vector; S1/S2/S3 JSON and D1 d1b3o remain frozen. known-answer/hash/count pins on this artifact after generate.
+
+**Explicit non-claims:** D2 complete / DSR1_SCAN complete / DSR2_ESP_BOUND complete / Stage 5 / public Runtime / D3 relationship semantics / full-ID set / ESP hardware。
