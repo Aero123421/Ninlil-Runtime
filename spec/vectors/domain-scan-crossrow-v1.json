@@ -1,15 +1,16 @@
 {
   "version": 1,
   "format": "ninlil-domain-scan-crossrow-v1-d3s2",
-  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen 100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained; frozen 102-vector pin (100 + Mode25 slice) retained; frozen 104-vector pin (102 + Mode26 slice) retained; frozen 106-vector pin (104 + Mode24 slice) retained; frozen 108-vector pin (106 + Mode23 slice) retained as append-only prefix; Mode22 slice appends APPLICATION_FIRST live RESULT_CACHE (application_attempt_count=1) carrier + DELIVERY-owned ATTEMPT (COMMAND) stream focus (observed app=1 cancel=0 C=0; true iterator EXHAUSTED count bit0) + BIND_ATTEMPT (RESULT_CACHE carrier subject + true DELIVERY PVD/raw + ATTEMPT_ID_INDEX ABSENT peer; no FOCUS_INDEX/BIND_INDEX) COMPLETE success, and DELIVERY-owned ATTEMPT-without-RESULT_CACHE BIND carrier-ABSENT STORAGE_CORRUPT (note path, not Port fail; primary/INDEX gets must not run). Each vector is one mode per independent READ_ONLY txn; baseline once + sequential zero-prefix reopen; stream FOCUS closes only on true iterator EXHAUSTED; SHA256_COMPOSITE ATTEMPT rows complete-key lex sorted; mutation_calls=0. Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked for expected generation.",
-  "vector_count": 110,
+  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen 100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained; frozen 102-vector pin (100 + Mode25 slice) retained; frozen 104-vector pin (102 + Mode26 slice) retained; frozen 106-vector pin (104 + Mode24 slice) retained; frozen 108-vector pin (106 + Mode23 slice) retained; frozen 110-vector pin (108 + Mode22 slice) retained as append-only prefix; Mode21 slice appends live TRANSACTION_STATE (cumulative_attempts=1, cancel=0) carrier + TX-owned COMMAND ATTEMPT + matching ATTEMPT_ID_INDEX + true ANCHOR: FOCUS_ATTEMPT+FOCUS_INDEX stream (observed A=1/B=0/C=1; true iterator EXHAUSTED count bit0|bit1) + BIND_ATTEMPT (STATE carrier + ANCHOR PVD/raw + INDEX PRESENT pair) + BIND_INDEX (ANCHOR + ATTEMPT PRESENT pair; no STATE re-get) COMPLETE success, and STATE+ANCHOR+ATTEMPT without INDEX under CLEANUP_PLAN PRESENT (cleanup_skip so ordinary INDEX undercount does not preempt BIND) BIND_ATTEMPT INDEX peer ABSENT STORAGE_CORRUPT (note path; primary already proven before pair; BIND_INDEX must not run). Each vector is one mode per independent READ_ONLY txn; baseline once + sequential zero-prefix reopen; stream FOCUS closes only on true iterator EXHAUSTED; SHA256_COMPOSITE ATTEMPT rows complete-key lex sorted; mutation_calls=0. Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked for expected generation.",
+  "vector_count": 112,
   "d3s1_prefix_count": 94,
-  "d3s2_suffix_count": 16,
+  "d3s2_suffix_count": 18,
   "d3s2_100_prefix_count": 100,
   "d3s2_102_prefix_count": 102,
   "d3s2_104_prefix_count": 104,
   "d3s2_106_prefix_count": 106,
   "d3s2_108_prefix_count": 108,
+  "d3s2_110_prefix_count": 110,
   "required_kinds": [
     "begin_alias_poison",
     "begin_context_null",
@@ -89,7 +90,9 @@
     "mode20_tx_active_absent_ok",
     "mode20_tx_terminal_missing_corrupt",
     "mode20_tx_terminal_present_ok",
+    "mode21_att_without_aii_index_pair_absent_corrupt",
     "mode21_empty_carrier_empty_secondary_ok",
+    "mode21_state_cum1_att_tx_aii_anchor_ok",
     "mode22_att_without_rc_carrier_absent_corrupt",
     "mode22_empty_carrier_empty_secondary_ok",
     "mode22_rc_app1_dlv_attempt_delivery_ok",
@@ -176,31 +179,37 @@
     "vector_count": 100,
     "content_sha256": "880e4b62cf62eb667397b9c58e547298290df92c87a4308400274e9db090fc89",
     "prior_fingerprint_prefix_hash": "0d769bba784c0f2250f27d382d4150c22570095da6f12b237b9e49d2bd6c9a0c",
-    "note": "append-only freeze of prior main (94 D3S1 + 6 Mode21..26 empty-carrier smoke); Mode25/Mode26/Mode24/Mode23/Mode22 slice vectors follow"
+    "note": "append-only freeze of prior main (94 D3S1 + 6 Mode21..26 empty-carrier smoke); Mode25/Mode26/Mode24/Mode23/Mode22/Mode21 slice vectors follow"
   },
   "d3s2_102_prefix_authority": {
     "vector_count": 102,
     "content_sha256": "31bee901f9ab613cf7fe1d8e58b28a1c28ea174e8869a859d0a6c756c2ec88ea",
     "prior_fingerprint_prefix_hash": "c399e6d7a39de7792c7782ee70468f5508d984df509ed3a2b602baa8fb39e246",
-    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 slice); Mode26/Mode24/Mode23/Mode22 slice vectors follow"
+    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 slice); Mode26/Mode24/Mode23/Mode22/Mode21 slice vectors follow"
   },
   "d3s2_104_prefix_authority": {
     "vector_count": 104,
     "content_sha256": "03915c54e1e1bbfce20392d36428f5e50c03c91d016c24ec0aba0fb9d0c2f629",
     "prior_fingerprint_prefix_hash": "baac26572c63a72c3ae90cc02f56b89017100a046aebedeed734ee3fa0ed1b22",
-    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 + Mode26 slices); Mode24/Mode23/Mode22 slice vectors follow"
+    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 + Mode26 slices); Mode24/Mode23/Mode22/Mode21 slice vectors follow"
   },
   "d3s2_106_prefix_authority": {
     "vector_count": 106,
     "content_sha256": "3c5f7bfaea92ffa7a4373a48cddfb36936fac23332dfc6fe7c69e0cf5f7b88c2",
     "prior_fingerprint_prefix_hash": "dba8c377074892b934cd4417ce5a0d1bd917f93b3fa2b49ba023873b15467a1f",
-    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 + Mode26 + Mode24 slices); Mode23/Mode22 slice vectors follow"
+    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 + Mode26 + Mode24 slices); Mode23/Mode22/Mode21 slice vectors follow"
   },
   "d3s2_108_prefix_authority": {
     "vector_count": 108,
     "content_sha256": "23e504f1346c04d9a9ee6b59a5eae9bca3b52e4a4de2460c61d0ce7043efab66",
     "prior_fingerprint_prefix_hash": "724d58e23d504f65b12ab0a6dc7e4df51cfd18c1cc3be956cd4aed560a67a25a",
-    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 + Mode26 + Mode24 + Mode23 slices); Mode22 slice vectors follow"
+    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 + Mode26 + Mode24 + Mode23 slices); Mode22/Mode21 slice vectors follow"
+  },
+  "d3s2_110_prefix_authority": {
+    "vector_count": 110,
+    "content_sha256": "344f28319a7bc1cf4d1265f35e37ff3360a59d36b1799d0774b5fa7a6780c026",
+    "prior_fingerprint_prefix_hash": "8cb323608764c52243e75b5978a3e4c7bea904ba846bc72472c6f5f61a165c39",
+    "note": "append-only freeze of prior main (94 D3S1 + 6 smoke + Mode25 + Mode26 + Mode24 + Mode23 + Mode22 slices); Mode21 slice vectors follow"
   },
   "prior_fingerprints": [
     {
@@ -862,11 +871,23 @@
       "kind": "mode22_att_without_rc_carrier_absent_corrupt",
       "mode": 22,
       "fingerprint": "0922ad89d99be47f4ae8c15508b3c899e393324820e8ed584887f32db220c787"
+    },
+    {
+      "id": "D3S2_M21_STATE_CUM1_ATT_TX_AII_ANCHOR_OK",
+      "kind": "mode21_state_cum1_att_tx_aii_anchor_ok",
+      "mode": 21,
+      "fingerprint": "f0831313710591a2bbbde2b24813dfde575e4b086756afc82abbb2c046e50ae0"
+    },
+    {
+      "id": "D3S2_M21_ATT_WITHOUT_AII_INDEX_PAIR_ABSENT",
+      "kind": "mode21_att_without_aii_index_pair_absent_corrupt",
+      "mode": 21,
+      "fingerprint": "5e741f5170aa2c4b5537985142e3f8c482ef3a7fee7f82b7c529cbb3b12a72d0"
     }
   ],
-  "prior_fingerprint_prefix_hash": "8cb323608764c52243e75b5978a3e4c7bea904ba846bc72472c6f5f61a165c39",
-  "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix, the 100-vector prior main, the 102-vector prior main, the 104-vector prior main, the 106-vector prior main, and the 108-vector prior main (fingerprint/order/expected/rows/calls/full object equality). content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
-  "content_sha256": "344f28319a7bc1cf4d1265f35e37ff3360a59d36b1799d0774b5fa7a6780c026",
+  "prior_fingerprint_prefix_hash": "0a3653d5b03ad5f22be66bfb24149fe8ed434f1345d391bfb5a3d1ac39c42968",
+  "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix, the 100-vector prior main, the 102-vector prior main, the 104-vector prior main, the 106-vector prior main, the 108-vector prior main, and the 110-vector prior main (fingerprint/order/expected/rows/calls/full object equality). content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
+  "content_sha256": "519bc7465b47bc6da957e8815c112da6445a811c5fcb5b65ff9c3cd3038bff79",
   "vectors": [
     {
       "id": "D3S1_M01_SERVICE_QUOTA_PRESENT",
@@ -28120,6 +28141,952 @@
         "d3_mode_applicable_count": 1,
         "phase": 16,
         "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": 5
+      }
+    },
+    {
+      "id": "D3S2_M21_STATE_CUM1_ATT_TX_AII_ANCHOR_OK",
+      "kind": "mode21_state_cum1_att_tx_aii_anchor_ok",
+      "mode": 21,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000da081087"
+        },
+        {
+          "key_hex": "4e494e4c494c00010631010520a63b5a16c20388fe15e1e6d111421309c2ef6d6db9edc6be1d055f904dc8d533",
+          "value_hex": "4e4c52310006000100000162000131000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000102a1a2a3a4a5a6a7a8a9aaabacadaeafb000010000001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb71000000000000000000000000000099e0e1e2e3e4e5e6e7e8e9eaebecedeeefe0e1e2e3e4e5e6e7e8e9eaebecedeeef000100010000000000000000000000000000000000000001000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfefff0f1f2f3f4f5f6f7f8f9fafbfcfdfeffc0c1c2c3c4c5c6c7c8c9cacbcccdcecf00000000000000000000000100000000000000000000000000000000000000000000000000000000000000004611e25a"
+        },
+        {
+          "key_hex": "4e494e4c494c00010634010210a1a2a3a4a5a6a7a8a9aaabacadaeafb0",
+          "value_hex": "4e4c523100060001000000c4000134000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000064a1a2a3a4a5a6a7a8a9aaabacadaeafb071000000000000000000000000000099000100007bd209c92755a650841d4d9bdb1c05ba012ff05f2d6469db3a55a60d095f0c5e5152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70651c6bcf"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 21,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [
+        "DSB2_STATE_TYPED",
+        "DSB3_ATT_TX_CMD_PREP_TYPED",
+        "DSB3_AII_CMD_TYPED",
+        "DSB2_ANCHOR_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB2_STATE_TYPED",
+        "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000da081087",
+        "mutations": [
+          {
+            "offset": 199,
+            "old_hex": "00",
+            "new_hex": "01",
+            "recompute": "crc32c_trailer",
+            "directive": "byte_patch"
+          },
+          {
+            "offset": 332,
+            "old_hex": "ae",
+            "new_hex": "da",
+            "recompute": "none",
+            "directive": "byte_patch"
+          },
+          {
+            "offset": 333,
+            "old_hex": "e7",
+            "new_hex": "08",
+            "recompute": "none",
+            "directive": "byte_patch"
+          },
+          {
+            "offset": 334,
+            "old_hex": "6e",
+            "new_hex": "10",
+            "recompute": "none",
+            "directive": "byte_patch"
+          },
+          {
+            "offset": 335,
+            "old_hex": "95",
+            "new_hex": "87",
+            "recompute": "none",
+            "directive": "byte_patch"
+          }
+        ],
+        "expect_presence": "PRESENT",
+        "note": "Mode21 carrier TRANSACTION_STATE cumulative_attempts=1 (body field patched; cancel=0 via CANCEL_STATE ABSENT; ordinary CLEANUP_PLAN ABSENT path)"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB2_ANCHOR_TYPED",
+        "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "true primary ANCHOR for ATTEMPT/INDEX BIND PVD/raw"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB3_ATT_TX_CMD_PREP_TYPED",
+          "key_hex": "4e494e4c494c00010631010520a63b5a16c20388fe15e1e6d111421309c2ef6d6db9edc6be1d055f904dc8d533",
+          "value_hex": "4e4c52310006000100000162000131000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000102a1a2a3a4a5a6a7a8a9aaabacadaeafb000010000001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb71000000000000000000000000000099e0e1e2e3e4e5e6e7e8e9eaebecedeeefe0e1e2e3e4e5e6e7e8e9eaebecedeeef000100010000000000000000000000000000000000000001000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfefff0f1f2f3f4f5f6f7f8f9fafbfcfdfeffc0c1c2c3c4c5c6c7c8c9cacbcccdcecf00000000000000000000000100000000000000000000000000000000000000000000000000000000000000004611e25a",
+          "mutations": [
+            {
+              "offset": 72,
+              "old_hex": "1112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f30",
+              "new_hex": "f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea",
+              "recompute": "crc32c_trailer",
+              "directive": "write_pvd_then_crc32c"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "TX-owned COMMAND ATTEMPT secondary; PVD\u2192ANCHOR; INDEX PRESENT pair peer"
+        },
+        {
+          "binding": "d1",
+          "id": "DSB3_AII_CMD_TYPED",
+          "key_hex": "4e494e4c494c00010634010210a1a2a3a4a5a6a7a8a9aaabacadaeafb0",
+          "value_hex": "4e4c523100060001000000c4000134000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000064a1a2a3a4a5a6a7a8a9aaabacadaeafb071000000000000000000000000000099000100007bd209c92755a650841d4d9bdb1c05ba012ff05f2d6469db3a55a60d095f0c5e5152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70651c6bcf",
+          "mutations": [
+            {
+              "offset": 72,
+              "old_hex": "6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80",
+              "new_hex": "f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea",
+              "recompute": "crc32c_trailer",
+              "directive": "write_pvd_then_crc32c"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "ATTEMPT_ID_INDEX secondary; attempt_record_key_digest = KEY_DIGEST(complete TX ATTEMPT key); PVD\u2192ANCHOR"
+        }
+      ],
+      "notes": "Mode21 FOCUS_ATTEMPT+FOCUS_INDEX + BIND_ATTEMPT+BIND_INDEX success: live TRANSACTION_STATE declares cumulative_attempts=1 (cancel=0), one TX-owned COMMAND ATTEMPT, matching ATTEMPT_ID_INDEX, true ANCHOR primary. Single READ_ONLY txn; baseline once; sequential zero-prefix reopen; SELECT installs carrier with CANCEL_STATE + CLEANUP_PLAN setup gets (ABSENT ordinary path); FOCUS_ATTEMPT then FOCUS_INDEX streams close only on true iterator EXHAUSTED (H2; observed A=1 B=0 C=1; declared C=A+B); count bit0|bit1; empty SELECT then BIND_ATTEMPT proves STATE carrier subject + ANCHOR PVD/raw + INDEX PRESENT pair (attempt_id/txn/complete-key digest); BIND_INDEX proves ANCHOR + ATTEMPT PRESENT pair without STATE companion re-get; COMPLETE; mutation_calls=0. Get budget ATTEMPT\u22643 INDEX\u22642. SHA256_COMPOSITE ATTEMPT complete-key lex sorted. D1 authority rows patched via independent Python only.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (18-vector suffix on frozen 94-prefix only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 4,
+        "ok_row_count": 21,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 7,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 7,
+        "d3_mode_applicable_count": 2,
+        "phase": 15,
+        "count_complete_mask": 3,
+        "binding_complete_mask": 3,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M21_ATT_WITHOUT_AII_INDEX_PAIR_ABSENT",
+      "kind": "mode21_att_without_aii_index_pair_absent_corrupt",
+      "mode": 21,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000da081087"
+        },
+        {
+          "key_hex": "4e494e4c494c00010631010520a63b5a16c20388fe15e1e6d111421309c2ef6d6db9edc6be1d055f904dc8d533",
+          "value_hex": "4e4c52310006000100000162000131000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000102a1a2a3a4a5a6a7a8a9aaabacadaeafb000010000001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb71000000000000000000000000000099e0e1e2e3e4e5e6e7e8e9eaebecedeeefe0e1e2e3e4e5e6e7e8e9eaebecedeeef000100010000000000000000000000000000000000000001000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfefff0f1f2f3f4f5f6f7f8f9fafbfcfdfeffc0c1c2c3c4c5c6c7c8c9cacbcccdcecf00000000000000000000000100000000000000000000000000000000000000000000000000000000000000004611e25a"
+        },
+        {
+          "key_hex": "4e494e4c494c000106630105209a3b3ab4f436682207a049d1bfd76df87909cf3f1fc7c1b9e5864dfb413ac76b",
+          "value_hex": "4e4c523100060001000000ee00016300000000000000000171000000000000000000000000000099c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c40000008e00020001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfbc4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c40000000000000001000000000000000100000000000000050000000000000005000000000000000200000000000000020000000000000000a746f1fb"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 21,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE_CORRUPT"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE_CORRUPT"
+        }
+      ],
+      "d1_refs": [
+        "DSB2_STATE_TYPED",
+        "DSB3_ATT_TX_CMD_PREP_TYPED",
+        "DSB2_ANCHOR_TYPED",
+        "DSB3_CP_TX_P1_FULL_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB3_ATT_TX_CMD_PREP_TYPED",
+        "key_hex": "4e494e4c494c00010631010520a63b5a16c20388fe15e1e6d111421309c2ef6d6db9edc6be1d055f904dc8d533",
+        "value_hex": "4e4c52310006000100000162000131000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea00000102a1a2a3a4a5a6a7a8a9aaabacadaeafb000010000001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb71000000000000000000000000000099e0e1e2e3e4e5e6e7e8e9eaebecedeeefe0e1e2e3e4e5e6e7e8e9eaebecedeeef000100010000000000000000000000000000000000000001000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfefff0f1f2f3f4f5f6f7f8f9fafbfcfdfeffc0c1c2c3c4c5c6c7c8c9cacbcccdcecf00000000000000000000000100000000000000000000000000000000000000000000000000000000000000004611e25a",
+        "mutations": [
+          {
+            "offset": 72,
+            "old_hex": "1112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f30",
+            "new_hex": "f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea",
+            "recompute": "crc32c_trailer",
+            "directive": "write_pvd_then_crc32c"
+          }
+        ],
+        "expect_presence": "PRESENT",
+        "note": "TX-owned ATTEMPT secondary without matching ATTEMPT_ID_INDEX peer key"
+      },
+      "peer_ref": {
+        "binding": "none",
+        "id": "",
+        "key_hex": "",
+        "value_hex": "",
+        "mutations": [],
+        "expect_presence": "",
+        "note": "ATTEMPT_ID_INDEX pair peer exact_get ABSENT (P1-3 constructible pair fail; BIND_INDEX must not run)"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB2_STATE_TYPED",
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000da081087",
+          "mutations": [
+            {
+              "offset": 199,
+              "old_hex": "00",
+              "new_hex": "01",
+              "recompute": "crc32c_trailer",
+              "directive": "byte_patch"
+            },
+            {
+              "offset": 332,
+              "old_hex": "ae",
+              "new_hex": "da",
+              "recompute": "none",
+              "directive": "byte_patch"
+            },
+            {
+              "offset": 333,
+              "old_hex": "e7",
+              "new_hex": "08",
+              "recompute": "none",
+              "directive": "byte_patch"
+            },
+            {
+              "offset": 334,
+              "old_hex": "6e",
+              "new_hex": "10",
+              "recompute": "none",
+              "directive": "byte_patch"
+            },
+            {
+              "offset": 335,
+              "old_hex": "95",
+              "new_hex": "87",
+              "recompute": "none",
+              "directive": "byte_patch"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "carrier STATE cum=1 present (declared C would be 1)"
+        },
+        {
+          "binding": "d1",
+          "id": "DSB2_ANCHOR_TYPED",
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+          "mutations": [],
+          "expect_presence": "PRESENT",
+          "note": "true ANCHOR proven on BIND_ATTEMPT before pair ABSENT"
+        },
+        {
+          "binding": "d1",
+          "id": "DSB3_CP_TX_P1_FULL_TYPED",
+          "key_hex": "4e494e4c494c000106630105209a3b3ab4f436682207a049d1bfd76df87909cf3f1fc7c1b9e5864dfb413ac76b",
+          "value_hex": "4e4c523100060001000000ee00016300000000000000000171000000000000000000000000000099c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c40000008e00020001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfbc4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c40000000000000001000000000000000100000000000000050000000000000005000000000000000200000000000000020000000000000000a746f1fb",
+          "mutations": [],
+          "expect_presence": "PRESENT",
+          "note": "CLEANUP_PLAN PRESENT \u2192 cleanup_skip so ordinary FOCUS INDEX undercount does not preempt BIND pair proof"
+        }
+      ],
+      "notes": "Mode21 constructible INDEX pair ABSENT: STATE+ANCHOR+TX ATTEMPT exist but ATTEMPT_ID_INDEX is missing. Ordinary path would fail FOCUS_INDEX undercount (declared C=1, observed C=0) before BIND; fixture uses CLEANUP_PLAN PRESENT (same shape as unit test test_d3s2_p1_mode21_bind_index_pair_absent) so cleanup_skip defers ordinary A/B/C compare and BIND_ATTEMPT reaches INDEX peer exact_get ABSENT \u2192 note_terminal_corrupt STORAGE_CORRUPT sticky/FAILED. BIND_INDEX and further pair gets must not run. Not a Port failure path. abort; mutation_calls=0. Independent reference model \u2014 production C not used for expected.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (18-vector suffix on frozen 94-prefix only)",
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 4,
+        "ok_row_count": 21,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 6,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 5,
+        "d3_mode_applicable_count": 1,
+        "phase": 16,
+        "count_complete_mask": 3,
         "binding_complete_mask": 0,
         "flags": 5
       }
