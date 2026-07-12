@@ -76,7 +76,20 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     CLEANUP_PLAN identity/typed row on same snapshot, Mode23 forces
     cleanup_skip=0, carrier STATE PRESENT + known-slot EVIDENCE slots
     insufficient → STORAGE_CORRUPT (real ordinary path; not false skip).
-    Mode24–26 CLEANUP still-ordinary left explicit incomplete (P1-B2).
+  * P1-B2 slice (§18.13.15 case 5 residual / §18.13.8 Modes24–26): three
+    matching CLEANUP_PLAN PRESENT still-ordinary negatives (one formal
+    vector each). Mode24: live RESULT_CACHE reply_count>0 + matching
+    DELIVERY plan PRESENT + REVERSE_REPLY known-kind absent →
+    cleanup_skip forced 0 → STORAGE_CORRUPT. Mode25: retained CUM
+    total>0 + matching TX plan PRESENT + required RECENT slot absent →
+    cleanup_skip=0 → STORAGE_CORRUPT. Mode26: live EVENT_SPOOL
+    resume/discard declared>0 + matching TX plan PRESENT + MANAGEMENT
+    secondary empty → cleanup_skip=0 stream undercount STORAGE_CORRUPT.
+    Modes24–26 do not CLEANUP setup get; plan presence proven via same-
+    snapshot matching typed row + baseline visit; Port-trace /
+    d3_peer_get_count pin zero extra plan get. Checkpoints freeze
+    cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 existing +
+    22/23 P1-B1 + 24–26 this slice aligned; does not claim D3-S2 complete.
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -122,6 +135,7 @@ D3S2_P1A_SLICE_COUNT = 6
 D3S2_P1D_SLICE_COUNT = 2
 D3S2_P1D2_SLICE_COUNT = 1
 D3S2_P1B1_SLICE_COUNT = 2
+D3S2_P1B2_SLICE_COUNT = 3
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -138,8 +152,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_P1D_SLICE_COUNT
     + D3S2_P1D2_SLICE_COUNT
     + D3S2_P1B1_SLICE_COUNT
-)  # 36
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 130
+    + D3S2_P1B2_SLICE_COUNT
+)  # 39
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 133
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -428,6 +443,34 @@ D3S2_128_CONTENT_SHA256 = (
 D3S2_128_FINGERPRINT_HASH = (
     "d82f7677180fd28a866f9b763ebbb6ea52a269afe273f85e18e686460be15e66"
 )
+# Frozen 130-vector append-only prefix (128 + P1-B1) — origin/main before P1-B2.
+# content hash + fingerprint chain independently derived from origin/main
+# 130-vector artifact (full document content_sha256 / prior_fingerprint
+# chain of that release; not recomputed by rewriting published objects).
+D3S2_130_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+    + D3S2_P0C_SLICE_COUNT
+    + D3S2_P0D_SLICE_COUNT
+    + D3S2_P1A_SLICE_COUNT
+    + D3S2_P1D_SLICE_COUNT
+    + D3S2_P1D2_SLICE_COUNT
+    + D3S2_P1B1_SLICE_COUNT
+)  # 130 (origin/main freeze before P1-B2)
+D3S2_130_CONTENT_SHA256 = (
+    "eb2e32b452632e2f3ac08e7376262eb537498745f9c6dce5ccae4abcf3b4f2e6"
+)
+D3S2_130_FINGERPRINT_HASH = (
+    "7eaaa8e30709cdcbccbc81cf2a5a8f5461aef2c74e315f1b0a08864d7fab2cbf"
+)
 
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -540,6 +583,8 @@ MODE23_ACCEPTED_L = 3
 PHASE_BASELINE = 1
 PHASE_FOCUS_ATTEMPT = 3
 PHASE_FOCUS_EVIDENCE = 5
+PHASE_FOCUS_REPLY = 6
+PHASE_FOCUS_RETRY = 7
 PHASE_FOCUS_MANAGEMENT = 8
 PHASE_BIND_ATTEMPT = 9
 PHASE_COMPLETE = 15
@@ -665,6 +710,13 @@ D3S2_P1B1_KINDS = frozenset(
         "mode23_cleanup_plan_present_still_ordinary_corrupt",
     }
 )
+D3S2_P1B2_KINDS = frozenset(
+    {
+        "mode24_cleanup_plan_present_still_ordinary_corrupt",
+        "mode25_cleanup_plan_present_still_ordinary_corrupt",
+        "mode26_cleanup_plan_present_still_ordinary_corrupt",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -681,6 +733,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_P1D_KINDS
     | D3S2_P1D2_KINDS
     | D3S2_P1B1_KINDS
+    | D3S2_P1B2_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -894,8 +947,20 @@ SCOPE = (
     "adopt1; checkpoint freezes cleanup_skip=1; Port-trace/get budget pin "
     "matching CLEANUP setup get); Mode23 matching TX CLEANUP_PLAN PRESENT "
     "still-ordinary negative (cleanup_skip forced 0; STATE PRESENT + known-"
-    "slot EVIDENCE insufficient → STORAGE_CORRUPT). Mode24–26 still-ordinary "
-    "left explicit incomplete (P1-B2). "
+    "slot EVIDENCE insufficient → STORAGE_CORRUPT). "
+    "Frozen 130-vector origin/main pin retained (128 + P1-B1). P1-B2 appends "
+    "§18.13.15 case5 residual / §18.13.8 Modes24–26 still-ordinary negatives "
+    "(one formal vector each): Mode24 RC reply_count>0 + matching DELIVERY "
+    "plan + REVERSE_REPLY known-kind absent → cleanup_skip=0 STORAGE_CORRUPT; "
+    "Mode25 CUM total>0 + matching TX plan + RECENT required slot absent → "
+    "cleanup_skip=0 STORAGE_CORRUPT; Mode26 ES resume/discard>0 + matching "
+    "TX plan + MANAGEMENT empty → cleanup_skip=0 stream undercount "
+    "STORAGE_CORRUPT. Modes24–26 force cleanup_skip=0 without CLEANUP setup "
+    "get (plan presence via same-snapshot typed row + baseline visit; "
+    "Port-trace/d3_peer_get_count pin zero extra plan get). Checkpoints "
+    "freeze cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 "
+    "existing + 22/23 P1-B1 + 24–26 this slice aligned; D3-S2 complete not "
+    "claimed. "
     "Does not claim full D3-S2 oracle complete, "
     "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
     "transport begin forbidden. Independent generator — production C not "
@@ -912,7 +977,8 @@ SHA256_PROCEDURE = (
     "the 112-vector prior main, the 113-vector origin/main, the "
     "114-vector origin/main, the 115-vector origin/main, the "
     "119-vector origin/main, the 125-vector origin/main, the "
-    "127-vector origin/main, and the 128-vector origin/main "
+    "127-vector origin/main, the 128-vector origin/main, and the "
+    "130-vector origin/main "
     "(fingerprint/order/expected/rows/calls/full object equality). "
     "content_sha256 "
     "covers the document with sha256_procedure/content_sha256 fields set "
@@ -1017,6 +1083,14 @@ OWNERSHIP_P1B1 = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(36-vector suffix on frozen 128-prefix only)"
+)
+# P1-B2 ownership (39-vector suffix at P1-B2 append time). Hardcoded 39 so a
+# later append does not rewrite published P1-B2 objects.
+OWNERSHIP_P1B2 = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(39-vector suffix on frozen 130-prefix only)"
 )
 
 
@@ -6159,6 +6233,903 @@ def build_d3s2_p1b1_slice_vectors() -> List[Dict[str, Any]]:
     return vectors
 
 
+# ---------------------------------------------------------------------------
+# P1-B2 CLEANUP_PLAN still-ordinary Modes24–26 (§18.13.15 #5 residual /
+# §18.13.8). Modes24–26 force cleanup_skip=0 without CLEANUP setup get.
+# ---------------------------------------------------------------------------
+
+
+def _mode24_cleanup_plan_still_ordinary_material() -> Tuple[
+    List[Dict[str, str]], Dict[str, Dict[str, str]], bytes
+]:
+    """DELIVERY + RESULT_CACHE(reply_count=1) + matching DELIVERY CLEANUP_PLAN.
+
+    Zero REVERSE_REPLY. Mode24 forces cleanup_skip=0; known-kind matrix notes
+    ordinary reply undercount (declared A=1, observed A=0).
+    """
+    _assert_d1_authority_pin()
+    cat = _d1_catalog()
+    dlv = cat[D1_DLV_ID]
+    rc = cat[D1_RC_ID]
+    cp = cat[D1_CP_DLV_ID]
+
+    dlv_key = from_hex(dlv["key_hex"])
+    dlv_val = from_hex(dlv["value_hex"])
+    dlv_pvd = _d3s1.value_digest(dlv_val)
+    dlv_kd = _d3s1.key_digest(dlv_key)
+    dlv_draw, dlv_txn, _pid = _parse_delivery_raw_and_primary(dlv_val)
+
+    rc_key = from_hex(rc["key_hex"])
+    rc_val = _patch_rc_reply_count(from_hex(rc["value_hex"]), 1)
+    rc_val = _d3s1.patch_pvd(rc_val, dlv_pvd)
+    reply_n, rc_draw, rc_txn = _parse_rc_reply_count_and_delivery(rc_val)
+    if reply_n != 1:
+        raise SystemExit(
+            f"Mode24 still-ordinary RC reply_count must be 1, got {reply_n}"
+        )
+    if rc_draw != dlv_draw or rc_txn != dlv_txn:
+        raise SystemExit("Mode24 still-ordinary RC/DELIVERY identity mismatch")
+    if _d3s1.domain_value_framing(rc_val) != "current":
+        raise SystemExit("Mode24 still-ordinary RC framing not current")
+
+    cp_key = from_hex(cp["key_hex"])
+    cp_val = from_hex(cp["value_hex"])
+    sk, phase, _raw, subj_pkd, _subj_pvd = _parse_cleanup_plan_subject(cp_val)
+    if sk != 3:
+        raise SystemExit(
+            f"Mode24 still-ordinary CP subject_kind must be 3 (DLV), got {sk}"
+        )
+    if phase < 1:
+        raise SystemExit("Mode24 still-ordinary CP phase must be >=1")
+    if subj_pkd != dlv_kd:
+        raise SystemExit(
+            "Mode24 still-ordinary CP subject_primary_key_digest must equal "
+            "KEY_DIGEST(complete DELIVERY key)"
+        )
+    rebuilt = _rebuild_cleanup_plan_key(3, dlv_kd)
+    if rebuilt != cp_key:
+        raise SystemExit("Mode24 still-ordinary CLEANUP_PLAN key rebuild mismatch")
+
+    named: Dict[str, Dict[str, str]] = {
+        "delivery": {"key_hex": hex_of(dlv_key), "value_hex": hex_of(dlv_val)},
+        "rc": {"key_hex": hex_of(rc_key), "value_hex": hex_of(rc_val)},
+        "cp": {"key_hex": hex_of(cp_key), "value_hex": hex_of(cp_val)},
+    }
+    domain_rows = [named["delivery"], named["rc"], named["cp"]]
+    binding = _d3s1.default_binding_fields()
+    profile = _d3s1.encode_all_profile_rows(binding)
+    all_rows = sorted(
+        list(profile) + list(domain_rows), key=lambda r: from_hex(r["key_hex"])
+    )
+    for r in all_rows:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x42:
+            raise SystemExit("Mode24 still-ordinary must not ship REVERSE_REPLY")
+    cp_n = sum(
+        1
+        for r in all_rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x63
+    )
+    if cp_n != 1:
+        raise SystemExit(
+            f"Mode24 still-ordinary must ship exact 1 CLEANUP_PLAN, got {cp_n}"
+        )
+    order = [
+        from_hex(r["key_hex"])[9]
+        for r in all_rows
+        if len(from_hex(r["key_hex"])) >= 10 and from_hex(r["key_hex"])[8] == 6
+    ]
+    if order != [0x40, 0x41, 0x63]:
+        raise SystemExit(f"Mode24 still-ordinary domain order pin fail: {order}")
+    return all_rows, named, dlv_pvd
+
+
+def run_d3s2_mode24_cleanup_plan_still_ordinary_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode24: RC reply=1 + matching DLV CLEANUP_PLAN + zero RR → CORRUPT.
+
+    Modes24 force cleanup_skip=0 (no CLEANUP setup get). Known-kind matrix
+    (closed kinds 1..4) observes 0 vs declared reply_count=1 →
+    note_terminal_corrupt STORAGE_CORRUPT. Checkpoint freezes cleanup_skip=0.
+    """
+    n_ok = len(rows)
+    if n_ok != 20:
+        raise SystemExit(
+            f"mode24 still-ordinary expects 20 rows (17+DLV+RC+CP), got {n_ok}"
+        )
+    rc_rows = [
+        r
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x41
+    ]
+    if len(rc_rows) != 1:
+        raise SystemExit(
+            f"mode24 still-ordinary expects exact 1 RESULT_CACHE, got {len(rc_rows)}"
+        )
+    rc_key = from_hex(rc_rows[0]["key_hex"])
+    rc_key_len = len(rc_key)
+    if rc_key_len == 0 or rc_key_len > 45:
+        raise SystemExit(f"RC carrier key_len invalid: {rc_key_len}")
+
+    n_kinds = 4  # closed reply_kind 1..4
+    n_drive = 2
+    n_open = 2
+    walk = _walk_trace_segment(n_ok)
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT residual + known-kind matrix (4 ABSENT) → CORRUPT
+    # Mode24 forces cleanup_skip=0 without CLEANUP setup get.
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * n_kinds)
+    cp_trace_count = len(port_trace)
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    checkpoint_drive: Dict[str, Any] = {
+        "op": "d3s2_drive",
+        "row_budget": 256,
+        "expected_status": "STORAGE_CORRUPT",
+        "has_checkpoint": 1,
+        "cp_phase": PHASE_FAILED,
+        "cp_focus_live": 1,
+        "cp_observed_a": 0,
+        "cp_observed_b": 0,
+        "cp_observed_c": 0,
+        "cp_count_complete_mask": 0,
+        "cp_binding_complete_mask": 0,
+        "cp_flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        "cp_pass_kind": PASS_INTERNAL,
+        "cp_cleanup_skip": 0,
+        "cp_last_carrier_key_len": rc_key_len,
+        "cp_last_carrier_key_hex": hex_of(rc_key),
+        "cp_begin_calls": 1,
+        "cp_iter_open_calls": 2,
+        "cp_iter_close_calls": 1,
+        "cp_trace_count": cp_trace_count,
+    }
+    if int(checkpoint_drive["cp_cleanup_skip"]) != 0:
+        raise SystemExit("mode24 still-ordinary checkpoint must freeze cleanup_skip=0")
+    if int(checkpoint_drive["cp_phase"]) != PHASE_FAILED:
+        raise SystemExit("mode24 still-ordinary checkpoint phase must be FAILED")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 24, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        checkpoint_drive,
+        {"op": "abort", "expected_status": "STORAGE_CORRUPT"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("mode24 still-ordinary drive count drift")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,  # DELIVERY + RC + CP
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": n_kinds,  # known-kind only; no CLEANUP setup get
+        "d3_mode_applicable_count": 0,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("mode24 still-ordinary port_trace must be single-txn")
+    if port_trace.count("get") != 17 + n_kinds:
+        raise SystemExit(
+            f"mode24 still-ordinary must have 17 profile + {n_kinds} kind gets, "
+            f"got {port_trace.count('get')}"
+        )
+    _ = binding
+    return calls, expected
+
+
+def _mode25_cleanup_plan_still_ordinary_material() -> Tuple[
+    List[Dict[str, str]], Dict[str, Dict[str, str]], bytes
+]:
+    """ANCHOR + CUM(total=1) + matching TX CLEANUP_PLAN; zero RECENT.
+
+    Mode25 forces cleanup_skip=0; known-slot matrix notes RECENT undercount
+    (declared recent_n=1, observed RECENT=0) while CUM self is PRESENT.
+    """
+    _assert_d1_authority_pin()
+    cat = _d1_catalog()
+    anchor = cat[D1_ANCHOR_ID]
+    cum = cat[D1_CUM_ID]
+    cp = cat[D1_CP_TX_ID]
+
+    anchor_key = from_hex(anchor["key_hex"])
+    anchor_val = from_hex(anchor["value_hex"])
+    anchor_pvd = _d3s1.value_digest(anchor_val)
+    anchor_kd = _d3s1.key_digest(anchor_key)
+
+    cum_key = from_hex(cum["key_hex"])
+    cum_val = _patch_cum_total_completed(from_hex(cum["value_hex"]), 1)
+    cum_val = _d3s1.patch_pvd(cum_val, anchor_pvd)
+    st_c, body_c, _ = _d3s1.extract_envelope(cum_val)
+    if st_c != 0x51:
+        raise SystemExit("Mode25 still-ordinary CUM subtype fail")
+    total = struct.unpack_from(">Q", body_c, 20)[0]
+    kind = struct.unpack_from(">H", body_c, 16)[0]
+    slot = struct.unpack_from(">H", body_c, 18)[0]
+    if total != 1 or kind != 1 or slot != 0:
+        raise SystemExit(
+            f"Mode25 still-ordinary CUM must be kind=1 slot=0 total=1, "
+            f"got kind={kind} slot={slot} total={total}"
+        )
+
+    cp_key = from_hex(cp["key_hex"])
+    cp_val = from_hex(cp["value_hex"])
+    sk, phase, subject_raw, subj_pkd, _subj_pvd = _parse_cleanup_plan_subject(cp_val)
+    if sk != 2:
+        raise SystemExit(
+            f"Mode25 still-ordinary CP subject_kind must be 2 (TX), got {sk}"
+        )
+    if phase < 1:
+        raise SystemExit("Mode25 still-ordinary CP phase must be >=1")
+    if subj_pkd != anchor_kd:
+        raise SystemExit(
+            "Mode25 still-ordinary CP subject_primary_key_digest must equal "
+            "KEY_DIGEST(complete ANCHOR key)"
+        )
+    rebuilt = _rebuild_cleanup_plan_key(2, anchor_kd)
+    if rebuilt != cp_key:
+        raise SystemExit("Mode25 still-ordinary CLEANUP_PLAN key rebuild mismatch")
+    if len(subject_raw) != 16:
+        raise SystemExit(
+            f"Mode25 still-ordinary CP TX subject_key_raw must be 16, got "
+            f"{len(subject_raw)}"
+        )
+
+    named: Dict[str, Dict[str, str]] = {
+        "anchor": {
+            "key_hex": hex_of(anchor_key),
+            "value_hex": hex_of(anchor_val),
+        },
+        "cum": {"key_hex": hex_of(cum_key), "value_hex": hex_of(cum_val)},
+        "cp": {"key_hex": hex_of(cp_key), "value_hex": hex_of(cp_val)},
+    }
+    domain_rows = [named["anchor"], named["cum"], named["cp"]]
+    binding = _d3s1.default_binding_fields()
+    profile = _d3s1.encode_all_profile_rows(binding)
+    all_rows = sorted(
+        list(profile) + list(domain_rows), key=lambda r: from_hex(r["key_hex"])
+    )
+    # Forbid RECENT (kind=2) RETRY rows: only CUM (kind=1) allowed.
+    for r in all_rows:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x51:
+            st_r, body_r, _ = _d3s1.extract_envelope(from_hex(r["value_hex"]))
+            if st_r != 0x51:
+                raise SystemExit("Mode25 still-ordinary RETRY subtype fail")
+            rk = struct.unpack_from(">H", body_r, 16)[0]
+            if rk == RS_KIND_RECENT:
+                raise SystemExit("Mode25 still-ordinary must not ship RECENT")
+    cp_n = sum(
+        1
+        for r in all_rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x63
+    )
+    if cp_n != 1:
+        raise SystemExit(
+            f"Mode25 still-ordinary must ship exact 1 CLEANUP_PLAN, got {cp_n}"
+        )
+    _ = anchor_pvd
+    return all_rows, named, anchor_pvd
+
+
+def run_d3s2_mode25_cleanup_plan_still_ordinary_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode25: CUM total=1 + matching TX CLEANUP_PLAN + zero RECENT → CORRUPT.
+
+    Modes25 force cleanup_skip=0 (no CLEANUP setup get). Known-slot matrix
+    (CUM + RECENT 0..3) observes RECENT=0 vs declared recent_n=1 →
+    STORAGE_CORRUPT. Checkpoint freezes cleanup_skip=0 / observed_c=1 (CUM).
+    """
+    n_ok = len(rows)
+    if n_ok != 20:
+        raise SystemExit(
+            f"mode25 still-ordinary expects 20 rows (17+ANCHOR+CUM+CP), got {n_ok}"
+        )
+    cum_rows = [
+        r
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x51
+    ]
+    if len(cum_rows) != 1:
+        raise SystemExit(
+            f"mode25 still-ordinary expects exact 1 RETRY CUM, got {len(cum_rows)}"
+        )
+    cum_key = from_hex(cum_rows[0]["key_hex"])
+    cum_key_len = len(cum_key)
+    if cum_key_len == 0 or cum_key_len > 45:
+        raise SystemExit(f"CUM carrier key_len invalid: {cum_key_len}")
+
+    n_slots = 5  # CUM + RECENT 0..3
+    n_drive = 2
+    n_open = 2
+    walk = _walk_trace_segment(n_ok)
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT residual + known-slot matrix → CORRUPT
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * n_slots)
+    cp_trace_count = len(port_trace)
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    checkpoint_drive: Dict[str, Any] = {
+        "op": "d3s2_drive",
+        "row_budget": 256,
+        "expected_status": "STORAGE_CORRUPT",
+        "has_checkpoint": 1,
+        "cp_phase": PHASE_FAILED,
+        "cp_focus_live": 1,
+        "cp_observed_a": 0,  # RECENT count
+        "cp_observed_b": 0,
+        "cp_observed_c": 1,  # CUM PRESENT
+        "cp_count_complete_mask": 0,
+        "cp_binding_complete_mask": 0,
+        "cp_flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        "cp_pass_kind": PASS_INTERNAL,
+        "cp_cleanup_skip": 0,
+        "cp_last_carrier_key_len": cum_key_len,
+        "cp_last_carrier_key_hex": hex_of(cum_key),
+        "cp_begin_calls": 1,
+        "cp_iter_open_calls": 2,
+        "cp_iter_close_calls": 1,
+        "cp_trace_count": cp_trace_count,
+    }
+    if int(checkpoint_drive["cp_cleanup_skip"]) != 0:
+        raise SystemExit("mode25 still-ordinary checkpoint must freeze cleanup_skip=0")
+    if int(checkpoint_drive["cp_phase"]) != PHASE_FAILED:
+        raise SystemExit("mode25 still-ordinary checkpoint phase must be FAILED")
+    if int(checkpoint_drive["cp_observed_c"]) != 1:
+        raise SystemExit("mode25 still-ordinary checkpoint must freeze CUM observed_c=1")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 25, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        checkpoint_drive,
+        {"op": "abort", "expected_status": "STORAGE_CORRUPT"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("mode25 still-ordinary drive count drift")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,  # ANCHOR + CUM + CP
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": n_slots,  # known-slot only; no CLEANUP setup get
+        "d3_mode_applicable_count": 0,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("mode25 still-ordinary port_trace must be single-txn")
+    if port_trace.count("get") != 17 + n_slots:
+        raise SystemExit(
+            f"mode25 still-ordinary must have 17 profile + {n_slots} slot gets, "
+            f"got {port_trace.count('get')}"
+        )
+    _ = binding
+    return calls, expected
+
+
+def _mode26_cleanup_plan_still_ordinary_material() -> Tuple[
+    List[Dict[str, str]], Dict[str, Dict[str, str]], bytes
+]:
+    """ANCHOR + EVENT_SPOOL(resume=1) + matching TX CLEANUP_PLAN; zero MGMT.
+
+    Mode26 forces cleanup_skip=0; stream FOCUS notes MANAGEMENT undercount
+    (declared A=resume+discard=1, observed A=0).
+    """
+    _assert_d1_authority_pin()
+    cat = _d1_catalog()
+    anchor = cat[D1_ANCHOR_ID]
+    es = cat[D1_ES_ID]
+    cp = cat[D1_CP_TX_ID]
+
+    anchor_key = from_hex(anchor["key_hex"])
+    anchor_val = from_hex(anchor["value_hex"])
+    anchor_pvd = _d3s1.value_digest(anchor_val)
+    anchor_kd = _d3s1.key_digest(anchor_key)
+    anchor_tx = anchor_key[13:29]
+    if len(anchor_tx) != 16:
+        raise SystemExit("Mode26 still-ordinary ANCHOR ID128 must be exact 16")
+
+    es_key = from_hex(es["key_hex"])
+    es_val = _patch_es_resume_discard(
+        from_hex(es["value_hex"]), resume=1, discard=0
+    )
+    es_val = _d3s1.patch_pvd(es_val, anchor_pvd)
+    got_r, got_d = _parse_es_resume_discard(es_val)
+    if got_r != 1 or got_d != 0:
+        raise SystemExit(
+            f"Mode26 still-ordinary ES must be resume=1 discard=0, "
+            f"got {got_r}/{got_d}"
+        )
+    es_tx = _d3s1.extract_envelope(es_val)[1][:16]
+    if es_tx != anchor_tx:
+        raise SystemExit("Mode26 still-ordinary EVENT_SPOOL tx must match ANCHOR")
+
+    cp_key = from_hex(cp["key_hex"])
+    cp_val = from_hex(cp["value_hex"])
+    sk, phase, subject_raw, subj_pkd, _subj_pvd = _parse_cleanup_plan_subject(cp_val)
+    if sk != 2:
+        raise SystemExit(
+            f"Mode26 still-ordinary CP subject_kind must be 2 (TX), got {sk}"
+        )
+    if phase < 1:
+        raise SystemExit("Mode26 still-ordinary CP phase must be >=1")
+    if subj_pkd != anchor_kd:
+        raise SystemExit(
+            "Mode26 still-ordinary CP subject_primary_key_digest must equal "
+            "KEY_DIGEST(complete ANCHOR key)"
+        )
+    rebuilt = _rebuild_cleanup_plan_key(2, anchor_kd)
+    if rebuilt != cp_key:
+        raise SystemExit("Mode26 still-ordinary CLEANUP_PLAN key rebuild mismatch")
+    if len(subject_raw) != 16:
+        raise SystemExit(
+            f"Mode26 still-ordinary CP TX subject_key_raw must be 16, got "
+            f"{len(subject_raw)}"
+        )
+
+    named: Dict[str, Dict[str, str]] = {
+        "anchor": {
+            "key_hex": hex_of(anchor_key),
+            "value_hex": hex_of(anchor_val),
+        },
+        "es": {"key_hex": hex_of(es_key), "value_hex": hex_of(es_val)},
+        "cp": {"key_hex": hex_of(cp_key), "value_hex": hex_of(cp_val)},
+    }
+    domain_rows = [named["anchor"], named["es"], named["cp"]]
+    binding = _d3s1.default_binding_fields()
+    profile = _d3s1.encode_all_profile_rows(binding)
+    all_rows = sorted(
+        list(profile) + list(domain_rows), key=lambda r: from_hex(r["key_hex"])
+    )
+    for r in all_rows:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x52:
+            raise SystemExit(
+                "Mode26 still-ordinary must not ship MANAGEMENT_LEDGER"
+            )
+    cp_n = sum(
+        1
+        for r in all_rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x63
+    )
+    if cp_n != 1:
+        raise SystemExit(
+            f"Mode26 still-ordinary must ship exact 1 CLEANUP_PLAN, got {cp_n}"
+        )
+    order = [
+        from_hex(r["key_hex"])[9]
+        for r in all_rows
+        if len(from_hex(r["key_hex"])) >= 10 and from_hex(r["key_hex"])[8] == 6
+    ]
+    if order != [0x20, 0x50, 0x63]:
+        raise SystemExit(f"Mode26 still-ordinary domain order pin fail: {order}")
+    return all_rows, named, anchor_pvd
+
+
+def run_d3s2_mode26_cleanup_plan_still_ordinary_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode26: ES resume=1 + matching TX CLEANUP_PLAN + empty MGMT → CORRUPT.
+
+    Modes26 force cleanup_skip=0 (no CLEANUP setup get). Stream FOCUS
+    observes A=0 vs declared resume+discard=1 → STORAGE_CORRUPT.
+    Checkpoint freezes cleanup_skip=0 on the failing FOCUS drive.
+    """
+    n_ok = len(rows)
+    if n_ok != 20:
+        raise SystemExit(
+            f"mode26 still-ordinary expects 20 rows (17+ANCHOR+ES+CP), got {n_ok}"
+        )
+    es_rows = [
+        r
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x50
+    ]
+    if len(es_rows) != 1:
+        raise SystemExit(
+            f"mode26 still-ordinary expects exact 1 EVENT_SPOOL, got {len(es_rows)}"
+        )
+    es_key = from_hex(es_rows[0]["key_hex"])
+    es_key_len = len(es_key)
+    if es_key_len == 0 or es_key_len > 45:
+        raise SystemExit(f"ES carrier key_len invalid: {es_key_len}")
+
+    n_drive = 3
+    n_open = 3
+    walk = _walk_trace_segment(n_ok)
+
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT residual (no Mode26 CLEANUP setup get) → reopen FOCUS
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive3 FOCUS_MANAGEMENT stream empty undercount → CORRUPT
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    cp_trace_count = len(port_trace)
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    checkpoint_drive: Dict[str, Any] = {
+        "op": "d3s2_drive",
+        "row_budget": 256,
+        "expected_status": "STORAGE_CORRUPT",
+        "has_checkpoint": 1,
+        "cp_phase": PHASE_FAILED,
+        "cp_focus_live": 1,
+        "cp_observed_a": 0,
+        "cp_observed_b": 0,
+        "cp_observed_c": 0,
+        "cp_count_complete_mask": 0,
+        "cp_binding_complete_mask": 0,
+        "cp_flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        "cp_pass_kind": PASS_INTERNAL,
+        "cp_cleanup_skip": 0,
+        "cp_last_carrier_key_len": es_key_len,
+        "cp_last_carrier_key_hex": hex_of(es_key),
+        "cp_begin_calls": 1,
+        "cp_iter_open_calls": 3,
+        "cp_iter_close_calls": 2,
+        "cp_trace_count": cp_trace_count,
+    }
+    if int(checkpoint_drive["cp_cleanup_skip"]) != 0:
+        raise SystemExit("mode26 still-ordinary checkpoint must freeze cleanup_skip=0")
+    if int(checkpoint_drive["cp_phase"]) != PHASE_FAILED:
+        raise SystemExit("mode26 still-ordinary checkpoint phase must be FAILED")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 26, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        checkpoint_drive,
+        {"op": "abort", "expected_status": "STORAGE_CORRUPT"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("mode26 still-ordinary drive count drift")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,  # ANCHOR + ES + CP
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        # stream FOCUS uses 0 exact_get; no CLEANUP setup get for Mode26
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("mode26 still-ordinary port_trace must be single-txn")
+    # begin profile 17 only (no CLEANUP setup get; stream 0 peer gets).
+    if port_trace.count("get") != 17:
+        raise SystemExit(
+            f"mode26 still-ordinary must have 17 profile gets only "
+            f"(no CLEANUP setup), got {port_trace.count('get')}"
+        )
+    _ = binding
+    return calls, expected
+
+
+def build_d3s2_p1b2_slice_vectors() -> List[Dict[str, Any]]:
+    """P1-B2 append-only slice (3 vectors) after the frozen 130-prefix.
+
+    Mode24/25/26 CLEANUP_PLAN PRESENT still-ordinary negatives (case5 residual).
+    """
+    _assert_d1_authority_pin()
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    # A) Mode24 still-ordinary negative
+    rows_a, named_a, _pvd_a = _mode24_cleanup_plan_still_ordinary_material()
+    reply_n, rc_draw, _rc_txn = _parse_rc_reply_count_and_delivery(
+        from_hex(named_a["rc"]["value_hex"])
+    )
+    dlv_draw, _dlv_txn, _pid = _parse_delivery_raw_and_primary(
+        from_hex(named_a["delivery"]["value_hex"])
+    )
+    if reply_n != 1 or rc_draw != dlv_draw:
+        raise SystemExit("P1-B2 Mode24 material identity self-check fail")
+    calls_a, exp_a = run_d3s2_mode24_cleanup_plan_still_ordinary_corrupt(
+        binding, rows_a
+    )
+    cp_a = [c for c in calls_a if int(c.get("has_checkpoint", 0)) == 1]
+    if len(cp_a) != 1 or int(cp_a[0]["cp_cleanup_skip"]) != 0:
+        raise SystemExit("P1-B2 Mode24 expects checkpoint cleanup_skip=0")
+    if exp_a.get("final_status") != "STORAGE_CORRUPT":
+        raise SystemExit("P1-B2 Mode24 must be STORAGE_CORRUPT")
+    vectors.append(
+        {
+            "id": "D3S2_M24_CLEANUP_PLAN_PRESENT_STILL_ORDINARY_CORRUPT",
+            "kind": "mode24_cleanup_plan_present_still_ordinary_corrupt",
+            "mode": 24,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_a),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_a,
+            "d1_refs": [D1_RC_ID, D1_DLV_ID, D1_CP_DLV_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_RC_ID,
+                row=named_a["rc"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode24 carrier RESULT_CACHE reply_count=1; ordinary "
+                    "known-kind REVERSE_REPLY presence required"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_CP_DLV_ID,
+                row=named_a["cp"],
+                expect_presence="PRESENT",
+                note=(
+                    "matching DELIVERY CLEANUP_PLAN (subject_kind=3 || "
+                    "KEY_DIGEST(complete DELIVERY key)); Mode24 forces "
+                    "cleanup_skip=0 (no ordinary skip; no CLEANUP setup get)"
+                ),
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_DLV_ID,
+                    row=named_a["delivery"],
+                    expect_presence="PRESENT",
+                    note="true primary DELIVERY subject of matching CLEANUP_PLAN",
+                )
+            ],
+            "notes": (
+                "P1-B2 formal (§18.13.15 case5 residual / §18.13.8 Mode24): "
+                "live RESULT_CACHE declares reply_count=1 with matching "
+                "DELIVERY CLEANUP_PLAN PRESENT on same snapshot, but Mode24 "
+                "forces cleanup_skip=0 and still applies ordinary known-kind "
+                "REVERSE_REPLY presence matrix (closed kinds 1..4). Zero "
+                "REVERSE_REPLY → observed A=0 != declared 1 → "
+                "note_terminal_corrupt STORAGE_CORRUPT (real ordinary path; "
+                "not false skip / false success). Plan row is independent D1 "
+                "typed CLEANUP_PLAN keyed by KEY_DIGEST(DELIVERY complete "
+                "key). Call-level checkpoint on the CORRUPT drive freezes "
+                "cleanup_skip=0 / phase FAILED / FOCUS_LIVE + spy counts. "
+                "Port-trace pins 4 known-kind gets and zero CLEANUP setup "
+                "get. Single READ_ONLY txn; mutation_calls=0; faults=[]."
+            ),
+            "ownership": OWNERSHIP_P1B2,
+            "expected": exp_a,
+        }
+    )
+
+    # B) Mode25 still-ordinary negative
+    rows_b, named_b, _pvd_b = _mode25_cleanup_plan_still_ordinary_material()
+    calls_b, exp_b = run_d3s2_mode25_cleanup_plan_still_ordinary_corrupt(
+        binding, rows_b
+    )
+    cp_b = [c for c in calls_b if int(c.get("has_checkpoint", 0)) == 1]
+    if len(cp_b) != 1 or int(cp_b[0]["cp_cleanup_skip"]) != 0:
+        raise SystemExit("P1-B2 Mode25 expects checkpoint cleanup_skip=0")
+    if int(cp_b[0]["cp_observed_c"]) != 1:
+        raise SystemExit("P1-B2 Mode25 expects checkpoint observed_c=1 (CUM)")
+    if exp_b.get("final_status") != "STORAGE_CORRUPT":
+        raise SystemExit("P1-B2 Mode25 must be STORAGE_CORRUPT")
+    vectors.append(
+        {
+            "id": "D3S2_M25_CLEANUP_PLAN_PRESENT_STILL_ORDINARY_CORRUPT",
+            "kind": "mode25_cleanup_plan_present_still_ordinary_corrupt",
+            "mode": 25,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_b),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_b,
+            "d1_refs": [D1_CUM_ID, D1_ANCHOR_ID, D1_CP_TX_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_CUM_ID,
+                row=named_b["cum"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode25 carrier RETRY CUM total_completed_cycle_count=1; "
+                    "ordinary RECENT slot presence required (recent_n=1)"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_CP_TX_ID,
+                row=named_b["cp"],
+                expect_presence="PRESENT",
+                note=(
+                    "matching TX CLEANUP_PLAN (subject_kind=2 || "
+                    "KEY_DIGEST(complete ANCHOR key)); Mode25 forces "
+                    "cleanup_skip=0 (no ordinary skip; no CLEANUP setup get)"
+                ),
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named_b["anchor"],
+                    expect_presence="PRESENT",
+                    note="true primary ANCHOR subject of matching CLEANUP_PLAN",
+                )
+            ],
+            "notes": (
+                "P1-B2 formal (§18.13.15 case5 residual / §18.13.8 Mode25): "
+                "retained CUM total=1 with matching TX CLEANUP_PLAN PRESENT "
+                "on same snapshot, but Mode25 forces cleanup_skip=0 and still "
+                "applies ordinary known-slot RECENT presence matrix. Zero "
+                "RECENT while declared recent_n=1 → STORAGE_CORRUPT (CUM "
+                "self PRESENT so observed_c=1; RECENT observed_a=0). Plan "
+                "row is independent D1 typed CLEANUP_PLAN keyed by "
+                "KEY_DIGEST(ANCHOR complete key). Checkpoint freezes "
+                "cleanup_skip=0 / phase FAILED / FOCUS_LIVE / observed_c=1. "
+                "Port-trace pins 5 known-slot gets (CUM+RECENT0..3) and zero "
+                "CLEANUP setup get. Single READ_ONLY txn; mutation_calls=0."
+            ),
+            "ownership": OWNERSHIP_P1B2,
+            "expected": exp_b,
+        }
+    )
+
+    # C) Mode26 still-ordinary negative
+    rows_c, named_c, _pvd_c = _mode26_cleanup_plan_still_ordinary_material()
+    resume_c, discard_c = _parse_es_resume_discard(
+        from_hex(named_c["es"]["value_hex"])
+    )
+    if resume_c + discard_c != 1:
+        raise SystemExit("P1-B2 Mode26 ES declared total must be 1")
+    calls_c, exp_c = run_d3s2_mode26_cleanup_plan_still_ordinary_corrupt(
+        binding, rows_c
+    )
+    cp_c = [c for c in calls_c if int(c.get("has_checkpoint", 0)) == 1]
+    if len(cp_c) != 1 or int(cp_c[0]["cp_cleanup_skip"]) != 0:
+        raise SystemExit("P1-B2 Mode26 expects checkpoint cleanup_skip=0")
+    if exp_c.get("final_status") != "STORAGE_CORRUPT":
+        raise SystemExit("P1-B2 Mode26 must be STORAGE_CORRUPT")
+    vectors.append(
+        {
+            "id": "D3S2_M26_CLEANUP_PLAN_PRESENT_STILL_ORDINARY_CORRUPT",
+            "kind": "mode26_cleanup_plan_present_still_ordinary_corrupt",
+            "mode": 26,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_c),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_c,
+            "d1_refs": [D1_ES_ID, D1_ANCHOR_ID, D1_CP_TX_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_ES_ID,
+                row=named_c["es"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode26 carrier EVENT_SPOOL resume=1 discard=0 "
+                    "(declared A=1); ordinary MANAGEMENT stream required"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_CP_TX_ID,
+                row=named_c["cp"],
+                expect_presence="PRESENT",
+                note=(
+                    "matching TX CLEANUP_PLAN (subject_kind=2 || "
+                    "KEY_DIGEST(complete ANCHOR key)); Mode26 forces "
+                    "cleanup_skip=0 (no ordinary skip; no CLEANUP setup get)"
+                ),
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named_c["anchor"],
+                    expect_presence="PRESENT",
+                    note="true primary ANCHOR subject of matching CLEANUP_PLAN",
+                )
+            ],
+            "notes": (
+                "P1-B2 formal (§18.13.15 case5 residual / §18.13.8 Mode26): "
+                "live EVENT_SPOOL declares resume+discard=1 with matching TX "
+                "CLEANUP_PLAN PRESENT on same snapshot (carrier/true-primary "
+                "subject), but Mode26 forces cleanup_skip=0 and still applies "
+                "ordinary MANAGEMENT stream cardinality. Empty MANAGEMENT "
+                "secondary band → observed A=0 != declared 1 → stream "
+                "undercount STORAGE_CORRUPT. Plan row is independent D1 typed "
+                "CLEANUP_PLAN keyed by KEY_DIGEST(ANCHOR complete key). "
+                "Checkpoint freezes cleanup_skip=0 / phase FAILED / "
+                "FOCUS_LIVE. Port-trace pins zero CLEANUP setup get and zero "
+                "stream peer gets (d3_peer_get_count=0). Single READ_ONLY "
+                "txn; mutation_calls=0; faults=[]. Case5 Mode21 existing + "
+                "22/23 P1-B1 + 24–26 this slice aligned; D3-S2 complete not "
+                "claimed."
+            ),
+            "ownership": OWNERSHIP_P1B2,
+            "expected": exp_c,
+        }
+    )
+
+    if len(vectors) != D3S2_P1B2_SLICE_COUNT:
+        raise SystemExit("p1b2 slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P1B2_KINDS:
+        raise SystemExit(f"p1b2 kinds inventory mismatch: {kinds}")
+    return vectors
+
+
 def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
     vectors = (
         build_d3s2_smoke_vectors()
@@ -6176,6 +7147,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_p1d_slice_vectors()
         + build_d3s2_p1d2_slice_vectors()
         + build_d3s2_p1b1_slice_vectors()
+        + build_d3s2_p1b2_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -6277,6 +7249,7 @@ def build_document() -> Dict[str, Any]:
     p1d_vectors = build_d3s2_p1d_slice_vectors()
     p1d2_vectors = build_d3s2_p1d2_slice_vectors()
     p1b1_vectors = build_d3s2_p1b1_slice_vectors()
+    p1b2_vectors = build_d3s2_p1b2_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -6293,6 +7266,7 @@ def build_document() -> Dict[str, Any]:
         + p1d_vectors
         + p1d2_vectors
         + p1b1_vectors
+        + p1b2_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -6440,6 +7414,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_twenty_eight_hash})"
         )
 
+    # Retained 130-vector chain pin (128 + P1-B1 = origin/main before P1-B2).
+    hundred_thirty_hash = _chain_hash(
+        prior_fingerprints[:D3S2_130_PREFIX_COUNT]
+    )
+    if hundred_thirty_hash != D3S2_130_FINGERPRINT_HASH:
+        raise SystemExit(
+            "130-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_thirty_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -6465,6 +7449,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_125_prefix_count": D3S2_125_PREFIX_COUNT,
         "d3s2_127_prefix_count": D3S2_127_PREFIX_COUNT,
         "d3s2_128_prefix_count": D3S2_128_PREFIX_COUNT,
+        "d3s2_130_prefix_count": D3S2_130_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -6623,6 +7608,16 @@ def build_document() -> Dict[str, Any]:
                 "append-only freeze of origin/main (94 D3S1 + 34 d3s2 suffix "
                 "through P1-D2); P1-B1 Mode22 CLEANUP ordinary-skip + Mode23 "
                 "CLEANUP still-ordinary vectors follow"
+            ),
+        },
+        "d3s2_130_prefix_authority": {
+            "vector_count": D3S2_130_PREFIX_COUNT,
+            "content_sha256": D3S2_130_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_130_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 36 d3s2 suffix "
+                "through P1-B1); P1-B2 Mode24/25/26 CLEANUP still-ordinary "
+                "vectors follow"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -6906,6 +7901,17 @@ def check(path: Path) -> int:
         )
     if int(auth128.get("vector_count", -1)) != D3S2_128_PREFIX_COUNT:
         return _fail_check("d3s2_128_prefix_authority vector_count pin mismatch")
+    if int(data.get("d3s2_130_prefix_count", -1)) != D3S2_130_PREFIX_COUNT:
+        return _fail_check("d3s2_130_prefix_count pin mismatch")
+    auth130 = data.get("d3s2_130_prefix_authority") or {}
+    if auth130.get("content_sha256") != D3S2_130_CONTENT_SHA256:
+        return _fail_check("d3s2_130_prefix_authority content_sha256 pin mismatch")
+    if auth130.get("prior_fingerprint_prefix_hash") != D3S2_130_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_130_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth130.get("vector_count", -1)) != D3S2_130_PREFIX_COUNT:
+        return _fail_check("d3s2_130_prefix_authority vector_count pin mismatch")
 
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
@@ -7029,6 +8035,75 @@ def check(path: Path) -> int:
         return _fail_check(
             f"127-prefix fingerprint chain pin fail "
             f"(got {hundred_twenty_seven_chain})"
+        )
+
+    # Full-object 128-prefix equality (127 + P1-D2; origin/main before P1-B1).
+    expected_128 = expected_doc["vectors"][:D3S2_128_PREFIX_COUNT]
+    if vectors[:D3S2_128_PREFIX_COUNT] != expected_128:
+        for i in range(D3S2_128_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_128[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_128[i])
+            if vectors[i] != expected_128[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"128-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("128-prefix full-object mismatch")
+    hundred_twenty_eight_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_128_PREFIX_COUNT)
+        ]
+    )
+    if hundred_twenty_eight_chain != D3S2_128_FINGERPRINT_HASH:
+        return _fail_check(
+            f"128-prefix fingerprint chain pin fail "
+            f"(got {hundred_twenty_eight_chain})"
+        )
+
+    # Full-object 130-prefix equality (128 + P1-B1; origin/main before P1-B2).
+    # Absolute invariant: existing 130 full-object prefix must not change.
+    expected_130 = expected_doc["vectors"][:D3S2_130_PREFIX_COUNT]
+    if vectors[:D3S2_130_PREFIX_COUNT] != expected_130:
+        for i in range(D3S2_130_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_130[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_130[i])
+            if vectors[i] != expected_130[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"130-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("130-prefix full-object mismatch")
+    hundred_thirty_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_130_PREFIX_COUNT)
+        ]
+    )
+    if hundred_thirty_chain != D3S2_130_FINGERPRINT_HASH:
+        return _fail_check(
+            f"130-prefix fingerprint chain pin fail "
+            f"(got {hundred_thirty_chain})"
         )
 
     err = _assert_prefix_identity(vectors, prefix_doc)
@@ -7765,7 +8840,9 @@ def check(path: Path) -> int:
     p1d = suffix[p1d_start : p1d_start + D3S2_P1D_SLICE_COUNT]
     p1d2_start = p1d_start + D3S2_P1D_SLICE_COUNT
     p1d2 = suffix[p1d2_start : p1d2_start + D3S2_P1D2_SLICE_COUNT]
-    p1b1 = suffix[p1d2_start + D3S2_P1D2_SLICE_COUNT :]
+    p1b1_start = p1d2_start + D3S2_P1D2_SLICE_COUNT
+    p1b1 = suffix[p1b1_start : p1b1_start + D3S2_P1B1_SLICE_COUNT]
+    p1b2 = suffix[p1b1_start + D3S2_P1B1_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -7794,6 +8871,8 @@ def check(path: Path) -> int:
         return _fail_check("p1d2 slice length mismatch")
     if len(p1b1) != D3S2_P1B1_SLICE_COUNT:
         return _fail_check("p1b1 slice length mismatch")
+    if len(p1b2) != D3S2_P1B2_SLICE_COUNT:
+        return _fail_check("p1b2 slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -9790,6 +10869,173 @@ def check(path: Path) -> int:
     if m23_ord["expected"] != exp_expected:
         return _fail_check(f"{m23_ord['id']}: expected != independent model")
 
+    # ---- P1-B2 CLEANUP_PLAN Modes24–26 still-ordinary (#5 residual) ----
+    p1b2_kinds_got = {v["kind"] for v in p1b2}
+    if p1b2_kinds_got != D3S2_P1B2_KINDS:
+        return _fail_check(f"p1b2 kinds inventory mismatch: {p1b2_kinds_got}")
+    p1b2_by_kind = {v["kind"]: v for v in p1b2}
+
+    def _p1b2_still_ordinary_common(
+        vec: Dict[str, Any],
+        *,
+        mode: int,
+        peer_gets: int,
+        subject_kind: int,
+        primary_subtype: int,
+        forbid_subtype: int,
+        model_fn,
+        model_args: Tuple[Any, ...] = (),
+    ) -> Optional[str]:
+        if int(vec["mode"]) != mode:
+            return f"{vec['id']}: mode must be {mode}"
+        if vec.get("ownership") != OWNERSHIP_P1B2:
+            return f"{vec['id']}: ownership pin fail"
+        if vec.get("faults"):
+            return f"{vec['id']}: faults must be empty"
+        exp = vec["expected"]
+        if exp.get("final_status") != "STORAGE_CORRUPT":
+            return f"{vec['id']}: final_status must be STORAGE_CORRUPT"
+        if int(exp.get("adopted", -1)) != 0:
+            return f"{vec['id']}: adopted must be 0"
+        if int(exp.get("phase", -1)) != PHASE_FAILED:
+            return f"{vec['id']}: terminal phase must be FAILED"
+        if int(exp.get("has_sticky_primary", -1)) != 1:
+            return f"{vec['id']}: sticky must be 1"
+        if exp.get("sticky_primary") != "STORAGE_CORRUPT":
+            return f"{vec['id']}: sticky_primary pin fail"
+        if int(exp.get("mutation_calls", -1)) != 0:
+            return f"{vec['id']}: mutation_calls must be 0"
+        if int(exp.get("d3_peer_get_count", -1)) != peer_gets:
+            return f"{vec['id']}: d3_peer_get_count must be {peer_gets}"
+        pt = exp.get("port_trace") or []
+        if pt.count("begin:READ_ONLY") != 1:
+            return f"{vec['id']}: single-txn begin pin fail"
+        # No CLEANUP setup get for Modes24–26: profile 17 + peer_gets only.
+        if pt.count("get") != 17 + peer_gets:
+            return (
+                f"{vec['id']}: 17 profile + {peer_gets} peer gets "
+                f"(no CLEANUP setup get), got {pt.count('get')}"
+            )
+        forbid_n = sum(
+            1
+            for r in vec["rows"]
+            if len(from_hex(r["key_hex"])) >= 10
+            and from_hex(r["key_hex"])[8] == 6
+            and from_hex(r["key_hex"])[9] == forbid_subtype
+        )
+        if forbid_n != 0:
+            return f"{vec['id']}: forbidden secondary subtype must be empty"
+        cp_n = sum(
+            1
+            for r in vec["rows"]
+            if len(from_hex(r["key_hex"])) >= 10
+            and from_hex(r["key_hex"])[8] == 6
+            and from_hex(r["key_hex"])[9] == 0x63
+        )
+        if cp_n != 1:
+            return f"{vec['id']}: exact 1 CLEANUP_PLAN required"
+        cps = [
+            c for c in vec["calls"] if int(c.get("has_checkpoint", 0)) == 1
+        ]
+        if len(cps) != 1:
+            return f"{vec['id']}: exactly one checkpoint required"
+        if int(cps[0]["cp_cleanup_skip"]) != 0:
+            return f"{vec['id']}: cp_cleanup_skip must be 0"
+        if int(cps[0]["cp_phase"]) != PHASE_FAILED:
+            return f"{vec['id']}: cp_phase must be FAILED"
+        if int(cps[0]["cp_focus_live"]) != 1:
+            return f"{vec['id']}: cp_focus_live must be 1"
+        if int(cps[0]["cp_begin_calls"]) != 1:
+            return f"{vec['id']}: begin_calls must be 1"
+        primary_rows = [
+            r
+            for r in vec["rows"]
+            if len(from_hex(r["key_hex"])) >= 10
+            and from_hex(r["key_hex"])[8] == 6
+            and from_hex(r["key_hex"])[9] == primary_subtype
+        ]
+        cp_rows = [
+            r
+            for r in vec["rows"]
+            if len(from_hex(r["key_hex"])) >= 10
+            and from_hex(r["key_hex"])[8] == 6
+            and from_hex(r["key_hex"])[9] == 0x63
+        ]
+        if len(primary_rows) != 1 or len(cp_rows) != 1:
+            return f"{vec['id']}: primary/CP row inventory fail"
+        pkd = _d3s1.key_digest(from_hex(primary_rows[0]["key_hex"]))
+        if _rebuild_cleanup_plan_key(subject_kind, pkd) != from_hex(
+            cp_rows[0]["key_hex"]
+        ):
+            return f"{vec['id']}: CLEANUP_PLAN key must match primary subject"
+        sk, _ph, _raw, subj_pkd, _spvd = _parse_cleanup_plan_subject(
+            from_hex(cp_rows[0]["value_hex"])
+        )
+        if sk != subject_kind or subj_pkd != pkd:
+            return f"{vec['id']}: CLEANUP_PLAN body subject must match primary"
+        try:
+            exp_calls, exp_expected = model_fn(
+                vec["candidate_binding"], vec["rows"], *model_args
+            )
+        except SystemExit as exc:
+            return f"{vec['id']}: model reject: {exc}"
+        if vec["calls"] != exp_calls:
+            return f"{vec['id']}: calls != independent model"
+        if vec["expected"] != exp_expected:
+            return f"{vec['id']}: expected != independent model"
+        return None
+
+    m24_ord = p1b2_by_kind["mode24_cleanup_plan_present_still_ordinary_corrupt"]
+    err = _p1b2_still_ordinary_common(
+        m24_ord,
+        mode=24,
+        peer_gets=4,
+        subject_kind=3,
+        primary_subtype=0x40,  # DELIVERY
+        forbid_subtype=0x42,  # REVERSE_REPLY
+        model_fn=run_d3s2_mode24_cleanup_plan_still_ordinary_corrupt,
+    )
+    if err:
+        return _fail_check(err)
+
+    m25_ord = p1b2_by_kind["mode25_cleanup_plan_present_still_ordinary_corrupt"]
+    err = _p1b2_still_ordinary_common(
+        m25_ord,
+        mode=25,
+        peer_gets=5,
+        subject_kind=2,
+        primary_subtype=0x20,  # ANCHOR
+        forbid_subtype=0xFF,  # no generic forbid; RECENT checked below
+        model_fn=run_d3s2_mode25_cleanup_plan_still_ordinary_corrupt,
+    )
+    if err:
+        return _fail_check(err)
+    # Mode25: forbid RECENT (kind=2) specifically among RETRY rows.
+    for r in m25_ord["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x51:
+            _st, body, _ = _d3s1.extract_envelope(from_hex(r["value_hex"]))
+            if struct.unpack_from(">H", body, 16)[0] == RS_KIND_RECENT:
+                return _fail_check(f"{m25_ord['id']}: RECENT must be absent")
+    cp_m25 = [
+        c for c in m25_ord["calls"] if int(c.get("has_checkpoint", 0)) == 1
+    ]
+    if int(cp_m25[0]["cp_observed_c"]) != 1:
+        return _fail_check(f"{m25_ord['id']}: cp_observed_c must be 1 (CUM)")
+
+    m26_ord = p1b2_by_kind["mode26_cleanup_plan_present_still_ordinary_corrupt"]
+    err = _p1b2_still_ordinary_common(
+        m26_ord,
+        mode=26,
+        peer_gets=0,
+        subject_kind=2,
+        primary_subtype=0x20,  # ANCHOR
+        forbid_subtype=0x52,  # MANAGEMENT
+        model_fn=run_d3s2_mode26_cleanup_plan_still_ordinary_corrupt,
+    )
+    if err:
+        return _fail_check(err)
+
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
             f"missing d3s2 kinds {D3S2_REQUIRED_KINDS - kinds}"
@@ -11356,6 +12602,205 @@ def self_test() -> int:
         t(
             "p1b1_m23_ownership_tamper",
             lambda d: d["vectors"][129].__setitem__("ownership", OWNERSHIP_P1D2),
+        )
+        # 130-prefix freeze (includes P1-B1; P1-B2 follows at 130..132).
+        t(
+            "hundred_thirty_prefix_row_tamper",
+            lambda d: d["vectors"][129]["rows"].__setitem__(
+                0, {"key_hex": "00", "value_hex": "00"}
+            ),
+        )
+        t(
+            "hundred_thirty_prefix_expected_tamper",
+            lambda d: d["vectors"][128]["expected"].__setitem__(
+                "ok_row_count", 999
+            ),
+        )
+        t(
+            "hundred_thirty_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_130_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_thirty_prefix_content_authority_tamper",
+            lambda d: d["d3s2_130_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        # P1-B2 Mode24 cleanup still-ordinary (index 130).
+        t(
+            "p1b2_m24_plan_delete_tamper",
+            lambda d: d["vectors"][130].__setitem__(
+                "rows",
+                [
+                    r
+                    for r in d["vectors"][130]["rows"]
+                    if not (
+                        len(bytes.fromhex(r["key_hex"])) >= 10
+                        and bytes.fromhex(r["key_hex"])[8] == 6
+                        and bytes.fromhex(r["key_hex"])[9] == 0x63
+                    )
+                ],
+            ),
+        )
+        t(
+            "p1b2_m24_false_skip_tamper",
+            lambda d: d["vectors"][130]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][130]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][130]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_cleanup_skip": 1,
+                },
+            ),
+        )
+        t(
+            "p1b2_m24_false_success_tamper",
+            lambda d: d["vectors"][130]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1b2_m24_checkpoint_tamper",
+            lambda d: d["vectors"][130]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][130]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][130]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_phase": PHASE_COMPLETE,
+                },
+            ),
+        )
+        t(
+            "p1b2_m24_ownership_tamper",
+            lambda d: d["vectors"][130].__setitem__("ownership", OWNERSHIP_P1B1),
+        )
+        # P1-B2 Mode25 cleanup still-ordinary (index 131).
+        t(
+            "p1b2_m25_plan_delete_tamper",
+            lambda d: d["vectors"][131].__setitem__(
+                "rows",
+                [
+                    r
+                    for r in d["vectors"][131]["rows"]
+                    if not (
+                        len(bytes.fromhex(r["key_hex"])) >= 10
+                        and bytes.fromhex(r["key_hex"])[8] == 6
+                        and bytes.fromhex(r["key_hex"])[9] == 0x63
+                    )
+                ],
+            ),
+        )
+        t(
+            "p1b2_m25_false_skip_tamper",
+            lambda d: d["vectors"][131]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][131]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][131]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_cleanup_skip": 1,
+                },
+            ),
+        )
+        t(
+            "p1b2_m25_false_success_tamper",
+            lambda d: d["vectors"][131]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1b2_m25_phase_status_tamper",
+            lambda d: d["vectors"][131]["expected"].__setitem__(
+                "phase", PHASE_COMPLETE
+            ),
+        )
+        t(
+            "p1b2_m25_ownership_tamper",
+            lambda d: d["vectors"][131].__setitem__("ownership", OWNERSHIP_P1B1),
+        )
+        # P1-B2 Mode26 cleanup still-ordinary (index 132).
+        t(
+            "p1b2_m26_plan_delete_tamper",
+            lambda d: d["vectors"][132].__setitem__(
+                "rows",
+                [
+                    r
+                    for r in d["vectors"][132]["rows"]
+                    if not (
+                        len(bytes.fromhex(r["key_hex"])) >= 10
+                        and bytes.fromhex(r["key_hex"])[8] == 6
+                        and bytes.fromhex(r["key_hex"])[9] == 0x63
+                    )
+                ],
+            ),
+        )
+        t(
+            "p1b2_m26_false_skip_tamper",
+            lambda d: d["vectors"][132]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][132]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][132]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_cleanup_skip": 1,
+                },
+            ),
+        )
+        t(
+            "p1b2_m26_false_success_tamper",
+            lambda d: d["vectors"][132]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1b2_m26_checkpoint_tamper",
+            lambda d: d["vectors"][132]["calls"].__setitem__(
+                next(
+                    i
+                    for i, c in enumerate(d["vectors"][132]["calls"])
+                    if int(c.get("has_checkpoint", 0)) == 1
+                ),
+                {
+                    **next(
+                        c
+                        for c in d["vectors"][132]["calls"]
+                        if int(c.get("has_checkpoint", 0)) == 1
+                    ),
+                    "cp_phase": PHASE_COMPLETE,
+                },
+            ),
+        )
+        t(
+            "p1b2_m26_ownership_tamper",
+            lambda d: d["vectors"][132].__setitem__("ownership", OWNERSHIP_P1B1),
         )
         t(
             "content_sha_tamper",
