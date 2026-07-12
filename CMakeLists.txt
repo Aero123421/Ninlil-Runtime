@@ -966,7 +966,8 @@ if(NINLIL_BUILD_TESTS)
 
     # Append-only D3-S2 crossrow sibling oracle (docs/17 §18.13.15):
     # frozen 94-vector D3-S1 prefix + 6 Mode21..26 empty-carrier smoke +
-    # Mode25 CUM/RECENT/ANCHOR + Mode26 ES/MANAGEMENT slices (suffix=10).
+    # Mode25 CUM/RECENT/ANCHOR + Mode26 ES/MANAGEMENT + Mode24 RC/RR/DELIVERY
+    # slices (suffix=12).
     # Independent generator rebuilds prefix from domain_scan_crossrow_vector_gen
     # and fails closed on prefix fingerprint/order/expected/rows/calls drift.
     # Does not claim full D3-S2 oracle complete. Stage5 D3 remains unbound.
@@ -985,13 +986,13 @@ if(NINLIL_BUILD_TESTS)
     )
     # Fixture freshness + determinism: emit twice (byte-identical) and equal
     # the build-dir artifact consumed by the production bridges.
-    # Fail-closed pins: D3-S1 count=94 and D3-S2 suffix count=10.
+    # Fail-closed pins: D3-S1 count=94 and D3-S2 suffix count=12.
     set(_ninlil_d3s1_fixture
         ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_crossrow_vector_fixture.h)
     add_test(
         NAME domain_scan_crossrow_fixture_freshness
         COMMAND ${Python3_EXECUTABLE} -c
-            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s2_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_D3S1_VECTOR_COUNT ((size_t)94u)' in ta, 'd3s1 vector count pin missing'; assert b'NINLIL_D3S2_VECTOR_COUNT ((size_t)10u)' in ta, 'd3s2 vector count pin missing'; print('crossrow fixture freshness+determinism ok', len(ta), 'bytes')"
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s2_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_D3S1_VECTOR_COUNT ((size_t)94u)' in ta, 'd3s1 vector count pin missing'; assert b'NINLIL_D3S2_VECTOR_COUNT ((size_t)12u)' in ta, 'd3s2 vector count pin missing'; print('crossrow fixture freshness+determinism ok', len(ta), 'bytes')"
     )
     add_custom_command(
         OUTPUT ${_ninlil_d3s1_fixture}
