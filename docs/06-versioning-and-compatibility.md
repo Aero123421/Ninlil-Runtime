@@ -12,7 +12,9 @@ Ninlilは複数の独立したversion domainを持ちます。単一の`protocol
 | Runtime / SDK release | SemVer | source/API behavior |
 | Public C ABI | ABI major/minor | header + binary |
 | Data wire | family/major/minor | Endpoint間application transport |
-| Control/gateway protocol | major/minor | Controller–Cell Agent–Endpoint control（byte-stream framing `NCG1` v1 は [19章](19-m3-control-byte-stream-framing.md); logical message catalog は未固定） |
+| Control/gateway protocol | major/minor | Controller–Cell semantic catalog（HELLO 交渉の `control_version`）。byte-stream framing `NCG1` v1 は [19章](19-m3-control-byte-stream-framing.md)。**NCL1 envelope `logical_version` とは別 domain**（[23章](23-usb-radio-boundary.md)）。**U1–U4 最小 private NCL1 catalog**（HELLO/PING/PONG/RESET 等）は [23章](23-usb-radio-boundary.md) で Normative private。**complete / public control protocol**（assignment/custody/security を含む公開 catalog・public ABI）は **未割当** |
+| NCL1 envelope format | `logical_version` byte | NCG1 payload 内 header 形式（U4: `NCL1_HEADER_BYTES=26`、offset 16 `session_cookie` u64、`MAX_NCL1_BODY=998`）。U4 は exact 1。v2 は reject または別 freeze（control protocol major と番号空間を共有しない） |
+| Secure compact radio wire | major/minor | Endpoint/Cell physical RF frame。**version unallocated**（[23章 §9](23-usb-radio-boundary.md); production bytes は後続 Normative） |
 | Application schema | namespace/schema/major/minor | payload semantics |
 | Service descriptor | immutable revision | admission/policy snapshot |
 | Capability manifest | schema version + revision | supported feature set |
@@ -193,6 +195,7 @@ Release tag前に、次がすべて必要です。
 - Storage schema: `1` experimental
 - Simulated bearer protocol: test fixture only
 - Ninlil public data wire: **未割当**
-- Ninlil control protocol: **未割当**
+- Ninlil **complete / public** control protocol（public catalog / public ABI）: **未割当**
+- Ninlil **private minimal** control catalog（U1–U4 NCL1 HELLO/PING/PONG/RESET; [23章](23-usb-radio-boundary.md)）: private Normative（`control_version` 交渉値は U4 で 1）。public 採番・ABI 昇格とは別
 
-Wireを実装していないFoundationで`wire v1`を先取り採番しません。
+Wireを実装していないFoundationで`wire v1`を先取り採番しません。private U4 catalog の存在を public control protocol v1 割当とみなしません。

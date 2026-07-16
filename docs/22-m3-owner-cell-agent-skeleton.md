@@ -29,6 +29,8 @@ STOPPED | STARTING | RUNNING | STOPPING | JOIN_ACK | **FAILED_LIVE** | **FAILED_
 | FAILED_LIVE | **no** | **no** | **no** | **no**（core/TCB/stack 触らない） |
 | RUNNING/STARTING/STOPPING | no | no | no | no |
 
+**語彙（MUST）:** ここでの `JOIN_ACK` / `FAILED_JOINED` は **Owner Task Join**（FreeRTOS owner task の suspend→delete→reclaim 証跡）である。[03章](03-identity-and-join.md) の Network / Attachment join でも、[23章](23-usb-radio-boundary.md) の Control HELLO でもない。C 記号は本 M3 slice では変更しない。規定移行名は `TASK_JOIN_ACK` / `FAILED_TASK_JOINED`（[23章 §11](23-usb-radio-boundary.md)、[15章](15-glossary.md)）。
+
 ### 2.2 Init / mux one-shot（mux_ready）
 
 - caller は object を **zero-init**。
@@ -56,7 +58,7 @@ Normative 手順:
 
 1. owner: will_suspend=1 → `vTaskSuspend(NULL)`
 2. manager: poll `eSuspended`（bounded）
-3. published=JOIN_ACK
+3. published=JOIN_ACK（**Owner Task Join ACK**; Site Membership / Attachment / Control HELLO ではない。曖昧 umbrella「Network Join」でもない）
 4. `vTaskDelete(handle)`（同期 cleanup、pin v5.5.3）
 5. handle=NULL、`tcb_generation++`、queue reset、STOPPED
 6. **FAILED_LIVE** では 4–5 を行わず storage を再利用しない

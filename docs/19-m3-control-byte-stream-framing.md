@@ -52,7 +52,7 @@
 | Domain | 値 | 備考 |
 | --- | --- | --- |
 | Control frame format | major=`1`（byte `version` field） | 本章の wire layout |
-| Control/gateway protocol (logical) | 未固定 | payload 内 message は後続 M3/M4 |
+| Control/gateway protocol (logical) | 最小 NCL1 v1 は [23章](23-usb-radio-boundary.md)（HELLO/PING/PONG/RESET のみ; private） | assignment/custody/security の完全 catalog は未固定 |
 | Public C ABI | 変更なし | `include/ninlil/*` を触らない |
 | Data wire / radio | 非対象 | application radio frame と分離 |
 
@@ -112,7 +112,7 @@ offset  size  field
 | `RESET` | `0x04` | 0..1024 opaque | stream reset / fence signal |
 
 - `0x00` と `0x05..0xFF` は v1 で **unknown type** → reject（skip して成功扱いにしない）。
-- payload の業務意味（custody message、assignment、TxPermit 等）は **本章の外**。本 slice は type を closed に保ち、opaque payload を運ぶだけとする。
+- payload の業務意味のうち、**U1–U4 最小 logical control**（NCL1 HELLO/PING/PONG/RESET）は [23章](23-usb-radio-boundary.md) が正本。custody message、assignment、TxPermit、security 等の **完全 protocol は未固定**。本 framing 章は type を closed に保ち、NCL1 未適用の payload を opaque として運ぶだけとする。
 
 ## 6. stream_or_cell_id と既存 ID 型
 
@@ -128,7 +128,7 @@ offset  size  field
 3. higher layer が `controller_term + assignment_epoch` 等で cell を fence するとき、その session 内で u32 を bind する。bind 規則自体は後続 M3/M4。
 4. framing codec は id の非 zero 強制をしない（0 も合法な handle 候補）。意味検証は上位。
 
-`sequence` は per-`(stream_or_cell_id)` の単調カウンタ想定だが、**wrap / gap / replay ポリシーは上位**。codec は任意 u32 を透過する。
+`sequence` は per-`(stream_or_cell_id)` の単調カウンタ想定だが、**wrap / gap / replay ポリシーは上位**。codec は任意 u32 を透過する。**USB U4 single bootstrap/control stream** の exact 上位ポリシー（authority / 初期値 0 / +1 / duplicate / gap→session fence / wrap fail-closed / parser·link reset / `stream_or_cell_id` exact 0）は [23章 §5.5.2](23-usb-radio-boundary.md) が正本。
 
 ## 7. Flags
 
@@ -293,9 +293,9 @@ portable source は ESP-IDF / FreeRTOS / socket header を include しない。
 
 ## 13. 明示的に残る work
 
-- USB CDC / TCP port task と backpressure
-- control logical messages、assignment、TxPermit path
+- USB CDC / TCP port task と backpressure（境界は [23章](23-usb-radio-boundary.md) U0 freeze / 実装は U1–U7）
+- control logical messages の assignment/custody 拡張（NCL1 最小 HELLO 系は 23章; 完全 protocol は後続）
 - custody spool と Application Receipt の結合
 - authentication / encryption of control channel
-- Cell Agent skeleton 全体
+- Cell Agent skeleton 全体との結合
 - on-target conformance beyond compile smoke

@@ -1,7 +1,8 @@
 # 21. M3 slice: ESP-IDF durable storage port
 
-状態: Informative / Normative-for-this-port（**M3 incomplete**）
-対象: ESP32-S3 向け `ninlil_storage_ops_t` production 候補 adapter
+状態: Informative / Normative-for-this-port（**M3 incomplete**）<br>
+対象: ESP32-S3 向け `ninlil_storage_ops_t` production 候補 adapter<br>
+実装: **PR #80 merged**（host conformance + target compile gates）。**power-cut HIL 未実行 / ESP FULL unproven**
 
 ## 1. 位置付けと非主張
 
@@ -10,10 +11,11 @@
 **主張しない:**
 
 - M3 complete / field-ready / V1 complete
-- 実機 power-cut HIL の実行済み（harness と partition table は実装するが **未実行**）
+- 実機 power-cut HIL の実行済み（harness と partition table は実装済みでも **HIL PASS ではない**）
 - ESP flash 上の FULL commit success を HIL なしで production 保証すること
 - NVS 単独での契約成立
-- FreeRTOS / USB / radio / Join / KGuard
+- FreeRTOS / USB / radio / Site Membership・Attachment（Network Join umbrella） / KGuard
+- compile success = HIL PASS
 
 public ABI / wire は変更しない。
 
