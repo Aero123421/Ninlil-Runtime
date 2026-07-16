@@ -44,6 +44,7 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ### Changed
 
+- **Installed CMake package imported-config mapping:** single-config `install(EXPORT)` が producer の1 configuration（`DEBUG`/`RELEASE`/`NOCONFIG`）分の `IMPORTED_LOCATION_<CONFIG>` しか出さないため、空 `CMAKE_BUILD_TYPE`・別 build type・厳格 `CMAKE_MAP_IMPORTED_CONFIG_*` identity map の installed consumer が `IMPORTED_LOCATION not set for ... configuration "Release"` 等で generate 失敗する既知問題を修正。`NinlilConfig.cmake` が (1) `Ninlil::ninlil_posix_sqlite_storage` に config 非依存 `IMPORTED_LOCATION` と不足 config 向け `MAP_IMPORTED_CONFIG_*` を付与、(2) FindSQLite3 の config-less `IMPORTED_LOCATION` を standard config 名へ **additive 複製のみ**（`INTERFACE_*` / link line は非改変; ALIAS は触らない）。install-consumer smoke を match / no-`CMAKE_BUILD_TYPE` / Debug↔Release / strict-map（および multi-config generator 時は Debug+Release）matrix に拡張。STATIC/SHARED SQLite・archive hygiene・tests-OFF package surface・sanitizer skip 規則は維持。
 - Project statusをPR1-only checkpointから、Foundation PR2主要modelとPR3a/b/c/d fixture実装済みのpre-alpha checkpointへ更新。
 - Apache License 2.0の採用決定をProject CharterとM11 compliance gateへ反映。
 - `1.0.0`はhardware exitだけでなくM11までの全exit gate後とし、platformの現行検証実績とplanned targetを分離。
