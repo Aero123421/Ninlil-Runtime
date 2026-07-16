@@ -97,7 +97,7 @@ Gate:
 - 全named commit/crash boundaryでall-or-none。
 - partial group、unknown schema、corruptionをsuccessへfallbackしない。
 
-PR 4の実装前に[17章](17-foundation-domain-store.md)のD0〜D3を独立境界として完了します。D0はNormative inventory、D1はpure codec/catalog、D2はbounded read-only scanner、D3はcounter/capacity/index/health相互validationです。**D3-S0 Normative architecture freeze（[17章 §18](17-foundation-domain-store.md)）と D3-S1a closed-mode/context freeze（[17章 §18.12](17-foundation-domain-store.md)）と D3-S2a declared multi-count freeze（[17章 §18.13](17-foundation-domain-store.md)）は docs only で完了済み; D3-S1 exact-1 implementation は complete; D3-S2 implementation / D3-S3..S12 implementation は pending。** D3-S0 / D3-S1a / D3-S2a / D3-S1 単独を D3 complete / Stage 5 complete に置換しません。D4 operation別convergence以降をSQLite writerと接続し、bootstrap-only orchestrationやempty scanをPR 4完了の代用にしません。
+PR 4の実装前に[17章](17-foundation-domain-store.md)のD0〜D3を独立境界として完了します。D0はNormative inventory、D1はpure codec/catalog、D2はbounded read-only scanner、D3はcounter/capacity/index/health相互validationです。**D3-S0 Normative architecture freeze（[17章 §18](17-foundation-domain-store.md)）と D3-S1a closed-mode/context freeze（[17章 §18.12](17-foundation-domain-store.md)）と D3-S2a declared multi-count freeze（[17章 §18.13](17-foundation-domain-store.md)）と D3-S3a BLOB lifecycle freeze（[17章 §18.14](17-foundation-domain-store.md)）は docs only で完了済み; D3-S1 exact-1 implementation は complete; D3-S2 implementation / D3-S3 implementation / D3-S4..S12 implementation は pending。** D3-S0 / D3-S1a / D3-S2a / D3-S3a / D3-S1 単独を D3 complete / Stage 5 complete に置換しません。D4 operation別convergence以降をSQLite writerと接続し、bootstrap-only orchestrationやempty scanをPR 4完了の代用にしません。
 
 ### PR 5: Reliable Command path
 
