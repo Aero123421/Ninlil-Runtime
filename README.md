@@ -21,6 +21,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Stage1 successだけが発行するheader/pointer-free accepted-config projectionからcanonical binding/identity、17-record presence/integrity、profile/identity decision、compact lazy bootstrap planを作るRuntime Store L2a2 pure model
 - Lifecycle/Runtime Store Coreをpublic `ninlil`とTEST fixtureから分離し、subprojectでも単独buildできる非export `ninlil_runtime_private` STATIC target
 - **M3-prep:** portable Core/private library を ESP-IDF component として package し、pinned ESP-IDF `v5.5.3` で ESP32-S3 smoke app を target build する CI（[ports/esp-idf](ports/esp-idf/README.md)、[docs/18](docs/18-m3-prep-esp-idf-component.md)）。NVS/FreeRTOS/USB/Wi-Fi/SX1262 は未実装。**M3 complete / ESP-IDF port complete / hardware verified ではない**
+- **M3-slice control framing:** Controller↔Cell Agent 向け private `NCG1` bounded byte-stream frame codec（[docs/19](docs/19-m3-control-byte-stream-framing.md)）。USB/TCP driver・Cell Agent task・logical control messages は未実装。**M3 complete ではない**
 - 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
 - Domain Store v1のfamily 5/6 catalog、4KiB record/3KiB chunk上限、最大256-member atomic witness、backlink/capacity/health/recovery順を固定したNormative D0仕様
 - Domain Store D1-Aのkey/envelope/digest/witness primitiveと、D1-B1のINTERNAL_INVARIANT / BEARER_STATE / CLOCK_BASELINE / ATTEMPT_REUSE_FENCE / WITNESS_HEAD_INDEX exact body codec・同一record検証・独立golden vector
@@ -41,7 +42,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Domain Store D3相互validation の残 slice（EVIDENCE live L/cardinality multi-row / witness chain / capacity / health 等; **D3-S0 architecture freeze is docs-only complete**; **D3-S1a closed-mode/context freeze is docs-only complete**; **D3-S1 exact-1 implementation complete**; **D3-S2a declared multi-count freeze is docs-only complete**; **D3-S3a BLOB lifecycle freeze is docs-only complete**; **D3-S2 implementation / D3-S3 implementation / D3-S4..S12 / D3 overall / Stage 5 D3 bind still pending**）、D4 operation別commit-unknown convergence
 - Stage 5 completion / public Runtime publish / Bearer・clock・entropy open / identity rotation / health reconstruction（**D2-S6 private fail-closed seam は実装済み; Stage 5 と public Runtime は still pending**）
 - end-to-endのReliable Command / Durable Event path
-- ESP-IDF storage/NVS、FreeRTOS owner task、USB transport、LoRa bearer/radio MAC、Cell Agent（**M3-prepとして component packaging と pinned ESP32-S3 target build のみ追加。M3 complete / port complete ではない**）
+- ESP-IDF storage/NVS、FreeRTOS owner task、USB transport、LoRa bearer/radio MAC、Cell Agent（**M3-prepとして component packaging と pinned ESP32-S3 target build のみ追加。M3-slice として private control frame codec のみ追加。M3 complete / port complete ではない**）
 - Display node / Leak nodeを使う実機end-to-end検証
 - `NIN-PR1-OUTPUT-001`、`NIN-PR1-STRUCT-001`、`NIN-PR1-UNSUPPORTED-001`はhelper testまでで、public runtime APIへ未統合のため`partial`
 

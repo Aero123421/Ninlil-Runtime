@@ -181,6 +181,16 @@ M3 complete 前でも、component packaging の回帰を次で防ぎます（[18
 - 分離 workflow `.github/workflows/esp-idf.yml`: 公式 image `espressif/idf:<ESP_IDF_VERSION>` で **esp32s3** smoke app build
 - host `ci.yml` は ESP-IDF を install せず、従来の GCC/Clang CTest のみ
 
+### M3 control framing slice
+
+[19章](19-m3-control-byte-stream-framing.md) の production-candidate private `NCG1` codec は次を host CTest で証明します（M3 complete の代替ではない）:
+
+- `control_frame_codec`: encode/decode round-trip、overflow/truncation、手書き boundary/reject、noise resync、concat、1-byte incremental、guard 境界（noise2087+empty26）、alias（payload_storage×out_*）
+- `control_frame_vector_oracle`: independent Python `check`（JSON ≡ generator、mutation recipe 適用 + 独立 decode）
+- `control_frame_vector_gen_self_test`: recipe/expected/operator 改変が fail することを自己検査
+- `control_frame_vector_oracle_bridge`: `emit-c-fixture` が **適用済み** golden+negative bytes と `expected_result` を deterministic header へ生成し、**production C** `ninlil_model_control_frame_decode` が全件 loop で一致（JSON/recipe 変更が C に追随しない false-pass を防ぐ）
+- `control_frame_vector_fixture_freshness`: emit 二重実行 determinism + build fixture freshness
+
 ### Release candidate
 
 - all PR/nightly gates green on release commit

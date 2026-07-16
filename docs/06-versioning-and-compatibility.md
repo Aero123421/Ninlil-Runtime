@@ -12,7 +12,7 @@ Ninlilは複数の独立したversion domainを持ちます。単一の`protocol
 | Runtime / SDK release | SemVer | source/API behavior |
 | Public C ABI | ABI major/minor | header + binary |
 | Data wire | family/major/minor | Endpoint間application transport |
-| Control/gateway protocol | major/minor | Controller–Cell Agent–Endpoint control |
+| Control/gateway protocol | major/minor | Controller–Cell Agent–Endpoint control（byte-stream framing `NCG1` v1 は [19章](19-m3-control-byte-stream-framing.md); logical message catalog は未固定） |
 | Application schema | namespace/schema/major/minor | payload semantics |
 | Service descriptor | immutable revision | admission/policy snapshot |
 | Capability manifest | schema version + revision | supported feature set |
