@@ -90,6 +90,11 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     d3_peer_get_count pin zero extra plan get. Checkpoints freeze
     cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 existing +
     22/23 P1-B1 + 24–26 this slice aligned; does not claim D3-S2 complete.
+  * P1-C1 slice (§18.13.15 cases 3/19 / §18.13.12.1 Mode23): illegal
+    extra RAW slot L+1 BIND CORRUPT after FOCUS green; equation fail
+    valid!=M+overflow FOCUS CORRUPT; late coherence observed_c>
+    declared_c FOCUS CORRUPT (constructible under D1; no false late
+    equality). Matching STATE+ANCHOR+required slots each vector.
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -136,6 +141,7 @@ D3S2_P1D_SLICE_COUNT = 2
 D3S2_P1D2_SLICE_COUNT = 1
 D3S2_P1B1_SLICE_COUNT = 2
 D3S2_P1B2_SLICE_COUNT = 3
+D3S2_P1C1_SLICE_COUNT = 6
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -153,8 +159,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_P1D2_SLICE_COUNT
     + D3S2_P1B1_SLICE_COUNT
     + D3S2_P1B2_SLICE_COUNT
-)  # 39
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 133
+    + D3S2_P1C1_SLICE_COUNT
+)  # 45
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 139
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -471,6 +478,34 @@ D3S2_130_CONTENT_SHA256 = (
 D3S2_130_FINGERPRINT_HASH = (
     "7eaaa8e30709cdcbccbc81cf2a5a8f5461aef2c74e315f1b0a08864d7fab2cbf"
 )
+# Frozen 133-vector append-only prefix (130 + P1-B2) — origin/main before P1-C1.
+# content hash + fingerprint chain from origin/main 133-vector artifact
+# (PR#69 / self-test-perf main; full-object prefix absolute invariant).
+D3S2_133_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+    + D3S2_P0C_SLICE_COUNT
+    + D3S2_P0D_SLICE_COUNT
+    + D3S2_P1A_SLICE_COUNT
+    + D3S2_P1D_SLICE_COUNT
+    + D3S2_P1D2_SLICE_COUNT
+    + D3S2_P1B1_SLICE_COUNT
+    + D3S2_P1B2_SLICE_COUNT
+)  # 133 (origin/main freeze before P1-C1)
+D3S2_133_CONTENT_SHA256 = (
+    "65f58bfe71d71ccbb3bb553223f6762a14c022c110be481e061475cf3a84c98d"
+)
+D3S2_133_FINGERPRINT_HASH = (
+    "031fdef1204ef7ca56d6c9fdca56d750a4d3d4bc3c4cdf433023ddbc508cd871"
+)
 
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -560,6 +595,8 @@ D1_EV_SUM_MAT_ID = "DSB3_EV_TX_SUM_MAT_LEN0_TYPED"
 D1_EV_SUM_EMPTY_ID = "DSB3_EV_TX_SUM_EMPTY_TYPED"
 D1_EV_RAW_UNUSED_ID = "DSB3_EV_TX_RAW_UNUSED_TYPED"
 D1_EV_RAW_MAT_ID = "DSB3_EV_TX_RAW_MAT_TYPED"
+D1_EV_DLV_SUM_EMPTY_ID = "DSB3_EV_DLV_SUM_EMPTY_TYPED"
+D1_DLV_APP_DS_ID = "DSB3_DLV_APP_DS_TYPED"
 # EVIDENCE_CELL TX body exact 734 (docs/17 §8.3 D1-B3g): owner TX raw16=16.
 # Offsets after owner_kind:u16 + cell_kind:u16 + RAW16(18) + pkd32 + target32.
 EV_TX_BODY_LEN = 734
@@ -717,6 +754,16 @@ D3S2_P1B2_KINDS = frozenset(
         "mode26_cleanup_plan_present_still_ordinary_corrupt",
     }
 )
+D3S2_P1C1_KINDS = frozenset(
+    {
+        "mode23_illegal_slot_L_plus_1_bind_corrupt",
+        "mode23_equation_fail_valid_ne_m_plus_overflow_corrupt",
+        "mode23_late_coherence_observed_gt_declared_corrupt",
+        "mode23_cancel_first_slot0_bind_corrupt",
+        "mode23_multi_owner_cancel_last_tx_ok",
+        "mode23_multi_owner_tx_before_cancel_ev_corrupt",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -734,6 +781,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_P1D2_KINDS
     | D3S2_P1B1_KINDS
     | D3S2_P1B2_KINDS
+    | D3S2_P1C1_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -961,6 +1009,22 @@ SCOPE = (
     "freeze cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 "
     "existing + 22/23 P1-B1 + 24–26 this slice aligned; D3-S2 complete not "
     "claimed. "
+    "Frozen 133-vector origin/main pin retained (130 + P1-B2). P1-C1 appends "
+    "§18.13.15 cases 3/19 / §18.13.12.1 Mode23: (1) all required slots 0..L "
+    "coherent empty equation + extra RAW slot L+1 (D1 typed-valid slot<=8, "
+    "same owner/PVD) → FOCUS counts green then BIND illegal slot "
+    "STORAGE_CORRUPT (not mere D1 invalid); (2) equation fail — all slots "
+    "0..L PRESENT, SUMMARY counters D1-valid, valid != M+overflow → FOCUS "
+    "close CORRUPT; (3) late coherence fail — equation green, RAW "
+    "MATERIALIZED late_material=1 with SUMMARY late_evidence_count=0 "
+    "(D1 late_mat==(late>0) holds) → observed_c > declared_c CORRUPT "
+    "(no false declared_c==observed_c requirement). Also: (4) CANCEL_FIRST "
+    "+ Evidence slot0 → BIND CORRUPT after carrier get (shape exact-0); "
+    "(5) multi-owner TX legal 0..L + CANCEL empty with CANCEL last FOCUS "
+    "(declared_L=0) → COMPLETE (anti last-declared_L); (6) multi-owner TX "
+    "legal + CANCEL slot0 with key order STATE<RC and TX EV<EV_DLV → "
+    "BIND CORRUPT after legal TX secondaries. Each vector single-txn "
+    "mutation_calls=0. "
     "Does not claim full D3-S2 oracle complete, "
     "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
     "transport begin forbidden. Independent generator — production C not "
@@ -977,8 +1041,8 @@ SHA256_PROCEDURE = (
     "the 112-vector prior main, the 113-vector origin/main, the "
     "114-vector origin/main, the 115-vector origin/main, the "
     "119-vector origin/main, the 125-vector origin/main, the "
-    "127-vector origin/main, the 128-vector origin/main, and the "
-    "130-vector origin/main "
+    "127-vector origin/main, the 128-vector origin/main, the "
+    "130-vector origin/main, and the 133-vector origin/main "
     "(fingerprint/order/expected/rows/calls/full object equality). "
     "content_sha256 "
     "covers the document with sha256_procedure/content_sha256 fields set "
@@ -1091,6 +1155,14 @@ OWNERSHIP_P1B2 = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(39-vector suffix on frozen 130-prefix only)"
+)
+# P1-C1 ownership (45-vector suffix at P1-C1 append time). Hardcoded 45 so a
+# later append does not rewrite published P1-C1 objects.
+OWNERSHIP_P1C1 = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(45-vector suffix on frozen 133-prefix only)"
 )
 
 
@@ -7141,6 +7213,1190 @@ def build_d3s2_p1b2_slice_vectors() -> List[Dict[str, Any]]:
     return vectors
 
 
+
+# ---------------------------------------------------------------------------
+# P1-C1 Mode23 illegal slot + equation/late fails
+# (docs/17 §18.13.12.1 / §18.13.15 cases 3,19)
+# ---------------------------------------------------------------------------
+
+
+def _mode23_p1c1_base_domain(
+    *,
+    summary_valid: int,
+    summary_overflow: int,
+    summary_late: int,
+    summary_late_mat: int,
+    raw1_state: int,
+    raw1_late_mat: int,
+    extra_slot_L_plus_1: bool,
+) -> Tuple[List[Dict[str, str]], Dict[str, Dict[str, str]], bytes, int]:
+    """STATE + ANCHOR + EVIDENCE slots for P1-C1 Mode23 formal vectors.
+
+    All single-record cells are D1 typed-valid. Cross-row equation/late/
+    illegal-slot judgments are D3-S2 only (not D1 invalid).
+    """
+    _assert_d1_authority_pin()
+    cat = _d1_catalog()
+    anchor = cat[D1_ANCHOR_ID]
+    state = cat[D1_STATE_ID]
+    sum_mat = cat[D1_EV_SUM_MAT_ID]
+    sum_empty = cat[D1_EV_SUM_EMPTY_ID]
+    raw_unused = cat[D1_EV_RAW_UNUSED_ID]
+    raw_mat = cat[D1_EV_RAW_MAT_ID]
+    binding = _d3s1.default_binding_fields()
+    L = int(binding["limits"]["max_evidence_per_target"])
+    if L != MODE23_ACCEPTED_L:
+        raise SystemExit(
+            f"P1-C1 Mode23 L pin drift: binding L={L} != {MODE23_ACCEPTED_L}"
+        )
+    anchor_key = from_hex(anchor["key_hex"])
+    anchor_val = from_hex(anchor["value_hex"])
+    anchor_pvd = _d3s1.value_digest(anchor_val)
+    named: Dict[str, Dict[str, str]] = {
+        "anchor": {
+            "key_hex": hex_of(anchor_key),
+            "value_hex": hex_of(anchor_val),
+        },
+        "state": {
+            "key_hex": hex_of(from_hex(state["key_hex"])),
+            "value_hex": hex_of(from_hex(state["value_hex"])),
+        },
+    }
+    domain_rows: List[Dict[str, str]] = [named["anchor"], named["state"]]
+
+    sum_tmpl = (
+        from_hex(sum_empty["value_hex"])
+        if int(summary_valid) == 0
+        else from_hex(sum_mat["value_hex"])
+    )
+    k0, v0 = _build_tx_evidence_value(
+        template_value=sum_tmpl,
+        slot=0,
+        cell_kind=EV_CELL_KIND_SUMMARY,
+        cell_state=EV_CELL_STATE_MATERIALIZED,
+        valid=int(summary_valid),
+        overflow=int(summary_overflow),
+        late_count=int(summary_late),
+        late_material=int(summary_late_mat),
+        anchor_pvd=anchor_pvd,
+    )
+    named["ev_slot0"] = {"key_hex": hex_of(k0), "value_hex": hex_of(v0)}
+    domain_rows.append(named["ev_slot0"])
+
+    if int(raw1_state) == EV_CELL_STATE_MATERIALIZED:
+        k1, v1 = _build_tx_evidence_value(
+            template_value=from_hex(raw_mat["value_hex"]),
+            slot=1,
+            cell_kind=EV_CELL_KIND_RAW,
+            cell_state=EV_CELL_STATE_MATERIALIZED,
+            late_material=int(raw1_late_mat),
+            anchor_pvd=anchor_pvd,
+        )
+    else:
+        k1, v1 = _build_tx_evidence_value(
+            template_value=from_hex(raw_unused["value_hex"]),
+            slot=1,
+            cell_kind=EV_CELL_KIND_RAW,
+            cell_state=EV_CELL_STATE_UNUSED,
+            late_material=0,
+            anchor_pvd=anchor_pvd,
+        )
+    named["ev_slot1"] = {"key_hex": hex_of(k1), "value_hex": hex_of(v1)}
+    domain_rows.append(named["ev_slot1"])
+
+    for slot in range(2, L + 1):
+        ks, vs = _build_tx_evidence_value(
+            template_value=from_hex(raw_unused["value_hex"]),
+            slot=slot,
+            cell_kind=EV_CELL_KIND_RAW,
+            cell_state=EV_CELL_STATE_UNUSED,
+            late_material=0,
+            anchor_pvd=anchor_pvd,
+        )
+        name = f"ev_slot{slot}"
+        named[name] = {"key_hex": hex_of(ks), "value_hex": hex_of(vs)}
+        domain_rows.append(named[name])
+
+    if extra_slot_L_plus_1:
+        k_x, v_x = _build_tx_evidence_value(
+            template_value=from_hex(raw_unused["value_hex"]),
+            slot=L + 1,
+            cell_kind=EV_CELL_KIND_RAW,
+            cell_state=EV_CELL_STATE_UNUSED,
+            late_material=0,
+            anchor_pvd=anchor_pvd,
+        )
+        named["ev_slot_L_plus_1"] = {
+            "key_hex": hex_of(k_x),
+            "value_hex": hex_of(v_x),
+        }
+        domain_rows.append(named["ev_slot_L_plus_1"])
+        # D1 allows slot<=8; L+1 with L=3 is typed-valid (not D1 corrupt).
+        if L + 1 > 8:
+            raise SystemExit("P1-C1 illegal slot must stay D1-typed-valid (<=8)")
+
+    profile = _d3s1.encode_all_profile_rows(binding)
+    all_rows = list(profile) + list(domain_rows)
+    all_rows = sorted(all_rows, key=lambda r: from_hex(r["key_hex"]))
+    return all_rows, named, anchor_pvd, L
+
+
+def _mode23_evidence_lex_slots(named: Dict[str, Dict[str, str]]) -> List[int]:
+    """Return EVIDENCE slot_index values in complete-key lex order."""
+    items: List[Tuple[bytes, int]] = []
+    for name, row in named.items():
+        if not name.startswith("ev_slot"):
+            continue
+        key = from_hex(row["key_hex"])
+        _ck, _cs, slot, *_rest = _parse_tx_evidence_cell(
+            from_hex(row["value_hex"])
+        )
+        items.append((key, int(slot)))
+    items.sort(key=lambda t: t[0])
+    return [s for _k, s in items]
+
+
+def run_d3s2_mode23_illegal_slot_L_plus_1_corrupt(
+    binding: Dict[str, Any],
+    rows: List[Dict[str, str]],
+    named: Dict[str, Dict[str, str]],
+    L: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode23: slots 0..L coherent + extra L+1 → FOCUS green, BIND CORRUPT."""
+    if L != MODE23_ACCEPTED_L:
+        raise SystemExit(f"illegal-slot L pin fail: {L}")
+    n_required = L + 1
+    n_cells = n_required + 1  # + illegal L+1
+    n_ok = len(rows)
+    if n_ok != 17 + 2 + n_cells:
+        raise SystemExit(
+            f"illegal-slot expects {17 + 2 + n_cells} rows, got {n_ok}"
+        )
+    lex_slots = _mode23_evidence_lex_slots(named)
+    if sorted(lex_slots) != list(range(0, L + 2)):
+        raise SystemExit(f"illegal-slot lex slot set drift: {lex_slots}")
+    # BIND walks lex order; note on first slot > L without peer gets after.
+    legal_before_illegal = 0
+    for s in lex_slots:
+        if s > L:
+            break
+        legal_before_illegal += 1
+    if legal_before_illegal != n_required:
+        # With current TX owner keys slot L+1 is last; pin that shape.
+        raise SystemExit(
+            f"illegal-slot expected all {n_required} legal before illegal in "
+            f"lex order, got {legal_before_illegal} (lex={lex_slots})"
+        )
+
+    n_drive = 4
+    n_open = 4
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT+FOCUS known-slot 0..L only (B6k; not L+1)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * n_required)
+    port_trace.append("iter_close")
+    # drive3 SELECT empty → BIND
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive4 BIND: legal secondaries STATE+ANCHOR; illegal carrier get then note
+    # (slot authority after carrier body; before true primary; max 2 gets/row)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)  # profile
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    for s in lex_slots:
+        port_trace.append("iter_next")  # EVIDENCE
+        if s <= L:
+            port_trace.append("get")  # STATE carrier
+            port_trace.append("get")  # ANCHOR primary
+        else:
+            # illegal slot: carrier exact_get then note before primary get
+            port_trace.append("get")  # STATE carrier
+            break
+    port_trace.append("iter_close")  # abort cleanup
+    port_trace.append("rollback")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 23, "expected_status": "OK"}
+    ]
+    for di in range(n_drive):
+        if di < n_drive - 1:
+            calls.append(
+                {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+            )
+        else:
+            calls.append(
+                {
+                    "op": "d3s2_drive",
+                    "row_budget": 256,
+                    "expected_status": "STORAGE_CORRUPT",
+                }
+            )
+    calls.append({"op": "abort", "expected_status": "STORAGE_CORRUPT"})
+
+    bind_peer_gets = legal_before_illegal * 2 + 1  # +1 carrier get on illegal
+    d3_peer = n_required + bind_peer_gets
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 2 + n_cells,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": d3_peer,
+        "d3_mode_applicable_count": legal_before_illegal + 1,  # illegal visited
+        "phase": PHASE_FAILED,
+        "count_complete_mask": MASK_EVIDENCE,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("illegal-slot port_trace must be single-txn")
+    if port_trace.count("get") != 17 + d3_peer:
+        raise SystemExit(
+            f"illegal-slot get budget: expect 17+{d3_peer}, "
+            f"got {port_trace.count('get')}"
+        )
+    return calls, expected
+
+
+def run_d3s2_mode23_focus_equation_or_late_corrupt(
+    binding: Dict[str, Any],
+    rows: List[Dict[str, str]],
+    L: int,
+    *,
+    kind_tag: str,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode23 FOCUS known-slot close CORRUPT (equation or late). No BIND."""
+    if L != MODE23_ACCEPTED_L:
+        raise SystemExit(f"{kind_tag} L pin fail: {L}")
+    n_cells = L + 1
+    n_ok = len(rows)
+    if n_ok != 17 + 2 + n_cells:
+        raise SystemExit(
+            f"{kind_tag} expects {17 + 2 + n_cells} rows, got {n_ok}"
+        )
+    n_drive = 2
+    n_open = 2
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * n_cells)
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 23, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {
+            "op": "d3s2_drive",
+            "row_budget": 256,
+            "expected_status": "STORAGE_CORRUPT",
+        },
+        {"op": "abort", "expected_status": "STORAGE_CORRUPT"},
+    ]
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 2 + n_cells,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": n_cells,
+        "d3_mode_applicable_count": 0,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit(f"{kind_tag} port_trace must be single-txn")
+    if port_trace.count("get") != 17 + n_cells:
+        raise SystemExit(
+            f"{kind_tag} get budget fail: got {port_trace.count('get')}"
+        )
+    return calls, expected
+
+
+
+def _mode23_p1c1_cancel_multi_domain(
+    *,
+    include_tx_evidence: bool,
+    include_cancel_ev: bool,
+) -> Tuple[List[Dict[str, str]], Dict[str, Dict[str, str]], int]:
+    """CANCEL_FIRST / multi-owner Mode23 domain material (D1 fixtures only).
+
+    Complete-key lex order of existing fixtures:
+      ANCHOR < STATE < TX EVIDENCE slots < EV_DLV < DELIVERY < RC CANCEL
+    ⇒ CANCEL RESULT is last Mode23 carrier vs TX STATE (declared_L scratch 0
+    after last FOCUS). TX EVIDENCE keys sort before EV_DLV so BIND proves
+    legal TX secondaries before CANCEL slot0 finding.
+    """
+    _assert_d1_authority_pin()
+    cat = _d1_catalog()
+    anchor = cat[D1_ANCHOR_ID]
+    state = cat[D1_STATE_ID]
+    sum_empty = cat[D1_EV_SUM_EMPTY_ID]
+    raw_unused = cat[D1_EV_RAW_UNUSED_ID]
+    ev_dlv = cat[D1_EV_DLV_SUM_EMPTY_ID]
+    dlv = cat[D1_DLV_APP_DS_ID]
+    rc = cat[D1_RC_CANCEL_FIRST_ID]
+    binding = _d3s1.default_binding_fields()
+    L = int(binding["limits"]["max_evidence_per_target"])
+    if L != MODE23_ACCEPTED_L:
+        raise SystemExit(f"cancel/multi L pin fail: {L}")
+    anchor_val = from_hex(anchor["value_hex"])
+    anchor_pvd = _d3s1.value_digest(anchor_val)
+    dlv_val = from_hex(dlv["value_hex"])
+    dlv_pvd = _d3s1.value_digest(dlv_val)
+    named: Dict[str, Dict[str, str]] = {
+        "anchor": {
+            "key_hex": hex_of(from_hex(anchor["key_hex"])),
+            "value_hex": hex_of(anchor_val),
+        },
+        "state": {
+            "key_hex": hex_of(from_hex(state["key_hex"])),
+            "value_hex": hex_of(from_hex(state["value_hex"])),
+        },
+        "dlv": {
+            "key_hex": hex_of(from_hex(dlv["key_hex"])),
+            "value_hex": hex_of(dlv_val),
+        },
+        "rc_cancel": {
+            "key_hex": hex_of(from_hex(rc["key_hex"])),
+            "value_hex": hex_of(from_hex(rc["value_hex"])),
+        },
+    }
+    # Fail-closed carrier order pin before assembly.
+    if not (from_hex(named["state"]["key_hex"]) < from_hex(named["rc_cancel"]["key_hex"])):
+        raise SystemExit("STATE must sort before RC CANCEL (fixture order)")
+    app, _dlv_raw, _txn = _parse_rc_app_attempt_and_delivery(
+        from_hex(named["rc_cancel"]["value_hex"])
+    )
+    if app != 0:
+        raise SystemExit("RC CANCEL_FIRST must have application_attempt_count=0")
+
+    domain_rows: List[Dict[str, str]] = []
+    if include_tx_evidence:
+        domain_rows.extend([named["anchor"], named["state"]])
+        k0, v0 = _build_tx_evidence_value(
+            template_value=from_hex(sum_empty["value_hex"]),
+            slot=0,
+            cell_kind=EV_CELL_KIND_SUMMARY,
+            cell_state=EV_CELL_STATE_MATERIALIZED,
+            valid=0,
+            overflow=0,
+            late_count=0,
+            late_material=0,
+            anchor_pvd=anchor_pvd,
+        )
+        named["ev_slot0"] = {"key_hex": hex_of(k0), "value_hex": hex_of(v0)}
+        domain_rows.append(named["ev_slot0"])
+        for slot in range(1, L + 1):
+            ks, vs = _build_tx_evidence_value(
+                template_value=from_hex(raw_unused["value_hex"]),
+                slot=slot,
+                cell_kind=EV_CELL_KIND_RAW,
+                cell_state=EV_CELL_STATE_UNUSED,
+                late_material=0,
+                anchor_pvd=anchor_pvd,
+            )
+            nm = f"ev_slot{slot}"
+            named[nm] = {"key_hex": hex_of(ks), "value_hex": hex_of(vs)}
+            domain_rows.append(named[nm])
+    if include_cancel_ev:
+        patched = _d3s1.patch_pvd(from_hex(ev_dlv["value_hex"]), dlv_pvd)
+        if _d3s1.header_pvd(patched) != dlv_pvd:
+            raise SystemExit("EV_DLV PVD patch fail")
+        named["ev_dlv"] = {
+            "key_hex": hex_of(from_hex(ev_dlv["key_hex"])),
+            "value_hex": hex_of(patched),
+        }
+        domain_rows.append(named["ev_dlv"])
+        if include_tx_evidence:
+            for slot in range(0, L + 1):
+                if not (
+                    from_hex(named[f"ev_slot{slot}"]["key_hex"])
+                    < from_hex(named["ev_dlv"]["key_hex"])
+                ):
+                    raise SystemExit(
+                        f"TX ev_slot{slot} must sort before EV_DLV"
+                    )
+    domain_rows.append(named["dlv"])
+    domain_rows.append(named["rc_cancel"])
+    profile = _d3s1.encode_all_profile_rows(binding)
+    all_rows = list(profile) + list(domain_rows)
+    all_rows = sorted(all_rows, key=lambda r: from_hex(r["key_hex"]))
+    return all_rows, named, L
+
+
+def run_d3s2_mode23_cancel_first_slot0_corrupt(
+    binding: Dict[str, Any],
+    rows: List[Dict[str, str]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """CANCEL_FIRST empty set + EV slot0 → FOCUS green, BIND CORRUPT (1 get)."""
+    L = int(binding["limits"]["max_evidence_per_target"])
+    if L != MODE23_ACCEPTED_L:
+        raise SystemExit(f"cancel-slot0 L pin fail: {L}")
+    n_ok = len(rows)
+    # 17 profile + EV_DLV + DELIVERY + RC = 20
+    if n_ok != 17 + 3:
+        raise SystemExit(f"cancel-slot0 expects 20 rows, got {n_ok}")
+    n_drive = 4
+    n_open = 4
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # baseline
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # SELECT+FOCUS CANCEL empty (no known-slot gets)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # SELECT empty → BIND
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # BIND: profile + EV; carrier get then note (no primary)
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # EV_DLV
+    port_trace.append("get")  # RC carrier
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 23, "expected_status": "OK"}
+    ]
+    for di in range(n_drive):
+        if di < n_drive - 1:
+            calls.append(
+                {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+            )
+        else:
+            calls.append(
+                {
+                    "op": "d3s2_drive",
+                    "row_budget": 256,
+                    "expected_status": "STORAGE_CORRUPT",
+                }
+            )
+    calls.append({"op": "abort", "expected_status": "STORAGE_CORRUPT"})
+
+    d3_peer = 1  # only illegal row carrier get
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": d3_peer,
+        "d3_mode_applicable_count": 1,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": MASK_EVIDENCE,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("cancel-slot0 must be single-txn")
+    if port_trace.count("get") != 17 + d3_peer:
+        raise SystemExit(
+            f"cancel-slot0 get budget: expect 17+{d3_peer}, got "
+            f"{port_trace.count('get')}"
+        )
+    return calls, expected
+
+
+def run_d3s2_mode23_multi_owner_cancel_last_tx_ok(
+    binding: Dict[str, Any],
+    rows: List[Dict[str, str]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """TX legal 0..L + CANCEL empty; CANCEL last FOCUS; COMPLETE."""
+    L = int(binding["limits"]["max_evidence_per_target"])
+    if L != MODE23_ACCEPTED_L:
+        raise SystemExit(f"multi-ok L pin fail: {L}")
+    n_cells = L + 1
+    n_ok = len(rows)
+    # 17 + ANCHOR+STATE + EV×(L+1) + DLV + RC = 17+2+4+2 = 25
+    if n_ok != 17 + 2 + n_cells + 2:
+        raise SystemExit(f"multi-ok expects {17+2+n_cells+2} rows, got {n_ok}")
+    n_drive = 5
+    n_open = 5
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # STATE FOCUS known-slot
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * n_cells)
+    port_trace.append("iter_close")
+    # CANCEL FOCUS empty
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # SELECT empty → BIND
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # BIND TX secondaries only
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    for _ in range(n_cells):
+        port_trace.append("iter_next")
+        port_trace.append("get")  # STATE carrier
+        port_trace.append("get")  # ANCHOR primary
+    port_trace.append("iter_next")  # DLV
+    port_trace.append("iter_next")  # RC
+    port_trace.append("iter_next")  # NOT_FOUND
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 23, "expected_status": "OK"}
+    ]
+    for _ in range(n_drive):
+        calls.append(
+            {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+        )
+    calls.append({"op": "finalize", "expected_status": "OK"})
+
+    bind_gets = n_cells * 2
+    d3_peer = n_cells + bind_gets
+    expected: Dict[str, Any] = {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 2 + n_cells + 2,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": d3_peer,
+        "d3_mode_applicable_count": n_cells,
+        "phase": PHASE_COMPLETE,
+        "count_complete_mask": MASK_EVIDENCE,
+        "binding_complete_mask": MASK_EVIDENCE,
+        "flags": FLAG_BASELINE_DONE | FLAG_COMPLETE_READY,
+    }
+    if port_trace.count("get") != 17 + d3_peer:
+        raise SystemExit(
+            f"multi-ok get budget: expect 17+{d3_peer}, got "
+            f"{port_trace.count('get')}"
+        )
+    return calls, expected
+
+
+def run_d3s2_mode23_multi_owner_tx_before_cancel_ev_corrupt(
+    binding: Dict[str, Any],
+    rows: List[Dict[str, str]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """TX legal + CANCEL slot0; TX EV keys before EV_DLV; BIND CORRUPT."""
+    L = int(binding["limits"]["max_evidence_per_target"])
+    if L != MODE23_ACCEPTED_L:
+        raise SystemExit(f"multi-corrupt L pin fail: {L}")
+    n_cells = L + 1
+    n_ok = len(rows)
+    # + EV_DLV
+    if n_ok != 17 + 2 + n_cells + 3:
+        raise SystemExit(
+            f"multi-corrupt expects {17+2+n_cells+3} rows, got {n_ok}"
+        )
+    n_drive = 5
+    n_open = 5
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * n_cells)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # BIND: legal TX then EV_DLV carrier get → note
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(["iter_next"] * 17)
+    port_trace.append("iter_next")  # ANCHOR
+    port_trace.append("iter_next")  # STATE
+    for _ in range(n_cells):
+        port_trace.append("iter_next")
+        port_trace.append("get")
+        port_trace.append("get")
+    port_trace.append("iter_next")  # EV_DLV
+    port_trace.append("get")  # RC carrier then note
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 23, "expected_status": "OK"}
+    ]
+    for di in range(n_drive):
+        if di < n_drive - 1:
+            calls.append(
+                {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"}
+            )
+        else:
+            calls.append(
+                {
+                    "op": "d3s2_drive",
+                    "row_budget": 256,
+                    "expected_status": "STORAGE_CORRUPT",
+                }
+            )
+    calls.append({"op": "abort", "expected_status": "STORAGE_CORRUPT"})
+
+    bind_gets = n_cells * 2 + 1
+    d3_peer = n_cells + bind_gets
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 2 + n_cells + 3,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": d3_peer,
+        "d3_mode_applicable_count": n_cells + 1,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": MASK_EVIDENCE,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+    }
+    if port_trace.count("get") != 17 + d3_peer:
+        raise SystemExit(
+            f"multi-corrupt get budget: expect 17+{d3_peer}, got "
+            f"{port_trace.count('get')}"
+        )
+    return calls, expected
+
+
+
+def build_d3s2_p1c1_slice_vectors() -> List[Dict[str, Any]]:
+    """P1-C1 append-only slice (3 vectors) after the frozen 133-prefix."""
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    # ---- (1) illegal slot L+1 after FOCUS green ----
+    rows_a, named_a, _pvd_a, L_a = _mode23_p1c1_base_domain(
+        summary_valid=0,
+        summary_overflow=0,
+        summary_late=0,
+        summary_late_mat=0,
+        raw1_state=EV_CELL_STATE_UNUSED,
+        raw1_late_mat=0,
+        extra_slot_L_plus_1=True,
+    )
+    # Equation coherent on 0..L: valid=0, M=0, overflow=0.
+    s0 = _parse_tx_evidence_cell(from_hex(named_a["ev_slot0"]["value_hex"]))
+    if (s0[0], s0[1], s0[2], s0[4], s0[5], s0[6]) != (
+        EV_CELL_KIND_SUMMARY,
+        EV_CELL_STATE_MATERIALIZED,
+        0,
+        0,
+        0,
+        0,
+    ):
+        raise SystemExit("P1-C1 illegal SUMMARY shape pin fail")
+    x = _parse_tx_evidence_cell(
+        from_hex(named_a["ev_slot_L_plus_1"]["value_hex"])
+    )
+    if x[0] != EV_CELL_KIND_RAW or x[2] != L_a + 1 or x[2] > 8:
+        raise SystemExit("P1-C1 illegal L+1 must be D1-typed RAW slot<=8")
+    calls_a, exp_a = run_d3s2_mode23_illegal_slot_L_plus_1_corrupt(
+        binding, rows_a, named_a, L_a
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M23_ILLEGAL_SLOT_L_PLUS_1_BIND_CORRUPT",
+            "kind": "mode23_illegal_slot_L_plus_1_bind_corrupt",
+            "mode": 23,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_a),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_a,
+            "d1_refs": [
+                D1_STATE_ID,
+                D1_ANCHOR_ID,
+                D1_EV_SUM_EMPTY_ID,
+                D1_EV_RAW_UNUSED_ID,
+            ],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=named_a["state"],
+                expect_presence="PRESENT",
+                note="Mode23 retained TRANSACTION_STATE carrier",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named_a["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR for legal BIND rows before illegal",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_EV_RAW_UNUSED_ID,
+                    row=named_a["ev_slot_L_plus_1"],
+                    expect_presence="PRESENT",
+                    note=(
+                        f"extra RAW UNUSED slot L+1={L_a + 1} D1-typed-valid "
+                        f"(slot<=8) same owner/PVD; S2 BIND illegal vs L={L_a}"
+                    ),
+                )
+            ],
+            "notes": (
+                "P1-C1 formal (§18.13.15 case3 / §18.13.12.1 Mode23): all "
+                f"required slots 0..L (L={MODE23_ACCEPTED_L}) PRESENT with "
+                "empty SUMMARY equation-green (valid=M=overflow=0), plus "
+                "extra RAW slot L+1 D1-typed-valid (slot<=8) same owner/PVD. "
+                "FOCUS known-slot matrix exact_get 0..L only → count bit2 "
+                "green; BIND_EVIDENCE walks lex-ordered secondaries, notes "
+                "illegal slot > accepted profile L via note_terminal_corrupt "
+                "STORAGE_CORRUPT after carrier get and before primary get on "
+                "that row. Not mere D1 "
+                "invalid; not Port failure; not carrier/primary absence. "
+                "Single READ_ONLY txn; mutation_calls=0. Independent Python "
+                "only. Not D3-S2 complete claim."
+            ),
+            "ownership": OWNERSHIP_P1C1,
+            "expected": exp_a,
+        }
+    )
+
+    # ---- (2) equation fail ----
+    rows_b, named_b, _pvd_b, L_b = _mode23_p1c1_base_domain(
+        summary_valid=2,
+        summary_overflow=0,
+        summary_late=0,
+        summary_late_mat=0,
+        raw1_state=EV_CELL_STATE_MATERIALIZED,
+        raw1_late_mat=0,
+        extra_slot_L_plus_1=False,
+    )
+    sb = _parse_tx_evidence_cell(from_hex(named_b["ev_slot0"]["value_hex"]))
+    rb = _parse_tx_evidence_cell(from_hex(named_b["ev_slot1"]["value_hex"]))
+    if (sb[4], sb[5], sb[6], sb[7]) != (2, 0, 0, 0):
+        raise SystemExit(f"equation-fail SUMMARY counters pin fail: {sb}")
+    if rb[1] != EV_CELL_STATE_MATERIALIZED or rb[7] != 0:
+        raise SystemExit("equation-fail RAW1 must be MATERIALIZED late=0")
+    # D1: overflow<=valid, late<=valid; S2 equation 2 != 1+0
+    if not (sb[5] <= sb[4] and sb[6] <= sb[4]):
+        raise SystemExit("equation-fail must remain D1 counter-domain valid")
+    if sb[4] == 1 + sb[5]:
+        raise SystemExit("equation-fail must violate valid == M + overflow")
+    calls_b, exp_b = run_d3s2_mode23_focus_equation_or_late_corrupt(
+        binding, rows_b, L_b, kind_tag="equation-fail"
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M23_EQUATION_FAIL_VALID_NE_M_PLUS_OVERFLOW_CORRUPT",
+            "kind": "mode23_equation_fail_valid_ne_m_plus_overflow_corrupt",
+            "mode": 23,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_b),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_b,
+            "d1_refs": [
+                D1_STATE_ID,
+                D1_ANCHOR_ID,
+                D1_EV_SUM_MAT_ID,
+                D1_EV_RAW_MAT_ID,
+                D1_EV_RAW_UNUSED_ID,
+            ],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=named_b["state"],
+                expect_presence="PRESENT",
+                note="Mode23 retained TRANSACTION_STATE carrier",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named_b["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR present (FOCUS path only)",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_EV_SUM_MAT_ID,
+                    row=named_b["ev_slot0"],
+                    expect_presence="PRESENT",
+                    note=(
+                        "SUMMARY@0 valid=2 overflow=0 late=0 (D1 domain OK); "
+                        "equation 2 != M=1 + overflow=0"
+                    ),
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_EV_RAW_MAT_ID,
+                    row=named_b["ev_slot1"],
+                    expect_presence="PRESENT",
+                    note="RAW MATERIALIZED slot1 (M=1) late_material=0",
+                ),
+            ],
+            "notes": (
+                "P1-C1 formal (§18.13.15 case19 / §18.13.12.1 Mode23 equation): "
+                "all slots 0..L PRESENT with matching STATE+ANCHOR. SUMMARY "
+                "counters D1-valid (overflow<=valid, late<=valid, "
+                "late_mat==(late>0)) but valid_material_count=2 != M=1 + "
+                "raw_overflow_count=0 → FOCUS known-slot close "
+                "note_terminal_corrupt STORAGE_CORRUPT. BIND must not run. "
+                "Not absence/carrier/BIND failure; not Port path. Single "
+                "READ_ONLY txn; mutation_calls=0. Independent Python only."
+            ),
+            "ownership": OWNERSHIP_P1C1,
+            "expected": exp_b,
+        }
+    )
+
+    # ---- (3) late coherence fail (constructible under D1) ----
+    rows_c, named_c, _pvd_c, L_c = _mode23_p1c1_base_domain(
+        summary_valid=1,
+        summary_overflow=0,
+        summary_late=0,
+        summary_late_mat=0,
+        raw1_state=EV_CELL_STATE_MATERIALIZED,
+        raw1_late_mat=1,
+        extra_slot_L_plus_1=False,
+    )
+    sc = _parse_tx_evidence_cell(from_hex(named_c["ev_slot0"]["value_hex"]))
+    rc = _parse_tx_evidence_cell(from_hex(named_c["ev_slot1"]["value_hex"]))
+    if (sc[4], sc[5], sc[6], sc[7]) != (1, 0, 0, 0):
+        raise SystemExit(f"late-fail SUMMARY pin fail: {sc}")
+    if rc[1] != EV_CELL_STATE_MATERIALIZED or rc[7] != 1:
+        raise SystemExit("late-fail RAW1 must be MATERIALIZED late_material=1")
+    # Equation green: 1 == 1 + 0; late: observed_c=1 > declared_c=0
+    if sc[4] != 1 + sc[5]:
+        raise SystemExit("late-fail must keep equation green")
+    if not (1 > sc[6]):
+        raise SystemExit("late-fail must have observed_c > declared_c")
+    # D1 SUMMARY late_mat == (late_count > 0) holds with both 0.
+    if int(sc[7]) != (1 if int(sc[6]) > 0 else 0):
+        raise SystemExit("late-fail SUMMARY must remain D1 late_mat coherent")
+    calls_c, exp_c = run_d3s2_mode23_focus_equation_or_late_corrupt(
+        binding, rows_c, L_c, kind_tag="late-fail"
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M23_LATE_COHERENCE_OBSERVED_GT_DECLARED_CORRUPT",
+            "kind": "mode23_late_coherence_observed_gt_declared_corrupt",
+            "mode": 23,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_c),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_c,
+            "d1_refs": [
+                D1_STATE_ID,
+                D1_ANCHOR_ID,
+                D1_EV_SUM_MAT_ID,
+                D1_EV_RAW_MAT_ID,
+                D1_EV_RAW_UNUSED_ID,
+            ],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=named_c["state"],
+                expect_presence="PRESENT",
+                note="Mode23 retained TRANSACTION_STATE carrier",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named_c["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR present (FOCUS path only)",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_EV_SUM_MAT_ID,
+                    row=named_c["ev_slot0"],
+                    expect_presence="PRESENT",
+                    note=(
+                        "SUMMARY@0 valid=1 overflow=0 late_evidence_count=0 "
+                        "late_material=0 (D1 same-record OK)"
+                    ),
+                ),
+                _d3s1.d1_ref_from_id(
+                    D1_EV_RAW_MAT_ID,
+                    row=named_c["ev_slot1"],
+                    expect_presence="PRESENT",
+                    note=(
+                        "RAW MATERIALIZED late_material=1 → observed_c=1; "
+                        "equation valid==M+overflow still green"
+                    ),
+                ),
+            ],
+            "notes": (
+                "P1-C1 formal (§18.13.15 case19 / §18.13.12.1 Mode23 late): "
+                "all slots 0..L PRESENT, equation green (valid=1 == M=1 + "
+                "overflow=0), at least one RAW MATERIALIZED late_material=1 "
+                "while SUMMARY late_evidence_count=0 (SUMMARY late_material=0 "
+                "keeps D1 late_mat==(late>0)). observed_c > declared_c → "
+                "FOCUS close STORAGE_CORRUPT. Normative forbids requiring "
+                "declared_c==observed_c (overflow late may lack RAW). "
+                "Constructible under D1; not absence/carrier/BIND fail. "
+                "Single READ_ONLY txn; mutation_calls=0. Independent Python."
+            ),
+            "ownership": OWNERSHIP_P1C1,
+            "expected": exp_c,
+        }
+    )
+
+
+    # ---- (4) CANCEL_FIRST + slot0 Evidence CORRUPT ----
+    rows_d, named_d, L_d = _mode23_p1c1_cancel_multi_domain(
+        include_tx_evidence=False, include_cancel_ev=True
+    )
+    calls_d, exp_d = run_d3s2_mode23_cancel_first_slot0_corrupt(binding, rows_d)
+    vectors.append(
+        {
+            "id": "D3S2_M23_CANCEL_FIRST_SLOT0_BIND_CORRUPT",
+            "kind": "mode23_cancel_first_slot0_bind_corrupt",
+            "mode": 23,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_d),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_d,
+            "d1_refs": [
+                D1_RC_CANCEL_FIRST_ID,
+                D1_DLV_APP_DS_ID,
+                D1_EV_DLV_SUM_EMPTY_ID,
+            ],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_RC_CANCEL_FIRST_ID,
+                row=named_d["rc_cancel"],
+                expect_presence="PRESENT",
+                note="CANCEL_FIRST RESULT_CACHE carrier (app_attempt=0)",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_DLV_APP_DS_ID,
+                row=named_d["dlv"],
+                expect_presence="PRESENT",
+                note="true primary DELIVERY for EV_DLV PVD",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_EV_DLV_SUM_EMPTY_ID,
+                    row=named_d["ev_dlv"],
+                    expect_presence="PRESENT",
+                    note="any Evidence under CANCEL_FIRST is S2 illegal",
+                )
+            ],
+            "notes": (
+                "P1-C1 formal: DELIVERY CANCEL_FIRST RESULT expects exact 0 "
+                "EVIDENCE cells. Slot0 SUMMARY for that owner is D1-typed-valid "
+                "and slot0<=profile L, but BIND_EVIDENCE notes STORAGE_CORRUPT "
+                "from carrier body shape after carrier exact_get and before "
+                "true primary get (max 2 gets; this row consumes 1). "
+                "Profile-only L authority would false-accept. mutation_calls=0."
+            ),
+            "ownership": OWNERSHIP_P1C1,
+            "expected": exp_d,
+        }
+    )
+
+    # ---- (5) multi-owner CANCEL last FOCUS + TX legal COMPLETE ----
+    rows_e, named_e, L_e = _mode23_p1c1_cancel_multi_domain(
+        include_tx_evidence=True, include_cancel_ev=False
+    )
+    # Pin carrier order STATE < RC (CANCEL last FOCUS → declared_L=0).
+    if not (
+        from_hex(named_e["state"]["key_hex"])
+        < from_hex(named_e["rc_cancel"]["key_hex"])
+    ):
+        raise SystemExit("multi-ok carrier order pin fail")
+    calls_e, exp_e = run_d3s2_mode23_multi_owner_cancel_last_tx_ok(
+        binding, rows_e
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M23_MULTI_OWNER_CANCEL_LAST_TX_OK",
+            "kind": "mode23_multi_owner_cancel_last_tx_ok",
+            "mode": 23,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_e),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_e,
+            "d1_refs": [
+                D1_STATE_ID,
+                D1_ANCHOR_ID,
+                D1_RC_CANCEL_FIRST_ID,
+                D1_DLV_APP_DS_ID,
+                D1_EV_SUM_EMPTY_ID,
+                D1_EV_RAW_UNUSED_ID,
+            ],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=named_e["state"],
+                expect_presence="PRESENT",
+                note="TX retained STATE carrier (first FOCUS)",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_RC_CANCEL_FIRST_ID,
+                row=named_e["rc_cancel"],
+                expect_presence="PRESENT",
+                note="CANCEL_FIRST last FOCUS; declared_L scratch ends 0",
+            ),
+            "row_refs": [],
+            "notes": (
+                "P1-C1 formal anti last-declared_L: TX retained legal slots "
+                f"0..L (L={MODE23_ACCEPTED_L}) coexist with CANCEL_FIRST empty "
+                "evidence set. Fixture key order STATE < RC ⇒ CANCEL is last "
+                "Mode23 carrier FOCUS and ctx.declared_L ends 0. BIND must use "
+                "per-row carrier shape + profile L — not declared_L — so TX "
+                "evidence COMPLETE green. mutation_calls=0."
+            ),
+            "ownership": OWNERSHIP_P1C1,
+            "expected": exp_e,
+        }
+    )
+
+    # ---- (6) multi-owner TX before CANCEL EV CORRUPT ----
+    rows_f, named_f, L_f = _mode23_p1c1_cancel_multi_domain(
+        include_tx_evidence=True, include_cancel_ev=True
+    )
+    calls_f, exp_f = run_d3s2_mode23_multi_owner_tx_before_cancel_ev_corrupt(
+        binding, rows_f
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M23_MULTI_OWNER_TX_BEFORE_CANCEL_EV_CORRUPT",
+            "kind": "mode23_multi_owner_tx_before_cancel_ev_corrupt",
+            "mode": 23,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_f),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_f,
+            "d1_refs": [
+                D1_STATE_ID,
+                D1_ANCHOR_ID,
+                D1_RC_CANCEL_FIRST_ID,
+                D1_DLV_APP_DS_ID,
+                D1_EV_SUM_EMPTY_ID,
+                D1_EV_RAW_UNUSED_ID,
+                D1_EV_DLV_SUM_EMPTY_ID,
+            ],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_STATE_ID,
+                row=named_f["state"],
+                expect_presence="PRESENT",
+                note="TX STATE carrier (sorts before RC)",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_EV_DLV_SUM_EMPTY_ID,
+                row=named_f["ev_dlv"],
+                expect_presence="PRESENT",
+                note="CANCEL owner Evidence after TX EVIDENCE keys in lex order",
+            ),
+            "row_refs": [],
+            "notes": (
+                "P1-C1 formal: multi-owner TX legal 0..L + CANCEL_FIRST with "
+                "slot0 Evidence. Computed fixture key order STATE < RC "
+                "(CANCEL last FOCUS) and all TX EVIDENCE keys < EV_DLV so BIND "
+                "walks legal TX secondaries first then notes CANCEL shape "
+                "corrupt after carrier get. Profile-only L would false-accept "
+                "slot0; last declared_L is 0 and is not authority. "
+                "mutation_calls=0."
+            ),
+            "ownership": OWNERSHIP_P1C1,
+            "expected": exp_f,
+        }
+    )
+
+
+    if len(vectors) != D3S2_P1C1_SLICE_COUNT:
+        raise SystemExit("p1c1 slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P1C1_KINDS:
+        raise SystemExit(f"p1c1 kinds inventory mismatch: {kinds}")
+    return vectors
+
+
 def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
     vectors = (
         build_d3s2_smoke_vectors()
@@ -7159,6 +8415,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_p1d2_slice_vectors()
         + build_d3s2_p1b1_slice_vectors()
         + build_d3s2_p1b2_slice_vectors()
+        + build_d3s2_p1c1_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -7261,6 +8518,7 @@ def build_document() -> Dict[str, Any]:
     p1d2_vectors = build_d3s2_p1d2_slice_vectors()
     p1b1_vectors = build_d3s2_p1b1_slice_vectors()
     p1b2_vectors = build_d3s2_p1b2_slice_vectors()
+    p1c1_vectors = build_d3s2_p1c1_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -7278,6 +8536,7 @@ def build_document() -> Dict[str, Any]:
         + p1d2_vectors
         + p1b1_vectors
         + p1b2_vectors
+        + p1c1_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -7435,6 +8694,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_thirty_hash})"
         )
 
+    # Retained 133-vector chain pin (130 + P1-B2 = origin/main before P1-C1).
+    hundred_thirty_three_hash = _chain_hash(
+        prior_fingerprints[:D3S2_133_PREFIX_COUNT]
+    )
+    if hundred_thirty_three_hash != D3S2_133_FINGERPRINT_HASH:
+        raise SystemExit(
+            "133-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_thirty_three_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -7461,6 +8730,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_127_prefix_count": D3S2_127_PREFIX_COUNT,
         "d3s2_128_prefix_count": D3S2_128_PREFIX_COUNT,
         "d3s2_130_prefix_count": D3S2_130_PREFIX_COUNT,
+        "d3s2_133_prefix_count": D3S2_133_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -7629,6 +8899,16 @@ def build_document() -> Dict[str, Any]:
                 "append-only freeze of origin/main (94 D3S1 + 36 d3s2 suffix "
                 "through P1-B1); P1-B2 Mode24/25/26 CLEANUP still-ordinary "
                 "vectors follow"
+            ),
+        },
+        "d3s2_133_prefix_authority": {
+            "vector_count": D3S2_133_PREFIX_COUNT,
+            "content_sha256": D3S2_133_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_133_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 39 d3s2 suffix "
+                "through P1-B2 / PR#69); P1-C1 Mode23 illegal-slot + "
+                "equation/late fail vectors follow"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -7961,6 +9241,17 @@ def check_data(
         )
     if int(auth130.get("vector_count", -1)) != D3S2_130_PREFIX_COUNT:
         return _fail_check("d3s2_130_prefix_authority vector_count pin mismatch")
+    if int(data.get("d3s2_133_prefix_count", -1)) != D3S2_133_PREFIX_COUNT:
+        return _fail_check("d3s2_133_prefix_count pin mismatch")
+    auth133 = data.get("d3s2_133_prefix_authority") or {}
+    if auth133.get("content_sha256") != D3S2_133_CONTENT_SHA256:
+        return _fail_check("d3s2_133_prefix_authority content_sha256 pin mismatch")
+    if auth133.get("prior_fingerprint_prefix_hash") != D3S2_133_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_133_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth133.get("vector_count", -1)) != D3S2_133_PREFIX_COUNT:
+        return _fail_check("d3s2_133_prefix_authority vector_count pin mismatch")
 
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
@@ -8153,6 +9444,40 @@ def check_data(
         return _fail_check(
             f"130-prefix fingerprint chain pin fail "
             f"(got {hundred_thirty_chain})"
+        )
+
+    # Full-object 133-prefix equality (130 + P1-B2; origin/main before P1-C1).
+    expected_133 = expected_doc["vectors"][:D3S2_133_PREFIX_COUNT]
+    if vectors[:D3S2_133_PREFIX_COUNT] != expected_133:
+        for i in range(D3S2_133_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_133[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_133[i])
+            if vectors[i] != expected_133[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"133-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("133-prefix full-object mismatch")
+    hundred_thirty_three_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_133_PREFIX_COUNT)
+        ]
+    )
+    if hundred_thirty_three_chain != D3S2_133_FINGERPRINT_HASH:
+        return _fail_check(
+            f"133-prefix fingerprint chain pin fail "
+            f"(got {hundred_thirty_three_chain})"
         )
 
     err = _assert_prefix_identity(vectors, prefix_doc)
@@ -8918,7 +10243,9 @@ def check_data(
     p1d2 = suffix[p1d2_start : p1d2_start + D3S2_P1D2_SLICE_COUNT]
     p1b1_start = p1d2_start + D3S2_P1D2_SLICE_COUNT
     p1b1 = suffix[p1b1_start : p1b1_start + D3S2_P1B1_SLICE_COUNT]
-    p1b2 = suffix[p1b1_start + D3S2_P1B1_SLICE_COUNT :]
+    p1b2_start = p1b1_start + D3S2_P1B1_SLICE_COUNT
+    p1b2 = suffix[p1b2_start : p1b2_start + D3S2_P1B2_SLICE_COUNT]
+    p1c1 = suffix[p1b2_start + D3S2_P1B2_SLICE_COUNT :]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -8949,6 +10276,8 @@ def check_data(
         return _fail_check("p1b1 slice length mismatch")
     if len(p1b2) != D3S2_P1B2_SLICE_COUNT:
         return _fail_check("p1b2 slice length mismatch")
+    if len(p1c1) != D3S2_P1C1_SLICE_COUNT:
+        return _fail_check("p1c1 slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -11112,6 +12441,385 @@ def check_data(
     if err:
         return _fail_check(err)
 
+    # ---- P1-C1 Mode23 illegal / equation / late ----
+    p1c1_kinds_got = {v["kind"] for v in p1c1}
+    if p1c1_kinds_got != D3S2_P1C1_KINDS:
+        return _fail_check(f"p1c1 kinds inventory mismatch: {p1c1_kinds_got}")
+    p1c1_by_kind = {v["kind"]: v for v in p1c1}
+
+    def _p1c1_common(vec: Dict[str, Any], *, mode: int, peer_gets: int,
+                     focus_live_flags: int, count_mask: int,
+                     binding_mask: int,
+                     require_state_anchor: bool = True,
+                     require_corrupt: bool = True) -> Optional[str]:
+        if int(vec["mode"]) != mode:
+            return f"{vec['id']}: mode must be {mode}"
+        if vec.get("ownership") != OWNERSHIP_P1C1:
+            return f"{vec['id']}: ownership pin fail"
+        if vec.get("faults"):
+            return f"{vec['id']}: faults must be empty"
+        if int(vec["expected"].get("mutation_calls", -1)) != 0:
+            return f"{vec['id']}: mutation_calls must be 0"
+        if require_corrupt:
+            if int(vec["expected"]["phase"]) != PHASE_FAILED:
+                return f"{vec['id']}: phase must be FAILED"
+            if vec["expected"]["final_status"] != "STORAGE_CORRUPT":
+                return f"{vec['id']}: final_status must be STORAGE_CORRUPT"
+            if int(vec["expected"]["has_sticky_primary"]) != 1:
+                return f"{vec['id']}: sticky must be set"
+            if vec["expected"]["sticky_primary"] != "STORAGE_CORRUPT":
+                return f"{vec['id']}: sticky_primary pin fail"
+            if int(vec["expected"]["adopted"]) != 0:
+                return f"{vec['id']}: adopted must be 0"
+        else:
+            if int(vec["expected"]["phase"]) != PHASE_COMPLETE:
+                return f"{vec['id']}: phase must be COMPLETE"
+            if vec["expected"]["final_status"] != "OK":
+                return f"{vec['id']}: final_status must be OK"
+            if int(vec["expected"]["has_sticky_primary"]) != 0:
+                return f"{vec['id']}: sticky must be clear"
+            if int(vec["expected"]["adopted"]) != 1:
+                return f"{vec['id']}: adopted must be 1"
+        if int(vec["expected"]["count_complete_mask"]) != count_mask:
+            return (
+                f"{vec['id']}: count_complete_mask must be {count_mask}, got "
+                f"{vec['expected']['count_complete_mask']}"
+            )
+        if int(vec["expected"]["binding_complete_mask"]) != binding_mask:
+            return (
+                f"{vec['id']}: binding_complete_mask must be {binding_mask}"
+            )
+        if int(vec["expected"]["d3_peer_get_count"]) != peer_gets:
+            return (
+                f"{vec['id']}: d3_peer_get_count must be {peer_gets}, got "
+                f"{vec['expected']['d3_peer_get_count']}"
+            )
+        if int(vec["expected"]["flags"]) != focus_live_flags:
+            return (
+                f"{vec['id']}: flags must be {focus_live_flags}, got "
+                f"{vec['expected']['flags']}"
+            )
+        if (vec["expected"].get("port_trace") or []).count("begin:READ_ONLY") != 1:
+            return f"{vec['id']}: single-txn begin pin fail"
+        if require_corrupt:
+            if vec["calls"][-1]["op"] != "abort":
+                return f"{vec['id']}: fail path must end with abort"
+        else:
+            if vec["calls"][-1]["op"] != "finalize":
+                return f"{vec['id']}: success path must end with finalize"
+        if require_state_anchor:
+            has_state = has_anchor = False
+            for r in vec["rows"]:
+                k = from_hex(r["key_hex"])
+                if len(k) >= 10 and k[8] == 6 and k[9] == 0x22:
+                    has_state = True
+                if len(k) >= 10 and k[8] == 6 and k[9] == 0x20:
+                    has_anchor = True
+            if not has_state or not has_anchor:
+                return f"{vec['id']}: must include STATE carrier + ANCHOR primary"
+        return None
+
+    m23_illegal = p1c1_by_kind["mode23_illegal_slot_L_plus_1_bind_corrupt"]
+    err = _p1c1_common(
+        m23_illegal,
+        mode=23,
+        peer_gets=4 + 8 + 1,  # FOCUS 0..L + BIND 4 legal * 2 + illegal carrier
+        focus_live_flags=FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+        count_mask=MASK_EVIDENCE,
+        binding_mask=0,
+    )
+    if err:
+        return _fail_check(err)
+    # Rebuild named from rows for independent model.
+    named_il: Dict[str, Dict[str, str]] = {}
+    for r in m23_illegal["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x32:
+            _ck, _cs, slot, *_ = _parse_tx_evidence_cell(from_hex(r["value_hex"]))
+            if slot == MODE23_ACCEPTED_L + 1:
+                named_il["ev_slot_L_plus_1"] = r
+            else:
+                named_il[f"ev_slot{slot}"] = r
+        elif len(k) >= 10 and k[8] == 6 and k[9] == 0x20:
+            named_il["anchor"] = r
+        elif len(k) >= 10 and k[8] == 6 and k[9] == 0x22:
+            named_il["state"] = r
+    try:
+        exp_calls, exp_expected = run_d3s2_mode23_illegal_slot_L_plus_1_corrupt(
+            m23_illegal["candidate_binding"],
+            m23_illegal["rows"],
+            named_il,
+            MODE23_ACCEPTED_L,
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m23_illegal['id']}: model reject: {exc}")
+    if m23_illegal["calls"] != exp_calls:
+        return _fail_check(f"{m23_illegal['id']}: calls != independent model")
+    if m23_illegal["expected"] != exp_expected:
+        return _fail_check(f"{m23_illegal['id']}: expected != independent model")
+    # Extra slot present and legal 0..L present.
+    slots_present = set()
+    for r in m23_illegal["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x32:
+            _ck, _cs, slot, *_ = _parse_tx_evidence_cell(from_hex(r["value_hex"]))
+            slots_present.add(int(slot))
+    if set(range(0, MODE23_ACCEPTED_L + 1)) - slots_present:
+        return _fail_check(f"{m23_illegal['id']}: missing required slots 0..L")
+    if MODE23_ACCEPTED_L + 1 not in slots_present:
+        return _fail_check(f"{m23_illegal['id']}: missing illegal L+1 row")
+
+    m23_eq = p1c1_by_kind[
+        "mode23_equation_fail_valid_ne_m_plus_overflow_corrupt"
+    ]
+    err = _p1c1_common(
+        m23_eq,
+        mode=23,
+        peer_gets=MODE23_ACCEPTED_L + 1,
+        focus_live_flags=FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        count_mask=0,
+        binding_mask=0,
+    )
+    if err:
+        return _fail_check(err)
+    try:
+        exp_calls, exp_expected = run_d3s2_mode23_focus_equation_or_late_corrupt(
+            m23_eq["candidate_binding"],
+            m23_eq["rows"],
+            MODE23_ACCEPTED_L,
+            kind_tag="equation-fail",
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m23_eq['id']}: model reject: {exc}")
+    if m23_eq["calls"] != exp_calls:
+        return _fail_check(f"{m23_eq['id']}: calls != independent model")
+    if m23_eq["expected"] != exp_expected:
+        return _fail_check(f"{m23_eq['id']}: expected != independent model")
+    # Equation pin: valid != M + overflow with D1 domain ok.
+    sum_row = None
+    m_mat = 0
+    for r in m23_eq["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != 0x32:
+            continue
+        ck, cs, slot, _o, valid, overflow, late, lm = _parse_tx_evidence_cell(
+            from_hex(r["value_hex"])
+        )
+        if slot == 0:
+            sum_row = (valid, overflow, late, lm)
+        elif (
+            ck == EV_CELL_KIND_RAW
+            and cs == EV_CELL_STATE_MATERIALIZED
+            and 1 <= slot <= MODE23_ACCEPTED_L
+        ):
+            m_mat += 1
+    if sum_row is None:
+        return _fail_check(f"{m23_eq['id']}: SUMMARY missing")
+    valid, overflow, late, lm = sum_row
+    if overflow > valid or late > valid:
+        return _fail_check(f"{m23_eq['id']}: SUMMARY must stay D1 counter-domain")
+    if lm != (1 if late > 0 else 0):
+        return _fail_check(f"{m23_eq['id']}: SUMMARY late_mat D1 fail")
+    if valid == m_mat + overflow:
+        return _fail_check(f"{m23_eq['id']}: must violate equation")
+
+    m23_late = p1c1_by_kind[
+        "mode23_late_coherence_observed_gt_declared_corrupt"
+    ]
+    err = _p1c1_common(
+        m23_late,
+        mode=23,
+        peer_gets=MODE23_ACCEPTED_L + 1,
+        focus_live_flags=FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        count_mask=0,
+        binding_mask=0,
+    )
+    if err:
+        return _fail_check(err)
+    try:
+        exp_calls, exp_expected = run_d3s2_mode23_focus_equation_or_late_corrupt(
+            m23_late["candidate_binding"],
+            m23_late["rows"],
+            MODE23_ACCEPTED_L,
+            kind_tag="late-fail",
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m23_late['id']}: model reject: {exc}")
+    if m23_late["calls"] != exp_calls:
+        return _fail_check(f"{m23_late['id']}: calls != independent model")
+    if m23_late["expected"] != exp_expected:
+        return _fail_check(f"{m23_late['id']}: expected != independent model")
+    sum_row = None
+    m_mat = 0
+    obs_late = 0
+    for r in m23_late["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != 0x32:
+            continue
+        ck, cs, slot, _o, valid, overflow, late, lm = _parse_tx_evidence_cell(
+            from_hex(r["value_hex"])
+        )
+        if slot == 0:
+            sum_row = (valid, overflow, late, lm)
+        elif (
+            ck == EV_CELL_KIND_RAW
+            and cs == EV_CELL_STATE_MATERIALIZED
+            and 1 <= slot <= MODE23_ACCEPTED_L
+        ):
+            m_mat += 1
+            if lm != 0:
+                obs_late += 1
+    if sum_row is None:
+        return _fail_check(f"{m23_late['id']}: SUMMARY missing")
+    valid, overflow, late, lm = sum_row
+    if valid != m_mat + overflow:
+        return _fail_check(f"{m23_late['id']}: equation must stay green")
+    if not (obs_late > late):
+        return _fail_check(
+            f"{m23_late['id']}: must have observed_c > declared_c "
+            f"(obs={obs_late} decl={late})"
+        )
+    if lm != (1 if late > 0 else 0):
+        return _fail_check(f"{m23_late['id']}: SUMMARY must stay D1 late_mat")
+    # Forbid false late equality requirement in notes.
+    notes_l = m23_late.get("notes") or ""
+    if "requires declared_c == observed_c" in notes_l:
+        return _fail_check(
+            f"{m23_late['id']}: must not require declared_c==observed_c"
+        )
+
+
+    # ---- cancel slot0 / multi-owner success / multi-owner corrupt ----
+    m23_cf = p1c1_by_kind["mode23_cancel_first_slot0_bind_corrupt"]
+    err = _p1c1_common(
+        m23_cf,
+        mode=23,
+        peer_gets=1,
+        focus_live_flags=FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+        count_mask=MASK_EVIDENCE,
+        binding_mask=0,
+        require_state_anchor=False,
+    )
+    if err:
+        return _fail_check(err)
+    try:
+        exp_calls, exp_expected = run_d3s2_mode23_cancel_first_slot0_corrupt(
+            m23_cf["candidate_binding"], m23_cf["rows"]
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m23_cf['id']}: model reject: {exc}")
+    if m23_cf["calls"] != exp_calls:
+        return _fail_check(f"{m23_cf['id']}: calls != independent model")
+    if m23_cf["expected"] != exp_expected:
+        return _fail_check(f"{m23_cf['id']}: expected != independent model")
+    has_rc = has_ev = False
+    for r in m23_cf["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x41:
+            has_rc = True
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x32:
+            has_ev = True
+    if not has_rc or not has_ev:
+        return _fail_check(f"{m23_cf['id']}: need RC CANCEL + EVIDENCE")
+
+    m23_mok = p1c1_by_kind["mode23_multi_owner_cancel_last_tx_ok"]
+    err = _p1c1_common(
+        m23_mok,
+        mode=23,
+        peer_gets=(MODE23_ACCEPTED_L + 1) + (MODE23_ACCEPTED_L + 1) * 2,
+        focus_live_flags=FLAG_BASELINE_DONE | FLAG_COMPLETE_READY,
+        count_mask=MASK_EVIDENCE,
+        binding_mask=MASK_EVIDENCE,
+        require_corrupt=False,
+    )
+    if err:
+        return _fail_check(err)
+    try:
+        exp_calls, exp_expected = run_d3s2_mode23_multi_owner_cancel_last_tx_ok(
+            m23_mok["candidate_binding"], m23_mok["rows"]
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m23_mok['id']}: model reject: {exc}")
+    if m23_mok["calls"] != exp_calls:
+        return _fail_check(f"{m23_mok['id']}: calls != independent model")
+    if m23_mok["expected"] != exp_expected:
+        return _fail_check(f"{m23_mok['id']}: expected != independent model")
+    # Carrier order STATE < RC and no CANCEL evidence.
+    state_k = rc_k = None
+    for r in m23_mok["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x22:
+            state_k = k
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x41:
+            rc_k = k
+    if state_k is None or rc_k is None or not (state_k < rc_k):
+        return _fail_check(f"{m23_mok['id']}: STATE must sort before RC CANCEL")
+
+    m23_mc = p1c1_by_kind["mode23_multi_owner_tx_before_cancel_ev_corrupt"]
+    err = _p1c1_common(
+        m23_mc,
+        mode=23,
+        peer_gets=(MODE23_ACCEPTED_L + 1) + (MODE23_ACCEPTED_L + 1) * 2 + 1,
+        focus_live_flags=FLAG_BASELINE_DONE | FLAG_BIND_PHASE_ACTIVE,
+        count_mask=MASK_EVIDENCE,
+        binding_mask=0,
+    )
+    if err:
+        return _fail_check(err)
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode23_multi_owner_tx_before_cancel_ev_corrupt(
+                m23_mc["candidate_binding"], m23_mc["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{m23_mc['id']}: model reject: {exc}")
+    if m23_mc["calls"] != exp_calls:
+        return _fail_check(f"{m23_mc['id']}: calls != independent model")
+    if m23_mc["expected"] != exp_expected:
+        return _fail_check(f"{m23_mc['id']}: expected != independent model")
+    # TX EV keys before EV_DLV; STATE before RC.
+    tx_keys = []
+    ev_dlv_k = None
+    state_k = rc_k = None
+    for r in m23_mc["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6:
+            continue
+        if k[9] == 0x22:
+            state_k = k
+        elif k[9] == 0x41:
+            rc_k = k
+        elif k[9] == 0x32:
+            # Distinguish TX vs DLV owner by body owner_kind
+            try:
+                _ck, _cs, slot, owner, *_rest = _parse_tx_evidence_cell(
+                    from_hex(r["value_hex"])
+                )
+                tx_keys.append(k)
+            except SystemExit:
+                ev_dlv_k = k
+    if state_k is None or rc_k is None or not (state_k < rc_k):
+        return _fail_check(f"{m23_mc['id']}: STATE < RC pin fail")
+    # EV_DLV is delivery-owned; parse TX may fail — detect via owner_kind
+    tx_keys = []
+    ev_dlv_k = None
+    for r in m23_mc["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != 0x32:
+            continue
+        st, body, _ = _d3s1.extract_envelope(from_hex(r["value_hex"]))
+        import struct as _struct
+        owner_kind = _struct.unpack_from(">H", body, 0)[0]
+        if owner_kind == EV_OWNER_KIND_TX:
+            tx_keys.append(k)
+        else:
+            ev_dlv_k = k
+    if ev_dlv_k is None or not tx_keys:
+        return _fail_check(f"{m23_mc['id']}: need TX EV + EV_DLV")
+    if not all(tk < ev_dlv_k for tk in tx_keys):
+        return _fail_check(f"{m23_mc['id']}: TX EV keys must sort before EV_DLV")
+
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
             f"missing d3s2 kinds {D3S2_REQUIRED_KINDS - kinds}"
@@ -12925,6 +14633,150 @@ def self_test() -> int:
             "p1b2_m26_ownership_tamper",
             lambda d: d["vectors"][132].__setitem__("ownership", OWNERSHIP_P1B1),
         )
+        # 133-prefix freeze (includes P1-B2; P1-C1 follows at 133..135).
+        t(
+            "hundred_thirty_three_prefix_row_tamper",
+            lambda d: d["vectors"][132].__setitem__(
+                "rows", list(d["vectors"][132]["rows"])[:-1]
+            ),
+        )
+        t(
+            "hundred_thirty_three_prefix_expected_tamper",
+            lambda d: d["vectors"][132]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "hundred_thirty_three_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_133_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_thirty_three_prefix_content_authority_tamper",
+            lambda d: d["d3s2_133_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        # P1-C1 Mode23 illegal slot (index 133).
+        t(
+            "p1c1_illegal_extra_slot_delete_tamper",
+            lambda d: d["vectors"][133].__setitem__(
+                "rows",
+                [
+                    r
+                    for r in d["vectors"][133]["rows"]
+                    if not (
+                        len(from_hex(r["key_hex"])) >= 10
+                        and from_hex(r["key_hex"])[8] == 6
+                        and from_hex(r["key_hex"])[9] == 0x32
+                        and _parse_tx_evidence_cell(from_hex(r["value_hex"]))[2]
+                        == MODE23_ACCEPTED_L + 1
+                    )
+                ],
+            ),
+        )
+        t(
+            "p1c1_illegal_false_success_tamper",
+            lambda d: d["vectors"][133]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c1_illegal_count_mask_clear_tamper",
+            lambda d: d["vectors"][133]["expected"].__setitem__(
+                "count_complete_mask", 0
+            ),
+        )
+        t(
+            "p1c1_illegal_ownership_tamper",
+            lambda d: d["vectors"][133].__setitem__("ownership", OWNERSHIP_P1B2),
+        )
+        # P1-C1 equation fail (index 134).
+        t(
+            "p1c1_eq_false_success_tamper",
+            lambda d: d["vectors"][134]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c1_eq_peer_get_tamper",
+            lambda d: d["vectors"][134]["expected"].__setitem__(
+                "d3_peer_get_count", 0
+            ),
+        )
+        t(
+            "p1c1_eq_ownership_tamper",
+            lambda d: d["vectors"][134].__setitem__("ownership", OWNERSHIP_P1B2),
+        )
+        # P1-C1 late fail (index 135).
+        t(
+            "p1c1_late_false_success_tamper",
+            lambda d: d["vectors"][135]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c1_late_false_equality_note_tamper",
+            lambda d: d["vectors"][135].__setitem__(
+                "notes",
+                (d["vectors"][135].get("notes") or "")
+                + " requires declared_c == observed_c always",
+            ),
+        )
+        t(
+            "p1c1_late_ownership_tamper",
+            lambda d: d["vectors"][135].__setitem__("ownership", OWNERSHIP_P1B2),
+        )
+        # P1-C1 cancel slot0 (index 136)
+        t(
+            "p1c1_cancel_slot0_false_success_tamper",
+            lambda d: d["vectors"][136]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c1_cancel_slot0_peer_get_tamper",
+            lambda d: d["vectors"][136]["expected"].__setitem__(
+                "d3_peer_get_count", 0
+            ),
+        )
+        t(
+            "p1c1_cancel_slot0_ownership_tamper",
+            lambda d: d["vectors"][136].__setitem__("ownership", OWNERSHIP_P1B2),
+        )
+        # multi-owner success (index 137)
+        t(
+            "p1c1_multi_ok_false_corrupt_tamper",
+            lambda d: d["vectors"][137]["expected"].__setitem__(
+                "final_status", "STORAGE_CORRUPT"
+            ),
+        )
+        t(
+            "p1c1_multi_ok_adopt_clear_tamper",
+            lambda d: d["vectors"][137]["expected"].__setitem__("adopted", 0),
+        )
+        t(
+            "p1c1_multi_ok_ownership_tamper",
+            lambda d: d["vectors"][137].__setitem__("ownership", OWNERSHIP_P1B2),
+        )
+        # multi-owner corrupt (index 138)
+        t(
+            "p1c1_multi_corrupt_false_success_tamper",
+            lambda d: d["vectors"][138]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c1_multi_corrupt_peer_get_tamper",
+            lambda d: d["vectors"][138]["expected"].__setitem__(
+                "d3_peer_get_count", 0
+            ),
+        )
+        t(
+            "p1c1_multi_corrupt_ownership_tamper",
+            lambda d: d["vectors"][138].__setitem__("ownership", OWNERSHIP_P1B2),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -12948,7 +14800,7 @@ def self_test() -> int:
         ):
             failures.append("self-test: clean re-check failed")
 
-        # Cached authority documents are immutable across all 232 tampers.
+        # Cached authority documents are immutable across all tampers.
         if hashlib.sha256(
             json.dumps(
                 expected_doc, sort_keys=True, separators=(",", ":")
@@ -12968,9 +14820,9 @@ def self_test() -> int:
             return 1
         print(
             "self-test ok (94+100+102+104+106+108+110+112+113+114+115+119+125+"
-            "127+128 prefix freeze + mode25/mode26/mode24/mode23/mode22/mode21/p0a/"
-            "p0b/p0c/p0d/p1a/p1d/p1d2/p1b1 slice pins + two-txn anti-pass + "
-            "forbidden ops + clean pass)"
+            "127+128+130+133 prefix freeze + mode25/mode26/mode24/mode23/mode22/"
+            "mode21/p0a/p0b/p0c/p0d/p1a/p1d/p1d2/p1b1/p1b2/p1c1(6) slice pins + "
+            "two-txn anti-pass + forbidden ops + clean pass)"
         )
         return 0
 

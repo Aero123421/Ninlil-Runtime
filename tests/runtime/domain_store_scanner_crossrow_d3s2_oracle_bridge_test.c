@@ -716,10 +716,11 @@ int main(void)
     size_t p1d2_n = 0u;
     size_t p1b1_n = 0u;
     size_t p1b2_n = 0u;
+    size_t p1c1_n = 0u;
 
     /* Both pins live in the shared append-only fixture. */
     REQUIRE(NINLIL_D3S1_VECTOR_COUNT == 94u);
-    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 39u);
+    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 45u);
     REQUIRE(NINLIL_D3S1_WORKSPACE_CEILING_BYTES == 8192u);
     REQUIRE(sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES);
@@ -1122,11 +1123,10 @@ int main(void)
                 }
             }
             p1b1_n += 1u;
-        } else {
+        } else if (i >= 36u && i < 39u) {
             /* P1-B2: CLEANUP_PLAN Modes24–26 still-ordinary
              * (§18.13.15 case5 residual / §18.13.8). Inventory pin only;
              * run_vector exercises checkpoint + real production CORRUPT. */
-            REQUIRE(i >= 36u && i < 39u);
             REQUIRE(ninlil_d3s2_vectors[i].fault_count == 0u);
             REQUIRE(ninlil_d3s2_vectors[i].expected.mutation_calls == 0u);
             REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.final_status,
@@ -1189,6 +1189,93 @@ int main(void)
                     == 0u);
             }
             p1b2_n += 1u;
+        } else {
+            /* P1-C1: Mode23 illegal/equation/late + CANCEL/multi-owner
+             * (§18.13.15 cases3,19 / §18.13.12.1 slot authority). */
+            REQUIRE(i >= 39u && i < 45u);
+            REQUIRE(ninlil_d3s2_vectors[i].mode == 23u);
+            REQUIRE(ninlil_d3s2_vectors[i].fault_count == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.mutation_calls == 0u);
+            if (i == 39u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M23_ILLEGAL_SLOT_L_PLUS_1_BIND_CORRUPT")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode23_illegal_slot_L_plus_1_bind_corrupt")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.final_status,
+                            "STORAGE_CORRUPT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.count_complete_mask
+                    == NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 13u);
+            } else if (i == 40u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M23_EQUATION_FAIL_VALID_NE_M_PLUS_OVERFLOW_CORRUPT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 4u);
+            } else if (i == 41u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M23_LATE_COHERENCE_OBSERVED_GT_DECLARED_CORRUPT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 4u);
+            } else if (i == 42u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M23_CANCEL_FIRST_SLOT0_BIND_CORRUPT")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode23_cancel_first_slot0_bind_corrupt")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 1u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.count_complete_mask
+                    == NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE);
+            } else if (i == 43u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M23_MULTI_OWNER_CANCEL_LAST_TX_OK")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode23_multi_owner_cancel_last_tx_ok")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.final_status,
+                            "OK")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.adopted == 1u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.phase
+                    == NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 12u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.binding_complete_mask
+                    == NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE);
+            } else {
+                REQUIRE(i == 44u);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M23_MULTI_OWNER_TX_BEFORE_CANCEL_EV_CORRUPT")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode23_multi_owner_tx_before_cancel_ev_corrupt")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 13u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.count_complete_mask
+                    == NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE);
+            }
+            if (i != 43u) {
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.final_status,
+                            "STORAGE_CORRUPT")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.adopted == 0u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.phase
+                    == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.has_sticky_primary
+                    == 1u);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.binding_complete_mask
+                    == 0u);
+            }
+            p1c1_n += 1u;
         }
 
         /* Mode21 success: BIND_INDEX no STATE companion (case15 pin). */
@@ -1224,5 +1311,6 @@ int main(void)
     REQUIRE(p1d2_n == 1u);
     REQUIRE(p1b1_n == 2u);
     REQUIRE(p1b2_n == 3u);
+    REQUIRE(p1c1_n == 6u);
     return 0;
 }

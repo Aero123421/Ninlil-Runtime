@@ -2135,12 +2135,29 @@ static ninlil_status_t bind_generic_secondary(
         uint8_t owner_raw[80];
         uint16_t owner_raw_len;
         uint16_t evidence_owner_kind;
+        uint32_t evidence_slot;
+        uint8_t accepted_L;
+        uint8_t cancel_first_empty;
 
+        /*
+         * Per-row composite authority (docs/17 §18.13.9 BIND_EVIDENCE +
+         * §18.13.12.1 Mode23):
+         *   L := accepted exact profile max_evidence_per_target (1..8)
+         *   shape := matching owner carrier body (not ctx->declared_L)
+         * TX retained STATE / DLV APPLICATION_FIRST RESULT_CACHE → slots 0..L
+         * DLV CANCEL_FIRST RESULT_CACHE → exact 0 cells; any Evidence row is
+         * STORAGE_CORRUPT. ctx->declared_L is last-FOCUS scratch only and
+         * must not gate global BIND. Stop order: copy-before-get → fail-closed
+         * profile L → carrier exact_get+typed+owner → shape/slot finding →
+         * true primary get. Max 2 gets; illegal slot notes after carrier get
+         * and before primary get.
+         */
         if (typed->evidence_cell.owner_key_raw_length > 80u) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
         owner_raw_len = typed->evidence_cell.owner_key_raw_length;
         evidence_owner_kind = typed->evidence_cell.evidence_owner_kind;
+        evidence_slot = typed->evidence_cell.slot_index;
         (void)memcpy(
             owner_raw, typed->evidence_cell.owner_key_raw, owner_raw_len);
         (void)memcpy(ctx->focus_raw80, owner_raw, owner_raw_len);
@@ -2150,6 +2167,19 @@ static ninlil_status_t bind_generic_secondary(
                 == NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_TRANSACTION
             ? 1u
             : 2u;
+
+        if (session->bound_workspace == NULL) {
+            return note_finding(session);
+        }
+        {
+            uint32_t pl = session->bound_workspace->candidate.limits
+                              .max_evidence_per_target;
+            if (pl < 1u || pl > 8u) {
+                return note_finding(session);
+            }
+            accepted_L = (uint8_t)pl;
+        }
+
         if (ctx->focus_owner_kind == 1u) {
             st = rebuild_tx_state_key(
                 owner_raw, ctx->peer_key, &ctx->peer_key_len);
@@ -2169,9 +2199,14 @@ static ninlil_status_t bind_generic_secondary(
         if (got.presence != NINLIL_DOMAIN_SCAN_EXACT_PRESENT) {
             return note_finding(session);
         }
+
+        cancel_first_empty = 0u;
         if (ctx->focus_owner_kind == 1u) {
             (void)memcpy(ctx->focus_tx_id, owner_raw, 16u);
             st = verify_carrier_tx_state(session, ctx, &got);
+            if (st != NINLIL_OK) {
+                return st;
+            }
         } else {
             const ninlil_model_domain_typed_record_t *tr;
             st = bind_typed_from_get(
@@ -2189,11 +2224,22 @@ static ninlil_status_t bind_generic_secondary(
             }
             (void)memcpy(
                 ctx->focus_tx_id, tr->result_cache.transaction_id, 16u);
-            st = NINLIL_OK;
+            /*
+             * Carrier body shape: APPLICATION_FIRST has application_attempt
+             * count ≥1; CANCEL_FIRST is app=0 empty evidence set (same
+             * discrimination as FOCUS install).
+             */
+            if (tr->result_cache.application_attempt_count == 0u) {
+                cancel_first_empty = 1u;
+            }
         }
-        if (st != NINLIL_OK) {
-            return st;
+
+        /* Slot legality from carrier shape + profile L — before primary get. */
+        if (cancel_first_empty != 0u
+            || evidence_slot > (uint32_t)accepted_L) {
+            return note_finding(session);
         }
+
         if (ctx->focus_owner_kind == 1u) {
             st = rebuild_anchor_key(
                 owner_raw, ctx->peer_key, &ctx->peer_key_len);
