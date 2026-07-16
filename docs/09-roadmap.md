@@ -125,6 +125,16 @@ Exit gate:
 
 含まない: NVS storage port、FreeRTOS owner task、USB/LAN、Cell Agent、power-cut HIL、on-target conformance subset。
 
+### M3-slice: control byte-stream framing（部分作業; M3 incomplete）
+
+USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agnostic bounded control frame codec** だけを先行できます。正本: [19-m3-control-byte-stream-framing.md](19-m3-control-byte-stream-framing.md)。
+
+- private `NCG1` frame encode / one-shot decode / 1-byte incremental parser
+- magic/version/type/flags/stream_or_cell_id/sequence/length/header CRC/frame CRC、fail-closed resync
+- host golden + mutation tests、ESP-IDF component private source への接続
+
+含まない: USB/CDC driver、TCP socket、Cell Agent task、logical control messages、custody/Application Receipt、security、M3 complete。
+
 ## M4: Identity Lifecycle
 
 内容:

@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 10)
-    message(FATAL_ERROR "private source count is not 10: ${_private_sources}")
+if(NOT _private_source_count EQUAL 11)
+    message(FATAL_ERROR "private source count is not 11: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -86,6 +86,7 @@ foreach(_source IN LISTS _private_sources)
 endforeach()
 list(SORT _private_source_names)
 set(_expected_private_source_names
+    control_frame_codec.c
     domain_store_body_codec.c
     domain_store_codec.c
     domain_store_d3s1.c
@@ -146,6 +147,12 @@ check_c_source_compiles(
     NINLIL_PRIVATE_STAGE5_SEAM_HEADER_LEAKED)
 if(NINLIL_PRIVATE_STAGE5_SEAM_HEADER_LEAKED)
     message(FATAL_ERROR "private Stage5 seam header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"control_frame_codec.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_CONTROL_FRAME_HEADER_LEAKED)
+if(NINLIL_PRIVATE_CONTROL_FRAME_HEADER_LEAKED)
+    message(FATAL_ERROR "private control frame header is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)

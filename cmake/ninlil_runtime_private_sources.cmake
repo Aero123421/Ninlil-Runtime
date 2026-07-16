@@ -6,6 +6,7 @@
 # contract/reducer sources must not appear here.
 
 set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
+    src/model/control_frame_codec.c
     src/model/domain_store_body_codec.c
     src/model/domain_store_codec.c
     src/model/runtime_lifecycle_model.c

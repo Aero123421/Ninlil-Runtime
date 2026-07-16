@@ -115,5 +115,5 @@ host の `ninlil_runtime_private` と本 component は、同じ
 - FreeRTOS owner-task adapter
 - NVS / partition storage port と power-cut HIL
 - clock / entropy / execution の ESP-IDF port
-- Cell Agent skeleton、USB/LAN control transport
+- Cell Agent skeleton、USB/LAN control transport（byte-stream framing の private `NCG1` codec は [docs/19](../../docs/19-m3-control-byte-stream-framing.md) として portable source authority に含まれる。driver/task は未実装）
 - portable conformance subset の on-target 実行

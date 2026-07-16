@@ -147,6 +147,6 @@ docker run --rm -v "$PWD:/project" -w /project "espressif/idf:${pin}" \
 - NVS / partition storage port と power-cut HIL
 - clock / entropy / execution の ESP-IDF port
 - Cell Agent firmware skeleton
-- USB/LAN gateway control transport
+- USB/LAN gateway control transport（**byte-stream framing codec 自体は [19章](19-m3-control-byte-stream-framing.md) の private slice として先行可。driver/task は未実装**）
 - virtual/loopback TxPermit path
 - POSIX と同一 portable conformance subset の on-target 実行
