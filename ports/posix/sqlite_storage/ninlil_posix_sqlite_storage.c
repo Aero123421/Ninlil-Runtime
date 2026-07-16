@@ -1,9 +1,29 @@
 #include "ninlil_posix_sqlite_storage.h"
+#include "ninlil_posix_sqlite_token_advance.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <sqlite3.h>
+#include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
+#ifndef O_NOFOLLOW
+#define O_NOFOLLOW 0
+#define NINLIL_POSIX_SQLITE_NO_O_NOFOLLOW 1
+#endif
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 /*
  * POSIX SQLite durable storage port (production candidate for host PC).
@@ -15,6 +35,17 @@
  * FULL commit success means the atomic group crossed the SQLite durability
  * boundary under those settings. Filesystem or hardware that lies about flush
  * is outside the claim.
+ *
+ * Exclusive authority (docs/08): main DB identity is pinned by a nofollow fd;
+ * an adjacent st_dev/st_ino-keyed nofollow sidecar carries the process-crash-
+ * safe flock. Direct main-file flock is not used because it conflicts with
+ * SQLite record locks on macOS. Main and sidecar pathname identity are checked
+ * after SQLite open and during durable persist (after BEGIN IMMEDIATE, before
+ * mutation, before COMMIT, and after COMMIT success before OK).
+ *
+ * Opaque values are never-dereferenced addresses in a pre-reserved PROT_NONE
+ * virtual arena. Addresses are never reissued during a provider lifetime, so
+ * stale/fabricated values fail closed without per-operation heap growth.
  *
  * Fault model:
  *   BUSY       - lock/busy after configured timeout, or exclusive lease/RW held
@@ -38,10 +69,23 @@ typedef struct storage_entry {
 typedef struct storage_handle storage_handle_t;
 typedef struct storage_transaction storage_transaction_t;
 typedef struct storage_iterator storage_iterator_t;
+typedef struct identity_registry_entry identity_registry_entry_t;
+
+struct identity_registry_entry {
+    dev_t dev;
+    ino_t ino;
+    identity_registry_entry_t *next;
+};
+
+static atomic_flag identity_registry_guard = ATOMIC_FLAG_INIT;
+static identity_registry_entry_t *identity_registry;
 
 struct storage_iterator {
     int in_use;
+    uint64_t generation;
+    void *active_cookie;
     storage_transaction_t *transaction;
+    uint64_t transaction_generation;
     storage_entry_t *rows;
     size_t row_count;
     size_t position;
@@ -49,7 +93,11 @@ struct storage_iterator {
 
 struct storage_transaction {
     int in_use;
+    uint64_t generation;
+    void *active_cookie;
     storage_handle_t *handle;
+    uint64_t handle_generation;
+    uint64_t lease_token;
     ninlil_storage_mode_t mode;
     storage_entry_t *view;
     size_t view_count;
@@ -59,7 +107,10 @@ struct storage_transaction {
 
 struct storage_handle {
     int in_use;
-    int leased;
+    uint64_t generation;
+    void *active_cookie;
+    uint64_t lease_token;
+    int lease_fd;
     uint8_t name[255];
     uint32_t name_length;
     uint32_t schema;
@@ -74,15 +125,32 @@ struct ninlil_posix_sqlite_storage {
     storage_handle_t *handles;
     storage_transaction_t *transactions;
     storage_iterator_t *iterators;
+    void *token_arena;
+    size_t token_arena_size;
+    uint64_t next_token_offset;
     uint32_t max_handles;
     uint32_t max_transactions;
     uint32_t max_iterators;
     uint64_t live_handles;
     uint64_t live_transactions;
     uint64_t live_iterators;
-    ninlil_posix_sqlite_commit_fault_t commit_fault;
+    uint64_t last_lease_token;
+    int lease_tokens_fenced;
+    int connection_fenced;
     char *path_copy;
+    dev_t db_dev;
+    ino_t db_ino;
+    dev_t lock_dev;
+    ino_t lock_ino;
+    int identity_bound;
+    int db_identity_fd;
+    int db_lock_fd;
+    char *lock_path;
+    identity_registry_entry_t *identity_registry_entry;
 };
+
+#define NINLIL_POSIX_TOKEN_GEN_MAX UINT64_MAX
+#define NINLIL_POSIX_TOKEN_ARENA_BYTES UINT64_C(17592186044416)
 
 static ninlil_storage_status_t port_open(
     void *user,
@@ -399,90 +467,417 @@ static ninlil_storage_status_t configure_connection(
     return NINLIL_STORAGE_OK;
 }
 
-static ninlil_storage_status_t read_schema_version(
-    sqlite3 *db,
-    uint32_t *out_version,
-    int *out_present)
+static int table_exists(sqlite3 *db, const char *name, int *out_exists)
 {
     sqlite3_stmt *stmt = NULL;
     int rc;
 
-    *out_version = 0u;
-    *out_present = 0;
+    *out_exists = 0;
     rc = sqlite3_prepare_v2(
         db,
-        "SELECT value FROM ninlil_meta WHERE key = 'schema_version';",
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1;",
         -1,
         &stmt,
         NULL);
-    if (rc == SQLITE_ERROR) {
-        return NINLIL_STORAGE_OK; /* table missing => new database path */
+    if (rc != SQLITE_OK) {
+        return 0;
     }
+    rc = sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    if (rc != SQLITE_OK) {
+        (void)sqlite3_finalize(stmt);
+        return 0;
+    }
+    rc = sqlite3_step(stmt);
+    *out_exists = rc == SQLITE_ROW;
+    (void)sqlite3_finalize(stmt);
+    return rc == SQLITE_ROW || rc == SQLITE_DONE;
+}
+
+static int column_xinfo_matches(
+    sqlite3 *db,
+    const char *table,
+    int expected_cid,
+    const char *expected_name,
+    const char *expected_type,
+    int expected_notnull,
+    int expected_pk)
+{
+    sqlite3_stmt *stmt = NULL;
+    char sql[192];
+    int rc;
+    int ok = 0;
+    int matches = 0;
+
+    if (snprintf(sql, sizeof(sql), "PRAGMA table_xinfo(%s);", table) <= 0) {
+        return 0;
+    }
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        /* Fall back to table_info when table_xinfo is unavailable. */
+        if (snprintf(sql, sizeof(sql), "PRAGMA table_info(%s);", table) <= 0) {
+            return 0;
+        }
+        rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            return 0;
+        }
+    }
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        int cid = sqlite3_column_int(stmt, 0);
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        const char *type = (const char *)sqlite3_column_text(stmt, 2);
+        int notnull = sqlite3_column_int(stmt, 3);
+        int pk = sqlite3_column_int(stmt, 5);
+
+        if (cid != expected_cid) {
+            continue;
+        }
+        matches += 1;
+        ok = name != NULL && type != NULL
+            && strcmp(name, expected_name) == 0
+            && strcmp(type, expected_type) == 0
+            && notnull == expected_notnull
+            && pk == expected_pk;
+    }
+    (void)sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE && matches == 1 && ok;
+}
+
+static int table_column_count_exact(
+    sqlite3 *db,
+    const char *table,
+    int expected_count)
+{
+    sqlite3_stmt *stmt = NULL;
+    char sql[192];
+    int rc;
+    int count = 0;
+
+    if (snprintf(sql, sizeof(sql), "PRAGMA table_xinfo(%s);", table) <= 0) {
+        return 0;
+    }
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        if (snprintf(sql, sizeof(sql), "PRAGMA table_info(%s);", table) <= 0) {
+            return 0;
+        }
+        rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            return 0;
+        }
+    }
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        count += 1;
+    }
+    (void)sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE && count == expected_count;
+}
+
+static int table_flags_match(sqlite3 *db, const char *table)
+{
+    sqlite3_stmt *stmt = NULL;
+    int rc;
+    int matches = 0;
+
+    /* Schema v1 requires both STRICT and WITHOUT ROWID. */
+    rc = sqlite3_prepare_v2(
+        db,
+        "SELECT wr, strict FROM pragma_table_list"
+        " WHERE schema='main' AND type='table' AND name=?1;",
+        -1,
+        &stmt,
+        NULL);
+    if (rc == SQLITE_OK) {
+        rc = sqlite3_bind_text(stmt, 1, table, -1, SQLITE_STATIC);
+        if (rc == SQLITE_OK) {
+            rc = sqlite3_step(stmt);
+            if (rc == SQLITE_ROW) {
+                matches = sqlite3_column_int(stmt, 0) == 1
+                    && sqlite3_column_int(stmt, 1) == 1;
+                rc = sqlite3_step(stmt);
+                matches = matches && rc == SQLITE_DONE;
+            }
+        }
+        (void)sqlite3_finalize(stmt);
+    }
+    return matches;
+}
+
+static int schema_objects_are_exact(sqlite3 *db)
+{
+    sqlite3_stmt *stmt = NULL;
+    int rc;
+    int meta_seen = 0;
+    int kv_seen = 0;
+    int count = 0;
+
+    rc = sqlite3_prepare_v2(
+        db,
+        "SELECT type, name, tbl_name, sql FROM sqlite_master"
+        " ORDER BY type, name;",
+        -1,
+        &stmt,
+        NULL);
+    if (rc != SQLITE_OK) {
+        return 0;
+    }
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        const char *type = (const char *)sqlite3_column_text(stmt, 0);
+        const char *name = (const char *)sqlite3_column_text(stmt, 1);
+        const char *table = (const char *)sqlite3_column_text(stmt, 2);
+        const char *sql = (const char *)sqlite3_column_text(stmt, 3);
+
+        count += 1;
+        if (type == NULL || name == NULL || table == NULL || sql == NULL
+            || strcmp(type, "table") != 0 || strcmp(name, table) != 0) {
+            break;
+        }
+        if (strcmp(name, "ninlil_meta") == 0) {
+            if (meta_seen != 0) {
+                break;
+            }
+            meta_seen += 1;
+        } else if (strcmp(name, "ninlil_kv") == 0) {
+            if (kv_seen != 0) {
+                break;
+            }
+            kv_seen += 1;
+        } else {
+            break;
+        }
+    }
+    (void)sqlite3_finalize(stmt);
+    /*
+     * Both v1 tables are WITHOUT ROWID, so their PRIMARY KEY is the table
+     * b-tree itself and sqlite_master contains no required sqlite_autoindex.
+     * The exact closed object set is therefore these two table rows. Any
+     * trigger, view, explicit index, sqlite_stat/sqlite_sequence residue, or
+     * future object is unsupported until a versioned migration defines it.
+     */
+    return rc == SQLITE_DONE && count == 2 && meta_seen == 1 && kv_seen == 1;
+}
+
+static int meta_rows_are_exact(sqlite3 *db)
+{
+    sqlite3_stmt *stmt = NULL;
+    int rc;
+    int ok = 0;
+
+    rc = sqlite3_prepare_v2(
+        db,
+        "SELECT COUNT(*),"
+        " SUM(key='schema_version' AND typeof(value)='integer' AND value=1),"
+        " SUM(key='migration_state' AND typeof(value)='integer' AND value=0)"
+        " FROM ninlil_meta;",
+        -1,
+        &stmt,
+        NULL);
+    if (rc != SQLITE_OK) {
+        return 0;
+    }
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        ok = sqlite3_column_int(stmt, 0) == 2
+            && sqlite3_column_int(stmt, 1) == 1
+            && sqlite3_column_int(stmt, 2) == 1;
+    }
+    (void)sqlite3_finalize(stmt);
+    return ok;
+}
+
+static ninlil_storage_status_t validate_kv_row_storage_classes(sqlite3 *db)
+{
+    sqlite3_stmt *stmt = NULL;
+    int rc;
+
+    rc = sqlite3_prepare_v2(
+        db,
+        "SELECT 1 FROM ninlil_kv WHERE"
+        " typeof(namespace) != 'blob'"
+        " OR typeof(key) != 'blob'"
+        " OR typeof(value) != 'blob'"
+        " OR length(namespace) NOT BETWEEN 1 AND 255"
+        " OR length(key) NOT BETWEEN 1 AND 255"
+        " OR length(value) > 65536"
+        " LIMIT 1;",
+        -1,
+        &stmt,
+        NULL);
     if (rc != SQLITE_OK) {
         return map_sqlite_rc(rc);
     }
     rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
-        sqlite3_int64 value = sqlite3_column_int64(stmt, 0);
-        if (value < 0 || value > (sqlite3_int64)UINT32_MAX) {
-            (void)sqlite3_finalize(stmt);
-            return NINLIL_STORAGE_CORRUPT;
-        }
-        *out_version = (uint32_t)value;
-        *out_present = 1;
-        (void)sqlite3_finalize(stmt);
-        return NINLIL_STORAGE_OK;
-    }
     (void)sqlite3_finalize(stmt);
+    if (rc == SQLITE_ROW) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    if (rc != SQLITE_DONE) {
+        return map_sqlite_rc(rc);
+    }
+    return NINLIL_STORAGE_OK;
+}
+
+static ninlil_storage_status_t read_strict_meta_integer(
+    sqlite3 *db,
+    const char *key,
+    int required,
+    int64_t *out_value,
+    int *out_present)
+{
+    sqlite3_stmt *stmt = NULL;
+    int rc;
+    const char *type_name;
+
+    *out_present = 0;
+    *out_value = 0;
+    rc = sqlite3_prepare_v2(
+        db,
+        "SELECT typeof(value), value FROM ninlil_meta WHERE key = ?1;",
+        -1,
+        &stmt,
+        NULL);
+    if (rc != SQLITE_OK) {
+        return map_sqlite_rc(rc);
+    }
+    rc = sqlite3_bind_text(stmt, 1, key, -1, SQLITE_STATIC);
+    if (rc != SQLITE_OK) {
+        (void)sqlite3_finalize(stmt);
+        return map_sqlite_rc(rc);
+    }
+    rc = sqlite3_step(stmt);
     if (rc == SQLITE_DONE) {
+        (void)sqlite3_finalize(stmt);
+        if (required) {
+            return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+        }
         return NINLIL_STORAGE_OK;
     }
-    return map_sqlite_rc(rc);
+    if (rc != SQLITE_ROW) {
+        (void)sqlite3_finalize(stmt);
+        return map_sqlite_rc(rc);
+    }
+    type_name = (const char *)sqlite3_column_text(stmt, 0);
+    /*
+     * Reject TEXT coercions such as '1garbage' that sqlite3_column_int64 would
+     * partially parse as 1.
+     */
+    if (type_name == NULL || strcmp(type_name, "integer") != 0) {
+        (void)sqlite3_finalize(stmt);
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    *out_value = (int64_t)sqlite3_column_int64(stmt, 1);
+    *out_present = 1;
+    (void)sqlite3_finalize(stmt);
+    return NINLIL_STORAGE_OK;
+}
+
+static ninlil_storage_status_t validate_schema_definition_shape(sqlite3 *db)
+{
+    int meta_exists = 0;
+    int kv_exists = 0;
+    int64_t schema_version = 0;
+    int64_t migration_state = 0;
+    int present = 0;
+    ninlil_storage_status_t status;
+
+    if (!table_exists(db, "ninlil_meta", &meta_exists)
+        || !table_exists(db, "ninlil_kv", &kv_exists)) {
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    if (!meta_exists || !kv_exists || !schema_objects_are_exact(db)) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    if (!table_column_count_exact(db, "ninlil_meta", 2)
+        || !table_column_count_exact(db, "ninlil_kv", 3)) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    if (!column_xinfo_matches(db, "ninlil_meta", 0, "key", "TEXT", 1, 1)
+        || !column_xinfo_matches(db, "ninlil_meta", 1, "value", "INTEGER", 1, 0)
+        || !column_xinfo_matches(db, "ninlil_kv", 0, "namespace", "BLOB", 1, 1)
+        || !column_xinfo_matches(db, "ninlil_kv", 1, "key", "BLOB", 1, 2)
+        || !column_xinfo_matches(db, "ninlil_kv", 2, "value", "BLOB", 1, 0)) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    if (!table_flags_match(db, "ninlil_meta")
+        || !table_flags_match(db, "ninlil_kv")) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    status = read_strict_meta_integer(
+        db, "schema_version", 1, &schema_version, &present);
+    if (status != NINLIL_STORAGE_OK) {
+        return status;
+    }
+    if (!present
+        || schema_version != (int64_t)NINLIL_POSIX_SQLITE_SCHEMA_VERSION) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    status = read_strict_meta_integer(
+        db, "migration_state", 1, &migration_state, &present);
+    if (status != NINLIL_STORAGE_OK) {
+        return status;
+    }
+    if (!present || migration_state != 0) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    if (!meta_rows_are_exact(db)) {
+        return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
+    }
+    return NINLIL_STORAGE_OK;
+}
+
+static ninlil_storage_status_t validate_existing_schema_shape(sqlite3 *db)
+{
+    ninlil_storage_status_t status = validate_schema_definition_shape(db);
+
+    if (status != NINLIL_STORAGE_OK) {
+        return status;
+    }
+    return validate_kv_row_storage_classes(db);
 }
 
 static ninlil_storage_status_t initialize_schema(sqlite3 *db)
 {
     static const char *const ddl =
         "BEGIN IMMEDIATE;"
-        "CREATE TABLE IF NOT EXISTS ninlil_meta ("
+        "CREATE TABLE ninlil_meta ("
         "  key TEXT PRIMARY KEY NOT NULL,"
         "  value INTEGER NOT NULL"
-        ");"
-        "CREATE TABLE IF NOT EXISTS ninlil_kv ("
-        "  namespace BLOB NOT NULL,"
-        "  key BLOB NOT NULL,"
-        "  value BLOB NOT NULL,"
+        ") STRICT, WITHOUT ROWID;"
+        "CREATE TABLE ninlil_kv ("
+        "  namespace BLOB NOT NULL CHECK(typeof(namespace) = 'blob'),"
+        "  key BLOB NOT NULL CHECK(typeof(key) = 'blob'),"
+        "  value BLOB NOT NULL CHECK(typeof(value) = 'blob'),"
         "  PRIMARY KEY (namespace, key)"
-        ") WITHOUT ROWID;"
-        "CREATE TABLE IF NOT EXISTS ninlil_lease ("
-        "  namespace BLOB PRIMARY KEY NOT NULL,"
-        "  generation INTEGER NOT NULL"
-        ") WITHOUT ROWID;"
-        "INSERT OR REPLACE INTO ninlil_meta(key, value)"
+        ") STRICT, WITHOUT ROWID;"
+        "INSERT INTO ninlil_meta(key, value)"
         "  VALUES('schema_version', 1);"
-        "INSERT OR REPLACE INTO ninlil_meta(key, value)"
+        "INSERT INTO ninlil_meta(key, value)"
         "  VALUES('migration_state', 0);"
         "COMMIT;";
-
-    return exec_sql(db, ddl);
-}
-
-static ninlil_storage_status_t ensure_schema(sqlite3 *db)
-{
-    uint32_t version = 0u;
-    int present = 0;
-    ninlil_storage_status_t status = read_schema_version(db, &version, &present);
+    ninlil_storage_status_t status = exec_sql(db, ddl);
 
     if (status != NINLIL_STORAGE_OK) {
         return status;
     }
-    if (!present) {
-        /* Distinguish missing meta table from empty meta after partial create. */
+    return validate_existing_schema_shape(db);
+}
+
+static ninlil_storage_status_t ensure_schema(sqlite3 *db)
+{
+    int meta_exists = 0;
+    int kv_exists = 0;
+    ninlil_storage_status_t status;
+
+    if (!table_exists(db, "ninlil_meta", &meta_exists)
+        || !table_exists(db, "ninlil_kv", &kv_exists)) {
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    if (!meta_exists && !kv_exists) {
         sqlite3_stmt *stmt = NULL;
         int rc = sqlite3_prepare_v2(
             db,
             "SELECT 1 FROM sqlite_master"
-            " WHERE type='table' AND name='ninlil_meta';",
+            " LIMIT 1;",
             -1,
             &stmt,
             NULL);
@@ -492,7 +887,6 @@ static ninlil_storage_status_t ensure_schema(sqlite3 *db)
         rc = sqlite3_step(stmt);
         (void)sqlite3_finalize(stmt);
         if (rc == SQLITE_ROW) {
-            /* meta table exists without schema_version => corrupt/unsupported */
             return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
         }
         if (rc != SQLITE_DONE) {
@@ -500,109 +894,475 @@ static ninlil_storage_status_t ensure_schema(sqlite3 *db)
         }
         return initialize_schema(db);
     }
-    if (version != NINLIL_POSIX_SQLITE_SCHEMA_VERSION) {
+    /* Partial or foreign shape is unsupported at create/open, not delayed. */
+    if (!meta_exists || !kv_exists) {
         return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
     }
-    return NINLIL_STORAGE_OK;
+    status = validate_existing_schema_shape(db);
+    return status;
+}
+
+static int slot_can_issue_generation(
+    uint64_t current_generation,
+    uint64_t gen_max)
+{
+    return ninlil_posix_sqlite_generation_advance(current_generation, gen_max)
+        != 0u;
+}
+
+static uint64_t issue_slot_generation(
+    uint64_t *slot_generation,
+    uint64_t gen_max)
+{
+    uint64_t next;
+
+    if (slot_generation == NULL) {
+        return 0u;
+    }
+    next = ninlil_posix_sqlite_generation_advance(*slot_generation, gen_max);
+    if (next == 0u) {
+        return 0u;
+    }
+    *slot_generation = next;
+    return next;
+}
+
+static uint64_t issue_lease_token(ninlil_posix_sqlite_storage_t *storage)
+{
+    uint64_t next;
+
+    if (storage == NULL || storage->lease_tokens_fenced) {
+        return 0u;
+    }
+    /* Production uses a fixed UINT64_MAX token domain (no runtime ceiling). */
+    next = ninlil_posix_sqlite_lease_token_advance(
+        storage->last_lease_token, UINT64_MAX);
+    if (next == 0u) {
+        storage->lease_tokens_fenced = 1;
+        return 0u;
+    }
+    storage->last_lease_token = next;
+    if (next == UINT64_MAX) {
+        /* Last issuable token consumed: fence further allocations. */
+        storage->lease_tokens_fenced = 1;
+    }
+    return next;
+}
+
+static void *cookie_issue(ninlil_posix_sqlite_storage_t *storage)
+{
+    uint8_t *cookie;
+
+    if (storage == NULL || storage->token_arena == NULL
+        || storage->next_token_offset >= storage->token_arena_size) {
+        return NULL;
+    }
+    cookie = (uint8_t *)storage->token_arena + storage->next_token_offset;
+    storage->next_token_offset += 1u;
+    return (void *)cookie;
+}
+
+static int cookie_was_issued(
+    const ninlil_posix_sqlite_storage_t *storage,
+    const void *opaque)
+{
+    uintptr_t base;
+    uintptr_t address;
+
+    if (storage == NULL || storage->token_arena == NULL || opaque == NULL) {
+        return 0;
+    }
+    base = (uintptr_t)storage->token_arena;
+    address = (uintptr_t)opaque;
+    return address >= base
+        && (uint64_t)(address - base) < storage->next_token_offset;
 }
 
 static storage_handle_t *find_handle(
     ninlil_posix_sqlite_storage_t *storage,
     ninlil_storage_handle_t opaque)
 {
-    uintptr_t index;
+    uint32_t index;
 
-    if (opaque == NULL || storage == NULL) {
+    if (!cookie_was_issued(storage, opaque)) {
         return NULL;
     }
-    index = (uintptr_t)opaque - 1u;
-    if (index >= storage->max_handles) {
-        return NULL;
+    for (index = 0u; index < storage->max_handles; ++index) {
+        storage_handle_t *handle = &storage->handles[index];
+        if (handle->in_use && handle->active_cookie == opaque) {
+            return handle;
+        }
     }
-    if (!storage->handles[index].in_use) {
-        return NULL;
-    }
-    return &storage->handles[index];
+    return NULL;
 }
 
 static storage_transaction_t *find_transaction(
     ninlil_posix_sqlite_storage_t *storage,
     ninlil_storage_txn_t opaque)
 {
-    uintptr_t index;
+    uint32_t index;
 
-    if (opaque == NULL || storage == NULL) {
+    if (!cookie_was_issued(storage, opaque)) {
         return NULL;
     }
-    index = (uintptr_t)opaque - 1u;
-    if (index >= storage->max_transactions) {
-        return NULL;
+    for (index = 0u; index < storage->max_transactions; ++index) {
+        storage_transaction_t *transaction = &storage->transactions[index];
+        if (transaction->in_use && transaction->active_cookie == opaque
+            && transaction->handle != NULL
+            && transaction->handle->in_use
+            && transaction->handle->generation
+                == transaction->handle_generation
+            && transaction->handle->active_cookie != NULL) {
+            return transaction;
+        }
     }
-    if (!storage->transactions[index].in_use) {
-        return NULL;
-    }
-    return &storage->transactions[index];
+    return NULL;
 }
 
 static storage_iterator_t *find_iterator(
     ninlil_posix_sqlite_storage_t *storage,
     ninlil_storage_iter_t opaque)
 {
-    uintptr_t index;
+    uint32_t index;
 
-    if (opaque == NULL || storage == NULL) {
+    if (!cookie_was_issued(storage, opaque)) {
         return NULL;
     }
-    index = (uintptr_t)opaque - 1u;
-    if (index >= storage->max_iterators) {
-        return NULL;
+    for (index = 0u; index < storage->max_iterators; ++index) {
+        storage_iterator_t *iterator = &storage->iterators[index];
+        if (iterator->in_use && iterator->active_cookie == opaque
+            && iterator->transaction != NULL
+            && iterator->transaction->in_use
+            && iterator->transaction->generation
+                == iterator->transaction_generation
+            && iterator->transaction->active_cookie != NULL) {
+            return iterator;
+        }
     }
-    if (!storage->iterators[index].in_use) {
-        return NULL;
-    }
-    return &storage->iterators[index];
+    return NULL;
 }
 
 static ninlil_storage_handle_t handle_to_opaque(
     ninlil_posix_sqlite_storage_t *storage,
     storage_handle_t *handle)
 {
-    return (ninlil_storage_handle_t)(
-        (uintptr_t)(handle - storage->handles) + 1u);
+    if (storage == NULL || handle == NULL) {
+        return NULL;
+    }
+    handle->active_cookie = cookie_issue(storage);
+    if (handle->active_cookie == NULL) {
+        return NULL;
+    }
+    return (ninlil_storage_handle_t)handle->active_cookie;
 }
 
 static ninlil_storage_txn_t txn_to_opaque(
     ninlil_posix_sqlite_storage_t *storage,
     storage_transaction_t *transaction)
 {
-    return (ninlil_storage_txn_t)(
-        (uintptr_t)(transaction - storage->transactions) + 1u);
+    if (storage == NULL || transaction == NULL) {
+        return NULL;
+    }
+    transaction->active_cookie = cookie_issue(storage);
+    if (transaction->active_cookie == NULL) {
+        return NULL;
+    }
+    return (ninlil_storage_txn_t)transaction->active_cookie;
 }
 
 static ninlil_storage_iter_t iter_to_opaque(
     ninlil_posix_sqlite_storage_t *storage,
     storage_iterator_t *iterator)
 {
-    return (ninlil_storage_iter_t)(
-        (uintptr_t)(iterator - storage->iterators) + 1u);
+    if (storage == NULL || iterator == NULL) {
+        return NULL;
+    }
+    iterator->active_cookie = cookie_issue(storage);
+    if (iterator->active_cookie == NULL) {
+        return NULL;
+    }
+    return (ninlil_storage_iter_t)iterator->active_cookie;
 }
 
-static storage_handle_t *find_leased_namespace(
-    ninlil_posix_sqlite_storage_t *storage,
-    ninlil_bytes_view_t name)
+static int handle_lease_is_live(const storage_handle_t *handle)
 {
-    uint32_t index;
+    return handle != NULL
+        && handle->in_use
+        && handle->lease_fd >= 0
+        && handle->lease_token != 0u
+        && handle->generation != 0u;
+}
 
-    for (index = 0u; index < storage->max_handles; ++index) {
-        storage_handle_t *candidate = &storage->handles[index];
-        if (candidate->in_use
-            && candidate->leased
-            && candidate->name_length == name.length
-            && memcmp(candidate->name, name.data, name.length) == 0) {
-            return candidate;
+static ninlil_storage_status_t verify_db_file_identity(
+    const ninlil_posix_sqlite_storage_t *storage)
+{
+    struct stat path_st = {0};
+    struct stat fd_st = {0};
+    struct stat lock_path_st = {0};
+    struct stat lock_fd_st = {0};
+
+    if (storage == NULL || !storage->identity_bound
+        || storage->path_copy == NULL || storage->db_identity_fd < 0) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    if (lstat(storage->path_copy, &path_st) != 0
+        || fstat(storage->db_identity_fd, &fd_st) != 0
+        || storage->lock_path == NULL
+        || lstat(storage->lock_path, &lock_path_st) != 0
+        || fstat(storage->db_lock_fd, &lock_fd_st) != 0) {
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    if (!S_ISREG(path_st.st_mode) || !S_ISREG(fd_st.st_mode)
+        || path_st.st_nlink != 1 || fd_st.st_nlink != 1
+        || path_st.st_dev != storage->db_dev
+        || path_st.st_ino != storage->db_ino
+        || fd_st.st_dev != storage->db_dev
+        || fd_st.st_ino != storage->db_ino
+        || !S_ISREG(lock_path_st.st_mode)
+        || !S_ISREG(lock_fd_st.st_mode)
+        || lock_path_st.st_nlink != 1 || lock_fd_st.st_nlink != 1
+        || lock_path_st.st_uid != geteuid()
+        || lock_fd_st.st_uid != geteuid()
+        || (lock_path_st.st_mode & (mode_t)07777) != (mode_t)0600
+        || (lock_fd_st.st_mode & (mode_t)07777) != (mode_t)0600
+        || lock_path_st.st_dev != storage->lock_dev
+        || lock_path_st.st_ino != storage->lock_ino
+        || lock_fd_st.st_dev != storage->lock_dev
+        || lock_fd_st.st_ino != storage->lock_ino) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    return NINLIL_STORAGE_OK;
+}
+
+/*
+ * Acquire authority before SQLite derives WAL/SHM sidecar pathnames. Existing
+ * hardlinks are rejected rather than selecting one alias as the authority.
+ */
+static ninlil_storage_status_t acquire_db_identity_and_lock(
+    ninlil_posix_sqlite_storage_t *storage)
+{
+    struct stat st = {0};
+    struct stat lock_st = {0};
+    identity_registry_entry_t *entry;
+    identity_registry_entry_t *cursor;
+    int fd;
+    int lock_fd = -1;
+    int rc;
+    char *canonical = NULL;
+    char *lock_path = NULL;
+    size_t lock_path_length;
+    const char *slash;
+    size_t parent_length;
+
+    if (storage == NULL || storage->path_copy == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+#if defined(NINLIL_POSIX_SQLITE_NO_O_NOFOLLOW)
+    if (lstat(storage->path_copy, &st) == 0 && S_ISLNK(st.st_mode)) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+#endif
+    fd = open(
+        storage->path_copy,
+        O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
+        0600);
+    if (fd < 0) {
+        if (errno == ELOOP) {
+            return NINLIL_STORAGE_CORRUPT;
+        }
+        if (errno == ENOSPC || errno == EMFILE || errno == ENFILE) {
+            return NINLIL_STORAGE_NO_SPACE;
+        }
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    if (fstat(fd, &st) != 0) {
+        (void)close(fd);
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    if (!S_ISREG(st.st_mode) || st.st_nlink != 1) {
+        (void)close(fd);
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    entry = (identity_registry_entry_t *)calloc(1u, sizeof(*entry));
+    if (entry == NULL) {
+        (void)close(fd);
+        return NINLIL_STORAGE_NO_SPACE;
+    }
+    while (atomic_flag_test_and_set_explicit(
+        &identity_registry_guard, memory_order_acquire)) {
+    }
+    for (cursor = identity_registry; cursor != NULL; cursor = cursor->next) {
+        if (cursor->dev == st.st_dev && cursor->ino == st.st_ino) {
+            atomic_flag_clear_explicit(
+                &identity_registry_guard, memory_order_release);
+            free(entry);
+            (void)close(fd);
+            return NINLIL_STORAGE_BUSY;
         }
     }
-    return NULL;
+    canonical = realpath(storage->path_copy, NULL);
+    if (canonical == NULL) {
+        atomic_flag_clear_explicit(
+            &identity_registry_guard, memory_order_release);
+        free(entry);
+        (void)close(fd);
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    slash = strrchr(canonical, '/');
+    if (slash == NULL) {
+        atomic_flag_clear_explicit(
+            &identity_registry_guard, memory_order_release);
+        free(canonical);
+        free(entry);
+        (void)close(fd);
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    parent_length = slash == canonical ? 1u : (size_t)(slash - canonical);
+    lock_path_length = parent_length + 80u;
+    lock_path = (char *)malloc(lock_path_length);
+    if (lock_path == NULL) {
+        atomic_flag_clear_explicit(
+            &identity_registry_guard, memory_order_release);
+        free(canonical);
+        free(entry);
+        (void)close(fd);
+        return NINLIL_STORAGE_NO_SPACE;
+    }
+    (void)snprintf(
+        lock_path,
+        lock_path_length,
+        "%.*s/.ninlil-sqlite-%llx-%llx.lock",
+        (int)parent_length,
+        canonical,
+        (unsigned long long)st.st_dev,
+        (unsigned long long)st.st_ino);
+    free(storage->path_copy);
+    storage->path_copy = canonical;
+    storage->config.database_path = storage->path_copy;
+    canonical = NULL;
+    lock_fd = open(
+        lock_path,
+        O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
+        0600);
+    if (lock_fd < 0 || fstat(lock_fd, &lock_st) != 0) {
+        int saved = errno;
+        atomic_flag_clear_explicit(
+            &identity_registry_guard, memory_order_release);
+        if (lock_fd >= 0) {
+            (void)close(lock_fd);
+        }
+        free(lock_path);
+        free(entry);
+        (void)close(fd);
+        return saved == ELOOP
+            ? NINLIL_STORAGE_CORRUPT
+            : NINLIL_STORAGE_IO_ERROR;
+    }
+    if (!S_ISREG(lock_st.st_mode) || lock_st.st_nlink != 1
+        || lock_st.st_uid != geteuid()
+        || (lock_st.st_mode & (mode_t)07777) != (mode_t)0600) {
+        atomic_flag_clear_explicit(
+            &identity_registry_guard, memory_order_release);
+        (void)close(lock_fd);
+        free(lock_path);
+        free(entry);
+        (void)close(fd);
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    rc = flock(lock_fd, LOCK_EX | LOCK_NB);
+    if (rc != 0) {
+        int saved = errno;
+        atomic_flag_clear_explicit(
+            &identity_registry_guard, memory_order_release);
+        free(entry);
+        (void)close(lock_fd);
+        free(lock_path);
+        (void)close(fd);
+        if (saved == EWOULDBLOCK || saved == EAGAIN) {
+            return NINLIL_STORAGE_BUSY;
+        }
+        return NINLIL_STORAGE_IO_ERROR;
+    }
+    {
+        struct stat after_path = {0};
+        struct stat after_fd = {0};
+        if (lstat(lock_path, &after_path) != 0
+            || fstat(lock_fd, &after_fd) != 0
+            || !S_ISREG(after_path.st_mode) || !S_ISREG(after_fd.st_mode)
+            || after_path.st_nlink != 1 || after_fd.st_nlink != 1
+            || after_path.st_uid != geteuid()
+            || after_fd.st_uid != geteuid()
+            || (after_path.st_mode & (mode_t)07777) != (mode_t)0600
+            || (after_fd.st_mode & (mode_t)07777) != (mode_t)0600
+            || after_path.st_dev != after_fd.st_dev
+            || after_path.st_ino != after_fd.st_ino) {
+            atomic_flag_clear_explicit(
+                &identity_registry_guard, memory_order_release);
+            (void)flock(lock_fd, LOCK_UN);
+            (void)close(lock_fd);
+            free(lock_path);
+            free(entry);
+            (void)close(fd);
+            return NINLIL_STORAGE_CORRUPT;
+        }
+        lock_st = after_fd;
+    }
+    entry->dev = st.st_dev;
+    entry->ino = st.st_ino;
+    entry->next = identity_registry;
+    identity_registry = entry;
+    atomic_flag_clear_explicit(
+        &identity_registry_guard, memory_order_release);
+    storage->db_dev = st.st_dev;
+    storage->db_ino = st.st_ino;
+    storage->lock_dev = lock_st.st_dev;
+    storage->lock_ino = lock_st.st_ino;
+    storage->identity_bound = 1;
+    storage->db_identity_fd = fd;
+    storage->db_lock_fd = lock_fd;
+    storage->lock_path = lock_path;
+    storage->identity_registry_entry = entry;
+    return NINLIL_STORAGE_OK;
+}
+
+static ninlil_storage_status_t acquire_namespace_lease(
+    ninlil_posix_sqlite_storage_t *storage,
+    ninlil_bytes_view_t storage_namespace,
+    int *out_fd)
+{
+    ninlil_storage_status_t status;
+    uint32_t index;
+
+    *out_fd = -1;
+    if (storage != NULL
+        && (storage->connection_fenced || storage->lease_tokens_fenced)) {
+        return NINLIL_STORAGE_NO_SPACE;
+    }
+    status = verify_db_file_identity(storage);
+    if (status != NINLIL_STORAGE_OK) {
+        return status;
+    }
+    for (index = 0u; index < storage->max_handles; ++index) {
+        const storage_handle_t *handle = &storage->handles[index];
+        if (handle->in_use
+            && handle->name_length == storage_namespace.length
+            && memcmp(handle->name, storage_namespace.data,
+                storage_namespace.length) == 0) {
+            return NINLIL_STORAGE_BUSY;
+        }
+    }
+    /* The DB-wide flock already provides cross-process exclusion. */
+    *out_fd = storage->db_lock_fd;
+    return NINLIL_STORAGE_OK;
+}
+
+static void release_namespace_lease_fd(int *lease_fd)
+{
+    if (lease_fd == NULL || *lease_fd < 0) {
+        return;
+    }
+    /* Borrowed from storage->db_lock_fd; released only by provider destroy. */
+    *lease_fd = -1;
 }
 
 static void release_iterator(
@@ -611,17 +1371,23 @@ static void release_iterator(
 {
     storage_transaction_t *transaction;
     uint32_t index;
+    uint64_t generation;
 
     if (iterator == NULL || !iterator->in_use) {
         return;
     }
     transaction = iterator->transaction;
     index = (uint32_t)(iterator - storage->iterators);
-    if (transaction != NULL && transaction->in_use) {
+    if (transaction != NULL && transaction->in_use
+        && transaction->generation == iterator->transaction_generation) {
         transaction->open_iterator_mask &= ~(1u << index);
     }
     free_entries(iterator->rows, iterator->row_count);
+    iterator->active_cookie = NULL;
+    generation = iterator->generation;
     (void)memset(iterator, 0, sizeof(*iterator));
+    iterator->generation = generation;
+    iterator->in_use = 0;
     if (storage->live_iterators > 0u) {
         storage->live_iterators -= 1u;
     }
@@ -648,23 +1414,33 @@ static void release_transaction(
 {
     storage_handle_t *handle;
     uint32_t index;
+    uint64_t generation;
 
     if (transaction == NULL || !transaction->in_use) {
         return;
     }
     handle = transaction->handle;
     consume_iterators(storage, transaction);
-    if (transaction->mode == NINLIL_STORAGE_READ_WRITE && handle != NULL) {
+    if (transaction->mode == NINLIL_STORAGE_READ_WRITE
+        && handle != NULL
+        && handle->in_use
+        && handle->generation == transaction->handle_generation) {
         handle->has_writer = 0;
     }
-    if (handle != NULL && handle->in_use) {
+    if (handle != NULL
+        && handle->in_use
+        && handle->generation == transaction->handle_generation) {
         index = (uint32_t)(transaction - storage->transactions);
         handle->open_txn_mask &= ~(1u << index);
     }
     if (!keep_view) {
         free_entries(transaction->view, transaction->view_count);
     }
+    transaction->active_cookie = NULL;
+    generation = transaction->generation;
     (void)memset(transaction, 0, sizeof(*transaction));
+    transaction->generation = generation;
+    transaction->in_use = 0;
     if (storage->live_transactions > 0u) {
         storage->live_transactions -= 1u;
     }
@@ -675,6 +1451,8 @@ static void force_close_handle(
     storage_handle_t *handle)
 {
     uint32_t index;
+    uint64_t generation;
+    int lease_fd;
 
     if (handle == NULL || !handle->in_use) {
         return;
@@ -685,7 +1463,15 @@ static void force_close_handle(
                 storage, &storage->transactions[index], 0);
         }
     }
+    handle->active_cookie = NULL;
+    generation = handle->generation;
+    lease_fd = handle->lease_fd;
+    handle->lease_fd = -1;
+    release_namespace_lease_fd(&lease_fd);
     (void)memset(handle, 0, sizeof(*handle));
+    handle->generation = generation;
+    handle->lease_fd = -1;
+    handle->in_use = 0;
     if (storage->live_handles > 0u) {
         storage->live_handles -= 1u;
     }
@@ -748,19 +1534,11 @@ static ninlil_storage_status_t load_namespace_view(
             status = NINLIL_STORAGE_CORRUPT;
             break;
         }
-        if ((uint64_t)count >= storage->config.max_entries_per_namespace) {
-            status = NINLIL_STORAGE_CORRUPT;
-            break;
-        }
         if (count == capacity) {
             size_t next = capacity == 0u ? 8u : capacity * 2u;
             storage_entry_t *grown;
 
-            if (next < capacity
-                || next > (size_t)storage->config.max_entries_per_namespace) {
-                next = (size_t)storage->config.max_entries_per_namespace;
-            }
-            if (next <= capacity) {
+            if (next < capacity) {
                 status = NINLIL_STORAGE_NO_SPACE;
                 break;
             }
@@ -803,6 +1581,39 @@ static ninlil_storage_status_t load_namespace_view(
     return NINLIL_STORAGE_OK;
 }
 
+static ninlil_storage_status_t confirm_autocommit_after_rollback(
+    ninlil_posix_sqlite_storage_t *storage,
+    ninlil_storage_status_t candidate_definite)
+{
+    int rc;
+
+    if (storage == NULL || storage->db == NULL) {
+        return NINLIL_STORAGE_COMMIT_UNKNOWN;
+    }
+    rc = sqlite3_exec(storage->db, "ROLLBACK;", NULL, NULL, NULL);
+    /*
+     * ROLLBACK may return OK or a benign "no transaction is active" error.
+     * Only treat non-commit as definite when autocommit confirms no open txn.
+     */
+    if (sqlite3_get_autocommit(storage->db) != 0
+        && (rc == SQLITE_OK || rc == SQLITE_ERROR)) {
+        return candidate_definite;
+    }
+    storage->connection_fenced = 1;
+    return NINLIL_STORAGE_COMMIT_UNKNOWN;
+}
+
+static ninlil_storage_status_t classify_pre_commit_identity_failure(
+    ninlil_posix_sqlite_storage_t *storage,
+    ninlil_storage_status_t identity_status)
+{
+    storage->connection_fenced = 1;
+    if (identity_status == NINLIL_STORAGE_CORRUPT) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    return NINLIL_STORAGE_COMMIT_UNKNOWN;
+}
+
 static ninlil_storage_status_t persist_namespace_view(
     ninlil_posix_sqlite_storage_t *storage,
     const storage_handle_t *handle,
@@ -814,11 +1625,56 @@ static ninlil_storage_status_t persist_namespace_view(
     int rc;
     size_t index;
     ninlil_storage_status_t status = NINLIL_STORAGE_OK;
+    ninlil_storage_status_t identity_status;
+    ninlil_storage_status_t schema_status;
 
+    if (storage->connection_fenced) {
+        return NINLIL_STORAGE_COMMIT_UNKNOWN;
+    }
+    identity_status = verify_db_file_identity(storage);
+    if (identity_status != NINLIL_STORAGE_OK) {
+        return classify_pre_commit_identity_failure(storage, identity_status);
+    }
+
+    /*
+     * docs/08 durable persist ordering:
+     *   BEGIN IMMEDIATE → closed schema revalidation (same txn) →
+     *   identity revalidation → DELETE/INSERT → identity → COMMIT →
+     *   identity before OK publication.
+     * Schema/path checks after BEGIN close the validate-then-BEGIN TOCTOU
+     * window. Raw external SQLite access remains unsupported; these checks are
+     * defense-in-depth and never justify publishing OK after replacement.
+     * Windows between revalidations are not closed atomically: a rename after
+     * the last pre-COMMIT check is reported only post-COMMIT as COMMIT_UNKNOWN.
+     */
     rc = sqlite3_exec(storage->db, "BEGIN IMMEDIATE;", NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
         return map_sqlite_rc(rc);
     }
+
+    identity_status = verify_db_file_identity(storage);
+    if (identity_status != NINLIL_STORAGE_OK) {
+        status = classify_pre_commit_identity_failure(
+            storage, identity_status);
+        goto abort_tx;
+    }
+
+    schema_status = validate_schema_definition_shape(storage->db);
+    if (schema_status != NINLIL_STORAGE_OK) {
+        storage->connection_fenced = 1;
+        status = schema_status == NINLIL_STORAGE_UNSUPPORTED_SCHEMA
+            ? NINLIL_STORAGE_CORRUPT
+            : schema_status;
+        goto abort_tx;
+    }
+
+    identity_status = verify_db_file_identity(storage);
+    if (identity_status != NINLIL_STORAGE_OK) {
+        status = classify_pre_commit_identity_failure(
+            storage, identity_status);
+        goto abort_tx;
+    }
+
     rc = sqlite3_prepare_v2(
         storage->db,
         "DELETE FROM ninlil_kv WHERE namespace = ?1;",
@@ -902,25 +1758,38 @@ static ninlil_storage_status_t persist_namespace_view(
     }
     (void)sqlite3_finalize(ins);
     ins = NULL;
+
+    identity_status = verify_db_file_identity(storage);
+    if (identity_status != NINLIL_STORAGE_OK) {
+        status = classify_pre_commit_identity_failure(
+            storage, identity_status);
+        goto abort_tx;
+    }
+
     rc = sqlite3_exec(storage->db, "COMMIT;", NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
-        /*
-         * Once COMMIT has been attempted, a non-OK result may leave the
-         * durable outcome unclassified. Prefer COMMIT_UNKNOWN over guessing.
-         */
+        ninlil_storage_status_t candidate = NINLIL_STORAGE_COMMIT_UNKNOWN;
         if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
-            (void)sqlite3_exec(storage->db, "ROLLBACK;", NULL, NULL, NULL);
-            return NINLIL_STORAGE_BUSY;
+            candidate = NINLIL_STORAGE_BUSY;
+        } else if (rc == SQLITE_FULL) {
+            candidate = NINLIL_STORAGE_NO_SPACE;
+        } else if (rc == SQLITE_CORRUPT || rc == SQLITE_NOTADB) {
+            candidate = NINLIL_STORAGE_CORRUPT;
         }
-        if (rc == SQLITE_FULL) {
-            (void)sqlite3_exec(storage->db, "ROLLBACK;", NULL, NULL, NULL);
-            return NINLIL_STORAGE_NO_SPACE;
-        }
-        if (rc == SQLITE_CORRUPT || rc == SQLITE_NOTADB) {
-            (void)sqlite3_exec(storage->db, "ROLLBACK;", NULL, NULL, NULL);
-            return NINLIL_STORAGE_CORRUPT;
-        }
-        (void)sqlite3_exec(storage->db, "ROLLBACK;", NULL, NULL, NULL);
+        return confirm_autocommit_after_rollback(storage, candidate);
+    }
+    if (sqlite3_get_autocommit(storage->db) == 0) {
+        storage->connection_fenced = 1;
+        return NINLIL_STORAGE_COMMIT_UNKNOWN;
+    }
+
+    /*
+     * Post-commit identity is linearization evidence. Path replacement after
+     * COMMIT must never publish OK against a different inode at the pathname.
+     */
+    identity_status = verify_db_file_identity(storage);
+    if (identity_status != NINLIL_STORAGE_OK) {
+        storage->connection_fenced = 1;
         return NINLIL_STORAGE_COMMIT_UNKNOWN;
     }
     return NINLIL_STORAGE_OK;
@@ -932,8 +1801,7 @@ abort_tx:
     if (ins != NULL) {
         (void)sqlite3_finalize(ins);
     }
-    (void)sqlite3_exec(storage->db, "ROLLBACK;", NULL, NULL, NULL);
-    return status;
+    return confirm_autocommit_after_rollback(storage, status);
 }
 
 static ninlil_storage_status_t port_open(
@@ -946,6 +1814,12 @@ static ninlil_storage_status_t port_open(
         (ninlil_posix_sqlite_storage_t *)user;
     storage_handle_t *handle = NULL;
     uint32_t index;
+    int lease_fd = -1;
+    ninlil_storage_status_t status;
+    uint64_t generation;
+    uint64_t lease_token;
+    ninlil_storage_handle_t opaque;
+    uint64_t gen_ceiling;
 
     if (storage == NULL || out_handle == NULL || *out_handle != NULL
         || !view_shape_is_valid(storage_namespace, 1u, 255u)) {
@@ -954,27 +1828,57 @@ static ninlil_storage_status_t port_open(
     if (expected_schema != NINLIL_STORAGE_SCHEMA_M1A) {
         return NINLIL_STORAGE_UNSUPPORTED_SCHEMA;
     }
-    if (find_leased_namespace(storage, storage_namespace) != NULL) {
-        return NINLIL_STORAGE_BUSY;
+    if (storage->connection_fenced) {
+        return NINLIL_STORAGE_CORRUPT;
     }
+    if (storage->lease_tokens_fenced) {
+        return NINLIL_STORAGE_NO_SPACE;
+    }
+    gen_ceiling = NINLIL_POSIX_TOKEN_GEN_MAX;
     for (index = 0u; index < storage->max_handles; ++index) {
-        if (!storage->handles[index].in_use) {
-            handle = &storage->handles[index];
+        storage_handle_t *candidate = &storage->handles[index];
+        if (!candidate->in_use
+            && slot_can_issue_generation(candidate->generation, gen_ceiling)) {
+            handle = candidate;
             break;
         }
     }
     if (handle == NULL) {
         return NINLIL_STORAGE_NO_SPACE;
     }
-    (void)memset(handle, 0, sizeof(*handle));
+    status = acquire_namespace_lease(storage, storage_namespace, &lease_fd);
+    if (status != NINLIL_STORAGE_OK) {
+        return status;
+    }
+    generation = issue_slot_generation(&handle->generation, gen_ceiling);
+    if (generation == 0u) {
+        release_namespace_lease_fd(&lease_fd);
+        return NINLIL_STORAGE_NO_SPACE;
+    }
+    lease_token = issue_lease_token(storage);
+    if (lease_token == 0u) {
+        release_namespace_lease_fd(&lease_fd);
+        return NINLIL_STORAGE_NO_SPACE;
+    }
     handle->in_use = 1;
-    handle->leased = 1;
+    handle->lease_token = lease_token;
+    handle->lease_fd = lease_fd;
     handle->name_length = storage_namespace.length;
     handle->schema = expected_schema;
+    handle->has_writer = 0;
+    handle->open_txn_mask = 0u;
     (void)memcpy(
         handle->name, storage_namespace.data, storage_namespace.length);
+    opaque = handle_to_opaque(storage, handle);
+    if (opaque == NULL) {
+        handle->in_use = 0;
+        handle->lease_fd = -1;
+        handle->lease_token = 0u;
+        release_namespace_lease_fd(&lease_fd);
+        return NINLIL_STORAGE_NO_SPACE;
+    }
     storage->live_handles += 1u;
-    *out_handle = handle_to_opaque(storage, handle);
+    *out_handle = opaque;
     return NINLIL_STORAGE_OK;
 }
 
@@ -1020,32 +1924,63 @@ static ninlil_storage_status_t port_begin(
     if (mode == NINLIL_STORAGE_READ_WRITE && handle->has_writer) {
         return NINLIL_STORAGE_BUSY;
     }
-    for (index = 0u; index < storage->max_transactions; ++index) {
-        if (!storage->transactions[index].in_use) {
-            transaction = &storage->transactions[index];
-            break;
+    {
+        uint64_t gen_ceiling = NINLIL_POSIX_TOKEN_GEN_MAX;
+
+        for (index = 0u; index < storage->max_transactions; ++index) {
+            storage_transaction_t *candidate = &storage->transactions[index];
+            if (!candidate->in_use
+                && slot_can_issue_generation(
+                    candidate->generation, gen_ceiling)) {
+                transaction = candidate;
+                break;
+            }
         }
     }
     if (transaction == NULL) {
         return NINLIL_STORAGE_NO_SPACE;
     }
+    if (!handle_lease_is_live(handle)) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
     status = load_namespace_view(storage, handle, &view, &view_count);
     if (status != NINLIL_STORAGE_OK) {
         return status;
     }
-    (void)memset(transaction, 0, sizeof(*transaction));
-    transaction->in_use = 1;
-    transaction->handle = handle;
-    transaction->mode = mode;
-    transaction->view = view;
-    transaction->view_count = view_count;
-    transaction->view_capacity = view_count;
-    handle->open_txn_mask |= 1u << index;
-    if (mode == NINLIL_STORAGE_READ_WRITE) {
-        handle->has_writer = 1;
+    {
+        uint64_t generation = issue_slot_generation(
+            &transaction->generation,
+            NINLIL_POSIX_TOKEN_GEN_MAX);
+        ninlil_storage_txn_t txn_opaque;
+
+        if (generation == 0u) {
+            free_entries(view, view_count);
+            return NINLIL_STORAGE_NO_SPACE;
+        }
+        transaction->in_use = 1;
+        transaction->handle = handle;
+        transaction->handle_generation = handle->generation;
+        transaction->lease_token = handle->lease_token;
+        transaction->mode = mode;
+        transaction->view = view;
+        transaction->view_count = view_count;
+        transaction->view_capacity = view_count;
+        transaction->open_iterator_mask = 0u;
+        txn_opaque = txn_to_opaque(storage, transaction);
+        if (txn_opaque == NULL) {
+            free_entries(view, view_count);
+            transaction->in_use = 0;
+            transaction->view = NULL;
+            transaction->view_count = 0u;
+            return NINLIL_STORAGE_NO_SPACE;
+        }
+        handle->open_txn_mask |= 1u << index;
+        if (mode == NINLIL_STORAGE_READ_WRITE) {
+            handle->has_writer = 1;
+        }
+        storage->live_transactions += 1u;
+        *out_txn = txn_opaque;
     }
-    storage->live_transactions += 1u;
-    *out_txn = txn_to_opaque(storage, transaction);
     return NINLIL_STORAGE_OK;
 }
 
@@ -1128,21 +2063,16 @@ static ninlil_storage_status_t port_put(
         free(value_copy);
         return NINLIL_STORAGE_NO_SPACE;
     }
-    if (transaction->view_count
-        >= (size_t)storage->config.max_entries_per_namespace) {
-        free(key_copy);
-        free(value_copy);
-        return NINLIL_STORAGE_NO_SPACE;
-    }
+    /*
+     * docs/14: capacity is evaluated on the final transaction view at commit,
+     * not at each put. Accept into the working view while the staging area can
+     * grow; OOM of the staging area is the only put-time NO_SPACE for counts.
+     */
     if (transaction->view_count == transaction->view_capacity) {
         size_t next = transaction->view_capacity == 0u
             ? 4u
             : transaction->view_capacity * 2u;
         if (next < transaction->view_capacity
-            || next > (size_t)storage->config.max_entries_per_namespace) {
-            next = (size_t)storage->config.max_entries_per_namespace;
-        }
-        if (next <= transaction->view_capacity
             || next > SIZE_MAX / sizeof(*entries)) {
             free(key_copy);
             free(value_copy);
@@ -1231,10 +2161,17 @@ static ninlil_storage_status_t port_iter_open(
     if (transaction == NULL || !view_shape_is_valid(prefix, 0u, 255u)) {
         return NINLIL_STORAGE_CORRUPT;
     }
-    for (slot = 0u; slot < storage->max_iterators; ++slot) {
-        if (!storage->iterators[slot].in_use) {
-            iterator = &storage->iterators[slot];
-            break;
+    {
+        uint64_t gen_ceiling = NINLIL_POSIX_TOKEN_GEN_MAX;
+
+        for (slot = 0u; slot < storage->max_iterators; ++slot) {
+            storage_iterator_t *candidate = &storage->iterators[slot];
+            if (!candidate->in_use
+                && slot_can_issue_generation(
+                    candidate->generation, gen_ceiling)) {
+                iterator = candidate;
+                break;
+            }
         }
     }
     if (iterator == NULL) {
@@ -1274,15 +2211,34 @@ static ninlil_storage_status_t port_iter_open(
             target += 1u;
         }
     }
-    (void)memset(iterator, 0, sizeof(*iterator));
-    iterator->in_use = 1;
-    iterator->transaction = transaction;
-    iterator->rows = rows;
-    iterator->row_count = matches;
-    iterator->position = 0u;
-    transaction->open_iterator_mask |= 1u << slot;
-    storage->live_iterators += 1u;
-    *out_iter = iter_to_opaque(storage, iterator);
+    {
+        uint64_t generation = issue_slot_generation(
+            &iterator->generation,
+            NINLIL_POSIX_TOKEN_GEN_MAX);
+        ninlil_storage_iter_t iter_opaque;
+
+        if (generation == 0u) {
+            free_entries(rows, matches);
+            return NINLIL_STORAGE_NO_SPACE;
+        }
+        iterator->in_use = 1;
+        iterator->transaction = transaction;
+        iterator->transaction_generation = transaction->generation;
+        iterator->rows = rows;
+        iterator->row_count = matches;
+        iterator->position = 0u;
+        iter_opaque = iter_to_opaque(storage, iterator);
+        if (iter_opaque == NULL) {
+            free_entries(rows, matches);
+            iterator->in_use = 0;
+            iterator->rows = NULL;
+            iterator->row_count = 0u;
+            return NINLIL_STORAGE_NO_SPACE;
+        }
+        transaction->open_iterator_mask |= 1u << slot;
+        storage->live_iterators += 1u;
+        *out_iter = iter_opaque;
+    }
     return NINLIL_STORAGE_OK;
 }
 
@@ -1393,7 +2349,6 @@ static ninlil_storage_status_t port_commit(
         (ninlil_posix_sqlite_storage_t *)user;
     storage_transaction_t *transaction;
     ninlil_storage_status_t status = NINLIL_STORAGE_OK;
-    ninlil_posix_sqlite_commit_fault_t fault;
     storage_entry_t *view;
     size_t view_count;
     storage_handle_t *handle;
@@ -1430,25 +2385,33 @@ static ninlil_storage_status_t port_commit(
             return NINLIL_STORAGE_NO_SPACE;
         }
     }
-    fault = storage->commit_fault;
-    storage->commit_fault = NINLIL_POSIX_SQLITE_COMMIT_FAULT_NONE;
-    if (fault == NINLIL_POSIX_SQLITE_COMMIT_FAULT_UNKNOWN_NOT_COMMITTED) {
+    handle = transaction->handle;
+    /*
+     * Fence stale writers: handle must still own the same OS lease and
+     * generation captured at begin. Lost lease / ABA / close mid-txn cannot
+     * publish mutations.
+     */
+    if (!handle_lease_is_live(handle)
+        || handle->generation != transaction->handle_generation
+        || handle->lease_token != transaction->lease_token) {
         release_transaction(storage, transaction, 0);
-        return NINLIL_STORAGE_COMMIT_UNKNOWN;
+        return NINLIL_STORAGE_CORRUPT;
     }
     view = transaction->view;
     view_count = transaction->view_count;
-    handle = transaction->handle;
     transaction->view = NULL;
     transaction->view_count = 0u;
     transaction->view_capacity = 0u;
+    if (!handle_lease_is_live(handle)
+        || handle->generation != transaction->handle_generation
+        || handle->lease_token != transaction->lease_token) {
+        free_entries(view, view_count);
+        release_transaction(storage, transaction, 0);
+        return NINLIL_STORAGE_CORRUPT;
+    }
     status = persist_namespace_view(storage, handle, view, view_count);
     free_entries(view, view_count);
     release_transaction(storage, transaction, 0);
-    if (fault == NINLIL_POSIX_SQLITE_COMMIT_FAULT_UNKNOWN_COMMITTED
-        && status == NINLIL_STORAGE_OK) {
-        return NINLIL_STORAGE_COMMIT_UNKNOWN;
-    }
     return status;
 }
 
@@ -1477,6 +2440,9 @@ static int config_is_valid(const ninlil_posix_sqlite_storage_config_t *config)
         || config->database_path[0] == '\0') {
         return 0;
     }
+    if (config->busy_timeout_ms > (uint32_t)INT_MAX) {
+        return 0;
+    }
     if (config->max_entries_per_namespace == 0u
         || config->max_entries_per_namespace == UINT64_MAX
         || config->max_bytes_per_namespace == 0u
@@ -1498,6 +2464,100 @@ static int config_is_valid(const ninlil_posix_sqlite_storage_config_t *config)
     return 1;
 }
 
+static ninlil_storage_status_t validate_committed_capacity(
+    ninlil_posix_sqlite_storage_t *storage)
+{
+    sqlite3_stmt *stmt = NULL;
+    int rc;
+    ninlil_storage_status_t status = NINLIL_STORAGE_OK;
+
+    /*
+     * SH4: reject configurations where any existing namespace already exceeds
+     * configured max_entries / max_bytes (logical 16+key+value units).
+     */
+    rc = sqlite3_prepare_v2(
+        storage->db,
+        "SELECT namespace, key, value FROM ninlil_kv ORDER BY namespace, key;",
+        -1,
+        &stmt,
+        NULL);
+    if (rc != SQLITE_OK) {
+        return map_sqlite_rc(rc);
+    }
+    {
+        uint8_t current_ns[255];
+        uint32_t current_ns_len = 0u;
+        int have_ns = 0;
+        uint64_t used_entries = 0u;
+        uint64_t used_bytes = 0u;
+
+        for (;;) {
+            const void *ns_ptr;
+            const void *key_ptr;
+            const void *value_ptr;
+            int ns_len;
+            int key_len;
+            int value_len;
+            uint64_t row_bytes;
+
+            rc = sqlite3_step(stmt);
+            if (rc == SQLITE_DONE) {
+                break;
+            }
+            if (rc != SQLITE_ROW) {
+                status = map_sqlite_rc(rc);
+                break;
+            }
+            ns_ptr = sqlite3_column_blob(stmt, 0);
+            ns_len = sqlite3_column_bytes(stmt, 0);
+            key_ptr = sqlite3_column_blob(stmt, 1);
+            key_len = sqlite3_column_bytes(stmt, 1);
+            value_ptr = sqlite3_column_blob(stmt, 2);
+            value_len = sqlite3_column_bytes(stmt, 2);
+            (void)value_ptr;
+            if (ns_len < 1 || ns_len > 255 || key_len < 1 || key_len > 255
+                || value_len < 0
+                || (uint32_t)value_len > NINLIL_M1A_MAX_STORAGE_VALUE_BYTES
+                || ns_ptr == NULL || key_ptr == NULL) {
+                status = NINLIL_STORAGE_CORRUPT;
+                break;
+            }
+            if (!have_ns
+                || current_ns_len != (uint32_t)ns_len
+                || memcmp(current_ns, ns_ptr, (size_t)ns_len) != 0) {
+                if (have_ns
+                    && (used_entries
+                            > storage->config.max_entries_per_namespace
+                        || used_bytes
+                            > storage->config.max_bytes_per_namespace)) {
+                    status = NINLIL_STORAGE_NO_SPACE;
+                    break;
+                }
+                current_ns_len = (uint32_t)ns_len;
+                (void)memcpy(current_ns, ns_ptr, (size_t)ns_len);
+                have_ns = 1;
+                used_entries = 0u;
+                used_bytes = 0u;
+            }
+            row_bytes = 16u + (uint64_t)key_len + (uint64_t)value_len;
+            if (used_entries == UINT64_MAX
+                || used_bytes > UINT64_MAX - row_bytes) {
+                status = NINLIL_STORAGE_CORRUPT;
+                break;
+            }
+            used_entries += 1u;
+            used_bytes += row_bytes;
+        }
+        if (status == NINLIL_STORAGE_OK && have_ns
+            && (used_entries > storage->config.max_entries_per_namespace
+                || used_bytes > storage->config.max_bytes_per_namespace)) {
+            status = NINLIL_STORAGE_NO_SPACE;
+        }
+    }
+    (void)sqlite3_finalize(stmt);
+    return status;
+}
+
 ninlil_posix_sqlite_storage_t *ninlil_posix_sqlite_storage_create(
     const ninlil_posix_sqlite_storage_config_t *config)
 {
@@ -1506,6 +2566,7 @@ ninlil_posix_sqlite_storage_t *ninlil_posix_sqlite_storage_create(
     int rc;
     ninlil_storage_status_t status;
     size_t path_len;
+    uint32_t index;
 
     if (!config_is_valid(config)) {
         return NULL;
@@ -1525,6 +2586,8 @@ ninlil_posix_sqlite_storage_t *ninlil_posix_sqlite_storage_create(
     }
     (void)memcpy(storage->path_copy, config->database_path, path_len + 1u);
     storage->config = *config;
+    storage->db_identity_fd = -1;
+    storage->db_lock_fd = -1;
     storage->config.database_path = storage->path_copy;
     if (storage->config.busy_timeout_ms == 0u) {
         storage->config.busy_timeout_ms =
@@ -1533,6 +2596,27 @@ ninlil_posix_sqlite_storage_t *ninlil_posix_sqlite_storage_create(
     storage->max_handles = config->max_handles;
     storage->max_transactions = config->max_transactions;
     storage->max_iterators = config->max_iterators;
+    storage->last_lease_token = 0u;
+    storage->lease_tokens_fenced = 0;
+    storage->connection_fenced = 0;
+    if (UINTPTR_MAX <= UINT32_MAX
+        || (uint64_t)SIZE_MAX < NINLIL_POSIX_TOKEN_ARENA_BYTES) {
+        ninlil_posix_sqlite_storage_destroy(storage);
+        return NULL;
+    }
+    storage->token_arena_size = (size_t)NINLIL_POSIX_TOKEN_ARENA_BYTES;
+    storage->token_arena = mmap(
+        NULL,
+        storage->token_arena_size,
+        PROT_NONE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0);
+    if (storage->token_arena == MAP_FAILED) {
+        storage->token_arena = NULL;
+        ninlil_posix_sqlite_storage_destroy(storage);
+        return NULL;
+    }
     storage->handles = (storage_handle_t *)calloc(
         storage->max_handles, sizeof(*storage->handles));
     storage->transactions = (storage_transaction_t *)calloc(
@@ -1541,6 +2625,14 @@ ninlil_posix_sqlite_storage_t *ninlil_posix_sqlite_storage_create(
         storage->max_iterators, sizeof(*storage->iterators));
     if (storage->handles == NULL || storage->transactions == NULL
         || storage->iterators == NULL) {
+        ninlil_posix_sqlite_storage_destroy(storage);
+        return NULL;
+    }
+    for (index = 0u; index < storage->max_handles; ++index) {
+        storage->handles[index].lease_fd = -1;
+    }
+    status = acquire_db_identity_and_lock(storage);
+    if (status != NINLIL_STORAGE_OK) {
         ninlil_posix_sqlite_storage_destroy(storage);
         return NULL;
     }
@@ -1556,19 +2648,46 @@ ninlil_posix_sqlite_storage_t *ninlil_posix_sqlite_storage_create(
         ninlil_posix_sqlite_storage_destroy(storage);
         return NULL;
     }
-    status = configure_connection(db, storage->config.busy_timeout_ms);
+    storage->db = db;
+    rc = sqlite3_busy_timeout(db, (int)storage->config.busy_timeout_ms);
+    if (rc != SQLITE_OK) {
+        ninlil_posix_sqlite_storage_destroy(storage);
+        return NULL;
+    }
+    /*
+     * Revalidate the pinned pathname before any schema or PRAGMA mutation.
+     * Without a custom VFS this cannot close an adversarial rename race inside
+     * sqlite3_open_v2 itself; the supported live-path precondition is stated
+     * in the port profile.  It does ensure an already-replaced path is never
+     * initialized or configured by this provider.
+     */
+    status = verify_db_file_identity(storage);
     if (status != NINLIL_STORAGE_OK) {
-        (void)sqlite3_close(db);
         ninlil_posix_sqlite_storage_destroy(storage);
         return NULL;
     }
     status = ensure_schema(db);
     if (status != NINLIL_STORAGE_OK) {
-        (void)sqlite3_close(db);
         ninlil_posix_sqlite_storage_destroy(storage);
         return NULL;
     }
-    storage->db = db;
+    /* Schema initialization can cross a durable boundary; fence before the
+     * subsequent persistent journal-mode configuration as well. */
+    status = verify_db_file_identity(storage);
+    if (status != NINLIL_STORAGE_OK) {
+        ninlil_posix_sqlite_storage_destroy(storage);
+        return NULL;
+    }
+    status = configure_connection(db, storage->config.busy_timeout_ms);
+    if (status != NINLIL_STORAGE_OK) {
+        ninlil_posix_sqlite_storage_destroy(storage);
+        return NULL;
+    }
+    status = validate_committed_capacity(storage);
+    if (status != NINLIL_STORAGE_OK) {
+        ninlil_posix_sqlite_storage_destroy(storage);
+        return NULL;
+    }
     storage->ops.abi_version = NINLIL_ABI_VERSION;
     storage->ops.struct_size = (uint16_t)sizeof(storage->ops);
     storage->ops.user = storage;
@@ -1605,10 +2724,42 @@ void ninlil_posix_sqlite_storage_destroy(ninlil_posix_sqlite_storage_t *storage)
         (void)sqlite3_close(storage->db);
         storage->db = NULL;
     }
+    if (storage->db_lock_fd >= 0) {
+        identity_registry_entry_t **link;
+
+        while (atomic_flag_test_and_set_explicit(
+            &identity_registry_guard, memory_order_acquire)) {
+        }
+        link = &identity_registry;
+        while (*link != NULL) {
+            if (*link == storage->identity_registry_entry) {
+                *link = (*link)->next;
+                break;
+            }
+            link = &(*link)->next;
+        }
+        atomic_flag_clear_explicit(
+            &identity_registry_guard, memory_order_release);
+        free(storage->identity_registry_entry);
+        storage->identity_registry_entry = NULL;
+        (void)flock(storage->db_lock_fd, LOCK_UN);
+        (void)close(storage->db_lock_fd);
+        storage->db_lock_fd = -1;
+    }
+    if (storage->db_identity_fd >= 0) {
+        (void)close(storage->db_identity_fd);
+        storage->db_identity_fd = -1;
+    }
+    if (storage->token_arena != NULL && storage->token_arena_size != 0u) {
+        (void)munmap(storage->token_arena, storage->token_arena_size);
+        storage->token_arena = NULL;
+        storage->token_arena_size = 0u;
+    }
     free(storage->handles);
     free(storage->transactions);
     free(storage->iterators);
     free(storage->path_copy);
+    free(storage->lock_path);
     free(storage);
 }
 
@@ -1636,16 +2787,6 @@ void ninlil_posix_sqlite_storage_simulate_crash(
     }
 }
 
-void ninlil_posix_sqlite_storage_set_commit_fault(
-    ninlil_posix_sqlite_storage_t *storage,
-    ninlil_posix_sqlite_commit_fault_t fault)
-{
-    if (storage == NULL) {
-        return;
-    }
-    storage->commit_fault = fault;
-}
-
 uint64_t ninlil_posix_sqlite_storage_live_handles(
     const ninlil_posix_sqlite_storage_t *storage)
 {
@@ -1662,4 +2803,16 @@ uint64_t ninlil_posix_sqlite_storage_live_iterators(
     const ninlil_posix_sqlite_storage_t *storage)
 {
     return storage == NULL ? 0u : storage->live_iterators;
+}
+
+int ninlil_posix_sqlite_storage_lease_tokens_fenced(
+    const ninlil_posix_sqlite_storage_t *storage)
+{
+    return storage != NULL && storage->lease_tokens_fenced != 0;
+}
+
+int ninlil_posix_sqlite_storage_connection_fenced(
+    const ninlil_posix_sqlite_storage_t *storage)
+{
+    return storage != NULL && storage->connection_fenced != 0;
 }

@@ -8,10 +8,10 @@ permissions:
   contents: read
 
 jobs:
-  gcc-normal:
-    name: GCC normal
+  optional-composition:
+    name: SQLite optional and tests OFF
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -20,28 +20,287 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install SQLite3
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
-      - name: Configure
+      - name: Build portable tests without SQLite discovery
         run: >-
-          cmake -S . -B build/ci-gcc
+          cmake -S . -B build/ci-no-sqlite
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
+          && cmake --build build/ci-no-sqlite --parallel 2
+          && ctest --test-dir build/ci-no-sqlite --output-on-failure
+      - name: Install SQLite3 for tests-off storage composition
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Build library composition with tests disabled
+        run: >-
+          cmake -S . -B build/ci-tests-off
+          -DCMAKE_BUILD_TYPE=Release
+          -DNINLIL_BUILD_TESTS=OFF
+          && cmake --build build/ci-tests-off --parallel 2
+      - name: Verify tests-off registers no tests
+        run: >-
+          test "$(ctest --test-dir build/ci-tests-off -N | tail -1)"
+          = "Total Tests: 0"
+
+  ubuntu-dynamic-strict:
+    name: Ubuntu dynamic SQLite strict full
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install SQLite3 and ninja
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev ninja-build binutils
+      - name: Configure (shared libsqlite3, strict)
+        run: >-
+          cmake -S . -B build/ci-ubuntu-dyn -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=gcc
           -DCMAKE_CXX_COMPILER=g++
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_SQLITE_LINKAGE=SHARED
       - name: Build
-        run: cmake --build build/ci-gcc --parallel 2
-      - name: Test
-        run: ctest --test-dir build/ci-gcc --output-on-failure
+        run: cmake --build build/ci-ubuntu-dyn --parallel 2
+      - name: Test full matrix
+        run: ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
+      - name: Debug archive path hygiene (DWARF4 + strings/readelf)
+        run: |
+          set -euo pipefail
+          a=build/ci-ubuntu-dyn/libninlil_posix_sqlite_storage.a
+          test -f "$a"
+          ninja -C build/ci-ubuntu-dyn -t commands ninlil_posix_sqlite_storage \
+            | tr ' ' '\n' | grep -E '^-gdwarf-4$'
+          for n in \
+            "$PWD/build/ci-ubuntu-dyn/" \
+            "$PWD/build/ci-ubuntu-dyn" \
+            "$PWD/ports/" \
+            "$PWD/include/" \
+            "$PWD/src/" \
+            "$PWD/CMakeLists.txt"
+          do
+            if strings "$a" | grep -F "$n"; then
+              echo "false-green: absolute needle in Debug archive: $n" >&2
+              exit 1
+            fi
+            if strings "$a" | grep -F "file-prefix-map=$n"; then
+              echo "false-green: prefix-map flag re-embedded: $n" >&2
+              exit 1
+            fi
+          done
+          # readelf on .a is unreliable; scan extracted objects (no DWARF5 line_str).
+          tmp=$(mktemp -d)
+          (cd "$tmp" && ar x "$PWD/$a")
+          for o in "$tmp"/*; do
+            if readelf -S "$o" 2>/dev/null | grep -q debug_line_str; then
+              echo "false-green: DWARF5 .debug_line_str still present in $o" >&2
+              exit 1
+            fi
+            if strings "$o" | grep -F "$PWD/"; then
+              echo "false-green: absolute workspace path in object $o" >&2
+              exit 1
+            fi
+          done
+          rm -rf "$tmp"
 
-  clang-sanitizers:
-    name: Clang ASan and UBSan
+  ubuntu-static-strict:
+    name: Ubuntu static SQLite strict full
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install SQLite3 (static archive), zlib, ninja
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev zlib1g-dev ninja-build binutils
+      - name: Resolve static libsqlite3.a
+        id: sqlite_static
+        run: |
+          a=$(find /usr/lib -name 'libsqlite3.a' 2>/dev/null | head -1)
+          test -f "$a"
+          echo "lib=$a" >> "$GITHUB_OUTPUT"
+      - name: Configure (static libsqlite3.a, strict, --wrap interpose)
+        run: >-
+          cmake -S . -B build/ci-ubuntu-static -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=gcc
+          -DCMAKE_CXX_COMPILER=g++
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_SQLITE_LINKAGE=STATIC
+          -DSQLite3_LIBRARY=${{ steps.sqlite_static.outputs.lib }}
+      - name: Build
+        run: cmake --build build/ci-ubuntu-static --parallel 2
+      - name: Test full matrix
+        run: ctest --test-dir build/ci-ubuntu-static --output-on-failure
+      - name: Assert wrap backend and no shared sqlite on test binary
+        run: |
+          set -euo pipefail
+          ninja -C build/ci-ubuntu-static -t commands ninlil_posix_sqlite_storage_test \
+            | tee /tmp/wrap-cmd.txt
+          grep -E -- '--wrap=sqlite3_exec|--wrap=sqlite3_prepare_v2|--wrap=sqlite3_get_autocommit' /tmp/wrap-cmd.txt
+          ldd build/ci-ubuntu-static/ninlil_posix_sqlite_storage_test | tee /tmp/static-test-ldd.txt
+          if grep -E 'libsqlite3\.so' /tmp/static-test-ldd.txt; then
+            echo "static strict test binary still NEEDED libsqlite3.so" >&2
+            exit 1
+          fi
+      - name: Debug archive path hygiene (DWARF4 + strings/readelf)
+        run: |
+          set -euo pipefail
+          a=build/ci-ubuntu-static/libninlil_posix_sqlite_storage.a
+          test -f "$a"
+          ninja -C build/ci-ubuntu-static -t commands ninlil_posix_sqlite_storage \
+            | tr ' ' '\n' | grep -E '^-gdwarf-4$'
+          for n in \
+            "$PWD/build/ci-ubuntu-static/" \
+            "$PWD/build/ci-ubuntu-static" \
+            "$PWD/ports/" \
+            "$PWD/include/" \
+            "$PWD/src/" \
+            "$PWD/CMakeLists.txt"
+          do
+            if strings "$a" | grep -F "$n"; then
+              echo "false-green: absolute needle in Debug archive: $n" >&2
+              exit 1
+            fi
+          done
+          tmp=$(mktemp -d)
+          (cd "$tmp" && ar x "$PWD/$a")
+          for o in "$tmp"/*; do
+            if readelf -S "$o" 2>/dev/null | grep -q debug_line_str; then
+              echo "false-green: DWARF5 .debug_line_str still present in $o" >&2
+              exit 1
+            fi
+            if strings "$o" | grep -F "$PWD/"; then
+              echo "false-green: absolute workspace path in object $o" >&2
+              exit 1
+            fi
+          done
+          rm -rf "$tmp"
+
+  ubuntu-static-tests-off-consumer:
+    name: Ubuntu static tests-off installed consumer
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
     steps:
-      # actions/checkout v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install SQLite3, zlib, ninja
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev zlib1g-dev ninja-build binutils
+      - name: Resolve static libsqlite3.a
+        id: sqlite
+        run: |
+          a=$(find /usr/lib -name 'libsqlite3.a' 2>/dev/null | head -1)
+          test -n "$a"
+          test -f "$a"
+          echo "lib=$a" >> "$GITHUB_OUTPUT"
+          echo "Using static archive: $a"
+      - name: Configure tests-off static
+        run: >-
+          cmake -S . -B build/ci-ubuntu-static-off -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DNINLIL_BUILD_TESTS=OFF
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_SQLITE_LINKAGE=STATIC
+          -DSQLite3_LIBRARY=${{ steps.sqlite.outputs.lib }}
+      - name: Build and install
+        run: >-
+          cmake --build build/ci-ubuntu-static-off --parallel 2
+          && cmake --install build/ci-ubuntu-static-off
+          --prefix build/ci-ubuntu-static-off/prefix
+      - name: External installed consumer build/run with pinned .a
+        run: |
+          set -euo pipefail
+          inc=$(pkg-config --variable=includedir sqlite3 2>/dev/null || true)
+          if [ -z "$inc" ]; then inc=/usr/include; fi
+          cmake -S tests/cmake/installed_posix_sqlite_consumer \
+            -B build/ci-ubuntu-static-off/consumer -G Ninja \
+            -DCMAKE_PREFIX_PATH=$PWD/build/ci-ubuntu-static-off/prefix \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_CONSUMER_EXPECT_STATIC_SQLITE=ON \
+            -DNINLIL_CONSUMER_SQLITE3_LIBRARY=${{ steps.sqlite.outputs.lib }} \
+            -DSQLite3_LIBRARY=${{ steps.sqlite.outputs.lib }} \
+            -DSQLite3_INCLUDE_DIR=$inc
+          cmake --build build/ci-ubuntu-static-off/consumer --parallel 2 --verbose \
+            | tee build/ci-ubuntu-static-off/consumer-link.txt
+          grep -F 'libsqlite3.a' build/ci-ubuntu-static-off/consumer-link.txt
+          if grep -E 'libsqlite3\.so' build/ci-ubuntu-static-off/consumer-link.txt; then
+            echo "false-green: shared sqlite on static consumer link line" >&2
+            exit 1
+          fi
+          ctest --test-dir build/ci-ubuntu-static-off/consumer --output-on-failure
+          exe=build/ci-ubuntu-static-off/consumer/ninlil_installed_posix_sqlite_consumer
+          ldd "$exe" | tee build/ci-ubuntu-static-off/consumer-ldd.txt
+          if grep -E 'libsqlite3\.so' build/ci-ubuntu-static-off/consumer-ldd.txt; then
+            echo "false-green: NEEDED libsqlite3.so" >&2
+            exit 1
+          fi
+          if command -v readelf >/dev/null; then
+            readelf -d "$exe" | tee build/ci-ubuntu-static-off/consumer-readelf.txt
+            if grep -E 'libsqlite3\.so' build/ci-ubuntu-static-off/consumer-readelf.txt; then
+              echo "false-green: readelf NEEDED libsqlite3.so" >&2
+              exit 1
+            fi
+          fi
+      - name: Archive path hygiene (DWARF4 + strings/readelf needles)
+        run: |
+          set -euo pipefail
+          a=build/ci-ubuntu-static-off/prefix/lib/libninlil_posix_sqlite_storage.a
+          test -f "$a"
+          ninja -C build/ci-ubuntu-static-off -t commands ninlil_posix_sqlite_storage \
+            | tr ' ' '\n' | grep -E '^-gdwarf-4$'
+          for n in \
+            "$PWD/build/ci-ubuntu-static-off/" \
+            "$PWD/build/ci-ubuntu-static-off" \
+            "$PWD/ports/" \
+            "$PWD/include/" \
+            "$PWD/src/" \
+            "$PWD/CMakeLists.txt"
+          do
+            if strings "$a" | grep -F "$n"; then
+              echo "false-green: absolute needle in Debug archive: $n" >&2
+              exit 1
+            fi
+            if strings "$a" | grep -F "file-prefix-map=$n"; then
+              echo "false-green: prefix-map flag re-embedded: $n" >&2
+              exit 1
+            fi
+          done
+          tmp=$(mktemp -d)
+          (cd "$tmp" && ar x "$PWD/$a")
+          for o in "$tmp"/*; do
+            if readelf -S "$o" 2>/dev/null | grep -q debug_line_str; then
+              echo "false-green: DWARF5 .debug_line_str still present in $o" >&2
+              exit 1
+            fi
+            if strings "$o" | grep -F "$PWD/"; then
+              echo "false-green: absolute workspace path in object $o" >&2
+              exit 1
+            fi
+          done
+          rm -rf "$tmp"
+
+  clang-sanitizers:
+    name: Clang ASan and UBSan (dynamic SQLite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
@@ -54,6 +313,7 @@ jobs:
           -DCMAKE_C_COMPILER=clang
           -DCMAKE_CXX_COMPILER=clang++
           -DNINLIL_ENABLE_SANITIZERS=ON
+          -DNINLIL_SQLITE_LINKAGE=SHARED
       - name: Build
         run: cmake --build build/ci-clang-sanitize --parallel 2
       - name: Test
@@ -61,27 +321,181 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build/ci-clang-sanitize --output-on-failure
+      - name: Sanitizer artifacts are non-ship (hygiene scan skipped by explicit flag only)
+        run: |
+          set -euo pipefail
+          # Coverage is full (ASan/UBSan ON). Archive absolute-path hygiene is
+          # not a ship gate under NINLIL_ENABLE_SANITIZERS=ON — ASan global
+          # descriptors embed absolute -c paths. Ship hygiene is enforced by
+          # non-sanitizer GCC/Clang jobs and installed-consumer smoke when
+          # sanitizers are OFF. Do not disable ASan globals or drop coverage.
+          test -f build/ci-clang-sanitize/libninlil_posix_sqlite_storage.a
+          grep -E 'NINLIL_ENABLE_SANITIZERS:BOOL=ON' \
+            build/ci-clang-sanitize/CMakeCache.txt
 
-  macos-sqlite:
-    name: macOS SQLite port
-    runs-on: macos-14
+  clang-non-sanitizer-hygiene:
+    name: Ubuntu Clang non-sanitizer archive hygiene
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
     steps:
-      # actions/checkout v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install SQLite3, ninja, binutils
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev ninja-build binutils
+      - name: Configure (Clang, sanitizers OFF — ship hygiene gate)
+        run: >-
+          cmake -S . -B build/ci-clang-nosan -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_ENABLE_SANITIZERS=OFF
+          -DNINLIL_SQLITE_LINKAGE=SHARED
+      - name: Build
+        run: cmake --build build/ci-clang-nosan --parallel 2
+      - name: Test full matrix
+        run: ctest --test-dir build/ci-clang-nosan --output-on-failure
+      - name: Strict archive strings/ar/readelf path hygiene (ship gate)
+        run: |
+          set -euo pipefail
+          a=build/ci-clang-nosan/libninlil_posix_sqlite_storage.a
+          test -f "$a"
+          # Must NOT be a sanitizer build — skip path is explicit-flag only.
+          if grep -E 'NINLIL_ENABLE_SANITIZERS:BOOL=ON' \
+               build/ci-clang-nosan/CMakeCache.txt; then
+            echo "false-green: sanitizers ON in non-sanitizer hygiene job" >&2
+            exit 1
+          fi
+          for n in \
+            "$PWD/build/ci-clang-nosan/" \
+            "$PWD/build/ci-clang-nosan" \
+            "$PWD/ports/" \
+            "$PWD/include/" \
+            "$PWD/src/" \
+            "$PWD/CMakeLists.txt"
+          do
+            if strings "$a" | grep -F "$n"; then
+              echo "false-green: absolute needle in Debug archive: $n" >&2
+              exit 1
+            fi
+            if strings "$a" | grep -F "file-prefix-map=$n"; then
+              echo "false-green: prefix-map flag re-embedded: $n" >&2
+              exit 1
+            fi
+          done
+          tmp=$(mktemp -d)
+          (cd "$tmp" && ar x "$PWD/$a")
+          test -n "$(ls -A "$tmp")"
+          for o in "$tmp"/*; do
+            if strings "$o" | grep -F "$PWD/"; then
+              echo "false-green: absolute workspace path in object $o" >&2
+              exit 1
+            fi
+            if strings "$o" | grep -F "file-prefix-map=$PWD"; then
+              echo "false-green: prefix-map re-embedded in object $o" >&2
+              exit 1
+            fi
+            # Inventory only: Clang may keep DWARF5 .debug_line_str when clean.
+            if readelf -S "$o" 2>/dev/null | grep -q debug_line_str; then
+              echo "note: $o has .debug_line_str (needles already scanned)"
+            fi
+          done
+          rm -rf "$tmp"
+
+  macos-dynamic:
+    name: macOS dynamic SQLite full
+    runs-on: macos-14
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Configure (shared/dylib SQLite)
+        run: >-
+          cmake -S . -B build/ci-macos
+          -DCMAKE_BUILD_TYPE=Debug
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_ENABLE_SANITIZERS=OFF
+          -DNINLIL_SQLITE_LINKAGE=SHARED
+      - name: Build
+        run: cmake --build build/ci-macos --parallel 2
+      - name: Test full matrix
+        run: ctest --test-dir build/ci-macos --output-on-failure
+      - name: Archive path hygiene (strings/ar; AppleClang standard tools)
+        run: |
+          set -euo pipefail
+          a=build/ci-macos/libninlil_posix_sqlite_storage.a
+          test -f "$a"
+          if grep -E 'NINLIL_ENABLE_SANITIZERS:BOOL=ON' \
+               build/ci-macos/CMakeCache.txt; then
+            echo "false-green: sanitizers ON in ship-hygiene job" >&2
+            exit 1
+          fi
+          for n in \
+            "$PWD/build/ci-macos/" \
+            "$PWD/build/ci-macos" \
+            "$PWD/ports/" \
+            "$PWD/include/" \
+            "$PWD/src/" \
+            "$PWD/CMakeLists.txt"
+          do
+            if strings "$a" | grep -F "$n"; then
+              echo "false-green: absolute needle in Debug archive: $n" >&2
+              exit 1
+            fi
+            if strings "$a" | grep -F "file-prefix-map=$n"; then
+              echo "false-green: prefix-map flag re-embedded: $n" >&2
+              exit 1
+            fi
+          done
+          tmp=$(mktemp -d)
+          (cd "$tmp" && ar x "$PWD/$a")
+          test -n "$(ls -A "$tmp")"
+          for o in "$tmp"/*; do
+            if strings "$o" | grep -F "$PWD/"; then
+              echo "false-green: absolute workspace path in object $o" >&2
+              exit 1
+            fi
+          done
+          rm -rf "$tmp"
+
+  macos-dynamic-asan:
+    name: macOS dynamic SQLite ASan
+    runs-on: macos-14
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
       - name: Configure
         run: >-
-          cmake -S . -B build/ci-macos
+          cmake -S . -B build/ci-macos-asan
           -DCMAKE_BUILD_TYPE=Debug
-      - name: Build
-        run: cmake --build build/ci-macos --parallel 2
-      - name: Test SQLite port
+          -DNINLIL_ENABLE_SANITIZERS=ON
+          -DNINLIL_SQLITE_LINKAGE=SHARED
+      - name: Build SQLite port targets
         run: >-
-          ctest --test-dir build/ci-macos
+          cmake --build build/ci-macos-asan --parallel 2
+          --target ninlil_posix_sqlite_storage_test
+          ninlil_posix_sqlite_storage_shared_conformance_test
+          ninlil_posix_sqlite_storage_example
+      - name: Test SQLite port under ASan
+        env:
+          ASAN_OPTIONS: halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: >-
+          ctest --test-dir build/ci-macos-asan
           -R 'posix_sqlite_storage'
           --output-on-failure

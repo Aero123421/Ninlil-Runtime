@@ -6,18 +6,106 @@
 
 #include "ninlil_posix_sqlite_storage.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static int make_temp_path(char *out, size_t out_size)
+{
+    const char *tmpdir = getenv("TMPDIR");
+    int written;
+    int fd;
+
+    if (tmpdir == NULL || tmpdir[0] == '\0') {
+        tmpdir = "/tmp";
+    }
+    written = snprintf(
+        out, out_size, "%s/ninlil-sqlite-example-XXXXXX", tmpdir);
+    if (written <= 0 || (size_t)written >= out_size) {
+        return 0;
+    }
+    fd = mkstemp(out);
+    if (fd < 0) {
+        return 0;
+    }
+    if (close(fd) != 0) {
+        (void)unlink(out);
+        return 0;
+    }
+    return 1;
+}
+
+static int make_authority_path(
+    const char *path,
+    char *out,
+    size_t out_size)
+{
+    struct stat st;
+    char *canonical;
+    char *slash;
+    size_t parent_length;
+    int written;
+
+    if (stat(path, &st) != 0) {
+        return 0;
+    }
+    canonical = realpath(path, NULL);
+    if (canonical == NULL) {
+        return 0;
+    }
+    slash = strrchr(canonical, '/');
+    if (slash == NULL) {
+        free(canonical);
+        return 0;
+    }
+    parent_length = slash == canonical ? 1u : (size_t)(slash - canonical);
+    written = snprintf(
+        out,
+        out_size,
+        "%.*s/.ninlil-sqlite-%llx-%llx.lock",
+        (int)parent_length,
+        canonical,
+        (unsigned long long)st.st_dev,
+        (unsigned long long)st.st_ino);
+    free(canonical);
+    return written > 0 && (size_t)written < out_size;
+}
+
+static void remove_artifacts(const char *path)
+{
+    char authority[768];
+    char sidecar[704];
+    int have_authority;
+    static const char *const suffixes[] = {"-wal", "-shm", "-journal"};
+    size_t index;
+
+    if (path == NULL || path[0] == '\0') {
+        return;
+    }
+    have_authority = make_authority_path(
+        path, authority, sizeof(authority));
+    for (index = 0u; index < sizeof(suffixes) / sizeof(suffixes[0]); ++index) {
+        int written = snprintf(
+            sidecar, sizeof(sidecar), "%s%s", path, suffixes[index]);
+        if (written > 0 && (size_t)written < sizeof(sidecar)) {
+            (void)unlink(sidecar);
+        }
+    }
+    (void)unlink(path);
+    if (have_authority) {
+        (void)unlink(authority);
+    }
+}
 
 int main(void)
 {
-    char path[640];
-    const char *tmpdir = getenv("TMPDIR");
+    char path[640] = {0};
     ninlil_posix_sqlite_storage_config_t config;
-    ninlil_posix_sqlite_storage_t *storage;
-    const ninlil_storage_ops_t *ops;
+    ninlil_posix_sqlite_storage_t *storage = NULL;
+    const ninlil_storage_ops_t *ops = NULL;
     ninlil_storage_handle_t handle = NULL;
     ninlil_storage_txn_t txn = NULL;
     ninlil_bytes_view_t ns;
@@ -28,18 +116,11 @@ int main(void)
     static const uint8_t ns_bytes[] = {0x65u, 0x78u, 0x00u, 0xffu};
     static const uint8_t key_bytes[] = {0x6bu, 0x31u};
     static const uint8_t value_bytes[] = {0x68u, 0x69u};
+    ninlil_storage_status_t status;
+    int exit_code = 1;
 
-    if (tmpdir == NULL || tmpdir[0] == '\0') {
-        tmpdir = "/tmp";
-    }
-    if (snprintf(
-            path,
-            sizeof(path),
-            "%s/ninlil-sqlite-example-%lu.db",
-            tmpdir,
-            (unsigned long)time(NULL))
-        < 0) {
-        return 1;
+    if (!make_temp_path(path, sizeof(path))) {
+        goto cleanup;
     }
 
     (void)memset(&config, 0, sizeof(config));
@@ -53,39 +134,34 @@ int main(void)
 
     storage = ninlil_posix_sqlite_storage_create(&config);
     if (storage == NULL) {
-        return 1;
+        goto cleanup;
     }
     ops = ninlil_posix_sqlite_storage_ops(storage);
     ns.data = ns_bytes;
     ns.length = (uint32_t)sizeof(ns_bytes);
     if (ops->open(ops->user, ns, NINLIL_STORAGE_SCHEMA_M1A, &handle)
         != NINLIL_STORAGE_OK) {
-        ninlil_posix_sqlite_storage_destroy(storage);
-        return 1;
+        goto cleanup;
     }
     if (ops->begin(ops->user, handle, NINLIL_STORAGE_READ_WRITE, &txn)
         != NINLIL_STORAGE_OK) {
-        ops->close(ops->user, handle);
-        ninlil_posix_sqlite_storage_destroy(storage);
-        return 1;
+        goto cleanup;
     }
     key.data = key_bytes;
     key.length = (uint32_t)sizeof(key_bytes);
     value.data = value_bytes;
     value.length = (uint32_t)sizeof(value_bytes);
-    if (ops->put(ops->user, txn, key, value) != NINLIL_STORAGE_OK
-        || ops->commit(ops->user, txn, NINLIL_DURABILITY_FULL)
-            != NINLIL_STORAGE_OK) {
-        ops->close(ops->user, handle);
-        ninlil_posix_sqlite_storage_destroy(storage);
-        return 1;
+    if (ops->put(ops->user, txn, key, value) != NINLIL_STORAGE_OK) {
+        goto cleanup;
     }
+    status = ops->commit(ops->user, txn, NINLIL_DURABILITY_FULL);
     txn = NULL;
+    if (status != NINLIL_STORAGE_OK) {
+        goto cleanup;
+    }
     if (ops->begin(ops->user, handle, NINLIL_STORAGE_READ_ONLY, &txn)
         != NINLIL_STORAGE_OK) {
-        ops->close(ops->user, handle);
-        ninlil_posix_sqlite_storage_destroy(storage);
-        return 1;
+        goto cleanup;
     }
     out.data = out_raw;
     out.capacity = (uint32_t)sizeof(out_raw);
@@ -93,15 +169,23 @@ int main(void)
     if (ops->get(ops->user, txn, key, &out) != NINLIL_STORAGE_OK
         || out.length != value.length
         || memcmp(out_raw, value_bytes, value.length) != 0) {
-        (void)ops->rollback(ops->user, txn);
-        ops->close(ops->user, handle);
-        ninlil_posix_sqlite_storage_destroy(storage);
-        return 1;
+        goto cleanup;
     }
     (void)ops->rollback(ops->user, txn);
-    ops->close(ops->user, handle);
+    txn = NULL;
+    exit_code = 0;
+
+cleanup:
+    if (txn != NULL && ops != NULL) {
+        (void)ops->rollback(ops->user, txn);
+    }
+    if (handle != NULL && ops != NULL) {
+        ops->close(ops->user, handle);
+    }
     ninlil_posix_sqlite_storage_destroy(storage);
-    (void)remove(path);
-    (void)printf("posix sqlite storage minimal example ok\n");
-    return 0;
+    remove_artifacts(path);
+    if (exit_code == 0) {
+        (void)printf("posix sqlite storage minimal example ok\n");
+    }
+    return exit_code;
 }
