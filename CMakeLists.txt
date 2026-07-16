@@ -67,17 +67,12 @@ function(ninlil_apply_strict_warnings target)
     endif()
 endfunction()
 
+# Production private Runtime sources: single authority shared with the
+# ESP-IDF component packaging under ports/esp-idf/components/ninlil.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_runtime_private_sources.cmake)
+
 add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
-    src/model/domain_store_body_codec.c
-    src/model/domain_store_codec.c
-    src/model/runtime_lifecycle_model.c
-    src/model/runtime_store_bootstrap.c
-    src/model/runtime_store_codec.c
-    src/runtime/domain_store_d3s1.c
-    src/runtime/domain_store_d3s2.c
-    src/runtime/domain_store_scanner.c
-    src/runtime/runtime_store_orchestrator.c
-    src/runtime/runtime_store_stage5_seam.c
+    ${NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES}
 )
 set_property(TARGET ninlil_runtime_private
     PROPERTY NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE)
@@ -100,26 +95,12 @@ ninlil_apply_strict_warnings(ninlil_runtime_private)
 # objects are proved absent by tools/domain_scan_dsr2_gate.py source analysis.
 # S6 seam also rejects VLAs (bounded workspace only).
 if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
-    set_property(
-        SOURCE src/runtime/domain_store_scanner.c
-        APPEND PROPERTY COMPILE_OPTIONS -Wvla
-    )
-    set_property(
-        SOURCE src/runtime/domain_store_d3s1.c
-        APPEND PROPERTY COMPILE_OPTIONS -Wvla
-    )
-    set_property(
-        SOURCE src/runtime/domain_store_d3s2.c
-        APPEND PROPERTY COMPILE_OPTIONS -Wvla
-    )
-    set_property(
-        SOURCE src/runtime/runtime_store_stage5_seam.c
-        APPEND PROPERTY COMPILE_OPTIONS -Wvla
-    )
-    set_property(
-        SOURCE src/runtime/runtime_store_orchestrator.c
-        APPEND PROPERTY COMPILE_OPTIONS -Wvla
-    )
+    foreach(_vla_source IN LISTS NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES)
+        set_property(
+            SOURCE ${_vla_source}
+            APPEND PROPERTY COMPILE_OPTIONS -Wvla
+        )
+    endforeach()
 endif()
 if(NINLIL_ENABLE_SANITIZERS)
     target_link_options(ninlil_runtime_private INTERFACE
@@ -1297,6 +1278,22 @@ if(NINLIL_BUILD_TESTS)
         NAME runtime_store_stage5_gate_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_store_stage5_gate.py
+            self-test
+    )
+
+    # M3-prep packaging gates: host private source authority, ESP-IDF
+    # component CMake include, ESP_IDF_VERSION pin consistency across
+    # docs/CI/component metadata. Does not claim M3 port complete.
+    add_test(
+        NAME esp_idf_component_packaging_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_idf_component_packaging_gate.py
+            check
+    )
+    add_test(
+        NAME esp_idf_component_packaging_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_idf_component_packaging_gate.py
             self-test
     )
 

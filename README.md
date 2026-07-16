@@ -20,6 +20,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Runtime Store v1の17 bootstrap key、typed big-endian record、CRC32C、境界/破損検査を行うportable C11 codec
 - Stage1 successだけが発行するheader/pointer-free accepted-config projectionからcanonical binding/identity、17-record presence/integrity、profile/identity decision、compact lazy bootstrap planを作るRuntime Store L2a2 pure model
 - Lifecycle/Runtime Store Coreをpublic `ninlil`とTEST fixtureから分離し、subprojectでも単独buildできる非export `ninlil_runtime_private` STATIC target
+- **M3-prep:** portable Core/private library を ESP-IDF component として package し、pinned ESP-IDF `v5.5.3` で ESP32-S3 smoke app を target build する CI（[ports/esp-idf](ports/esp-idf/README.md)、[docs/18](docs/18-m3-prep-esp-idf-component.md)）。NVS/FreeRTOS/USB/Wi-Fi/SX1262 は未実装。**M3 complete / ESP-IDF port complete / hardware verified ではない**
 - 1 READ_ONLY snapshotでの17 exact key判定、empty namespace証明、17-record/FULL初期化、既存profile検証、commit-unknown fencingを行うprivate Runtime Store L2b1 orchestrator
 - Domain Store v1のfamily 5/6 catalog、4KiB record/3KiB chunk上限、最大256-member atomic witness、backlink/capacity/health/recovery順を固定したNormative D0仕様
 - Domain Store D1-Aのkey/envelope/digest/witness primitiveと、D1-B1のINTERNAL_INVARIANT / BEARER_STATE / CLOCK_BASELINE / ATTEMPT_REUSE_FENCE / WITNESS_HEAD_INDEX exact body codec・同一record検証・独立golden vector
@@ -40,7 +41,7 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 - Domain Store D3相互validation の残 slice（EVIDENCE live L/cardinality multi-row / witness chain / capacity / health 等; **D3-S0 architecture freeze is docs-only complete**; **D3-S1a closed-mode/context freeze is docs-only complete**; **D3-S1 exact-1 implementation complete**; **D3-S2a declared multi-count freeze is docs-only complete**; **D3-S2 implementation / D3-S3..S12 / D3 overall / Stage 5 D3 bind still pending**）、D4 operation別commit-unknown convergence
 - Stage 5 completion / public Runtime publish / Bearer・clock・entropy open / identity rotation / health reconstruction（**D2-S6 private fail-closed seam は実装済み; Stage 5 と public Runtime は still pending**）
 - end-to-endのReliable Command / Durable Event path
-- ESP-IDF component、USB transport、LoRa bearer/radio MAC、Cell Agent
+- ESP-IDF storage/NVS、FreeRTOS owner task、USB transport、LoRa bearer/radio MAC、Cell Agent（**M3-prepとして component packaging と pinned ESP32-S3 target build のみ追加。M3 complete / port complete ではない**）
 - Display node / Leak nodeを使う実機end-to-end検証
 - `NIN-PR1-OUTPUT-001`、`NIN-PR1-STRUCT-001`、`NIN-PR1-UNSUPPORTED-001`はhelper testまでで、public runtime APIへ未統合のため`partial`
 
@@ -119,13 +120,13 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。現時点の開発branchでは69件が成功していますが、これは固定gateではなくcheckpoint evidenceです。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。
+CTestの件数はcontract追加に伴って変わるため、特定件数ではなく全test成功をgateとします。GitHub ActionsではUbuntu上のGCC通常buildとClang sanitizer buildに同じ手順を使用します。ESP-IDF ESP32-S3 target buildは host CI から分離した別 workflow（公式 Docker image `espressif/idf:v5.5.3`）で実行します。
 
 ## Portabilityとversioning
 
 Portable CoreはC11で実装し、host thread、filesystem、radio driverを直接参照しません。現在の検証実績は、GitHub Actions上のUbuntuで行うGCC通常buildとClang ASan/UBSan build、およびmacOSでのlocal development checkです。これらはpre-alpha checkpointの検証環境であり、platform support宣言ではありません。
 
-ESP-IDFはV1のtargetですが、portとtarget buildはplanned / unverifiedです。それ以外のplatformもPort ABIによる移植候補になり得ますが、現時点では検証、互換性、supportを約束しません。
+ESP-IDFはV1のtargetです。**M3-prep** として component packaging と pinned `v5.5.3` / ESP32-S3 の **compile smoke** を追加済みですが、storage/task/bearer の ESP-IDF port と HIL は未実装であり、port complete ではありません。それ以外のplatformもPort ABIによる移植候補になり得ますが、現時点では検証、互換性、supportを約束しません。詳細は[M3-prep ESP-IDF component](docs/18-m3-prep-esp-idf-component.md)を参照してください。
 
 `0.x`でbreaking changeを行う場合も、minor version bump、CHANGELOG、migration note、compatibility matrixを必須とします。`1.0.0`はV1 hardware exitだけではなく、M11までの全exit gateを満たした後にreleaseします。詳細は[Versioning and Compatibility](docs/06-versioning-and-compatibility.md)を参照してください。
 

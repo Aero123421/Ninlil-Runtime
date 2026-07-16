@@ -115,6 +115,16 @@ Exit gate:
 - power-cut HILでstorage contractを満たす。
 - Cell AgentにKGuard business ruleが0。
 
+### M3-prep（部分作業; M3 incomplete）
+
+**M3-prep** として次だけを先行実装できます。M3 exit gate の代替ではありません。正本: [18-m3-prep-esp-idf-component.md](18-m3-prep-esp-idf-component.md)。
+
+- portable Core / private library の ESP-IDF component packaging
+- concrete ESP-IDF version pin（現在 `v5.5.3`）と host から分離した esp32s3 target compile CI
+- component 利用者向け最小 README / smoke app
+
+含まない: NVS storage port、FreeRTOS owner task、USB/LAN、Cell Agent、power-cut HIL、on-target conformance subset。
+
 ## M4: Identity Lifecycle
 
 内容:

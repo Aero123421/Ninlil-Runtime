@@ -137,6 +137,19 @@ deprecation/removal release
 
 Matrixと実test targetをCIで一致させます。文書だけに存在するsupported combinationを作りません。
 
+### M3-prep ESP-IDF pin（support 宣言ではない）
+
+Foundation pre-alpha の **M3-prep** では、ESP-IDF を次の concrete tag に pin して target **compile smoke** だけを CI します。これは production support matrix の完成でも、M3 exit でもありません。
+
+| Item | Pin |
+| --- | --- |
+| ESP-IDF | `v5.5.3`（正本: `ports/esp-idf/ESP_IDF_VERSION`） |
+| Target | `esp32s3` |
+| Evidence | `.github/workflows/esp-idf.yml` + `ports/esp-idf/smoke_app` |
+| Docs | [18-m3-prep-esp-idf-component.md](18-m3-prep-esp-idf-component.md) |
+
+host POSIX CI（`.github/workflows/ci.yml`）とは分離します。pin 変更時は docs / `idf_component.yml` / workflow を同一変更で揃えます。
+
 ## Deprecation
 
 Public alphaまでに、次を決めます。

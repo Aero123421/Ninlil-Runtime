@@ -1,0 +1,55 @@
+# ESP-IDF target build (M3-prep). Separated from host GCC/Clang CI in ci.yml.
+# Pins ESP-IDF via the official Docker image tag that matches
+# ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
+# Does not claim M3 complete or hardware verify.
+
+name: ESP-IDF
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  esp32s3-component-build:
+    name: ESP32-S3 component build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0 (same pin as host ci.yml)
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Read pinned ESP-IDF version
+        id: pin
+        run: |
+          pin="$(tr -d '[:space:]' < ports/esp-idf/ESP_IDF_VERSION)"
+          if [[ ! "$pin" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "invalid ESP_IDF_VERSION: $pin" >&2
+            exit 1
+          fi
+          echo "version=$pin" >> "$GITHUB_OUTPUT"
+          echo "Pinned ESP-IDF: $pin"
+
+      - name: Build ninlil component smoke app for esp32s3
+        # Official Espressif setup: published Docker image tag vX.Y.Z
+        # (espressif/idf). Image tag must match ports/esp-idf/ESP_IDF_VERSION.
+        # No third-party Action required beyond checkout (SHA-pinned above).
+        run: |
+          pin="${{ steps.pin.outputs.version }}"
+          docker run --rm \
+            --user 0:0 \
+            -v "$PWD:/project" \
+            -w /project \
+            "espressif/idf:${pin}" \
+            bash -lc '
+              set -euo pipefail
+              . "${IDF_PATH}/export.sh"
+              idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
+            '

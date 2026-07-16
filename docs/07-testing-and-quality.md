@@ -173,6 +173,14 @@ Fuzz inputでunbounded allocation、hang、secret log、panic、undefined behavi
 - profile/TxPermit path test
 - actual radio setting measurement where the change affects PHY/compliance
 
+### M3-prep packaging CI（host と分離）
+
+M3 complete 前でも、component packaging の回帰を次で防ぎます（[18章](18-m3-prep-esp-idf-component.md)）:
+
+- host CTest: `esp_idf_component_packaging_gate`（source authority、pin 一致、no GLOB、portable source に ESP-IDF include なし）
+- 分離 workflow `.github/workflows/esp-idf.yml`: 公式 image `espressif/idf:<ESP_IDF_VERSION>` で **esp32s3** smoke app build
+- host `ci.yml` は ESP-IDF を install せず、従来の GCC/Clang CTest のみ
+
 ### Release candidate
 
 - all PR/nightly gates green on release commit
