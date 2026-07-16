@@ -203,12 +203,14 @@ only**. Clang/AppleClang non-sanitizer builds rely on prefix-map +
 `-fdebug-compilation-dir=.` (no unconditional `-gdwarf-4` for all compilers,
 no relpath compile launcher).
 
-**Sanitizer builds are not ship artifacts.** With explicit
-`NINLIL_ENABLE_SANITIZERS=ON`, ASan/UBSan coverage stays full. Installed
-consumer smoke still package/install/`find_package`/link/run. Only the
+**Sanitizer builds are not ship artifacts.** Builds with explicit
+`NINLIL_ENABLE_SANITIZERS=ON`, or with a supported
+`NINLIL_ENABLE_POINTER_COMPARE_SANITIZER=ON`, keep their sanitizer coverage
+full. Installed consumer smoke still exercises package/install/
+`find_package`/link/run. Only the
 archive/object absolute-path hygiene scan is skipped, because ASan global
 descriptors embed absolute `-c` paths that prefix-map cannot rewrite. Skip is
-driven solely by that CMake option (no compiler guessing, no inspection
+driven solely by those explicit, toolchain-validated CMake options (no compiler guessing, no inspection
 deletion, no ASan-globals disable). Ship hygiene is guaranteed by separate
 non-sanitizer gates: Ubuntu GCC (existing), Ubuntu Clang non-sanitizer
 (`strings` / `ar x` / `readelf` inventory), and macOS AppleClang (`strings` /

@@ -1,12 +1,13 @@
-# Ninlil portable Core / private Runtime + M3-basic ESP-IDF platform adapters.
+# Ninlil portable Core / private Runtime + M3 ESP-IDF port adapters.
 #
 # Portable sources: cmake/ninlil_runtime_private_sources.cmake
 # ESP-IDF port sources: cmake/ninlil_esp_idf_port_sources.cmake
 # Do not list sources with file(GLOB). Do not merge ESP-IDF sources into the
 # portable authority.
 #
-# This does not implement NVS storage, FreeRTOS owner-task body, USB, Wi-Fi,
-# SX1262, radio MAC, Join, or KGuard adapters.
+# Includes M3-basic (clock/entropy/execution) and M3 owner/cell/loopback
+# skeleton. Does not implement NVS storage, USB, Wi-Fi, SX1262, radio MAC,
+# Join, or KGuard adapters.
 
 get_filename_component(NINLIL_REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
@@ -48,6 +49,11 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Werror
     -Wvla
 )
+
+# Private pure helpers use NINLIL_ESP_IDF_INTERNAL (hidden). Do not set
+# C_VISIBILITY_PRESET hidden on the whole component: public port APIs must
+# remain default-visible for application link. Private .c symbols that need
+# non-DEFAULT visibility mark NINLIL_ESP_IDF_INTERNAL explicitly.
 
 # Match host production private build: TEST-only transport begin is OFF.
 # Do not define NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN here.

@@ -98,15 +98,16 @@ endforeach()
 # check distinctive absolute needles instead.
 #
 # Skip policy (explicit only): when the producer was configured with
-# NINLIL_ENABLE_SANITIZERS=ON, ASan global descriptors embed absolute -c
-# source paths that prefix-map cannot rewrite. Sanitizer archives are not
-# ship artifacts. Skip ONLY this archive/object hygiene block; package
-# surface, nm, install, find_package, consumer link, and run still run.
+# NINLIL_ENABLE_SANITIZERS=ON or the supported pointer-compare sanitizer,
+# ASan global descriptors embed absolute -c source paths that prefix-map
+# cannot rewrite. Instrumented archives are not ship artifacts. Skip ONLY
+# this archive/object hygiene block; package surface, nm, install,
+# find_package, consumer link, and run still run.
 # No compiler-id guessing and no fallback that disables the scan implicitly.
 if(NINLIL_INSTALL_SMOKE_SANITIZERS)
     message(STATUS
         "installed consumer smoke: skipping archive/object path hygiene "
-        "(producer NINLIL_ENABLE_SANITIZERS=ON; sanitizer artifacts are "
+        "(producer sanitizer instrumentation is ON; instrumented artifacts are "
         "non-ship; non-sanitizer production builds still require needles=0)")
 else()
     find_program(_strings NAMES strings)

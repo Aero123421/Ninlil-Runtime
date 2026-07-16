@@ -147,6 +147,19 @@ USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agno
 
 含まない: NVS、owner-task body、USB/LAN、Cell Agent、Wi-Fi、SX1262、Join、KGuard、HIL、M3 exit。
 
+### M3-slice: owner-task / Cell Agent skeleton / loopback TxPermit（部分作業; M3 incomplete）
+
+**M3-slice** として FreeRTOS owner-task adapter、汎用 Cell Agent firmware skeleton、virtual/loopback TxPermit path を先行できます。正本: [22-m3-owner-cell-agent-skeleton.md](22-m3-owner-cell-agent-skeleton.md)。
+
+- dedicated owner task の exclusive confinement と bounded mailbox（overflow = backpressure、silent drop 禁止）
+- start / stop / restart、stale generation rejection、generation wrap fail-closed
+- 同一 firmware へ Controller から cell/channel/role assignment（KGuard / ParentA/B variant なし）
+- NCG1 framing との境界（decode OK ≠ assignment apply）
+- TxPermit deny-by-default、`TEST` + explicit loopback のみ許可、将来 M5 provider へ交換可能な `ninlil_tx_gate_ops_t`
+- host pure tests + packaging gate + esp32s3 smoke compile/link
+
+含まない: NVS、USB/TCP driver、Wi-Fi、SX1262、Join、実 radio、logical control message schema、public Runtime body、security 完了、HIL、M3 exit。
+
 ## M4: Identity Lifecycle
 
 内容:

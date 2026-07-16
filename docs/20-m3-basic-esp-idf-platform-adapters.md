@@ -222,11 +222,11 @@ Host は ESP-IDF を install しない。target 実動作（RNG 品質、timer d
 - [x] docs が CI smoke を compile/link と正確記載（実行 HIL を claim しない）
 - [x] M3 / NVS / owner-task body / HIL / V1 完了を主張しない
 
-## 10. 明示的に残る M3 work
+## 10. 明示的に残る / 後続の M3 work
 
-- FreeRTOS owner-task body と exclusive Runtime confinement wiring
+- FreeRTOS owner-task body / Cell Agent skeleton / loopback TxPermit は [22章](22-m3-owner-cell-agent-skeleton.md) の別 slice（本章の完了 claim には含めない）
 - NVS / partition storage port と power-cut HIL
-- Cell Agent firmware skeleton、USB/LAN control transport
-- virtual/loopback TxPermit path
+- USB/LAN control transport driver と logical control messages
+- public Runtime body との owner wiring
 - POSIX と同一 portable conformance subset の on-target 実行
 - 上記を含む M3 exit gate
