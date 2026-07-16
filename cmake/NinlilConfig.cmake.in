@@ -7,6 +7,61 @@ if(@NINLIL_CONFIG_HAS_POSIX_SQLITE@)
     if(NOT TARGET SQLite3::SQLite3 AND TARGET SQLite::SQLite3)
         add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
     endif()
+    # FindSQLite3 creates UNKNOWN IMPORTED targets with config-less
+    # IMPORTED_LOCATION only. That works for empty/default configs, but
+    # identity CMAKE_MAP_IMPORTED_CONFIG_<CFG>=<CFG> makes CMake look for
+    # IMPORTED_LOCATION_<CFG> only and fail generation when linking
+    # Ninlil::ninlil_posix_sqlite_storage. Advertise the same discovered path
+    # under standard imported configurations when those locations are absent.
+    # Additive location properties only — no INTERFACE_* / link-line rewrite.
+    foreach(_ninlil_sqlite_tgt SQLite3::SQLite3 SQLite::SQLite3)
+        if(NOT TARGET ${_ninlil_sqlite_tgt})
+            continue()
+        endif()
+        get_target_property(_ninlil_sqlite_aliased
+            ${_ninlil_sqlite_tgt} ALIASED_TARGET)
+        if(_ninlil_sqlite_aliased AND NOT _ninlil_sqlite_aliased STREQUAL "NOTFOUND")
+            continue()
+        endif()
+        get_target_property(_ninlil_sqlite_type ${_ninlil_sqlite_tgt} TYPE)
+        if(_ninlil_sqlite_type STREQUAL "INTERFACE_LIBRARY")
+            continue()
+        endif()
+        get_target_property(_ninlil_sqlite_plain
+            ${_ninlil_sqlite_tgt} IMPORTED_LOCATION)
+        if(NOT _ninlil_sqlite_plain
+           OR _ninlil_sqlite_plain STREQUAL "NOTFOUND"
+           OR _ninlil_sqlite_plain STREQUAL "")
+            continue()
+        endif()
+        foreach(_ninlil_sqlite_cfg DEBUG RELEASE RELWITHDEBINFO MINSIZEREL NOCONFIG)
+            get_target_property(_ninlil_sqlite_cfg_loc
+                ${_ninlil_sqlite_tgt} IMPORTED_LOCATION_${_ninlil_sqlite_cfg})
+            if(_ninlil_sqlite_cfg_loc
+               AND NOT _ninlil_sqlite_cfg_loc STREQUAL "NOTFOUND"
+               AND NOT _ninlil_sqlite_cfg_loc STREQUAL "")
+                continue()
+            endif()
+            get_target_property(_ninlil_sqlite_cfgs
+                ${_ninlil_sqlite_tgt} IMPORTED_CONFIGURATIONS)
+            if(NOT _ninlil_sqlite_cfgs
+               OR _ninlil_sqlite_cfgs STREQUAL "NOTFOUND"
+               OR NOT _ninlil_sqlite_cfg IN_LIST _ninlil_sqlite_cfgs)
+                set_property(TARGET ${_ninlil_sqlite_tgt} APPEND PROPERTY
+                    IMPORTED_CONFIGURATIONS ${_ninlil_sqlite_cfg})
+            endif()
+            set_target_properties(${_ninlil_sqlite_tgt} PROPERTIES
+                IMPORTED_LOCATION_${_ninlil_sqlite_cfg}
+                "${_ninlil_sqlite_plain}")
+        endforeach()
+    endforeach()
+    unset(_ninlil_sqlite_tgt)
+    unset(_ninlil_sqlite_aliased)
+    unset(_ninlil_sqlite_type)
+    unset(_ninlil_sqlite_plain)
+    unset(_ninlil_sqlite_cfg)
+    unset(_ninlil_sqlite_cfg_loc)
+    unset(_ninlil_sqlite_cfgs)
     # Static libsqlite3.a private system deps must be re-found by consumers.
     if(@NINLIL_CONFIG_SQLITE_STATIC@)
         if(@NINLIL_CONFIG_SQLITE_NEEDS_THREADS@)
@@ -19,4 +74,87 @@ if(@NINLIL_CONFIG_HAS_POSIX_SQLITE@)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/NinlilTargets.cmake")
+
+# Single-config install(EXPORT) emits only one NinlilTargets-<config>.cmake, so
+# IMPORTED_LOCATION exists solely for that producer configuration (DEBUG,
+# RELEASE, or NOCONFIG). Consumers with empty CMAKE_BUILD_TYPE, a different
+# single-config type, multi-config generators, or strict
+# CMAKE_MAP_IMPORTED_CONFIG_<CFG> identity maps then fail with:
+#   IMPORTED_LOCATION not set for imported target "Ninlil::..." configuration "..."
+# Map missing consumer configs onto a shipped imported configuration and expose
+# a config-agnostic IMPORTED_LOCATION. Touch only Ninlil imported targets —
+# never rewrite third-party targets such as SQLite3::SQLite3.
+if(TARGET Ninlil::ninlil_posix_sqlite_storage)
+    get_target_property(_ninlil_imported_configs
+        Ninlil::ninlil_posix_sqlite_storage IMPORTED_CONFIGURATIONS)
+    if(_ninlil_imported_configs AND NOT _ninlil_imported_configs STREQUAL "NOTFOUND")
+        set(_ninlil_fallback_config "")
+        foreach(_ninlil_cand RELEASE RELWITHDEBINFO MINSIZEREL DEBUG NOCONFIG)
+            if(_ninlil_cand IN_LIST _ninlil_imported_configs)
+                set(_ninlil_fallback_config "${_ninlil_cand}")
+                break()
+            endif()
+        endforeach()
+        if(NOT _ninlil_fallback_config)
+            list(GET _ninlil_imported_configs 0 _ninlil_fallback_config)
+        endif()
+
+        get_target_property(_ninlil_fallback_location
+            Ninlil::ninlil_posix_sqlite_storage
+            IMPORTED_LOCATION_${_ninlil_fallback_config})
+        if(_ninlil_fallback_location
+           AND NOT _ninlil_fallback_location STREQUAL "NOTFOUND"
+           AND NOT _ninlil_fallback_location STREQUAL "")
+            get_target_property(_ninlil_plain_location
+                Ninlil::ninlil_posix_sqlite_storage IMPORTED_LOCATION)
+            if(NOT _ninlil_plain_location
+               OR _ninlil_plain_location STREQUAL "NOTFOUND"
+               OR _ninlil_plain_location STREQUAL "")
+                set_target_properties(Ninlil::ninlil_posix_sqlite_storage
+                    PROPERTIES IMPORTED_LOCATION "${_ninlil_fallback_location}")
+            endif()
+        endif()
+
+        foreach(_ninlil_consumer_cfg DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+            if(_ninlil_consumer_cfg IN_LIST _ninlil_imported_configs)
+                continue()
+            endif()
+            # Keep an existing map only when it already resolves to a shipped
+            # imported configuration. Identity maps from
+            # CMAKE_MAP_IMPORTED_CONFIG_<CFG>=<CFG> point at missing configs and
+            # must be rewritten onto the fallback (otherwise generate fails with
+            # "IMPORTED_LOCATION not set ... configuration <CFG>").
+            get_target_property(_ninlil_existing_map
+                Ninlil::ninlil_posix_sqlite_storage
+                MAP_IMPORTED_CONFIG_${_ninlil_consumer_cfg})
+            set(_ninlil_map_resolves FALSE)
+            if(_ninlil_existing_map AND NOT _ninlil_existing_map STREQUAL "NOTFOUND")
+                foreach(_ninlil_map_entry IN LISTS _ninlil_existing_map)
+                    string(TOUPPER "${_ninlil_map_entry}" _ninlil_map_entry_upper)
+                    if(_ninlil_map_entry_upper IN_LIST _ninlil_imported_configs)
+                        set(_ninlil_map_resolves TRUE)
+                        break()
+                    endif()
+                endforeach()
+            endif()
+            if(NOT _ninlil_map_resolves)
+                set_property(TARGET Ninlil::ninlil_posix_sqlite_storage
+                    PROPERTY MAP_IMPORTED_CONFIG_${_ninlil_consumer_cfg}
+                    "${_ninlil_fallback_config}")
+            endif()
+        endforeach()
+
+        unset(_ninlil_fallback_location)
+        unset(_ninlil_plain_location)
+        unset(_ninlil_existing_map)
+        unset(_ninlil_map_resolves)
+        unset(_ninlil_map_entry)
+        unset(_ninlil_map_entry_upper)
+        unset(_ninlil_consumer_cfg)
+        unset(_ninlil_cand)
+        unset(_ninlil_fallback_config)
+    endif()
+    unset(_ninlil_imported_configs)
+endif()
+
 check_required_components(Ninlil)

@@ -225,96 +225,91 @@ else()
     file(REMOVE_RECURSE "${_ar_tmp}")
 endif()
 
-set(_consumer_cmake_args
+# Shared consumer package args (prefix / SQLite pin / sanitizers). Build-type
+# variants are applied per matrix case below.
+set(_consumer_common_args
     "-DCMAKE_PREFIX_PATH=${_prefix}"
-    "-DCMAKE_BUILD_TYPE=${NINLIL_BUILD_CONFIG}"
     "-DNINLIL_CONSUMER_ENABLE_SANITIZERS=${NINLIL_INSTALL_SMOKE_SANITIZERS}"
 )
 if(NINLIL_SMOKE_SQLITE3_LIBRARY)
-    list(APPEND _consumer_cmake_args
+    list(APPEND _consumer_common_args
         "-DSQLite3_LIBRARY=${NINLIL_SMOKE_SQLITE3_LIBRARY}"
         "-DSQLite3_LIBRARIES=${NINLIL_SMOKE_SQLITE3_LIBRARY}")
 endif()
 if(NINLIL_SMOKE_SQLITE3_INCLUDE_DIR)
-    list(APPEND _consumer_cmake_args
+    list(APPEND _consumer_common_args
         "-DSQLite3_INCLUDE_DIR=${NINLIL_SMOKE_SQLITE3_INCLUDE_DIR}"
         "-DSQLite3_INCLUDE_DIRS=${NINLIL_SMOKE_SQLITE3_INCLUDE_DIR}")
 endif()
 if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
-    list(APPEND _consumer_cmake_args
+    list(APPEND _consumer_common_args
         "-DNINLIL_CONSUMER_EXPECT_STATIC_SQLITE=ON")
     if(NINLIL_SMOKE_SQLITE3_LIBRARY)
-        list(APPEND _consumer_cmake_args
+        list(APPEND _consumer_common_args
             "-DNINLIL_CONSUMER_SQLITE3_LIBRARY=${NINLIL_SMOKE_SQLITE3_LIBRARY}")
     endif()
 endif()
 
-execute_process(
-    COMMAND "${CMAKE_COMMAND}"
-        -S "${NINLIL_SOURCE_DIR}/tests/cmake/installed_posix_sqlite_consumer"
-        -B "${_build}"
-        -G "${NINLIL_GENERATOR}"
-        ${_consumer_cmake_args}
-    RESULT_VARIABLE _configure_rc)
-if(NOT _configure_rc EQUAL 0)
-    message(FATAL_ERROR "installed consumer configure failed: ${_configure_rc}")
+# One install, then consumer matrix:
+# - match: producer config (historical path)
+# - none: omit CMAKE_BUILD_TYPE (regression for empty/default consumer)
+# - alt: Debug↔Release mismatch (MAP_IMPORTED_CONFIG / single-config export)
+# - strict_map: alt config with identity CMAKE_MAP_IMPORTED_CONFIG_* so only
+#   package target MAP (not CMake auto-fallback) can resolve locations
+# Multi-config generators: single configure (no build type) + Debug/Release
+# build/run; static checks run on the first successful executable.
+set(_consumer_is_multi FALSE)
+if(NINLIL_GENERATOR MATCHES "Multi-Config"
+   OR NINLIL_GENERATOR MATCHES "Visual Studio"
+   OR NINLIL_GENERATOR STREQUAL "Xcode")
+    set(_consumer_is_multi TRUE)
 endif()
 
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build "${_build}"
-        --config "${NINLIL_BUILD_CONFIG}"
-        --verbose
-    RESULT_VARIABLE _build_rc
-    OUTPUT_VARIABLE _build_out
-    ERROR_VARIABLE _build_err)
-if(NOT _build_rc EQUAL 0)
-    message(FATAL_ERROR
-        "installed consumer build failed: ${_build_rc}\n${_build_out}\n${_build_err}")
+string(TOUPPER "${NINLIL_BUILD_CONFIG}" _producer_cfg_upper)
+if(_producer_cfg_upper STREQUAL "DEBUG")
+    set(_alt_consumer_cfg "Release")
+else()
+    set(_alt_consumer_cfg "Debug")
 endif()
 
-if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
-    if(NINLIL_SMOKE_SQLITE3_LIBRARY)
-        string(FIND "${_build_out}${_build_err}" "${NINLIL_SMOKE_SQLITE3_LIBRARY}" _lib_pos)
+function(ninlil_installed_consumer_static_checks build_dir build_config label build_out build_err)
+    if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE AND NINLIL_SMOKE_SQLITE3_LIBRARY)
+        string(FIND "${build_out}${build_err}"
+            "${NINLIL_SMOKE_SQLITE3_LIBRARY}" _lib_pos)
         if(_lib_pos EQUAL -1)
-            # Ninja/Make verbose may shorten; require .a in the link line at least.
-            string(FIND "${_build_out}${_build_err}" "libsqlite3.a" _a_pos)
+            string(FIND "${build_out}${build_err}" "libsqlite3.a" _a_pos)
             if(_a_pos EQUAL -1)
                 message(FATAL_ERROR
                     "static consumer link did not mention libsqlite3.a or "
-                    "SQLite3_LIBRARY='${NINLIL_SMOKE_SQLITE3_LIBRARY}'. "
-                    "Link output:\n${_build_out}\n${_build_err}")
+                    "SQLite3_LIBRARY='${NINLIL_SMOKE_SQLITE3_LIBRARY}' "
+                    "(${label}). Link output:\n${build_out}\n${build_err}")
             endif()
         endif()
-        string(FIND "${_build_out}${_build_err}" "libsqlite3.so" _so_pos)
+        string(FIND "${build_out}${build_err}" "libsqlite3.so" _so_pos)
         if(NOT _so_pos EQUAL -1)
             message(FATAL_ERROR
                 "static consumer link line references libsqlite3.so "
-                "(false-green risk):\n${_build_out}\n${_build_err}")
+                "(${label}):\n${build_out}\n${build_err}")
         endif()
     endif()
-endif()
 
-execute_process(
-    COMMAND "${NINLIL_CTEST_COMMAND}" --test-dir "${_build}"
-        -C "${NINLIL_BUILD_CONFIG}" --output-on-failure
-    RESULT_VARIABLE _test_rc)
-if(NOT _test_rc EQUAL 0)
-    message(FATAL_ERROR "installed consumer execution failed: ${_test_rc}")
-endif()
+    if(NOT NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
+        return()
+    endif()
 
-# Runtime dynamic dependency check for static-expectation consumers.
-if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
     set(_exe "")
     foreach(_cand
-            "${_build}/ninlil_installed_posix_sqlite_consumer"
-            "${_build}/${NINLIL_BUILD_CONFIG}/ninlil_installed_posix_sqlite_consumer")
+            "${build_dir}/ninlil_installed_posix_sqlite_consumer"
+            "${build_dir}/${build_config}/ninlil_installed_posix_sqlite_consumer")
         if(EXISTS "${_cand}")
             set(_exe "${_cand}")
             break()
         endif()
     endforeach()
     if(NOT _exe)
-        message(FATAL_ERROR "cannot locate installed consumer executable under ${_build}")
+        message(FATAL_ERROR
+            "cannot locate installed consumer executable under "
+            "${build_dir} (${label})")
     endif()
     find_program(_ldd NAMES ldd)
     find_program(_otool NAMES otool)
@@ -326,13 +321,15 @@ if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
             OUTPUT_VARIABLE _ldd_out
             ERROR_VARIABLE _ldd_err)
         if(NOT _ldd_rc EQUAL 0)
-            message(FATAL_ERROR "ldd failed: ${_ldd_err}")
+            message(FATAL_ERROR "ldd failed (${label}): ${_ldd_err}")
         endif()
         if(_ldd_out MATCHES "libsqlite3\\.so")
             message(FATAL_ERROR
-                "static consumer still depends on libsqlite3.so:\n${_ldd_out}")
+                "static consumer still depends on libsqlite3.so "
+                "(${label}):\n${_ldd_out}")
         endif()
-        message(STATUS "static consumer ldd: no libsqlite3.so dependency")
+        message(STATUS
+            "static consumer ldd (${label}): no libsqlite3.so dependency")
     elseif(_otool)
         execute_process(
             COMMAND "${_otool}" -L "${_exe}"
@@ -340,11 +337,12 @@ if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
             OUTPUT_VARIABLE _ot_out
             ERROR_VARIABLE _ot_err)
         if(NOT _ot_rc EQUAL 0)
-            message(FATAL_ERROR "otool -L failed: ${_ot_err}")
+            message(FATAL_ERROR "otool -L failed (${label}): ${_ot_err}")
         endif()
         if(_ot_out MATCHES "libsqlite3")
             message(FATAL_ERROR
-                "consumer unexpectedly links libsqlite3 dylib:\n${_ot_out}")
+                "consumer unexpectedly links libsqlite3 dylib "
+                "(${label}):\n${_ot_out}")
         endif()
     else()
         message(FATAL_ERROR
@@ -358,7 +356,143 @@ if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
             ERROR_QUIET)
         if(_re_rc EQUAL 0 AND _re_out MATCHES "libsqlite3\\.so")
             message(FATAL_ERROR
-                "readelf -d shows libsqlite3.so NEEDED:\n${_re_out}")
+                "readelf -d shows libsqlite3.so NEEDED (${label}):\n${_re_out}")
         endif()
     endif()
+endfunction()
+
+function(ninlil_installed_consumer_build_and_run build_dir build_config label)
+    message(STATUS
+        "installed consumer build/run '${label}': dir='${build_dir}' "
+        "config='${build_config}'")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" --build "${build_dir}"
+            --config "${build_config}"
+            --verbose
+        RESULT_VARIABLE _build_rc
+        OUTPUT_VARIABLE _build_out
+        ERROR_VARIABLE _build_err)
+    if(NOT _build_rc EQUAL 0)
+        message(FATAL_ERROR
+            "installed consumer build failed (${label}): ${_build_rc}\n"
+            "${_build_out}\n${_build_err}")
+    endif()
+
+    set(_ctest_cmd
+        "${NINLIL_CTEST_COMMAND}" --test-dir "${build_dir}"
+        --output-on-failure)
+    if(build_config AND NOT build_config STREQUAL "")
+        list(APPEND _ctest_cmd -C "${build_config}")
+    endif()
+    execute_process(
+        COMMAND ${_ctest_cmd}
+        RESULT_VARIABLE _test_rc)
+    if(NOT _test_rc EQUAL 0)
+        message(FATAL_ERROR
+            "installed consumer execution failed (${label}): ${_test_rc}")
+    endif()
+
+    ninlil_installed_consumer_static_checks(
+        "${build_dir}" "${build_config}" "${label}"
+        "${_build_out}" "${_build_err}")
+endfunction()
+
+function(ninlil_installed_consumer_run_one)
+    set(options)
+    set(oneValueArgs LABEL BUILD_TYPE BUILD_CONFIG BUILD_DIR)
+    set(multiValueArgs EXTRA_CMAKE_ARGS)
+    cmake_parse_arguments(NIC "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+    if(NOT NIC_LABEL OR NOT NIC_BUILD_DIR)
+        message(FATAL_ERROR
+            "ninlil_installed_consumer_run_one requires LABEL and BUILD_DIR")
+    endif()
+    if(NOT DEFINED NIC_BUILD_CONFIG OR NIC_BUILD_CONFIG STREQUAL "")
+        if(NIC_BUILD_TYPE AND NOT NIC_BUILD_TYPE STREQUAL "")
+            set(NIC_BUILD_CONFIG "${NIC_BUILD_TYPE}")
+        else()
+            set(NIC_BUILD_CONFIG "${NINLIL_BUILD_CONFIG}")
+        endif()
+    endif()
+
+    set(_args ${_consumer_common_args})
+    if(DEFINED NIC_EXTRA_CMAKE_ARGS)
+        list(APPEND _args ${NIC_EXTRA_CMAKE_ARGS})
+    endif()
+    if(DEFINED NIC_BUILD_TYPE AND NOT NIC_BUILD_TYPE STREQUAL "")
+        list(APPEND _args "-DCMAKE_BUILD_TYPE=${NIC_BUILD_TYPE}")
+    endif()
+
+    file(REMOVE_RECURSE "${NIC_BUILD_DIR}")
+    message(STATUS
+        "installed consumer case '${NIC_LABEL}': build_type='${NIC_BUILD_TYPE}' "
+        "build_config='${NIC_BUILD_CONFIG}'")
+
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}"
+            -S "${NINLIL_SOURCE_DIR}/tests/cmake/installed_posix_sqlite_consumer"
+            -B "${NIC_BUILD_DIR}"
+            -G "${NINLIL_GENERATOR}"
+            ${_args}
+        RESULT_VARIABLE _configure_rc)
+    if(NOT _configure_rc EQUAL 0)
+        message(FATAL_ERROR
+            "installed consumer configure failed (${NIC_LABEL}): ${_configure_rc}")
+    endif()
+
+    ninlil_installed_consumer_build_and_run(
+        "${NIC_BUILD_DIR}" "${NIC_BUILD_CONFIG}" "${NIC_LABEL}")
+endfunction()
+
+if(_consumer_is_multi)
+    # Multi-config: one configure without CMAKE_BUILD_TYPE, then Debug+Release.
+    set(_mc_build "${_root}/consumer-multi")
+    file(REMOVE_RECURSE "${_mc_build}")
+    message(STATUS
+        "installed consumer multi-config generator: configure once, build Debug+Release")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}"
+            -S "${NINLIL_SOURCE_DIR}/tests/cmake/installed_posix_sqlite_consumer"
+            -B "${_mc_build}"
+            -G "${NINLIL_GENERATOR}"
+            ${_consumer_common_args}
+        RESULT_VARIABLE _configure_rc)
+    if(NOT _configure_rc EQUAL 0)
+        message(FATAL_ERROR
+            "installed multi-config consumer configure failed: ${_configure_rc}")
+    endif()
+    foreach(_mc_cfg Debug Release)
+        ninlil_installed_consumer_build_and_run(
+            "${_mc_build}" "${_mc_cfg}" "multi-${_mc_cfg}")
+    endforeach()
+else()
+    ninlil_installed_consumer_run_one(
+        LABEL "match"
+        BUILD_DIR "${_root}/consumer-match"
+        BUILD_TYPE "${NINLIL_BUILD_CONFIG}"
+        BUILD_CONFIG "${NINLIL_BUILD_CONFIG}")
+
+    # Regression: omit CMAKE_BUILD_TYPE entirely (empty/default single-config).
+    ninlil_installed_consumer_run_one(
+        LABEL "none"
+        BUILD_DIR "${_root}/consumer-none"
+        BUILD_TYPE ""
+        BUILD_CONFIG "${NINLIL_BUILD_CONFIG}")
+
+    ninlil_installed_consumer_run_one(
+        LABEL "alt-${_alt_consumer_cfg}"
+        BUILD_DIR "${_root}/consumer-alt"
+        BUILD_TYPE "${_alt_consumer_cfg}"
+        BUILD_CONFIG "${_alt_consumer_cfg}")
+
+    # Strict identity maps: without package MAP_IMPORTED_CONFIG / plain
+    # IMPORTED_LOCATION, generate fails with missing IMPORTED_LOCATION for the
+    # alt consumer configuration when the install only shipped producer config.
+    string(TOUPPER "${_alt_consumer_cfg}" _alt_upper)
+    ninlil_installed_consumer_run_one(
+        LABEL "strict-map-${_alt_consumer_cfg}"
+        BUILD_DIR "${_root}/consumer-strict-map"
+        BUILD_TYPE "${_alt_consumer_cfg}"
+        BUILD_CONFIG "${_alt_consumer_cfg}"
+        EXTRA_CMAKE_ARGS
+            "-DCMAKE_MAP_IMPORTED_CONFIG_${_alt_upper}=${_alt_consumer_cfg}")
 endif()

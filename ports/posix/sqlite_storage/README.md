@@ -231,6 +231,19 @@ The installed package re-finds SQLite3 and, for Linux static builds, Threads
 source-tree paths; the install smoke gate rejects absolute source paths in the
 exported package.
 
+**Imported configuration mapping:** single-config `install(EXPORT)` ships only
+one `NinlilTargets-<config>.cmake` (`DEBUG` / `RELEASE` / `NOCONFIG`), so
+`IMPORTED_LOCATION` exists for that producer configuration alone.
+`NinlilConfig.cmake` then (1) sets a config-agnostic `IMPORTED_LOCATION` and
+`MAP_IMPORTED_CONFIG_<CFG>` on `Ninlil::ninlil_posix_sqlite_storage`, and
+(2) additively copies FindSQLite3's config-less `IMPORTED_LOCATION` onto
+standard imported configuration names when missing (no `INTERFACE_*` / link-line
+rewrite; ALIAS targets untouched). Installed consumers configure/build with
+empty `CMAKE_BUILD_TYPE`, `Debug`, `Release`, multi-config generators, and
+strict identity `CMAKE_MAP_IMPORTED_CONFIG_*` maps. The install-consumer smoke
+matrix covers match / no-build-type / Debug↔Release / strict-map after one
+install.
+
 ## Explicit non-claims
 
 - Public Runtime body / `runtime_create` integration
