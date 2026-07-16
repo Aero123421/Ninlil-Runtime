@@ -1,10 +1,10 @@
 {
   "version": 1,
   "format": "ninlil-domain-scan-crossrow-v1-d3s2",
-  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen 100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained; frozen 102-vector pin (100 + Mode25 slice) retained; frozen 104-vector pin (102 + Mode26 slice) retained; frozen 106-vector pin (104 + Mode24 slice) retained; frozen 108-vector pin (106 + Mode23 slice) retained; frozen 110-vector pin (108 + Mode22 slice) retained as append-only prefix; Mode21 slice appends live TRANSACTION_STATE (cumulative_attempts=1, cancel=0) carrier + TX-owned COMMAND ATTEMPT + matching ATTEMPT_ID_INDEX + true ANCHOR: FOCUS_ATTEMPT+FOCUS_INDEX stream (observed A=1/B=0/C=1; true iterator EXHAUSTED count bit0|bit1) + BIND_ATTEMPT (STATE carrier + ANCHOR PVD/raw + INDEX PRESENT pair) + BIND_INDEX (ANCHOR + ATTEMPT PRESENT pair; no STATE re-get) COMPLETE success, and STATE+ANCHOR+ATTEMPT without INDEX under CLEANUP_PLAN PRESENT (cleanup_skip so ordinary INDEX undercount does not preempt BIND) BIND_ATTEMPT INDEX peer ABSENT STORAGE_CORRUPT (note path; primary already proven before pair; BIND_INDEX must not run). Each vector is one mode per independent READ_ONLY txn; baseline once + sequential zero-prefix reopen; stream FOCUS closes only on true iterator EXHAUSTED; SHA256_COMPOSITE ATTEMPT rows complete-key lex sorted; mutation_calls=0. Frozen 113-vector origin/main pin retained (112 + P0-A multi-owner Mode25). P0-B appends Mode26 EVENT_SPOOL resume=1 + MANAGEMENT RESUME mid-FOCUS stream budget stop (B5): FOCUS_MANAGEMENT row_budget derived from fixture OK-row count so the last MANAGEMENT OK is observed then advance stops before NOT_FOUND; call-level checkpoint freezes phase/focus_live/observed/masks/flags/pass_kind/cleanup_skip/last_carrier_key_len + spy begin/iter_open/iter_close/trace_count; next drive resumes same iterator (B6 close; not B11 restart); final SELECT empty\u2192BIND\u2192COMPLETE matches one-shot Mode26 success semantics. Frozen 114-vector origin/main pin retained (113 + P0-B). P0-C appends Mode25 BIND exact_get Port IO_ERROR mid-BIND (after FOCUS known-slot matrix): sticky NINLIL_E_STORAGE / phase FAILED; formal JSON note_count=0 is reference-model only (not a production note_terminal_corrupt call counter); production bridge proves Port fault + STORAGE sticky/FAILED + incomplete BIND + exact trace. Fault is real spy get on_call after baseline 17 + FOCUS 5 peer gets. Frozen 115-vector origin/main pin retained (114 + P0-C). P0-D appends Mode22 unexpected ATTEMPT_ID_INDEX PRESENT (BIND_ATTEMPT ABSENT-peer fail after carrier+primary proven), Mode22 true-primary DELIVERY ABSENT (carrier RC proven first), Mode21 primary PVD mismatch, and Mode21 INDEX pair PRESENT subject/raw mismatch under CLEANUP_PLAN (constructible BIND pair subject residual after primary proven). True-primary raw after PRESENT+typed validate remains identity-tautological/unconstructible under D1 same-record + same READ_ONLY snapshot and is not claimed as P0-D coverage. Mode21 success BIND_INDEX no-STATE companion re-get remains pinned by d3_peer_get_count=7 and exact Port-trace (BIND_INDEX segment exact 2 gets). Frozen 119-vector origin/main pin retained (115 + P0-D). P1-A appends ordinary CLEANUP_PLAN ABSENT stream count failures: Mode21 app ATTEMPT overcount (declared A=0 observed A=1 at FOCUS_ATTEMPT H2), Mode21 cancel ATTEMPT overcount (declared B=0 observed B=1), Mode21 INDEX undercount (FOCUS_ATTEMPT green then FOCUS_INDEX C 0!=1; no CLEANUP skip), Mode22 APPLICATION_FIRST carrier PRESENT declared A=1 empty ATTEMPT band undercount, Mode22 CANCEL_FIRST cancel undercount (declared B=1 observed B=0 via DLV CANCEL_STATE), Mode26 MANAGEMENT overcount (ES resume+discard=0 observed A=1). All STORAGE_CORRUPT semantic findings; faults=[]; single READ_ONLY txn; mutation 0. Same-txn: every d3s2 suffix port_trace has exactly one begin:READ_ONLY; two-txn list-then-count models fail closed (self-test tamper). Frozen 127-vector origin/main pin retained (125 + P1-D evaluator-off). P1-D2 appends Mode21 count-green without BIND set: FOCUS count complete (bit0|bit1) while binding_complete_mask=0 at BIND_ATTEMPT entry (BIND_PHASE_ACTIVE, no COMPLETE_READY, sticky 0); call-level checkpoint freezes phase/masks/flags/pass_kind/last_carrier_key + spy begin/iter_open/iter_close/trace_count; test-only probe_false_terminal_finalize on session/context copy with copy.state=EXHAUSTED expects INVALID_STATE Port0 no cleanup/output mutation; original session resumes BIND\u2192COMPLETE/adopt1. Not orphan CORRUPT / Port fault / evaluator-off / metadata-only. Frozen 128-vector origin/main pin retained (127 + P1-D2). P1-B1 appends \u00a718.13.15 case5 / \u00a718.13.8 Modes22\u201323 only: Mode22 CLEANUP_PLAN PRESENT ordinary-skip positive (RC app>0, empty ATTEMPT band, matching DELIVERY plan \u2192 cleanup_skip=1, no ordinary undercount note, empty BIND COMPLETE/adopt1; checkpoint freezes cleanup_skip=1; Port-trace/get budget pin matching CLEANUP setup get); Mode23 matching TX CLEANUP_PLAN PRESENT still-ordinary negative (cleanup_skip forced 0; STATE PRESENT + known-slot EVIDENCE insufficient \u2192 STORAGE_CORRUPT). Frozen 130-vector origin/main pin retained (128 + P1-B1). P1-B2 appends \u00a718.13.15 case5 residual / \u00a718.13.8 Modes24\u201326 still-ordinary negatives (one formal vector each): Mode24 RC reply_count>0 + matching DELIVERY plan + REVERSE_REPLY known-kind absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode25 CUM total>0 + matching TX plan + RECENT required slot absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode26 ES resume/discard>0 + matching TX plan + MANAGEMENT empty \u2192 cleanup_skip=0 stream undercount STORAGE_CORRUPT. Modes24\u201326 force cleanup_skip=0 without CLEANUP setup get (plan presence via same-snapshot typed row + baseline visit; Port-trace/d3_peer_get_count pin zero extra plan get). Checkpoints freeze cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 existing + 22/23 P1-B1 + 24\u201326 this slice aligned; D3-S2 complete not claimed. Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked for expected generation.",
-  "vector_count": 133,
+  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen 100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained; frozen 102-vector pin (100 + Mode25 slice) retained; frozen 104-vector pin (102 + Mode26 slice) retained; frozen 106-vector pin (104 + Mode24 slice) retained; frozen 108-vector pin (106 + Mode23 slice) retained; frozen 110-vector pin (108 + Mode22 slice) retained as append-only prefix; Mode21 slice appends live TRANSACTION_STATE (cumulative_attempts=1, cancel=0) carrier + TX-owned COMMAND ATTEMPT + matching ATTEMPT_ID_INDEX + true ANCHOR: FOCUS_ATTEMPT+FOCUS_INDEX stream (observed A=1/B=0/C=1; true iterator EXHAUSTED count bit0|bit1) + BIND_ATTEMPT (STATE carrier + ANCHOR PVD/raw + INDEX PRESENT pair) + BIND_INDEX (ANCHOR + ATTEMPT PRESENT pair; no STATE re-get) COMPLETE success, and STATE+ANCHOR+ATTEMPT without INDEX under CLEANUP_PLAN PRESENT (cleanup_skip so ordinary INDEX undercount does not preempt BIND) BIND_ATTEMPT INDEX peer ABSENT STORAGE_CORRUPT (note path; primary already proven before pair; BIND_INDEX must not run). Each vector is one mode per independent READ_ONLY txn; baseline once + sequential zero-prefix reopen; stream FOCUS closes only on true iterator EXHAUSTED; SHA256_COMPOSITE ATTEMPT rows complete-key lex sorted; mutation_calls=0. Frozen 113-vector origin/main pin retained (112 + P0-A multi-owner Mode25). P0-B appends Mode26 EVENT_SPOOL resume=1 + MANAGEMENT RESUME mid-FOCUS stream budget stop (B5): FOCUS_MANAGEMENT row_budget derived from fixture OK-row count so the last MANAGEMENT OK is observed then advance stops before NOT_FOUND; call-level checkpoint freezes phase/focus_live/observed/masks/flags/pass_kind/cleanup_skip/last_carrier_key_len + spy begin/iter_open/iter_close/trace_count; next drive resumes same iterator (B6 close; not B11 restart); final SELECT empty\u2192BIND\u2192COMPLETE matches one-shot Mode26 success semantics. Frozen 114-vector origin/main pin retained (113 + P0-B). P0-C appends Mode25 BIND exact_get Port IO_ERROR mid-BIND (after FOCUS known-slot matrix): sticky NINLIL_E_STORAGE / phase FAILED; formal JSON note_count=0 is reference-model only (not a production note_terminal_corrupt call counter); production bridge proves Port fault + STORAGE sticky/FAILED + incomplete BIND + exact trace. Fault is real spy get on_call after baseline 17 + FOCUS 5 peer gets. Frozen 115-vector origin/main pin retained (114 + P0-C). P0-D appends Mode22 unexpected ATTEMPT_ID_INDEX PRESENT (BIND_ATTEMPT ABSENT-peer fail after carrier+primary proven), Mode22 true-primary DELIVERY ABSENT (carrier RC proven first), Mode21 primary PVD mismatch, and Mode21 INDEX pair PRESENT subject/raw mismatch under CLEANUP_PLAN (constructible BIND pair subject residual after primary proven). True-primary raw after PRESENT+typed validate remains identity-tautological/unconstructible under D1 same-record + same READ_ONLY snapshot and is not claimed as P0-D coverage. Mode21 success BIND_INDEX no-STATE companion re-get remains pinned by d3_peer_get_count=7 and exact Port-trace (BIND_INDEX segment exact 2 gets). Frozen 119-vector origin/main pin retained (115 + P0-D). P1-A appends ordinary CLEANUP_PLAN ABSENT stream count failures: Mode21 app ATTEMPT overcount (declared A=0 observed A=1 at FOCUS_ATTEMPT H2), Mode21 cancel ATTEMPT overcount (declared B=0 observed B=1), Mode21 INDEX undercount (FOCUS_ATTEMPT green then FOCUS_INDEX C 0!=1; no CLEANUP skip), Mode22 APPLICATION_FIRST carrier PRESENT declared A=1 empty ATTEMPT band undercount, Mode22 CANCEL_FIRST cancel undercount (declared B=1 observed B=0 via DLV CANCEL_STATE), Mode26 MANAGEMENT overcount (ES resume+discard=0 observed A=1). All STORAGE_CORRUPT semantic findings; faults=[]; single READ_ONLY txn; mutation 0. Same-txn: every d3s2 suffix port_trace has exactly one begin:READ_ONLY; two-txn list-then-count models fail closed (self-test tamper). Frozen 127-vector origin/main pin retained (125 + P1-D evaluator-off). P1-D2 appends Mode21 count-green without BIND set: FOCUS count complete (bit0|bit1) while binding_complete_mask=0 at BIND_ATTEMPT entry (BIND_PHASE_ACTIVE, no COMPLETE_READY, sticky 0); call-level checkpoint freezes phase/masks/flags/pass_kind/last_carrier_key + spy begin/iter_open/iter_close/trace_count; test-only probe_false_terminal_finalize on session/context copy with copy.state=EXHAUSTED expects INVALID_STATE Port0 no cleanup/output mutation; original session resumes BIND\u2192COMPLETE/adopt1. Not orphan CORRUPT / Port fault / evaluator-off / metadata-only. Frozen 128-vector origin/main pin retained (127 + P1-D2). P1-B1 appends \u00a718.13.15 case5 / \u00a718.13.8 Modes22\u201323 only: Mode22 CLEANUP_PLAN PRESENT ordinary-skip positive (RC app>0, empty ATTEMPT band, matching DELIVERY plan \u2192 cleanup_skip=1, no ordinary undercount note, empty BIND COMPLETE/adopt1; checkpoint freezes cleanup_skip=1; Port-trace/get budget pin matching CLEANUP setup get); Mode23 matching TX CLEANUP_PLAN PRESENT still-ordinary negative (cleanup_skip forced 0; STATE PRESENT + known-slot EVIDENCE insufficient \u2192 STORAGE_CORRUPT). Frozen 130-vector origin/main pin retained (128 + P1-B1). P1-B2 appends \u00a718.13.15 case5 residual / \u00a718.13.8 Modes24\u201326 still-ordinary negatives (one formal vector each): Mode24 RC reply_count>0 + matching DELIVERY plan + REVERSE_REPLY known-kind absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode25 CUM total>0 + matching TX plan + RECENT required slot absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode26 ES resume/discard>0 + matching TX plan + MANAGEMENT empty \u2192 cleanup_skip=0 stream undercount STORAGE_CORRUPT. Modes24\u201326 force cleanup_skip=0 without CLEANUP setup get (plan presence via same-snapshot typed row + baseline visit; Port-trace/d3_peer_get_count pin zero extra plan get). Checkpoints freeze cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 existing + 22/23 P1-B1 + 24\u201326 this slice aligned; D3-S2 complete not claimed. Frozen 133-vector origin/main pin retained (130 + P1-B2). P1-C1 appends \u00a718.13.15 cases 3/19 / \u00a718.13.12.1 Mode23: (1) all required slots 0..L coherent empty equation + extra RAW slot L+1 (D1 typed-valid slot<=8, same owner/PVD) \u2192 FOCUS counts green then BIND illegal slot STORAGE_CORRUPT (not mere D1 invalid); (2) equation fail \u2014 all slots 0..L PRESENT, SUMMARY counters D1-valid, valid != M+overflow \u2192 FOCUS close CORRUPT; (3) late coherence fail \u2014 equation green, RAW MATERIALIZED late_material=1 with SUMMARY late_evidence_count=0 (D1 late_mat==(late>0) holds) \u2192 observed_c > declared_c CORRUPT (no false declared_c==observed_c requirement). Also: (4) CANCEL_FIRST + Evidence slot0 \u2192 BIND CORRUPT after carrier get (shape exact-0); (5) multi-owner TX legal 0..L + CANCEL empty with CANCEL last FOCUS (declared_L=0) \u2192 COMPLETE (anti last-declared_L); (6) multi-owner TX legal + CANCEL slot0 with key order STATE<RC and TX EV<EV_DLV \u2192 BIND CORRUPT after legal TX secondaries. Each vector single-txn mutation_calls=0. Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked for expected generation.",
+  "vector_count": 139,
   "d3s1_prefix_count": 94,
-  "d3s2_suffix_count": 39,
+  "d3s2_suffix_count": 45,
   "d3s2_100_prefix_count": 100,
   "d3s2_102_prefix_count": 102,
   "d3s2_104_prefix_count": 104,
@@ -20,6 +20,7 @@
   "d3s2_127_prefix_count": 127,
   "d3s2_128_prefix_count": 128,
   "d3s2_130_prefix_count": 130,
+  "d3s2_133_prefix_count": 133,
   "required_kinds": [
     "begin_alias_poison",
     "begin_context_null",
@@ -118,9 +119,15 @@
     "mode22_cleanup_plan_present_ordinary_skip_ok",
     "mode22_empty_carrier_empty_secondary_ok",
     "mode22_rc_app1_dlv_attempt_delivery_ok",
+    "mode23_cancel_first_slot0_bind_corrupt",
     "mode23_cleanup_plan_present_still_ordinary_corrupt",
     "mode23_empty_carrier_empty_secondary_ok",
+    "mode23_equation_fail_valid_ne_m_plus_overflow_corrupt",
     "mode23_evidence_without_state_carrier_absent_corrupt",
+    "mode23_illegal_slot_L_plus_1_bind_corrupt",
+    "mode23_late_coherence_observed_gt_declared_corrupt",
+    "mode23_multi_owner_cancel_last_tx_ok",
+    "mode23_multi_owner_tx_before_cancel_ev_corrupt",
     "mode23_tx_state_slots_L_equation_anchor_ok",
     "mode24_cleanup_plan_present_still_ordinary_corrupt",
     "mode24_empty_carrier_empty_secondary_ok",
@@ -294,6 +301,12 @@
     "content_sha256": "eb2e32b452632e2f3ac08e7376262eb537498745f9c6dce5ccae4abcf3b4f2e6",
     "prior_fingerprint_prefix_hash": "7eaaa8e30709cdcbccbc81cf2a5a8f5461aef2c74e315f1b0a08864d7fab2cbf",
     "note": "append-only freeze of origin/main (94 D3S1 + 36 d3s2 suffix through P1-B1); P1-B2 Mode24/25/26 CLEANUP still-ordinary vectors follow"
+  },
+  "d3s2_133_prefix_authority": {
+    "vector_count": 133,
+    "content_sha256": "65f58bfe71d71ccbb3bb553223f6762a14c022c110be481e061475cf3a84c98d",
+    "prior_fingerprint_prefix_hash": "031fdef1204ef7ca56d6c9fdca56d750a4d3d4bc3c4cdf433023ddbc508cd871",
+    "note": "append-only freeze of origin/main (94 D3S1 + 39 d3s2 suffix through P1-B2 / PR#69); P1-C1 Mode23 illegal-slot + equation/late fail vectors follow"
   },
   "prior_fingerprints": [
     {
@@ -1093,11 +1106,47 @@
       "kind": "mode26_cleanup_plan_present_still_ordinary_corrupt",
       "mode": 26,
       "fingerprint": "79d099c029b548eb13191084cd6fa81f278920be6df6c4bd827d8ec080a74706"
+    },
+    {
+      "id": "D3S2_M23_ILLEGAL_SLOT_L_PLUS_1_BIND_CORRUPT",
+      "kind": "mode23_illegal_slot_L_plus_1_bind_corrupt",
+      "mode": 23,
+      "fingerprint": "60d18b46e0b74fada90acc48abba395387b0e19958859976c7f9286b1ba7357e"
+    },
+    {
+      "id": "D3S2_M23_EQUATION_FAIL_VALID_NE_M_PLUS_OVERFLOW_CORRUPT",
+      "kind": "mode23_equation_fail_valid_ne_m_plus_overflow_corrupt",
+      "mode": 23,
+      "fingerprint": "ac91cb45d8bbef9f44b6c233a845a07a5acbee54e0752426322ef07131a70b7e"
+    },
+    {
+      "id": "D3S2_M23_LATE_COHERENCE_OBSERVED_GT_DECLARED_CORRUPT",
+      "kind": "mode23_late_coherence_observed_gt_declared_corrupt",
+      "mode": 23,
+      "fingerprint": "f4861c366b95f927dfc8e688562bc572498fb0470914e2645190199cc9d69402"
+    },
+    {
+      "id": "D3S2_M23_CANCEL_FIRST_SLOT0_BIND_CORRUPT",
+      "kind": "mode23_cancel_first_slot0_bind_corrupt",
+      "mode": 23,
+      "fingerprint": "bc34dc550c46d86caf166849ce3c404fc9da1d3345b7553aee2abc1c4ce4a45e"
+    },
+    {
+      "id": "D3S2_M23_MULTI_OWNER_CANCEL_LAST_TX_OK",
+      "kind": "mode23_multi_owner_cancel_last_tx_ok",
+      "mode": 23,
+      "fingerprint": "d3824374b006a2d31b892a3791745f7de6425eec22342cc60495c6fdd1ce177d"
+    },
+    {
+      "id": "D3S2_M23_MULTI_OWNER_TX_BEFORE_CANCEL_EV_CORRUPT",
+      "kind": "mode23_multi_owner_tx_before_cancel_ev_corrupt",
+      "mode": 23,
+      "fingerprint": "3854676c11203f35f43d173a8e3f6dd1c56dc6a42e965e1a5fefc92bbbf9ced0"
     }
   ],
-  "prior_fingerprint_prefix_hash": "031fdef1204ef7ca56d6c9fdca56d750a4d3d4bc3c4cdf433023ddbc508cd871",
-  "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix, the 100-vector prior main, the 102-vector prior main, the 104-vector prior main, the 106-vector prior main, the 108-vector prior main, the 110-vector prior main, the 112-vector prior main, the 113-vector origin/main, the 114-vector origin/main, the 115-vector origin/main, the 119-vector origin/main, the 125-vector origin/main, the 127-vector origin/main, the 128-vector origin/main, and the 130-vector origin/main (fingerprint/order/expected/rows/calls/full object equality). content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
-  "content_sha256": "65f58bfe71d71ccbb3bb553223f6762a14c022c110be481e061475cf3a84c98d",
+  "prior_fingerprint_prefix_hash": "456a446a069fb65fed01f81b9ba9556d12a6bbe9796c7e7ed2317a707416e5be",
+  "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix, the 100-vector prior main, the 102-vector prior main, the 104-vector prior main, the 106-vector prior main, the 108-vector prior main, the 110-vector prior main, the 112-vector prior main, the 113-vector origin/main, the 114-vector origin/main, the 115-vector origin/main, the 119-vector origin/main, the 125-vector origin/main, the 127-vector origin/main, the 128-vector origin/main, the 130-vector origin/main, and the 133-vector origin/main (fingerprint/order/expected/rows/calls/full object equality). content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
+  "content_sha256": "c6e2bfe29e4e319f84133fa60faf180c6db5221d37c854cdd3c0132d520b0f3d",
   "vectors": [
     {
       "id": "D3S1_M01_SERVICE_QUOTA_PRESENT",
@@ -36605,6 +36654,2173 @@
         "count_complete_mask": 0,
         "binding_complete_mask": 0,
         "flags": 3
+      }
+    },
+    {
+      "id": "D3S2_M23_ILLEGAL_SLOT_L_PLUS_1_BIND_CORRUPT",
+      "kind": "mode23_illegal_slot_L_plus_1_bind_corrupt",
+      "mode": 23,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105204f78c58269fa4530322f7f0b495ba5a6d3c6944cb7a03bf162d901d44910993d",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000200010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003253c30b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001063201052066091a2bfc9ea805dd5bda9f2f4a63ab4350912c25eeada9891243b352f89fc1",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80000000010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ec003949"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520669e93da2279e8299e256105778ca66309d96af51e2ea39f00b1f40f673ef11a",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008d4b2b5b"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105208863cb367ad343cd54400868c5a9a8241cdbaaa233bff38bbeb65a5e91dedc2e",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8000000003000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000078629535"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520fa7c1c831e861be815b377b28a02d5364e66d7698f2080b8744d2be0a7b021e7",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008b18417e"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 23,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE_CORRUPT"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE_CORRUPT"
+        }
+      ],
+      "d1_refs": [
+        "DSB2_STATE_TYPED",
+        "DSB2_ANCHOR_TYPED",
+        "DSB3_EV_TX_SUM_EMPTY_TYPED",
+        "DSB3_EV_TX_RAW_UNUSED_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB2_STATE_TYPED",
+        "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "Mode23 retained TRANSACTION_STATE carrier"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB2_ANCHOR_TYPED",
+        "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "true primary ANCHOR for legal BIND rows before illegal"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB3_EV_TX_RAW_UNUSED_TYPED",
+          "key_hex": "4e494e4c494c00010632010520fa7c1c831e861be815b377b28a02d5364e66d7698f2080b8744d2be0a7b021e7",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008b18417e",
+          "mutations": [
+            {
+              "offset": 0,
+              "old_hex": "4e4c5231000600010000033e0001320000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444449192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80000000010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c26d9676",
+              "new_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000400010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008b18417e",
+              "recompute": "crc32c_trailer",
+              "directive": "replace_complete_value_recrc"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "extra RAW UNUSED slot L+1=4 D1-typed-valid (slot<=8) same owner/PVD; S2 BIND illegal vs L=3"
+        }
+      ],
+      "notes": "P1-C1 formal (\u00a718.13.15 case3 / \u00a718.13.12.1 Mode23): all required slots 0..L (L=3) PRESENT with empty SUMMARY equation-green (valid=M=overflow=0), plus extra RAW slot L+1 D1-typed-valid (slot<=8) same owner/PVD. FOCUS known-slot matrix exact_get 0..L only \u2192 count bit2 green; BIND_EVIDENCE walks lex-ordered secondaries, notes illegal slot > accepted profile L via note_terminal_corrupt STORAGE_CORRUPT after carrier get and before primary get on that row. Not mere D1 invalid; not Port failure; not carrier/primary absence. Single READ_ONLY txn; mutation_calls=0. Independent Python only. Not D3-S2 complete claim.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (45-vector suffix on frozen 133-prefix only)",
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 7,
+        "ok_row_count": 24,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 4,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 13,
+        "d3_mode_applicable_count": 5,
+        "phase": 16,
+        "count_complete_mask": 4,
+        "binding_complete_mask": 0,
+        "flags": 5
+      }
+    },
+    {
+      "id": "D3S2_M23_EQUATION_FAIL_VALID_NE_M_PLUS_OVERFLOW_CORRUPT",
+      "kind": "mode23_equation_fail_valid_ne_m_plus_overflow_corrupt",
+      "mode": 23,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105204f78c58269fa4530322f7f0b495ba5a6d3c6944cb7a03bf162d901d44910993d",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000200010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003253c30b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001063201052066091a2bfc9ea805dd5bda9f2f4a63ab4350912c25eeada9891243b352f89fc1",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000100020000000000000000000000000002000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000707214b0"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520669e93da2279e8299e256105778ca66309d96af51e2ea39f00b1f40f673ef11a",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000010000000100000001000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000072122232425262728292a2b2c2d2e2f3000000000000000000000000100000000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000ae6398c3"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105208863cb367ad343cd54400868c5a9a8241cdbaaa233bff38bbeb65a5e91dedc2e",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8000000003000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000078629535"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 23,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE_CORRUPT"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE_CORRUPT"
+        }
+      ],
+      "d1_refs": [
+        "DSB2_STATE_TYPED",
+        "DSB2_ANCHOR_TYPED",
+        "DSB3_EV_TX_SUM_MAT_LEN0_TYPED",
+        "DSB3_EV_TX_RAW_MAT_TYPED",
+        "DSB3_EV_TX_RAW_UNUSED_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB2_STATE_TYPED",
+        "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "Mode23 retained TRANSACTION_STATE carrier"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB2_ANCHOR_TYPED",
+        "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "true primary ANCHOR present (FOCUS path only)"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB3_EV_TX_SUM_MAT_LEN0_TYPED",
+          "key_hex": "4e494e4c494c00010632010520669e93da2279e8299e256105778ca66309d96af51e2ea39f00b1f40f673ef11a",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000010000000100000001000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000072122232425262728292a2b2c2d2e2f3000000000000000000000000100000000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000ae6398c3",
+          "mutations": [
+            {
+              "offset": 0,
+              "old_hex": "4e4c5231000600010000033e0001320000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444449192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000010000000100000001000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000072122232425262728292a2b2c2d2e2f3000000000000000000000000100000000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000f2536b5b",
+              "new_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000010000000100000001000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000072122232425262728292a2b2c2d2e2f3000000000000000000000000100000000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000ae6398c3",
+              "recompute": "crc32c_trailer",
+              "directive": "replace_complete_value_recrc"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "SUMMARY@0 valid=2 overflow=0 late=0 (D1 domain OK); equation 2 != M=1 + overflow=0"
+        },
+        {
+          "binding": "d1",
+          "id": "DSB3_EV_TX_RAW_MAT_TYPED",
+          "key_hex": "4e494e4c494c0001063201052066091a2bfc9ea805dd5bda9f2f4a63ab4350912c25eeada9891243b352f89fc1",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000100020000000000000000000000000002000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000707214b0",
+          "mutations": [
+            {
+              "offset": 0,
+              "old_hex": "4e4c5231000600010000033e0001320000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444449192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000300020000000000000000000000000002000000000000000000000001b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000d677b27e",
+              "new_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000100020000000000000000000000000002000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000707214b0",
+              "recompute": "crc32c_trailer",
+              "directive": "replace_complete_value_recrc"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "RAW MATERIALIZED slot1 (M=1) late_material=0"
+        }
+      ],
+      "notes": "P1-C1 formal (\u00a718.13.15 case19 / \u00a718.13.12.1 Mode23 equation): all slots 0..L PRESENT with matching STATE+ANCHOR. SUMMARY counters D1-valid (overflow<=valid, late<=valid, late_mat==(late>0)) but valid_material_count=2 != M=1 + raw_overflow_count=0 \u2192 FOCUS known-slot close note_terminal_corrupt STORAGE_CORRUPT. BIND must not run. Not absence/carrier/BIND failure; not Port path. Single READ_ONLY txn; mutation_calls=0. Independent Python only.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (45-vector suffix on frozen 133-prefix only)",
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 6,
+        "ok_row_count": 23,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 2,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 4,
+        "d3_mode_applicable_count": 0,
+        "phase": 16,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": 3
+      }
+    },
+    {
+      "id": "D3S2_M23_LATE_COHERENCE_OBSERVED_GT_DECLARED_CORRUPT",
+      "kind": "mode23_late_coherence_observed_gt_declared_corrupt",
+      "mode": 23,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105204f78c58269fa4530322f7f0b495ba5a6d3c6944cb7a03bf162d901d44910993d",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000200010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003253c30b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001063201052066091a2bfc9ea805dd5bda9f2f4a63ab4350912c25eeada9891243b352f89fc1",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000100020000000000000000000000000002000000000000000000000001b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006c78b13d"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520669e93da2279e8299e256105778ca66309d96af51e2ea39f00b1f40f673ef11a",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000010000000100000001000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000072122232425262728292a2b2c2d2e2f3000000000000000000000000100000000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000dc3ec464"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105208863cb367ad343cd54400868c5a9a8241cdbaaa233bff38bbeb65a5e91dedc2e",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8000000003000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000078629535"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 23,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE_CORRUPT"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE_CORRUPT"
+        }
+      ],
+      "d1_refs": [
+        "DSB2_STATE_TYPED",
+        "DSB2_ANCHOR_TYPED",
+        "DSB3_EV_TX_SUM_MAT_LEN0_TYPED",
+        "DSB3_EV_TX_RAW_MAT_TYPED",
+        "DSB3_EV_TX_RAW_UNUSED_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB2_STATE_TYPED",
+        "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "Mode23 retained TRANSACTION_STATE carrier"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB2_ANCHOR_TYPED",
+        "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "true primary ANCHOR present (FOCUS path only)"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB3_EV_TX_SUM_MAT_LEN0_TYPED",
+          "key_hex": "4e494e4c494c00010632010520669e93da2279e8299e256105778ca66309d96af51e2ea39f00b1f40f673ef11a",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000010000000100000001000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000072122232425262728292a2b2c2d2e2f3000000000000000000000000100000000e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000dc3ec464",
+          "mutations": [
+            {
+              "offset": 72,
+              "old_hex": "9192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0",
+              "new_hex": "f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea",
+              "recompute": "crc32c_trailer",
+              "directive": "write_pvd_then_crc32c"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "SUMMARY@0 valid=1 overflow=0 late_evidence_count=0 late_material=0 (D1 same-record OK)"
+        },
+        {
+          "binding": "d1",
+          "id": "DSB3_EV_TX_RAW_MAT_TYPED",
+          "key_hex": "4e494e4c494c0001063201052066091a2bfc9ea805dd5bda9f2f4a63ab4350912c25eeada9891243b352f89fc1",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000100020000000000000000000000000002000000000000000000000001b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006c78b13d",
+          "mutations": [
+            {
+              "offset": 0,
+              "old_hex": "4e4c5231000600010000033e0001320000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444449192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000300020000000000000000000000000002000000000000000000000001b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000d677b27e",
+              "new_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000100020000000000000000000000000002000000000000000000000001b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0000000000000000000000000000000092122232425262728292a2b2c2d2e2f3000000000000000640000000200000000c0a7188b4e87d64b5ff6dbedc69629b41ded38b08f0f79b85c5b63ed4a6b464600050000030a11181f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006c78b13d",
+              "recompute": "crc32c_trailer",
+              "directive": "replace_complete_value_recrc"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "RAW MATERIALIZED late_material=1 \u2192 observed_c=1; equation valid==M+overflow still green"
+        }
+      ],
+      "notes": "P1-C1 formal (\u00a718.13.15 case19 / \u00a718.13.12.1 Mode23 late): all slots 0..L PRESENT, equation green (valid=1 == M=1 + overflow=0), at least one RAW MATERIALIZED late_material=1 while SUMMARY late_evidence_count=0 (SUMMARY late_material=0 keeps D1 late_mat==(late>0)). observed_c > declared_c \u2192 FOCUS close STORAGE_CORRUPT. Normative forbids requiring declared_c==observed_c (overflow late may lack RAW). Constructible under D1; not absence/carrier/BIND fail. Single READ_ONLY txn; mutation_calls=0. Independent Python.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (45-vector suffix on frozen 133-prefix only)",
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 6,
+        "ok_row_count": 23,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 2,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 4,
+        "d3_mode_applicable_count": 0,
+        "phase": 16,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": 3
+      }
+    },
+    {
+      "id": "D3S2_M23_CANCEL_FIRST_SLOT0_BIND_CORRUPT",
+      "kind": "mode23_cancel_first_slot0_bind_corrupt",
+      "mode": 23,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520d1f7c4b3723402b66a586246e0666f49460c4b1f16feb4b9711105dee82f0ab7",
+          "value_hex": "4e4c5231000600010000037e0001320000000000000000018434dbf6d6f14c86d85836e72bbac4e84444444444444444444444444444444444444444444444444444444444444444830ca74af7f61076c2d9cd1bae48789bee503d4b9a8bdf463a1bcfb555eb1fff0000031e000200010050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697916162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003b8a452c"
+        },
+        {
+          "key_hex": "4e494e4c494c000106400105208434dbf6d6f14c86d85836e72bbac4e89447d33ae7c7ddca86d8a22599d9a5a3",
+          "value_hex": "4e4c523100060001000002880001400000000000000000018434dbf6d6f14c86d85836e72bbac4e8d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d10000000000000000000000000000000000000000000000000000000000000000000002280050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d10000000000000000000000000000040001000000000000000000017100000000000000000000000000009900000000000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002016e0173016300000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf1600000000000000011100000000000000000000000000002200000000000003e80000000000000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae42811aa19279b6fa8c31234eefacc8c94f5a7f310bf7e3843f3ee0a928eb81730e49e6469f8506bc4c122c93c0518d63db473186c53bec480db01e474a89768c7ec5413e"
+        },
+        {
+          "key_hex": "4e494e4c494c000106410105209b042c5f455bb88da968244dba0e2d1c888067c4e657435119a629abd43e8451",
+          "value_hex": "4e4c523100060001000001da0001410000000000000000018434dbf6d6f14c86d85836e72bbac4e8c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c20000017a0050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697917100000000000000000000000000009900000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000000000000000000000000000000000000000000007938131f"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 23,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE_CORRUPT"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE_CORRUPT"
+        }
+      ],
+      "d1_refs": [
+        "DSB3_RC_CANCEL_FIRST_TYPED",
+        "DSB3_DLV_APP_DS_TYPED",
+        "DSB3_EV_DLV_SUM_EMPTY_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB3_RC_CANCEL_FIRST_TYPED",
+        "key_hex": "4e494e4c494c000106410105209b042c5f455bb88da968244dba0e2d1c888067c4e657435119a629abd43e8451",
+        "value_hex": "4e4c523100060001000001da0001410000000000000000018434dbf6d6f14c86d85836e72bbac4e8c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c20000017a0050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697917100000000000000000000000000009900000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000000000000000000000000000000000000000000007938131f",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "CANCEL_FIRST RESULT_CACHE carrier (app_attempt=0)"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB3_DLV_APP_DS_TYPED",
+        "key_hex": "4e494e4c494c000106400105208434dbf6d6f14c86d85836e72bbac4e89447d33ae7c7ddca86d8a22599d9a5a3",
+        "value_hex": "4e4c523100060001000002880001400000000000000000018434dbf6d6f14c86d85836e72bbac4e8d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d10000000000000000000000000000000000000000000000000000000000000000000002280050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d10000000000000000000000000000040001000000000000000000017100000000000000000000000000009900000000000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002016e0173016300000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf1600000000000000011100000000000000000000000000002200000000000003e80000000000000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae42811aa19279b6fa8c31234eefacc8c94f5a7f310bf7e3843f3ee0a928eb81730e49e6469f8506bc4c122c93c0518d63db473186c53bec480db01e474a89768c7ec5413e",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "true primary DELIVERY for EV_DLV PVD"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB3_EV_DLV_SUM_EMPTY_TYPED",
+          "key_hex": "4e494e4c494c00010632010520d1f7c4b3723402b66a586246e0666f49460c4b1f16feb4b9711105dee82f0ab7",
+          "value_hex": "4e4c5231000600010000037e0001320000000000000000018434dbf6d6f14c86d85836e72bbac4e84444444444444444444444444444444444444444444444444444444444444444830ca74af7f61076c2d9cd1bae48789bee503d4b9a8bdf463a1bcfb555eb1fff0000031e000200010050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697916162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003b8a452c",
+          "mutations": [
+            {
+              "offset": 72,
+              "old_hex": "9192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0",
+              "new_hex": "830ca74af7f61076c2d9cd1bae48789bee503d4b9a8bdf463a1bcfb555eb1fff",
+              "recompute": "crc32c_trailer",
+              "directive": "write_pvd_then_crc32c"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "any Evidence under CANCEL_FIRST is S2 illegal"
+        }
+      ],
+      "notes": "P1-C1 formal: DELIVERY CANCEL_FIRST RESULT expects exact 0 EVIDENCE cells. Slot0 SUMMARY for that owner is D1-typed-valid and slot0<=profile L, but BIND_EVIDENCE notes STORAGE_CORRUPT from carrier body shape after carrier exact_get and before true primary get (max 2 gets; this row consumes 1). Profile-only L authority would false-accept. mutation_calls=0.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (45-vector suffix on frozen 133-prefix only)",
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,
+        "ok_row_count": 20,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 4,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 1,
+        "d3_mode_applicable_count": 1,
+        "phase": 16,
+        "count_complete_mask": 4,
+        "binding_complete_mask": 0,
+        "flags": 5
+      }
+    },
+    {
+      "id": "D3S2_M23_MULTI_OWNER_CANCEL_LAST_TX_OK",
+      "kind": "mode23_multi_owner_cancel_last_tx_ok",
+      "mode": 23,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105204f78c58269fa4530322f7f0b495ba5a6d3c6944cb7a03bf162d901d44910993d",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000200010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003253c30b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001063201052066091a2bfc9ea805dd5bda9f2f4a63ab4350912c25eeada9891243b352f89fc1",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80000000010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ec003949"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520669e93da2279e8299e256105778ca66309d96af51e2ea39f00b1f40f673ef11a",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008d4b2b5b"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105208863cb367ad343cd54400868c5a9a8241cdbaaa233bff38bbeb65a5e91dedc2e",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8000000003000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000078629535"
+        },
+        {
+          "key_hex": "4e494e4c494c000106400105208434dbf6d6f14c86d85836e72bbac4e89447d33ae7c7ddca86d8a22599d9a5a3",
+          "value_hex": "4e4c523100060001000002880001400000000000000000018434dbf6d6f14c86d85836e72bbac4e8d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d10000000000000000000000000000000000000000000000000000000000000000000002280050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d10000000000000000000000000000040001000000000000000000017100000000000000000000000000009900000000000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002016e0173016300000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf1600000000000000011100000000000000000000000000002200000000000003e80000000000000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae42811aa19279b6fa8c31234eefacc8c94f5a7f310bf7e3843f3ee0a928eb81730e49e6469f8506bc4c122c93c0518d63db473186c53bec480db01e474a89768c7ec5413e"
+        },
+        {
+          "key_hex": "4e494e4c494c000106410105209b042c5f455bb88da968244dba0e2d1c888067c4e657435119a629abd43e8451",
+          "value_hex": "4e4c523100060001000001da0001410000000000000000018434dbf6d6f14c86d85836e72bbac4e8c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c20000017a0050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697917100000000000000000000000000009900000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000000000000000000000000000000000000000000007938131f"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 23,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "finalize",
+          "expected_status": "OK"
+        }
+      ],
+      "d1_refs": [
+        "DSB2_STATE_TYPED",
+        "DSB2_ANCHOR_TYPED",
+        "DSB3_RC_CANCEL_FIRST_TYPED",
+        "DSB3_DLV_APP_DS_TYPED",
+        "DSB3_EV_TX_SUM_EMPTY_TYPED",
+        "DSB3_EV_TX_RAW_UNUSED_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB2_STATE_TYPED",
+        "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "TX retained STATE carrier (first FOCUS)"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB3_RC_CANCEL_FIRST_TYPED",
+        "key_hex": "4e494e4c494c000106410105209b042c5f455bb88da968244dba0e2d1c888067c4e657435119a629abd43e8451",
+        "value_hex": "4e4c523100060001000001da0001410000000000000000018434dbf6d6f14c86d85836e72bbac4e8c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c20000017a0050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697917100000000000000000000000000009900000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000000000000000000000000000000000000000000007938131f",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "CANCEL_FIRST last FOCUS; declared_L scratch ends 0"
+      },
+      "row_refs": [],
+      "notes": "P1-C1 formal anti last-declared_L: TX retained legal slots 0..L (L=3) coexist with CANCEL_FIRST empty evidence set. Fixture key order STATE < RC \u21d2 CANCEL is last Mode23 carrier FOCUS and ctx.declared_L ends 0. BIND must use per-row carrier shape + profile L \u2014 not declared_L \u2014 so TX evidence COMPLETE green. mutation_calls=0.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (45-vector suffix on frozen 133-prefix only)",
+      "expected": {
+        "final_status": "OK",
+        "adopted": 1,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 8,
+        "ok_row_count": 25,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 5,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 0,
+        "sticky_primary": "",
+        "d3_peer_get_count": 12,
+        "d3_mode_applicable_count": 4,
+        "phase": 15,
+        "count_complete_mask": 4,
+        "binding_complete_mask": 4,
+        "flags": 9
+      }
+    },
+    {
+      "id": "D3S2_M23_MULTI_OWNER_TX_BEFORE_CANCEL_EV_CORRUPT",
+      "kind": "mode23_multi_owner_tx_before_cancel_ev_corrupt",
+      "mode": 23,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105204f78c58269fa4530322f7f0b495ba5a6d3c6944cb7a03bf162d901d44910993d",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000200010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003253c30b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001063201052066091a2bfc9ea805dd5bda9f2f4a63ab4350912c25eeada9891243b352f89fc1",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80000000010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ec003949"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520669e93da2279e8299e256105778ca66309d96af51e2ea39f00b1f40f673ef11a",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010001001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008d4b2b5b"
+        },
+        {
+          "key_hex": "4e494e4c494c000106320105208863cb367ad343cd54400868c5a9a8241cdbaaa233bff38bbeb65a5e91dedc2e",
+          "value_hex": "4e4c5231000600010000033e000132000000000000000001710000000000000000000000000000994444444444444444444444444444444444444444444444444444444444444444f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea000002de00010002001071000000000000000000000000000099d05fc7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb6162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8000000003000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000078629535"
+        },
+        {
+          "key_hex": "4e494e4c494c00010632010520d1f7c4b3723402b66a586246e0666f49460c4b1f16feb4b9711105dee82f0ab7",
+          "value_hex": "4e4c5231000600010000037e0001320000000000000000018434dbf6d6f14c86d85836e72bbac4e84444444444444444444444444444444444444444444444444444444444444444830ca74af7f61076c2d9cd1bae48789bee503d4b9a8bdf463a1bcfb555eb1fff0000031e000200010050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697916162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003b8a452c"
+        },
+        {
+          "key_hex": "4e494e4c494c000106400105208434dbf6d6f14c86d85836e72bbac4e89447d33ae7c7ddca86d8a22599d9a5a3",
+          "value_hex": "4e4c523100060001000002880001400000000000000000018434dbf6d6f14c86d85836e72bbac4e8d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d10000000000000000000000000000000000000000000000000000000000000000000002280050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d10000000000000000000000000000040001000000000000000000017100000000000000000000000000009900000000000000000000000000000000b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002016e0173016300000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf1600000000000000011100000000000000000000000000002200000000000003e80000000000000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae42811aa19279b6fa8c31234eefacc8c94f5a7f310bf7e3843f3ee0a928eb81730e49e6469f8506bc4c122c93c0518d63db473186c53bec480db01e474a89768c7ec5413e"
+        },
+        {
+          "key_hex": "4e494e4c494c000106410105209b042c5f455bb88da968244dba0e2d1c888067c4e657435119a629abd43e8451",
+          "value_hex": "4e4c523100060001000001da0001410000000000000000018434dbf6d6f14c86d85836e72bbac4e8c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c20000017a0050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697917100000000000000000000000000009900000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000000000000000000000000000000000000000000007938131f"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 23,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE_CORRUPT"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE_CORRUPT"
+        }
+      ],
+      "d1_refs": [
+        "DSB2_STATE_TYPED",
+        "DSB2_ANCHOR_TYPED",
+        "DSB3_RC_CANCEL_FIRST_TYPED",
+        "DSB3_DLV_APP_DS_TYPED",
+        "DSB3_EV_TX_SUM_EMPTY_TYPED",
+        "DSB3_EV_TX_RAW_UNUSED_TYPED",
+        "DSB3_EV_DLV_SUM_EMPTY_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB2_STATE_TYPED",
+        "key_hex": "4e494e4c494c0001062201021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000001400001220000000000000000017100000000000000000000000000009944444444444444444444444444444444444444444444444444444444444444445555555555555555555555555555555555555555555555555555555555555555000000e071000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb533f29e54b1df763abd98227e034b4065f00000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f10000000000000000000000000000060000000000000001000000000000000200000001000000000000000000000000aee76e95",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "TX STATE carrier (sorts before RC)"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB3_EV_DLV_SUM_EMPTY_TYPED",
+        "key_hex": "4e494e4c494c00010632010520d1f7c4b3723402b66a586246e0666f49460c4b1f16feb4b9711105dee82f0ab7",
+        "value_hex": "4e4c5231000600010000037e0001320000000000000000018434dbf6d6f14c86d85836e72bbac4e84444444444444444444444444444444444444444444444444444444444444444830ca74af7f61076c2d9cd1bae48789bee503d4b9a8bdf463a1bcfb555eb1fff0000031e000200010050b1000000000000000000000000000002a100000000000000000000000000000171000000000000000000000000000099c1000000000000000000000000000003d1000000000000000000000000000004b1f296946ec84c2a502f96dafe52d8a2154a70263b1caaf4100b2388385697916162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f800000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003b8a452c",
+        "mutations": [
+          {
+            "offset": 72,
+            "old_hex": "9192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0",
+            "new_hex": "830ca74af7f61076c2d9cd1bae48789bee503d4b9a8bdf463a1bcfb555eb1fff",
+            "recompute": "crc32c_trailer",
+            "directive": "write_pvd_then_crc32c"
+          }
+        ],
+        "expect_presence": "PRESENT",
+        "note": "CANCEL owner Evidence after TX EVIDENCE keys in lex order"
+      },
+      "row_refs": [],
+      "notes": "P1-C1 formal: multi-owner TX legal 0..L + CANCEL_FIRST with slot0 Evidence. Computed fixture key order STATE < RC (CANCEL last FOCUS) and all TX EVIDENCE keys < EV_DLV so BIND walks legal TX secondaries first then notes CANCEL shape corrupt after carrier get. Profile-only L would false-accept slot0; last declared_L is 0 and is not authority. mutation_calls=0.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (45-vector suffix on frozen 133-prefix only)",
+      "expected": {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 9,
+        "ok_row_count": 26,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 5,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "get",
+          "iter_next",
+          "get",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": 13,
+        "d3_mode_applicable_count": 5,
+        "phase": 16,
+        "count_complete_mask": 4,
+        "binding_complete_mask": 0,
+        "flags": 5
       }
     }
   ]

@@ -2552,6 +2552,815 @@ int test_d3s2_mode23_nonempty_success(void)
     return 0;
 }
 
+/*
+ * Encode TX EVIDENCE from a D1 typed template with independent slot/kind/
+ * state/counter/late_material patches + composite rekey + PVD→ANCHOR.
+ * Production codec only; does not re-implement scanner judgments.
+ */
+static int encode_tx_evidence_from_template(
+    const uint8_t *template_value,
+    uint32_t template_len,
+    uint32_t slot_index,
+    uint16_t cell_kind,
+    uint16_t cell_state,
+    uint64_t valid_material_count,
+    uint64_t raw_overflow_count,
+    uint64_t late_evidence_count,
+    uint32_t late_material,
+    const uint8_t anchor_pvd[32],
+    uint8_t *out_key,
+    uint32_t key_cap,
+    uint32_t *out_key_len,
+    uint8_t *out_value,
+    uint32_t value_cap,
+    uint32_t *out_value_len)
+{
+    ninlil_bytes_view_t vv;
+    ninlil_model_domain_envelope_t env;
+    ninlil_model_domain_body_evidence_cell_t body;
+    ninlil_model_domain_common_header_t hdr;
+    uint8_t owner_raw[16];
+    uint8_t bodybuf[NINLIL_MODEL_DOMAIN_BODY_EVIDENCE_CELL_MAX];
+    uint32_t blen = 0u;
+    ninlil_bytes_view_t bodyv;
+    uint8_t components[2u + 2u + 16u + 4u];
+    ninlil_bytes_view_t components_view;
+    ninlil_model_domain_digest_t composite;
+    ninlil_bytes_view_t identity;
+    ninlil_model_domain_key_t key;
+
+    if (template_value == NULL || anchor_pvd == NULL || out_key == NULL
+        || out_key_len == NULL || out_value == NULL || out_value_len == NULL
+        || slot_index > 8u) {
+        return 0;
+    }
+
+    vv.data = template_value;
+    vv.length = template_len;
+    if (ninlil_model_domain_decode_envelope(vv, &env) != NINLIL_OK
+        || ninlil_model_domain_decode_body_evidence_cell(env.body, &body)
+            != NINLIL_OK
+        || body.evidence_owner_kind
+            != NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_TRANSACTION
+        || body.owner_key_raw_length != 16u
+        || body.owner_key_raw == NULL) {
+        return 0;
+    }
+
+    (void)memcpy(owner_raw, body.owner_key_raw, 16u);
+    body.owner_key_raw = owner_raw;
+    body.owner_key_raw_length = 16u;
+    body.slot_index = slot_index;
+    body.cell_kind = cell_kind;
+    body.cell_state = cell_state;
+    body.late_material = late_material;
+    if (cell_kind == NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_SUMMARY) {
+        body.valid_material_count = valid_material_count;
+        body.raw_overflow_count = raw_overflow_count;
+        body.late_evidence_count = late_evidence_count;
+        body.exact_duplicate_count = 0u;
+        body.counter_saturated = 0u;
+    } else {
+        body.valid_material_count = 0u;
+        body.exact_duplicate_count = 0u;
+        body.raw_overflow_count = 0u;
+        body.late_evidence_count = 0u;
+        body.counter_saturated = 0u;
+        if (cell_state == NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_UNUSED) {
+            body.highest_receipt_stage = 0u;
+            body.latest_evidence_stage = 0u;
+            body.material_receipt_stage = 0u;
+            body.late_material = 0u;
+        }
+    }
+
+    if (ninlil_model_domain_encode_body_evidence_cell(
+            &body, bodybuf, (uint32_t)sizeof(bodybuf), &blen)
+        != NINLIL_OK) {
+        return 0;
+    }
+
+    components[0] = (uint8_t)((NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_TRANSACTION
+                                  >> 8)
+        & 0xffu);
+    components[1] =
+        (uint8_t)(NINLIL_MODEL_DOMAIN_EVIDENCE_OWNER_TRANSACTION & 0xffu);
+    components[2] = 0u;
+    components[3] = 16u;
+    (void)memcpy(&components[4], owner_raw, 16u);
+    components[20] = (uint8_t)((slot_index >> 24) & 0xffu);
+    components[21] = (uint8_t)((slot_index >> 16) & 0xffu);
+    components[22] = (uint8_t)((slot_index >> 8) & 0xffu);
+    components[23] = (uint8_t)(slot_index & 0xffu);
+    components_view.data = components;
+    components_view.length = 24u;
+    if (ninlil_model_domain_composite_digest(
+            NINLIL_MODEL_DOMAIN_SUBTYPE_EVIDENCE_CELL, components_view,
+            &composite)
+        != NINLIL_OK) {
+        return 0;
+    }
+    identity.data = composite.bytes;
+    identity.length = 32u;
+    if (ninlil_model_domain_build_key(
+            NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN,
+            NINLIL_MODEL_DOMAIN_SUBTYPE_EVIDENCE_CELL,
+            NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE, identity, &key)
+        != NINLIL_OK
+        || key.length > key_cap) {
+        return 0;
+    }
+    (void)memcpy(out_key, key.bytes, key.length);
+    *out_key_len = key.length;
+
+    hdr = env.header;
+    hdr.body_length = blen;
+    bodyv.data = bodybuf;
+    bodyv.length = blen;
+    if (ninlil_model_domain_encode_envelope(
+            env.record_type, &hdr, bodyv, out_value, value_cap, out_value_len)
+        != NINLIL_OK) {
+        return 0;
+    }
+    return patch_pvd_crc(out_value, *out_value_len, anchor_pvd);
+}
+
+static int sort_evidence_rows_by_key(
+    uint8_t (*keys)[NINLIL_MODEL_DOMAIN_KEY_MAX_BYTES],
+    uint32_t *key_lens,
+    uint8_t (*values)[1024],
+    uint32_t *value_lens,
+    uint32_t row_count)
+{
+    uint32_t i;
+    uint32_t j;
+    for (i = 1u; i < row_count; i += 1u) {
+        uint8_t ck[NINLIL_MODEL_DOMAIN_KEY_MAX_BYTES];
+        uint8_t cv[1024];
+        uint32_t ckl = key_lens[i];
+        uint32_t cvl = value_lens[i];
+        (void)memcpy(ck, keys[i], ckl);
+        (void)memcpy(cv, values[i], cvl);
+        j = i;
+        while (j > 0u && memcmp(keys[j - 1u], ck, ckl) > 0) {
+            (void)memcpy(keys[j], keys[j - 1u], key_lens[j - 1u]);
+            key_lens[j] = key_lens[j - 1u];
+            (void)memcpy(values[j], values[j - 1u], value_lens[j - 1u]);
+            value_lens[j] = value_lens[j - 1u];
+            j -= 1u;
+        }
+        (void)memcpy(keys[j], ck, ckl);
+        key_lens[j] = ckl;
+        (void)memcpy(values[j], cv, cvl);
+        value_lens[j] = cvl;
+    }
+    return 1;
+}
+
+/*
+ * P1-C1 repro/regression (docs/17 §18.13.12.1 / §18.13.15 cases 3,19):
+ * slots 0..L coherent empty equation + extra RAW slot L+1 (D1 typed-valid
+ * slot<=8, same owner/PVD). FOCUS matrix green; without BIND slot legality
+ * production false-COMPLETE'd. With Normative fix: BIND notes STORAGE_CORRUPT.
+ */
+static int test_d3s2_p1c1_mode23_illegal_slot_L_plus_1_corrupt(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t anchor_pvd[32];
+    uint8_t L;
+    uint32_t slot;
+    uint32_t row_count;
+    uint32_t i;
+    int guard;
+    uint8_t keys[9][NINLIL_MODEL_DOMAIN_KEY_MAX_BYTES];
+    uint32_t key_lens[9];
+    uint8_t values[9][1024];
+    uint32_t value_lens[9];
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    L = (uint8_t)candidate.limits.max_evidence_per_target;
+    REQUIRE(L == 3u);
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_STATE_TYPED_KEY, DSB2_STATE_TYPED_KEY_LEN,
+        DSB2_STATE_TYPED_VALUE, DSB2_STATE_TYPED_VALUE_LEN));
+
+    /* slots 0..L + illegal L+1 */
+    row_count = (uint32_t)L + 2u;
+    for (slot = 0u; slot < row_count; slot += 1u) {
+        if (slot == 0u) {
+            REQUIRE(encode_tx_evidence_from_template(
+                DSB3_EV_TX_SUM_EMPTY_TYPED_VALUE,
+                (uint32_t)DSB3_EV_TX_SUM_EMPTY_TYPED_VALUE_LEN, 0u,
+                NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_SUMMARY,
+                NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_MATERIALIZED, 0u, 0u,
+                0u, 0u, anchor_pvd, keys[slot],
+                (uint32_t)sizeof(keys[slot]), &key_lens[slot], values[slot],
+                (uint32_t)sizeof(values[slot]), &value_lens[slot]));
+        } else {
+            REQUIRE(encode_tx_evidence_from_template(
+                NINLIL_D3S2_WIRE_EV_TX_RAW_UNUSED_VALUE,
+                (uint32_t)NINLIL_D3S2_WIRE_EV_TX_RAW_UNUSED_VALUE_LEN, slot,
+                NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_RAW,
+                NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_UNUSED, 0u, 0u, 0u,
+                0u, anchor_pvd, keys[slot], (uint32_t)sizeof(keys[slot]),
+                &key_lens[slot], values[slot], (uint32_t)sizeof(values[slot]),
+                &value_lens[slot]));
+        }
+    }
+    REQUIRE(sort_evidence_rows_by_key(
+        keys, key_lens, values, value_lens, row_count));
+    for (i = 0u; i < row_count; i += 1u) {
+        REQUIRE(add_domain_row(
+            &spy, keys[i], (size_t)key_lens[i], values[i],
+            (size_t)value_lens[i]));
+    }
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 23u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    guard = 0;
+    st = NINLIL_OK;
+    while (session.has_sticky_primary == 0u
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        guard += 1;
+    }
+    /*
+     * Normative: illegal slot L+1 → note_terminal_corrupt STORAGE_CORRUPT.
+     * Pre-fix production: FOCUS green + BIND without slot legality → COMPLETE
+     * (measured on origin/main; this unit fails under that regression).
+     */
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.has_sticky_primary == 1u);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(
+        (context.flags & NINLIL_DOMAIN_SCAN_D3S2_FLAG_COMPLETE_READY) == 0u);
+    REQUIRE((context.count_complete_mask & NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE)
+        == NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE);
+    REQUIRE(
+        (context.binding_complete_mask & NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE)
+        == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    return 0;
+}
+
+/*
+ * P1-C1: DELIVERY CANCEL_FIRST RESULT_CACHE expects exact 0 evidence cells.
+ * Slot0 SUMMARY for that owner is D1-typed-valid but BIND_EVIDENCE must note
+ * STORAGE_CORRUPT from carrier shape (not profile L alone; slot0 ≤ L).
+ */
+static int test_d3s2_p1c1_mode23_cancel_first_slot0_corrupt(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t dlv_pvd[32];
+    uint8_t ev_value[1024];
+    int guard;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    REQUIRE(compute_value_digest(
+        DSB3_DLV_APP_DS_TYPED_VALUE, (uint32_t)DSB3_DLV_APP_DS_TYPED_VALUE_LEN,
+        dlv_pvd));
+    REQUIRE(sizeof(ev_value) >= DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN);
+    (void)memcpy(
+        ev_value, DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE,
+        DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN);
+    REQUIRE(patch_pvd_crc(
+        ev_value, (uint32_t)DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN, dlv_pvd));
+
+    /* Lex order: EVIDENCE 0x32 < DELIVERY 0x40 < RESULT_CACHE 0x41. */
+    REQUIRE(add_domain_row(
+        &spy, DSB3_EV_DLV_SUM_EMPTY_TYPED_KEY,
+        DSB3_EV_DLV_SUM_EMPTY_TYPED_KEY_LEN, ev_value,
+        (uint32_t)DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_DLV_APP_DS_TYPED_KEY, DSB3_DLV_APP_DS_TYPED_KEY_LEN,
+        DSB3_DLV_APP_DS_TYPED_VALUE, DSB3_DLV_APP_DS_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_RC_CANCEL_FIRST_TYPED_KEY,
+        DSB3_RC_CANCEL_FIRST_TYPED_KEY_LEN,
+        DSB3_RC_CANCEL_FIRST_TYPED_VALUE,
+        DSB3_RC_CANCEL_FIRST_TYPED_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 23u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    guard = 0;
+    st = NINLIL_OK;
+    while (session.has_sticky_primary == 0u
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        guard += 1;
+    }
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(
+        (context.binding_complete_mask & NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE)
+        == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    return 0;
+}
+
+/*
+ * P1-C1 multi-owner anti-pass: TX retained legal 0..L + CANCEL_FIRST empty.
+ * SELECT focuses STATE then RC; last-FOCUS declared_L=0. BIND must not treat
+ * declared_L as authority and must not false-corrupt TX evidence (profile L
+ * + TX carrier shape still allow 0..L).
+ */
+static int test_d3s2_p1c1_mode23_multi_owner_cancel_last_tx_ok(void)
+{
+    typedef struct evidence_fixture_row {
+        uint8_t key[NINLIL_MODEL_DOMAIN_KEY_MAX_BYTES];
+        uint8_t value[1024];
+        uint32_t key_len;
+        uint32_t value_len;
+    } evidence_fixture_row_t;
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t anchor_pvd[32];
+    uint8_t L;
+    uint32_t slot;
+    uint32_t row_count;
+    uint32_t i;
+    uint32_t j;
+    evidence_fixture_row_t rows[9];
+    uint8_t required = NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE;
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    L = (uint8_t)candidate.limits.max_evidence_per_target;
+    REQUIRE(L >= 1u && L <= 8u);
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+
+    /* Fixture complete-key order: STATE subtype 0x22 < RC 0x41 ⇒ CANCEL last
+     * Mode23 carrier FOCUS (declared_L ends 0). */
+    REQUIRE(DSB2_STATE_TYPED_KEY[9] == 0x22u);
+    REQUIRE(DSB3_RC_CANCEL_FIRST_TYPED_KEY[9] == 0x41u);
+    REQUIRE(DSB2_STATE_TYPED_KEY[9] < DSB3_RC_CANCEL_FIRST_TYPED_KEY[9]);
+
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_STATE_TYPED_KEY, DSB2_STATE_TYPED_KEY_LEN,
+        DSB2_STATE_TYPED_VALUE, DSB2_STATE_TYPED_VALUE_LEN));
+
+    row_count = (uint32_t)L + 1u;
+    (void)memset(rows, 0, sizeof(rows));
+    for (slot = 0u; slot < row_count; slot += 1u) {
+        REQUIRE(encode_tx_evidence_cell_slot(slot, anchor_pvd, rows[slot].key,
+            (uint32_t)sizeof(rows[slot].key), &rows[slot].key_len,
+            rows[slot].value, (uint32_t)sizeof(rows[slot].value),
+            &rows[slot].value_len));
+    }
+    for (i = 1u; i < row_count; i += 1u) {
+        evidence_fixture_row_t current = rows[i];
+        j = i;
+        while (j > 0u
+            && memcmp(rows[j - 1u].key, current.key, current.key_len) > 0) {
+            rows[j] = rows[j - 1u];
+            j -= 1u;
+        }
+        rows[j] = current;
+    }
+    /* ANCHOR/STATE < EVIDENCE 0x32 < DELIVERY < RESULT_CACHE. */
+    for (i = 0u; i < row_count; i += 1u) {
+        REQUIRE(add_domain_row(&spy, rows[i].key, (size_t)rows[i].key_len,
+            rows[i].value, (size_t)rows[i].value_len));
+    }
+    REQUIRE(add_domain_row(
+        &spy, DSB3_DLV_APP_DS_TYPED_KEY, DSB3_DLV_APP_DS_TYPED_KEY_LEN,
+        DSB3_DLV_APP_DS_TYPED_VALUE, DSB3_DLV_APP_DS_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_RC_CANCEL_FIRST_TYPED_KEY,
+        DSB3_RC_CANCEL_FIRST_TYPED_KEY_LEN,
+        DSB3_RC_CANCEL_FIRST_TYPED_VALUE,
+        DSB3_RC_CANCEL_FIRST_TYPED_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 23u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+    REQUIRE(drive_s2_to_complete_exact(&session, &context));
+    REQUIRE(session.has_sticky_primary == 0u);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE);
+    /* Last FOCUS was CANCEL_FIRST → declared_L scratch is 0. */
+    REQUIRE(context.declared_L == 0u);
+    REQUIRE((context.count_complete_mask & required) == required);
+    REQUIRE((context.binding_complete_mask & required) == required);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_OK);
+    return 0;
+}
+
+/*
+ * P1-C1 multi-owner: TX legal 0..L + CANCEL_FIRST with slot0 Evidence.
+ * Even with coexisting legal TX owner, CANCEL_FIRST any Evidence row is
+ * STORAGE_CORRUPT (carrier shape; profile-only L would false-accept slot0).
+ */
+static int test_d3s2_p1c1_mode23_multi_owner_cancel_slot0_corrupt(void)
+{
+    typedef struct evidence_fixture_row {
+        uint8_t key[NINLIL_MODEL_DOMAIN_KEY_MAX_BYTES];
+        uint8_t value[1024];
+        uint32_t key_len;
+        uint32_t value_len;
+    } evidence_fixture_row_t;
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t anchor_pvd[32];
+    uint8_t dlv_pvd[32];
+    uint8_t ev_value[1024];
+    uint8_t L;
+    uint32_t slot;
+    uint32_t row_count;
+    uint32_t i;
+    uint32_t j;
+    int guard;
+    evidence_fixture_row_t rows[9];
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    L = (uint8_t)candidate.limits.max_evidence_per_target;
+    REQUIRE(L >= 1u && L <= 8u);
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+    REQUIRE(compute_value_digest(
+        DSB3_DLV_APP_DS_TYPED_VALUE, (uint32_t)DSB3_DLV_APP_DS_TYPED_VALUE_LEN,
+        dlv_pvd));
+    REQUIRE(sizeof(ev_value) >= DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN);
+    (void)memcpy(
+        ev_value, DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE,
+        DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN);
+    REQUIRE(patch_pvd_crc(
+        ev_value, (uint32_t)DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN, dlv_pvd));
+
+    /* Carrier order: STATE subtype < RC CANCEL (CANCEL last FOCUS). */
+    REQUIRE(DSB2_STATE_TYPED_KEY[9] < DSB3_RC_CANCEL_FIRST_TYPED_KEY[9]);
+
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_STATE_TYPED_KEY, DSB2_STATE_TYPED_KEY_LEN,
+        DSB2_STATE_TYPED_VALUE, DSB2_STATE_TYPED_VALUE_LEN));
+
+    row_count = (uint32_t)L + 1u;
+    (void)memset(rows, 0, sizeof(rows));
+    for (slot = 0u; slot < row_count; slot += 1u) {
+        REQUIRE(encode_tx_evidence_cell_slot(slot, anchor_pvd, rows[slot].key,
+            (uint32_t)sizeof(rows[slot].key), &rows[slot].key_len,
+            rows[slot].value, (uint32_t)sizeof(rows[slot].value),
+            &rows[slot].value_len));
+    }
+    for (i = 1u; i < row_count; i += 1u) {
+        evidence_fixture_row_t current = rows[i];
+        j = i;
+        while (j > 0u
+            && memcmp(rows[j - 1u].key, current.key, current.key_len) > 0) {
+            rows[j] = rows[j - 1u];
+            j -= 1u;
+        }
+        rows[j] = current;
+    }
+    for (i = 0u; i < row_count; i += 1u) {
+        REQUIRE(memcmp(rows[i].key, DSB3_EV_DLV_SUM_EMPTY_TYPED_KEY,
+                    rows[i].key_len < DSB3_EV_DLV_SUM_EMPTY_TYPED_KEY_LEN
+                        ? rows[i].key_len
+                        : DSB3_EV_DLV_SUM_EMPTY_TYPED_KEY_LEN)
+            < 0);
+        REQUIRE(add_domain_row(&spy, rows[i].key, (size_t)rows[i].key_len,
+            rows[i].value, (size_t)rows[i].value_len));
+    }
+    REQUIRE(add_domain_row(
+        &spy, DSB3_EV_DLV_SUM_EMPTY_TYPED_KEY,
+        DSB3_EV_DLV_SUM_EMPTY_TYPED_KEY_LEN, ev_value,
+        (uint32_t)DSB3_EV_DLV_SUM_EMPTY_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_DLV_APP_DS_TYPED_KEY, DSB3_DLV_APP_DS_TYPED_KEY_LEN,
+        DSB3_DLV_APP_DS_TYPED_VALUE, DSB3_DLV_APP_DS_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB3_RC_CANCEL_FIRST_TYPED_KEY,
+        DSB3_RC_CANCEL_FIRST_TYPED_KEY_LEN,
+        DSB3_RC_CANCEL_FIRST_TYPED_VALUE,
+        DSB3_RC_CANCEL_FIRST_TYPED_VALUE_LEN));
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 23u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    guard = 0;
+    st = NINLIL_OK;
+    while (session.has_sticky_primary == 0u
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        guard += 1;
+    }
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    /* Last FOCUS was CANCEL (declared_L=0); still found CANCEL slot0. */
+    REQUIRE(context.declared_L == 0u);
+    REQUIRE(
+        (context.binding_complete_mask & NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE)
+        == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    return 0;
+}
+
+/*
+ * P1-C1: equation fail — all slots 0..L PRESENT, SUMMARY counters D1-valid,
+ * valid_material_count != M + raw_overflow_count → FOCUS close CORRUPT.
+ */
+static int test_d3s2_p1c1_mode23_equation_fail_corrupt(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t anchor_pvd[32];
+    uint8_t L;
+    uint32_t slot;
+    uint32_t row_count;
+    uint32_t i;
+    int guard;
+    uint8_t keys[8][NINLIL_MODEL_DOMAIN_KEY_MAX_BYTES];
+    uint32_t key_lens[8];
+    uint8_t values[8][1024];
+    uint32_t value_lens[8];
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    L = (uint8_t)candidate.limits.max_evidence_per_target;
+    REQUIRE(L >= 1u && L <= 8u);
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_STATE_TYPED_KEY, DSB2_STATE_TYPED_KEY_LEN,
+        DSB2_STATE_TYPED_VALUE, DSB2_STATE_TYPED_VALUE_LEN));
+
+    /* SUMMARY valid=2 overflow=0 late=0 (D1: overflow<=valid, late_mat==0);
+     * RAW slot1 MATERIALIZED (M=1); slots 2..L UNUSED → 2 != 1+0. */
+    row_count = (uint32_t)L + 1u;
+    REQUIRE(encode_tx_evidence_from_template(
+        NINLIL_D3S2_WIRE_EV_TX_SUM_MAT_LEN0_VALUE,
+        (uint32_t)NINLIL_D3S2_WIRE_EV_TX_SUM_MAT_LEN0_VALUE_LEN, 0u,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_SUMMARY,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_MATERIALIZED, 2u, 0u, 0u, 0u,
+        anchor_pvd, keys[0], (uint32_t)sizeof(keys[0]), &key_lens[0],
+        values[0], (uint32_t)sizeof(values[0]), &value_lens[0]));
+    REQUIRE(encode_tx_evidence_from_template(
+        NINLIL_D3S2_WIRE_EV_TX_RAW_MAT_VALUE,
+        (uint32_t)NINLIL_D3S2_WIRE_EV_TX_RAW_MAT_VALUE_LEN, 1u,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_RAW,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_MATERIALIZED, 0u, 0u, 0u, 0u,
+        anchor_pvd, keys[1], (uint32_t)sizeof(keys[1]), &key_lens[1],
+        values[1], (uint32_t)sizeof(values[1]), &value_lens[1]));
+    for (slot = 2u; slot < row_count; slot += 1u) {
+        REQUIRE(encode_tx_evidence_from_template(
+            NINLIL_D3S2_WIRE_EV_TX_RAW_UNUSED_VALUE,
+            (uint32_t)NINLIL_D3S2_WIRE_EV_TX_RAW_UNUSED_VALUE_LEN, slot,
+            NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_RAW,
+            NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_UNUSED, 0u, 0u, 0u, 0u,
+            anchor_pvd, keys[slot], (uint32_t)sizeof(keys[slot]),
+            &key_lens[slot], values[slot], (uint32_t)sizeof(values[slot]),
+            &value_lens[slot]));
+    }
+    REQUIRE(sort_evidence_rows_by_key(
+        keys, key_lens, values, value_lens, row_count));
+    for (i = 0u; i < row_count; i += 1u) {
+        REQUIRE(add_domain_row(
+            &spy, keys[i], (size_t)key_lens[i], values[i],
+            (size_t)value_lens[i]));
+    }
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 23u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    guard = 0;
+    st = NINLIL_OK;
+    while (session.has_sticky_primary == 0u
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        guard += 1;
+    }
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(
+        (context.count_complete_mask & NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE)
+        == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    return 0;
+}
+
+/*
+ * P1-C1: late coherence fail — equation green, RAW MATERIALIZED late_material=1
+ * but SUMMARY late_evidence_count=0 (D1 same-record: SUMMARY late_mat==0).
+ * observed_c > declared_c → FOCUS CORRUPT. Not false declared_c==observed_c.
+ */
+static int test_d3s2_p1c1_mode23_late_coherence_fail_corrupt(void)
+{
+    ninlil_scripted_storage_spy_t spy;
+    ninlil_domain_scan_session_t session;
+    ninlil_domain_scan_workspace_t workspace;
+    ninlil_domain_scan_d3s2_context_t context;
+    ninlil_domain_scan_result_t result;
+    ninlil_model_runtime_store_binding_t candidate;
+    ninlil_storage_handle_t handle;
+    const ninlil_storage_ops_t *ops;
+    ninlil_status_t st;
+    uint8_t anchor_pvd[32];
+    uint8_t L;
+    uint32_t slot;
+    uint32_t row_count;
+    uint32_t i;
+    int guard;
+    uint8_t keys[8][NINLIL_MODEL_DOMAIN_KEY_MAX_BYTES];
+    uint32_t key_lens[8];
+    uint8_t values[8][1024];
+    uint32_t value_lens[8];
+
+    ninlil_spy_init(&spy);
+    ops = ninlil_spy_ops(&spy);
+    handle = ninlil_spy_open_handle(&spy);
+    REQUIRE(install_full_profile(&spy, &candidate));
+    L = (uint8_t)candidate.limits.max_evidence_per_target;
+    REQUIRE(L >= 1u && L <= 8u);
+    REQUIRE(compute_value_digest(
+        DSB2_ANCHOR_TYPED_VALUE, (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN,
+        anchor_pvd));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_ANCHOR_TYPED_KEY, DSB2_ANCHOR_TYPED_KEY_LEN,
+        DSB2_ANCHOR_TYPED_VALUE, DSB2_ANCHOR_TYPED_VALUE_LEN));
+    REQUIRE(add_domain_row(
+        &spy, DSB2_STATE_TYPED_KEY, DSB2_STATE_TYPED_KEY_LEN,
+        DSB2_STATE_TYPED_VALUE, DSB2_STATE_TYPED_VALUE_LEN));
+
+    /* valid=1 overflow=0 late=0 late_mat=0; M=1 late RAW → eq green; late 1>0 */
+    row_count = (uint32_t)L + 1u;
+    REQUIRE(encode_tx_evidence_from_template(
+        NINLIL_D3S2_WIRE_EV_TX_SUM_MAT_LEN0_VALUE,
+        (uint32_t)NINLIL_D3S2_WIRE_EV_TX_SUM_MAT_LEN0_VALUE_LEN, 0u,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_SUMMARY,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_MATERIALIZED, 1u, 0u, 0u, 0u,
+        anchor_pvd, keys[0], (uint32_t)sizeof(keys[0]), &key_lens[0],
+        values[0], (uint32_t)sizeof(values[0]), &value_lens[0]));
+    REQUIRE(encode_tx_evidence_from_template(
+        NINLIL_D3S2_WIRE_EV_TX_RAW_MAT_VALUE,
+        (uint32_t)NINLIL_D3S2_WIRE_EV_TX_RAW_MAT_VALUE_LEN, 1u,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_RAW,
+        NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_MATERIALIZED, 0u, 0u, 0u, 1u,
+        anchor_pvd, keys[1], (uint32_t)sizeof(keys[1]), &key_lens[1],
+        values[1], (uint32_t)sizeof(values[1]), &value_lens[1]));
+    for (slot = 2u; slot < row_count; slot += 1u) {
+        REQUIRE(encode_tx_evidence_from_template(
+            NINLIL_D3S2_WIRE_EV_TX_RAW_UNUSED_VALUE,
+            (uint32_t)NINLIL_D3S2_WIRE_EV_TX_RAW_UNUSED_VALUE_LEN, slot,
+            NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_KIND_RAW,
+            NINLIL_MODEL_DOMAIN_EVIDENCE_CELL_STATE_UNUSED, 0u, 0u, 0u, 0u,
+            anchor_pvd, keys[slot], (uint32_t)sizeof(keys[slot]),
+            &key_lens[slot], values[slot], (uint32_t)sizeof(values[slot]),
+            &value_lens[slot]));
+    }
+    REQUIRE(sort_evidence_rows_by_key(
+        keys, key_lens, values, value_lens, row_count));
+    for (i = 0u; i < row_count; i += 1u) {
+        REQUIRE(add_domain_row(
+            &spy, keys[i], (size_t)key_lens[i], values[i],
+            (size_t)value_lens[i]));
+    }
+
+    ninlil_domain_scan_session_init(&session);
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&context, 0, sizeof(context));
+    st = ninlil_domain_scan_begin_profiled_d3s2(
+        &session, ops, &handle, &workspace, &candidate, 23u, &context);
+    REQUIRE(st == NINLIL_OK);
+    REQUIRE(drive_baseline_to_internal(&session, &context));
+
+    guard = 0;
+    st = NINLIL_OK;
+    while (session.has_sticky_primary == 0u
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED
+        && context.phase != NINLIL_DOMAIN_SCAN_D3S2_PHASE_COMPLETE
+        && guard < 64) {
+        st = ninlil_domain_scan_d3s2_drive(&session, 256u);
+        guard += 1;
+    }
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+    REQUIRE(
+        (context.count_complete_mask & NINLIL_DOMAIN_SCAN_D3S2_MASK_EVIDENCE)
+        == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    st = ninlil_domain_scan_abort(&session, &result);
+    REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
+    return 0;
+}
+
 /* Mode25 CUM total=0: no RECENT rows are expected, CUM remains present. */
 int test_d3s2_mode25_retry_zero_success(void)
 {
@@ -3644,6 +4453,24 @@ int ninlil_d3s2_run_all_tests(void)
         return 1;
     }
     if (test_d3s2_mode23_nonempty_success() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p1c1_mode23_illegal_slot_L_plus_1_corrupt() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p1c1_mode23_cancel_first_slot0_corrupt() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p1c1_mode23_multi_owner_cancel_last_tx_ok() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p1c1_mode23_multi_owner_cancel_slot0_corrupt() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p1c1_mode23_equation_fail_corrupt() != 0) {
+        return 1;
+    }
+    if (test_d3s2_p1c1_mode23_late_coherence_fail_corrupt() != 0) {
         return 1;
     }
     if (test_d3s2_mode25_retry_zero_success() != 0) {
