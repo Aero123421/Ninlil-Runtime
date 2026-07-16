@@ -1250,7 +1250,7 @@ Scanは1 READ_ONLY snapshot上で行う。Current rootだけのprefix scanは禁
 | --- | --- |
 | **D1** | Port call 0のpure key/record/**witness** codecとgolden。witness header/chunk/memberのbyte layout・local encode/decode正本 |
 | **D2** | mutation 0 bounded traversal、Port/shape/transport、lex order、framing/coarse classification、scanner-detectable status集約、same-snapshot exact `get` seam、adopt/finalize/fence。steps 2〜4のscanner到達可能な部分、**step 5のうち same-record/local witness header+chunk framing/matrix のscan到達（D2-S3）**、step 11のtxn/iterator lifetime |
-| **D3** | cross-row semantic / partial group / orphan / cardinality / counter / capacity / health の相互validation。**step 5のうち witness member old/new・partial witness group・successor/supersede chain および他cross-row witness validation**。そのfindingを§16 precedenceへ投入。**Normative architecture / slice ledger 正本は §18（D3-S0 architecture + D3-S1a mode/context freeze docs only + D3-S2a declared multi-count freeze docs only + D3-S3a BLOB lifecycle freeze docs only; **D3-S1 exact-1 implementation complete**; D3-S2 implementation / D3-S3 implementation / D3-S4..S12 / D3 overall pending）** |
+| **D3** | cross-row semantic / partial group / orphan / cardinality / counter / capacity / health の相互validation。**step 5のうち witness member old/new・partial witness group・successor/supersede chain および他cross-row witness validation**。そのfindingを§16 precedenceへ投入。**Normative architecture / slice ledger 正本は §18（D3-S0 architecture + D3-S1a mode/context freeze docs only + D3-S2a declared multi-count freeze docs only + D3-S3a BLOB lifecycle freeze docs only + D3-S4a DSW1 freeze docs only §18.15; **D3-S1 exact-1 implementation complete**; D3-S2/S3/S4 implementation / D3-S5..S12 / D3 overall pending）** |
 | **D4** | recovery mutation / convergence / FULL writer。snapshot終了後の1 item mutationとfresh re-scan接続 |
 
 必要なrecovery mutationはsnapshot終了後、1 item / 1 specific FULL transactionで行い、fresh READ_ONLY scanを先頭から再実行します（D4）。Durable scan cursorは作りません。Crash/reopenは常に先頭からです。Identity比較/rotationは最終scan成功後だけです。
@@ -1576,7 +1576,7 @@ C11実装が満たすべきpublication / unchanged / alias規則:
 
 **「S5 proves D2」の意味（D2-S0）:** S5 completionは、S1〜S5本体と、それらが要求する依存・vector/oracleが**すべて**完了していることの**bounded scanner composition**証明です。S4が未完了のまま（S1/S2/S3はimplementation completeでも **D2 incomplete**）、S5だけをcomplete宣言してはなりません。**D2 completionはS1〜S5 bounded scanner completeを意味し、Stage 5 / public Runtime completionはD3・D4および§1残gateが揃うまでfalseのままです。** S6は統合でありD2証明の代替でもStage 5証明でもありません。S0単独、L2a/L2b1、D1 codec完了、部分vector、body-only completeもD2完了宣言に使ってはなりません。
 
-D3（cross-row semantic / cardinality / capacity / health / **witness member old/new・partial group・successor chain**）とD4（operation別mutation / convergence / FULL writer）は本ledgerの外です。**D3 の architecture / ordered slice ledger（D3-S0..S12）/ hybrid / corruption / outcome ladder 正本は §18。closed exact-1 modes / fixed context / `begin_profiled_d3s1` contract は §18.12（D3-S1a docs freeze; D3-S1 implementation complete は別 slice）。declared multi-count / same-txn multipass contract は §18.13（D3-S2a docs freeze; D3-S2 implementation は別 slice）。BLOB lifecycle / chunk stream contract は §18.14（D3-S3a docs freeze; D3-S3 implementation は別 slice）。** D3-S0 / D3-S1a / D3-S2a / D3-S3a は docs freeze only のまま。**D3-S1 exact-1 implementation は complete** だが **D3-S2 implementation / D3-S3 implementation / D3-S4..S12 / D3 overall / Stage 5 complete は claim しない**。§15 steps 1〜11の最終Stage 5 closed orderと§1 publish gateはD1+D2+D3+D4 compositionのRuntime objectiveのままです。
+D3（cross-row semantic / cardinality / capacity / health / **witness member old/new・partial group・successor chain**）とD4（operation別mutation / convergence / FULL writer）は本ledgerの外です。**D3 の architecture / ordered slice ledger（D3-S0..S12）/ hybrid / corruption / outcome ladder 正本は §18。closed exact-1 modes / fixed context / `begin_profiled_d3s1` contract は §18.12（D3-S1a docs freeze; D3-S1 implementation complete は別 slice）。declared multi-count / same-txn multipass contract は §18.13（D3-S2a docs freeze; D3-S2 implementation は別 slice）。BLOB lifecycle / chunk stream contract は §18.14（D3-S3a docs freeze; D3-S3 implementation は別 slice）。`DSW1_ALL_OLD_NEW` contract は §18.15（D3-S4a docs freeze; D3-S4 implementation は別 slice）。** D3-S0 / D3-S1a / D3-S2a / D3-S3a / D3-S4a は docs freeze only のまま。**D3-S1 exact-1 implementation は complete** だが **D3-S2 implementation / D3-S3 implementation / D3-S4 implementation / D3-S5..S12 / D3 overall / Stage 5 complete は claim しない**。§15 steps 1〜11の最終Stage 5 closed orderと§1 publish gateはD1+D2+D3+D4 compositionのRuntime objectiveのままです。
 
 ### 15.10 D2-S2 profile gateとone-iterator互換（D2-S2 Normative freeze）
 
@@ -1881,7 +1881,7 @@ S2 one-iterator互換・production profiled begin・get completeness・iterator 
 
 ## 17. Mandatory D0/D1/D2 vectors
 
-D3 invariant / vector の slice ownership 表は **§18.6**（D3-S0）。closed exact-1 mode / fixed context は **§18.12**（D3-S1a）。declared multi-count / same-txn multipass は **§18.13**（D3-S2a）。BLOB lifecycle / chunk stream は **§18.14**（D3-S3a）。本節の DSI1 / DSW* / DSC* / DSH1 行は mandatory case 名の正本であり、D3-S0 / D3-S1a / D3-S2a / D3-S3a 単独で green にはならない。
+D3 invariant / vector の slice ownership 表は **§18.6**（D3-S0）。closed exact-1 mode / fixed context は **§18.12**（D3-S1a）。declared multi-count / same-txn multipass は **§18.13**（D3-S2a）。BLOB lifecycle / chunk stream は **§18.14**（D3-S3a）。`DSW1_ALL_OLD_NEW` closed contract は **§18.15**（D3-S4a）。本節の DSI1 / DSW* / DSC* / DSH1 行は mandatory case 名の正本であり、D3-S0 / D3-S1a / D3-S2a / D3-S3a / D3-S4a 単独で green にはならない。
 
 - `DSK1_KEY_CATALOG`: 全subtype exact key golden、unknown kind/subtype/root version
 - `DSV1_RECORD_BOUNDARY`: 各body min/max、4096/4097、chunk 3072/3073、trailing/short/CRC
@@ -1912,7 +1912,7 @@ D3 invariant / vector の slice ownership 表は **§18.6**（D3-S0）。closed 
 | D2-S5 | **実装済み:** `DSR1_SCAN` complete（**D2-detectable** corrupt>future + D3 corruption投入seam）+ `DSR2_ESP_BOUND` complete。sibling oracle **`spec/vectors/domain-scan-composition-v1.json`** / format **`ninlil-domain-scan-composition-v1-d2s5`**（§17.1.5）+ independent generator + production bridge + unit acceptance。S1〜S4 ownership vectorと依存D1 body pin | **S1〜S5+deps で D2（bounded scanner）証明。Stage 5 / D3 / D4 / public Runtime / ESP-IDF / hardware は証明しない**（S6 seam は §15.13 の partial integration） |
 | D2-S6 | **S6a/S6b 実装済み（Stage 5 incomplete）:** 新規D2 oracleを必須化しない。private seam integration matrix + source gates。Stage 5 orchestration integration testはD2完了の代替にもStage 5完了の代替にもならない | S6 successでStage 5 / public Runtime claim禁止 |
 
-D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、**D2 completionはS1〜S5および依存が揃ったmutation 0 bounded scanner composition証明**です（partial group / orphan / counter / capacity / health の正しさは含まない）。D2-S0はNormative固定のみでimplementation pendingです（historical; 現在 D2 は S1–S5 で complete）。**D3-S0（§18 冒頭–§18.11）は architecture docs freeze only。D3-S1a（§18.12）は closed modes / fixed context / private API contract の docs freeze only（historical; 実装完了へ書き換えない）。D3-S1 exact-1 implementation は complete（§18.2 / §18.7 / §18.12.9 current status）。D3-S2a（§18.13）は declared multi-count / same-txn multipass の docs freeze only（historical; 実装完了へ書き換えない）。D3-S3a（§18.14）は BLOB lifecycle / chunk stream の docs freeze only（historical; 実装完了へ書き換えない）。D3-S2 implementation / D3-S3 implementation / D3-S4..S12 と D3 overall は incomplete。** **Stage 5全体・public Runtime・SQLite recoveryの完成はD2完了後も、D3/D4および§1残gateが揃うまで主張しません。**
+D0 completionは本章と12/13/14/16のmirror矛盾0です。D1 completionはPort call 0のkey/record/witness pure codecと全golden、**D2 completionはS1〜S5および依存が揃ったmutation 0 bounded scanner composition証明**です（partial group / orphan / counter / capacity / health の正しさは含まない）。D2-S0はNormative固定のみでimplementation pendingです（historical; 現在 D2 は S1–S5 で complete）。**D3-S0（§18 冒頭–§18.11）は architecture docs freeze only。D3-S1a（§18.12）は closed modes / fixed context / private API contract の docs freeze only（historical; 実装完了へ書き換えない）。D3-S1 exact-1 implementation は complete（§18.2 / §18.7 / §18.12.9 current status）。D3-S2a（§18.13）は declared multi-count / same-txn multipass の docs freeze only（historical; 実装完了へ書き換えない）。D3-S3a（§18.14）は BLOB lifecycle / chunk stream の docs freeze only（historical; 実装完了へ書き換えない）。D3-S4a（§18.15）は DSW1_ALL_OLD_NEW の docs freeze only（historical; 実装完了へ書き換えない）。D3-S2 implementation / D3-S3 implementation / D3-S4 implementation / D3-S5..S12 と D3 overall は incomplete。** **Stage 5全体・public Runtime・SQLite recoveryの完成はD2完了後も、D3/D4および§1残gateが揃うまで主張しません。**
 
 D1は上記case名だけで完了扱いせず、`spec/vectors/domain-store-v1.json`をmachine-readable正本として追加します。各caseはinput semantic fields、expected complete key/value hex、全SHA-256/CRC、expected status、required workspace bytesを持ち、production codecとは独立したvector generatorとのbyte equalityをCI gateにします。D0はformat contract、実hex oracleの追加はD1 deliverableです。**既存`domain-store-v1.json`はD1 authorityのまま残し、D2 scanner/fault/call-trace vectorを同schemaへ押し込めない。**
 
@@ -2293,7 +2293,7 @@ Scanner UNSUPPORTED / CORRUPT / Port / fence status は **exactly propagate**。
 
 #### 15.13.4 Explicit non-claims（必須）
 
-1. **D3** finding correctness（cardinality / orphan / backlink / PVD / health reconstruction）。architecture freeze は §18（D3-S0）+ closed mode/context freeze は §18.12（D3-S1a docs only）+ declared multi-count freeze は §18.13（D3-S2a docs only）+ BLOB lifecycle freeze は §18.14（D3-S3a docs only）。**D3-S1 exact-1 / `DSI1_BACKLINK` core implementation complete**; D3-S2 implementation / D3-S3 implementation / D3-S4..S12 / D3 overall / Stage 5 D3 bind still pending
+1. **D3** finding correctness（cardinality / orphan / backlink / PVD / health reconstruction）。architecture freeze は §18（D3-S0）+ closed mode/context freeze は §18.12（D3-S1a docs only）+ declared multi-count freeze は §18.13（D3-S2a docs only）+ BLOB lifecycle freeze は §18.14（D3-S3a docs only）+ DSW1 freeze は §18.15（D3-S4a docs only）。**D3-S1 exact-1 / `DSI1_BACKLINK` core implementation complete**; D3-S2 implementation / D3-S3 implementation / D3-S4 implementation / D3-S5..S12 / D3 overall / Stage 5 D3 bind still pending
 2. **D4** recovery / metadata mutation / FULL writer beyond L2b1 bootstrap
 3. **identity** comparison / rotation
 4. **health** reconstruction / Stage 9 publish
@@ -2351,7 +2351,8 @@ exact existing 17 clean → `EXISTING_SCAN_ADOPTED_D3_PENDING`; new empty → `N
 | **D3-S2** | declared-count graph families（ATTEMPT / EVIDENCE_CELL `L+1` / REVERSE_REPLY / RETRY / MANAGEMENT 等）および attempt/delivery/result/event ledger の multi-row 部分。**implementation** of §18.13: six mode sessions + same-txn focus multipass + stream/known-slot counts + mode-scoped BIND_* **carrier companion + live primary PVD/raw/pair** + declared A/B/C 照合 | BLOB chunk lifecycle、witness old/new、global capacity、health、SERVICE_QUOTA multi-pass（S9）、CLEANUP phase remaining（S11） |
 | **D3-S3a** | **docs only** BLOB lifecycle Normative freeze（§18.14）: KEY_DIGEST SCAN（single arm）、modes **27..30**、Mode28 view pin+re-SCAN、**expected_semantic_digest / expected_owner_pvd pins**、Mode30 #14 binding + #15 length + #16 RECEIPT tri-match、Mode29 always RESULT setup、untyped orphan、context **754/768**、outer **9920**。**JSON/code/tests 0** | D3-S3 implementation、Stage 5 D3 bind、public Runtime、D3 complete |
 | **D3-S3** | BLOB lifecycle / chunks / multi-chunk stream digest / owner 0·1 cardinality。**implementation** of §18.14: four mode sessions + digest-match SCAN + known-index stream + Mode30 referrer/companion matrix + untyped orphan | witness member old/new、DSW*、capacity double-count 回避以外の global ledger、D4 erase history |
-| **D3-S4** | **`DSW1_ALL_OLD_NEW`**: witness member all-old / all-new / mixed / partial group detection（§10 Recovery 表） | successor chain walk（S5）、retire/cleanup（S6）、D4 mutation |
+| **D3-S4a** | **docs only** `DSW1_ALL_OLD_NEW` Normative freeze（**§18.15**; §18.14=S3a）: modes **31..34** / **k₄=4**、**FOCUS_MEMBERS_2M+P**、**MEMBERSHIP_DUAL full-M + Mode34 same-txn manifest SHA**、Mode34 A/B/C + **carrier pin**、same-txn primary PVD + S4 closed byte-exact raw/raw2/aux normalization（BLOB manifest/chunk含む）、Mode31/32 SUPERSEDE deferred progression、Mode33 RETIRED-header inventory、finalize/quota gates、context **949/960**、full outer **10880**、oracle architecture only。**JSON / code / tests 変更 0** | D3-S4 implementation、Stage 5 D3 bind、public Runtime、D3 complete |
+| **D3-S4** | **`DSW1_ALL_OLD_NEW`**: witness member all-old / all-new / mixed / partial group detection（§10 Recovery 表）。**implementation** of §18.15: four mode sessions + 2M+P stream + dual membership + chunk orphan + head/index backlink | successor chain walk（S5）、retire/cleanup（S6）、D4 mutation |
 | **D3-S5** | **`DSW2_SUPERSEDE_CHAIN`**: ACTIVE/SUPERSEDED successor chain、bounded walk、cycle/missing successor | retire/cleanup physical erase truth（S6）、D4 |
 | **D3-S6** | **`DSW3_RETIRE_CLEANUP`**: SUPERSEDED→RETIRED、incoming successor 参照 0、oldest-first chunk partial cleanup eligibility、ACTIVE partial 拒否 | D4 actual erase/replace commits |
 | **D3-S7** | **`DSC1_COUNTERS`**: 4 family-3 counter upper-bound / unique / orphan / visited gap 規則（§12） | capacity 11-kind（S8）、health source set（S10） |
@@ -2376,6 +2377,8 @@ D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 �
    **S2a specialization（§18.13; historical S0 文を削除しない）:** declared multi-count cardinality の **list-then-count across two `READ_ONLY` snapshots** は **禁止**。S2 は **単一 txn** 上で baseline once + sequential zero-prefix iterator reopen + `PASS_INTERNAL` で multipass する。§18.3 の fresh-session multipass は S9 等の **independent one-pass-per-session proofs** には残り得るが、S2 carrier 列挙と count を別 snapshot に分割する vehicle ではない。
    **S3a specialization（§18.14; historical S0/S2a 文を削除しない）:** BLOB owner→manifest→chunk / stream digest の **list-then-prove across two `READ_ONLY` snapshots** は **禁止**。S3 は **単一 txn** 上で baseline once + sequential zero-prefix reopen + `PASS_INTERNAL` + **KEY_DIGEST digest-match SCAN**（owner からの complete-key rebuild exact_get は **禁止**）+ install 後 known-index chunk `exact_get` で multipass する。BLOB keys は SHA256_COMPOSITE のため same-blob contiguous-run count は **禁止**（§18.14.3）。
 
+   **S4a specialization（§18.15; historical S0/S2a 文を削除しない）:** witness group member all-old/all-new の **list-then-prove across two `READ_ONLY` snapshots** は **禁止**。S4 は **単一 txn** 上で baseline once + sequential zero-prefix reopen + `PASS_INTERNAL` + **per-member chunk re-get + member get + same-txn primary PVD（2M+P）** + **MEMBERSHIP_DUAL full-M** で multipass する（single 4096; pin-before-overwrite; chunk borrow **禁止**）。Mode34は同じtxnでM/C/chunk framing/final manifest SHAを独立証明し、Modes31/32の別session結果を代用しない。full member-ID set / successor chain walk（S5）/ retire cleanup（S6）を S4 に混入しない。
+
 3. **絶対禁止**
    - **second concurrent iterator**（zero-prefix を含む second live iterator）
    - **full-ID set** を RAM に保持（全 transaction/delivery/blob ID の可変集合）
@@ -2393,7 +2396,7 @@ D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 �
 | D3 context | scanner workspace とは **separate fixed-size object**（Runtime arena）。session に可変長 ID list をぶら下げない |
 | Borrowed consume | borrowed present value / PVD bytes は **次の** advance / exact_get / finalize / abort 前に消費し終える |
 | Ceiling（既存） | `DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES`（現行 8192）および Stage5 seam workspace ceiling（現行 **8704**）の変更は **doc-first**（本章 Normative 更新が実装/vector より先）。silent raise 禁止 |
-| **D3 fixed context size** | **Historical S0 text:** size は TBD at D3-S1；S0 は具体 byte 数を **guess しない**。**S1a supersession（§18.12）:** fixed layout `sizeof=421` / object ceiling **448**；NEW D3 aggregate arena ceiling **8832**（= 8384+448；doc-first **+128** over Stage5-alone 8704）。**S2a addition（§18.13）:** S2 context `sizeof=306` / object ceiling **320**；outer future aggregate when S1+S2 co-resident **9152**（= 8384+448+320）。**S3a addition（§18.14）:** S3 context `sizeof=754` / object ceiling **768**；outer future aggregate when S1+S2+S3 co-resident **9920**（= 8384+448+320+768）。scanner ceiling **8192** と Stage5-seam-alone ceiling **8704** は **unchanged**。Stage5 は S12 まで D3 context を allocate/bind/run しない。DSR2（scanner workspace 8192 / single 4096 value / no second 4096 / no full-ID / no VLA/heap record buffer）は維持 |
+| **D3 fixed context size** | **Historical S0 text:** size は TBD at D3-S1；S0 は具体 byte 数を **guess しない**。**S1a supersession（§18.12）:** fixed layout `sizeof=421` / object ceiling **448**；NEW D3 aggregate arena ceiling **8832**（= 8384+448；doc-first **+128** over Stage5-alone 8704）。**S2a addition（§18.13）:** S2 context `sizeof=306` / object ceiling **320**；outer future aggregate when S1+S2 co-resident **9152**（= 8384+448+320）。**S3a addition（§18.14）:** S3 context `sizeof=754` / object ceiling **768**；outer future aggregate when S1+S2+S3 co-resident **9920**（= 8384+448+320+768）。**S4a addition（§18.15）:** S4 context `sizeof=949` / object ceiling **960**；outer S1+S2+S4 **10112**；**full S1+S2+S3+S4 outer 10880**（= 8384+448+320+768+960）。scanner ceiling **8192** と Stage5-seam-alone ceiling **8704** は **unchanged**。Stage5 は S12 まで D3 context を allocate/bind/run しない。DSR2（scanner workspace 8192 / single 4096 value / no second 4096 / no full-ID / no VLA/heap record buffer）は維持 |
 | Mutation | D3 path の Storage mutation 0（D2 と同） |
 
 ### 18.5 Algorithm categories（closed）+ rejected claims
@@ -2403,7 +2406,7 @@ D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 �
 | **A. exact-1 key rebuild / reverse / PVD** | §9 exact-1 secondaries（QUOTA、STATE、RESULT_CACHE、1:1 digest fields 等）。body raw → complete peer key → `exact_get` → PVD/raw bijection | O(1) Port get / relationship。**undocumented all-pairs 禁止** |
 | **B. contiguous run streaming counts** | same-primary / same-subtype の lex 連続 run を advance で数え、declared count と checked 照合 | O(N_subtype) single pass per focused family。必要なら multi-pass |
 | **C. O(1) global aggregates** | family-3 observed max、fence active plan count、checked add of reservation vectors の running totals | O(N) one pass + O(1) state。full-ID set 不要 |
-| **D. focused multi-pass（profile/data-bounded）** | SERVICE_QUOTA service-key grouping、BLOB digest matching、retire incoming-successor refcount 等。**S2a 以降:** declared multi-count families の focus multipass（§18.13）も本 category。**S3a 以降:** BLOB known-index + stream digest multipass（§18.14）も本 category | 複数 pass / focus。focus key/digest は fixed context に 1 件ずつ。**固定関係種別 k** と **データ依存 focus 数 F/S** を混同しない（下記） |
+| **D. focused multi-pass（profile/data-bounded）** | SERVICE_QUOTA service-key grouping、BLOB digest matching、retire incoming-successor refcount 等。**S2a 以降:** declared multi-count families の focus multipass（§18.13）も本 category。**S3a 以降:** BLOB known-index + stream digest multipass（§18.14）も本 category。**S4a 以降:** witness group **2M+P** member stream / dual membership / head-backlink（§18.15）も本 category | 複数 pass / focus。focus key/digest は fixed context に 1 件ずつ。**固定関係種別 k** と **データ依存 focus 数 F/S** を混同しない（下記） |
 | **E. bounded successor walk** | witness SUPERSEDED chain（§10.1）。起点 header から successor exact_get、visited step ≤ witness row count | O(chain length) ≤ O(witness headers)。cycle → corrupt |
 
 **Category B applicability correction（S2a; historical row を偽書き換えしない）:**
@@ -2418,7 +2421,7 @@ D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 �
 
 | Symbol | Meaning | Bound |
 | --- | --- | --- |
-| **`k`** | **固定** relationship-type / category 数（本節 A–E と Normative が列挙する closed 関係種別）。実装が「関係種別を増やした」ときの doc 上の focus 回数 | Normative が閉じた固定数。data size `N` に連動して勝手に増えない。**exact-1 local set は D3-S1a で `k=20` 固定**（§18.12; honest O(20·N)）。**declared multi-count mode set は D3-S2a で `k₂=6`（modes 21..26）固定**（§18.13; **1 session = 1 mode**; S2 complete = 6 sessions; per-session cost **O(Fₘ·N + mode BIND walks)** であり固定 k₂·N one-pass や one-session-all-six は禁止）。**BLOB lifecycle mode set は D3-S3a で `k₃=4`（modes 27..30）固定**（§18.14; **1 session = 1 mode**; S3 complete = 4 sessions; per-session cost **O(Fₘ·N_BLOB + chunks + OWNER_PVD + semantic + BIND [+ Mode30 N_REPLY·N_RR])**；false O(1) digest exact_get / unpinned semantic finalize / Mode28 without re-SCAN / one-session-all-four は禁止） |
+| **`k`** | **固定** relationship-type / category 数（本節 A–E と Normative が列挙する closed 関係種別）。実装が「関係種別を増やした」ときの doc 上の focus 回数 | Normative が閉じた固定数。data size `N` に連動して勝手に増えない。**exact-1 local set は D3-S1a で `k=20` 固定**（§18.12; honest O(20·N)）。**declared multi-count mode set は D3-S2a で `k₂=6`（modes 21..26）固定**（§18.13; **1 session = 1 mode**; S2 complete = 6 sessions; per-session cost **O(Fₘ·N + mode BIND walks)** であり固定 k₂·N one-pass や one-session-all-six は禁止）。**BLOB lifecycle mode set は D3-S3a で `k₃=4`（modes 27..30）固定**（§18.14; **1 session = 1 mode**; S3 complete = 4 sessions）。**DSW1 mode set は D3-S4a で `k₄=4`（modes 31..34）固定**（§18.15; **1 session = 1 mode**; S4 complete = 4 sessions each with **Θ(N) baseline**; per-header **Θ(2M+P)**; dual membership **Θ(M)** full scan; product **Θ(4N+W)** where `W` includes every internal full-domain scan, including Mode33's two scans；false one-baseline-all-four / C+M-without-reget / full-ID set は禁止） |
 | **`F`** | ある multi-pass 検査における **data-dependent** focus 件数（例: distinct BLOB digest、retire 対象 successor 起点） | その検査の domain data と profile 規則で bound。実装が unbounded set を RAM に積んではならない |
 | **`S`** | **SERVICE_QUOTA（S9）** の service-key focus 件数 | **selected profile の SERVICE / service-quota capacity** で upper-bound。S0 は具体 profile 定数を再掲しないが、**profile capacity 外の unbounded S** は禁止 |
 
@@ -2443,7 +2446,7 @@ D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 �
 | --- | --- | --- | --- |
 | **`DSI1_BACKLINK`** | primary↔secondary exact-1 / orphan / missing / collision raw / revision / PVD | **S1**（core）、S2 で multi | D1 same-record raw/digest local only |
 | **`DSI2_BLOB_STREAM`**（name freeze; S3a） | SCAN+stream+pins / Mode28 re-SCAN / Mode30 #14/#15/#16 / Mode29 RESULT setup / untyped orphan | **S3**（core; §18.14） | D1 same-record BLOB; KEY_DIGEST reverse **forbidden**; capacity **S8**; erase **D4** |
-| **`DSW1_ALL_OLD_NEW`** | member old/new/mixed/partial group | **S4** | D1 witness pure codec + D2-S3 header/chunk local framing |
+| **`DSW1_ALL_OLD_NEW`** | member old/new/mixed/partial/dup/missing/extra group; chunk orphan; head backlink; f3/4↔HEAD_INDEX | **S4**（§18.15 freeze; implementation pending） | D1 witness pure codec + D2-S3 header/chunk local framing; successor **S5**; retire **S6** |
 | **`DSW2_SUPERSEDE_CHAIN`** | successor/supersede chain | **S5** | header local: D1/D2-S3 |
 | **`DSW3_RETIRE_CLEANUP`** | retire eligibility / partial chunk rules | **S6** | physical erase commits: **D4** |
 | **`DSC1_COUNTERS`** | 4-counter validation（§12） | **S7** | family-3 codec: D1；scan reach: D2 |
@@ -2565,8 +2568,8 @@ S0 時点で **D3 が必要とし、production helper として未接続 / 未�
 | Needed helper | Purpose | Notes |
 | --- | --- | --- |
 | **Peer-key rebuild helpers**（**D3 work items**） | typed body raw → complete secondary/primary key bytes（exact-1 / backlink） | `KEY_DIGEST` reverse ではない。D1 raw fields と `build_key`/`key_digest` は evidence 上存在する。typed 接続は D3-S1。closed mode 表は §18.12 |
-| **Fixed D3 descriptor / context object** | exact_get 前に raw IDs/digests/counts を copy する fixed-size context | **Historical S0:** size TBD at S1。**S1a freeze（§18.12）:** exact layout 421 / ceiling 448; NEW aggregate arena ceiling 8832（8384+448; +128 over Stage5-alone 8704）。**S2a freeze（§18.13）:** S2 multipass context exact layout 306 / ceiling 320; outer future aggregate 9152 when S1+S2 co-resident。**S3a freeze（§18.14）:** S3 BLOB context exact layout 754 / ceiling 768; outer future aggregate 9920 when S1+S2+S3 co-resident。Stage5-alone 8704 / scanner 8192 unchanged。S1 implementation complete; S2/S3 implementation pending |
-| **Witness member streaming consumer** | header+chunk members を fixed scratch で stream し old/new presence/digest を照合 | D1 pure witness decode は存在; cross-row member set consumer は D3 |
+| **Fixed D3 descriptor / context object** | exact_get 前に raw IDs/digests/counts を copy する fixed-size context | **Historical S0:** size TBD at S1。**S1a freeze（§18.12）:** exact layout 421 / ceiling 448; NEW aggregate arena ceiling 8832（8384+448; +128 over Stage5-alone 8704）。**S2a freeze（§18.13）:** S2 multipass context exact layout 306 / ceiling 320; outer future aggregate 9152 when S1+S2 co-resident。**S3a freeze（§18.14）:** S3 BLOB context exact layout 754 / ceiling 768; outer future aggregate 9920 when S1+S2+S3 co-resident。**S4a freeze（§18.15）:** S4 multipass context exact layout **949** / ceiling **960**; S1+S2+S4 **10112**; **full S1+S2+S3+S4 10880**。Stage5-alone 8704 / scanner 8192 unchanged。S1 implementation complete; S2/S3/S4 implementation pending |
+| **Witness member streaming consumer** | per-member chunk re-get + pins + dual membership full-M + same-txn primary PVD（2M+P） | D1 pure witness decode は存在; cross-row consumer は **D3-S4**（§18.15; implementation pending） |
 | **Reservation contribution pure helper** | owner state → §13 exact live vector / quota contribution を pure 計算 | D1 RESERVATION body は存在; §13 formula pure helper は D3 所有で追加可 |
 
 **Do not state** that D1 fields are missing unless a later audit proves a concrete body field gap。cross-row absence は D3 finding であり D1 incomplete の言い換えではない。
@@ -2813,7 +2816,7 @@ S1a historical row を後から「implementation complete」へ書き換えて�
 | Crossrow authority | format `ninlil-domain-scan-crossrow-v1-d3s1` / `vector_count` **94** / full JSON sha256 `f47dff4f5753a92ebf3627408c576f69cc1862d20e1f74021e22ef5603c87176` / canonical `content_sha256` `76b28d847be8cd7a95e8f1879400403abf702931a3de170a473c7c0f76d95468` / independent generator + production bridge / exact 94 kinds / mutation 0 / frozen D1+S1–S5 pins |
 | D3-S2a Normative freeze | see §18.13.18（docs only; not claimed in this S1 row） |
 | D3-S3a Normative freeze | see §18.14.18（docs only; not claimed in this S1 row） |
-| D3-S2 implementation / D3-S3 implementation / D3-S4..S12 | **pending** |
+| D3-S2 / D3-S3 / D3-S4 implementation / D3-S5..S12 | **pending**（S4a docs freeze は §18.15; implementation は pending） |
 | D3 complete / S12 outcome transition | **no** |
 | Stage 5 D3 bind / Stage 5 complete / `storage_recovery_complete=1` | **no** |
 | D4 / public Runtime / ESP-IDF / hardware | **no** |
@@ -4082,3 +4085,651 @@ Constructible fixtures: D1-legal only; no speculative complete-key-from-digest v
 | Private APIs exist on branch | **no claim** |
 
 S3a を後から implementation complete へ書き換えてはならない。S0/S1a/S2a historical text は **preserve**。
+### 18.15 Normative D3-S4a freeze（DSW1_ALL_OLD_NEW / witness member group）
+
+**Decision identifier: D3-S4a。** 本節は D3-S0 / S1a / S2a / **S3a（§18.14）** を **上書きせず**、§10 **`DSW1_ALL_OLD_NEW`** の **docs-only Normative freeze** を追加する。§18.14（S3: **754/768**, outer **9920**）は **origin/main と byte-equivalent に保持**。**docs only**（code/tests/CMake/JSON/ADR 0）。implementation / D3 / Stage5 / D4 / public Runtime / ESP / hardware **pending**。private symbol 存在 **未 claim**。
+
+**Design choice:** 1 session = 1 mode `m` ∈ {31..34}; **k₄=4**; single `READ_ONLY` txn; **single 4096**; fixed S4 context; no full-ID set; no heap/VLA/second 4096/two-txn list-prove; **no S1 separate-session delegation** for primary bind。**successor → S5; retire → S6; mutation → D4**。Modes 31/32 は **2M chunk re-get**、Mode33 は RETIRED-header inventory→chunk bind の sequential same-txn subpasses、Mode34 は disjoint A/B/C carrier と dual raw/digest pins を使い、各 get 後の cursor progress を本節だけで閉じる。
+
+**Composite key rule:** witness header / HEAD_INDEX / manifest chunk の complete key は、その時点で実バイトとして pin 済みの operation raw / witness composite identity / member `KEY_DIGEST` / chunk index から **forward rebuild** する。`KEY_DIGEST` から raw identity を reverse することは **禁止**。
+
+#### 18.15.0 Value lifetime / pin discipline
+
+| Rule | Exact |
+| --- | --- |
+| Borrow | `value[4096]` は **直近 1 回** successful `exact_get` / iter value のみ valid |
+| Invalidate | 次の `exact_get` / value 供給 / cleanup で **即 invalid** |
+| Pin before overwrite | 後続 get 後に必要な digest / **complete primary key bytes + source raw/raw2/aux** / membership expected digests は **get 前**に fixed context へ copy |
+| Forbidden | invalid value を VALUE_DIGEST / body raw rebuild / raw bijection 入力に使う |
+
+#### 18.15.1 Snapshot-only DSW1 scope
+
+| In scope | Out |
+| --- | --- |
+| all-old/all-new/mixed/partial/dup/missing/extra; 2M stream | S5 chain; S6 retire; D4 commits |
+| Mode34 A/B/C + **dual-target membership full-M** with **two digest pins** | S1 separate session as substitute for primary bind |
+| **same-txn** primary PVD + **byte-exact primary body raw/raw2/aux**（S4 closed table: Mode17 pure rows + BLOB manifest/chunk rows） | public Runtime |
+| finalize / evaluator-off / incomplete-mask / **quota=1 substep progress** | |
+
+#### 18.15.2 Closed modes 31..34
+
+| Mode | Carrier | Core |
+| ---: | --- | --- |
+| **31** | every ACTIVE WITNESS_HEADER | FOCUS_MEMBERS_2M+P + ACTIVE GROUP_CLOSE |
+| **32** | every SUPERSEDED WITNESS_HEADER | FOCUS_MEMBERS_2M+P + local progression classification; successor proof is S5 |
+| **33** | every WITNESS_MANIFEST_CHUNK | forward-build its header key and bind the chunk to that header |
+| **34** | disjoint arms A/B/C in §18.15.8.0 | carrier pins → known forward gets → MEMBERSHIP_DUAL full-M |
+
+#### 18.15.3 Group identity / framing + exact member set
+
+Header install copies `witness_digest`, state, `member_count=M`, `chunk_count=C`, and `manifest_digest` while the header value is live. The following is exact:
+
+1. `1 ≤ M ≤ 256`; `C = ceil(M/8)` and `1 ≤ C ≤ 32`.
+2. For ordinal `i`, rebuild `chunk_key(witness_digest, floor(i/8))` and exact-get it. Decoded chunk `witness_digest`, returned `chunk_index`, and `chunk_count` must equal the installed header / **exact requested `floor(i/8)`** / `C`. The same returned index is therefore required and legal for all ordinals in that chunk（at most eight consecutive gets; exactly eight except the final chunk）。A returned-index duplicate is corruption only when it repeats across a **chunk boundary** where `floor(i/8)` advanced, when an iterator supplies a duplicate complete chunk row/key, or when the returned index differs from the current requested `floor(i/8)`; the normal within-chunk re-get is not a duplicate finding.
+3. Non-final chunks have exactly 8 entries; the final chunk has exactly `M-8*(C-1)` entries. `i%8` must exist. Missing expected chunk/slot is CORRUPT.
+4. Across all `M` entries, keys are strict unsigned-byte increasing. `prev_member_key` spans chunk boundaries; equality is duplicate and decreasing order is CORRUPT. No full member-key set is retained.
+5. The manifest SHA uses §5.1's exact domain-separated formula and exact encoded chunk bodies in index order. Modes 31/32 and Mode34 `MEMBERSHIP_DUAL` each re-get one chunk per member in their **own same-transaction session**; in every such stream a chunk body enters SHA **only when `i%8==0`**. After `M`, final SHA must equal that session's pinned `expected_manifest_digest`. A successful Modes31/32 session from another snapshot is never authority for the Mode34 comparison.
+6. Modes31/32 `streamed_members` and Mode34 `membership_i` must respectively become exactly `M`; observed expected chunks are exactly indices `{0..C-1}` in each session. Mode33 first inventories every RETIRED header and then rejects a chunk whose header is absent or whose header count/index framing does not include it; therefore a RETIRED header with zero/partial chunks still creates S6 work, while an extra/orphan chunk cannot hide outside the Modes 31/32 expected set.
+
+All checks above use D1-valid decoded rows. A local D1 failure remains D2 corruption and is not reclassified by S4.
+
+#### 18.15.4 Same-txn phase machine
+
+```text
+IDLE → BASELINE (D2 once)
+  → Mode 31/32:
+      (SELECT_HEADER → install header
+         → for i in 0..M-1: MEMBER_I_PIPELINE  (#P1 substeps)
+         → GROUP_CLOSE)*
+  → Mode 33: (SELECT_RETIRED_HEADER)*
+             → close/reopen the sole zero-prefix iterator in the same txn
+             → (SELECT_CHUNK → BIND_CHUNK_HEADER)*
+  → Mode 34: (SELECT arm → PIN raw+digests → forward known-key gets → MEMBERSHIP_DUAL)*
+  → COMPLETE | FAILED | mid-drive yield (not terminal)
+```
+
+#### 18.15.5 PASS_INTERNAL / B5s drive quota + **substep progress**（P1）
+
+| Item | Contract |
+| --- | --- |
+| `drive_get_quota` | each drive/advance: default **32**; legal **1..256**（**1 is legal**） |
+| `drive_gets_used` | +1 per S4 `exact_get` attempt |
+| Yield | used==quota mid work → OPEN, `flags.need_resume=1`, **no sticky**; preserve all pins/cursors/substeps |
+| Resume | refill quota; continue **same substep cursor** — **must not re-issue a completed get** |
+
+**`member_substep`（Mode 31/32; per ordinal `streamed_members` = i）:**
+
+| Value | Meaning | Next action | On success |
+| ---: | --- | --- | --- |
+| **0** | need chunk re-get for i | forward-build request into `peer_key`; `exact_get(chunk[i/8])`; then overwrite `peer_key` with entry[i%8] key scratch; lex/dup | → **1**（entry pins ready; value may die） |
+| **1** | need member get | `exact_get(member key from scratch)` | classify; if primary required: pin PVD + complete primary key in `peer_key` + normalized **source raw/raw2/aux** while value live → **2**; else → **3** |
+| **2** | need primary get | `exact_get(peer_key)`; compare PVD + returned primary body **raw/raw2/aux byte-exact** vs pins | → **3** |
+| **3** | member i complete | i+1; `streamed_members:=i+1`; `member_substep:=0` | |
+
+**Forbidden with quota=1:** looping substep 0 forever（re-getting same chunk without advancing）。Each successful get **must** advance `member_substep` or `streamed_members`。
+
+**`membership_substep`（MEMBERSHIP_DUAL; per `membership_i`）:**
+
+| Value | Meaning | On success |
+| ---: | --- | --- |
+| **0** | need chunk re-get for membership_i | extract entry; update found_count_a/b vs **pin_digest_a/b**; increment membership_i; if it becomes M → **1**, else stay 0 |
+| **1** | all M entries consumed; no get | close dual: require exact M/C/framing + final manifest SHA and found_count==1 per need bit; set arm_cursor 6 |
+
+Values 2..255 are invalid. Close substep 1 performs no Port call and cannot consume a new drive quota unit.
+
+Pseudocode (quota-aware):
+
+```text
+MEMBER_I_PIPELINE while i < M and quota remains:
+  if member_substep == 0:
+    forward-build chunk request key into peer_key
+    exact_get(chunk); used++
+    fill entry scratch; overwrite peer_key with decoded entry key; member_substep = 1; continue
+  if member_substep == 1:
+    exact_get(member); used++;
+    classify match_old/new/neither; head surface on live value
+    if needs_primary_pvd_raw:
+      expected_primary_pvd := common.pvd
+      normalize source body as S1 Mode17 tuple
+        → expected_primary_raw/raw2/aux + exact lengths
+      rebuild complete primary key → peer_key[0..L), L=len ≤45
+      member_substep = 2
+    else:
+      member_substep = 3
+    continue
+  if member_substep == 2:
+    exact_get(peer_key); used++;
+    ABSENT → finding; PRESENT →
+      VALUE_DIGEST(primary)==expected_primary_pvd
+      normalize returned primary body and require
+        raw/raw2/aux bytes + lengths == expected pins         # collision defense
+    member_substep = 3; continue
+  if member_substep == 3:
+    i++; streamed_members=i; member_substep=0
+if quota exhausted mid-pipeline: yield with cursors (i, member_substep, pins intact)
+```
+
+#### 18.15.6 Member match / GROUP_CLOSE + **same-txn primary PVD/raw**
+
+For an ordinary entry, compare current presence and `VALUE_DIGEST(current)` against the entry's exact old/new pair:
+
+| Local class | Exact predicate |
+| --- | --- |
+| `OLD` | current presence/digest equals `old_present/old_value_digest` |
+| `NEW` | current presence/digest equals `new_present/new_value_digest` |
+| `NEITHER` | neither exact pair matches |
+| `INVALID` | present row fails D1/D2 local decode, PVD/raw proof, or an applicable head predicate |
+
+For present family 5/6 semantic values, the applicable head is the live common `head_witness_digest`. For family 3/4, head truth is carried by its WITNESS_HEAD_INDEX and is closed by Mode34 B/C; a Mode32 `NEITHER` is therefore **never accepted as success** merely because S4 cannot retain a full pairing set. It becomes `PROGRESSED_S5_REQUIRED`, and final D3 success requires Mode34 plus S5 to prove the exact successor path. Absent values have no head surface.
+
+Head/lifecycle rules are exact:
+
+| Header mode | Current member surface | S4 result |
+| --- | --- | --- |
+| ACTIVE | `NEW`, and every applicable non-zero head equals this `witness_digest` | `NEW_THIS` |
+| ACTIVE | `OLD`, `NEITHER`, zero/wrong applicable head, or any `INVALID` | CORRUPT |
+| SUPERSEDED | `NEW` and applicable head still equals this witness; expected-new absence is also local NEW | `NEW_THIS` |
+| SUPERSEDED | different current digest/presence with a non-zero different current head, or family 3/4 `NEITHER` awaiting its index surface | `PROGRESSED_S5_REQUIRED`; **not success**, defer exact successor proof to S5 |
+| SUPERSEDED | `OLD`, `NEITHER` with zero/this/invalid head, rollback to an old digest, or any `INVALID` | CORRUPT |
+
+`SUPERSEDE_WITNESS` entries use §10.1's own progression **independently of whether the installed successor carrier is Mode31 ACTIVE or Mode32 SUPERSEDED**: exact new SUPERSEDED predecessor header is local `NEW`; a D1-valid RETIRED predecessor whose successor equals this installed witness, or a fully-ABSENT predecessor shape（header ABSENT locally; Mode33 must independently reject any orphan chunk）, is local **`S5_AND_S6_REQUIRED`** progression, folds as `PROGRESSED_S5_REQUIRED`, and in the same member-classification transition atomically sets both sticky authorities `flags.bit7` and `binding_complete_mask.bit5`. ACTIVE predecessor, different successor, or header-absent with an orphan chunk is CORRUPT. S4 does not perform a successor exact-get/walk, incoming-reference walk, or retirement eligibility proof; S5/S6 own that correlation.
+
+`group_class` is a closed fold: **0 UNSET, 1 ALL_NEW, 2 ALL_OLD, 3 MIXED_OLD_NEW, 4 PROGRESSED_S5_REQUIRED, 5 CORRUPT**. `NEW+PROGRESSED` remains 4; any `OLD` combined with NEW/PROGRESSED becomes 3; any invalid becomes 5.
+
+**GROUP_CLOSE exact outcomes:**
+
+| Mode | Required before close | Outcome |
+| ---: | --- | --- |
+| 31 ACTIVE | identity/framing/SHA exact; `streamed_members==M`; `group_class==ALL_NEW`; every required primary proof complete | local VALID ACTIVE/all-new |
+| 31 ACTIVE | same exact gates; every ordinary semantic member remains `NEW_THIS`; `group_class==PROGRESSED_S5_REQUIRED` only because one or more `SUPERSEDE_WITNESS` predecessors are same-successor RETIRED/fully-ABSENT | local traversal valid only as `S5_AND_S6_REQUIRED`; never local D3 success |
+| 31 ACTIVE | ALL_OLD, MIXED, CORRUPT, ordinary semantic progression, incomplete member/chunk/SHA, missing/extra | CORRUPT; active witness beside old/mixed ordinary semantic truth is never not-applied |
+| 32 SUPERSEDED | identity/framing/SHA exact; no OLD/MIXED/CORRUPT; all primary proofs complete | local traversal valid only as `S5_REQUIRED`, or `S5_AND_S6_REQUIRED` when a SUPERSEDE predecessor progressed to RETIRED/ABSENT; even ALL_NEW must have header successor and successor replacement proved by S5 |
+| 32 SUPERSEDED | OLD/MIXED/CORRUPT, invalid/zero successor, incomplete member/chunk/SHA | CORRUPT before S5 |
+
+Every non-corrupt Mode32 `GROUP_CLOSE`（ALL_NEW を含む）は **同じ transition で `flags.bit7=s5_required_seen` を set** してから次 header へ進む。Mode31/32のどちらでも上記 `SUPERSEDE_WITNESS` RETIRED/ABSENT progression が1件でもあれば、その member classification transition でbit7と`binding_complete_mask.bit5=s6_required_seen`をatomic setし、GROUP_CLOSE/pass exhaustion/yield は両bitを保存する。Mode31はこの例外以外のordinary semantic memberをALL_NEWのまま要求する。`group_class=PROGRESSED_S5_REQUIRED` は per-header classification、sticky bits は session composition authority であり、いずれかを他方の代用にしない。
+
+Precedence is: D2/local decode or framing CORRUPT > PVD/raw/head CORRUPT > missing/duplicate/extra/SHA CORRUPT > `S5_AND_S6_REQUIRED` / `S5_REQUIRED` deferred authority > local valid. A deferred result is not `COMPLETE_READY`; internal traversal completion後は §18.15.10 の **DEFERRED_READY** として finalize し、named S5/S6 successful composition 前に D3 success へ昇格しない。Deferred bits は既存 corruption を suppress しない。
+
+**Primary path（Modes 31/32; present secondary with non-zero `primary_value_digest`; zero-PVD set skip）:**
+
+S1 正本の **byte-exact collision defense** は「derived key と PVD が一致」だけでは足りない。`exact_get` は value だけを返すため、異なる source body raw A / returned primary body raw B が同じ SHA-composite keyへ衝突した場合、要求キーの再比較はBを検出できない。そこで member body が live の間に、下表の **S4 closed primary normalization** で source raw/raw2/aux + lengths + source role + owner-kind/body-variant aliasをcontextへpinする。complete primary key（current Domain max **45**）は同じraw tupleから `peer_key` へ forward rebuildする。primary get後は live returned primary bodyを同じtable rowへnormalizeし、**raw/raw2/aux byte列・長さ + VALUE_DIGEST** をすべて照合する。§18.12 Mode17 evaluatorを起動・拡張せず、そのclosed reverse rowsのpure normalizationだけをreuseする。
+
+**S4 closed primary normalization table（他rowはnon-zero PVDで到達するとCORRUPT before get）:**
+
+| Source role / body variant | `expected_primary_owner_kind` alias | Source tuple pinned while live | True primary / returned-body exact normalization |
+| --- | ---: | --- | --- |
+| §18.12 Mode17 reverse tableの全source secondary（BLOB以外） | Mode17 rowのexact role-specific owner kind。owner kindを持たないrowだけ0 | Mode17 pure normalizationのraw/raw2/aux + exact lengths。IDEMPOTENCYはscope + key dual RAW16、CALLBACK等はtableのfixed auxを省略不可 | 同じMode17 rowのtrue primary。returned bodyを同じrowでnormalizeし全tuple/lengthをbyte-exact比較 |
+| BLOB manifest（family6 subtype `30`, common flags/body variant exact `1`） | BLOB固有 `blob_owner_kind`: 1 TRANSACTION / 2 INGRESS / 3 DELIVERY | `raw=owner_key_raw` contents exact（16 / 8 / 80 bytes）、`raw2_len=0`, `aux_len=0`。role+alias `(0x0630,1..3)` がmanifest variantをpin | kind1 → TRANSACTION_ANCHOR transaction_id 16、kind2 → ORDERED_INGRESS ordered_sequence BE8、kind3 → DELIVERY `delivery_key_raw` contents 80。same rawからcomplete keyをforward rebuildし、returned primary bodyのexact identity raw/length + PVDを比較 |
+| BLOB chunk（family6 subtype `30`, common flags/body variant exact `2`） | exact `0`（role `(0x0630,0)` はchunk専用でmanifest kindとdisjoint） | `raw=blob_id_digest[32]`, `raw2_len=0`, `aux_len=0`。source `manifest_key_digest` はD1 same-recordでこのrawからbuildしたmanifest complete keyのKEY_DIGESTと一致済み | BLOB manifest key `COMPOSITE(30, u8=1 || blob_id_digest)` をrawからforward rebuild。returned rowはD1-valid manifest variant flags=1かつbody `blob_id_digest` exact同値、VALUE_DIGEST(manifest)==source PVD |
+
+The source common flags/body variant is D1-validated before pinning; `entry_record_role` plus owner-kind alias pins which table row is live. In particular family/subtype `0x0630` alone is insufficient and may never choose manifest vs chunk. A returned BLOB manifest is decoded as manifest independently of the source alias before its body digest is compared. `manifest_key_digest`, `owner_primary_key_digest`, KEY_DIGEST, truncated identity, or request-key equality is never a substitute for the raw tuple comparison.
+
+```text
+While member value live (substep 1 success, before next get):
+  expected_primary_pvd := common.primary_value_digest          # PIN 32
+  expected_primary_raw/raw2/aux := S4-closed-normalize(member body, role, owner-kind/body-variant)
+  expected_primary_raw_len/raw2_len/aux_len := exact lengths
+  rebuild complete primary key from that same normalized tuple
+  L := complete_key.length   # 0 < L ≤ 45
+  peer_key[0..L) := complete_key.bytes
+  peer_key_len := L
+  expected_primary_owner_kind := normalized role-specific owner kind
+    # phase-disjoint alias of entry_flags; entry_record_role retains family/subtype
+  # dual64: pin_digest fields are NOT a substitute for this key pin;
+  # they serve Mode34 membership only
+exact_get(peer_key[0..L)):
+  ABSENT → S4 finding
+  PRESENT →
+    VALUE_DIGEST(primary) == expected_primary_pvd
+    S4-closed-normalize(returned primary body, entry_record_role, owner-kind/body-variant)
+      == expected_primary_raw/raw2/aux + exact lengths                # byte-exact
+```
+
+`expected_primary_raw2_len=0` / `expected_primary_aux_len=0` means the applicable normalized component is absent; a role requiring that component may not use zero to skip it. `expected_primary_raw_len` is always non-zero for this path. The normalized tuple must prove the table's exact raw bijection, including dual RAW16 IDEMPOTENCY scope+key, fixed auxiliary identity, BLOB manifest owner raw, and BLOB chunk `blob_id_digest` where applicable; hash/truncated identity substitution is forbidden.
+
+**Lifetime of primary pins:** `expected_primary_pvd`, `peer_key`, raw/raw2/aux, lengths, role and owner-kind alias are set together at substep 1 and cleared together only after substep 2 closes（member i）。next i may overwrite。
+
+**Forbidden:** primary PVD/raw only via later S1 session; primary get then re-read member body; request-key equality as a substitute for returned-body raw comparison; digest-only “bind” when source raw was available。
+
+Family 3/4: no common header PVD path; Mode34 index arms。
+
+#### 18.15.7 Mode 33 CHUNK_ORPHAN / header binding
+
+Mode33 is two **sequential same-txn zero-prefix subpasses** with at most one live iterator. `arm_cursor=0` is `RETIRED_HEADER_INVENTORY`; after its sole iterator exhausts, close/reopen without rollback and atomically move to `arm_cursor=1` `CHUNK_BIND`. The transition cannot be entered through public input or skipped. Only CHUNK_BIND exhaustion sets `binding_complete_mask.bit0` and enters COMPLETE.
+
+**RETIRED_HEADER_INVENTORY:** enumerate every WITNESS_HEADER. ACTIVE/SUPERSEDED are locally skipped after the already-required D1 decode. Every D1-valid RETIRED header atomically sets sticky `binding_complete_mask.bit5=s6_required_seen`, even when it has **zero chunks or only a partial retained chunk set**. This subpass performs **zero `exact_get`**, does not inspect successor targets, does not walk incoming references, and does not decide retirement eligibility. Those are S5/S6 correlation duties.
+
+**CHUNK_BIND:** for every iterated WITNESS_MANIFEST_CHUNK, copy its actual complete key into `last_carrier_key` and copy body `witness_digest`, `chunk_index`, and `chunk_count` while live. The chunk body/key local D1 check has already proved that `witness_digest` is the exact 32-byte WITNESS_HEADER **composite identity**. Build `peer_key` as current root + family6 + subtype `7f` + identity-kind COMPOSITE + identity bytes=`witness_digest`, then perform exactly one header `exact_get(peer_key)`. This is constructible from raw composite identity bytes present in the chunk body; it is not `KEY_DIGEST` reverse and does not require header operation RAW16.
+
+| Header get/result | Exact Mode33 outcome |
+| --- | --- |
+| ABSENT | CORRUPT orphan chunk; it is not cleanup debris |
+| ACTIVE or SUPERSEDED | header `witness_digest`/key binding exact, `header.chunk_count==chunk.chunk_count`, `chunk_index<header.chunk_count`, and expected entry count exact; otherwise CORRUPT |
+| RETIRED | local header/chunk binding must still be exact; bit5 is already required by RETIRED_HEADER_INVENTORY and may be idempotently set again. S4 does not decide whether a zero/partial retained set is eligible |
+| other/future/current-invalid | normal D2 precedence; unsupported only under the already-frozen recognizable-future rule, otherwise CORRUPT |
+
+Missing expected chunks for ACTIVE/SUPERSEDED are found by Modes31/32 exact index set. RETIRED zero/partial sets are never treated as locally complete: the inventory bit requires S6. A chunk beyond a live header's count, count mismatch, or header-absent chunk is Mode33 CORRUPT. Duplicate complete chunk keys cannot coexist in one storage snapshot; duplicate member keys across different chunks are caught by §18.15.3 lex streaming.
+
+`s6_required_seen` is preserved across header→chunk reopen, chunk advance/yield, Mode31/32 GROUP_CLOSE/pass exhaustion, and is cleared only by fresh-begin initialization, by finalize cleanup **after disposition sampling**, or by abort cleanup。Mode33 CHUNK_BIND exhaustion sets binding-complete bit0 but must not clear bit5。bit5 is a deferred composition requirement, not corruption and not permission to accept a partial RETIRED set locally。Mode33 must not add a successor `exact_get`, successor/incoming walk, or hidden retirement proof.
+
+#### 18.15.8 Mode 34 HEAD_BACKLINK + **dual digest pins**（P0）
+
+**`pin_digest_a` / `pin_digest_b`（32+32 = dual64 digest pair）** は membership 終了まで **独立保持**。`carrier_value_digest` 単一フィールドの上書きで両 target を兼ねることは **禁止**。
+
+##### 18.15.8.0 Closed disjoint carrier inventory
+
+Each current row selects **at most one** arm:
+
+| Arm | Exact carrier set | Explicit exclusion |
+| --- | --- | --- |
+| **A** | current family 5/6 semantic row with non-zero common `head_witness_digest` | family6 subtype `7d` HEAD_INDEX and witness metadata `7e/7f`; any zero-head row |
+| **B** | every family6 subtype `7d` WITNESS_HEAD_INDEX, BASELINE or WITNESSED | all other family5/6 rows |
+| **C** | every current family3 counter or family4 capacity row | family1/2 and family5/6 |
+
+Thus WITNESSED HEAD_INDEX is **B only**, never A+B. Family6 `7e/7f` is owned by Modes31–33/S5/S6, not by Mode34 A. Rows outside A/B/C create no Mode34 work item.
+
+##### 18.15.8.1 Arm A — semantic family 5/6 non-zero head
+
+```text
+While carrier live:
+  pin_digest_a := VALUE_DIGEST(carrier)     # membership target A expected new
+  pin_digest_b := 0                         # need bit1 clear
+  last_carrier_key := carrier key           # exact raw pin
+  membership_key_a := last_carrier_key      # raw target A pin
+  witness_digest := head
+  if secondary non-zero PVD:
+    pin entry_record_role + expected_primary_owner_kind/body-variant alias together with
+      S4-closed-normalized source raw/raw2/aux and primary peer_key
+    pin expected_primary_pvd while carrier value is live; arm_cursor := 1
+  else: arm_cursor := 4
+arm_cursor 1:
+  exact_get(peer_key); prove PVD + returned-body raw/raw2/aux
+  clear peer_key_len, expected primary raw tuple/lengths/owner-kind, and PVD
+    before arm_cursor := 4
+arm_cursor 4:
+  forward-build header complete key into request_key_scratch; exact_get(header):
+  ABSENT/RETIRED → corrupt
+  ACTIVE|SUPERSEDED:
+    membership_need_mask := bit0
+    peer_key_len := 0                       # B target absent
+    arm_cursor := 5
+    MEMBERSHIP_DUAL full-M
+    on hit A: entry.new_value_digest == pin_digest_a
+```
+
+##### 18.15.8.2 Arm B — every HEAD_INDEX（BASELINE+WITNESSED）
+
+```text
+While index value live:
+  pin_digest_b := VALUE_DIGEST(index complete value)   # INDEX live digest PIN
+  copy index body: state, member_key → membership_key_a,
+                   member_key_digest → focus_key_digest,
+                   member_value_digest, member_head
+  last_carrier_key := index complete key               # actual B raw pin
+  peer_key := rebuild HEAD_INDEX key from focus_key_digest
+  require peer_key == last_carrier_key byte-exact       # body/key raw bijection
+  arm_cursor := 2
+arm_cursor 2:
+exact_get(member = membership_key_a):
+  ABSENT → corrupt
+  PRESENT while member live:
+    pin_digest_a := VALUE_DIGEST(member)               # SEMANTIC member digest PIN
+    pin_digest_a must equal body.member_value_digest
+  BASELINE: head zero; arm_cursor := 6; no membership
+  WITNESSED:
+    witness_digest := body.member_head
+    arm_cursor := 4
+    forward-build header key into request_key_scratch; exact_get(header from member_head)
+    membership_need_mask := bit0|bit1
+    key_a := membership_key_a; key_b := peer_key
+    arm_cursor := 5
+    MEMBERSHIP_DUAL:
+      hit A → entry.new == pin_digest_a   # semantic member entry
+      hit B → entry.new == pin_digest_b   # HEAD_INDEX entry in same manifest
+```
+
+##### 18.15.8.3 Arm C — every live family 3/4
+
+```text
+While carrier (f3/4) live:
+  pin_digest_a := VALUE_DIGEST(carrier)                # SEMANTIC PIN
+  last_carrier_key := carrier                          # actual A raw pin
+  membership_key_a := last_carrier_key                 # raw target A pin
+  focus_key_digest := KEY_DIGEST(carrier)
+  peer_key := build HEAD_INDEX key(focus_key_digest)   # raw target B pin
+  arm_cursor := 3
+arm_cursor 3:
+exact_get(index_key = build HEAD_INDEX key):
+  ABSENT → corrupt
+  PRESENT while index live:
+    pin_digest_b := VALUE_DIGEST(index)                # INDEX live PIN
+    body.member_value_digest == pin_digest_a
+    body.member_key == membership_key_a byte-exact
+    body.member_key_digest == focus_key_digest
+    got index complete key == peer_key byte-exact
+  BASELINE: body head zero; arm_cursor := 6; no membership
+  WITNESSED:
+    witness_digest := body.member_head; arm_cursor := 4
+arm_cursor 4:
+  forward-build header key into request_key_scratch; exact_get(header from witness_digest); validate live state/counts
+  membership_need_mask := bit0|bit1
+  key_a := membership_key_a; key_b := peer_key
+  arm_cursor := 5; MEMBERSHIP_DUAL with pin_digest_a/b
+```
+
+##### 18.15.8.4 `arm_cursor` closed enum + quota=1 progress
+
+| Value | Meaning | Successful get transition |
+| ---: | --- | --- |
+| **0** | SELECT next disjoint carrier | carrier install sets 1/2/3/4; no get |
+| **1** | Arm A needs optional primary proof | primary get → **4** |
+| **2** | Arm B needs semantic member | member get → BASELINE **6**, WITNESSED **4** |
+| **3** | Arm C needs HEAD_INDEX | index get → BASELINE **6**, WITNESSED **4** |
+| **4** | needs witness header | header get → **5** |
+| **5** | MEMBERSHIP_DUAL active | each chunk get increments `membership_i`; after exact M close → **6** |
+| **6** | current carrier complete | preserve `last_carrier_key` as global successor cursor, clear other per-carrier pins, then → **0** without get; **do not** set any arm-complete bit here |
+
+Quota exhaustion preserves `arm_cursor`, both raw target keys, both digest pins, `membership_i`, and found counts. Every successful Mode34 get changes `arm_cursor` or increments `membership_i`; with quota=1 a completed member/index/header/primary/chunk get is never re-issued. Invalid cursor 7..255 is CORRUPT/terminal with Port 0.
+
+For cursor 4/5 requests, set `request_key_scratch_len` immediately before the synchronous `exact_get` and clear it immediately after return（success, ABSENT, or Port failure）after the Port has consumed the request bytes. The borrowed returned value has its separate 4096-byte lifetime, so clearing request length does not invalidate response decoding.
+
+Mode34 owns one global full-domain iterator. At `arm_cursor=0`, it resumes strictly after `last_carrier_key`, selects every eligible A/B/C carrier in complete-key lexicographic order, and skips only rows outside §18.15.8.0. `arm_cursor=6` closes one carrier only. Only a successful iterator-exhaustion transition with `arm_cursor=0` and no live carrier proves the whole disjoint inventory exhausted; that transition atomically sets `count_complete_mask.bit2` and `binding_complete_mask.bits1|2|3|4`. Bits1/2/3 therefore include a vacuously empty arm. A bootstrap snapshot with Arm A empty and valid B/C rows can complete; observing one carrier, one arm, or an arm-boundary can never set a global completion bit.
+
+##### 18.15.8.5 MEMBERSHIP_DUAL full-M
+
+Every Arm A/B/C WITNESSED header get that enters `MEMBERSHIP_DUAL` independently installs `member_count=M`, `chunk_count=C`, and `expected_manifest_digest` while that header value is live, checks `C=ceil(M/8)`, and initializes the context SHA state. This proof belongs to the **current Mode34 READ_ONLY transaction**. A prior Mode31/32 result, cached manifest result, or another-session snapshot is not a substitute.
+
+For each ordinal `i`, the requested chunk key is built from the installed header's raw `witness_digest` and **exact index `floor(i/8)`**. The returned D1-valid chunk must additionally match that requested witness/index, installed `C`, and the exact non-final/final entry count from §18.15.3 before its slot is consumed. ABSENT, a returned index other than `floor(i/8)`, count/framing mismatch, or missing slot is CORRUPT. Re-getting the same chunk produces the same returned index for up to eight consecutive ordinals and is **required/合法**, not a duplicate finding. A duplicate-index mutation means only: (a) the returned index repeats after the ordinal crosses a chunk boundary and the requested `floor(i/8)` advanced, (b) an iterator yields a duplicate complete chunk row/key, or (c) a returned index mismatches the current requested `floor(i/8)`; skip at a boundary is equally CORRUPT. Since one chunk is re-fetched for each member, the exact encoded chunk body is fed to SHA only on `i%8==0`. Strict `membership_i` progress from 0 through M proves every expected index `0..C-1` was visited; duplicate complete Storage keys cannot coexist, and Mode33 independently owns extra/orphan chunk detection. The no-get close substep requires `membership_i==M`, the implied visited chunk count exactly `C`, and final SHA equal to the pinned `expected_manifest_digest` before evaluating target found-counts.
+
+```text
+found_count_a/b := 0; membership_i := 0; membership_substep := 0
+need := membership_need_mask
+key_a := membership_key_a; key_b := peer_key
+For i = 0 .. M-1  (full M; early exit forbidden):
+  quota yield preserves membership_i + found_count_* + pin_digest_a/b + key_a/b
+  forward-build chunk key into request_key_scratch; exact_get(chunk[i/8]); used++
+  require returned chunk witness/index/count/framing
+    == installed witness / floor(i/8) / C / exact entry count
+  if i%8 == 0: SHA_feed(exact encoded chunk body)       # exactly once/chunk
+  entry := slot i%8
+  if need bit0 and keys_equal(entry, key_a):
+    found_count_a = min(2, found_count_a+1)
+    if found_count_a==1 and entry.new != pin_digest_a → corrupt
+  if need bit1 and keys_equal(entry, key_b):
+    found_count_b = min(2, found_count_b+1)
+    if found_count_b==1 and entry.new != pin_digest_b → corrupt
+After M: require membership_i==M, exact C visited, SHA_final==expected_manifest_digest
+  require found_count_x==1 for each need bit (0=missing, ≥2=duplicate)
+  then arm_cursor := 6
+```
+
+Get budget membership: **exactly M** chunk re-gets。
+
+#### 18.15.9 Exact get-budget table
+
+| Situation | exact_gets |
+| --- | --- |
+| **31/32** per header | **2M+P** = M chunk + M member + P primary（0≤P≤M） |
+| **33** | RETIRED_HEADER_INVENTORY = 0 gets/header; CHUNK_BIND = 1 header get/chunk row |
+| **34 arm A** | ≤1 primary + 1 header + **M** membership |
+| **34 arm B BASELINE** | 1 member |
+| **34 arm B WITNESSED** | 1 member + 1 header + **M** |
+| **34 arm C BASELINE** | 1 index |
+| **34 arm C WITNESSED** | 1 index + 1 header + **M** |
+
+#### 18.15.10 Precedence / finalize gates
+
+| Gate | Exact |
+| --- | --- |
+| Traversal complete | phase COMPLETE + current mode required masks + no sticky corruption + INTERNAL done（or a proved vacuous-empty inventory） |
+| COMPLETE_READY | traversal complete + `flags.bit7==0` + `binding_complete_mask.bit5==0`; set `flags.bit3=1` |
+| DEFERRED_READY | traversal complete + at least one of `flags.bit7` / `binding_complete_mask.bit5`; `flags.bit3` **must remain 0** |
+| Finalize result | COMPLETE_READY and DEFERRED_READY both sample the private disposition below, perform normal cleanup, publish one complete private result with a single commit-style copy, and return `NINLIL_OK`; a deferred disposition is **not D3 success** until the named S5/S6 composition succeeds |
+| Incomplete masks / mid-yield | finalize → INVALID_STATE Port 0; no cleanup |
+| Evaluator-off | baseline candidate only; both READY shapes forbidden; finalize follows the frozen D2 unsupported/corrupt aggregate path and publishes canonical `d3s4_disposition_present=0`, `d3s4_disposition=0` only when cleanup succeeds |
+| Sticky terminal | further d3s4_drive → INVALID_STATE Port 0 |
+| Cleanup | iter_close → rollback → optional fence → DONE |
+
+The private finalize disposition is derived entirely from existing sticky bits; it is not another context field: **0 LOCAL_COMPLETE** (`bit7=0, bit5=0`), **1 S5_REQUIRED** (`1,0`), **2 S6_REQUIRED** (`0,1`), **3 S5_AND_S6_REQUIRED** (`1,1`). The local (`1,1`) shape is valid in **Mode31 or Mode32 only** when one or more `SUPERSEDE_WITNESS` members progressed to same-successor RETIRED or ABSENT predecessor candidates; Mode31 otherwise cannot set either deferred bit, while Mode32 may also produce `(1,0)` for its ordinary successor proof. Mode33 may produce only `(0,1)` and Mode34 only `(0,0)`; any other local shape is INVALID_STATE. A higher D3 composition accumulator may also combine dispositions 1 and 2 into 3. Invalid enum/MBZ/mode-bit shape or sticky corruption is never converted to a deferred result.
+
+**Closed private result carrier（implementation-required）:** append the following exact declaration-order fields after `ninlil_domain_scan_result_t.family14_iter_seen_mask`; do not add them to a public ABI/wire/storage type and do not use `packed`.
+
+```c
+uint8_t d3s4_disposition_present; /* exact 0 or 1 */
+uint8_t d3s4_disposition;         /* present=1: exact 0..3; present=0: exact 0 */
+```
+
+`present=1, disposition=0` is LOCAL_COMPLETE and is observably different from `present=0, disposition=0`（no D3-S4 disposition）。`present=0` with non-zero disposition, `present>1`, or `present=1` with disposition>3 is invalid and may never be published. Higher D3 composition accepts a disposition **only when the finalize call returned `NINLIL_OK` and `d3s4_disposition_present==1`**; it ignores both bytes on every non-OK status and ignores `d3s4_disposition` when present is zero. Thus evaluator-off, failed traversal, abort, or cleanup failure cannot accidentally contribute LOCAL_COMPLETE.
+
+**Output/cleanup mutation matrix（the whole `ninlil_domain_scan_result_t`, including padding, is the output unit）:**
+
+| Call/path | Port calls | `out_result` | S4 context/session |
+| --- | ---: | --- | --- |
+| finalize, evaluator-on READY, cleanup success | cleanup tree | publish one fully initialized temporary result; `present=1`, disposition exact 0..3; return `NINLIL_OK` | sample disposition to a scalar before cleanup; after publish, zero entire S4 context and finish DONE |
+| finalize, evaluator-off frozen aggregate, cleanup success | cleanup tree | publish one fully initialized temporary result; `present=0`, disposition=0; return frozen aggregate status | after publish, zero entire S4 context and finish DONE |
+| finalize from FAILED, cleanup success | cleanup tree | publish diagnostics with `present=0`, disposition=0 and the sticky non-OK status | after publish, zero entire S4 context and finish DONE |
+| finalize, any cleanup failure | cleanup tree/fence as required | **all bytes unchanged** from caller poison; sampled disposition is discarded | zero entire S4 context after Port cleanup; finish terminal DONE/reopen-required authority in session |
+| abort from legal OPEN/EXHAUSTED/FAILED | cleanup tree/fence as required | **all bytes unchanged**, regardless of cleanup outcome | zero entire S4 context after Port cleanup; finish terminal DONE |
+| NULL, output alias, invalid state, incomplete masks/mid-yield, invalid enum/MBZ/mode shape | **0** | **all bytes unchanged** | session/context/workspace unchanged |
+
+Prevalidation checks all required pointers/state/shape and requires the complete result range to be disjoint from the session, bound workspace, bound ops object, bound handle slot, and bound S4 context **before** any Port call, output write, or cleanup. On a publishable path, construct a zero-initialized local `ninlil_domain_scan_result_t candidate`, fill every legacy field plus the two carrier bytes, and perform exactly one non-overlapping full-object copy to `out_result` only after cleanup succeeds. The exact order is: **derive/sample scalar disposition → Port cleanup outcome → build/publish complete output → zero S4 context**. Cleanup failure and abort perform no candidate publication. This deliberate D3-S4 rule is stricter than the pre-S4 generic abort/direct-publication implementation and must be applied when S4 is bound.
+
+**Private-result size/stack accounting:** the current host layout is named bytes through offset 51, natural `sizeof=56`, alignment 8. Appending the two `uint8_t` fields at declaration offsets **52/53** consumes two existing tail-padding bytes on that host, so host `sizeof` remains **56**（2 tail-padding bytes remain）。The logical result payload grows by exactly 2 bytes. Target ABI padding is not assumed: implementation must `_Static_assert(sizeof(ninlil_domain_scan_result_t) <= 64)` and record host plus ESP32-S3 target `sizeof`/alignment in the implementation oracle; an align-4 target may grow from 52 to 56（worst current-to-new object delta 4）。The caller-owned Stage5 local therefore remains 56 on the measured host and is bounded by 64 on target. Commit-style candidate publication adds at most **64 bytes** of finalize function stack; no record/value buffer is placed there. This result is caller output/temporary, not part of the S4 context or co-resident D3 arena, so S4 **949/960**, outer **10880**, and packed aggregate arithmetic remain unchanged. ESP task-stack sizing/high-water verification must include the +64-byte finalize temporary. The single copy is a publication boundary for this non-concurrent private call contract, not a C11 lock-free atomicity claim.
+
+#### 18.15.11 Honest cost
+
+| Mode | Baseline | Internal | Session |
+| ---: | --- | --- | --- |
+| 31/32 | **Θ(N)** | **Θ(N + Σ(2M+P))**（header selection full scan + gets） | **Θ(2N+Σ(2M+P))** |
+| 33 | **Θ(N)** | **Θ(2N + N_chunk)**（header inventory full scan + chunk bind full scan + one get/chunk） | **Θ(3N+N_chunk)** |
+| 34 | **Θ(N)** | **Θ(N + N_arm + Σ M_grp)** | **Θ(2N+…)** |
+
+D3-S4 complete = **4 × baseline + every internal full scan/get walk**；`Θ(4N+W)` の `W` は上表の追加 full-domain scans と exact-get/member workをすべて含む。internal scanをhideして `W=members only` とすることは **forbidden**。
+
+#### 18.15.12 Fixed S4 context layout（sizeof **949** / align 1 / ceiling **960**）
+
+| Offsets | Size | Field |
+| ---: | ---: | --- |
+| 0..44 | 45 | `last_carrier_key` |
+| 45 | 1 | `last_carrier_key_len` |
+| 46..77 | 32 | `witness_digest` |
+| 78..79 | 2 | `member_count` u16 BE |
+| 80..81 | 2 | `chunk_count` u16 BE |
+| 82..83 | 2 | `streamed_members`（FOCUS next i） |
+| 84..85 | 2 | `membership_i` |
+| 86..117 | 32 | `expected_manifest_digest` |
+| 118..149 | 32 | `focus_key_digest` |
+| 150..181 | 32 | **`pin_digest_a`**（membership/semantic expected new） |
+| 182..213 | 32 | **`pin_digest_b`**（membership/index expected new; dual64 pair with a） |
+| 214..245 | 32 | `entry_old_value_digest` |
+| 246..277 | 32 | `entry_new_value_digest` |
+| 278..309 | 32 | `entry_prior_head_witness_digest` |
+| 310..341 | 32 | **`expected_primary_pvd`** |
+| 342..596 | 255 | phase-disjoint **`expected_primary_raw` / `request_key_scratch`**（raw contents / complete request; max 255） |
+| 597..660 | 64 | **`expected_primary_raw2`**（S4 closed-normalized second raw; max 64） |
+| 661..676 | 16 | **`expected_primary_aux`**（S4 closed-normalized fixed auxiliary identity; max 16） |
+| 677..678 | 2 | phase-disjoint **`expected_primary_raw_len` / `request_key_scratch_len`** u16 BE（0..255） |
+| 679 | 1 | **`expected_primary_raw2_len`**（0..64） |
+| 680 | 1 | **`expected_primary_aux_len`**（0..16） |
+| 681..725 | 45 | `prev_member_key` |
+| 726 | 1 | `prev_member_key_len` |
+| 727..771 | 45 | `peer_key`（primary-liveではcomplete primary key） |
+| 772 | 1 | `peer_key_len` |
+| 773..817 | 45 | `membership_key_a` |
+| 818 | 1 | `membership_key_a_len` |
+| 819..850 | 32 | `sha_state` |
+| 851..858 | 8 | `sha_bitcount` |
+| 859..922 | 64 | `sha_block` |
+| 923 | 1 | `sha_block_len` |
+| 924 | 1 | `entry_action` |
+| 925 | 1 | `entry_old_present` |
+| 926 | 1 | `entry_new_present` |
+| 927 | 1 | `entry_flags` / phase-disjoint **`expected_primary_owner_kind`** |
+| 928 | 1 | `group_class` |
+| 929 | 1 | `phase` |
+| 930 | 1 | `pass_kind` |
+| 931 | 1 | `flags` |
+| 932 | 1 | `count_complete_mask` |
+| 933 | 1 | `binding_complete_mask` |
+| 934 | 1 | `focus_mode` |
+| 935 | 1 | `arm_cursor` |
+| 936 | 1 | `membership_need_mask`（bit0 A; bit1 B） |
+| 937 | 1 | `found_count_a`（0..2 sat） |
+| 938 | 1 | `found_count_b` |
+| 939 | 1 | **`member_substep`**（0 chunk / 1 member / 2 primary / 3 done） |
+| 940 | 1 | **`membership_substep`** |
+| 941..942 | 2 | `drive_get_quota` u16 BE |
+| 943..944 | 2 | `drive_gets_used` u16 BE |
+| 945..946 | 2 | `entry_record_role` u16 BE |
+| 947..948 | 2 | `entry_key_length` u16 BE |
+| **Σ** | **949** | |
+| ceiling | **960** | headroom **11** |
+
+**flags:** bit0 baseline_done; bit1 focus_live; bit2 bind_phase_active; bit3 complete_ready; bit4 need_resume; bit5 header_installed; bit6 manifest_sha_open; bit7 **s5_required_seen**。All eight bits are assigned; no flag bit is MBZ.
+
+**Exact state-byte / bit ownership（no hidden booleans）:**
+
+| Byte | Bits / values |
+| --- | --- |
+| `phase` | 0 IDLE; 1 BASELINE; 2 SELECT; 3 MEMBER_PIPELINE; 4 GROUP_CLOSE; 5 MODE33_BIND; 6 MODE34_ARM; 7 COMPLETE; 8 FAILED; 9..255 invalid |
+| `pass_kind` | 0 PASS_BASELINE; 1 PASS_INTERNAL; 2..255 invalid |
+| `focus_mode` | 0 only before begin / after cleanup; 31,32,33,34 only while active; 1..30 and 35..255 invalid |
+| `flags` | bits0..7 exactly as the preceding paragraph; `bit3` only COMPLETE_READY, never DEFERRED_READY |
+| `group_class` | 0 UNSET; 1 ALL_NEW; 2 ALL_OLD; 3 MIXED_OLD_NEW; 4 PROGRESSED_S5_REQUIRED; 5 CORRUPT; 6..255 invalid |
+| `flags.bit7` | sticky within Mode32 once any header/member requires successor proof; in Mode31 it may be set only atomically with bit5 by `SUPERSEDE_WITNESS` RETIRED/ABSENT progression; preserved across carrier reset/GROUP_CLOSE/pass exhaustion/yield; clear only by fresh-begin initialization, finalize cleanup after disposition sampling, or abort cleanup |
+| `count_complete_mask` | bit0 Mode31 all-header/group pass complete; bit1 Mode32 all-header local pass complete; bit2 Mode34 carrier enumeration complete; bits3..7 MBZ |
+| `binding_complete_mask` | bit0 Mode33 RETIRED-header inventory then all chunks bound/deferred exactly; bits1/2/3 Mode34 global pass proved Arm A/B/C exhausted（empty included）; bit4 all three exhaustion bits set; bit5 sticky `s6_required_seen`（Mode31/32 SUPERSEDE progression or Mode33 RETIRED inventory）; bits6..7 MBZ |
+| `arm_cursor` | Mode33: 0 RETIRED_HEADER_INVENTORY, 1 CHUNK_BIND only; Mode34: exact 0..6 from §18.15.8.4; Modes31/32: 0 only; every other mode/value combination invalid |
+| `member_substep` | exact 0..3 from §18.15.5; 4..255 invalid |
+| `membership_substep` | 0 NEED_CHUNK, 1 CLOSE; 2..255 invalid |
+| `membership_need_mask` | bit0 target A, bit1 target B; values 0..3 only; bits2..7 MBZ |
+| `found_count_a/b` | saturating exact values 0,1,2; 3..255 invalid |
+| `entry_action` | 0 NONE/cleared; 1 CREATE; 2 REPLACE; 3 ERASE; 4 SUPERSEDE_WITNESS（§10.1）; 5..255 invalid |
+| `entry_old_present` / `entry_new_present` | each exact 0 or 1; 2..255 invalid |
+| `entry_flags` | ordinary manifest scratch: 0; while aliased for HEAD_INDEX: 1 BASELINE, 2 WITNESSED; while primary-live: `expected_primary_owner_kind` is the exact S4 normalization-table alias（Mode17 row owner kind、BLOB manifest kind 1..3、BLOB chunk 0）; the three lifetimes are disjoint and the byte is cleared with its owner |
+| `entry_record_role` | 0 when no entry/carrier role is live; while entry scratch or primary proof is live, high byte = key family and low byte = subtype for family5/6 or zero for family3/4, exactly as §10.1; mismatch/other value invalid。Primary close clears it |
+| `entry_key_length` | while entry-key scratch is live, exact 10 for family3/4 or 13..45 satisfying the actual family5/6 key grammar; it is cleared after member get even when `entry_record_role` remains for primary normalization。Other values invalid（255 remains wire capacity, not an acceptance range） |
+| key-length fields | each matching key/raw length is 0 iff that pin/scratch component is absent; otherwise within its declared array and applicable complete-key/raw grammar。primary-live requires `peer_key_len=13..45`, `expected_primary_raw_len=1..255`, raw2 ≤64, aux ≤16 and role-specific presence; request-live requires raw2/aux lengths zero。length/data disagreement invalid |
+| `sha_block_len` | 0..63 while SHA is open; 64..255 invalid |
+| `drive_get_quota` / `drive_gets_used` | quota exact 1..256 while driving; used 0..quota; used>quota, quota 0, or quota>256 invalid |
+
+At `begin_profiled_d3s4`, all state/masks/pins are zero, then `focus_mode` is installed and phase enters BASELINE. SELECT_HEADER resets per-header `group_class`, member/SHA/entry scratch and counts but preserves flags.bit7, binding bit5, and mode completion masks. SELECT arm resets `arm_cursor`, membership need/found/i/substep, raw targets, digest pins, and primary pins for that carrier only（Mode33's subpass cursor is not an Arm reset）。Mid-yield preserves every field. Mode33 header-inventory exhaustion alone advances cursor and reopens; only subsequent chunk-bind exhaustion sets bit0. Mode34 carrier close does not write completion bits; only global iterator exhaustion performs the atomic completion transition in §18.15.8.4. Mode pass exhaustion sets the applicable count/binding completion bits, then phase becomes COMPLETE. COMPLETE can be either COMPLETE_READY or DEFERRED_READY under §18.15.10. Any invalid/MBZ value is terminal corruption before readiness derivation. Finalize samples the derived disposition first; on cleanup-success finalize it publishes the complete result before zeroing the entire S4 context, while abort/cleanup-failure publishes nothing; every terminal cleanup zeros that context after Port cleanup（§18.15.10）。
+
+**Pass-scoped raw inventory / aliases（closed; simultaneous dual raw is explicit）:**
+
+| Pass | Raw field ownership |
+| --- | --- |
+| Modes31/32 member stream | `prev_member_key` = previous ordinal key for global lex check; before substep-0 get, `peer_key` = forward-built chunk request, then after successful get it is overwritten by current decoded entry key scratch; after substep-1 member get it may be overwritten again by the complete primary key（≤45）。`entry_*` = current entry action/presence/digests/role/length. Current entry key is copied before chunk value dies. |
+| Mode31/32 primary proof | `peer_key[45]+len` = complete primary key rebuilt while member body is live; `expected_primary_raw[255]` + `raw2[64]` + `aux[16]` + lengths = same member's S4-closed-normalized source tuple; `expected_primary_pvd` = same member's live PVD; `entry_record_role` + `entry_flags` owner-kind/body-variant alias select the exact returned-primary normalization, including BLOB manifest/chunk. |
+| Mode33 | header inventory retains no per-header raw after each row and only sets bit5; chunk bind uses `last_carrier_key` = actual chunk complete key, `witness_digest` = chunk composite identity, `peer_key` = forward-built WITNESS_HEADER complete key. |
+| Mode34 Arm A | `last_carrier_key` = actual semantic carrier raw/global iterator successor; `membership_key_a` = exact copied target A raw; `peer_key_len=0` because B is absent except while an optional primary proof is live. A non-zero primary PVD uses `peer_key` + expected raw/raw2/aux only until cursor 1 closes. |
+| Mode34 Arm B | `membership_key_a` = index-body member raw target A; `last_carrier_key` = actual HEAD_INDEX raw; `peer_key` = forward rebuilt HEAD_INDEX raw target B; rebuilt B must byte-equal `last_carrier_key`. |
+| Mode34 Arm C | `last_carrier_key` and `membership_key_a` = actual family3/4 raw target A; `peer_key` = forward-built HEAD_INDEX raw target B. Index body raw must bind both. |
+| Mode34 request key | the 255 bytes at offsets 342..596 and u16 at 677..678 are named `request_key_scratch` / `_len` only when no primary raw tuple is live. Header/chunk complete request keys are forward-built there immediately before each `exact_get`; the request length is cleared immediately after that call. It is distinct from simultaneous live `last_carrier_key`, `membership_key_a`, and `peer_key`; raw2/aux lengths must be zero in request-live shape. |
+
+`membership_key_a` and `peer_key` are live together from header proof through all M membership entries in Arm B/C. Neither may alias the borrowed 4096 value, the 255-byte primary-raw/request slot, or the other raw target. `expected_primary_raw` and `request_key_scratch`（including their phase-disjoint length name）must never be live simultaneously. Primary-live shape is exactly member_substep 2 or Mode34 arm_cursor 1 with non-zero expected PVD, `peer_key_len`, primary raw length and role-specific optional raw2/aux lengths; request-live shape is the synchronous Mode34 exact-get call at cursor 4/5 with no primary-live shape. No hidden alias-live boolean exists. `entry_new_value_digest` temporarily holds HEAD_INDEX `member_value_digest`; `entry_flags` holds `index_state` outside primary-live and `expected_primary_owner_kind` only during primary-live; `witness_digest` holds `member_head_witness_digest`. Each alias is assigned while its source value is live and cleared at the named close.
+
+**Pin lifetimes:**
+
+| Pin | Set when | Valid until |
+| --- | --- | --- |
+| `expected_primary_pvd` / `peer_key` / primary raw+raw2+aux tuple / role+owner-kind | member PRESENT substep 1 | primary substep 2 close; all clear together |
+| Arm A primary PVD / `peer_key` / raw+raw2+aux tuple / role+owner-kind | carrier install while value is live | cursor 1 close; all clear before cursor 4 |
+| `request_key_scratch` / `_len` | immediately before a Mode34 header/chunk `exact_get`, only with no live primary pin | that exact_get returns; clear length and rebuild for every later request |
+| `pin_digest_a` / `pin_digest_b` | arm install / forward known-key gets | MEMBERSHIP_DUAL close for that carrier |
+| Mode34 `expected_manifest_digest` / M / C / SHA state | live ACTIVE/SUPERSEDED header get immediately before MEMBERSHIP_DUAL | same-transaction full-M close after exact framing/index-set/final-SHA proof |
+| entry action/presence/digest/key-length scratch | chunk substep 0 | member substep 1 consume; `entry_record_role` and owner-kind alias alone remain when a primary proof follows |
+
+**Required exact masks by session:** Mode31 → count bit0 only; normally deferred bits zero, but a `SUPERSEDE_WITNESS` same-successor RETIRED/ABSENT progression requires exactly `(bit7,bit5)=(1,1)` and no other binding bit。Mode32 → count bit1 only, binding completion bit0/1..4 zero, `flags.bit7` mandatory after every non-corrupt group（vacuous empty inventory may leave it zero）, and binding bit5 optional only for the same progression; `(1,1)` means S5_AND_S6_REQUIRED。Mode33 → count zero, binding bit0 plus optional deferred bit5 S6, `flags.bit7=0`; Mode34 → count bit2 + binding bits1|2|3|4 exactly, deferred bits zero. Mode34 writes its five completion bits only on global iterator exhaustion. A mode never writes another mode's completion bit; extra completion/deferred bits、Mode31 `(1,0)` / `(0,1)`、or Mode33/34 `(1,1)` make the shape invalid. Deferred bits are composition authority, not substitutes for required masks.
+
+**key_b:** rebuild HEAD_INDEX complete key into `peer_key` from `focus_key_digest` before the borrowed carrier/index value is overwritten; retain it through MEMBERSHIP_DUAL（pure; not a second 255 array）。
+
+#### 18.15.13 Memory ceilings（S3 **768** fixed from main）
+
+| Object | Ceiling |
+| --- | ---: |
+| scanner / Stage5-alone | **8192** / **8704** unchanged |
+| S1 / S2 | **448** / **320** unchanged |
+| S1+S2 | **9152** unchanged |
+| S3（§18.14 main） | **754 / 768**; outer **9920** |
+| **S4** | sizeof **949** / ceiling **960** |
+| private scan result | host **56** before/after two-byte append; target ceiling **64**; finalize temporary stack ≤**64**; not in arena |
+| S1+S2+S4 | **10112** = 8384+448+320+960 |
+| **S1+S2+S3+S4 full** | **10880** = 8384+448+320+768+960 |
+
+Packed full: `8384+421+306+754+949=10814`；align8 **10816** ≤ **10880**。
+Packed S1+S2+S4: `8384+421+306+949=10060`；align8 **10064** ≤ **10112**。
+
+dual-bound **forbidden**。Stage5 no D3 bind until S12。
+
+#### 18.15.14 Private API（contract names only）
+
+| API | Rule |
+| --- | --- |
+| `begin_profiled_d3s4` | mode 31..34; ctx ≤**960**; disjoint; not dual-bound |
+| `d3s4_drive` / advance | enforce quota; **substep progress**; mid yield |
+| finalize/abort | §18.15.10 exact private carrier, whole-output publication/poison, cleanup, alias and zero order |
+| Stage5 until S12 | no begin_d3s4 |
+
+#### 18.15.15 Oracle architecture / constructible positives / anti-false-pass
+
+The implementation change set shall add the append-only authority format **`ninlil-domain-scan-crossrow-v1-d3s4`**. It retains the D3-S1 exact 94-vector prefix and the then-current D3-S2/D3-S3 prefix byte-for-byte; this docs-only freeze does **not** edit the existing JSON. An independent deterministic generator, separate from production scanner control flow, must emit both (a) Port fixture records/scripts and (b) the expected per-drive state transition, exact-get key sequence, masks, disposition, and terminal result. The production bridge must run those generated scripts through the private D3-S4 implementation; a hand-authored C-only positive oracle that can drift independently is insufficient.
+
+Minimum constructible positive catalog:
+
+1. Mode31, `M=1`, ACTIVE, all-new, zero primary PVD → `LOCAL_COMPLETE`.
+2. Mode31, `M=2`, one present secondary with non-zero primary PVD, `drive_get_quota=1` → exact chunk/member/primary/done cursor sequence, byte-exact primary raw/raw2/aux + PVD proof, no repeated get. A companion fixture uses a test digest oracle that makes source raw A and returned primary raw B derive the **same complete key and PVD**; raw tuple mismatch still produces a finding.
+3. The S4 primary-normalization table is **closed-set covered**, not sampled: every imported Mode17 source role/owner-kind, dual-raw and aux-bearing shape, BLOB manifest owner kinds 1/2/3, and BLOB chunk→manifest has a constructible positive. BLOB manifest positives prove returned TRANSACTION_ANCHOR 16 / ORDERED_INGRESS BE8 / DELIVERY raw80 identity; the chunk positive proves forward manifest-key rebuild, returned manifest flags=1/body `blob_id_digest`, and PVD. At least one BLOB path is driven through Mode31 and one through Mode34 Arm A so neither caller may skip the shared normalizer.
+4. Mode31 ACTIVE successor with a `SUPERSEDE_WITNESS` predecessor that is (a) same-successor RETIRED and (b) fully ABSENT with no orphan chunk: every ordinary semantic member remains ALL_NEW, both sticky bits are set atomically, and finalize returns `S5_AND_S6_REQUIRED` rather than CORRUPT/local complete.
+5. Mode32 ALL_NEW with valid successor field, and separately a progressed different-head member → `S5_REQUIRED`, never COMPLETE_READY/local D3 success. A `SUPERSEDE_WITNESS` whose predecessor is same-successor RETIRED and a fully-ABSENT predecessor candidate each set both bits and finalize `S5_AND_S6_REQUIRED` locally（S5/S6 correlation still pending）。
+6. Mode33 exact ACTIVE and SUPERSEDED header binds → `LOCAL_COMPLETE`; RETIRED header inventory with (a) zero chunks and (b) only a strict prefix of declared chunks → `S6_REQUIRED` with bit5 preserved through header→chunk reopen and exhaustion. A RETIRED header with an incoming-reference fixture still produces the same deferred S6 authority（S4 performs no incoming walk; S6 later rejects/accepts）。
+7. Mode34 valid bootstrap: Arm A empty, fifteen BASELINE Arm-B indexes and fifteen family3/4 Arm-C carriers → global exhaustion atomically proves empty A plus B/C and completes.
+8. Mode34 WITNESSED B/C pair has two positive fixtures: **M=2/C=1** returns chunk index sequence `[0,0]`; **M=9/C=2** returns `[0,0,0,0,0,0,0,0,1]`. Both prove that within-chunk repeated returned indexes are required/合法, each requested/returned index is exact `floor(i/8)`, SHA feeds at ordinals 0 and（for M=9）8 only, both raw targets and distinct `pin_digest_a/b` are found exactly once, and final framing/SHA close succeeds.
+9. Mode34 Arm A with non-zero primary PVD → primary raw/PVD pin closes before the same bytes become header/chunk request scratch, followed by successful same-transaction membership + manifest proof.
+10. A Mode32 session returning S5_REQUIRED plus a Mode33 session returning S6_REQUIRED → higher composition accumulator yields `S5_AND_S6_REQUIRED`; separately, Mode31 and Mode32 SUPERSEDE progression fixtures each return disposition 3 directly. Neither sticky bit is lost at carrier/pass close.
+11. Finalize output carriers include evaluator-on LOCAL_COMPLETE as exact `(present,disposition)=(1,0)`, each deferred value `(1,1..3)`, and evaluator-off as exact `(0,0)`. Higher composition consumes only status `NINLIL_OK` + present 1. Every fixture starts the whole output object as non-zero poison and proves one full-object publication only on a cleanup-success finalize.
+
+Each positive fixture must be materialized, reproducible from a pinned seed/version, and self-check its expected get keys against keys independently reconstructed from fixture raw fields. CI must reject stale generated output, changed prefix vectors, duplicate vector IDs, nondeterministic regeneration, or a production result/state trace differing from the generated expectation.
+
+Minimum negative/mutation catalog:
+
+1. Primary get with only derived key/PVD pin, including a same-key+same-PVD collision fixture whose returned body differs in **exactly one** of raw bytes、raw2 bytes、aux bytes、each corresponding length、source role、or owner-kind/body-variant alias → **must fail**。Required raw2/aux may not be converted to zero-length skip.
+2. BLOB manifest wrong owner kind/raw/returned primary type、BLOB chunk treated as manifest、wrong source/returned `blob_id_digest`、returned flags≠1、KEY_DIGEST-only/request-key-only comparison、or chunk PVD not compared with returned manifest VALUE_DIGEST → **must fail**.
+3. Arm B membership compares the index entry with `pin_digest_a` → **must fail**（wrong target digest）.
+4. Arm C omits `pin_digest_b` or reuses `pin_digest_a` for index → **must fail**.
+5. `quota=1` re-gets the same chunk without substep advance → **must fail**.
+6. Dual first-hit early exit → **must fail**.
+7. Per-carrier close sets an Arm completion bit, or empty Arm A prevents global completion → **must fail**.
+8. Mode33 skips RETIRED_HEADER_INVENTORY, misses a RETIRED zero/partial-chunk header, loses bit5 at subpass transition/exhaustion, performs successor/incoming exact-get/walk, or finalize reports local complete → **must fail**.
+9. Header/chunk request scratch overwrites a live primary or either live raw membership target → **must fail**.
+10. Any invalid enum/MBZ bit, incomplete required mask, or COMPLETE_READY with a deferred bit → **must fail**.
+11. Mode31 or Mode32 same-successor RETIRED/ABSENT SUPERSEDE progression sets only S5 or only S6, treats `(1,1)` as invalid, accepts ACTIVE/different-successor, or locally proves retirement eligibility → **must fail**.
+12. Mode31 accepts ordinary semantic OLD/NEITHER/progression under the SUPERSEDE exception, or returns deferred for a group with no progressed `SUPERSEDE_WITNESS` → **must fail**.
+13. Mode34 accepts a prior Mode31/32 result instead of its own manifest proof, or misses a mutation of header `manifest_digest`, returned chunk `witness_digest`/count/entry-count, missing expected chunk/slot, or final SHA → **must fail**. Returned-index mutations are exact: at the M=9 boundary request `floor(8/8)=1`, returning 0 is a boundary repeat; returning 2 is a skip/mismatch; an iterator duplicate of the complete index-0 or index-1 row/key is corrupt/orphan inventory; any ordinal whose returned index differs from requested `floor(i/8)` fails. The legal M=2 `[0,0]` and M=9 first-eight `[0×8]` sequences must **not** fail as duplicates.
+14. Prior 2M / BASELINE stale / orphan / incomplete-finalize cases remain, and all four sessions independently prove their baseline Θ(N) pass.
+15. Whole-result poison tests prove abort（cleanup success and failure）、finalize cleanup failure、NULL/alias/prevalidation/invalid-state/incomplete-shape all leave every output byte unchanged. Alias mutations cover overlap with session, workspace, ops, handle slot, and bound S4 context. Invalid carrier combinations `(present>1)`, `(present=0, disposition!=0)`, and `(present=1, disposition>3)` are never published; a non-OK or present-0 result is never composed.
+
+#### 18.15.16 Mutation / D4 boundary
+
+Snapshot finding **S4**; chain **S5**; retire **S6**; commits **D4**。
+
+#### 18.15.17 Explicit exclusions
+
+| Exclusion | |
+| --- | --- |
+| Primary raw/key only via S1 session | forbidden |
+| Single carrier_value_digest for dual membership targets | forbidden |
+| quota=1 infinite same-get loop | forbidden |
+| Chunk borrow; C+M fiction; dual first-hit | forbidden |
+| public ABI/wire/D1 change | not this freeze |
+
+#### 18.15.18 Completion boundary / non-claims
+
+| Claim | |
+| --- | --- |
+| D3-S4a Normative freeze §18.15（S4 closed primary raw/raw2/aux pins incl. BLOB; Mode31/32 SUPERSEDE progression; dual digest pins; Mode33 RETIRED inventory; Mode34 same-txn manifest proof + legal within-chunk re-get; closed private result carrier/publication; substep progress; 949/960; full outer 10880） | **yes** |
+| S3a §18.14 main-equivalent 754/768/9920 | **preserved** |
+| S4 / D3 / Stage5 / Runtime / ESP implementation | **no** |
+| Crossrow d3s4 JSON | **no** |
+
+S4a を implementation complete へ書き換えない。S0/S1a/S2a/S3a historical は **preserve**。
