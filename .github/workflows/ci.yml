@@ -92,8 +92,9 @@ jobs:
             fi
           done
           # readelf on .a is unreliable; scan extracted objects (no DWARF5 line_str).
+          archive="$PWD/$a"
           tmp=$(mktemp -d)
-          (cd "$tmp" && ar x "$PWD/$a")
+          (cd "$tmp" && ar x "$archive")
           for o in "$tmp"/*; do
             if readelf -S "$o" 2>/dev/null | grep -q debug_line_str; then
               echo "false-green: DWARF5 .debug_line_str still present in $o" >&2
@@ -171,8 +172,9 @@ jobs:
               exit 1
             fi
           done
+          archive="$PWD/$a"
           tmp=$(mktemp -d)
-          (cd "$tmp" && ar x "$PWD/$a")
+          (cd "$tmp" && ar x "$archive")
           for o in "$tmp"/*; do
             if readelf -S "$o" 2>/dev/null | grep -q debug_line_str; then
               echo "false-green: DWARF5 .debug_line_str still present in $o" >&2
@@ -279,8 +281,9 @@ jobs:
               exit 1
             fi
           done
+          archive="$PWD/$a"
           tmp=$(mktemp -d)
-          (cd "$tmp" && ar x "$PWD/$a")
+          (cd "$tmp" && ar x "$archive")
           for o in "$tmp"/*; do
             if readelf -S "$o" 2>/dev/null | grep -q debug_line_str; then
               echo "false-green: DWARF5 .debug_line_str still present in $o" >&2
@@ -389,8 +392,9 @@ jobs:
               exit 1
             fi
           done
+          archive="$PWD/$a"
           tmp=$(mktemp -d)
-          (cd "$tmp" && ar x "$PWD/$a")
+          (cd "$tmp" && ar x "$archive")
           test -n "$(ls -A "$tmp")"
           for o in "$tmp"/*; do
             if strings "$o" | grep -F "$PWD/"; then
@@ -457,8 +461,9 @@ jobs:
               exit 1
             fi
           done
+          archive="$PWD/$a"
           tmp=$(mktemp -d)
-          (cd "$tmp" && ar x "$PWD/$a")
+          (cd "$tmp" && ar x "$archive")
           test -n "$(ls -A "$tmp")"
           for o in "$tmp"/*; do
             if strings "$o" | grep -F "$PWD/"; then
