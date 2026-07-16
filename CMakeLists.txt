@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.16)
 
 project(ninlil VERSION 0.1.0 LANGUAGES C CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(NINLIL_IS_TOP_LEVEL ON)
     set(_ninlil_build_tests_default ON)
@@ -15,13 +18,21 @@ option(NINLIL_BUILD_TESTS "Build Ninlil's test suite"
     ${_ninlil_build_tests_default})
 option(NINLIL_ENABLE_STRICT_WARNINGS "Build Ninlil with warnings as errors"
     ${_ninlil_strict_warnings_default})
+option(NINLIL_BUILD_POSIX_SQLITE_STORAGE
+    "Build POSIX SQLite storage port when SQLite3 is available" ON)
 
 add_library(ninlil INTERFACE)
+add_library(Ninlil::ninlil ALIAS ninlil)
 target_include_directories(ninlil INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+# ASan/UBSan coverage builds. Sanitizer archives are non-ship artifacts:
+# installed-consumer smoke skips only archive/object absolute-path hygiene when
+# this option is explicitly ON (ASan global descriptors embed absolute -c
+# paths). Ship hygiene is enforced by non-sanitizer production/CI gates.
+# Do not lower sanitizer coverage or disable ASan globals for path hygiene.
 option(NINLIL_ENABLE_SANITIZERS "Build with ASan and UBSan" OFF)
 set(_ninlil_sanitizer_supported FALSE)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
@@ -66,6 +77,205 @@ function(ninlil_apply_strict_warnings target)
         )
     endif()
 endfunction()
+
+# Single source of feature macros for POSIX SQLite library/example/tests.
+# glibc + -std=c11 (no extensions): realpath needs XSI; flock/MAP_ANONYMOUS
+# need _DEFAULT_SOURCE. macOS keeps _DARWIN_C_SOURCE only.
+function(ninlil_apply_posix_sqlite_feature_macros target)
+    if(APPLE)
+        target_compile_definitions(${target} PRIVATE
+            _DARWIN_C_SOURCE
+        )
+    else()
+        target_compile_definitions(${target} PRIVATE
+            _XOPEN_SOURCE=700
+            _DEFAULT_SOURCE
+        )
+    endif()
+endfunction()
+
+# Host-only durable storage port. Missing SQLite must not break portable core.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_posix_sqlite_sqlite3.cmake)
+set(NINLIL_POSIX_SQLITE_STORAGE_ENABLED FALSE)
+set(NINLIL_CONFIG_SQLITE_STATIC FALSE)
+set(NINLIL_CONFIG_SQLITE_NEEDS_ZLIB FALSE)
+set(NINLIL_CONFIG_SQLITE_NEEDS_THREADS FALSE)
+if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
+    # macOS static + host tests is never a supported combination (ld64 has no
+    # GNU --wrap). Fail before discovery so CI cannot silently skip the port.
+    if(APPLE AND NINLIL_BUILD_TESTS
+       AND NINLIL_SQLITE_LINKAGE STREQUAL "STATIC")
+        message(FATAL_ERROR
+            "NINLIL_SQLITE_LINKAGE=STATIC with NINLIL_BUILD_TESTS=ON is "
+            "unsupported on macOS (no safe static interpose backend). Use "
+            "SHARED/AUTO with dylib, or -DNINLIL_BUILD_TESTS=OFF. Production "
+            "static install on macOS is outside the supported matrix "
+            "(docs/08, port README).")
+    endif()
+    ninlil_sqlite3_find_with_preference()
+    if(NOT SQLite3_FOUND AND NINLIL_SQLITE_LINKAGE STREQUAL "STATIC")
+        message(FATAL_ERROR
+            "NINLIL_SQLITE_LINKAGE=STATIC requested but no static libsqlite3 "
+            "archive was found")
+    endif()
+    if(NOT SQLite3_FOUND AND NINLIL_SQLITE_LINKAGE STREQUAL "SHARED")
+        message(FATAL_ERROR
+            "NINLIL_SQLITE_LINKAGE=SHARED requested but no shared libsqlite3 "
+            "was found")
+    endif()
+    if(SQLite3_FOUND)
+        if(NOT TARGET SQLite3::SQLite3 AND TARGET SQLite::SQLite3)
+            add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+        endif()
+        ninlil_sqlite3_resolve_library_path(NINLIL_SQLITE_LIBRARY_PATH)
+        ninlil_sqlite3_classify_path(
+            "${NINLIL_SQLITE_LIBRARY_PATH}" _ninlil_sqlite_kind)
+        if(_ninlil_sqlite_kind STREQUAL "static")
+            set(NINLIL_SQLITE_IS_STATIC TRUE)
+        elseif(_ninlil_sqlite_kind STREQUAL "shared")
+            set(NINLIL_SQLITE_IS_STATIC FALSE)
+        else()
+            # AUTO: never guess shared/static from an unclassifiable path.
+            if(NINLIL_SQLITE_LINKAGE STREQUAL "AUTO")
+                message(FATAL_ERROR
+                    "NINLIL_SQLITE_LINKAGE=AUTO cannot reliably classify "
+                    "SQLite library path '${NINLIL_SQLITE_LIBRARY_PATH}' "
+                    "(need a known suffix: .a/.lib or .so/.dylib/.tbd/.dll). "
+                    "Set NINLIL_SQLITE_LINKAGE=STATIC or SHARED explicitly, "
+                    "or point SQLite3_LIBRARY at a classifiable path.")
+            elseif(NINLIL_SQLITE_LINKAGE STREQUAL "STATIC")
+                ninlil_sqlite3_accept_opaque_static(
+                    "${NINLIL_SQLITE_LIBRARY_PATH}" _opaque_ok)
+                if(NOT _opaque_ok)
+                    message(FATAL_ERROR
+                        "NINLIL_SQLITE_LINKAGE=STATIC but path "
+                        "'${NINLIL_SQLITE_LIBRARY_PATH}' is not a classifiable "
+                        "static archive and is not an acceptable opaque "
+                        "operator-forced file (must exist, regular file, "
+                        "not a shared-library name).")
+                endif()
+                set(NINLIL_SQLITE_IS_STATIC TRUE)
+                message(STATUS
+                    "POSIX SQLite: accepting operator-forced opaque static "
+                    "archive '${NINLIL_SQLITE_LIBRARY_PATH}'")
+            else()
+                message(FATAL_ERROR
+                    "NINLIL_SQLITE_LINKAGE=SHARED but path "
+                    "'${NINLIL_SQLITE_LIBRARY_PATH}' is not a classifiable "
+                    "shared library (.so/.dylib/.tbd/.dll)")
+            endif()
+        endif()
+        if(NINLIL_SQLITE_LINKAGE STREQUAL "STATIC" AND NOT NINLIL_SQLITE_IS_STATIC)
+            message(FATAL_ERROR
+                "NINLIL_SQLITE_LINKAGE=STATIC requested but resolved "
+                "'${NINLIL_SQLITE_LIBRARY_PATH}' is not static")
+        endif()
+        if(NINLIL_SQLITE_LINKAGE STREQUAL "SHARED" AND NINLIL_SQLITE_IS_STATIC)
+            message(FATAL_ERROR
+                "NINLIL_SQLITE_LINKAGE=SHARED requested but resolved "
+                "'${NINLIL_SQLITE_LIBRARY_PATH}' is a static archive")
+        endif()
+
+        if(NINLIL_SQLITE_IS_STATIC AND APPLE AND NINLIL_BUILD_TESTS)
+            message(FATAL_ERROR
+                "Static libsqlite3 with NINLIL_BUILD_TESTS=ON is unsupported on "
+                "macOS (no GNU --wrap). Use shared SQLite or "
+                "-DNINLIL_BUILD_TESTS=OFF. Production static install on macOS is "
+                "also outside the supported matrix (see docs/08, port README).")
+        endif()
+
+        set(NINLIL_POSIX_SQLITE_STORAGE_ENABLED TRUE)
+        add_library(ninlil_posix_sqlite_storage STATIC
+            ports/posix/sqlite_storage/ninlil_posix_sqlite_storage.c
+            ports/posix/sqlite_storage/ninlil_posix_sqlite_token_advance.c
+        )
+        add_library(Ninlil::ninlil_posix_sqlite_storage ALIAS
+            ninlil_posix_sqlite_storage)
+        target_include_directories(ninlil_posix_sqlite_storage
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include>
+                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/sqlite_storage
+        )
+        target_link_libraries(ninlil_posix_sqlite_storage
+            PUBLIC
+                ninlil
+                SQLite3::SQLite3
+        )
+        if(NINLIL_SQLITE_IS_STATIC)
+            ninlil_sqlite3_collect_static_system_deps(
+                "${NINLIL_SQLITE_LIBRARY_PATH}")
+            if(NINLIL_SQLITE_STATIC_SYSTEM_DEPS)
+                target_link_libraries(ninlil_posix_sqlite_storage
+                    PUBLIC ${NINLIL_SQLITE_STATIC_SYSTEM_DEPS})
+            endif()
+            set(NINLIL_CONFIG_SQLITE_STATIC TRUE)
+            set(NINLIL_CONFIG_SQLITE_NEEDS_ZLIB ${NINLIL_SQLITE_NEEDS_ZLIB})
+            if(UNIX AND NOT APPLE)
+                set(NINLIL_CONFIG_SQLITE_NEEDS_THREADS TRUE)
+            endif()
+        endif()
+        set_target_properties(ninlil_posix_sqlite_storage PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            POSITION_INDEPENDENT_CODE ON
+            C_VISIBILITY_PRESET hidden
+        )
+        ninlil_apply_posix_sqlite_feature_macros(ninlil_posix_sqlite_storage)
+        ninlil_apply_strict_warnings(ninlil_posix_sqlite_storage)
+        ninlil_posix_sqlite_apply_path_remap(ninlil_posix_sqlite_storage)
+        if(NINLIL_SQLITE_IS_STATIC)
+            set(_ninlil_sqlite_kind_msg "static")
+        else()
+            set(_ninlil_sqlite_kind_msg "shared")
+        endif()
+        message(STATUS
+            "POSIX SQLite storage port: enabled (${_ninlil_sqlite_kind_msg}"
+            " '${NINLIL_SQLITE_LIBRARY_PATH}'"
+            " linkage=${NINLIL_SQLITE_LINKAGE})")
+    else()
+        message(STATUS
+            "POSIX SQLite storage port: disabled (SQLite3 not found)")
+    endif()
+endif()
+
+# Installable OSS SDK package. The portable interface is always exported;
+# the host SQLite archive/factory header are exported only when discovered.
+install(TARGETS ninlil EXPORT NinlilTargets)
+install(DIRECTORY include/ninlil
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES LICENSE
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/ninlil)
+if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
+    install(TARGETS ninlil_posix_sqlite_storage
+        EXPORT NinlilTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES ports/posix/include/ninlil_posix_sqlite_storage.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+set(NINLIL_CONFIG_HAS_POSIX_SQLITE
+    ${NINLIL_POSIX_SQLITE_STORAGE_ENABLED})
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NinlilConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+install(EXPORT NinlilTargets
+    FILE NinlilTargets.cmake
+    NAMESPACE Ninlil::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
 
 # Production private Runtime sources: single authority shared with the
 # ESP-IDF component packaging under ports/esp-idf/components/ninlil.
@@ -1438,6 +1648,20 @@ if(NINLIL_BUILD_TESTS)
     )
     ninlil_apply_strict_warnings(ninlil_test_storage_fixture)
 
+    add_library(ninlil_test_storage_conformance STATIC
+        tests/support/storage_conformance.c
+    )
+    target_include_directories(ninlil_test_storage_conformance PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_test_storage_conformance PRIVATE ninlil)
+    set_target_properties(ninlil_test_storage_conformance PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_test_storage_conformance)
+
     add_library(ninlil_test_typed_bearer_fixture STATIC
         tests/support/typed_simulated_bearer.c
     )
@@ -1528,6 +1752,26 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_in_memory_storage_test
     )
 
+    add_executable(ninlil_in_memory_storage_shared_conformance_test
+        tests/port/in_memory_storage_shared_conformance_test.c
+    )
+    target_link_libraries(ninlil_in_memory_storage_shared_conformance_test PRIVATE
+        ninlil_test_storage_conformance
+        ninlil_test_storage_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_in_memory_storage_shared_conformance_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_in_memory_storage_shared_conformance_test)
+    add_test(
+        NAME in_memory_storage_shared_conformance
+        COMMAND ninlil_in_memory_storage_shared_conformance_test
+    )
+
     add_executable(ninlil_in_memory_storage_boundary_test
         tests/port/in_memory_storage_boundary_test.c
     )
@@ -1546,6 +1790,135 @@ if(NINLIL_BUILD_TESTS)
         NAME in_memory_storage_boundaries
         COMMAND ninlil_in_memory_storage_boundary_test
     )
+
+    if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
+        ninlil_sqlite3_select_test_interpose_backend()
+        # Test-only SQLite interposition seam (not installed; not in production TU).
+        add_executable(ninlil_posix_sqlite_storage_test
+            tests/port/posix_sqlite_storage_test.c
+            tests/port/posix_sqlite_persist_interpose.c
+        )
+        target_include_directories(ninlil_posix_sqlite_storage_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/sqlite_storage
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/port
+        )
+        target_link_libraries(ninlil_posix_sqlite_storage_test PRIVATE
+            ninlil_posix_sqlite_storage
+            SQLite3::SQLite3
+            ninlil
+        )
+        if(NINLIL_TEST_SQLITE_INTERPOSE_BACKEND STREQUAL "WRAP")
+            target_compile_definitions(ninlil_posix_sqlite_storage_test PRIVATE
+                NINLIL_TEST_SQLITE_INTERPOSE_WRAP=1)
+            target_link_options(ninlil_posix_sqlite_storage_test PRIVATE
+                "LINKER:--wrap=sqlite3_exec"
+                "LINKER:--wrap=sqlite3_prepare_v2"
+                "LINKER:--wrap=sqlite3_get_autocommit")
+            message(STATUS
+                "POSIX SQLite test interpose backend: GNU --wrap (static)")
+        elseif(NINLIL_TEST_SQLITE_INTERPOSE_BACKEND STREQUAL "DLSYM")
+            target_compile_definitions(ninlil_posix_sqlite_storage_test PRIVATE
+                NINLIL_TEST_SQLITE_INTERPOSE_DLSYM=1)
+            target_link_libraries(ninlil_posix_sqlite_storage_test PRIVATE
+                ${CMAKE_DL_LIBS})
+            message(STATUS
+                "POSIX SQLite test interpose backend: RTLD_NEXT dlsym (shared)")
+        else()
+            message(FATAL_ERROR
+                "Internal error: no SQLite test interpose backend selected")
+        endif()
+        set_target_properties(ninlil_posix_sqlite_storage_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(ninlil_posix_sqlite_storage_test)
+        ninlil_apply_strict_warnings(ninlil_posix_sqlite_storage_test)
+        add_test(
+            NAME posix_sqlite_storage
+            COMMAND ninlil_posix_sqlite_storage_test
+        )
+        add_test(
+            NAME posix_sqlite_storage_package_surface_negative
+            COMMAND ${CMAKE_COMMAND}
+                -DNINLIL_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DNINLIL_BUILD_CONFIG=$<CONFIG>
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/posix_sqlite_package_surface_negative.cmake
+        )
+
+        add_executable(ninlil_posix_sqlite_storage_shared_conformance_test
+            tests/port/posix_sqlite_storage_shared_conformance_test.c
+        )
+        target_link_libraries(
+            ninlil_posix_sqlite_storage_shared_conformance_test PRIVATE
+            ninlil_test_storage_conformance
+            ninlil_posix_sqlite_storage
+            ninlil
+        )
+        set_target_properties(
+            ninlil_posix_sqlite_storage_shared_conformance_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_posix_sqlite_storage_shared_conformance_test)
+        ninlil_apply_strict_warnings(
+            ninlil_posix_sqlite_storage_shared_conformance_test)
+        add_test(
+            NAME posix_sqlite_storage_shared_conformance
+            COMMAND ninlil_posix_sqlite_storage_shared_conformance_test
+        )
+
+        add_executable(ninlil_posix_sqlite_storage_example
+            ports/posix/examples/sqlite_storage_minimal.c
+        )
+        target_include_directories(ninlil_posix_sqlite_storage_example PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_posix_sqlite_storage_example PRIVATE
+            ninlil_posix_sqlite_storage
+            ninlil
+        )
+        set_target_properties(ninlil_posix_sqlite_storage_example PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_posix_sqlite_storage_example)
+        ninlil_apply_strict_warnings(ninlil_posix_sqlite_storage_example)
+        add_test(
+            NAME posix_sqlite_storage_example
+            COMMAND ninlil_posix_sqlite_storage_example
+        )
+        set(_ninlil_smoke_expect_static OFF)
+        if(NINLIL_SQLITE_IS_STATIC)
+            set(_ninlil_smoke_expect_static ON)
+        endif()
+        set(_ninlil_smoke_sqlite_inc "")
+        if(DEFINED SQLite3_INCLUDE_DIR AND SQLite3_INCLUDE_DIR)
+            set(_ninlil_smoke_sqlite_inc "${SQLite3_INCLUDE_DIR}")
+        elseif(DEFINED SQLite3_INCLUDE_DIRS AND SQLite3_INCLUDE_DIRS)
+            list(GET SQLite3_INCLUDE_DIRS 0 _ninlil_smoke_sqlite_inc)
+        endif()
+        add_test(
+            NAME posix_sqlite_storage_installed_consumer
+            COMMAND ${CMAKE_COMMAND}
+                -DNINLIL_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                -DNINLIL_BUILD_CONFIG=$<CONFIG>
+                -DNINLIL_INSTALL_SMOKE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                "-DNINLIL_SMOKE_SQLITE3_LIBRARY=${NINLIL_SQLITE_LIBRARY_PATH}"
+                "-DNINLIL_SMOKE_SQLITE3_INCLUDE_DIR=${_ninlil_smoke_sqlite_inc}"
+                -DNINLIL_SMOKE_EXPECT_STATIC_SQLITE=${_ninlil_smoke_expect_static}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_posix_sqlite_consumer_smoke.cmake
+        )
+    endif()
 
     add_library(ninlil_test_platform_fixtures STATIC
         tests/support/platform_basic_fixtures.c
