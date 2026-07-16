@@ -518,6 +518,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+      - name: Install SQLite3
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - name: Configure pointer-compare sanitizer
         run: >-
           cmake -S . -B build/ci-clang-pointer-compare

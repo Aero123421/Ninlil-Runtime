@@ -1950,6 +1950,11 @@ if(NINLIL_BUILD_TESTS)
         elseif(DEFINED SQLite3_INCLUDE_DIRS AND SQLite3_INCLUDE_DIRS)
             list(GET SQLite3_INCLUDE_DIRS 0 _ninlil_smoke_sqlite_inc)
         endif()
+        set(_ninlil_install_smoke_sanitizers OFF)
+        if(NINLIL_ENABLE_SANITIZERS
+           OR _ninlil_pointer_compare_sanitizer_supported)
+            set(_ninlil_install_smoke_sanitizers ON)
+        endif()
         add_test(
             NAME posix_sqlite_storage_installed_consumer
             COMMAND ${CMAKE_COMMAND}
@@ -1958,7 +1963,7 @@ if(NINLIL_BUILD_TESTS)
                 -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                 -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
                 -DNINLIL_BUILD_CONFIG=$<CONFIG>
-                -DNINLIL_INSTALL_SMOKE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                -DNINLIL_INSTALL_SMOKE_SANITIZERS=${_ninlil_install_smoke_sanitizers}
                 "-DNINLIL_SMOKE_SQLITE3_LIBRARY=${NINLIL_SQLITE_LIBRARY_PATH}"
                 "-DNINLIL_SMOKE_SQLITE3_INCLUDE_DIR=${_ninlil_smoke_sqlite_inc}"
                 -DNINLIL_SMOKE_EXPECT_STATIC_SQLITE=${_ninlil_smoke_expect_static}
