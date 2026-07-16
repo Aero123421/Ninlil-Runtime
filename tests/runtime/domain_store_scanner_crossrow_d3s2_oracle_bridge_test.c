@@ -717,10 +717,11 @@ int main(void)
     size_t p1b1_n = 0u;
     size_t p1b2_n = 0u;
     size_t p1c1_n = 0u;
+    size_t p1c2_n = 0u;
 
     /* Both pins live in the shared append-only fixture. */
     REQUIRE(NINLIL_D3S1_VECTOR_COUNT == 94u);
-    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 45u);
+    REQUIRE(NINLIL_D3S2_VECTOR_COUNT == 49u);
     REQUIRE(NINLIL_D3S1_WORKSPACE_CEILING_BYTES == 8192u);
     REQUIRE(sizeof(ninlil_domain_scan_workspace_t)
         <= NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES);
@@ -1189,7 +1190,7 @@ int main(void)
                     == 0u);
             }
             p1b2_n += 1u;
-        } else {
+        } else if (i < 45u) {
             /* P1-C1: Mode23 illegal/equation/late + CANCEL/multi-owner
              * (§18.13.15 cases3,19 / §18.13.12.1 slot authority). */
             REQUIRE(i >= 39u && i < 45u);
@@ -1276,6 +1277,67 @@ int main(void)
                     == 0u);
             }
             p1c1_n += 1u;
+        } else {
+            /* P1-C2: Mode24/25 known-slot declared vs population legality
+             * (§18.13.15 case3 residual; D1-valid shape fails only). */
+            REQUIRE(i >= 45u && i < 49u);
+            REQUIRE(ninlil_d3s2_vectors[i].fault_count == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.mutation_calls == 0u);
+            REQUIRE(strcmp(ninlil_d3s2_vectors[i].expected.final_status,
+                        "STORAGE_CORRUPT")
+                == 0);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.adopted == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.phase
+                == NINLIL_DOMAIN_SCAN_D3S2_PHASE_FAILED);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.has_sticky_primary == 1u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.count_complete_mask == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.binding_complete_mask
+                == 0u);
+            REQUIRE(ninlil_d3s2_vectors[i].expected.d3_mode_applicable_count
+                == 0u);
+            if (i == 45u) {
+                REQUIRE(ninlil_d3s2_vectors[i].mode == 24u);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M24_RC_REPLY1_EMPTY_SECONDARY_UNDERCOUNT_CORRUPT")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode24_rc_reply1_empty_secondary_undercount_corrupt")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 4u);
+            } else if (i == 46u) {
+                REQUIRE(ninlil_d3s2_vectors[i].mode == 24u);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M24_RC_REPLY1_EXTRA_DISPOSITION_OVERCOUNT_CORRUPT")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode24_rc_reply1_extra_disposition_overcount_corrupt")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 4u);
+            } else if (i == 47u) {
+                REQUIRE(ninlil_d3s2_vectors[i].mode == 25u);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M25_CUM_TOTAL1_RECENT_MISSING_UNDERCOUNT_CORRUPT")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode25_cum_total1_recent_missing_undercount_corrupt")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 5u);
+            } else {
+                REQUIRE(i == 48u);
+                REQUIRE(ninlil_d3s2_vectors[i].mode == 25u);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].id,
+                            "D3S2_M25_CUM_TOTAL1_RECENT_EXTRA_SLOT_OVERCOUNT_CORRUPT")
+                    == 0);
+                REQUIRE(strcmp(ninlil_d3s2_vectors[i].kind,
+                            "mode25_cum_total1_recent_extra_slot_overcount_corrupt")
+                    == 0);
+                REQUIRE(ninlil_d3s2_vectors[i].expected.d3_peer_get_count
+                    == 5u);
+            }
+            p1c2_n += 1u;
         }
 
         /* Mode21 success: BIND_INDEX no STATE companion (case15 pin). */
@@ -1312,5 +1374,6 @@ int main(void)
     REQUIRE(p1b1_n == 2u);
     REQUIRE(p1b2_n == 3u);
     REQUIRE(p1c1_n == 6u);
+    REQUIRE(p1c2_n == 4u);
     return 0;
 }
