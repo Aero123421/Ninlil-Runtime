@@ -2,3 +2,10 @@
 /build-*/
 __pycache__/
 *.py[cod]
+
+# ESP-IDF smoke app local artifacts (M3-prep)
+/ports/esp-idf/smoke_app/build/
+/ports/esp-idf/smoke_app/sdkconfig
+/ports/esp-idf/smoke_app/sdkconfig.old
+/ports/esp-idf/smoke_app/dependencies.lock
+/ports/esp-idf/smoke_app/managed_components/

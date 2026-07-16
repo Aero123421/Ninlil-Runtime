@@ -1,0 +1,5 @@
+# Minimal defaults for the M3-prep smoke app. Target is selected with
+# `idf.py set-target esp32s3` (required CI/local gate). These defaults only
+# reduce interactive prompts; they do not claim hardware verification.
+
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y

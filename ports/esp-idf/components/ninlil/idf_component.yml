@@ -1,0 +1,17 @@
+## ESP-IDF Component Manager metadata (M3-prep packaging only).
+##
+## This does not publish the component to the Espressif registry.
+## ESP-IDF version is pinned project-wide in ports/esp-idf/ESP_IDF_VERSION
+## and documented in docs/18-m3-prep-esp-idf-component.md.
+
+version: "0.1.0"
+description: >-
+  Ninlil Runtime portable Core / private library packaging for ESP-IDF
+  target builds (M3-prep). Not a complete ESP-IDF port.
+url: https://github.com/Aero123421/Ninlil-Runtime
+license: "Apache-2.0"
+targets:
+  - esp32s3
+dependencies:
+  idf:
+    version: "==5.5.3"
