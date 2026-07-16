@@ -15,6 +15,8 @@ option(NINLIL_BUILD_TESTS "Build Ninlil's test suite"
     ${_ninlil_build_tests_default})
 option(NINLIL_ENABLE_STRICT_WARNINGS "Build Ninlil with warnings as errors"
     ${_ninlil_strict_warnings_default})
+option(NINLIL_BUILD_POSIX_SQLITE_STORAGE
+    "Build POSIX SQLite storage port when SQLite3 is available" ON)
 
 add_library(ninlil INTERFACE)
 target_include_directories(ninlil INTERFACE
@@ -66,6 +68,40 @@ function(ninlil_apply_strict_warnings target)
         )
     endif()
 endfunction()
+
+# Host-only durable storage port. Missing SQLite must not break portable core.
+set(NINLIL_POSIX_SQLITE_STORAGE_ENABLED FALSE)
+if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
+    find_package(SQLite3 QUIET)
+    if(SQLite3_FOUND)
+        set(NINLIL_POSIX_SQLITE_STORAGE_ENABLED TRUE)
+        add_library(ninlil_posix_sqlite_storage STATIC
+            ports/posix/sqlite_storage/ninlil_posix_sqlite_storage.c
+        )
+        target_include_directories(ninlil_posix_sqlite_storage
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include>
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(ninlil_posix_sqlite_storage
+            PUBLIC ninlil
+            PRIVATE SQLite3::SQLite3
+        )
+        set_target_properties(ninlil_posix_sqlite_storage PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            POSITION_INDEPENDENT_CODE ON
+            C_VISIBILITY_PRESET hidden
+        )
+        ninlil_apply_strict_warnings(ninlil_posix_sqlite_storage)
+        message(STATUS "POSIX SQLite storage port: enabled")
+    else()
+        message(STATUS
+            "POSIX SQLite storage port: disabled (SQLite3 not found)")
+    endif()
+endif()
 
 # Production private Runtime sources: single authority shared with the
 # ESP-IDF component packaging under ports/esp-idf/components/ninlil.
@@ -1546,6 +1582,51 @@ if(NINLIL_BUILD_TESTS)
         NAME in_memory_storage_boundaries
         COMMAND ninlil_in_memory_storage_boundary_test
     )
+
+    if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
+        add_executable(ninlil_posix_sqlite_storage_test
+            tests/port/posix_sqlite_storage_test.c
+        )
+        target_include_directories(ninlil_posix_sqlite_storage_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_posix_sqlite_storage_test PRIVATE
+            ninlil_posix_sqlite_storage
+            SQLite3::SQLite3
+            ninlil
+        )
+        set_target_properties(ninlil_posix_sqlite_storage_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_strict_warnings(ninlil_posix_sqlite_storage_test)
+        add_test(
+            NAME posix_sqlite_storage
+            COMMAND ninlil_posix_sqlite_storage_test
+        )
+
+        add_executable(ninlil_posix_sqlite_storage_example
+            ports/posix/examples/sqlite_storage_minimal.c
+        )
+        target_include_directories(ninlil_posix_sqlite_storage_example PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_posix_sqlite_storage_example PRIVATE
+            ninlil_posix_sqlite_storage
+            ninlil
+        )
+        set_target_properties(ninlil_posix_sqlite_storage_example PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_strict_warnings(ninlil_posix_sqlite_storage_example)
+        add_test(
+            NAME posix_sqlite_storage_example
+            COMMAND ninlil_posix_sqlite_storage_example
+        )
+    endif()
 
     add_library(ninlil_test_platform_fixtures STATIC
         tests/support/platform_basic_fixtures.c

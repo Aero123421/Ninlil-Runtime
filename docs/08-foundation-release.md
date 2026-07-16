@@ -217,6 +217,15 @@ PRAGMA foreign_keys = ON;
 
 Database table名とcolumn layoutはinternalであり、0.1のpublic compatibilityではありません。Conformanceはobservable behaviorとmigration contractを検査します。
 
+Host implementation location（port-owned; public ABI外）:
+
+- factory: `ports/posix/include/ninlil_posix_sqlite_storage.h`
+- provider: `ports/posix/sqlite_storage/`
+- opaque storage namespace bytes（1..255）は path 文字列へ解釈せず、configured database file 内の BLOB `namespace` column で分離する。
+- unknown `schema_version` は migration せず拒否する（auto-upgrade なし）。
+- FULL durability claim は上記 PRAGMA 下の SQLite durability boundary まで。filesystem/hardware が flush を偽る範囲は保証外で port profile へ明記する。
+- この port 単体の存在は public Runtime body / M1a complete / field-ready を意味しない。
+
 ## Simulated bearer contract
 
 Simulatorはpublic wire byte formatを先取りしません。Typed logical envelopeをcopyし、次をfault scriptで制御します。

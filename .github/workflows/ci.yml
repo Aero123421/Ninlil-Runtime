@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+      - name: Install SQLite3
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - name: Configure
         run: >-
           cmake -S . -B build/ci-gcc
@@ -43,6 +45,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+      - name: Install SQLite3
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - name: Configure
         run: >-
           cmake -S . -B build/ci-clang-sanitize
@@ -57,3 +61,27 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build/ci-clang-sanitize --output-on-failure
+
+  macos-sqlite:
+    name: macOS SQLite port
+    runs-on: macos-14
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci-macos
+          -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: cmake --build build/ci-macos --parallel 2
+      - name: Test SQLite port
+        run: >-
+          ctest --test-dir build/ci-macos
+          -R 'posix_sqlite_storage'
+          --output-on-failure
