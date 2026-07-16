@@ -1,5 +1,6 @@
 # Minimal ESP-IDF project that compiles the ninlil component for ESP32-S3.
-# M3-prep build evidence only — not HIL, storage port, or Cell Agent.
+# M3-prep packaging + M3-basic adapter link evidence.
+# Not HIL, NVS storage, owner-task body, or Cell Agent.
 
 cmake_minimum_required(VERSION 3.16)
 
@@ -8,4 +9,4 @@ set(EXTRA_COMPONENT_DIRS
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(ninlil_m3_prep_smoke)
+project(ninlil_m3_basic_smoke)

@@ -1364,9 +1364,9 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
 
-    # M3-prep packaging gates: host private source authority, ESP-IDF
-    # component CMake include, ESP_IDF_VERSION pin consistency across
-    # docs/CI/component metadata. Does not claim M3 port complete.
+    # M3 packaging gates: host private source authority, ESP-IDF port
+    # authority, component CMake include, ESP_IDF_VERSION pin consistency
+    # across docs/CI/component metadata. Does not claim M3 port complete.
     add_test(
         NAME esp_idf_component_packaging_gate
         COMMAND ${Python3_EXECUTABLE}
@@ -1578,6 +1578,49 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME platform_basic_fixtures
         COMMAND ninlil_platform_basic_fixtures_test
+    )
+
+    # ESP-IDF port pure logic + port-owned header contracts (host only;
+    # no ESP-IDF / FreeRTOS backend link). Spec: docs/19.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_esp_idf_port_sources.cmake)
+    add_library(ninlil_esp_idf_port_pure STATIC
+        ${NINLIL_ESP_IDF_PORT_PURE_RELATIVE_SOURCES}
+    )
+    target_include_directories(ninlil_esp_idf_port_pure
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+    )
+    target_link_libraries(ninlil_esp_idf_port_pure PRIVATE ninlil)
+    set_target_properties(ninlil_esp_idf_port_pure PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        NINLIL_TEST_ONLY_ARTIFACT TRUE
+    )
+    ninlil_apply_strict_warnings(ninlil_esp_idf_port_pure)
+
+    add_executable(ninlil_esp_idf_port_logic_test
+        tests/port/esp_idf_port_logic_test.c
+    )
+    target_include_directories(ninlil_esp_idf_port_logic_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include
+    )
+    target_link_libraries(ninlil_esp_idf_port_logic_test PRIVATE
+        ninlil_esp_idf_port_pure
+        ninlil
+    )
+    set_target_properties(ninlil_esp_idf_port_logic_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_esp_idf_port_logic_test)
+    add_test(
+        NAME esp_idf_port_logic
+        COMMAND ninlil_esp_idf_port_logic_test
     )
 
     add_executable(ninlil_deterministic_entropy_test

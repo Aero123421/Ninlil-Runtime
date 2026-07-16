@@ -173,13 +173,15 @@ Fuzz inputでunbounded allocation、hang、secret log、panic、undefined behavi
 - profile/TxPermit path test
 - actual radio setting measurement where the change affects PHY/compliance
 
-### M3-prep packaging CI（host と分離）
+### M3-prep / M3-basic packaging CI（host と分離）
 
-M3 complete 前でも、component packaging の回帰を次で防ぎます（[18章](18-m3-prep-esp-idf-component.md)）:
+M3 complete 前でも、component packaging と basic platform adapters の回帰を次で防ぎます（[18章](18-m3-prep-esp-idf-component.md)、[20章](20-m3-basic-esp-idf-platform-adapters.md)）:
 
-- host CTest: `esp_idf_component_packaging_gate`（source authority、pin 一致、no GLOB、portable source に ESP-IDF include なし）
-- 分離 workflow `.github/workflows/esp-idf.yml`: 公式 image `espressif/idf:<ESP_IDF_VERSION>` で **esp32s3** smoke app build
+- host CTest: `esp_idf_component_packaging_gate`（portable / port source authority 分離、pin 一致、no GLOB、portable に ESP-IDF include なし、port-owned headers、smoke が 3 adapter を include）
+- host CTest: `esp_idf_port_logic`（clock/entropy/execution の invalid argument / boundary / entropy singleton lifecycle）
+- 分離 workflow `.github/workflows/esp-idf.yml`: 公式 image `espressif/idf:<ESP_IDF_VERSION>` で **esp32s3 smoke app の compile/link build**（`idf.py set-target esp32s3 build`）。**device 上の実行や HIL は含まない**
 - host `ci.yml` は ESP-IDF を install せず、従来の GCC/Clang CTest のみ
+- 実機/HIL/on-target runtime smoke は **未実証**。CI が証明するのは target firmware image の **build** まで
 
 ### M3 control framing slice
 

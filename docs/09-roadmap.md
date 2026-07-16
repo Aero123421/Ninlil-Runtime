@@ -135,6 +135,18 @@ USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agno
 
 含まない: USB/CDC driver、TCP socket、Cell Agent task、logical control messages、custody/Application Receipt、security、M3 complete。
 
+### M3-basic platform adapters（部分作業; M3 incomplete）
+
+**M3-basic** として clock / entropy / execution context の ESP-IDF adapters を先行できます。正本: [20-m3-basic-esp-idf-platform-adapters.md](20-m3-basic-esp-idf-platform-adapters.md)。
+
+- `esp_timer` clock（boot-local epoch/trust/reboot 境界を仕様で固定）
+- `esp_fill_random` entropy（invalid args / fail-closed）
+- FreeRTOS current task identity の execution context（owner-task confinement に使える identity。owner-task body は未完成）
+- port-owned factory headers（`ports/esp-idf/include/ninlil_esp_idf/`）。`include/ninlil` public ABI は変更しない
+- host pure-logic tests + packaging gate + esp32s3 smoke link
+
+含まない: NVS、owner-task body、USB/LAN、Cell Agent、Wi-Fi、SX1262、Join、KGuard、HIL、M3 exit。
+
 ## M4: Identity Lifecycle
 
 内容:
