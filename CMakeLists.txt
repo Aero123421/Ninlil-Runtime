@@ -1657,6 +1657,21 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
 
+    # U0 radio/USB boundary freeze: docs consistency + terminology only.
+    # Does not implement USB CDC or SX1262 production code.
+    add_test(
+        NAME radio_usb_boundary_docs_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_usb_boundary_docs_gate.py
+            check
+    )
+    add_test(
+        NAME radio_usb_boundary_docs_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_usb_boundary_docs_gate.py
+            self-test
+    )
+
     add_executable(ninlil_submission_preflight_test
         tests/model/submission_preflight_test.c
     )

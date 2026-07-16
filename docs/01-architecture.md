@@ -277,11 +277,26 @@ ninlil/
 
 ## Dependency rule
 
-- portable Coreはdirectory名に関係なく、KGuard、ESP-IDF、RadioLib、SQLiteを直接参照しない。
+- portable Coreはdirectory名に関係なく、KGuard、ESP-IDF、TinyUSB、termios、RadioLib、SX1262、SQLiteを直接参照しない。
 - `ports/` と `drivers/` が platform dependency を吸収する。
 - `integrations/kguard/` は public Ninlil API だけを使う。
 - example は private header を include しない。
 - test hook が production behavior を bypass しない。
+
+USB control transport、private control protocol、Physical Compliance Permit、secure radio wire、SX1262 の **依存方向の正本** は Accepted [ADR-0003](adr/0003-radio-usb-dependency-direction.md) と [23章](23-usb-radio-boundary.md) である。**compile/source dependency と runtime call/data flow は別図**（ADR 正本）。要約:
+
+**Compile/source（include/link; 逆依存禁止）:** Portable Core → byte-stream contract 抽象のみ。NCL1 session / NCG1 codec は portable private。POSIX termios/poll と ESP `esp_tinyusb` CDC は adapter に閉じ Core を汚染しない。KGuard は public API のみ。
+
+**Runtime physical RF TX（sole edge; 順序固定）:**
+
+```text
+Secure wire/MAC (immutable TX plan/bytes)
+  -> Physical Compliance Gate (SiteAssignment/profile/ledger/live; exact-plan Permit)
+    -> ninlil_radio_hal transmit-with-permit (re-validate + single-use consume)
+      -> SX1262 HAL/backend
+```
+
+Foundation の logical / virtual / loopback TxPermit は physical RF を認可しない。logical bearer message の `memcpy` 直列化は禁止する。secure radio wire version は **unallocated**。
 
 ## Legacy lab slice との関係
 

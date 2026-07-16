@@ -39,7 +39,7 @@ Artifactとruntime configurationは次を明示します。
 | Requirement set | First mandatory milestone | Foundation M1a |
 | --- | --- | --- |
 | `NIN-SEC-001`〜`NIN-SEC-015` production identity/session requirements | M4〜M5 | cryptographic/session provider ABIなし。TEST identity/origin authorizationとenvelope binding validationだけ |
-| `NIN-CMP-001`〜`NIN-CMP-011` physical radio requirements | M5 | virtual TxPermit pathだけ。physical TXは存在しない |
+| `NIN-CMP-001`〜`NIN-CMP-013` physical radio requirements（012/013 は logical permit 流用禁止・wire memcpy 禁止・radio wire unallocated） | M5（概念は U0 boundary freeze で先行定義; [23章](23-usb-radio-boundary.md)） | virtual TxPermit pathだけ。physical TXは存在しない |
 | secretをlog/support bundleへ出さない基本境界 | M1a | TEST dataを含め全実装必須 |
 | unknown environmentをproductionへfallbackしない | M1a | 必須 |
 
@@ -113,27 +113,47 @@ Production Runtimeは`DEPLOYMENT_APPROVED`だけを使用できます。
 
 ## TxPermit
 
-すべてのphysical radio TXはCompliance Gateが発行するone-shot `TxPermit`を必要とします。
+用語を分ける（[15章](15-glossary.md)、[23章](23-usb-radio-boundary.md)）:
 
-対象にはapplication dataだけでなく、beacon、Join、ACK、receipt、retry、relay、diagnostics、emergency trafficを含みます。
+| 用語 | 認可対象 | 備考 |
+| --- | --- | --- |
+| **Logical / virtual / loopback TxPermit** | simulated bearer および TEST loopback のみ | Foundation M1a / M3 loopback。**physical RF を認可しない** |
+| **Physical Compliance Permit** | すべての physical radio TX | 本章および M5 の hard gate。**唯一の physical TX 認可エッジ** |
 
-TxPermit binding:
+すべてのphysical radio TXはCompliance Gateが発行するone-shot **Physical Compliance Permit**（歴史的に TxPermit とも呼ぶ）を必要とします。
 
-- hardware / regulatory profile revision
+対象にはapplication dataだけでなく、beacon、Network Join / Attachment control、ACK、receipt、retry、relay、diagnostics、emergency trafficを含みます。
+
+Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-boundary.md)）。発行・consume の両方で検査する。
+
+- hardware profile ID / revision
+- regulatory profile ID / revision
+- **SiteAssignment identity / revision / epoch**（`NIN-CMP-001` 必須）
 - physical transmitter identity
 - bearer / radio / channel / PHY
-- frame digest and byte length
+- frame digest and byte length（immutable TX plan; permit 発行後の変更禁止）
 - conservatively calculated maximum airtime
 - not-before / expiry
 - permit sequence
 
+**Physical TX 順序（Normative; [23章](23-usb-radio-boundary.md) / [ADR-0003](adr/0003-radio-usb-dependency-direction.md)）:**
+
+1. secure wire/MAC が immutable TX plan / exact bytes を確定する。
+2. Compliance Gate が SiteAssignment × profiles × live settings × ledger を検査・予約し、**exact plan** へ Physical Compliance Permit を発行する。
+3. `ninlil_radio_hal` の **sole** transmit-with-permit 入口が再検証し single-use consume する。
+4. SX1262 backend が送信する。
+
+SiteAssignment / profile / live radio settings / frame digest・length・PHY が発行時スナップショットと異なれば **consume 拒否**（新 plan + 新 permit のみ）。
+
 規則:
 
-- `NIN-CMP-001`: `HardwareProfile × RegulatoryProfile × SiteAssignment × live radio settings`が一致しなければpermitを発行してはならない。
-- `NIN-CMP-002`: TxPermitなしでdriver TXへ到達するcode pathを作ってはならない。
-- `NIN-CMP-003`: permitは一度だけ消費し、expiry後に使用してはならない。
-- `NIN-CMP-004`: application、scheduler、operatorのpriorityはCompliance denialを上書きできない。
+- `NIN-CMP-001`: `HardwareProfile × RegulatoryProfile × SiteAssignment × live radio settings`が一致しなければpermitを発行してはならない。SiteAssignment は identity / revision / epoch を含む。
+- `NIN-CMP-002`: Physical Compliance Permitなしでdriver TXへ到達するcode pathを作ってはならない。sole edge は transmit-with-permit のみ。
+- `NIN-CMP-003`: permitは一度だけ消費し、expiry後に使用してはならない。発行後の bytes/PHY 差替えは禁止。
+- `NIN-CMP-004`: application、scheduler、operator、USB control pathのpriorityはCompliance denialを上書きできない。
 - `NIN-CMP-005`: permit denialをqueued、sent、received、appliedとして表示してはならない。
+- `NIN-CMP-012`: Foundation logical / virtual / loopback TxPermit を physical RF 送信許可として流用してはならない。
+- `NIN-CMP-013`: logical bearer message や public transaction struct を `memcpy` して radio wire にしてはならない。secure compact radio wire の production version は [23章](23-usb-radio-boundary.md) 時点で **unallocated** であり、別 Normative freeze まで固定しない。
 
 ## Airtime ledger
 

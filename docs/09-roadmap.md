@@ -125,16 +125,18 @@ Exit gate:
 
 含まない: USB/LAN driver、power-cut HIL、on-target conformance subset、M3 exit。
 
-### M3 storage port slice（部分作業; M3 incomplete）
+### M3 storage port slice（部分作業; M3 incomplete; PR #80 merged）
 
 正本: [21-m3-esp-idf-durable-storage.md](21-m3-esp-idf-durable-storage.md)。
 
 - dual-slot generation marker on wear-levelled partition（**NVS 単独は契約不能のため不採用**）
 - `ninlil_storage_ops_t` production 候補 adapter（固定上限・**binder-owned PSRAM workspace**・heap/VLA 禁止）
 - host conformance（snapshot / atomicity / ordering / capacity / fault+reopen）
-- ESP-IDF component/smoke への compile 接続
+- ESP-IDF component/smoke への compile 接続と map/stack/public-API gates
 
-含まない: 実機 power-cut HIL、field-ready 宣言、M3 exit gate 全体、USB/radio/Join/KGuard。
+**状態:** implementation merged（PR #80）。**power-cut HIL 未実行**、ESP FULL production 未証明。M3 exit の代替ではない。
+
+含まない: 実機 power-cut HIL PASS、field-ready 宣言、M3 exit gate 全体、USB/radio/Site Membership・Attachment（Network Join umbrella）/KGuard。
 
 ### M3-slice: control byte-stream framing（部分作業; M3 incomplete）
 
@@ -169,7 +171,21 @@ USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agno
 - TxPermit deny-by-default、`TEST` + explicit loopback のみ許可、将来 M5 provider へ交換可能な `ninlil_tx_gate_ops_t`
 - host pure tests + packaging gate + esp32s3 smoke compile/link
 
-含まない: NVS、USB/TCP driver、Wi-Fi、SX1262、Join、実 radio、logical control message schema、public Runtime body、security 完了、HIL、M3 exit。
+含まない: USB/TCP driver、Wi-Fi、SX1262、Site Membership / Attachment（Network Join umbrella）、実 radio、logical control message schema、public Runtime body、security 完了、HIL、M3 exit。
+
+### U0: USB / physical radio boundary freeze（docs only; 本 slice）
+
+USB production と SX1262 production の **前** に依存方向と境界を固定する。正本: [ADR-0003](adr/0003-radio-usb-dependency-direction.md)、[23-usb-radio-boundary.md](23-usb-radio-boundary.md)。
+
+- compile/source dependency と runtime call/data flow を分離（Core / byte-stream contract / NCL1 session / adapters / composition pump）
+- runtime physical TX 順序: immutable wire plan → Compliance Permit(exact) → HAL transmit-with-permit → SX1262（sole physical TX edge）
+- ownership、private session object + payload ownership、bounded queues（entry+byte; profile default）、RX overflow 時 parser/session fence、POSIX UX（termios/DTR/exclusive/`cu.*`）
+- NCL1 最小 envelope と HELLO/PING/PONG/RESET（Controller-only initiator、**NCL1 header session_cookie 全 active 検証 + CSPRNG fail-closed**、NCG1 sequence U4 policy、opaque echo token、CTRL_ERROR loop 閉鎖）
+- Physical Compliance Permit に SiteAssignment identity/revision/epoch bind; secure radio wire version **unallocated**
+- Owner Task Join ACK と Site Membership / Attachment（曖昧 umbrella Network Join）の文書分離
+- 独立 slice **U1–U7** / **R1–R10**（R9 は少なくとも R4+R5+R7; **Required HIL** なしに USB series 完成を名乗らない; **compile ≠ HIL**）
+
+含まない / **今回未確定（後続 freeze）**: USB/SX1262 production code、完全 assignment/custody/security protocol、**Network Attachment/Join**、**relay**、**multi-parent**、public ABI 昇格、M3/M5 exit。
 
 ## M4: Identity Lifecycle
 
@@ -199,8 +215,9 @@ Exit gate:
 - Attachment handshake RFC実装
 - session key / nonce / replay
 - Hardware/Regulatory Profile loader
-- TxPermit / airtime ledger
-- SX1262 HAL/backend
+- Physical Compliance Permit / airtime ledger（logical TxPermit と分離; [23章](23-usb-radio-boundary.md) §9）
+- secure compact radio wire の **Normative freeze**（ここで version を初めて割当; R6）
+- SX1262 HAL/backend（R1–R10; permit なし TX path 0）
 - `LAB_ONLY` radio profile
 
 Exit gate:
@@ -208,8 +225,10 @@ Exit gate:
 - 05章security/compliance acceptance。
 - permit bypass 0。
 - nonce/replay/power-loss fault test。
-- 対象lab hardwareでfrequency/time-on-air/LBT measurement。
+- 対象lab hardwareでfrequency/time-on-air/LBT measurement（R10; compile 成功の代替不可）。
 - 国内実運用可能とはまだ表示しない。
+
+実装は [23章 §10.2](23-usb-radio-boundary.md) の **R1–R10** に分割する。R6 以前に production radio wire bytes を固定しない。
 
 ## M6: KGuard Reference Vertical
 
