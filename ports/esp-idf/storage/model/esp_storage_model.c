@@ -947,6 +947,7 @@ int ninlil_port_esp_storage_private_set_hil_observer(
     return 0;
 }
 
+#if !defined(ESP_PLATFORM)
 void ninlil_port_esp_storage_private_simulate_crash(ninlil_port_esp_storage_t *storage)
 {
     uint32_t i;
@@ -982,6 +983,7 @@ int ninlil_port_esp_storage_private_simulate_full_reinit(
     return ninlil_port_esp_storage_private_init(
         storage, config, media_ops, media_user, full_policy);
 }
+#endif /* !ESP_PLATFORM */
 
 static ninlil_port_esp_storage_handle_t *resolve_handle(
     ninlil_port_esp_storage_t *storage,

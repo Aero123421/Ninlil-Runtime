@@ -101,6 +101,7 @@ jobs:
               fi
               python3 tools/esp_storage_public_api_gate.py \
                 --archive "${ARCHIVE}" \
+                --archive-kind target \
                 --elf "${HIL_ELF}" \
                 --nm xtensa-esp32s3-elf-nm \
                 --readelf xtensa-esp32s3-elf-readelf \

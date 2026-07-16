@@ -254,6 +254,65 @@ def check() -> None:
     if "ports/esp-idf/storage/host/esp_storage_host_media.c" in storage_target:
         fail("target storage authority must exclude host media")
 
+    # Host-media concrete workspace + private_simulate seams must stay
+    # compile-excluded under ESP_PLATFORM (docs/21 host-only dual-slot).
+    workspace_hdr = (
+        REPO_ROOT
+        / "ports"
+        / "esp-idf"
+        / "storage"
+        / "private"
+        / "esp_storage_workspace.h"
+    )
+    workspace_text = read_text(workspace_hdr)
+    if not re.search(
+        r"#if\s+!defined\s*\(\s*ESP_PLATFORM\s*\)\s*\n"
+        r"(?:/\*[\s\S]*?\*/\s*\n)?"
+        r"struct\s+ninlil_port_esp_storage_host_media\s*\{",
+        workspace_text,
+    ):
+        fail(
+            "esp_storage_workspace.h host_media struct must be "
+            "compile-excluded under ESP_PLATFORM"
+        )
+    private_hdr = (
+        REPO_ROOT
+        / "ports"
+        / "esp-idf"
+        / "storage"
+        / "private"
+        / "esp_storage_private.h"
+    )
+    private_text = read_text(private_hdr)
+    if not re.search(
+        r"#if\s+!defined\s*\(\s*ESP_PLATFORM\s*\)\s*\n"
+        r"(?:/\*[\s\S]*?\*/\s*\n)?"
+        r"void\s+ninlil_port_esp_storage_private_simulate_crash\s*\(",
+        private_text,
+    ):
+        fail(
+            "esp_storage_private.h private_simulate_crash must be "
+            "compile-excluded under ESP_PLATFORM"
+        )
+    model_src = (
+        REPO_ROOT
+        / "ports"
+        / "esp-idf"
+        / "storage"
+        / "model"
+        / "esp_storage_model.c"
+    )
+    model_text = read_text(model_src)
+    if not re.search(
+        r"#if\s+!defined\s*\(\s*ESP_PLATFORM\s*\)\s*\n"
+        r"void\s+ninlil_port_esp_storage_private_simulate_crash\s*\(",
+        model_text,
+    ):
+        fail(
+            "esp_storage_model.c private_simulate_crash definition must be "
+            "compile-excluded under ESP_PLATFORM"
+        )
+
     for header in PORT_HEADERS:
         h = read_text(header)
         if ESP_INCLUDE_RE.search(h) or FREERTOS_INCLUDE_RE.search(h):
@@ -282,6 +341,18 @@ def check() -> None:
     ):
         if needle not in ci:
             fail(f"esp-idf.yml missing storage target gate {needle!r}")
+    # Official target archive inspection must declare --archive-kind target
+    # (host CTest uses host kind; refuse silent default / inverted wiring).
+    if "--archive-kind target" not in ci:
+        fail(
+            "esp-idf.yml public_api_gate must pass --archive-kind target "
+            "(host CTest uses --archive-kind host)"
+        )
+    if "--archive-kind host" in ci:
+        fail(
+            "esp-idf.yml must not pass --archive-kind host "
+            "(target workflow inspects the official ESP archive)"
+        )
     # Both official maps must be required (not smoke-only).
     if ci.count("esp_storage_map_gate.py") < 2:
         fail("esp-idf.yml must run esp_storage_map_gate.py on smoke and HIL maps")
@@ -383,6 +454,21 @@ def check() -> None:
         fail("host CMakeLists missing esp_storage_wear_gate test")
     if "esp_storage_budget_gate" not in host:
         fail("host CMakeLists missing esp_storage_budget_gate test")
+    if "esp_storage_public_api_gate.py" not in host:
+        fail("host CMakeLists missing esp_storage_public_api_gate test")
+    # Host CTest archive is the dual-slot host library (includes host media
+    # test seams). Kind must be host; target kind here would false-fail on
+    # intentional ninlil_port_esp_storage_host_media_ops.
+    if "--archive-kind host" not in host:
+        fail(
+            "host CMakeLists public_api_gate must pass --archive-kind host "
+            "(refuse missing kind / silent target rules on host archive)"
+        )
+    if "--archive-kind target" in host:
+        fail(
+            "host CMakeLists must not pass --archive-kind target "
+            "(official ESP archive is gated in esp-idf.yml)"
+        )
 
     ci_host = read_text(REPO_ROOT / ".github" / "workflows" / "ci.yml")
     if "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER" not in ci_host:

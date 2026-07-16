@@ -5,8 +5,10 @@
 #include "esp_storage_hil_observer.h"
 
 typedef struct ninlil_port_esp_storage ninlil_port_esp_storage_t;
+#if !defined(ESP_PLATFORM)
 typedef struct ninlil_port_esp_storage_host_media
     ninlil_port_esp_storage_host_media_t;
+#endif
 
 typedef enum ninlil_port_esp_storage_private_full_policy {
 #if !defined(ESP_PLATFORM)
@@ -48,6 +50,8 @@ void ninlil_port_esp_storage_private_deinit(
     ninlil_port_esp_storage_t *storage);
 const ninlil_storage_ops_t *ninlil_port_esp_storage_private_ops(
     ninlil_port_esp_storage_t *storage);
+#if !defined(ESP_PLATFORM)
+/* Host dual-slot conformance only (docs/21 §4). Must not ship on ESP target. */
 void ninlil_port_esp_storage_private_simulate_crash(
     ninlil_port_esp_storage_t *storage);
 int ninlil_port_esp_storage_private_simulate_full_reinit(
@@ -56,6 +60,7 @@ int ninlil_port_esp_storage_private_simulate_full_reinit(
     const ninlil_port_esp_storage_private_media_ops_t *media_ops,
     void *media_user,
     ninlil_port_esp_storage_private_full_policy_t full_policy);
+#endif
 
 uint64_t ninlil_port_esp_storage_media_directory_offset(uint32_t dir_slot);
 uint64_t ninlil_port_esp_storage_media_data_offset(

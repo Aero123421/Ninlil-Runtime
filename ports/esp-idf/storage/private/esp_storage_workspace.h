@@ -122,6 +122,8 @@ struct ninlil_port_esp_storage {
     uint8_t dir_scratch[NINLIL_PORT_ESP_STORAGE_DIR_BYTES];
 };
 
+#if !defined(ESP_PLATFORM)
+/* Host dual-slot RAM media (docs/21). Must not exist under ESP preprocessing. */
 struct ninlil_port_esp_storage_host_media {
     int initialized;
     uint32_t max_namespaces;
@@ -149,6 +151,7 @@ struct ninlil_port_esp_storage_host_media {
     int sync_fault_mode;
     uint32_t sync_fault_remaining;
 };
+#endif /* !ESP_PLATFORM */
 
 #ifdef __cplusplus
 }

@@ -2080,6 +2080,7 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_public_api_gate.py
             --archive $<TARGET_FILE:ninlil_port_esp_storage>
+            --archive-kind host
     )
     add_test(
         NAME esp_storage_public_api_gate_self_test
