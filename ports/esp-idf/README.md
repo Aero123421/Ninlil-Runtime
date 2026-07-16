@@ -1,15 +1,18 @@
-# Ninlil ESP-IDF component (M3-prep)
+# Ninlil ESP-IDF component (M3-prep + M3-basic)
 
-この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** するための packaging です。
+この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** し、加えて **M3-basic platform adapters**（clock / entropy / execution context）を port-owned API として提供します。
 
-**これは M3-prep です。** 次を提供・主張しません。
+**これは M3-prep + M3-basic です。** 次を提供・主張しません。
 
-- ESP-IDF storage (NVS) / FreeRTOS owner task / USB / Wi-Fi / SX1262
+- ESP-IDF storage (NVS) / FreeRTOS **owner-task body** / USB / Wi-Fi / SX1262
 - radio MAC、Join、KGuard adapter
 - public Runtime の production 実行経路
 - M3 complete、ESP-IDF port complete、hardware verified、V1 complete
 
-仕様と pin の正本: [docs/18-m3-prep-esp-idf-component.md](../../docs/18-m3-prep-esp-idf-component.md)
+仕様と pin の正本:
+
+- packaging: [docs/18-m3-prep-esp-idf-component.md](../../docs/18-m3-prep-esp-idf-component.md)
+- basic adapters: [docs/20-m3-basic-esp-idf-platform-adapters.md](../../docs/20-m3-basic-esp-idf-platform-adapters.md)
 
 ## Pinned ESP-IDF version
 
@@ -21,18 +24,67 @@ ports/esp-idf/ESP_IDF_VERSION  →  v5.5.3
 - Component Manager: `idf.version: "==5.5.3"`（`components/ninlil/idf_component.yml`）
 - 必須 build target: **`esp32s3`**
 
-この pin は「最新 stable の自動追従」ではなく、M3-prep の **再現可能な既知安定版** です。変更する場合は `ESP_IDF_VERSION`・docs・CI・`idf_component.yml` を同一変更で揃えてください。
+この pin は「最新 stable の自動追従」ではなく、M3-prep / M3-basic の **再現可能な既知安定版** です。変更する場合は `ESP_IDF_VERSION`・docs・CI・`idf_component.yml` を同一変更で揃えてください。
 
 ## Layout
 
 | Path | Role |
 | --- | --- |
 | `components/ninlil/` | `idf_component_register` された component |
-| `smoke_app/` | component を link する最小 firmware project |
+| `include/ninlil_esp_idf/` | port-owned factory headers（public Core ABI ではない） |
+| `src/` | pure logic + ESP-IDF backend adapters |
+| `smoke_app/` | component と 3 adapters を link する最小 firmware project |
 | `ESP_IDF_VERSION` | concrete version pin |
-| `../../cmake/ninlil_runtime_private_sources.cmake` | host と共有する source list 正本 |
+| `../../cmake/ninlil_runtime_private_sources.cmake` | portable private source list 正本 |
+| `../../cmake/ninlil_esp_idf_port_sources.cmake` | ESP-IDF port source list 正本 |
 | `../../include/ninlil/` | public headers |
 | `../../src/model/` `../../src/runtime/` | portable private sources |
+
+## Port-owned basic adapters
+
+`include/ninlil` public ABI は変更しません。次の port-owned headers が `ninlil_*_ops_t` を満たす factory を提供します。
+
+| Header | Backend | Notes |
+| --- | --- | --- |
+| `ninlil_esp_idf/clock.h` | `esp_timer` + **immutable embedded ops** | zero-init one-shot。boot-local TRUSTED。reboot ごと fresh epoch は caller 責任 |
+| `ninlil_esp_idf/entropy.h` | `esp_fill_random` + bootloader RNG | boot-global one-shot + DISABLING + **reserved task-notification drain** + ACQUIRING cancel/await |
+| `ninlil_esp_idf/execution.h` | FreeRTOS task handle + immutable embedded ops | zero-init one-shot、ISR→0。TaskHandle identity は task delete を跨いで保持しない |
+
+state は caller-owned（static 可）で初回 init 前に全体 zero-initialize します。返却 ops を Runtime が借用する場合は、全 call を quiesce して `ninlil_runtime_destroy()` を完了した後に adapter を shutdown し、最後に state lifetime を終了します。heap / VLA / exception を使いません。
+
+### 最小利用例
+
+```c
+#include "ninlil_esp_idf/clock.h"
+#include "ninlil_esp_idf/entropy.h"
+#include "ninlil_esp_idf/execution.h"
+
+static ninlil_esp_idf_clock_t clock_state;
+static ninlil_esp_idf_entropy_t entropy_state;
+static ninlil_esp_idf_execution_t execution_state;
+
+void setup_ports(void)
+{
+    ninlil_esp_idf_clock_config_t clock_cfg = {
+        .abi_version = NINLIL_ABI_VERSION,
+        .struct_size = (uint16_t)sizeof(clock_cfg),
+        .boot_epoch_id = {{0xe5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x01}},
+    };
+    ninlil_esp_idf_entropy_config_t entropy_cfg = {
+        .abi_version = NINLIL_ABI_VERSION,
+        .struct_size = (uint16_t)sizeof(entropy_cfg),
+        .policy = NINLIL_ESP_IDF_ENTROPY_POLICY_BOOTLOADER_RNG,
+    };
+    (void)ninlil_esp_idf_clock_init(&clock_state, &clock_cfg);
+    /* Exclusive process singleton: only one live entropy owner. */
+    (void)ninlil_esp_idf_entropy_init(&entropy_state, &entropy_cfg);
+    (void)ninlil_esp_idf_execution_init(&execution_state);
+    /* ninlil_esp_idf_*_ops(&...) → ninlil_platform_ops_t fields */
+    /* Before RF/ADC init: ninlil_esp_idf_entropy_shutdown(&entropy_state); */
+}
+```
+
+**Entropy 注意（ESP-IDF v5.5.3）:** process-global RNG + `portMUX`。同一 boot は `... → DISABLING → RETIRED` の一回限りで、fresh address でも再 init しません。単一 lifecycle controller が init/shutdown を直列化します。ACQUIRING cancel と fill drain は `NINLIL_ESP_IDF_ENTROPY_NOTIFY_INDEX` を専用利用して shutdown task を block します（task notification 有効が必要）。ops は state 内で immutable（shutdown で fill/user を消去しない）。本 adapter 以外の RNG/RF/ADC owner は application が排他調停し、RF/ADC 前に `shutdown` します。**task only**。
 
 ## 自 project への導入例
 
@@ -62,22 +114,18 @@ idf_component_register(
 )
 ```
 
-### 3. public header だけを include
+### 3. headers
 
 ```c
 #include "ninlil/version.h"
 #include "ninlil/runtime.h"
 #include "ninlil/platform.h"
-
-void app_main(void)
-{
-    /* Public ABI types/constants are available.
-     * Public Runtime function bodies and ESP-IDF ports are not complete. */
-    (void)NINLIL_ABI_VERSION;
-}
+#include "ninlil_esp_idf/clock.h"
+#include "ninlil_esp_idf/entropy.h"
+#include "ninlil_esp_idf/execution.h"
 ```
 
-private header（`src/model/*`、`src/runtime/*`）を application から include しないでください。
+private header（`src/model/*`、`src/runtime/*`、`ports/esp-idf/src/*`）を application から include しないでください。
 
 ### 4. Build
 
@@ -104,16 +152,19 @@ idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
 
 ## Source list drift
 
-host の `ninlil_runtime_private` と本 component は、同じ
+host の `ninlil_runtime_private` と本 component の portable 部分は、同じ
 
 `cmake/ninlil_runtime_private_sources.cmake`
 
-を `include` します。`file(GLOB)` は使いません。host CTest の `esp_idf_component_packaging_gate` が pin と authority の一致を検査します。
+を `include` します。ESP-IDF adapters は
+
+`cmake/ninlil_esp_idf_port_sources.cmake`
+
+が正本です。`file(GLOB)` は使いません。host CTest の `esp_idf_component_packaging_gate` と `esp_idf_port_logic` が pin / authority / pure logic を検査します。
 
 ## 次に必要な M3 本体（未実装）
 
-- FreeRTOS owner-task adapter
+- FreeRTOS owner-task body と exclusive Runtime confinement wiring
 - NVS / partition storage port と power-cut HIL
-- clock / entropy / execution の ESP-IDF port
 - Cell Agent skeleton、USB/LAN control transport（byte-stream framing の private `NCG1` codec は [docs/19](../../docs/19-m3-control-byte-stream-framing.md) として portable source authority に含まれる。driver/task は未実装）
 - portable conformance subset の on-target 実行

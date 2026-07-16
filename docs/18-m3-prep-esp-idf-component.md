@@ -71,15 +71,18 @@ ports/esp-idf/
     ninlil/
       CMakeLists.txt              # idf_component_register
       idf_component.yml           # idf == pinned version, target esp32s3
+  include/ninlil_esp_idf/         # port-owned factories（M3-basic; [20章](20-m3-basic-esp-idf-platform-adapters.md)）
+  src/                            # ESP-IDF adapter pure + backend sources
   smoke_app/
     CMakeLists.txt                # EXTRA_COMPONENT_DIRS -> ../components
-    main/main.c                   # public header compile + link smoke
+    main/main.c                   # public header + adapter compile/link smoke
     sdkconfig.defaults
 cmake/
-  ninlil_runtime_private_sources.cmake   # host と component の単一 source authority
+  ninlil_runtime_private_sources.cmake   # portable Core source authority
+  ninlil_esp_idf_port_sources.cmake      # ESP-IDF port source authority（M3-basic）
 ```
 
-portable 実装本体は従来どおり repository の `include/ninlil/` と `src/model/` / `src/runtime/` に置きます。ESP-IDF 固有 adapter を portable Core へ混ぜません。
+portable 実装本体は従来どおり repository の `include/ninlil/` と `src/model/` / `src/runtime/` に置きます。ESP-IDF 固有 adapter を portable Core へ混ぜません。port-owned factory と backend は [20章](20-m3-basic-esp-idf-platform-adapters.md) です。
 
 ## 4. Source list 単一 authority
 
@@ -141,12 +144,16 @@ docker run --rm -v "$PWD:/project" -w /project "espressif/idf:${pin}" \
 - [ ] public ABI / wire / storage contract を変更していない
 - [ ] 文書が M3 / port / hardware / V1 の完了を主張していない
 
-## 9. 明示的に残る M3 本体 work
+## 9. 明示的に残る / 後続の M3 work
 
-- FreeRTOS owner-task adapter
+**M3-basic platform adapters**（clock / entropy / execution context）は [20章](20-m3-basic-esp-idf-platform-adapters.md) を正本とする別 slice です。本章の M3-prep packaging 完了は 20 章 adapter 完了を含みません。
+
+本章 packaging の後に残る主な M3 work:
+
+- FreeRTOS **owner-task body**（dedicated Runtime task / exclusive confinement wiring）。19 章の execution identity は usable identity までで body 完成を claim しない
 - NVS / partition storage port と power-cut HIL
-- clock / entropy / execution の ESP-IDF port
 - Cell Agent firmware skeleton
 - USB/LAN gateway control transport（**byte-stream framing codec 自体は [19章](19-m3-control-byte-stream-framing.md) の private slice として先行可。driver/task は未実装**）
 - virtual/loopback TxPermit path
 - POSIX と同一 portable conformance subset の on-target 実行
+- 上記を含む M3 exit gate

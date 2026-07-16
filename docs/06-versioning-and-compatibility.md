@@ -137,9 +137,9 @@ deprecation/removal release
 
 Matrixと実test targetをCIで一致させます。文書だけに存在するsupported combinationを作りません。
 
-### M3-prep ESP-IDF pin（support 宣言ではない）
+### M3-prep / M3-basic ESP-IDF pin（support 宣言ではない）
 
-Foundation pre-alpha の **M3-prep** では、ESP-IDF を次の concrete tag に pin して target **compile smoke** だけを CI します。これは production support matrix の完成でも、M3 exit でもありません。
+Foundation pre-alpha の **M3-prep** / **M3-basic** では、ESP-IDF を次の concrete tag に pin して target **compile smoke**（M3-basic では basic adapter link を含む）を CI します。これは production support matrix の完成でも、M3 exit でもありません。port-owned factory は `ports/esp-idf/include/ninlil_esp_idf/` に置き、`include/ninlil` public ABI は変更しません（[20章](20-m3-basic-esp-idf-platform-adapters.md)）。
 
 | Item | Pin |
 | --- | --- |

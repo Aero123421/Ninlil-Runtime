@@ -176,6 +176,8 @@ PR 1〜7とM1a exit gate完了後に開始できるのは、software-only `TEST`
 
 PC + USB Cell Agent + Display + Leakのphysical `LAB` laneはFoundationの実装順ではなく、09章どおりM3のESP-IDF/Cell Agent最小sliceとM5のLAB Tx Gate/radio subset完了後に開始します。Legacy codeをCoreへ移植して短絡せず、実機で見つかったcontract変更は仕様とgeneric conformance testへ戻します。
 
+M3 の実装は小さく分けます。[18章](18-m3-prep-esp-idf-component.md) packaging の後、[20章](20-m3-basic-esp-idf-platform-adapters.md) の clock / entropy / execution basic adapters を独立 slice とします。NVS storage、owner-task body、Cell Agent、USB/LAN は後続 slice であり、20章完了を M3 exit に置換しません。
+
 ## 実装者が独自決定してはいけない項目
 
 - enum値、struct field順、pointer/token ownership

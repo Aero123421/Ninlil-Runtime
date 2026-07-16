@@ -1,7 +1,9 @@
-# ESP-IDF target build (M3-prep). Separated from host GCC/Clang CI in ci.yml.
+# ESP-IDF target build (M3-prep packaging + M3-basic platform adapters).
+# Separated from host GCC/Clang CI in ci.yml.
 # Pins ESP-IDF via the official Docker image tag that matches
 # ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
-# Does not claim M3 complete or hardware verify.
+# Smoke links clock/entropy/execution port-owned adapters.
+# Does not claim M3 complete, NVS/owner-task body, HIL, or hardware verify.
 
 name: ESP-IDF
 
