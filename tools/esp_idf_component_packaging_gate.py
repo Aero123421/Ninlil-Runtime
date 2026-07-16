@@ -21,6 +21,7 @@ VERSION_FILE = REPO_ROOT / "ports" / "esp-idf" / "ESP_IDF_VERSION"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "esp-idf.yml"
 DOCS_PIN = REPO_ROOT / "docs" / "18-m3-prep-esp-idf-component.md"
 DOCS_BASIC = REPO_ROOT / "docs" / "20-m3-basic-esp-idf-platform-adapters.md"
+DOCS_OWNER = REPO_ROOT / "docs" / "22-m3-owner-cell-agent-skeleton.md"
 SMOKE_APP = REPO_ROOT / "ports" / "esp-idf" / "smoke_app" / "CMakeLists.txt"
 SMOKE_MAIN = REPO_ROOT / "ports" / "esp-idf" / "smoke_app" / "main" / "main.c"
 PIN_MIRRORS = (
@@ -34,6 +35,14 @@ PORT_HEADERS = (
     REPO_ROOT / "ports" / "esp-idf" / "include" / "ninlil_esp_idf" / "clock.h",
     REPO_ROOT / "ports" / "esp-idf" / "include" / "ninlil_esp_idf" / "entropy.h",
     REPO_ROOT / "ports" / "esp-idf" / "include" / "ninlil_esp_idf" / "execution.h",
+    REPO_ROOT / "ports" / "esp-idf" / "include" / "ninlil_esp_idf" / "owner_task.h",
+    REPO_ROOT / "ports" / "esp-idf" / "include" / "ninlil_esp_idf" / "cell_agent.h",
+    REPO_ROOT
+    / "ports"
+    / "esp-idf"
+    / "include"
+    / "ninlil_esp_idf"
+    / "loopback_tx_permit.h",
 )
 
 VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)\s*$")
@@ -153,9 +162,24 @@ def check() -> None:
         "ports/esp-idf/src/entropy_lifecycle_logic.c",
         "ports/esp-idf/src/entropy_publish_logic.c",
         "ports/esp-idf/src/execution_init_logic.c",
+        "ports/esp-idf/src/owner_mailbox_logic.c",
+        "ports/esp-idf/src/owner_lifecycle_logic.c",
+        "ports/esp-idf/src/owner_publish_logic.c",
+        "ports/esp-idf/src/owner_authority_logic.c",
+        "ports/esp-idf/src/cell_assignment_logic.c",
+        "ports/esp-idf/src/control_boundary_logic.c",
+        "ports/esp-idf/src/loopback_tx_permit_logic.c",
+        "ports/esp-idf/src/tx_gate_validate.c",
+        "ports/esp-idf/src/pointer_range_logic.c",
+        "ports/esp-idf/src/abi_header_stage_logic.c",
+        "ports/esp-idf/src/owner_config_stage_logic.c",
+        "ports/esp-idf/src/tx_gate_lease_logic.c",
         "ports/esp-idf/src/esp_idf_clock.c",
         "ports/esp-idf/src/esp_idf_entropy.c",
         "ports/esp-idf/src/esp_idf_execution.c",
+        "ports/esp-idf/src/esp_idf_owner_task.c",
+        "ports/esp-idf/src/esp_idf_cell_agent.c",
+        "ports/esp-idf/src/esp_idf_loopback_tx_permit.c",
     }
     all_port = set(pure_sources) | set(backend_sources)
     if not required.issubset(all_port):
@@ -200,6 +224,169 @@ def check() -> None:
         if needle not in docs19:
             fail(f"docs/20 must document {needle!r}")
 
+    docs22 = read_text(DOCS_OWNER)
+    for needle in (
+        "inflight",
+        "FAILED_LIVE",
+        "FAILED_JOINED",
+        "JOIN_ACK",
+        "vTaskDelete",
+        "prvDeleteTCB",
+        "start_gate",
+        "4096",
+        "StackType_t",
+        "experimental",
+        "logical_bytes",
+        "lease",
+        "MAX_TX_GATE_LEASES",
+        "mux_ready",
+        "M3 incomplete",
+        "self-stop",
+        "single-use",
+        "non-overlap",
+        "uintptr_t",
+        "pointer-compare",
+        "detect_invalid_pointer_pairs",
+        "tx_gate_lease_registry.h",
+        "ABI header staging",
+        "declared struct_size",
+        "detail/",
+        "Target smoke",
+        "trusted initial publish",
+        "exact",
+        "struct_size` 除外",
+        "post-write reread",
+        "owner_config_stage",
+    ):
+        if needle not in docs22:
+            fail(f"docs/22 must document {needle!r}")
+
+    owner_backend = read_text(
+        REPO_ROOT / "ports" / "esp-idf" / "src" / "esp_idf_owner_task.c"
+    )
+    if "ninlil_esp_idf_owner_config_stage" not in owner_backend:
+        fail("owner_task_init path must call owner_config_stage helper")
+    host_test = read_text(
+        REPO_ROOT / "tests" / "port" / "owner_cell_agent_logic_test.c"
+    )
+    if "ninlil_esp_idf_owner_config_stage" not in host_test:
+        fail("host owner test must exercise owner_config_stage (not generic only)")
+    if "|| (declared - known)" in host_test or "|| declared - known" in host_test:
+        fail("owner logic test has vacuous OR geometry assertion")
+
+    host = read_text(HOST_CMAKE)
+    if "owner_cell_agent_logic" not in host:
+        fail("host CMakeLists missing owner_cell_agent_logic test")
+    if "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER" not in host:
+        fail("host CMakeLists missing pointer-compare sanitizer option")
+
+    ci_host = read_text(REPO_ROOT / ".github" / "workflows" / "ci.yml")
+    if "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER" not in ci_host:
+        fail("host ci.yml missing pointer-compare sanitizer job")
+    if "detect_invalid_pointer_pairs=2" not in ci_host:
+        fail("host ci.yml missing detect_invalid_pointer_pairs=2")
+
+    owner_api = read_text(
+        REPO_ROOT / "ports" / "esp-idf" / "include" / "ninlil_esp_idf" / "owner_task.h"
+    )
+    if "tx_gate_lease_registry_t" in owner_api or "tx_gate_lease_slot_t" in owner_api:
+        fail("public owner_task.h must not expose registry/slot internal types")
+    if "ABI staging" not in owner_api:
+        fail("public owner_task.h must document ABI staging")
+
+    old_reg = (
+        REPO_ROOT
+        / "ports"
+        / "esp-idf"
+        / "include"
+        / "ninlil_esp_idf"
+        / "tx_gate_lease_registry.h"
+    )
+    if old_reg.is_file():
+        fail("registry layout must not remain outside detail/")
+    reg_hdr = (
+        REPO_ROOT
+        / "ports"
+        / "esp-idf"
+        / "include"
+        / "ninlil_esp_idf"
+        / "detail"
+        / "tx_gate_lease_registry.h"
+    )
+    if not reg_hdr.is_file():
+        fail("missing detail/tx_gate_lease_registry.h unstable layout header")
+    if "Unstable concrete storage detail" not in read_text(reg_hdr):
+        fail("detail registry header must declare unstable storage detail")
+
+    # Trusted/nested helpers must not ship as default global ELF symbols.
+    # Prefer static inline (local / absent in nm), not merely -fvisibility=hidden.
+    if "cell_config_stage_logic.c" in pure_sources:
+        fail("cell_config_stage_nested_owner must not be a pure .c TU (use static inline)")
+    lease_c = read_text(REPO_ROOT / "ports" / "esp-idf" / "src" / "tx_gate_lease_logic.c")
+    if re.search(
+        r"(?m)^(?!\s*static\s).*set_ops_trusted\s*\(", lease_c
+    ) or "set_ops_trusted" in lease_c:
+        fail("set_ops_trusted must not be defined in tx_gate_lease_logic.c")
+    owner_c = read_text(REPO_ROOT / "ports" / "esp-idf" / "src" / "esp_idf_owner_task.c")
+    if "publish_tx_gate_trusted" in owner_c:
+        fail("publish_tx_gate_trusted must not be defined in esp_idf_owner_task.c")
+    lease_h = read_text(REPO_ROOT / "ports" / "esp-idf" / "src" / "tx_gate_lease_logic.h")
+    if "static inline" not in lease_h or "set_ops_trusted" not in lease_h:
+        fail("set_ops_trusted must be static inline in private header")
+    trusted_h = read_text(REPO_ROOT / "ports" / "esp-idf" / "src" / "owner_tx_gate_trusted.h")
+    if "static inline" not in trusted_h or "publish_tx_gate_trusted" not in trusted_h:
+        fail("publish_tx_gate_trusted must be static inline in private header")
+    cell_stage_h = read_text(
+        REPO_ROOT / "ports" / "esp-idf" / "src" / "cell_config_stage_logic.h"
+    )
+    if "static inline" not in cell_stage_h or "cell_config_stage_nested_owner" not in cell_stage_h:
+        fail("cell_config_stage_nested_owner must be static inline in private header")
+    if (REPO_ROOT / "ports" / "esp-idf" / "src" / "cell_config_stage_logic.c").is_file():
+        fail("cell_config_stage_logic.c must be removed (header-only static inline)")
+    # Failure atomicity: stage to temps, commit only on success (no out poison).
+    if "outer_tmp" not in cell_stage_h or "owner_tmp" not in cell_stage_h:
+        fail("cell_config_stage must stage into temps before commit")
+    if "*out_outer_local = outer_tmp" not in cell_stage_h:
+        fail("cell_config_stage must commit outer_tmp only after validation")
+    owner_stage_c = read_text(
+        REPO_ROOT / "ports" / "esp-idf" / "src" / "owner_config_stage_logic.c"
+    )
+    owner_stage_h = read_text(
+        REPO_ROOT / "ports" / "esp-idf" / "src" / "owner_config_stage_logic.h"
+    )
+    if "NINLIL_ESP_IDF_INTERNAL" not in owner_stage_h:
+        fail("owner_config_stage must use NINLIL_ESP_IDF_INTERNAL (non-DEFAULT export)")
+    if "local_tmp" not in owner_stage_c or "hdr_tmp" not in owner_stage_c:
+        fail("owner_config_stage must stage into temps before commit")
+    if "(owner_storage == NULL) != (owner_storage_size == 0u)" not in owner_stage_c:
+        fail("owner_config_stage must closed-reject NULL/size storage contradictions")
+    if "pointer_ranges_overlap" not in owner_stage_c:
+        fail("owner_config_stage must reject out/storage alias via pointer_range helper")
+    internal_h = read_text(
+        REPO_ROOT / "ports" / "esp-idf" / "src" / "ninlil_esp_idf_internal.h"
+    )
+    if "visibility" not in internal_h or "hidden" not in internal_h:
+        fail("ninlil_esp_idf_internal.h must define portable hidden visibility")
+    # Official ELF gates must be wired into esp-idf.yml (objdump frame + readelf).
+    if "esp_idf_app_main_frame_gate.py" not in ci:
+        fail("esp-idf.yml must run app_main frame gate")
+    if "xtensa-esp32s3-elf-objdump" not in ci:
+        fail("esp-idf.yml frame gate must use xtensa-esp32s3-elf-objdump explicitly")
+    if "esp_idf_private_symbol_gate.py" not in ci:
+        fail("esp-idf.yml must run private symbol / readelf gate")
+    if "xtensa-esp32s3-elf-readelf" not in ci:
+        fail("esp-idf.yml symbol gate must use xtensa-esp32s3-elf-readelf explicitly")
+    frame_gate = read_text(REPO_ROOT / "tools" / "esp_idf_app_main_frame_gate.py")
+    if "false-green" not in frame_gate and "false_green" not in frame_gate:
+        fail("frame gate must refuse false-green when objdump missing")
+    if "SAFE_MARGIN_BYTES" not in frame_gate:
+        fail("frame gate must assert a safety margin")
+    sym_gate = read_text(REPO_ROOT / "tools" / "esp_idf_private_symbol_gate.py")
+    if "GLOBAL" not in sym_gate or "DEFAULT" not in sym_gate:
+        fail("private symbol gate must reject GLOBAL DEFAULT")
+    if "owner_config_stage" not in sym_gate:
+        fail("private symbol gate must cover owner_config_stage")
+
     for mirror in PIN_MIRRORS:
         if pin not in read_text(mirror):
             fail(f"{mirror.relative_to(REPO_ROOT)} missing pin {pin}")
@@ -212,12 +399,51 @@ def check() -> None:
         "ninlil_esp_idf/clock.h",
         "ninlil_esp_idf/entropy.h",
         "ninlil_esp_idf/execution.h",
+        "ninlil_esp_idf/owner_task_storage.h",
+        "ninlil_esp_idf/cell_agent_storage.h",
+        "ninlil_esp_idf/loopback_tx_permit.h",
         "NINLIL_ESP_IDF_ENTROPY_POLICY_BOOTLOADER_RNG",
         "ninlil_esp_idf_entropy_shutdown",
         "ninlil_esp_idf_clock_shutdown",
+        "ninlil_esp_idf_loopback_tx_permit",
+        "SELFTEST",
+        "producer_task",
+        "post_tick_from_isr",
+        "DOUBLE_STOP",
+        "stack_hwm_bytes",
+        "ESP_TIMER_ISR",
+        "acquire_tx_gate_lease",
+        "LEASE_STALE",
+        "max_leases",
+        "event_group_null",
+        "double_release_not_stale",
+        "snapshot_borrowers_not_2",
+        "shutdown_not_busy_two_leases",
+        "forged_release_not_stale",
+        "tx_gate_borrowers",
+        "owner_init_forward_ext",
+        "retired s_standalone_owner",
     ):
         if needle not in smoke_main:
             fail(f"smoke_app must include/use {needle!r}")
+    # Post-shutdown full memset of retired standalone owner is forbidden
+    # (destroys lifecycle evidence). Pre-init zero remains allowed.
+    post_shutdown_wipe = re.search(
+        r"owner_task_shutdown\(&s_standalone_owner\).*?"
+        r"memset\(&s_standalone_owner",
+        smoke_main,
+        re.DOTALL,
+    )
+    if post_shutdown_wipe:
+        fail("smoke must not memset retired s_standalone_owner after shutdown")
+
+    # Host tests must assert failure-path output immutability for both helpers.
+    if "outer_poison" not in host_test or "local_poison" not in host_test:
+        fail("owner_cell_agent_logic_test must poison outs for atomicity checks")
+    if "closed reject" not in host_test:
+        fail("host owner/cell tests must cover storage NULL/size closed reject")
+    if "failure atomicity" not in host_test and "Failure-path output" not in host_test:
+        fail("host tests must document/cover failure atomicity for stage helpers")
 
     print(
         "esp_idf_component_packaging_gate OK: "

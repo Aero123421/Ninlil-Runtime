@@ -34,6 +34,12 @@ target_include_directories(ninlil INTERFACE
 # paths). Ship hygiene is enforced by non-sanitizer production/CI gates.
 # Do not lower sanitizer coverage or disable ASan globals for path hygiene.
 option(NINLIL_ENABLE_SANITIZERS "Build with ASan and UBSan" OFF)
+# Dedicated pointer-compare sanitizer (docs/22). Not a substitute for
+# NINLIL_ENABLE_SANITIZERS alone: uses -fsanitize=address,pointer-compare and
+# ASAN_OPTIONS=detect_invalid_pointer_pairs=2. Feature-detected; required on
+# Linux CI (see .github/workflows/ci.yml).
+option(NINLIL_ENABLE_POINTER_COMPARE_SANITIZER
+    "Build with ASan+pointer-compare (invalid pointer pairs)" OFF)
 set(_ninlil_sanitizer_supported FALSE)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
    OR CMAKE_C_COMPILER_ID STREQUAL "Clang"
@@ -47,6 +53,46 @@ if(NINLIL_ENABLE_SANITIZERS)
     endif()
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address,undefined)
+endif()
+
+set(_ninlil_pointer_compare_sanitizer_supported FALSE)
+if(NINLIL_ENABLE_POINTER_COMPARE_SANITIZER)
+    if(NOT _ninlil_sanitizer_supported)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            message(FATAL_ERROR
+                "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER=ON requires GNU/Clang on Linux")
+        else()
+            message(WARNING
+                "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER ignored: unsupported compiler")
+        endif()
+    else()
+        include(CheckCSourceCompiles)
+        set(_ninlil_pc_save_flags "${CMAKE_REQUIRED_FLAGS}")
+        set(CMAKE_REQUIRED_FLAGS
+            "-fsanitize=address,pointer-compare -fno-omit-frame-pointer")
+        set(CMAKE_REQUIRED_LINK_OPTIONS
+            "-fsanitize=address,pointer-compare")
+        check_c_source_compiles(
+            "int main(void) { return 0; }"
+            NINLIL_HAS_POINTER_COMPARE_SANITIZER)
+        set(CMAKE_REQUIRED_FLAGS "${_ninlil_pc_save_flags}")
+        unset(CMAKE_REQUIRED_LINK_OPTIONS)
+        if(NINLIL_HAS_POINTER_COMPARE_SANITIZER)
+            set(_ninlil_pointer_compare_sanitizer_supported TRUE)
+            add_compile_options(
+                -fsanitize=address,pointer-compare -fno-omit-frame-pointer)
+            add_link_options(-fsanitize=address,pointer-compare)
+            message(STATUS
+                "pointer-compare sanitizer enabled (detect_invalid_pointer_pairs=2 at test time)")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            message(FATAL_ERROR
+                "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER=ON required on Linux but "
+                "-fsanitize=address,pointer-compare is unsupported by this toolchain")
+        else()
+            message(WARNING
+                "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER requested but unsupported; skipping")
+        endif()
+    endif()
 endif()
 
 set(NINLIL_STRICT_C_FLAGS
@@ -1954,7 +2000,7 @@ if(NINLIL_BUILD_TESTS)
     )
 
     # ESP-IDF port pure logic + port-owned header contracts (host only;
-    # no ESP-IDF / FreeRTOS backend link). Spec: docs/19.
+    # no ESP-IDF / FreeRTOS backend link). Spec: docs/20 + docs/22.
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_esp_idf_port_sources.cmake)
     add_library(ninlil_esp_idf_port_pure STATIC
         ${NINLIL_ESP_IDF_PORT_PURE_RELATIVE_SOURCES}
@@ -1964,12 +2010,18 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     )
-    target_link_libraries(ninlil_esp_idf_port_pure PRIVATE ninlil)
+    # control_boundary_logic reuses private NCG1 codec (docs/19 boundary).
+    target_link_libraries(ninlil_esp_idf_port_pure PRIVATE
+        ninlil
+        ninlil_runtime_private
+    )
     set_target_properties(ninlil_esp_idf_port_pure PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
         C_EXTENSIONS OFF
+        C_VISIBILITY_PRESET hidden
         NINLIL_TEST_ONLY_ARTIFACT TRUE
     )
     ninlil_apply_strict_warnings(ninlil_esp_idf_port_pure)
@@ -1994,6 +2046,30 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME esp_idf_port_logic
         COMMAND ninlil_esp_idf_port_logic_test
+    )
+
+    add_executable(ninlil_owner_cell_agent_logic_test
+        tests/port/owner_cell_agent_logic_test.c
+    )
+    target_include_directories(ninlil_owner_cell_agent_logic_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_owner_cell_agent_logic_test PRIVATE
+        ninlil_esp_idf_port_pure
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_owner_cell_agent_logic_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_owner_cell_agent_logic_test)
+    add_test(
+        NAME owner_cell_agent_logic
+        COMMAND ninlil_owner_cell_agent_logic_test
     )
 
     add_executable(ninlil_deterministic_entropy_test

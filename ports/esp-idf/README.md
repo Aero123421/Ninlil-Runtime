@@ -1,18 +1,22 @@
-# Ninlil ESP-IDF component (M3-prep + M3-basic)
+# Ninlil ESP-IDF component (M3-prep + M3-basic + owner/cell skeleton)
 
-この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** し、加えて **M3-basic platform adapters**（clock / entropy / execution context）を port-owned API として提供します。
+この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** し、加えて **M3-basic**（clock / entropy / execution）と **experimental M3 owner-task / Cell Agent / loopback TxPermit**（docs/22）を port-owned API として提供します。
 
-**これは M3-prep + M3-basic です。** 次を提供・主張しません。
+**実装済み（experimental）:** owner-task + FreeRTOS queue/notify、Cell Agent assignment、loopback TxPermit、smoke self-test **source**（dual-core + real ISR timer config）。
 
-- ESP-IDF storage (NVS) / FreeRTOS **owner-task body** / USB / Wi-Fi / SX1262
+**これは M3 の部分 slice です。** 次を提供・主張しません。
+
+- ESP-IDF storage (NVS) / USB / Wi-Fi / SX1262
 - radio MAC、Join、KGuard adapter
 - public Runtime の production 実行経路
+- **compile/link を HIL PASS / dual-core race PASS とみなすこと**
 - M3 complete、ESP-IDF port complete、hardware verified、V1 complete
 
 仕様と pin の正本:
 
 - packaging: [docs/18-m3-prep-esp-idf-component.md](../../docs/18-m3-prep-esp-idf-component.md)
 - basic adapters: [docs/20-m3-basic-esp-idf-platform-adapters.md](../../docs/20-m3-basic-esp-idf-platform-adapters.md)
+- owner/cell/loopback: [docs/22-m3-owner-cell-agent-skeleton.md](../../docs/22-m3-owner-cell-agent-skeleton.md)
 
 ## Pinned ESP-IDF version
 
@@ -49,6 +53,10 @@ ports/esp-idf/ESP_IDF_VERSION  →  v5.5.3
 | `ninlil_esp_idf/clock.h` | `esp_timer` + **immutable embedded ops** | zero-init one-shot。boot-local TRUSTED。reboot ごと fresh epoch は caller 責任 |
 | `ninlil_esp_idf/entropy.h` | `esp_fill_random` + bootloader RNG | boot-global one-shot + DISABLING + **reserved task-notification drain** + ACQUIRING cancel/await |
 | `ninlil_esp_idf/execution.h` | FreeRTOS task handle + immutable embedded ops | zero-init one-shot、ISR→0。TaskHandle identity は task delete を跨いで保持しない |
+| `ninlil_esp_idf/owner_task.h` | opaque API | inflight + claim + start barrier + JOIN_ACK（docs/22） |
+| `ninlil_esp_idf/owner_task_storage.h` | concrete FreeRTOS | `StackType_t` stack、ESP app include |
+| `ninlil_esp_idf/cell_agent.h` / `cell_agent_storage.h` | skeleton | tx_gate idle atomic swap |
+| `ninlil_esp_idf/loopback_tx_permit.h` | `ninlil_tx_gate_ops_t` | deny-by-default; logical_bytes>0; live shutdown fail |
 
 state は caller-owned（static 可）で初回 init 前に全体 zero-initialize します。返却 ops を Runtime が借用する場合は、全 call を quiesce して `ninlil_runtime_destroy()` を完了した後に adapter を shutdown し、最後に state lifetime を終了します。heap / VLA / exception を使いません。
 

@@ -1,9 +1,10 @@
-# ESP-IDF target build (M3-prep packaging + M3-basic platform adapters).
+# ESP-IDF target build (M3-prep + M3-basic + experimental owner/cell/loopback).
 # Separated from host GCC/Clang CI in ci.yml.
 # Pins ESP-IDF via the official Docker image tag that matches
 # ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
-# Smoke links clock/entropy/execution port-owned adapters.
-# Does not claim M3 complete, NVS/owner-task body, HIL, or hardware verify.
+# Smoke links clock/entropy/execution + owner-task/cell/loopback adapters.
+# Evidence is esp32s3 compile/link only — not device HIL / dual-core race PASS.
+# Does not claim M3 complete, NVS, USB, radio, or hardware verify.
 
 name: ESP-IDF
 
@@ -43,6 +44,8 @@ jobs:
         # Official Espressif setup: published Docker image tag vX.Y.Z
         # (espressif/idf). Image tag must match ports/esp-idf/ESP_IDF_VERSION.
         # No third-party Action required beyond checkout (SHA-pinned above).
+        # Post-link gates run inside the same image so xtensa-esp32s3-elf-objdump
+        # / readelf are always present — tools missing ⇒ fail, never false-green.
         run: |
           pin="${{ steps.pin.outputs.version }}"
           docker run --rm \
@@ -54,4 +57,26 @@ jobs:
               set -euo pipefail
               . "${IDF_PATH}/export.sh"
               idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
+              ELF=ports/esp-idf/smoke_app/build/ninlil_m3_basic_smoke.elf
+              SDK=ports/esp-idf/smoke_app/sdkconfig
+              # Prefer build/sdkconfig when present (idf may rewrite it there).
+              if [[ -f ports/esp-idf/smoke_app/build/config/sdkconfig.h ]]; then
+                if [[ -f ports/esp-idf/smoke_app/build/sdkconfig ]]; then
+                  SDK=ports/esp-idf/smoke_app/build/sdkconfig
+                fi
+              fi
+              python3 tools/esp_idf_app_main_frame_gate.py check \
+                --elf "${ELF}" \
+                --sdkconfig "${SDK}" \
+                --objdump xtensa-esp32s3-elf-objdump
+              python3 tools/esp_idf_private_symbol_gate.py check \
+                --elf "${ELF}" \
+                --readelf xtensa-esp32s3-elf-readelf
+              # nm cross-check: private helper must not be text GLOBAL default-looking T
+              # without hidden (readelf is authoritative for DEFAULT vs HIDDEN).
+              xtensa-esp32s3-elf-nm -g "${ELF}" | tee /tmp/ninlil_nm_g.txt >/dev/null
+              if xtensa-esp32s3-elf-nm -g "${ELF}" | grep -E " ninlil_esp_idf_cell_config_stage_nested_owner$"; then
+                echo "cell_config_stage_nested_owner must not be a global nm symbol" >&2
+                exit 1
+              fi
             '

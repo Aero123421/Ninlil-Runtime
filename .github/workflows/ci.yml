@@ -504,3 +504,30 @@ jobs:
           ctest --test-dir build/ci-macos-asan
           -R 'posix_sqlite_storage'
           --output-on-failure
+
+  # Dedicated pointer-compare sanitizer (docs/22). Ordinary ASan alone does
+  # not enable invalid pointer-pair detection.
+  clang-pointer-compare:
+    name: Clang pointer-compare sanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Configure pointer-compare sanitizer
+        run: >-
+          cmake -S . -B build/ci-clang-pointer-compare
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DNINLIL_ENABLE_POINTER_COMPARE_SANITIZER=ON
+      - name: Build
+        run: cmake --build build/ci-clang-pointer-compare --parallel 2
+      - name: Test with detect_invalid_pointer_pairs=2
+        env:
+          ASAN_OPTIONS: detect_invalid_pointer_pairs=2:halt_on_error=1
+        run: ctest --test-dir build/ci-clang-pointer-compare --output-on-failure

@@ -1,5 +1,5 @@
-# Minimal defaults for the M3-prep smoke app. Target is selected with
-# `idf.py set-target esp32s3` (required CI/local gate). These defaults only
-# reduce interactive prompts; they do not claim hardware verification.
-
+# Experimental owner/cell smoke. compile/link ≠ HIL PASS.
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_FREERTOS_UNICORE=n
+CONFIG_FREERTOS_CHECK_PORT_CRITICAL_COMPLIANCE=y
+CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD=y
