@@ -1,10 +1,11 @@
-# ESP-IDF target build (M3-prep + M3-basic + experimental owner/cell/loopback).
+# ESP-IDF target build (M3-prep + M3-basic + experimental owner/cell/loopback
+# + durable-storage target gates).
 # Separated from host GCC/Clang CI in ci.yml.
 # Pins ESP-IDF via the official Docker image tag that matches
 # ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
-# Smoke links clock/entropy/execution + owner-task/cell/loopback adapters.
-# Evidence is esp32s3 compile/link only — not device HIL / dual-core race PASS.
-# Does not claim M3 complete, NVS, USB, radio, or hardware verify.
+# Smoke links clock/entropy/execution + owner-task/cell/loopback + storage.
+# Evidence is esp32s3 compile/link only — not device HIL / dual-core race PASS /
+# physical power-cut HIL. Does not claim M3 complete, USB, radio, or hardware verify.
 
 name: ESP-IDF
 
@@ -40,12 +41,21 @@ jobs:
           echo "version=$pin" >> "$GITHUB_OUTPUT"
           echo "Pinned ESP-IDF: $pin"
 
-      - name: Build ninlil component smoke app for esp32s3
+      - name: Resolve storage partition paths
+        run: |
+          test -f ports/esp-idf/partitions/ninlil_storage.csv
+          test -f ports/esp-idf/hil_app/../partitions/ninlil_storage.csv
+          rel="$(sed -n 's/^CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="\(.*\)"/\1/p' \
+            ports/esp-idf/smoke_app/sdkconfig.defaults | head -1)"
+          test "$rel" = "../partitions/ninlil_storage.csv"
+          test -f "ports/esp-idf/smoke_app/${rel}"
+
+      - name: Build combined smoke and storage HIL app for esp32s3
         # Official Espressif setup: published Docker image tag vX.Y.Z
         # (espressif/idf). Image tag must match ports/esp-idf/ESP_IDF_VERSION.
         # No third-party Action required beyond checkout (SHA-pinned above).
         # Post-link gates run inside the same image so xtensa-esp32s3-elf-objdump
-        # / readelf are always present — tools missing ⇒ fail, never false-green.
+        # / nm / readelf are always present — tools missing ⇒ fail, never false-green.
         run: |
           pin="${{ steps.pin.outputs.version }}"
           docker run --rm \
@@ -57,7 +67,12 @@ jobs:
               set -euo pipefail
               . "${IDF_PATH}/export.sh"
               idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
-              ELF=ports/esp-idf/smoke_app/build/ninlil_m3_basic_smoke.elf
+              idf.py -C ports/esp-idf/hil_app set-target esp32s3 build
+              ELF=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.elf
+              SMOKE_MAP=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.map
+              HIL_MAP=ports/esp-idf/hil_app/build/ninlil_storage_powercut_hil.map
+              HIL_ELF=ports/esp-idf/hil_app/build/ninlil_storage_powercut_hil.elf
+              ARCHIVE=ports/esp-idf/smoke_app/build/esp-idf/ninlil/libninlil.a
               SDK=ports/esp-idf/smoke_app/sdkconfig
               # Prefer build/sdkconfig when present (idf may rewrite it there).
               if [[ -f ports/esp-idf/smoke_app/build/config/sdkconfig.h ]]; then
@@ -65,6 +80,11 @@ jobs:
                   SDK=ports/esp-idf/smoke_app/build/sdkconfig
                 fi
               fi
+              test -f "$ELF"
+              test -f "$SMOKE_MAP"
+              test -f "$HIL_MAP"
+              test -f "$HIL_ELF"
+              test -f "$ARCHIVE"
               python3 tools/esp_idf_app_main_frame_gate.py check \
                 --elf "${ELF}" \
                 --sdkconfig "${SDK}" \
@@ -79,4 +99,24 @@ jobs:
                 echo "cell_config_stage_nested_owner must not be a global nm symbol" >&2
                 exit 1
               fi
+              python3 tools/esp_storage_public_api_gate.py \
+                --archive "${ARCHIVE}" \
+                --archive-kind target \
+                --elf "${HIL_ELF}" \
+                --nm xtensa-esp32s3-elf-nm \
+                --readelf xtensa-esp32s3-elf-readelf \
+                --compile-commands ports/esp-idf/smoke_app/build/compile_commands.json
+              # Both official maps are required (smoke placement + HIL placement).
+              python3 tools/esp_storage_map_gate.py "${SMOKE_MAP}"
+              python3 tools/esp_storage_map_gate.py "${HIL_MAP}"
+              find ports/esp-idf/smoke_app/build \( \
+                -name "esp_storage_*.su" -o \
+                -name "*esp_storage_model*.su" \) \
+                | tee ports/esp-idf/smoke_app/build/ninlil_su_list.txt
             '
+
+      - name: Enforce target storage stack budget
+        run: |
+          test -s ports/esp-idf/smoke_app/build/ninlil_su_list.txt
+          python3 tools/esp_storage_stack_gate.py --require-su --require-model \
+            ports/esp-idf/smoke_app/build

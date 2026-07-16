@@ -17,6 +17,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/domain_store_scanner.c
     src/runtime/runtime_store_orchestrator.c
     src/runtime/runtime_store_stage5_seam.c
+    src/runtime/storage_canonical_plan.c
 )
 
 set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
@@ -25,4 +26,5 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/runtime/domain_store_d3s2.c
     src/runtime/runtime_store_stage5_seam.c
     src/runtime/runtime_store_orchestrator.c
+    src/runtime/storage_canonical_plan.c
 )

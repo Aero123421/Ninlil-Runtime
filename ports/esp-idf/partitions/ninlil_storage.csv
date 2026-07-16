@@ -1,0 +1,8 @@
+# Partition table for Ninlil ESP32-S3 storage smoke / HIL scaffold.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x10000, 0x180000,
+# Dual-slot directory + namespace data region (see docs/21 media geometry).
+# Size must be >= media_total_bytes(max_namespaces=2) for production profile.
+ninlil_st,data, 0x40,    ,        0x400000,

@@ -1089,6 +1089,42 @@ static int test_prevalidation_poison_retention(void)
     REQUIRE(memcmp(&context.workspace, &poisoned_workspace,
             sizeof(poisoned_workspace)) == 0);
 
+    /* storage ↔ validation (const-const) overlap. */
+    context.result = poisoned_result;
+    context.workspace = poisoned_workspace;
+    REQUIRE(ninlil_runtime_store_stage5_private_hookup(
+        (const ninlil_storage_ops_t *)&context.validation,
+        &context.handle, &context.validation, &context.hooks,
+        &context.workspace, &context.result) == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&context.result, &poisoned_result, sizeof(poisoned_result))
+        == 0);
+    REQUIRE(memcmp(&context.workspace, &poisoned_workspace,
+            sizeof(poisoned_workspace)) == 0);
+
+    /* hooks ↔ storage (const-const) overlap. */
+    context.result = poisoned_result;
+    context.workspace = poisoned_workspace;
+    REQUIRE(ninlil_runtime_store_stage5_private_hookup(
+        context.storage, &context.handle, &context.validation,
+        (const ninlil_runtime_store_hook_dispatcher_t *)context.storage,
+        &context.workspace, &context.result) == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&context.result, &poisoned_result, sizeof(poisoned_result))
+        == 0);
+    REQUIRE(memcmp(&context.workspace, &poisoned_workspace,
+            sizeof(poisoned_workspace)) == 0);
+
+    /* hooks ↔ validation (const-const) overlap. */
+    context.result = poisoned_result;
+    context.workspace = poisoned_workspace;
+    REQUIRE(ninlil_runtime_store_stage5_private_hookup(
+        context.storage, &context.handle, &context.validation,
+        (const ninlil_runtime_store_hook_dispatcher_t *)&context.validation,
+        &context.workspace, &context.result) == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(memcmp(&context.result, &poisoned_result, sizeof(poisoned_result))
+        == 0);
+    REQUIRE(memcmp(&context.workspace, &poisoned_workspace,
+            sizeof(poisoned_workspace)) == 0);
+
     REQUIRE(context.handle != NULL);
     REQUIRE(context_destroy(&context));
     return 0;

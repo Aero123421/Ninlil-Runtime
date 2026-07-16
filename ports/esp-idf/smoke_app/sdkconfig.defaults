@@ -1,5 +1,30 @@
-# Experimental owner/cell smoke. compile/link ≠ HIL PASS.
+# Combined owner/cell + durable-storage smoke.
+# compile/link ≠ HIL PASS / dual-core race PASS / physical power-cut HIL.
+# Does not claim field-ready.
+#
+# Partition CSV paths are relative to the ESP-IDF *project directory*
+# (this smoke_app/). Real file: ports/esp-idf/partitions/ninlil_storage.csv
+# => from smoke_app use ../partitions/... (NOT ../../partitions/...).
+
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_FREERTOS_UNICORE=n
 CONFIG_FREERTOS_CHECK_PORT_CRITICAL_COMPLIANCE=y
 CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD=y
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../partitions/ninlil_storage.csv"
+CONFIG_PARTITION_TABLE_FILENAME="../partitions/ninlil_storage.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# Raw Ninlil images are 4 KiB aligned. 4096-byte WL sectors avoid the
+# 512-byte performance-mode power-loss window and minimize write amplification.
+CONFIG_WL_SECTOR_SIZE_4096=y
+CONFIG_WL_SECTOR_SIZE=4096
+
+# Production storage workspace requires PSRAM (docs/21).
+# CAPS alloc for heap_caps_malloc(MALLOC_CAP_SPIRAM). The workspace is not
+# linked into external BSS/DATA, so segment-placement Kconfig is unnecessary.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y

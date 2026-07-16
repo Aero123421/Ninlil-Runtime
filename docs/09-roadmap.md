@@ -103,7 +103,7 @@ Exit gate:
 
 - ESP-IDF component packaging
 - FreeRTOS owner-task adapter
-- NVS/partition storage port
+- durable partition storage port（NVS単独ではなく、power-cut契約を満たすbackend）
 - identical Cell Agent firmware skeleton
 - USB/LAN gateway control transport
 - virtual/loopback TxPermit path
@@ -123,7 +123,18 @@ Exit gate:
 - concrete ESP-IDF version pin（現在 `v5.5.3`）と host から分離した esp32s3 target compile CI
 - component 利用者向け最小 README / smoke app
 
-含まない: NVS storage port、FreeRTOS owner task、USB/LAN、Cell Agent、power-cut HIL、on-target conformance subset。
+含まない: USB/LAN driver、power-cut HIL、on-target conformance subset、M3 exit。
+
+### M3 storage port slice（部分作業; M3 incomplete）
+
+正本: [21-m3-esp-idf-durable-storage.md](21-m3-esp-idf-durable-storage.md)。
+
+- dual-slot generation marker on wear-levelled partition（**NVS 単独は契約不能のため不採用**）
+- `ninlil_storage_ops_t` production 候補 adapter（固定上限・**binder-owned PSRAM workspace**・heap/VLA 禁止）
+- host conformance（snapshot / atomicity / ordering / capacity / fault+reopen）
+- ESP-IDF component/smoke への compile 接続
+
+含まない: 実機 power-cut HIL、field-ready 宣言、M3 exit gate 全体、USB/radio/Join/KGuard。
 
 ### M3-slice: control byte-stream framing（部分作業; M3 incomplete）
 
@@ -133,7 +144,7 @@ USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agno
 - magic/version/type/flags/stream_or_cell_id/sequence/length/header CRC/frame CRC、fail-closed resync
 - host golden + mutation tests、ESP-IDF component private source への接続
 
-含まない: USB/CDC driver、TCP socket、Cell Agent task、logical control messages、custody/Application Receipt、security、M3 complete。
+含まない: USB/CDC driver、TCP socket、logical control messages、custody/Application Receipt、security、M3 complete。
 
 ### M3-basic platform adapters（部分作業; M3 incomplete）
 
@@ -141,11 +152,11 @@ USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agno
 
 - `esp_timer` clock（boot-local epoch/trust/reboot 境界を仕様で固定）
 - `esp_fill_random` entropy（invalid args / fail-closed）
-- FreeRTOS current task identity の execution context（owner-task confinement に使える identity。owner-task body は未完成）
+- FreeRTOS current task identity の execution context（owner-task confinement に使える identity）
 - port-owned factory headers（`ports/esp-idf/include/ninlil_esp_idf/`）。`include/ninlil` public ABI は変更しない
 - host pure-logic tests + packaging gate + esp32s3 smoke link
 
-含まない: NVS、owner-task body、USB/LAN、Cell Agent、Wi-Fi、SX1262、Join、KGuard、HIL、M3 exit。
+含まない: storage FULL attestation、USB/LAN driver、Wi-Fi、SX1262、Join、KGuard、HIL、M3 exit。
 
 ### M3-slice: owner-task / Cell Agent skeleton / loopback TxPermit（部分作業; M3 incomplete）
 

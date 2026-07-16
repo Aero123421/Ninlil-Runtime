@@ -368,23 +368,14 @@ static ninlil_status_t load_snapshot(
     return primary;
 }
 
-static ninlil_status_t rollback_write_failure(
-    const ninlil_storage_ops_t *storage,
-    ninlil_storage_handle_t *inout_handle,
-    ninlil_storage_txn_t transaction,
-    ninlil_status_t primary,
-    uint32_t force_fence,
-    ninlil_runtime_store_bootstrap_result_t *result)
+static void dispatch_before_bootstrap_commit(void *user)
 {
-    ninlil_storage_status_t rollback_status = storage->rollback(
-        storage->user, transaction);
-    if (rollback_status != NINLIL_STORAGE_OK) {
-        result->cleanup_status = rollback_status;
-        fence_handle(storage, inout_handle, result);
-    } else if (force_fence != 0u) {
-        fence_handle(storage, inout_handle, result);
+    const ninlil_runtime_store_hook_dispatcher_t *hooks =
+        (const ninlil_runtime_store_hook_dispatcher_t *)user;
+    if (hooks != NULL && hooks->dispatch != NULL) {
+        hooks->dispatch(hooks->user,
+            NINLIL_RUNTIME_STORE_HOOK_BEFORE_NAMESPACE_BINDING_COMMIT);
     }
-    return primary;
 }
 
 static ninlil_status_t commit_new_bootstrap(
@@ -394,63 +385,39 @@ static ninlil_status_t commit_new_bootstrap(
     ninlil_runtime_store_bootstrap_workspace_t *workspace,
     ninlil_runtime_store_bootstrap_result_t *result)
 {
-    ninlil_storage_txn_t transaction = NULL;
+    ninlil_storage_canonical_view_t begin_view;
+    ninlil_storage_canonical_view_t final_view;
+    ninlil_storage_canonical_result_t apply_result;
     ninlil_storage_status_t storage_status;
     uint32_t index;
 
-    storage_status = storage->begin(storage->user, *inout_handle,
-        NINLIL_STORAGE_READ_WRITE, &transaction);
-    if ((storage_status == NINLIL_STORAGE_OK) != (transaction != NULL)) {
-        if (transaction != NULL) {
-            ninlil_storage_status_t cleanup = storage->rollback(
-                storage->user, transaction);
-            if (cleanup != NINLIL_STORAGE_OK) {
-                result->cleanup_status = cleanup;
-            }
-        }
-        fence_handle(storage, inout_handle, result);
-        return NINLIL_E_STORAGE_CORRUPT;
-    }
-    if (storage_status != NINLIL_STORAGE_OK) {
-        if (storage_status_requires_fence(storage_status)) {
-            fence_handle(storage, inout_handle, result);
-        }
-        return map_storage_status(storage_status);
-    }
     for (index = 0u;
          index < NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_RECORD_COUNT;
          ++index) {
-        ninlil_bytes_view_t key;
-        ninlil_bytes_view_t value;
         ninlil_status_t status =
             ninlil_model_runtime_store_bootstrap_record_at(
                 &workspace->phase.bootstrap.plan, index,
-                &workspace->phase.bootstrap.record);
+                &workspace->phase.bootstrap.records[index]);
         if (status != NINLIL_OK) {
-            return rollback_write_failure(storage, inout_handle,
-                transaction, status, 0u, result);
+            return status;
         }
-        key.data = workspace->phase.bootstrap.record.key.bytes;
-        key.length = workspace->phase.bootstrap.record.key.length;
-        value.data = workspace->phase.bootstrap.record.value;
-        value.length = workspace->phase.bootstrap.record.value_length;
-        storage_status = storage->put(
-            storage->user, transaction, key, value);
-        if (storage_status != NINLIL_STORAGE_OK) {
-            return rollback_write_failure(storage, inout_handle,
-                transaction, map_storage_status(storage_status),
-                storage_status_requires_fence(storage_status) ? 1u : 0u,
-                result);
-        }
-        (void)memset(&workspace->phase.bootstrap.record, 0xa5,
-            sizeof(workspace->phase.bootstrap.record));
+        workspace->phase.bootstrap.rows[index].key.data =
+            workspace->phase.bootstrap.records[index].key.bytes;
+        workspace->phase.bootstrap.rows[index].key.length =
+            workspace->phase.bootstrap.records[index].key.length;
+        workspace->phase.bootstrap.rows[index].value.data =
+            workspace->phase.bootstrap.records[index].value;
+        workspace->phase.bootstrap.rows[index].value.length =
+            workspace->phase.bootstrap.records[index].value_length;
     }
-    if (hooks != NULL && hooks->dispatch != NULL) {
-        hooks->dispatch(hooks->user,
-            NINLIL_RUNTIME_STORE_HOOK_BEFORE_NAMESPACE_BINDING_COMMIT);
-    }
-    storage_status = storage->commit(
-        storage->user, transaction, NINLIL_DURABILITY_FULL);
+    begin_view.rows = NULL;
+    begin_view.row_count = 0u;
+    final_view.rows = workspace->phase.bootstrap.rows;
+    final_view.row_count = NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_RECORD_COUNT;
+    storage_status = ninlil_storage_canonical_apply(storage, *inout_handle,
+        begin_view, final_view, dispatch_before_bootstrap_commit,
+        (void *)hooks, &apply_result);
+    result->cleanup_status = apply_result.cleanup_status;
     if (storage_status == NINLIL_STORAGE_OK) {
         if (hooks != NULL && hooks->dispatch != NULL) {
             hooks->dispatch(hooks->user,
@@ -459,7 +426,9 @@ static ninlil_status_t commit_new_bootstrap(
         result->outcome = NINLIL_RUNTIME_STORE_NEW_BOOTSTRAP_COMMITTED;
         return NINLIL_OK;
     }
-    if (storage_status_requires_fence(storage_status)) {
+    if (apply_result.cleanup_status != NINLIL_STORAGE_OK
+        || apply_result.fence_required != 0u
+        || storage_status_requires_fence(storage_status)) {
         fence_handle(storage, inout_handle, result);
     }
     return map_storage_status(storage_status);
@@ -502,6 +471,8 @@ ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
             workspace, sizeof(*workspace))
         || !ranges_are_disjoint(validation, sizeof(*validation),
             inout_handle, sizeof(*inout_handle))
+        || !ranges_are_disjoint(validation, sizeof(*validation),
+            storage, sizeof(*storage))
         || !ranges_are_disjoint(storage, sizeof(*storage),
             workspace, sizeof(*workspace))
         || !ranges_are_disjoint(storage, sizeof(*storage),
@@ -511,12 +482,19 @@ ninlil_status_t ninlil_runtime_store_orchestrate_bootstrap(
                 workspace, sizeof(*workspace)))
         || (hooks != NULL
             && !ranges_are_disjoint(hooks, sizeof(*hooks),
-                inout_handle, sizeof(*inout_handle)))) {
+                inout_handle, sizeof(*inout_handle)))
+        || (hooks != NULL
+            && !ranges_are_disjoint(hooks, sizeof(*hooks),
+                storage, sizeof(*storage)))
+        || (hooks != NULL
+            && !ranges_are_disjoint(hooks, sizeof(*hooks),
+                validation, sizeof(*validation)))) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     if (*inout_handle == NULL || storage->close == NULL
         || storage->begin == NULL || storage->get == NULL
-        || storage->put == NULL || storage->iter_open == NULL
+        || storage->put == NULL || storage->erase == NULL
+        || storage->capacity == NULL || storage->iter_open == NULL
         || storage->iter_next == NULL || storage->iter_close == NULL
         || storage->commit == NULL || storage->rollback == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;

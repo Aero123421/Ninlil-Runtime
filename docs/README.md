@@ -54,6 +54,7 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 18 | [M3-prep ESP-IDF component](18-m3-prep-esp-idf-component.md) | component packaging、ESP-IDF version pin、esp32s3 target build CI（M3 incomplete） |
 | 19 | [M3 control byte-stream framing](19-m3-control-byte-stream-framing.md) | Controller↔Cell Agent NCG1 bounded frame codec（private; M3 incomplete） |
 | 20 | [M3-basic ESP-IDF platform adapters](20-m3-basic-esp-idf-platform-adapters.md) | clock / entropy / execution port-owned adapters（M3 incomplete; NVS/owner-task body 非対象） |
+| 21 | [M3 ESP-IDF durable storage](21-m3-esp-idf-durable-storage.md) | format 4 dual-slot + durable directory、bounded final-net/iterator conformance（ESP FULL unproven; HIL未実行） |
 | 22 | [M3 owner-task / Cell Agent skeleton / loopback TxPermit](22-m3-owner-cell-agent-skeleton.md) | FreeRTOS owner confinement、generic Cell Agent assignment、deny-by-default loopback permit（M3 incomplete） |
 
 ## 実装開始条件

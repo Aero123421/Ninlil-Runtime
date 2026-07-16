@@ -79,6 +79,8 @@ static int prevalidate_arguments(
             workspace, sizeof(*workspace))
         || !ranges_are_disjoint(validation, sizeof(*validation),
             inout_handle, sizeof(*inout_handle))
+        || !ranges_are_disjoint(validation, sizeof(*validation),
+            storage, sizeof(*storage))
         || !ranges_are_disjoint(storage, sizeof(*storage),
             workspace, sizeof(*workspace))
         || !ranges_are_disjoint(storage, sizeof(*storage),
@@ -92,7 +94,11 @@ static int prevalidate_arguments(
             || !ranges_are_disjoint(hooks, sizeof(*hooks),
                 workspace, sizeof(*workspace))
             || !ranges_are_disjoint(hooks, sizeof(*hooks),
-                inout_handle, sizeof(*inout_handle))) {
+                inout_handle, sizeof(*inout_handle))
+            || !ranges_are_disjoint(hooks, sizeof(*hooks),
+                storage, sizeof(*storage))
+            || !ranges_are_disjoint(hooks, sizeof(*hooks),
+                validation, sizeof(*validation))) {
             return 0;
         }
     }

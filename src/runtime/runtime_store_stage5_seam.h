@@ -142,6 +142,8 @@ _Static_assert(sizeof(ninlil_runtime_store_stage5_workspace_t)
  * Prevalidation publication contract:
  *   Validate all required pointers, storage ops, non-NULL handle, and
  *   pairwise alias/disjointness before any out_result or workspace mutation.
+ *   Pairwise checks include storage↔validation and, when hooks is non-NULL,
+ *   hooks↔storage and hooks↔validation (const-const uintptr ranges).
  *   Every INVALID_ARGUMENT prevalidation failure leaves poisoned
  *   out_result/workspace bytes unchanged. Outputs are initialized only after
  *   full prevalidation succeeds.
