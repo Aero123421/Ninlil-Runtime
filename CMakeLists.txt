@@ -964,6 +964,79 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_domain_store_scanner_composition_oracle_bridge_test
     )
 
+    # D3-S2 P2-A DSD1 multi-session composition sibling (docs/17 §18.13.16):
+    # S1 modes 11/14/17/19 + S2 modes 22/23/24 as seven self-contained sessions
+    # on one D1-valid fixture. Does not modify crossrow authority. Not Mode 28;
+    # not dual-bound; not one-baseline-all-modes; not D3-S2 overall complete.
+    add_test(
+        NAME domain_scan_dsd1_composition_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_dsd1_composition_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-dsd1-composition-v1.json
+    )
+    add_test(
+        NAME domain_scan_dsd1_composition_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_dsd1_composition_vector_gen.py
+            self-test
+    )
+    set(_ninlil_dsd1_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_dsd1_composition_vector_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_dsd1_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_dsd1_composition_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-dsd1-composition-v1.json
+            ${_ninlil_dsd1_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_dsd1_composition_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-dsd1-composition-v1.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-store-v1.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+        COMMENT "Generate domain-scan-dsd1-composition production bridge fixture"
+        VERBATIM
+    )
+    add_test(
+        NAME domain_scan_dsd1_composition_fixture_freshness
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_dsd1_composition_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-dsd1-composition-v1.json'; build=pathlib.Path(r'${_ninlil_dsd1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_DSD1_VECTOR_COUNT ((size_t)1u)' in ta, 'dsd1 vector count pin missing'; assert b'NINLIL_DSD1_SESSION_COUNT ((size_t)7u)' in ta, 'dsd1 session count pin missing'; print('dsd1 composition fixture freshness+determinism ok', len(ta), 'bytes')"
+    )
+    set_tests_properties(domain_scan_dsd1_composition_fixture_freshness PROPERTIES
+        DEPENDS domain_store_scanner_dsd1_composition_oracle_bridge
+    )
+    add_executable(ninlil_domain_store_scanner_dsd1_composition_oracle_bridge_test
+        tests/runtime/domain_store_scanner_dsd1_composition_oracle_bridge_test.c
+        ${_ninlil_dsd1_fixture}
+    )
+    target_include_directories(
+        ninlil_domain_store_scanner_dsd1_composition_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(
+        ninlil_domain_store_scanner_dsd1_composition_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(
+        ninlil_domain_store_scanner_dsd1_composition_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_domain_store_scanner_dsd1_composition_oracle_bridge_test)
+    add_test(
+        NAME domain_store_scanner_dsd1_composition_oracle_bridge
+        COMMAND ninlil_domain_store_scanner_dsd1_composition_oracle_bridge_test
+    )
+
     # Append-only D3-S2 crossrow sibling oracle (docs/17 §18.13.15):
     # frozen 94-vector D3-S1 prefix + 6 Mode21..26 empty-carrier smoke +
     # Mode25 CUM/RECENT/ANCHOR + Mode26 ES/MANAGEMENT + Mode24 RC/RR/DELIVERY
