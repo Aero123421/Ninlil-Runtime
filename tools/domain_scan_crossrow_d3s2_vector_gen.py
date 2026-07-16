@@ -95,6 +95,15 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     valid!=M+overflow FOCUS CORRUPT; late coherence observed_c>
     declared_c FOCUS CORRUPT (constructible under D1; no false late
     equality). Matching STATE+ANCHOR+required slots each vector.
+  * P1-C2 slice (§18.13.15 case 3 residual / Modes24–25 known-slot
+    legality): D1 already rejects reply_kind∉1..4, CUM slot≠0, RECENT
+    slot>3 — those rows are NOT fabricated for S2 formal. Constructible
+    substitutes are D1-valid carrier declared vs population shape fails:
+    Mode24 reply_count vs closed-kind population under/over (missing RR
+    or undeclared extra kind); Mode25 CUM total-derived recent_n vs
+    D1-valid RECENT population under/over (missing or extra cycle/slot
+    with correct body arithmetic). FOCUS known-slot/kind close notes
+    STORAGE_CORRUPT; production already compare-fails (no false COMPLETE).
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -142,6 +151,7 @@ D3S2_P1D2_SLICE_COUNT = 1
 D3S2_P1B1_SLICE_COUNT = 2
 D3S2_P1B2_SLICE_COUNT = 3
 D3S2_P1C1_SLICE_COUNT = 6
+D3S2_P1C2_SLICE_COUNT = 4
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -160,8 +170,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_P1B1_SLICE_COUNT
     + D3S2_P1B2_SLICE_COUNT
     + D3S2_P1C1_SLICE_COUNT
-)  # 45
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 139
+    + D3S2_P1C2_SLICE_COUNT
+)  # 49
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 143
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -506,6 +517,35 @@ D3S2_133_CONTENT_SHA256 = (
 D3S2_133_FINGERPRINT_HASH = (
     "031fdef1204ef7ca56d6c9fdca56d750a4d3d4bc3c4cdf433023ddbc508cd871"
 )
+# Frozen 139-vector append-only prefix (133 + P1-C1) — origin/main before P1-C2.
+# content hash + fingerprint chain from origin/main 139-vector artifact
+# (PR#70 Mode23 evidence coherence; full-object prefix absolute invariant).
+D3S2_139_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+    + D3S2_P0C_SLICE_COUNT
+    + D3S2_P0D_SLICE_COUNT
+    + D3S2_P1A_SLICE_COUNT
+    + D3S2_P1D_SLICE_COUNT
+    + D3S2_P1D2_SLICE_COUNT
+    + D3S2_P1B1_SLICE_COUNT
+    + D3S2_P1B2_SLICE_COUNT
+    + D3S2_P1C1_SLICE_COUNT
+)  # 139 (origin/main freeze before P1-C2)
+D3S2_139_CONTENT_SHA256 = (
+    "c6e2bfe29e4e319f84133fa60faf180c6db5221d37c854cdd3c0132d520b0f3d"
+)
+D3S2_139_FINGERPRINT_HASH = (
+    "456a446a069fb65fed01f81b9ba9556d12a6bbe9796c7e7ed2317a707416e5be"
+)
 
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -550,8 +590,11 @@ RC_REPLY_COUNT_BODY_OFF = 150
 # (RECEIPT..CANCEL_RESULT). Kind wire lives at body offset 2+82.
 RR_REPLY_KIND_BODY_OFF = 84  # 2 (RAW16 len) + 82 (delivery RAW16 prefix)
 RR_KIND_RECEIPT = 1
+RR_KIND_DISPOSITION = 2
 RR_KIND_MIN = 1
 RR_KIND_MAX = 4
+# Body field reply_kind after reply_key:RAW16(88) + delivery:RAW16(82) + txn16.
+RR_BODY_REPLY_KIND_FIELD_OFF = 186  # 2+86 + 2+80 + 16
 DLV_KEY_CONTENTS_BYTES = 80
 
 # D1 authority pins for Mode22 material (independent of production C).
@@ -764,6 +807,14 @@ D3S2_P1C1_KINDS = frozenset(
         "mode23_multi_owner_tx_before_cancel_ev_corrupt",
     }
 )
+D3S2_P1C2_KINDS = frozenset(
+    {
+        "mode24_rc_reply1_empty_secondary_undercount_corrupt",
+        "mode24_rc_reply1_extra_disposition_overcount_corrupt",
+        "mode25_cum_total1_recent_missing_undercount_corrupt",
+        "mode25_cum_total1_recent_extra_slot_overcount_corrupt",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -782,6 +833,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_P1B1_KINDS
     | D3S2_P1B2_KINDS
     | D3S2_P1C1_KINDS
+    | D3S2_P1C2_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -1025,6 +1077,17 @@ SCOPE = (
     "legal + CANCEL slot0 with key order STATE<RC and TX EV<EV_DLV → "
     "BIND CORRUPT after legal TX secondaries. Each vector single-txn "
     "mutation_calls=0. "
+    "Frozen 139-vector origin/main pin retained (133 + P1-C1 / PR#70). "
+    "P1-C2 appends §18.13.15 case3 residual Modes24–25 known-slot legality: "
+    "constructibility — D1 same-record already rejects reply_kind∉1..4, "
+    "CUM slot≠0, RECENT slot>3 so those are not S2 formal rows; instead "
+    "D1-valid declared/population shape fails: Mode24 RC reply_count=1 + "
+    "zero RR undercount; Mode24 reply_count=1 + RECEIPT+DISPOSITION "
+    "overcount/extra; Mode25 CUM total=1 + zero RECENT undercount; Mode25 "
+    "CUM total=1 + RECENT cycle1/slot0 + cycle2/slot1 (D1 slot="
+    "(cycle-1)mod4) overcount. FOCUS B6k close notes STORAGE_CORRUPT "
+    "(production declared vs observed compare; no production false "
+    "COMPLETE; oracle/test-only). Single-txn mutation_calls=0. "
     "Does not claim full D3-S2 oracle complete, "
     "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
     "transport begin forbidden. Independent generator — production C not "
@@ -1163,6 +1226,14 @@ OWNERSHIP_P1C1 = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(45-vector suffix on frozen 133-prefix only)"
+)
+# P1-C2 ownership (49-vector suffix at P1-C2 append time). Hardcoded 49 so a
+# later append does not rewrite published P1-C2 objects.
+OWNERSHIP_P1C2 = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(49-vector suffix on frozen 139-prefix only)"
 )
 
 
@@ -8397,6 +8468,722 @@ def build_d3s2_p1c1_slice_vectors() -> List[Dict[str, Any]]:
     return vectors
 
 
+# ---------------------------------------------------------------------------
+# P1-C2 Mode24/25 known-slot legality residual (§18.13.15 case3)
+# Constructibility: D1 rejects reply_kind∉1..4 / CUM slot≠0 / RECENT slot>3
+# so those are not S2 formal. Use D1-valid declared vs population shape fails.
+# ---------------------------------------------------------------------------
+
+
+def _reverse_reply_composite_key(reply_key_contents86: bytes) -> bytes:
+    """Independent SHA256_COMPOSITE complete key for REVERSE_REPLY (0x42)."""
+    if len(reply_key_contents86) != 86:
+        raise SystemExit(
+            f"RR composite reply_key contents must be exact 86, got "
+            f"{len(reply_key_contents86)}"
+        )
+    return _d3s1.k_composite(0x42, _d3s1.raw16(reply_key_contents86))
+
+
+def _rekey_rr_reply_kind(
+    template_value: bytes, reply_kind: int, dlv_pvd: bytes
+) -> Tuple[bytes, bytes]:
+    """Rekey D1 REVERSE_REPLY to a closed reply_kind 1..4 + PVD→DELIVERY.
+
+    Rewrites reply_key trailing u32 and body reply_kind field; rebuilds
+    COMPOSITE key; CRC + PVD via stdlib only. Does not call production C.
+    """
+    if not (RR_KIND_MIN <= int(reply_kind) <= RR_KIND_MAX):
+        raise SystemExit(
+            f"RR rekey kind must stay in closed D1 domain 1..4, got {reply_kind}"
+        )
+    if len(dlv_pvd) != 32:
+        raise SystemExit("RR rekey dlv_pvd must be exact 32")
+    st, body, _ = _d3s1.extract_envelope(template_value)
+    if st != 0x42 or len(body) != 330:
+        raise SystemExit("RR rekey expects typed REVERSE_REPLY body 330")
+    b = bytearray(body)
+    # reply_key_raw contents trailing kind + body field kind bijection.
+    struct.pack_into(">I", b, RR_REPLY_KIND_BODY_OFF, int(reply_kind))
+    struct.pack_into(">I", b, RR_BODY_REPLY_KIND_FIELD_OFF, int(reply_kind))
+    out = bytearray(template_value)
+    body_off = 108
+    if bytes(out[body_off : body_off + len(body)]) != body:
+        idx = bytes(out).find(body)
+        if idx < 0:
+            raise SystemExit("RR body not found in envelope value")
+        body_off = idx
+    out[body_off : body_off + len(body)] = b
+    out[-4:] = _d3s1.be32(_d3s1.crc32c(bytes(out[:-4])))
+    val = _d3s1.patch_pvd(bytes(out), dlv_pvd)
+    reply_contents = bytes(b[2 : 2 + 86])
+    key = _reverse_reply_composite_key(reply_contents)
+    got_kind, got_draw, _txn = _parse_rr_kind_and_delivery(val)
+    if got_kind != int(reply_kind):
+        raise SystemExit("RR rekey kind did not stick")
+    # delivery raw identity unchanged.
+    tpl_kind, tpl_draw, _ = _parse_rr_kind_and_delivery(template_value)
+    if got_draw != tpl_draw:
+        raise SystemExit("RR rekey must preserve delivery raw")
+    _st2, _body2, pvd2 = _d3s1.extract_envelope(val)
+    if pvd2 != dlv_pvd:
+        raise SystemExit("RR rekey header PVD must equal DELIVERY VALUE_DIGEST")
+    if _d3s1.domain_value_framing(val) != "current":
+        raise SystemExit("RR rekey framing not current")
+    _ = tpl_kind
+    return key, val
+
+
+def _rekey_recent_cycle(
+    template_value: bytes,
+    tx: bytes,
+    *,
+    cycle_id: int,
+    anchor_pvd: bytes,
+) -> Tuple[bytes, bytes]:
+    """Rekey RECENT RETRY to cycle_id with D1 slot=(cycle-1) mod 4 + PVD.
+
+    Independent body rewrite; preserves attempt/outcome fields from template
+    except identity/cycle/slot. Does not call production C.
+    """
+    if len(tx) != 16 or len(anchor_pvd) != 32:
+        raise SystemExit("RECENT rekey: tx=16 and anchor_pvd=32 required")
+    if int(cycle_id) < 1:
+        raise SystemExit(f"RECENT cycle_id must be >=1, got {cycle_id}")
+    slot = (int(cycle_id) - 1) % 4
+    st, body, _ = _d3s1.extract_envelope(template_value)
+    if st != 0x51 or len(body) != 80:
+        raise SystemExit("RECENT rekey expects typed RECENT body 80")
+    b = bytearray(body)
+    b[0:16] = tx
+    struct.pack_into(">H", b, 16, RS_KIND_RECENT)
+    struct.pack_into(">H", b, 18, int(slot))
+    struct.pack_into(">Q", b, 20, int(cycle_id))
+    out = bytearray(template_value)
+    out[24:40] = tx  # primary_id
+    body_off = 108
+    if bytes(out[body_off : body_off + len(body)]) != body:
+        idx = bytes(out).find(body)
+        if idx < 0:
+            raise SystemExit("RECENT body not found in envelope value")
+        body_off = idx
+    out[body_off : body_off + len(body)] = b
+    out[-4:] = _d3s1.be32(_d3s1.crc32c(bytes(out[:-4])))
+    val = _d3s1.patch_pvd(bytes(out), anchor_pvd)
+    key = _retry_composite_key(tx, RS_KIND_RECENT, slot)
+    got_tx, got_kind, got_slot = _parse_retry_tx_kind_slot(val)
+    if got_tx != tx or got_kind != RS_KIND_RECENT or got_slot != int(slot):
+        raise SystemExit("RECENT rekey identity did not stick")
+    _st2, body2, pvd2 = _d3s1.extract_envelope(val)
+    got_cycle = struct.unpack_from(">Q", body2, 20)[0]
+    if got_cycle != int(cycle_id):
+        raise SystemExit("RECENT rekey cycle did not stick")
+    if pvd2 != anchor_pvd:
+        raise SystemExit("RECENT header PVD must equal ANCHOR VALUE_DIGEST")
+    # D1 slot arithmetic pin.
+    if int(slot) != (int(cycle_id) - 1) % 4:
+        raise SystemExit("RECENT slot vs cycle mod4 invariant fail")
+    return key, val
+
+
+def _mode24_p1c2_missing_material() -> Tuple[
+    List[Dict[str, str]], Dict[str, Dict[str, str]], bytes
+]:
+    """DLV + RC reply_count=1; zero REVERSE_REPLY (declared>0 empty secondary)."""
+    rows, named, dlv_pvd = _mode24_material_rows(include_rc=True, reply_count=1)
+    # Drop RR secondary.
+    rows = [
+        r
+        for r in rows
+        if not (
+            len(from_hex(r["key_hex"])) >= 10
+            and from_hex(r["key_hex"])[8] == 6
+            and from_hex(r["key_hex"])[9] == 0x42
+        )
+    ]
+    named = {k: v for k, v in named.items() if k != "rr"}
+    if "rr" in named:
+        raise SystemExit("mode24 missing material still has RR")
+    rr_n = sum(
+        1
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x42
+    )
+    if rr_n != 0:
+        raise SystemExit("mode24 missing material must ship zero RR")
+    rc_n = sum(
+        1
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x41
+    )
+    if rc_n != 1:
+        raise SystemExit("mode24 missing material expects exact 1 RC")
+    rc_count, _, _ = _parse_rc_reply_count_and_delivery(
+        from_hex(named["rc"]["value_hex"])
+    )
+    if rc_count != 1:
+        raise SystemExit("mode24 missing RC reply_count must be 1")
+    return rows, named, dlv_pvd
+
+
+def _mode24_p1c2_extra_material() -> Tuple[
+    List[Dict[str, str]], Dict[str, Dict[str, str]], bytes
+]:
+    """DLV + RC reply_count=1 + RECEIPT + DISPOSITION (undeclared extra kind)."""
+    rows, named, dlv_pvd = _mode24_material_rows(include_rc=True, reply_count=1)
+    # Base material already has RECEIPT; add DISPOSITION for same delivery.
+    rr_disp_key, rr_disp_val = _rekey_rr_reply_kind(
+        from_hex(named["rr"]["value_hex"]),
+        RR_KIND_DISPOSITION,
+        dlv_pvd,
+    )
+    named["rr_disposition"] = {
+        "key_hex": hex_of(rr_disp_key),
+        "value_hex": hex_of(rr_disp_val),
+    }
+    rows = sorted(
+        list(rows) + [named["rr_disposition"]],
+        key=lambda r: from_hex(r["key_hex"]),
+    )
+    kinds = []
+    for r in rows:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x42:
+            kinds.append(_parse_rr_kind_and_delivery(from_hex(r["value_hex"]))[0])
+    if sorted(kinds) != [RR_KIND_RECEIPT, RR_KIND_DISPOSITION]:
+        raise SystemExit(f"mode24 extra expects kinds {{1,2}}, got {kinds}")
+    rc_count, _, _ = _parse_rc_reply_count_and_delivery(
+        from_hex(named["rc"]["value_hex"])
+    )
+    if rc_count != 1:
+        raise SystemExit("mode24 extra RC reply_count must stay 1")
+    return rows, named, dlv_pvd
+
+
+def _mode25_p1c2_missing_material() -> Tuple[
+    List[Dict[str, str]], Dict[str, Dict[str, str]], bytes
+]:
+    """ANCHOR + CUM total=1; zero RECENT (declared recent_n=1 empty)."""
+    rows, named, anchor_pvd = _mode25_material_rows(
+        include_cum=True, cum_total=1
+    )
+    filtered: List[Dict[str, str]] = []
+    for r in rows:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x51:
+            _tx, kind, _slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+            if kind == RS_KIND_RECENT:
+                continue
+        filtered.append(r)
+    rows = filtered
+    named = {k: v for k, v in named.items() if k != "recent"}
+    rec_n = 0
+    cum_n = 0
+    for r in rows:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != 0x51:
+            continue
+        _tx, kind, _slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+        if kind == RS_KIND_RECENT:
+            rec_n += 1
+        elif kind == RS_KIND_CUMULATIVE:
+            cum_n += 1
+    if rec_n != 0 or cum_n != 1:
+        raise SystemExit(
+            f"mode25 missing expects cum=1 recent=0, got cum={cum_n} rec={rec_n}"
+        )
+    return rows, named, anchor_pvd
+
+
+def _mode25_p1c2_extra_material() -> Tuple[
+    List[Dict[str, str]], Dict[str, Dict[str, str]], bytes
+]:
+    """ANCHOR + CUM total=1 + RECENT C1/slot0 + RECENT C2/slot1 (extra)."""
+    rows, named, anchor_pvd = _mode25_material_rows(
+        include_cum=True, cum_total=1
+    )
+    # Existing recent is C1/slot0; add C2/slot1 with D1 slot arithmetic.
+    cat = _d1_catalog()
+    rec_t = from_hex(cat[D1_REC_ID]["value_hex"])
+    # TX from existing recent body.
+    tx, kind0, slot0 = _parse_retry_tx_kind_slot(
+        from_hex(named["recent"]["value_hex"])
+    )
+    if kind0 != RS_KIND_RECENT or slot0 != 0:
+        raise SystemExit("mode25 extra base RECENT must be C1/slot0 template")
+    rec2_key, rec2_val = _rekey_recent_cycle(
+        rec_t, tx, cycle_id=2, anchor_pvd=anchor_pvd
+    )
+    named["recent_c2"] = {
+        "key_hex": hex_of(rec2_key),
+        "value_hex": hex_of(rec2_val),
+    }
+    rows = sorted(
+        list(rows) + [named["recent_c2"]],
+        key=lambda r: from_hex(r["key_hex"]),
+    )
+    rec_slots = []
+    for r in rows:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != 0x51:
+            continue
+        _tx, kind, slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+        if kind == RS_KIND_RECENT:
+            rec_slots.append(int(slot))
+    if sorted(rec_slots) != [0, 1]:
+        raise SystemExit(f"mode25 extra expects RECENT slots {{0,1}}, got {rec_slots}")
+    return rows, named, anchor_pvd
+
+
+def _run_d3s2_focus_known_slot_population_corrupt(
+    *,
+    mode: int,
+    rows: List[Dict[str, str]],
+    n_domain: int,
+    n_matrix_gets: int,
+    carrier_subtype: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Shared independent model: baseline + FOCUS matrix → CORRUPT; abort.
+
+    Used for Mode24 known-kind (4 gets) and Mode25 known-slot (5 gets)
+    declared vs observed population fails. No BIND; single RO txn.
+    Mode24 carrier = RESULT_CACHE (0x41). Mode25 carrier = CUMULATIVE
+    RETRY only (kind=1, slot=0) among possibly multiple 0x51 rows.
+    """
+    n_ok = len(rows)
+    if n_ok != 17 + n_domain:
+        raise SystemExit(
+            f"mode{mode} population corrupt expects 17+{n_domain} rows, got {n_ok}"
+        )
+    carrier_rows: List[Dict[str, str]] = []
+    for r in rows:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != carrier_subtype:
+            continue
+        if mode == 25 and carrier_subtype == 0x51:
+            _tx, kind, slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+            if kind != RS_KIND_CUMULATIVE or slot != 0:
+                continue
+        carrier_rows.append(r)
+    if len(carrier_rows) != 1:
+        raise SystemExit(
+            f"mode{mode} population expects exact 1 carrier subtype "
+            f"{carrier_subtype:#x}, got {len(carrier_rows)}"
+        )
+    carrier_key = from_hex(carrier_rows[0]["key_hex"])
+    carrier_key_len = len(carrier_key)
+    if carrier_key_len == 0 or carrier_key_len > 45:
+        raise SystemExit(f"carrier key_len invalid: {carrier_key_len}")
+
+    n_drive = 2
+    n_open = 2
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT residual + known-slot/kind matrix → CORRUPT
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.extend(["get"] * n_matrix_gets)
+    cp_trace_count = len(port_trace)
+    port_trace.append("iter_close")
+    port_trace.append("rollback")
+
+    checkpoint_drive: Dict[str, Any] = {
+        "op": "d3s2_drive",
+        "row_budget": 256,
+        "expected_status": "STORAGE_CORRUPT",
+        "has_checkpoint": 1,
+        "cp_phase": PHASE_FAILED,
+        "cp_focus_live": 1,
+        "cp_observed_a": 0 if mode == 24 and n_domain == 2 else -1,
+        "cp_observed_b": 0,
+        "cp_observed_c": 0,
+        "cp_count_complete_mask": 0,
+        "cp_binding_complete_mask": 0,
+        "cp_flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        "cp_pass_kind": PASS_INTERNAL,
+        "cp_cleanup_skip": 0,
+        "cp_last_carrier_key_len": carrier_key_len,
+        "cp_last_carrier_key_hex": hex_of(carrier_key),
+        "cp_begin_calls": 1,
+        "cp_iter_open_calls": 2,
+        "cp_iter_close_calls": 1,
+        "cp_trace_count": cp_trace_count,
+    }
+    # observed_a is fixture-specific; drop -1 sentinel fields that bridge
+    # does not require. Keep only fields other vectors use consistently.
+    # For undercount Mode24 missing, observed_a=0; for overcount cases
+    # observed is non-zero at fail — production notes before checkpoint
+    # freezes observed after compare. Match still-ordinary: freeze 0 for
+    # missing; for overcount freeze observed after matrix (2 for both extras).
+    if mode == 24 and n_domain == 2:
+        checkpoint_drive["cp_observed_a"] = 0  # missing RR
+    elif mode == 24 and n_domain == 4:
+        checkpoint_drive["cp_observed_a"] = 2  # RECEIPT+DISPOSITION
+    elif mode == 25 and n_domain == 2:
+        checkpoint_drive["cp_observed_a"] = 0  # missing RECENT
+        checkpoint_drive["cp_observed_c"] = 1  # CUM present in matrix
+    elif mode == 25 and n_domain == 4:
+        checkpoint_drive["cp_observed_a"] = 2  # two RECENT
+        checkpoint_drive["cp_observed_c"] = 1
+    else:
+        raise SystemExit(f"mode{mode} n_domain={n_domain} unexpected for p1c2")
+
+    # Remove sentinel if any remaining
+    if int(checkpoint_drive["cp_observed_a"]) < 0:
+        raise SystemExit("checkpoint observed_a not set")
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": mode, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        checkpoint_drive,
+        {"op": "abort", "expected_status": "STORAGE_CORRUPT"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("population corrupt drive count drift")
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE_CORRUPT",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": n_domain,
+        "ok_row_count": n_ok,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE_CORRUPT",
+        "d3_peer_get_count": n_matrix_gets,
+        "d3_mode_applicable_count": 0,
+        "phase": PHASE_FAILED,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+    }
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("population corrupt port_trace must be single-txn")
+    if port_trace.count("get") != 17 + n_matrix_gets:
+        raise SystemExit(
+            f"population corrupt get budget: expect 17+{n_matrix_gets}, "
+            f"got {port_trace.count('get')}"
+        )
+    return calls, expected
+
+
+def run_d3s2_mode24_reply_empty_secondary_undercount_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode24: RC reply_count=1 + zero RR → known-kind undercount CORRUPT."""
+    _ = binding
+    return _run_d3s2_focus_known_slot_population_corrupt(
+        mode=24,
+        rows=rows,
+        n_domain=2,  # DLV + RC
+        n_matrix_gets=4,
+        carrier_subtype=0x41,
+    )
+
+
+def run_d3s2_mode24_reply_extra_disposition_overcount_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode24: RC reply_count=1 + RECEIPT+DISPOSITION → overcount CORRUPT."""
+    _ = binding
+    return _run_d3s2_focus_known_slot_population_corrupt(
+        mode=24,
+        rows=rows,
+        n_domain=4,  # DLV + RC + RR×2
+        n_matrix_gets=4,
+        carrier_subtype=0x41,
+    )
+
+
+def run_d3s2_mode25_recent_missing_undercount_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode25: CUM total=1 + zero RECENT → known-slot undercount CORRUPT."""
+    _ = binding
+    return _run_d3s2_focus_known_slot_population_corrupt(
+        mode=25,
+        rows=rows,
+        n_domain=2,  # ANCHOR + CUM
+        n_matrix_gets=5,
+        carrier_subtype=0x51,
+    )
+
+
+def run_d3s2_mode25_recent_extra_slot_overcount_corrupt(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode25: CUM total=1 + RECENT slots 0+1 → overcount CORRUPT."""
+    _ = binding
+    return _run_d3s2_focus_known_slot_population_corrupt(
+        mode=25,
+        rows=rows,
+        n_domain=4,  # ANCHOR + CUM + REC×2
+        n_matrix_gets=5,
+        carrier_subtype=0x51,
+    )
+
+
+def build_d3s2_p1c2_slice_vectors() -> List[Dict[str, Any]]:
+    """P1-C2 append-only slice (4 vectors) after the frozen 139-prefix.
+
+    Constructibility judgment (docs/17 §8.5–§8.6 D1 + §18.13.15 case3):
+      * reply_kind∉1..4, CUM slot≠0, RECENT slot>3 → D1 same-record reject;
+        not constructible as S2 formal rows under prior D1 invariants.
+      * Substitutes: D1-valid declared reply_count / recent_n vs closed
+        population under/over (missing or extra PRESENT kind/slot).
+      * Production focus_close_compare already notes these; no false COMPLETE
+        fix required (oracle + production bridge only).
+    """
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    # ---- (1) Mode24 reply_count=1 empty secondary undercount ----
+    rows_a, named_a, _pvd_a = _mode24_p1c2_missing_material()
+    calls_a, exp_a = run_d3s2_mode24_reply_empty_secondary_undercount_corrupt(
+        binding, rows_a
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M24_RC_REPLY1_EMPTY_SECONDARY_UNDERCOUNT_CORRUPT",
+            "kind": "mode24_rc_reply1_empty_secondary_undercount_corrupt",
+            "mode": 24,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_a),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_a,
+            "d1_refs": [D1_RC_ID, D1_DLV_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_RC_ID,
+                row=named_a["rc"],
+                expect_presence="PRESENT",
+                note="RESULT_CACHE reply_count=1 carrier; zero RR secondary",
+            ),
+            "peer_ref": _d3s1.none_ref(
+                "known-kind matrix observes 0 PRESENT of closed kinds 1..4"
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_DLV_ID,
+                    row=named_a["delivery"],
+                    expect_presence="PRESENT",
+                    note="true primary DELIVERY present; FOCUS fails before BIND",
+                )
+            ],
+            "notes": (
+                "P1-C2 formal (§18.13.15 case3 / Mode24 known-kind): "
+                "RESULT_CACHE declares reply_count=1 but closed reply_kind "
+                "1..4 matrix finds zero REVERSE_REPLY → observed_a=0 != "
+                "declared_a=1 → FOCUS B6k note_terminal_corrupt "
+                "STORAGE_CORRUPT. Constructible D1-valid substitute for "
+                "illegal reply_kind∉1..4 (D1-rejected; not fabricated). "
+                "Not CLEANUP still-ordinary (no plan). Single READ_ONLY "
+                "txn; Port-trace pins 4 known-kind gets; mutation_calls=0; "
+                "independent Python expected."
+            ),
+            "ownership": OWNERSHIP_P1C2,
+            "expected": exp_a,
+        }
+    )
+
+    # ---- (2) Mode24 reply_count=1 + extra DISPOSITION overcount ----
+    rows_b, named_b, _pvd_b = _mode24_p1c2_extra_material()
+    calls_b, exp_b = run_d3s2_mode24_reply_extra_disposition_overcount_corrupt(
+        binding, rows_b
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M24_RC_REPLY1_EXTRA_DISPOSITION_OVERCOUNT_CORRUPT",
+            "kind": "mode24_rc_reply1_extra_disposition_overcount_corrupt",
+            "mode": 24,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_b),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_b,
+            "d1_refs": [D1_RC_ID, D1_RR_ID, D1_DLV_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_RC_ID,
+                row=named_b["rc"],
+                expect_presence="PRESENT",
+                note="RESULT_CACHE reply_count=1; population has 2 closed kinds",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_RR_ID,
+                row=named_b["rr"],
+                expect_presence="PRESENT",
+                note="REVERSE_REPLY RECEIPT (kind=1) D1-valid",
+            ),
+            "row_refs": [
+                {
+                    "vector_id": D1_RR_ID,
+                    "expect_presence": "PRESENT",
+                    "key_hex": named_b["rr_disposition"]["key_hex"],
+                    "value_hex": named_b["rr_disposition"]["value_hex"],
+                    "note": (
+                        "REVERSE_REPLY DISPOSITION (kind=2) rekeyed from "
+                        "RECEIPT template; same delivery raw; D1 closed domain"
+                    ),
+                },
+                _d3s1.d1_ref_from_id(
+                    D1_DLV_ID,
+                    row=named_b["delivery"],
+                    expect_presence="PRESENT",
+                    note="true primary DELIVERY; FOCUS fails before BIND",
+                ),
+            ],
+            "notes": (
+                "P1-C2 formal (§18.13.15 case3 / Mode24 known-kind): "
+                "RESULT_CACHE declares reply_count=1 but matrix finds "
+                "RECEIPT+DISPOSITION (two closed kinds PRESENT) → "
+                "observed_a=2 != declared_a=1 → FOCUS B6k "
+                "STORAGE_CORRUPT (undeclared extra reply). Both RR rows "
+                "D1-valid (kinds 1..4; delivery raw bijection). "
+                "reply_kind∉1..4 not used (D1-rejected). Single READ_ONLY "
+                "txn; 4 known-kind gets; mutation_calls=0; independent "
+                "Python expected."
+            ),
+            "ownership": OWNERSHIP_P1C2,
+            "expected": exp_b,
+        }
+    )
+
+    # ---- (3) Mode25 CUM total=1 RECENT missing undercount ----
+    rows_c, named_c, _pvd_c = _mode25_p1c2_missing_material()
+    calls_c, exp_c = run_d3s2_mode25_recent_missing_undercount_corrupt(
+        binding, rows_c
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M25_CUM_TOTAL1_RECENT_MISSING_UNDERCOUNT_CORRUPT",
+            "kind": "mode25_cum_total1_recent_missing_undercount_corrupt",
+            "mode": 25,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_c),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_c,
+            "d1_refs": [D1_CUM_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_CUM_ID,
+                row=named_c["cum"],
+                expect_presence="PRESENT",
+                note="CUM total=1 carrier; declared recent_n=min(1,4)=1; zero RECENT",
+            ),
+            "peer_ref": _d3s1.none_ref(
+                "known-slot matrix RECENT 0..3 all ABSENT → observed_a=0"
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named_c["anchor"],
+                    expect_presence="PRESENT",
+                    note="true primary ANCHOR; FOCUS fails before BIND",
+                )
+            ],
+            "notes": (
+                "P1-C2 formal (§18.13.15 case3 / Mode25 known-slot): "
+                "CUM total_completed_cycle_count=1 declares recent_n=1 but "
+                "RECENT slots 0..3 all ABSENT → observed_a=0 != "
+                "declared_b=1 → FOCUS B6k STORAGE_CORRUPT. Constructible "
+                "D1-valid substitute for illegal RETRY slot "
+                "(CUM slot≠0 / RECENT slot>3 are D1-rejected). Not CLEANUP "
+                "still-ordinary (no plan). Single READ_ONLY txn; 5 known-"
+                "slot gets (CUM+RECENT0..3); mutation_calls=0."
+            ),
+            "ownership": OWNERSHIP_P1C2,
+            "expected": exp_c,
+        }
+    )
+
+    # ---- (4) Mode25 CUM total=1 + extra RECENT slot overcount ----
+    rows_d, named_d, _pvd_d = _mode25_p1c2_extra_material()
+    calls_d, exp_d = run_d3s2_mode25_recent_extra_slot_overcount_corrupt(
+        binding, rows_d
+    )
+    vectors.append(
+        {
+            "id": "D3S2_M25_CUM_TOTAL1_RECENT_EXTRA_SLOT_OVERCOUNT_CORRUPT",
+            "kind": "mode25_cum_total1_recent_extra_slot_overcount_corrupt",
+            "mode": 25,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows_d),
+            "alt_rows": {},
+            "faults": [],
+            "calls": calls_d,
+            "d1_refs": [D1_CUM_ID, D1_REC_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_CUM_ID,
+                row=named_d["cum"],
+                expect_presence="PRESENT",
+                note="CUM total=1 carrier; declared recent_n=1; population has 2 RECENT",
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_REC_ID,
+                row=named_d["recent"],
+                expect_presence="PRESENT",
+                note="RECENT cycle1/slot0 D1-valid ((1-1) mod 4 = 0)",
+            ),
+            "row_refs": [
+                {
+                    "vector_id": D1_REC_ID,
+                    "expect_presence": "PRESENT",
+                    "key_hex": named_d["recent_c2"]["key_hex"],
+                    "value_hex": named_d["recent_c2"]["value_hex"],
+                    "note": (
+                        "RECENT cycle2/slot1 D1-valid ((2-1) mod 4 = 1); "
+                        "extra vs total=1 recent_n"
+                    ),
+                },
+                _d3s1.d1_ref_from_id(
+                    D1_ANCHOR_ID,
+                    row=named_d["anchor"],
+                    expect_presence="PRESENT",
+                    note="true primary ANCHOR; FOCUS fails before BIND",
+                ),
+            ],
+            "notes": (
+                "P1-C2 formal (§18.13.15 case3 / Mode25 known-slot): "
+                "CUM total=1 declares recent_n=1 but D1-valid RECENT "
+                "population has cycle1/slot0 + cycle2/slot1 (both obey "
+                "slot=(cycle-1)mod4 body arithmetic) → observed_a=2 != "
+                "declared_b=1 → FOCUS B6k STORAGE_CORRUPT. Extra/missing "
+                "population is the constructible substitute for D1-illegal "
+                "RETRY slots. Close predicates compare count only (not a "
+                "distinct cycle-set membership law). Single READ_ONLY txn; "
+                "5 known-slot gets; mutation_calls=0; independent Python."
+            ),
+            "ownership": OWNERSHIP_P1C2,
+            "expected": exp_d,
+        }
+    )
+
+    if len(vectors) != D3S2_P1C2_SLICE_COUNT:
+        raise SystemExit("p1c2 slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P1C2_KINDS:
+        raise SystemExit(f"p1c2 kinds inventory mismatch: {kinds}")
+    return vectors
+
+
 def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
     vectors = (
         build_d3s2_smoke_vectors()
@@ -8416,6 +9203,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_p1b1_slice_vectors()
         + build_d3s2_p1b2_slice_vectors()
         + build_d3s2_p1c1_slice_vectors()
+        + build_d3s2_p1c2_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -8519,6 +9307,7 @@ def build_document() -> Dict[str, Any]:
     p1b1_vectors = build_d3s2_p1b1_slice_vectors()
     p1b2_vectors = build_d3s2_p1b2_slice_vectors()
     p1c1_vectors = build_d3s2_p1c1_slice_vectors()
+    p1c2_vectors = build_d3s2_p1c2_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -8537,6 +9326,7 @@ def build_document() -> Dict[str, Any]:
         + p1b1_vectors
         + p1b2_vectors
         + p1c1_vectors
+        + p1c2_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -8704,6 +9494,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_thirty_three_hash})"
         )
 
+    # Retained 139-vector chain pin (133 + P1-C1 = origin/main before P1-C2).
+    hundred_thirty_nine_hash = _chain_hash(
+        prior_fingerprints[:D3S2_139_PREFIX_COUNT]
+    )
+    if hundred_thirty_nine_hash != D3S2_139_FINGERPRINT_HASH:
+        raise SystemExit(
+            "139-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_thirty_nine_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -8731,6 +9531,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_128_prefix_count": D3S2_128_PREFIX_COUNT,
         "d3s2_130_prefix_count": D3S2_130_PREFIX_COUNT,
         "d3s2_133_prefix_count": D3S2_133_PREFIX_COUNT,
+        "d3s2_139_prefix_count": D3S2_139_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -8909,6 +9710,16 @@ def build_document() -> Dict[str, Any]:
                 "append-only freeze of origin/main (94 D3S1 + 39 d3s2 suffix "
                 "through P1-B2 / PR#69); P1-C1 Mode23 illegal-slot + "
                 "equation/late fail vectors follow"
+            ),
+        },
+        "d3s2_139_prefix_authority": {
+            "vector_count": D3S2_139_PREFIX_COUNT,
+            "content_sha256": D3S2_139_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_139_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 45 d3s2 suffix "
+                "through P1-C1 / PR#70); P1-C2 Mode24/25 known-slot population "
+                "legality residual vectors follow"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -9252,6 +10063,17 @@ def check_data(
         )
     if int(auth133.get("vector_count", -1)) != D3S2_133_PREFIX_COUNT:
         return _fail_check("d3s2_133_prefix_authority vector_count pin mismatch")
+    if int(data.get("d3s2_139_prefix_count", -1)) != D3S2_139_PREFIX_COUNT:
+        return _fail_check("d3s2_139_prefix_count pin mismatch")
+    auth139 = data.get("d3s2_139_prefix_authority") or {}
+    if auth139.get("content_sha256") != D3S2_139_CONTENT_SHA256:
+        return _fail_check("d3s2_139_prefix_authority content_sha256 pin mismatch")
+    if auth139.get("prior_fingerprint_prefix_hash") != D3S2_139_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_139_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth139.get("vector_count", -1)) != D3S2_139_PREFIX_COUNT:
+        return _fail_check("d3s2_139_prefix_authority vector_count pin mismatch")
 
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
@@ -9478,6 +10300,40 @@ def check_data(
         return _fail_check(
             f"133-prefix fingerprint chain pin fail "
             f"(got {hundred_thirty_three_chain})"
+        )
+
+    # Full-object 139-prefix equality (133 + P1-C1; origin/main before P1-C2).
+    expected_139 = expected_doc["vectors"][:D3S2_139_PREFIX_COUNT]
+    if vectors[:D3S2_139_PREFIX_COUNT] != expected_139:
+        for i in range(D3S2_139_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_139[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_139[i])
+            if vectors[i] != expected_139[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"139-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("139-prefix full-object mismatch")
+    hundred_thirty_nine_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_139_PREFIX_COUNT)
+        ]
+    )
+    if hundred_thirty_nine_chain != D3S2_139_FINGERPRINT_HASH:
+        return _fail_check(
+            f"139-prefix fingerprint chain pin fail "
+            f"(got {hundred_thirty_nine_chain})"
         )
 
     err = _assert_prefix_identity(vectors, prefix_doc)
@@ -10245,7 +11101,10 @@ def check_data(
     p1b1 = suffix[p1b1_start : p1b1_start + D3S2_P1B1_SLICE_COUNT]
     p1b2_start = p1b1_start + D3S2_P1B1_SLICE_COUNT
     p1b2 = suffix[p1b2_start : p1b2_start + D3S2_P1B2_SLICE_COUNT]
-    p1c1 = suffix[p1b2_start + D3S2_P1B2_SLICE_COUNT :]
+    p1c1_start = p1b2_start + D3S2_P1B2_SLICE_COUNT
+    p1c1 = suffix[p1c1_start : p1c1_start + D3S2_P1C1_SLICE_COUNT]
+    p1c2_start = p1c1_start + D3S2_P1C1_SLICE_COUNT
+    p1c2 = suffix[p1c2_start : p1c2_start + D3S2_P1C2_SLICE_COUNT]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -10278,6 +11137,8 @@ def check_data(
         return _fail_check("p1b2 slice length mismatch")
     if len(p1c1) != D3S2_P1C1_SLICE_COUNT:
         return _fail_check("p1c1 slice length mismatch")
+    if len(p1c2) != D3S2_P1C2_SLICE_COUNT:
+        return _fail_check("p1c2 slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -12820,6 +13681,221 @@ def check_data(
     if not all(tk < ev_dlv_k for tk in tx_keys):
         return _fail_check(f"{m23_mc['id']}: TX EV keys must sort before EV_DLV")
 
+    # ---- P1-C2 Mode24/25 known-slot population legality (case3 residual) ----
+    p1c2_kinds_got = {v["kind"] for v in p1c2}
+    if p1c2_kinds_got != D3S2_P1C2_KINDS:
+        return _fail_check(f"p1c2 kinds inventory mismatch: {p1c2_kinds_got}")
+    p1c2_by_kind = {v["kind"]: v for v in p1c2}
+
+    def _p1c2_common(
+        vec: Dict[str, Any],
+        *,
+        mode: int,
+        peer_gets: int,
+        domain_n: int,
+        obs_a: int,
+        obs_c: int,
+        model_fn,
+    ) -> Optional[str]:
+        if int(vec["mode"]) != mode:
+            return f"{vec['id']}: mode must be {mode}"
+        if vec.get("ownership") != OWNERSHIP_P1C2:
+            return f"{vec['id']}: ownership pin fail"
+        if vec.get("faults"):
+            return f"{vec['id']}: faults must be empty"
+        exp = vec["expected"]
+        if exp.get("final_status") != "STORAGE_CORRUPT":
+            return f"{vec['id']}: final_status must be STORAGE_CORRUPT"
+        if int(exp.get("phase", -1)) != PHASE_FAILED:
+            return f"{vec['id']}: phase must be FAILED"
+        if int(exp.get("has_sticky_primary", -1)) != 1:
+            return f"{vec['id']}: sticky must be set"
+        if exp.get("sticky_primary") != "STORAGE_CORRUPT":
+            return f"{vec['id']}: sticky_primary pin fail"
+        if int(exp.get("adopted", -1)) != 0:
+            return f"{vec['id']}: adopted must be 0"
+        if int(exp.get("mutation_calls", -1)) != 0:
+            return f"{vec['id']}: mutation_calls must be 0"
+        if int(exp.get("count_complete_mask", -1)) != 0:
+            return f"{vec['id']}: count_complete_mask must be 0 (FOCUS fail)"
+        if int(exp.get("binding_complete_mask", -1)) != 0:
+            return f"{vec['id']}: binding_complete_mask must be 0"
+        if int(exp.get("d3_peer_get_count", -1)) != peer_gets:
+            return (
+                f"{vec['id']}: d3_peer_get_count must be {peer_gets}, got "
+                f"{exp.get('d3_peer_get_count')}"
+            )
+        if int(exp.get("d3_mode_applicable_count", -1)) != 0:
+            return f"{vec['id']}: d3_mode_applicable_count must be 0 (no BIND)"
+        if int(exp.get("current_domain_key_count", -1)) != domain_n:
+            return (
+                f"{vec['id']}: current_domain_key_count must be {domain_n}"
+            )
+        if int(exp.get("flags", -1)) != (
+            FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE
+        ):
+            return f"{vec['id']}: flags must keep FOCUS_LIVE after note"
+        pt = exp.get("port_trace") or []
+        if pt.count("begin:READ_ONLY") != 1:
+            return f"{vec['id']}: single-txn begin pin fail"
+        if pt.count("get") != 17 + peer_gets:
+            return (
+                f"{vec['id']}: get budget must be 17+{peer_gets}, got "
+                f"{pt.count('get')}"
+            )
+        if vec["calls"][-1]["op"] != "abort":
+            return f"{vec['id']}: fail path must end with abort"
+        cps = [c for c in vec["calls"] if int(c.get("has_checkpoint", 0)) == 1]
+        if len(cps) != 1:
+            return f"{vec['id']}: exact 1 checkpoint required"
+        cp = cps[0]
+        if int(cp.get("cp_cleanup_skip", -1)) != 0:
+            return f"{vec['id']}: cleanup_skip must be 0"
+        if int(cp.get("cp_phase", -1)) != PHASE_FAILED:
+            return f"{vec['id']}: checkpoint phase must be FAILED"
+        if int(cp.get("cp_focus_live", -1)) != 1:
+            return f"{vec['id']}: checkpoint focus_live must be 1"
+        if int(cp.get("cp_observed_a", -1)) != obs_a:
+            return (
+                f"{vec['id']}: cp_observed_a must be {obs_a}, got "
+                f"{cp.get('cp_observed_a')}"
+            )
+        if int(cp.get("cp_observed_c", -1)) != obs_c:
+            return (
+                f"{vec['id']}: cp_observed_c must be {obs_c}, got "
+                f"{cp.get('cp_observed_c')}"
+            )
+        if int(cp.get("cp_begin_calls", -1)) != 1:
+            return f"{vec['id']}: cp_begin_calls must be 1"
+        try:
+            exp_calls, exp_expected = model_fn(
+                vec["candidate_binding"], vec["rows"]
+            )
+        except SystemExit as exc:
+            return f"{vec['id']}: model reject: {exc}"
+        if vec["calls"] != exp_calls:
+            return f"{vec['id']}: calls != independent model"
+        if vec["expected"] != exp_expected:
+            return f"{vec['id']}: expected != independent model"
+        return None
+
+    m24_miss = p1c2_by_kind[
+        "mode24_rc_reply1_empty_secondary_undercount_corrupt"
+    ]
+    err = _p1c2_common(
+        m24_miss,
+        mode=24,
+        peer_gets=4,
+        domain_n=2,
+        obs_a=0,
+        obs_c=0,
+        model_fn=run_d3s2_mode24_reply_empty_secondary_undercount_corrupt,
+    )
+    if err:
+        return _fail_check(err)
+    rr_n = sum(
+        1
+        for r in m24_miss["rows"]
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x42
+    )
+    if rr_n != 0:
+        return _fail_check(f"{m24_miss['id']}: must ship zero REVERSE_REPLY")
+
+    m24_extra = p1c2_by_kind[
+        "mode24_rc_reply1_extra_disposition_overcount_corrupt"
+    ]
+    err = _p1c2_common(
+        m24_extra,
+        mode=24,
+        peer_gets=4,
+        domain_n=4,
+        obs_a=2,
+        obs_c=0,
+        model_fn=run_d3s2_mode24_reply_extra_disposition_overcount_corrupt,
+    )
+    if err:
+        return _fail_check(err)
+    kinds_rr = []
+    for r in m24_extra["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) >= 10 and k[8] == 6 and k[9] == 0x42:
+            kinds_rr.append(
+                _parse_rr_kind_and_delivery(from_hex(r["value_hex"]))[0]
+            )
+    if sorted(kinds_rr) != [RR_KIND_RECEIPT, RR_KIND_DISPOSITION]:
+        return _fail_check(
+            f"{m24_extra['id']}: must ship RECEIPT+DISPOSITION only, got "
+            f"{kinds_rr}"
+        )
+    # Anti-pass: both kinds in closed D1 domain (not fabricated kind 0/5).
+    if any(k < RR_KIND_MIN or k > RR_KIND_MAX for k in kinds_rr):
+        return _fail_check(f"{m24_extra['id']}: RR kinds must stay in 1..4")
+
+    m25_miss = p1c2_by_kind[
+        "mode25_cum_total1_recent_missing_undercount_corrupt"
+    ]
+    err = _p1c2_common(
+        m25_miss,
+        mode=25,
+        peer_gets=5,
+        domain_n=2,
+        obs_a=0,
+        obs_c=1,
+        model_fn=run_d3s2_mode25_recent_missing_undercount_corrupt,
+    )
+    if err:
+        return _fail_check(err)
+    rec_n = 0
+    for r in m25_miss["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != 0x51:
+            continue
+        _tx, kind, _slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+        if kind == RS_KIND_RECENT:
+            rec_n += 1
+    if rec_n != 0:
+        return _fail_check(f"{m25_miss['id']}: must ship zero RECENT")
+
+    m25_extra = p1c2_by_kind[
+        "mode25_cum_total1_recent_extra_slot_overcount_corrupt"
+    ]
+    err = _p1c2_common(
+        m25_extra,
+        mode=25,
+        peer_gets=5,
+        domain_n=4,
+        obs_a=2,
+        obs_c=1,
+        model_fn=run_d3s2_mode25_recent_extra_slot_overcount_corrupt,
+    )
+    if err:
+        return _fail_check(err)
+    rec_slots = []
+    for r in m25_extra["rows"]:
+        k = from_hex(r["key_hex"])
+        if len(k) < 10 or k[8] != 6 or k[9] != 0x51:
+            continue
+        _tx, kind, slot = _parse_retry_tx_kind_slot(from_hex(r["value_hex"]))
+        if kind == RS_KIND_RECENT:
+            if slot > 3:
+                return _fail_check(
+                    f"{m25_extra['id']}: RECENT slot must stay D1-legal <=3"
+                )
+            rec_slots.append(int(slot))
+            # D1 slot arithmetic vs cycle
+            _st, body, _ = _d3s1.extract_envelope(from_hex(r["value_hex"]))
+            cycle = struct.unpack_from(">Q", body, 20)[0]
+            if int(slot) != (int(cycle) - 1) % 4:
+                return _fail_check(
+                    f"{m25_extra['id']}: RECENT slot!=(cycle-1)mod4"
+                )
+    if sorted(rec_slots) != [0, 1]:
+        return _fail_check(
+            f"{m25_extra['id']}: RECENT slots must be {{0,1}}, got {rec_slots}"
+        )
+
     if not D3S2_REQUIRED_KINDS.issubset(kinds):
         return _fail_check(
             f"missing d3s2 kinds {D3S2_REQUIRED_KINDS - kinds}"
@@ -14777,6 +15853,106 @@ def self_test() -> int:
             "p1c1_multi_corrupt_ownership_tamper",
             lambda d: d["vectors"][138].__setitem__("ownership", OWNERSHIP_P1B2),
         )
+        # 139-prefix freeze (includes P1-C1; P1-C2 follows at 139..142).
+        t(
+            "hundred_thirty_nine_prefix_row_tamper",
+            lambda d: d["vectors"][138].__setitem__(
+                "rows", list(d["vectors"][138]["rows"])[:-1]
+            ),
+        )
+        t(
+            "hundred_thirty_nine_prefix_expected_tamper",
+            lambda d: d["vectors"][138]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "hundred_thirty_nine_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_139_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_thirty_nine_prefix_content_authority_tamper",
+            lambda d: d["d3s2_139_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        # P1-C2 Mode24 empty secondary undercount (index 139).
+        t(
+            "p1c2_m24_miss_false_success_tamper",
+            lambda d: d["vectors"][139]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c2_m24_miss_peer_get_tamper",
+            lambda d: d["vectors"][139]["expected"].__setitem__(
+                "d3_peer_get_count", 0
+            ),
+        )
+        t(
+            "p1c2_m24_miss_ownership_tamper",
+            lambda d: d["vectors"][139].__setitem__("ownership", OWNERSHIP_P1C1),
+        )
+        # Mode24 extra disposition (index 140): delete extra RR → model fail.
+        t(
+            "p1c2_m24_extra_delete_disposition_tamper",
+            lambda d: d["vectors"][140].__setitem__(
+                "rows",
+                [
+                    r
+                    for r in d["vectors"][140]["rows"]
+                    if not (
+                        len(from_hex(r["key_hex"])) >= 10
+                        and from_hex(r["key_hex"])[8] == 6
+                        and from_hex(r["key_hex"])[9] == 0x42
+                        and _parse_rr_kind_and_delivery(
+                            from_hex(r["value_hex"])
+                        )[0]
+                        == RR_KIND_DISPOSITION
+                    )
+                ],
+            ),
+        )
+        t(
+            "p1c2_m24_extra_false_success_tamper",
+            lambda d: d["vectors"][140]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        # Mode25 missing RECENT (index 141).
+        t(
+            "p1c2_m25_miss_false_success_tamper",
+            lambda d: d["vectors"][141]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c2_m25_miss_obs_a_tamper",
+            lambda d: [
+                c.__setitem__("cp_observed_a", 1)
+                for c in d["vectors"][141]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ],
+        )
+        # Mode25 extra RECENT (index 142).
+        t(
+            "p1c2_m25_extra_false_success_tamper",
+            lambda d: d["vectors"][142]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "p1c2_m25_extra_peer_get_tamper",
+            lambda d: d["vectors"][142]["expected"].__setitem__(
+                "d3_peer_get_count", 0
+            ),
+        )
+        t(
+            "p1c2_m25_extra_ownership_tamper",
+            lambda d: d["vectors"][142].__setitem__("ownership", OWNERSHIP_P1C1),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -14820,9 +15996,9 @@ def self_test() -> int:
             return 1
         print(
             "self-test ok (94+100+102+104+106+108+110+112+113+114+115+119+125+"
-            "127+128+130+133 prefix freeze + mode25/mode26/mode24/mode23/mode22/"
-            "mode21/p0a/p0b/p0c/p0d/p1a/p1d/p1d2/p1b1/p1b2/p1c1(6) slice pins + "
-            "two-txn anti-pass + forbidden ops + clean pass)"
+            "127+128+130+133+139 prefix freeze + mode25/mode26/mode24/mode23/"
+            "mode22/mode21/p0a/p0b/p0c/p0d/p1a/p1d/p1d2/p1b1/p1b2/p1c1(6)/"
+            "p1c2(4) slice pins + two-txn anti-pass + forbidden ops + clean pass)"
         )
         return 0
 
