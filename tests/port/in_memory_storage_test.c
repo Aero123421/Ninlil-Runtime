@@ -1,4 +1,5 @@
 #include "in_memory_storage.h"
+#include "storage_provider_conformance.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -646,6 +647,17 @@ static int test_put_deep_copies_before_return(void)
     return 0;
 }
 
+static int test_provider_neutral_final_view_contract(void)
+{
+    fixture_context_t context = make_fixture(32u, 69632u);
+    REQUIRE(context.storage != NULL);
+    REQUIRE(ninlil_test_storage_provider_final_view_contract(
+                context.ops, context.handle)
+        == 0);
+    destroy_fixture(&context);
+    return 0;
+}
+
 int main(void)
 {
     if (test_configuration_namespace_lease_and_crash() != 0
@@ -655,7 +667,8 @@ int main(void)
         || test_value_boundary_net_capacity_and_capacity_output() != 0
         || test_fault_fifo_unknown_truth_and_rollback() != 0
         || test_fault_validation_nonconsumption_trace_and_shapes() != 0
-        || test_put_deep_copies_before_return() != 0) {
+        || test_put_deep_copies_before_return() != 0
+        || test_provider_neutral_final_view_contract() != 0) {
         return 1;
     }
     return 0;

@@ -3,6 +3,7 @@
 
 #include "runtime_lifecycle_model.h"
 #include "runtime_store_bootstrap.h"
+#include "storage_canonical_plan.h"
 
 #include <ninlil/platform.h>
 
@@ -56,7 +57,10 @@ typedef struct ninlil_runtime_store_bootstrap_workspace {
         } existing;
         struct {
             ninlil_model_runtime_store_bootstrap_plan_t plan;
-            ninlil_model_runtime_store_bootstrap_record_t record;
+            ninlil_model_runtime_store_bootstrap_record_t records[
+                NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_RECORD_COUNT];
+            ninlil_storage_canonical_row_t rows[
+                NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_RECORD_COUNT];
         } bootstrap;
         struct {
             uint8_t key[NINLIL_RUNTIME_STORE_L2B1_SCAN_KEY_CAPACITY];

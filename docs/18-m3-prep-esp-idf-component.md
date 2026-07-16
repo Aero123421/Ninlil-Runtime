@@ -24,7 +24,7 @@ M3 全体の exit gate（POSIX と同一 portable conformance subset、power-cut
 | [08-foundation-release.md](08-foundation-release.md) | portable core は OS thread / filesystem / SQLite に直接依存しない |
 | [09-roadmap.md](09-roadmap.md) M3 | packaging は M3 の先頭 slice。本章は packaging のみ |
 | [12-foundation-abi.md](12-foundation-abi.md) | public ABI は変更しない |
-| [14-foundation-ports-and-simulator.md](14-foundation-ports-and-simulator.md) | ESP-IDF storage/clock/entropy/execution port は **M3 本体**。本章は未実装 |
+| [14-foundation-ports-and-simulator.md](14-foundation-ports-and-simulator.md) | ESP-IDF storage/clock/entropy/execution port は **M3 本体**。本章は packaging のみ（basic/storage は 20/21 章） |
 | [01-architecture.md](01-architecture.md) | `ports/esp-idf/` layout の初期配置 |
 
 ## 2. ESP-IDF version pin（再現可能）
@@ -150,10 +150,8 @@ docker run --rm -v "$PWD:/project" -w /project "espressif/idf:${pin}" \
 
 本章 packaging の後に残る主な M3 work:
 
-- FreeRTOS **owner-task body**（dedicated Runtime task / exclusive confinement wiring）。19 章の execution identity は usable identity までで body 完成を claim しない
-- NVS / partition storage port と power-cut HIL
-- Cell Agent firmware skeleton
-- USB/LAN gateway control transport（**byte-stream framing codec 自体は [19章](19-m3-control-byte-stream-framing.md) の private slice として先行可。driver/task は未実装**）
-- virtual/loopback TxPermit path
-- POSIX と同一 portable conformance subset の on-target 実行
+- partition storage候補は[21章](21-m3-esp-idf-durable-storage.md)で実装済み。残るのは実機power-cut HILとFULL attestation
+- USB/LAN gateway control transport と logical control messages（**byte-stream framing codec 自体は [19章](19-m3-control-byte-stream-framing.md) の private slice**）
+- public Runtime owner wiring / exclusive confinement
+- portable conformance subset の on-target 実行
 - 上記を含む M3 exit gate

@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 11)
-    message(FATAL_ERROR "private source count is not 11: ${_private_sources}")
+if(NOT _private_source_count EQUAL 12)
+    message(FATAL_ERROR "private source count is not 12: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -97,6 +97,7 @@ set(_expected_private_source_names
     runtime_store_codec.c
     runtime_store_orchestrator.c
     runtime_store_stage5_seam.c
+    storage_canonical_plan.c
 )
 list(SORT _expected_private_source_names)
 if(NOT _private_source_names STREQUAL _expected_private_source_names)

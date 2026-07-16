@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ESP-IDF packaging + M3-basic port authority gate."""
+"""ESP-IDF packaging + M3-basic + owner/cell + durable-storage authority gate."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import sys
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PORTABLE_AUTHORITY = REPO_ROOT / "cmake" / "ninlil_runtime_private_sources.cmake"
 PORT_AUTHORITY = REPO_ROOT / "cmake" / "ninlil_esp_idf_port_sources.cmake"
+STORAGE_AUTHORITY = REPO_ROOT / "cmake" / "ninlil_esp_storage_sources.cmake"
 HOST_CMAKE = REPO_ROOT / "CMakeLists.txt"
 COMPONENT_CMAKE = (
     REPO_ROOT / "ports" / "esp-idf" / "components" / "ninlil" / "CMakeLists.txt"
@@ -21,9 +22,13 @@ VERSION_FILE = REPO_ROOT / "ports" / "esp-idf" / "ESP_IDF_VERSION"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "esp-idf.yml"
 DOCS_PIN = REPO_ROOT / "docs" / "18-m3-prep-esp-idf-component.md"
 DOCS_BASIC = REPO_ROOT / "docs" / "20-m3-basic-esp-idf-platform-adapters.md"
+DOCS_STORAGE = REPO_ROOT / "docs" / "21-m3-esp-idf-durable-storage.md"
 DOCS_OWNER = REPO_ROOT / "docs" / "22-m3-owner-cell-agent-skeleton.md"
 SMOKE_APP = REPO_ROOT / "ports" / "esp-idf" / "smoke_app" / "CMakeLists.txt"
 SMOKE_MAIN = REPO_ROOT / "ports" / "esp-idf" / "smoke_app" / "main" / "main.c"
+SMOKE_SDKCONFIG = REPO_ROOT / "ports" / "esp-idf" / "smoke_app" / "sdkconfig.defaults"
+PARTITION_CSV = REPO_ROOT / "ports" / "esp-idf" / "partitions" / "ninlil_storage.csv"
+HIL_MAIN = REPO_ROOT / "ports" / "esp-idf" / "hil_app" / "main" / "main.c"
 PIN_MIRRORS = (
     REPO_ROOT / "README.md",
     REPO_ROOT / "CHANGELOG.md",
@@ -47,6 +52,10 @@ PORT_HEADERS = (
 
 VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)\s*$")
 SOURCE_LINE_RE = re.compile(r"^\s*((?:src|ports)/[A-Za-z0-9_./-]+\.c)\s*$")
+SOURCE_TOKEN_RE = re.compile(
+    r"\$\{(?P<var>[A-Za-z0-9_]+)\}"
+    r"|(?P<source>(?:src|ports)/[A-Za-z0-9_./-]+\.c)"
+)
 GLOB_RE = re.compile(r"file\s*\(\s*GLOB", re.IGNORECASE)
 ESP_INCLUDE_RE = re.compile(r'#\s*include\s*[<"]esp_')
 FREERTOS_INCLUDE_RE = re.compile(r'#\s*include\s*[<"]freertos/')
@@ -91,14 +100,38 @@ def authority_sources(text: str) -> list[str]:
 
 
 def list_sources_in_var(text: str, var_name: str) -> list[str]:
+    """Expand a CMake set() list, including nested ${VAR} references."""
     pattern = re.compile(
-        rf"set\(\s*{re.escape(var_name)}\s*(.*?)^\s*\)",
+        r"set\(\s*(?P<name>[A-Za-z0-9_]+)\s*(?P<body>.*?)^\s*\)",
         re.MULTILINE | re.DOTALL,
     )
-    m = pattern.search(text)
-    if not m:
-        return []
-    return authority_sources(m.group(1))
+    bodies = {m.group("name"): m.group("body") for m in pattern.finditer(text)}
+
+    def expand(name: str, active: tuple[str, ...]) -> list[str]:
+        if name in active:
+            fail(f"recursive CMake source variable: {' -> '.join(active + (name,))}")
+        body = bodies.get(name)
+        if body is None:
+            fail(f"undefined CMake source variable {name}")
+        code = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
+        expanded: list[str] = []
+        for token in SOURCE_TOKEN_RE.finditer(code):
+            nested = token.group("var")
+            source = token.group("source")
+            if nested is not None:
+                expanded.extend(expand(nested, active + (name,)))
+            elif source is not None:
+                expanded.append(source)
+        return expanded
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for source in expand(var_name, ()):
+        if source in seen:
+            fail(f"duplicate source after CMake expansion in {var_name}: {source}")
+        seen.add(source)
+        result.append(source)
+    return result
 
 
 def assert_no_esp_freertos(rel: str, text: str) -> None:
@@ -117,6 +150,8 @@ def check() -> None:
         fail("host CMakeLists missing private authority")
     if "ninlil_esp_idf_port_sources.cmake" not in host:
         fail("host CMakeLists missing ESP-IDF port authority")
+    if "ninlil_esp_storage_sources.cmake" not in host:
+        fail("host CMakeLists missing storage authority")
     if "esp_idf_port_logic" not in host:
         fail("host missing esp_idf_port_logic test")
 
@@ -125,12 +160,24 @@ def check() -> None:
         fail("component missing port authority")
     if "NINLIL_ESP_IDF_PORT_ALL_RELATIVE_SOURCES" not in component:
         fail("component must consume port ALL sources")
+    if "ninlil_esp_storage_sources.cmake" not in component:
+        fail("component missing durable-storage authority")
+    if "NINLIL_ESP_STORAGE_TARGET_RELATIVE_SOURCES" not in component:
+        fail("component must consume storage TARGET sources")
     component_code = "\n".join(
         line.split("#", 1)[0] for line in component.splitlines()
     )
     if GLOB_RE.search(component_code):
         fail("component must not GLOB")
-    for req in ("esp_timer", "esp_hw_support", "bootloader_support", "freertos"):
+    for req in (
+        "esp_timer",
+        "esp_hw_support",
+        "bootloader_support",
+        "freertos",
+        "spi_flash",
+        "esp_partition",
+        "wear_levelling",
+    ):
         if req not in component:
             fail(f"component should PRIV_REQUIRES {req}")
 
@@ -185,6 +232,28 @@ def check() -> None:
     if not required.issubset(all_port):
         fail(f"port sources missing {required - all_port}")
 
+    storage_text = read_text(STORAGE_AUTHORITY)
+    storage_target = list_sources_in_var(
+        storage_text, "NINLIL_ESP_STORAGE_TARGET_RELATIVE_SOURCES"
+    )
+    exact_storage_target = [
+        "ports/esp-idf/storage/model/esp_storage_codec.c",
+        "ports/esp-idf/storage/model/esp_storage_model.c",
+        "ports/esp-idf/storage/esp/esp_storage_flash_media.c",
+    ]
+    if storage_target != exact_storage_target:
+        fail(
+            "target storage source set must be exactly model2+flash1, got "
+            f"{storage_target}"
+        )
+    for required_storage in exact_storage_target:
+        if required_storage not in storage_text:
+            fail(f"storage authority missing {required_storage}")
+        if not (REPO_ROOT / required_storage).is_file():
+            fail(f"missing storage source {required_storage}")
+    if "ports/esp-idf/storage/host/esp_storage_host_media.c" in storage_target:
+        fail("target storage authority must exclude host media")
+
     for header in PORT_HEADERS:
         h = read_text(header)
         if ESP_INCLUDE_RE.search(h) or FREERTOS_INCLUDE_RE.search(h):
@@ -201,6 +270,21 @@ def check() -> None:
         fail("esp-idf.yml pin/target/image mismatch")
     if re.search(r"\bctest\b", ci):
         fail("esp-idf.yml must not run host ctest")
+    for needle in (
+        "ports/esp-idf/hil_app",
+        "esp_storage_map_gate.py",
+        "esp_storage_stack_gate.py",
+        "esp_storage_public_api_gate.py",
+        "xtensa-esp32s3-elf-readelf",
+        "ninlil_m3_combined_smoke.map",
+        "ninlil_storage_powercut_hil.map",
+        "ninlil_storage_powercut_hil.elf",
+    ):
+        if needle not in ci:
+            fail(f"esp-idf.yml missing storage target gate {needle!r}")
+    # Both official maps must be required (not smoke-only).
+    if ci.count("esp_storage_map_gate.py") < 2:
+        fail("esp-idf.yml must run esp_storage_map_gate.py on smoke and HIL maps")
 
     docs = read_text(DOCS_PIN)
     if pin not in docs or "M3-prep" not in docs:
@@ -223,6 +307,18 @@ def check() -> None:
     ):
         if needle not in docs19:
             fail(f"docs/20 must document {needle!r}")
+
+    docs21 = read_text(DOCS_STORAGE)
+    for needle in (
+        "PSRAM",
+        "ESP_UNPROVEN",
+        "COMMIT_UNKNOWN",
+        "iterator",
+        "final-net",
+        "HIL 未実行",
+    ):
+        if needle not in docs21:
+            fail(f"docs/21 must document {needle!r}")
 
     docs22 = read_text(DOCS_OWNER)
     for needle in (
@@ -279,6 +375,14 @@ def check() -> None:
         fail("host CMakeLists missing owner_cell_agent_logic test")
     if "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER" not in host:
         fail("host CMakeLists missing pointer-compare sanitizer option")
+    if "esp_storage_dual_slot_conformance" not in host:
+        fail("host CMakeLists missing esp_storage_dual_slot_conformance test")
+    if "esp_storage_stack_gate" not in host:
+        fail("host CMakeLists missing esp_storage_stack_gate test")
+    if "esp_storage_wear_gate" not in host:
+        fail("host CMakeLists missing esp_storage_wear_gate test")
+    if "esp_storage_budget_gate" not in host:
+        fail("host CMakeLists missing esp_storage_budget_gate test")
 
     ci_host = read_text(REPO_ROOT / ".github" / "workflows" / "ci.yml")
     if "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER" not in ci_host:
@@ -423,6 +527,12 @@ def check() -> None:
         "tx_gate_borrowers",
         "owner_init_forward_ext",
         "retired s_standalone_owner",
+        "ninlil_port/esp_storage.h",
+        "ninlil_port/esp_storage_flash.h",
+        "ninlil_port_esp_storage_flash_bind",
+        "ninlil_port_esp_storage_flash_unbind",
+        "NINLIL_STORAGE_COMMIT_UNKNOWN",
+        "smoke_storage_commit_unknown",
     ):
         if needle not in smoke_main:
             fail(f"smoke_app must include/use {needle!r}")
@@ -445,9 +555,24 @@ def check() -> None:
     if "failure atomicity" not in host_test and "Failure-path output" not in host_test:
         fail("host tests must document/cover failure atomicity for stage helpers")
 
+    sdkconfig = read_text(SMOKE_SDKCONFIG)
+    for needle in (
+        "CONFIG_SPIRAM=y",
+        'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../partitions/ninlil_storage.csv"',
+        "CONFIG_WL_SECTOR_SIZE_4096=y",
+        "CONFIG_FREERTOS_UNICORE=n",
+        "CONFIG_FREERTOS_CHECK_PORT_CRITICAL_COMPLIANCE=y",
+        "CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD=y",
+    ):
+        if needle not in sdkconfig:
+            fail(f"smoke sdkconfig missing {needle!r}")
+    read_text(PARTITION_CSV)
+    read_text(HIL_MAIN)
+
     print(
         "esp_idf_component_packaging_gate OK: "
-        f"pin={pin} pure={len(pure_sources)} backend={len(backend_sources)}"
+        f"pin={pin} pure={len(pure_sources)} backend={len(backend_sources)} "
+        f"storage_target={len(storage_target)}"
     )
 
 
@@ -457,6 +582,21 @@ def self_test() -> None:
     sample = "    ports/esp-idf/src/clock_logic.c\n"
     if authority_sources(sample) != ["ports/esp-idf/src/clock_logic.c"]:
         fail("self-test source parse")
+    recursive = """set(MODEL
+    ports/esp-idf/storage/model/a.c
+    ports/esp-idf/storage/model/b.c
+)
+set(TARGET
+    ${MODEL}
+    ports/esp-idf/storage/esp/media.c
+)
+"""
+    if list_sources_in_var(recursive, "TARGET") != [
+        "ports/esp-idf/storage/model/a.c",
+        "ports/esp-idf/storage/model/b.c",
+        "ports/esp-idf/storage/esp/media.c",
+    ]:
+        fail("self-test recursive source expansion")
     print("esp_idf_component_packaging_gate self-test OK")
 
 

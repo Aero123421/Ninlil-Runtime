@@ -9,3 +9,10 @@ __pycache__/
 /ports/esp-idf/smoke_app/sdkconfig.old
 /ports/esp-idf/smoke_app/dependencies.lock
 /ports/esp-idf/smoke_app/managed_components/
+
+# ESP-IDF HIL app local artifacts (power-cut harness firmware)
+/ports/esp-idf/hil_app/build/
+/ports/esp-idf/hil_app/sdkconfig
+/ports/esp-idf/hil_app/sdkconfig.old
+/ports/esp-idf/hil_app/dependencies.lock
+/ports/esp-idf/hil_app/managed_components/

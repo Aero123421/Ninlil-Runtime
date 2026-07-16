@@ -859,6 +859,27 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_runtime_store_orchestrator_test
     )
 
+    add_executable(ninlil_storage_canonical_plan_test
+        tests/runtime/storage_canonical_plan_test.c
+    )
+    target_include_directories(ninlil_storage_canonical_plan_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_storage_canonical_plan_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_storage_canonical_plan_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_storage_canonical_plan_test)
+    add_test(
+        NAME storage_canonical_plan
+        COMMAND ninlil_storage_canonical_plan_test
+    )
+
     add_executable(ninlil_runtime_store_stage5_seam_test
         tests/runtime/runtime_store_stage5_seam_test.c
     )
@@ -1971,6 +1992,142 @@ if(NINLIL_BUILD_TESTS)
         )
     endif()
 
+    # M3 ESP dual-slot durable storage port (host media conformance).
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_esp_storage_sources.cmake)
+    add_library(ninlil_port_esp_storage STATIC
+        ${NINLIL_ESP_STORAGE_HOST_TEST_RELATIVE_SOURCES}
+    )
+    target_include_directories(ninlil_port_esp_storage PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/storage/include
+    )
+    target_include_directories(ninlil_port_esp_storage PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/storage/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/storage/private
+    )
+    target_link_libraries(ninlil_port_esp_storage PRIVATE ninlil)
+    set_target_properties(ninlil_port_esp_storage PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_port_esp_storage)
+    # AppleClang does not emit GCC-compatible .su artifacts. The production
+    # ESP-IDF compiler is GCC and is the authoritative frame-size gate.
+    set(NINLIL_ESP_STORAGE_HAS_SU OFF)
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(ninlil_port_esp_storage PRIVATE
+            -Wvla
+            -fstack-usage
+        )
+        set(NINLIL_ESP_STORAGE_HAS_SU ON)
+    elseif(CMAKE_C_COMPILER_ID MATCHES "^Clang$")
+        target_compile_options(ninlil_port_esp_storage PRIVATE -Wvla)
+    endif()
+    # Fail the build if any storage-port frame exceeds the FreeRTOS-safe budget.
+    include(CheckCCompilerFlag)
+    check_c_compiler_flag(-Wframe-larger-than=2048
+        NINLIL_HAS_WFRAME_LARGER_THAN)
+    if(NINLIL_HAS_WFRAME_LARGER_THAN
+        AND NOT CMAKE_C_COMPILER_ID STREQUAL "AppleClang"
+        AND NOT CMAKE_C_FLAGS MATCHES "-fsanitize")
+        target_compile_options(ninlil_port_esp_storage PRIVATE
+            -Wframe-larger-than=2048
+        )
+        # GCC accepts -Werror=frame-larger-than=N; Clang uses global -Werror.
+        if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(ninlil_port_esp_storage PRIVATE
+                -Werror=frame-larger-than=2048
+            )
+        endif()
+    endif()
+
+    add_executable(ninlil_esp_storage_conformance_test
+        tests/port/esp_storage_conformance_test.c
+    )
+    target_include_directories(ninlil_esp_storage_conformance_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/storage/private
+    )
+    target_link_libraries(ninlil_esp_storage_conformance_test PRIVATE
+        ninlil_port_esp_storage
+        ninlil
+    )
+    set_target_properties(ninlil_esp_storage_conformance_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_esp_storage_conformance_test)
+    add_test(
+        NAME esp_storage_dual_slot_conformance
+        COMMAND ninlil_esp_storage_conformance_test
+    )
+
+    add_test(
+        NAME esp_storage_budget_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_budget_gate.py
+    )
+
+    add_test(
+        NAME esp_storage_wear_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_wear_gate.py
+    )
+
+    add_test(
+        NAME esp_storage_public_api_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_public_api_gate.py
+            --archive $<TARGET_FILE:ninlil_port_esp_storage>
+    )
+    add_test(
+        NAME esp_storage_public_api_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_public_api_gate.py
+            self-test
+    )
+
+    add_test(
+        NAME esp_storage_hil_runner_selftest
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/storage/hil/host_powercut_runner.py
+            --self-test
+    )
+
+    add_test(
+        NAME esp_storage_map_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_map_gate.py
+    )
+    add_test(
+        NAME esp_storage_map_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_map_gate.py
+            self-test
+    )
+
+    # Parse real -fstack-usage artifacts from the storage port object build.
+    if(NINLIL_ESP_STORAGE_HAS_SU)
+        set(_ninlil_esp_stack_gate_args
+            --require-su
+            --require-model
+            ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ninlil_port_esp_storage.dir
+        )
+    else()
+        set(_ninlil_esp_stack_gate_args
+            --compiler-skip=${CMAKE_C_COMPILER_ID}
+        )
+    endif()
+    add_test(
+        NAME esp_storage_stack_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_stack_gate.py
+            ${_ninlil_esp_stack_gate_args}
+    )
+    set_tests_properties(esp_storage_stack_gate PROPERTIES
+        DEPENDS ninlil_esp_storage_conformance_test
+    )
     add_library(ninlil_test_platform_fixtures STATIC
         tests/support/platform_basic_fixtures.c
         tests/support/deterministic_entropy.c
@@ -2351,7 +2508,7 @@ if(NINLIL_BUILD_TESTS)
     )
     set_tests_properties(vector_inventory_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector inventory ok: total=301 table=257 explicit=26 bullet=16 canonical=2"
+            "vector inventory ok: total=302 table=258 explicit=26 bullet=16 canonical=2"
     )
     add_test(
         NAME vector_inventory_negative
@@ -2388,7 +2545,7 @@ if(NINLIL_BUILD_TESTS)
     )
     set_tests_properties(vector_reference_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector references ok: definitions=301 mandatory_unique=274 pr_unique=294 union=301 mandatory_occurrences=278 pr_occurrences=294 mandatory_rows=40 pr_bullets=11 excluded=1"
+            "vector references ok: definitions=302 mandatory_unique=280 pr_unique=295 union=302 mandatory_occurrences=284 pr_occurrences=295 mandatory_rows=40 pr_bullets=11 excluded=1"
     )
     add_test(
         NAME vector_reference_negative

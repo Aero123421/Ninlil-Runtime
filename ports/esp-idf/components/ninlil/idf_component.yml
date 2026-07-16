@@ -7,8 +7,9 @@
 version: "0.1.0"
 description: >-
   Ninlil Runtime portable Core / private library packaging for ESP-IDF
-  target builds, plus M3-basic clock/entropy/execution adapters.
-  Not a complete ESP-IDF port (no NVS/owner-task body/HIL).
+  target builds, M3-basic clock/entropy/execution adapters, and the format 4
+  dual-slot durable-storage candidate. Not a complete ESP-IDF port; storage
+  FULL durability remains ESP_UNPROVEN until physical power-cut HIL.
 url: https://github.com/Aero123421/Ninlil-Runtime
 license: "Apache-2.0"
 targets:

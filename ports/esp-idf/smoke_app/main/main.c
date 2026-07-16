@@ -1,7 +1,9 @@
 /*
- * Experimental dual-core owner/cell self-test source.
+ * Combined owner/cell + durable-storage self-test source.
  * Real ISR: esp_timer ESP_TIMER_ISR (requires SUPPORTS_ISR_DISPATCH_METHOD).
- * Compile/link ≠ HIL PASS. Device: idf.py flash monitor.
+ * Storage: flash bind + FULL → COMMIT_UNKNOWN (ESP_UNPROVEN).
+ * Compile/link ≠ HIL PASS / dual-core race PASS / physical power-cut HIL.
+ * Device: idf.py flash monitor.
  */
 
 #include "ninlil/platform.h"
@@ -13,6 +15,8 @@
 #include "ninlil_esp_idf/execution.h"
 #include "ninlil_esp_idf/loopback_tx_permit.h"
 #include "ninlil_esp_idf/owner_task_storage.h"
+#include "ninlil_port/esp_storage.h"
+#include "ninlil_port/esp_storage_flash.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -56,6 +60,72 @@ static uint32_t s_isr_ok;
 static uint32_t s_isr_fail;
 static uint32_t s_prod_ok;
 static uint32_t s_prod_full;
+
+
+/* Storage self-test: production bind path; FULL stays ESP_UNPROVEN/COMMIT_UNKNOWN.
+ * Large media/workspace is binder-owned (not app_main stack). Keep locals small.
+ */
+static int smoke_storage_commit_unknown(void)
+{
+    ninlil_port_esp_storage_flash_binding_t *binding = NULL;
+    ninlil_port_esp_storage_config_t config;
+    const ninlil_storage_ops_t *ops;
+    ninlil_storage_handle_t handle = NULL;
+    ninlil_storage_txn_t txn = NULL;
+    static const uint8_t ns[] = {'s', 'm', 'k'};
+    static const uint8_t key[] = {'k'};
+    static const uint8_t value[] = {'v'};
+    ninlil_bytes_view_t ns_view = {ns, (uint32_t)sizeof(ns)};
+    ninlil_bytes_view_t key_view = {key, (uint32_t)sizeof(key)};
+    ninlil_bytes_view_t value_view = {value, (uint32_t)sizeof(value)};
+    ninlil_storage_status_t commit_status;
+    int result = -1;
+
+    ninlil_port_esp_storage_config_production(&config);
+    if (ninlil_port_esp_storage_flash_bind(
+            "ninlil_st", &config, &binding, &ops)
+        != 0) {
+        ESP_LOGE(TAG, "storage flash bind failed");
+        goto cleanup;
+    }
+    if (ops == NULL
+        || ops->open(
+               ops->user,
+               ns_view,
+               NINLIL_STORAGE_SCHEMA_M1A,
+               &handle)
+            != NINLIL_STORAGE_OK
+        || ops->begin(
+               ops->user, handle, NINLIL_STORAGE_READ_WRITE, &txn)
+            != NINLIL_STORAGE_OK
+        || ops->put(ops->user, txn, key_view, value_view)
+            != NINLIL_STORAGE_OK) {
+        ESP_LOGE(TAG, "storage open/begin/put failed");
+        goto unbind;
+    }
+    commit_status =
+        ops->commit(ops->user, txn, NINLIL_DURABILITY_FULL);
+    txn = NULL;
+    if (commit_status != NINLIL_STORAGE_COMMIT_UNKNOWN) {
+        ESP_LOGE(TAG,
+            "ESP_UNPROVEN FULL must be COMMIT_UNKNOWN, got %u",
+            (unsigned)commit_status);
+        goto unbind;
+    }
+    ESP_LOGI(TAG, "storage FULL correctly remains ESP_UNPROVEN");
+    result = 0;
+
+unbind:
+    if (txn != NULL) {
+        (void)ops->rollback(ops->user, txn);
+    }
+    if (handle != NULL) {
+        ops->close(ops->user, handle);
+    }
+    ninlil_port_esp_storage_flash_unbind(binding);
+cleanup:
+    return result;
+}
 
 static void IRAM_ATTR isr_timer_cb(void *arg)
 {
@@ -528,10 +598,16 @@ void app_main(void)
     }
     smoke_cleanup_basic();
 
+    /* Owner/cell first, then storage bind/COMMIT_UNKNOWN on the same app_main. */
+    if (smoke_storage_commit_unknown() != 0) {
+        fail = 1;
+    }
+
     if (fail != 0) {
         ESP_LOGE(TAG, "SELFTEST FAIL (device HIL required for runtime verdict)");
     } else {
         ESP_LOGI(TAG,
-            "SELFTEST source paths exercised; compile!=HIL; flash monitor for runtime");
+            "SELFTEST owner/cell + storage paths exercised; "
+            "compile!=HIL; flash monitor for runtime");
     }
 }
