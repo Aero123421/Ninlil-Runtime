@@ -3,16 +3,19 @@
 # Portable sources: cmake/ninlil_runtime_private_sources.cmake
 # ESP-IDF port sources: cmake/ninlil_esp_idf_port_sources.cmake
 # Durable storage: cmake/ninlil_esp_storage_sources.cmake
+# R4 SX1262 control-plane: cmake/ninlil_sx1262_sources.cmake
 # Do not list sources with file(GLOB). Do not merge ESP-IDF sources into the
 # portable authority.
 #
 # Includes M3-basic (clock/entropy/execution), M3 owner/cell/loopback skeleton,
-# format-4 dual-slot durable-storage candidate, and U2 A2 USB CDC-ACM adapter
-# candidate (esp_tinyusb), R1 portable radio_hal (sole transmit-with-permit),
-# and R2 private pcp_authority (durable permit authority body; private only).
-# Does not implement Wi-Fi, SX1262 SPI TX, radio MAC, Join, or KGuard adapters.
+# format-4 dual-slot durable-storage candidate, U2 A2 USB CDC-ACM adapter
+# candidate (esp_tinyusb), R1 portable radio_hal (sole transmit-with-permit;
+# default-deny without R2 permit ops), R2 private pcp_authority (durable permit
+# authority body; private only), and R4 SX1262 control-plane backend
+# (reset/init/SPI only; SetTx denied; not RF TX complete). Does not implement
+# Wi-Fi, SX1262 physical RF TX path, radio MAC, Join, or KGuard adapters.
 # Does not claim storage FULL attestation, physical power-cut HIL, U2 HIL,
-# R1/R2 production radio/legal complete, or field-ready.
+# R1/R2/R4 production radio/legal complete, or field-ready.
 
 get_filename_component(NINLIL_REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
@@ -20,6 +23,7 @@ get_filename_component(NINLIL_REPO_ROOT
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_runtime_private_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_idf_port_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_storage_sources.cmake")
+include("${NINLIL_REPO_ROOT}/cmake/ninlil_sx1262_sources.cmake")
 
 set(NINLIL_COMPONENT_SRCS "")
 foreach(_rel IN LISTS NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES)
@@ -29,6 +33,12 @@ foreach(_rel IN LISTS NINLIL_ESP_IDF_PORT_ALL_RELATIVE_SOURCES)
     list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
 endforeach()
 foreach(_rel IN LISTS NINLIL_ESP_STORAGE_TARGET_RELATIVE_SOURCES)
+    list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
+foreach(_rel IN LISTS NINLIL_SX1262_PORTABLE_RELATIVE_SOURCES)
+    list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
+foreach(_rel IN LISTS NINLIL_SX1262_ESP_BUS_RELATIVE_SOURCES)
     list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
 endforeach()
 
@@ -44,6 +54,7 @@ idf_component_register(
         "${NINLIL_REPO_ROOT}/src/runtime"
         "${NINLIL_REPO_ROOT}/src/transport"
         "${NINLIL_REPO_ROOT}/src/radio"
+        "${NINLIL_REPO_ROOT}/drivers/sx126x"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/src"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/storage/model"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/storage/private"
@@ -56,6 +67,7 @@ idf_component_register(
         esp_partition
         wear_levelling
         esp_tinyusb
+        driver
 )
 
 # Portable Core remains C11-compatible (enforced by the host build). The

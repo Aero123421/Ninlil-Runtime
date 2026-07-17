@@ -1,6 +1,6 @@
 # 24. R2 Physical Compliance Permit Authority
 
-状態: **Normative freeze（docs only; R2 implementation pending; independent re-review GO 主張禁止）**<br>
+状態: **Normative + private host implementation candidate**（legal / Japan production profile / physical RF / HIL / production complete は未）<br>
 対象: Physical Compliance Permit **authority object**（ADR-0003 **P1**）<br>
 依存: [05](05-security-and-compliance.md)、[23](23-usb-radio-boundary.md)、[ADR-0003](adr/0003-radio-usb-dependency-direction.md)、[ADR-0004](adr/0004-r2-durable-permit-authority.md)、R1 `src/radio/radio_hal.h`、[platform.h](../include/ninlil/platform.h)、[version.h](../include/ninlil/version.h)、[20](20-m3-basic-esp-idf-platform-adapters.md)<br>
 非対象: R3/R5/R4/R9/R6/R7/R10、Japan 数値、legal、public ABI、KGuard、M5 complete、HIL PASS、re-review PASS
