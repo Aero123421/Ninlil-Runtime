@@ -3141,6 +3141,364 @@ ninlil_pcp_status_t ninlil_pcp_revoke_all_outstanding(
     }
 }
 
+/* ---- Post-publish durable live rebind + generation (R5) ---- */
+
+ninlil_pcp_status_t ninlil_pcp_get_assignment_generation(
+    const ninlil_pcp_t *pcp,
+    uint64_t *out_generation)
+{
+    if (out_generation == NULL) {
+        return NINLIL_PCP_INVALID_ARGUMENT;
+    }
+    /* Alias before any destructive write of *out_generation. */
+    if (pcp != NULL
+        && pcp_ranges_overlap(
+            pcp, sizeof(*pcp), out_generation, sizeof(*out_generation))) {
+        return NINLIL_PCP_ALIAS;
+    }
+    if (pcp == NULL || pcp->magic != NINLIL_PCP_MAGIC_VALUE
+        || pcp->lifecycle != NINLIL_PCP_LC_ACTIVE || pcp->published == 0u) {
+        *out_generation = 0u;
+        return NINLIL_PCP_INVALID_STATE;
+    }
+    *out_generation = pcp->bound_live.assignment_generation;
+    return NINLIL_PCP_OK;
+}
+
+static int pcp_live_struct_ok(const ninlil_pcp_live_profile_t *live)
+{
+    if (live == NULL) {
+        return 0;
+    }
+    if (pcp_hal_id_is_zero(&live->hardware_profile_id)
+        || pcp_hal_id_is_zero(&live->regulatory_profile_id)
+        || pcp_hal_id_is_zero(&live->site_assignment_id)
+        || pcp_hal_id_is_zero(&live->transmitter_id)
+        || live->max_airtime_us == 0u
+        || live->phy.bandwidth_hz == 0u
+        || live->phy.spreading_factor == 0u
+        || live->phy.coding_rate_denom == 0u
+        || live->phy.phy_flags != 0u
+        || live->reserved_zero != 0u
+        || live->hardware_profile_rev == 0u
+        || live->regulatory_profile_rev == 0u
+        || live->site_assignment_rev == 0u
+        || live->site_assignment_epoch == 0u
+        || live->channel_id == 0u) {
+        return 0;
+    }
+    return 1;
+}
+
+static void pcp_apply_live_to_meta(
+    pcp_meta_t *meta,
+    const ninlil_pcp_live_profile_t *live,
+    uint64_t generation)
+{
+    meta->bound_hardware_profile_id = live->hardware_profile_id;
+    meta->bound_hardware_profile_rev = live->hardware_profile_rev;
+    meta->bound_regulatory_profile_id = live->regulatory_profile_id;
+    meta->bound_regulatory_profile_rev = live->regulatory_profile_rev;
+    meta->bound_site_assignment_id = live->site_assignment_id;
+    meta->bound_site_assignment_rev = live->site_assignment_rev;
+    meta->bound_site_assignment_epoch = live->site_assignment_epoch;
+    meta->bound_transmitter_id = live->transmitter_id;
+    meta->bound_channel_id = live->channel_id;
+    meta->bound_phy = live->phy;
+    meta->bound_max_airtime_ceiling_us = live->max_airtime_us;
+    meta->assignment_generation = generation;
+}
+
+static void pcp_apply_live_to_ram(
+    ninlil_pcp_t *pcp,
+    const ninlil_pcp_live_profile_t *live,
+    uint64_t generation)
+{
+    pcp->bound_live.hardware_profile_id = live->hardware_profile_id;
+    pcp->bound_live.hardware_profile_rev = live->hardware_profile_rev;
+    pcp->bound_live.regulatory_profile_id = live->regulatory_profile_id;
+    pcp->bound_live.regulatory_profile_rev = live->regulatory_profile_rev;
+    pcp->bound_live.site_assignment_id = live->site_assignment_id;
+    pcp->bound_live.site_assignment_rev = live->site_assignment_rev;
+    pcp->bound_live.site_assignment_epoch = live->site_assignment_epoch;
+    pcp->bound_live.transmitter_id = live->transmitter_id;
+    pcp->bound_live.channel_id = live->channel_id;
+    pcp->bound_live.phy = live->phy;
+    pcp->bound_live.max_airtime_ceiling_us = live->max_airtime_us;
+    pcp->bound_live.assignment_generation = generation;
+    pcp->bound_live.bound = 1u;
+    pcp->bound_live.reserved_zero = 0u;
+    pcp->live_bound = 1u;
+}
+
+ninlil_pcp_status_t ninlil_pcp_commit_live_binding(
+    ninlil_pcp_t *pcp,
+    const ninlil_pcp_live_profile_t *live,
+    uint64_t generation,
+    ninlil_pcp_error_t *out_error)
+{
+    int out_safe = 1;
+    ninlil_pcp_status_t st;
+    ninlil_storage_txn_t txn = NULL;
+    pcp_scan_t scan;
+    pcp_meta_t meta;
+    int live_equal;
+    int gen_equal;
+
+    if (pcp == NULL) {
+        return NINLIL_PCP_INVALID_ARGUMENT;
+    }
+    /*
+     * Alias/output order before any owner mutation (stats/last_error/in_api):
+     * owner↔live, owner↔out_error, live↔out_error → ALIAS only, zero mutation.
+     */
+    if (live != NULL
+        && pcp_ranges_overlap(pcp, sizeof(*pcp), live, sizeof(*live))) {
+        return NINLIL_PCP_ALIAS;
+    }
+    if (out_error != NULL
+        && pcp_ranges_overlap(pcp, sizeof(*pcp), out_error, sizeof(*out_error))) {
+        return NINLIL_PCP_ALIAS;
+    }
+    if (live != NULL && out_error != NULL
+        && pcp_ranges_overlap(live, sizeof(*live), out_error, sizeof(*out_error))) {
+        return NINLIL_PCP_ALIAS;
+    }
+    if (!pcp_guard_active(pcp, out_error, &out_safe, NINLIL_PCP_STAGE_BIND)) {
+        return pcp->last_error.status;
+    }
+    if (!pcp_live_struct_ok(live) || generation == 0u) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_STRUCT, NINLIL_PCP_STAGE_BIND,
+            NINLIL_PCP_REASON_STRUCT_INVALID, "live_struct");
+        return NINLIL_PCP_STRUCT;
+    }
+    if (pcp->published == 0u || pcp->storage_bound == 0u) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_INVALID_STATE,
+            NINLIL_PCP_STAGE_BIND, NINLIL_PCP_REASON_INVALID_STATE, "unpub");
+        return NINLIL_PCP_INVALID_STATE;
+    }
+    if ((pcp->fence_bits
+            & (NINLIL_PCP_FENCE_BIT_STORAGE | NINLIL_PCP_FENCE_BIT_CORRUPT))
+        != 0u) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_STORAGE_FENCE,
+            NINLIL_PCP_STAGE_BIND, NINLIL_PCP_REASON_STORAGE_FENCE, "fence");
+        return NINLIL_PCP_STORAGE_FENCE;
+    }
+
+    pcp->in_api = 1u;
+    st = pcp_ensure_open(pcp, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+    if (st != NINLIL_PCP_OK) {
+        pcp->in_api = 0u;
+        return st;
+    }
+    st = pcp_begin(
+        pcp, NINLIL_STORAGE_READ_WRITE, &txn, NINLIL_PCP_STAGE_BIND, out_error,
+        out_safe);
+    if (st != NINLIL_PCP_OK) {
+        pcp->in_api = 0u;
+        return st;
+    }
+    st = pcp_rw_scan_check(
+        pcp, txn, &scan, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+    if (st != NINLIL_PCP_OK) {
+        (void)pcp_rollback_map(
+            pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+        pcp->in_api = 0u;
+        return st;
+    }
+    meta = scan.meta;
+    if (meta.outstanding_count != 0u) {
+        st = pcp_rollback_map(
+            pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+        pcp->in_api = 0u;
+        if (st != NINLIL_PCP_OK) {
+            return st;
+        }
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_BUSY_OUTSTANDING,
+            NINLIL_PCP_STAGE_BIND, NINLIL_PCP_REASON_BUSY_OUTSTANDING,
+            "outstanding");
+        return NINLIL_PCP_BUSY_OUTSTANDING;
+    }
+    if (generation < meta.assignment_generation) {
+        st = pcp_rollback_map(
+            pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+        pcp->in_api = 0u;
+        if (st != NINLIL_PCP_OK) {
+            return st;
+        }
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_STRUCT, NINLIL_PCP_STAGE_BIND,
+            NINLIL_PCP_REASON_STRUCT_INVALID, "gen_rollback");
+        return NINLIL_PCP_STRUCT;
+    }
+
+    live_equal =
+        pcp_hal_id_equal(&meta.bound_hardware_profile_id, &live->hardware_profile_id)
+        && meta.bound_hardware_profile_rev == live->hardware_profile_rev
+        && pcp_hal_id_equal(
+            &meta.bound_regulatory_profile_id, &live->regulatory_profile_id)
+        && meta.bound_regulatory_profile_rev == live->regulatory_profile_rev
+        && pcp_hal_id_equal(&meta.bound_site_assignment_id, &live->site_assignment_id)
+        && meta.bound_site_assignment_rev == live->site_assignment_rev
+        && meta.bound_site_assignment_epoch == live->site_assignment_epoch
+        && pcp_hal_id_equal(&meta.bound_transmitter_id, &live->transmitter_id)
+        && meta.bound_channel_id == live->channel_id
+        && pcp_phy_equal(&meta.bound_phy, &live->phy)
+        && meta.bound_max_airtime_ceiling_us == live->max_airtime_us;
+    gen_equal = (generation == meta.assignment_generation);
+
+    if (live_equal != 0 && gen_equal != 0) {
+        /* Idempotent no-op: durable already matches; still refresh RAM. */
+        st = pcp_rollback_map(
+            pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+        if (st != NINLIL_PCP_OK) {
+            pcp->in_api = 0u;
+            return st;
+        }
+        pcp_apply_live_to_ram(pcp, live, generation);
+        pcp_clear_ram_validate(pcp);
+        pcp->in_api = 0u;
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_OK, NINLIL_PCP_STAGE_BIND,
+            NINLIL_PCP_REASON_NONE, NULL);
+        return NINLIL_PCP_OK;
+    }
+
+    /*
+     * SEMANTIC: COMMIT_LIVE_SAME_GEN_EXACT_ONLY
+     * Same generation is allowed only as the exact identical no-op above.
+     * Any L_core / legal ceiling / live-binding change requires generation >
+     * current durable assignment_generation (strict increase).
+     */
+    if (gen_equal != 0) {
+        st = pcp_rollback_map(
+            pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+        pcp->in_api = 0u;
+        if (st != NINLIL_PCP_OK) {
+            return st;
+        }
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_STRUCT, NINLIL_PCP_STAGE_BIND,
+            NINLIL_PCP_REASON_STRUCT_INVALID, "same_gen_live");
+        return NINLIL_PCP_STRUCT;
+    }
+
+    /* generation > meta.assignment_generation (strict increase path). */
+    pcp_apply_live_to_meta(&meta, live, generation);
+    st = pcp_txn_put_meta(
+        pcp, txn, &meta, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+    if (st != NINLIL_PCP_OK) {
+        if (st != NINLIL_PCP_COMMIT_UNKNOWN) {
+            (void)pcp_rollback_map(
+                pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+        }
+        if (st == NINLIL_PCP_COMMIT_UNKNOWN) {
+            pcp_sticky_storage_fence_best_effort(pcp);
+        }
+        pcp->in_api = 0u;
+        return st;
+    }
+    st = pcp_commit_full(pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+    if (st != NINLIL_PCP_OK) {
+        if (st == NINLIL_PCP_COMMIT_UNKNOWN) {
+            pcp_sticky_storage_fence_best_effort(pcp);
+        }
+        /* RAM not updated on failure. */
+        pcp->in_api = 0u;
+        return st;
+    }
+    /* RAM only after durable FULL success. */
+    pcp_apply_live_to_ram(pcp, live, generation);
+    pcp_clear_ram_validate(pcp);
+    pcp->in_api = 0u;
+    pcp_set_error(
+        pcp, out_error, out_safe, NINLIL_PCP_OK, NINLIL_PCP_STAGE_BIND,
+        NINLIL_PCP_REASON_NONE, NULL);
+    return NINLIL_PCP_OK;
+}
+
+ninlil_pcp_status_t ninlil_pcp_set_assignment_generation(
+    ninlil_pcp_t *pcp,
+    uint64_t generation,
+    ninlil_pcp_error_t *out_error)
+{
+    int out_safe = 1;
+    ninlil_pcp_status_t st;
+    ninlil_storage_txn_t txn = NULL;
+    ninlil_pcp_live_profile_t live;
+    pcp_meta_t m;
+    int absent = 0;
+
+    if (!pcp_guard_active(pcp, out_error, &out_safe, NINLIL_PCP_STAGE_BIND)) {
+        return pcp != NULL ? pcp->last_error.status : NINLIL_PCP_INVALID_ARGUMENT;
+    }
+    if (generation == 0u) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_STRUCT, NINLIL_PCP_STAGE_BIND,
+            NINLIL_PCP_REASON_STRUCT_INVALID, "gen0");
+        return NINLIL_PCP_STRUCT;
+    }
+    if (pcp->published == 0u || pcp->storage_bound == 0u) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_INVALID_STATE,
+            NINLIL_PCP_STAGE_BIND, NINLIL_PCP_REASON_INVALID_STATE, "unpub");
+        return NINLIL_PCP_INVALID_STATE;
+    }
+
+    /* Load durable L_core first (not RAM-first) then commit_live. */
+    pcp->in_api = 1u;
+    st = pcp_ensure_open(pcp, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+    if (st != NINLIL_PCP_OK) {
+        pcp->in_api = 0u;
+        return st;
+    }
+    st = pcp_begin(
+        pcp, NINLIL_STORAGE_READ_ONLY, &txn, NINLIL_PCP_STAGE_BIND, out_error,
+        out_safe);
+    if (st != NINLIL_PCP_OK) {
+        pcp->in_api = 0u;
+        return st;
+    }
+    st = pcp_txn_get_meta(
+        pcp, txn, &m, &absent, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+    if (st != NINLIL_PCP_OK || absent != 0) {
+        (void)pcp_rollback_map(
+            pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+        pcp->in_api = 0u;
+        if (st != NINLIL_PCP_OK) {
+            return st;
+        }
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_INVALID_STATE,
+            NINLIL_PCP_STAGE_BIND, NINLIL_PCP_REASON_INVALID_STATE, "no_meta");
+        return NINLIL_PCP_INVALID_STATE;
+    }
+    (void)memset(&live, 0, sizeof(live));
+    live.hardware_profile_id = m.bound_hardware_profile_id;
+    live.hardware_profile_rev = m.bound_hardware_profile_rev;
+    live.regulatory_profile_id = m.bound_regulatory_profile_id;
+    live.regulatory_profile_rev = m.bound_regulatory_profile_rev;
+    live.site_assignment_id = m.bound_site_assignment_id;
+    live.site_assignment_rev = m.bound_site_assignment_rev;
+    live.site_assignment_epoch = m.bound_site_assignment_epoch;
+    live.transmitter_id = m.bound_transmitter_id;
+    live.channel_id = m.bound_channel_id;
+    live.phy = m.bound_phy;
+    live.max_airtime_us = m.bound_max_airtime_ceiling_us;
+    live.reserved_zero = 0u;
+    st = pcp_rollback_map(
+        pcp, txn, NINLIL_PCP_STAGE_BIND, out_error, out_safe);
+    pcp->in_api = 0u;
+    if (st != NINLIL_PCP_OK) {
+        return st;
+    }
+    return ninlil_pcp_commit_live_binding(pcp, &live, generation, out_error);
+}
+
 /* ---- Algorithm A: advance_expired_heads ---- */
 
 ninlil_pcp_status_t ninlil_pcp_advance_expired_heads(
@@ -4631,6 +4989,10 @@ void ninlil_pcp_stats(
     if (out_stats == NULL) {
         return;
     }
+    if (pcp != NULL
+        && pcp_ranges_overlap(pcp, sizeof(*pcp), out_stats, sizeof(*out_stats))) {
+        return; /* alias: leave out_stats unchanged */
+    }
     if (pcp == NULL) {
         (void)memset(out_stats, 0, sizeof(*out_stats));
         return;
@@ -4644,6 +5006,10 @@ void ninlil_pcp_last_error(
 {
     if (out_error == NULL) {
         return;
+    }
+    if (pcp != NULL
+        && pcp_ranges_overlap(pcp, sizeof(*pcp), out_error, sizeof(*out_error))) {
+        return; /* alias: leave out_error unchanged */
     }
     if (pcp == NULL) {
         (void)memset(out_error, 0, sizeof(*out_error));

@@ -1683,6 +1683,10 @@ static ninlil_status_t focus_known_slot_matrix(
 /*
  * Typed-validate exact_get value into workspace scratch. Returns note on
  * validate/subtype failure; Port path is caller's exact_get status.
+ * Out contract (when out_typed is non-NULL): *out_typed is written on every
+ * return — NULL on fail paths; workspace pointer only with NINLIL_OK.
+ * Callers must treat a successful status with NULL out as fail-closed
+ * STORAGE_CORRUPT.
  */
 static ninlil_status_t bind_typed_from_get(
     ninlil_domain_scan_session_t *session,
@@ -1694,8 +1698,12 @@ static ninlil_status_t bind_typed_from_get(
     ninlil_bytes_view_t kv;
     ninlil_model_domain_typed_record_t *tr;
 
+    if (out_typed == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_typed = NULL;
     if (session == NULL || session->bound_workspace == NULL || ctx == NULL
-        || got == NULL || out_typed == NULL) {
+        || got == NULL) {
         return NINLIL_E_STORAGE_CORRUPT;
     }
     tr = &session->bound_workspace->row_validate_scratch.typed;
@@ -1725,7 +1733,7 @@ static ninlil_status_t verify_true_primary_pvd_and_raw(
     ninlil_bytes_view_t key_view;
     ninlil_status_t st;
     ninlil_model_domain_digest_t dig;
-    const ninlil_model_domain_typed_record_t *tr;
+    const ninlil_model_domain_typed_record_t *tr = NULL;
 
     key_view.data = ctx->peer_key;
     key_view.length = ctx->peer_key_len;
@@ -1749,6 +1757,9 @@ static ninlil_status_t verify_true_primary_pvd_and_raw(
         if (st != NINLIL_OK) {
             return st;
         }
+        if (tr == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
         if (memcmp(tr->transaction_anchor.transaction_id, ctx->focus_tx_id, 16u)
             != 0) {
             return note_finding(session);
@@ -1758,6 +1769,9 @@ static ninlil_status_t verify_true_primary_pvd_and_raw(
             session, ctx, &got, NINLIL_MODEL_DOMAIN_SUBTYPE_DELIVERY, &tr);
         if (st != NINLIL_OK) {
             return st;
+        }
+        if (tr == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
         }
         if (tr->delivery.delivery_key_raw_length != ctx->focus_raw_len
             || ctx->focus_raw_len
@@ -1781,13 +1795,16 @@ static ninlil_status_t verify_carrier_tx_state(
     ninlil_domain_scan_d3s2_context_t *ctx,
     const ninlil_domain_scan_exact_get_result_t *got)
 {
-    const ninlil_model_domain_typed_record_t *tr;
+    const ninlil_model_domain_typed_record_t *tr = NULL;
     ninlil_status_t st;
 
     st = bind_typed_from_get(
         session, ctx, got, NINLIL_MODEL_DOMAIN_SUBTYPE_TRANSACTION_STATE, &tr);
     if (st != NINLIL_OK) {
         return st;
+    }
+    if (tr == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
     }
     if (memcmp(tr->transaction_state.transaction_id, ctx->focus_tx_id, 16u)
         != 0) {
@@ -1801,13 +1818,16 @@ static ninlil_status_t verify_carrier_result_cache(
     ninlil_domain_scan_d3s2_context_t *ctx,
     const ninlil_domain_scan_exact_get_result_t *got)
 {
-    const ninlil_model_domain_typed_record_t *tr;
+    const ninlil_model_domain_typed_record_t *tr = NULL;
     ninlil_status_t st;
 
     st = bind_typed_from_get(
         session, ctx, got, NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE, &tr);
     if (st != NINLIL_OK) {
         return st;
+    }
+    if (tr == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
     }
     if (tr->result_cache.delivery_key_raw_length != ctx->focus_raw_len
         || ctx->focus_raw_len
@@ -1828,13 +1848,16 @@ static ninlil_status_t verify_carrier_event_spool(
     ninlil_domain_scan_d3s2_context_t *ctx,
     const ninlil_domain_scan_exact_get_result_t *got)
 {
-    const ninlil_model_domain_typed_record_t *tr;
+    const ninlil_model_domain_typed_record_t *tr = NULL;
     ninlil_status_t st;
 
     st = bind_typed_from_get(
         session, ctx, got, NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_SPOOL, &tr);
     if (st != NINLIL_OK) {
         return st;
+    }
+    if (tr == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
     }
     if (memcmp(tr->event_spool.transaction_id, ctx->focus_tx_id, 16u) != 0) {
         return note_finding(session);
@@ -1847,13 +1870,16 @@ static ninlil_status_t verify_carrier_retry_cum(
     ninlil_domain_scan_d3s2_context_t *ctx,
     const ninlil_domain_scan_exact_get_result_t *got)
 {
-    const ninlil_model_domain_typed_record_t *tr;
+    const ninlil_model_domain_typed_record_t *tr = NULL;
     ninlil_status_t st;
 
     st = bind_typed_from_get(
         session, ctx, got, NINLIL_MODEL_DOMAIN_SUBTYPE_RETRY_SUMMARY, &tr);
     if (st != NINLIL_OK) {
         return st;
+    }
+    if (tr == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
     }
     if (memcmp(tr->retry_summary.transaction_id, ctx->focus_tx_id, 16u) != 0
         || tr->retry_summary.summary_kind
@@ -1874,7 +1900,7 @@ static ninlil_status_t verify_index_pair_for_attempt(
     const ninlil_domain_scan_exact_get_result_t *got,
     const ninlil_model_domain_body_attempt_t *att)
 {
-    const ninlil_model_domain_typed_record_t *tr;
+    const ninlil_model_domain_typed_record_t *tr = NULL;
     ninlil_status_t st;
     uint8_t att_key[NINLIL_DOMAIN_SCAN_D3S2_PEER_KEY_CAPACITY];
     uint8_t att_key_len = 0u;
@@ -1884,6 +1910,9 @@ static ninlil_status_t verify_index_pair_for_attempt(
         session, ctx, got, NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT_ID_INDEX, &tr);
     if (st != NINLIL_OK) {
         return st;
+    }
+    if (tr == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
     }
     if (memcmp(tr->attempt_id_index.attempt_id, att->attempt_id, 16u) != 0
         || memcmp(
@@ -2097,11 +2126,14 @@ static ninlil_status_t bind_index_row(
     }
     /* Symmetric to P1-3: ATTEMPT body attempt_id / tx match INDEX. */
     {
-        const ninlil_model_domain_typed_record_t *tr;
+        const ninlil_model_domain_typed_record_t *tr = NULL;
         st = bind_typed_from_get(
             session, ctx, &got, NINLIL_MODEL_DOMAIN_SUBTYPE_ATTEMPT, &tr);
         if (st != NINLIL_OK) {
             return st;
+        }
+        if (tr == NULL) {
+            return NINLIL_E_STORAGE_CORRUPT;
         }
         if (memcmp(tr->attempt.attempt_id, attempt_id, 16u) != 0
             || memcmp(tr->attempt.transaction_id, transaction_id, 16u) != 0
@@ -2208,12 +2240,15 @@ static ninlil_status_t bind_generic_secondary(
                 return st;
             }
         } else {
-            const ninlil_model_domain_typed_record_t *tr;
+            const ninlil_model_domain_typed_record_t *tr = NULL;
             st = bind_typed_from_get(
                 session, ctx, &got, NINLIL_MODEL_DOMAIN_SUBTYPE_RESULT_CACHE,
                 &tr);
             if (st != NINLIL_OK) {
                 return st;
+            }
+            if (tr == NULL) {
+                return NINLIL_E_STORAGE_CORRUPT;
             }
             if (tr->result_cache.delivery_key_raw_length != ctx->focus_raw_len
                 || memcmp(

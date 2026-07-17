@@ -11,11 +11,14 @@
 # format-4 dual-slot durable-storage candidate, U2 A2 USB CDC-ACM adapter
 # candidate (esp_tinyusb), R1 portable radio_hal (sole transmit-with-permit;
 # default-deny without R2 permit ops), R2 private pcp_authority (durable permit
-# authority body; private only), and R4 SX1262 control-plane backend
-# (reset/init/SPI only; SetTx denied; not RF TX complete). Does not implement
-# Wi-Fi, SX1262 physical RF TX path, radio MAC, Join, or KGuard adapters.
-# Does not claim storage FULL attestation, physical power-cut HIL, U2 HIL,
-# R1/R2/R4 production radio/legal complete, or field-ready.
+# authority body; private only), R3 airtime_calculator (private), R4 SX1262
+# control-plane backend (reset/init/SPI only; SetTx denied; not RF TX/RX
+# complete), and R5 private LAB_ONLY profile_loader + PCP bind candidate
+# (profile_loader.c via portable private authority; host/ESP packaging only).
+# Does not implement Wi-Fi, SX1262 physical RF TX/RX path, SetTx path, radio
+# MAC, Join, or KGuard adapters. Does not claim storage FULL attestation,
+# physical power-cut HIL, U2 HIL, R1/R2/R3/R4/R5 complete, FIELD, PRODUCTION,
+# Japan legal, RF HIL, production radio, or field-ready.
 
 get_filename_component(NINLIL_REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)

@@ -2130,6 +2130,51 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_airtime_r3_bridge_test
     )
 
+    # R5: LAB_ONLY profile loader + full §9.3 permit bind matrix (host candidate).
+    # Does not claim FIELD/PRODUCTION/Japan legal/RF/HIL/R5 complete.
+    add_test(
+        NAME profile_r5_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/profile_r5_gate.py
+            check
+    )
+    add_test(
+        NAME profile_r5_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/profile_r5_gate.py
+            self-test
+    )
+    add_test(
+        NAME profile_r5_golden_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/profile_r5_golden_oracle.py
+    )
+    add_executable(ninlil_profile_r5_test
+        tests/radio/profile_r5_test.c
+        tests/support/in_memory_storage.c
+        tests/support/platform_basic_fixtures.c
+        tests/support/deterministic_entropy.c
+    )
+    target_include_directories(ninlil_profile_r5_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ninlil_profile_r5_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_profile_r5_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_profile_r5_test)
+    add_test(
+        NAME profile_r5
+        COMMAND ninlil_profile_r5_test
+    )
+
     # R2 Physical Compliance Permit authority — host vectors §14.1 + faults.
     # Does not claim legal/R3/HIL/re-review GO. Docs gate alone is not completion.
     add_executable(ninlil_pcp_r2_authority_test

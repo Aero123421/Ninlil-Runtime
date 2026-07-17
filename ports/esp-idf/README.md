@@ -1,15 +1,17 @@
-# Ninlil ESP-IDF component (M3-prep + M3-basic + owner/cell + storage + U2 CDC candidate)
+# Ninlil ESP-IDF component (M3-prep + M3-basic + owner/cell + storage + U2 CDC + R4 SX1262 control-plane + R5 LAB_ONLY profile packaging candidate)
 
-この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** し、加えて **M3-basic**（clock / entropy / execution）、**experimental M3 owner-task / Cell Agent / loopback TxPermit**（docs/22）、**format 4 dual-slot durable-storage candidate**（docs/21）、および **U2 A2 USB CDC-ACM adapter candidate**（docs/23）を port-owned API として提供します。
+この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** し、加えて **M3-basic**（clock / entropy / execution）、**experimental M3 owner-task / Cell Agent / loopback TxPermit**（docs/22）、**format 4 dual-slot durable-storage candidate**（docs/21）、**U2 A2 USB CDC-ACM adapter candidate**（docs/23）、**R4 SX1262 control-plane portable + ESP SPI/GPIO bus candidate**（docs/28）、および **R5 LAB_ONLY private profile_loader / PCP bind packaging candidate**（docs/29; private sources only）を port 向けに提供します。
 
-**実装済み（experimental）:** owner-task + FreeRTOS queue/notify、Cell Agent assignment、loopback TxPermit、durable-storage flash bind / host conformance、U2 control CDC adapter candidate（`esp_tinyusb==2.1.1`）、combined smoke self-test **source**（dual-core + real ISR timer config + storage COMMIT_UNKNOWN + CDC **init CLOSED snapshot** — no USB install/open in smoke）。
+**実装済み（experimental / candidate packaging）:** owner-task + FreeRTOS queue/notify、Cell Agent assignment、loopback TxPermit、durable-storage flash bind / host conformance、U2 control CDC adapter candidate（`esp_tinyusb==2.1.1`）、R4 SX1262 control-plane（reset/init/SPI allowlist + STDBY_RC; SetTx 構造的不在; ESP SPI/GPIO bus）、R5 private LAB_ONLY profile_loader + R1/R2/R3 radio private sources の component 収録、combined smoke self-test **source**（dual-core + real ISR timer config + storage COMMIT_UNKNOWN + CDC **init CLOSED snapshot** — no USB install/open in smoke）。
 
-**これは M3 の部分 slice + U2 candidate です。** 次を提供・主張しません。
+**これは M3 の部分 slice + U2/R4/R5 packaging candidate です。** 次を提供・主張しません。
 
 - storage の実機 FULL attestation / power-cut HIL PASS
 - **U2 Required HIL**（実機 flash + host CDC 往復 + DTR down/up old-generation payload negative）/ USB series complete
 - TinyUSB complete TX/RX FIFO purge or recall of endpoint/hardware-in-flight / already-transmitted bytes（U2 は Ninlil ring generation isolation + software FIFO soft-clear のみ）
-- Wi-Fi / SX1262 / radio MAC、Join、KGuard adapter
+- **SX1262 physical RF TX/RX、SetTx path、radio MAC、production radio / legal / HIL**（R4 は control-plane candidate のみ; compile ≠ RF complete）
+- **R5 complete / FIELD / PRODUCTION / Japan legal / RF / HIL**（LAB_ONLY host/ESP packaging candidate のみ）
+- Wi-Fi、Join、KGuard adapter
 - public Runtime の production 実行経路
 - **compile/link を HIL PASS / dual-core race PASS とみなすこと**
 - PSRAM workspace の caller 所有や二重bind許可
@@ -21,7 +23,9 @@
 - basic adapters: [docs/20-m3-basic-esp-idf-platform-adapters.md](../../docs/20-m3-basic-esp-idf-platform-adapters.md)
 - owner/cell/loopback: [docs/22-m3-owner-cell-agent-skeleton.md](../../docs/22-m3-owner-cell-agent-skeleton.md)
 - durable storage: [docs/21-m3-esp-idf-durable-storage.md](../../docs/21-m3-esp-idf-durable-storage.md)
-- USB CDC (U2): [docs/23-usb-radio-boundary.md](../../docs/23-usb-radio-boundary.md)
+- USB CDC / radio boundary (U0–U2): [docs/23-usb-radio-boundary.md](../../docs/23-usb-radio-boundary.md)
+- R4 SX1262 control-plane: [docs/28-r4-sx1262-control-plane-backend.md](../../docs/28-r4-sx1262-control-plane-backend.md) / [ADR-0008](../../docs/adr/0008-r4-sx1262-control-plane-backend.md)
+- R5 LAB_ONLY profile loader + permit bind: [docs/29-r5-lab-only-profile-loader.md](../../docs/29-r5-lab-only-profile-loader.md) / [ADR-0009](../../docs/adr/0009-r5-lab-only-profile-loader.md)
 
 ## Pinned ESP-IDF version
 

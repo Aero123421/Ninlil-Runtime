@@ -447,6 +447,49 @@ ninlil_pcp_status_t ninlil_pcp_revoke_all_outstanding(
     ninlil_pcp_t *pcp,
     ninlil_pcp_error_t *out_error);
 
+/*
+ * Post-publish durable rebind of full live binding + assignment_generation.
+ * Schema1 meta 200B only (bound L_core + ceiling + generation). Issued 232B unchanged.
+ *
+ * Contract (docs/24 + R5):
+ *   - published, outstanding_count==0, no STORAGE/CORRUPT fence
+ *   - live: full L_core + ceiling (max_airtime_us field)
+ *   - generation >= 1 and monotonic vs durable current
+ *   - same generation allowed ONLY as exact identical live idempotent no-op
+ *     (L_core + legal ceiling + all live fields match durable)
+ *   - any L_core / ceiling / live-binding change requires strict generation
+ *     increase (generation > current); same-gen different-live → STRUCT
+ *   - single FULL transaction: get meta → replace bound_*+ceiling+gen → put → commit
+ *   - RAM bound_live updated ONLY after FULL commit OK (no RAM-first)
+ *   - COMMIT_UNKNOWN / BUSY-on-commit → F_s + sticky fence best-effort
+ *   - definite rollback failure → mapped fence/error (not silent OK)
+ *   - alias/output order before any owner mutation (stats/last_error/in_api):
+ *       owner↔live, owner↔out_error, and live↔out_error → NINLIL_PCP_ALIAS only
+ *       with zero mutation of owner, live, and unsafe out_error canaries
+ *       (live is const input; never overwrite live via out_error)
+ *
+ * ninlil_pcp_set_assignment_generation delegates here keeping durable L_core
+ * (read in-txn) so gen-only bumps cannot desync L_core.
+ *
+ * SEMANTIC: COMMIT_LIVE_SAME_GEN_EXACT_ONLY
+ */
+ninlil_pcp_status_t ninlil_pcp_commit_live_binding(
+    ninlil_pcp_t *pcp,
+    const ninlil_pcp_live_profile_t *live,
+    uint64_t generation,
+    ninlil_pcp_error_t *out_error);
+
+/* Gen-only durable bump: commit_live with in-txn durable L_core + new generation. */
+ninlil_pcp_status_t ninlil_pcp_set_assignment_generation(
+    ninlil_pcp_t *pcp,
+    uint64_t generation,
+    ninlil_pcp_error_t *out_error);
+
+/* Read RAM mirror of durable assignment_generation (0 if unbound). */
+ninlil_pcp_status_t ninlil_pcp_get_assignment_generation(
+    const ninlil_pcp_t *pcp,
+    uint64_t *out_generation);
+
 ninlil_pcp_status_t ninlil_pcp_gc_terminal_records(
     ninlil_pcp_t *pcp,
     const uint64_t *seqs,
