@@ -1858,6 +1858,21 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
 
+    # U5/U6 Normative docs: layout arithmetic + lifecycle + namespace budget.
+    # Required docs PR gate (not word-marker only). Does not claim U5/U6 complete.
+    add_test(
+        NAME u5_u6_docs_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/u5_u6_docs_gate.py
+            check
+    )
+    add_test(
+        NAME u5_u6_docs_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/u5_u6_docs_gate.py
+            self-test
+    )
+
     # C1 portable contract must stay free of termios/fd/pthread/platform types.
     add_test(
         NAME byte_stream_portability_gate

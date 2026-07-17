@@ -131,6 +131,9 @@ Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-bou
 - hardware profile ID / revision
 - regulatory profile ID / revision
 - **SiteAssignment identity / revision / epoch**（`NIN-CMP-001` 必須）
+- **controller_term**（U5 CellOperatingAssignment; [25章](25-u5-cell-operating-assignment.md) / [23章 §9.3](23-usb-radio-boundary.md)）
+- **assignment_digest**（U5 canonical assignment digest; 同上）
+- **permit_bind_generation**（U5 ARW; [25章 §8.5](25-u5-cell-operating-assignment.md) — assignment apply ごとに単調増加; 旧 generation の permit は consume 拒否）
 - **physical transmitter identity**（physical radio path; Foundation `ninlil_bearer_*` ではない）
 - channel / PHY（live radio settings; R1 `live_binding` / 24章 Live bind set L）
 - frame digest and byte length（immutable TX plan; permit 発行後の変更禁止）
@@ -141,15 +144,16 @@ Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-bou
 **Physical TX 順序（Normative; [23章](23-usb-radio-boundary.md) / [ADR-0003](adr/0003-radio-usb-dependency-direction.md)）:**
 
 1. secure wire/MAC が immutable TX plan / exact bytes を確定する。
-2. Compliance Gate が SiteAssignment × profiles × live settings × ledger を検査・予約し、**exact plan** へ Physical Compliance Permit を発行する。
+2. Compliance Gate が SiteAssignment（identity/revision/epoch/**term**/**assignment_digest**）× profiles × live settings × ledger を検査・予約し、**exact plan** へ Physical Compliance Permit を発行する。
 3. `ninlil_radio_hal` の **sole** transmit-with-permit 入口が再検証し single-use consume する。
 4. SX1262 backend が送信する。
 
-SiteAssignment / profile / live radio settings / frame digest・length・PHY が発行時スナップショットと異なれば **consume 拒否**（新 plan + 新 permit のみ）。
+SiteAssignment（identity/revision/epoch/term/digest）/ profile / live radio settings / frame digest・length・PHY が発行時スナップショットと異なれば **consume 拒否**（新 plan + 新 permit のみ）。
+CellOperatingAssignment mutation/replacement 時は outstanding permit を **atomic fence** する（[25章](25-u5-cell-operating-assignment.md)）。R2 Normative 正本は [24章](24-r2-physical-compliance-permit-authority.md) / ADR-0004（main 統合済み）; U5 fence/bind と **docs 整合済み**。R2 **runtime complete は主張しない**。
 
 規則:
 
-- `NIN-CMP-001`: `HardwareProfile × RegulatoryProfile × SiteAssignment × live radio settings`が一致しなければpermitを発行してはならない。SiteAssignment は identity / revision / epoch を含む。
+- `NIN-CMP-001`: `HardwareProfile × RegulatoryProfile × SiteAssignment × live radio settings`が一致しなければpermitを発行してはならない。SiteAssignment は identity / revision / epoch に加え、U5 以降 **controller_term と assignment_digest** を含む。
 - `NIN-CMP-002`: Physical Compliance Permitなしでdriver TXへ到達するcode pathを作ってはならない。sole edge は transmit-with-permit のみ。
 - `NIN-CMP-003`: permitは一度だけ消費し、expiry後に使用してはならない。発行後の bytes/PHY 差替えは禁止。
 - `NIN-CMP-004`: application、scheduler、operator、USB control pathのpriorityはCompliance denialを上書きできない。
