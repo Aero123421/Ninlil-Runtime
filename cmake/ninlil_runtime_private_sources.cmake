@@ -18,6 +18,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/domain_store_scanner.c
     src/runtime/runtime_store_orchestrator.c
     src/runtime/runtime_store_stage5_seam.c
+    src/runtime/stage5_empty_metadata.c
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
     src/radio/radio_hal.c
@@ -29,6 +30,7 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/runtime/domain_store_d3s1.c
     src/runtime/domain_store_d3s2.c
     src/runtime/runtime_store_stage5_seam.c
+    src/runtime/stage5_empty_metadata.c
     src/runtime/runtime_store_orchestrator.c
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
