@@ -44,6 +44,18 @@ REQUIRED_HEADER_TOKENS = (
     "ninlil_ctrl_session_pump",
     "ninlil_ctrl_session_submit_tx",
     "ninlil_ctrl_session_take_rx",
+    "ninlil_ctrl_session_logical_epoch_begin",
+    "ninlil_ctrl_session_logical_epoch_end",
+    "ninlil_ctrl_session_tracked_submit_tx",
+    "ninlil_ctrl_session_tx_resolve",
+    "ninlil_ctrl_session_logical_rx_cold",
+    "NINLIL_CTRL_SESSION_TX_RAW_ACCEPTED_THEN_FENCED",
+    "NINLIL_CTRL_SESSION_TX_INDETERMINATE_PARTIAL",
+    "NINLIL_CTRL_SESSION_TOKEN_EXHAUSTED",
+    "NINLIL_CTRL_SESSION_RX_COLD_REASON_",
+    "0x52430001",
+    "RX_COLD_REASON_TAG",
+    "rx_cold_reason",
     "NINLIL_CTRL_SESSION_INGRESS_MAX_ENTRIES",
     "NINLIL_CTRL_SESSION_INGRESS_BYTE_CAP",
     "NINLIL_CTRL_SESSION_TX_INTENT_MAX_ENTRIES",
@@ -54,11 +66,16 @@ REQUIRED_HEADER_TOKENS = (
     "all-or-none",
     "copy-out",
     "Not HELLO",
+    "Not U4 complete",
     "NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM",
 )
 
 REQUIRED_SOURCE_TOKENS = (
     "ninlil_ctrl_session_pump",
+    "ninlil_ctrl_session_logical_epoch_begin",
+    "ninlil_ctrl_session_tracked_submit_tx",
+    "ninlil_ctrl_session_tx_resolve",
+    "ninlil_ctrl_session_logical_rx_cold",
     "ninlil_model_control_frame_parser_feed",
     "ninlil_model_control_frame_encode",
     "link_generation",
@@ -70,6 +87,12 @@ REQUIRED_SOURCE_TOKENS = (
     "validate_link_generation_ticket",
     "set_error_out_only",
     "commit_parser_stats_and_reset",
+    "rx_only_cold_apply",
+    "RAW_ACCEPTED_THEN_FENCED",
+    "INDETERMINATE_PARTIAL",
+    "TOKEN_EXHAUSTED",
+    "rx_cold_reason_to_status",
+    "token wrap fail-closed",
     "partial OK",
     "read OK length > capacity",
     "read WOULD_BLOCK with length!=0",
@@ -77,7 +100,13 @@ REQUIRED_SOURCE_TOKENS = (
     "g1/link/g2",
 )
 
-SEAM_SYMBOL = "ninlil_ctrl_session_test_force_committed_framing_stats"
+# Host-test-only symbols. Must be absent from tests-off production objects
+# (compile without NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM + nm -g negative).
+SEAM_SYMBOLS = (
+    "ninlil_ctrl_session_test_force_committed_framing_stats",
+    "ninlil_ctrl_session_test_force_epoch_next",
+    "ninlil_ctrl_session_test_force_token_next",
+)
 
 
 class GateFailure(Exception):
@@ -235,15 +264,22 @@ def check_source() -> None:
         fail("RX_OVERFLOW fence path missing from production code")
     if "WRONG_OWNER" not in code:
         fail("WRONG_OWNER path missing from production code")
-    if re.search(r"\bHELLO_OK\b|\bNCL1\b|\bsession_cookie\b", code):
-        fail("U3 production source must not implement HELLO/NCL1/cookie")
-    # Test seam definition must be under #if defined(SEAM)
-    if not re.search(
-        r"#\s*if\s+defined\s*\(\s*NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM\s*\)[\s\S]*?"
-        + re.escape(SEAM_SYMBOL),
-        text,
-    ):
-        fail("test seam definition must be under NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM")
+    if re.search(r"\bHELLO_OK\b|\bsession_cookie\b", code):
+        fail("U3 production source must not implement HELLO/cookie")
+    # NCL1 logical control remains U4; boundary may mention NCL1 only in comments.
+    if re.search(r"\bninlil_ncl1_|\bNCL1_HELLO\b|\blogical_control\b", code):
+        fail("U3 production source must not implement NCL1/logical_control")
+    # Every test seam definition must sit under #if defined(SEAM).
+    for seam in SEAM_SYMBOLS:
+        if not re.search(
+            r"#\s*if\s+defined\s*\(\s*NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM\s*\)[\s\S]*?"
+            + re.escape(seam),
+            text,
+        ):
+            fail(
+                f"test seam {seam} must be under "
+                "NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM"
+            )
     # Double-generation ticket
     if "g1" not in code or "g2" not in code:
         fail("generation ticket must use g1/g2 double snapshot")
@@ -295,11 +331,13 @@ def check_tests_off_seam_absent() -> None:
         )
         if nm.returncode != 0:
             fail(f"nm failed: {nm.stderr}")
-        if SEAM_SYMBOL in nm.stdout or SEAM_SYMBOL in nm.stderr:
-            fail(f"test seam symbol present in production U3 object: {SEAM_SYMBOL}")
-        if "ninlil_ctrl_session_pump" not in nm.stdout and "ninlil_ctrl_session_pump" not in nm.stderr:
+        nm_text = (nm.stdout or "") + (nm.stderr or "")
+        for seam in SEAM_SYMBOLS:
+            if seam in nm_text or ("_" + seam) in nm_text:
+                fail(f"test seam symbol present in production U3 object: {seam}")
+        if "ninlil_ctrl_session_pump" not in nm_text:
             # Apple nm prefixes with _
-            if "_ninlil_ctrl_session_pump" not in nm.stdout:
+            if "_ninlil_ctrl_session_pump" not in nm_text:
                 fail("ctrl_session_pump missing from production U3 object")
 
 
@@ -326,7 +364,9 @@ def check(root: pathlib.Path | None = None, *, run_archive_probe: bool = True) -
     check_cmake_test_seam_define()
     check_public_abi_clean()
     check_docs_nonclaims()
-    if run_archive_probe and root is None:
+    # Archive probe uses SESSION_C (real tree or mutation root). Always run when
+    # requested so self-test can prove each SEAM_SYMBOL nm leak is caught.
+    if run_archive_probe:
         check_tests_off_seam_absent()
     print("control_session_u3_gate: OK")
 
@@ -402,6 +442,32 @@ def self_test() -> None:
             encoding="utf-8",
         )
 
+    def _mut_leak_seam_symbol(root: pathlib.Path, symbol: str) -> None:
+        """Append an unguarded definition so tests-off nm sees the symbol."""
+        p = root / "src" / "transport" / "control_session.c"
+        text = p.read_text(encoding="utf-8")
+        # Outside any #if TEST_SEAM: forces production object export of `symbol`.
+        stub = (
+            f"\n/* mutation: unguarded seam leak */\n"
+            f"void {symbol}(void *session, unsigned long long v)\n"
+            f"{{\n"
+            f"    (void)session;\n"
+            f"    (void)v;\n"
+            f"}}\n"
+        )
+        p.write_text(text + stub, encoding="utf-8")
+
+    def mut_leak_seam_committed_framing(root: pathlib.Path) -> None:
+        _mut_leak_seam_symbol(
+            root, "ninlil_ctrl_session_test_force_committed_framing_stats"
+        )
+
+    def mut_leak_seam_epoch_next(root: pathlib.Path) -> None:
+        _mut_leak_seam_symbol(root, "ninlil_ctrl_session_test_force_epoch_next")
+
+    def mut_leak_seam_token_next(root: pathlib.Path) -> None:
+        _mut_leak_seam_symbol(root, "ninlil_ctrl_session_test_force_token_next")
+
     def mut_drop_g1g2(root: pathlib.Path) -> None:
         p = root / "src" / "transport" / "control_session.c"
         text = p.read_text(encoding="utf-8")
@@ -431,7 +497,8 @@ def self_test() -> None:
             encoding="utf-8",
         )
 
-    mutations = [
+    # Structural mutations: static checks only (archive probe optional).
+    structural_mutations: list[tuple[str, Callable[[pathlib.Path], None]]] = [
         ("drop pump API token", mut_drop_pump),
         ("drop private authority entry", mut_drop_authority),
         ("drop generation fence path", mut_drop_gen_fence),
@@ -446,13 +513,30 @@ def self_test() -> None:
         ("drop cmake TEST_SEAM define", mut_drop_cmake_seam),
     ]
 
+    # Each SEAM_SYMBOL leak must fail tests-off compile+nm (archive probe on).
+    seam_leak_mutations: list[tuple[str, Callable[[pathlib.Path], None]]] = [
+        (
+            "leak seam committed_framing_stats in production nm",
+            mut_leak_seam_committed_framing,
+        ),
+        (
+            "leak seam force_epoch_next in production nm",
+            mut_leak_seam_epoch_next,
+        ),
+        (
+            "leak seam force_token_next in production nm",
+            mut_leak_seam_token_next,
+        ),
+    ]
+
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td) / "clean"
         root.mkdir()
         _copy_tree(root)
-        check(root, run_archive_probe=False)
+        # Clean tree must pass static + tests-off nm for all SEAM_SYMBOLS.
+        check(root, run_archive_probe=True)
 
-    for name, mut in mutations:
+    for name, mut in structural_mutations:
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td) / "mut"
             root.mkdir()
@@ -465,7 +549,21 @@ def self_test() -> None:
                 continue
             raise SystemExit(f"mutation NOT caught: {name}")
 
-    print(f"control_session_u3_gate self-test: {len(mutations)} mutations caught")
+    for name, mut in seam_leak_mutations:
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td) / "mut"
+            root.mkdir()
+            _copy_tree(root)
+            mut(root)
+            try:
+                check(root, run_archive_probe=True)
+            except GateFailure:
+                print(f"mutation caught: {name}")
+                continue
+            raise SystemExit(f"mutation NOT caught: {name}")
+
+    total = len(structural_mutations) + len(seam_leak_mutations)
+    print(f"control_session_u3_gate self-test: {total} mutations caught")
 
 
 def main(argv: list[str]) -> int:
