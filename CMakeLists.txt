@@ -1931,6 +1931,19 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
 
+    add_test(
+        NAME pcp_r2_rw_scan_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/pcp_r2_rw_scan_gate.py
+            check
+    )
+    add_test(
+        NAME pcp_r2_rw_scan_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/pcp_r2_rw_scan_gate.py
+            self-test
+    )
+
     # R2 complete private header consumer compile (types/sizeof only).
     add_executable(ninlil_pcp_r2_consumer_compile
         tests/radio/pcp_r2_consumer_compile_test.c
@@ -2054,6 +2067,35 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME airtime_r3_bridge
         COMMAND ninlil_airtime_r3_bridge_test
+    )
+
+    # R2 Physical Compliance Permit authority — host vectors §14.1 + faults.
+    # Does not claim legal/R3/HIL/re-review GO. Docs gate alone is not completion.
+    add_executable(ninlil_pcp_r2_authority_test
+        tests/radio/pcp_r2_authority_test.c
+        tests/support/in_memory_storage.c
+        tests/support/platform_basic_fixtures.c
+        tests/support/deterministic_entropy.c
+        tests/support/scripted_storage_spy.c
+        tests/support/radio_hal_spy.c
+    )
+    target_include_directories(ninlil_pcp_r2_authority_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_pcp_r2_authority_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_pcp_r2_authority_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_pcp_r2_authority_test)
+    add_test(
+        NAME pcp_r2_authority
+        COMMAND ninlil_pcp_r2_authority_test
     )
 
     add_executable(ninlil_control_session_u3_test

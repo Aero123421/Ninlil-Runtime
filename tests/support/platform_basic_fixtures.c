@@ -479,13 +479,6 @@ static int time_sample_is_valid(const ninlil_time_sample_t *sample)
         && sample->reserved_zero == 0u;
 }
 
-static int clock_output_header_is_valid(const ninlil_time_sample_t *sample)
-{
-    return sample != NULL
-        && sample->abi_version == NINLIL_ABI_VERSION
-        && sample->struct_size >= sizeof(*sample);
-}
-
 static int clock_current_logical_now(
     const ninlil_test_clock_t *clock,
     uint64_t *out_now)
@@ -544,16 +537,11 @@ static ninlil_port_status_t clock_now(
         return NINLIL_PORT_PERMANENT_FAILURE;
     }
     clock->call_count = increment_saturating(clock->call_count);
-    if (!clock_output_header_is_valid(out_sample)) {
-        if (out_sample == NULL) {
-            (void)memset(&trace_sample, 0, sizeof(trace_sample));
-            clock_trace(clock, NINLIL_PORT_PERMANENT_FAILURE,
-                &trace_sample, 0, 0);
-        } else {
-            trace_sample = *out_sample;
-            clock_trace(clock, NINLIL_PORT_PERMANENT_FAILURE,
-                &trace_sample, 0, 0);
-        }
+    /* Port owns output: NULL is permanent; zeroed/poison input is allowed
+     * (authority may pass zero sample so callback must write V1–V5 on OK). */
+    if (out_sample == NULL) {
+        (void)memset(&trace_sample, 0, sizeof(trace_sample));
+        clock_trace(clock, NINLIL_PORT_PERMANENT_FAILURE, &trace_sample, 0, 0);
         return NINLIL_PORT_PERMANENT_FAILURE;
     }
     if (clock->script_count != 0u) {
@@ -569,6 +557,10 @@ static ninlil_port_status_t clock_now(
                 clock->configuration_error_count = increment_saturating(
                     clock->configuration_error_count);
             } else {
+                /* Complete OK sample (callback fills V1–V5, not pre-init). */
+                out_sample->abi_version = NINLIL_ABI_VERSION;
+                out_sample->struct_size =
+                    (uint16_t)sizeof(ninlil_time_sample_t);
                 out_sample->clock_epoch_id = entry->sample.clock_epoch_id;
                 out_sample->now_ms = entry->sample.now_ms;
                 out_sample->trust = entry->sample.trust;
@@ -590,6 +582,8 @@ static ninlil_port_status_t clock_now(
             status = NINLIL_PORT_PERMANENT_FAILURE;
         } else {
             status = NINLIL_PORT_OK;
+            out_sample->abi_version = NINLIL_ABI_VERSION;
+            out_sample->struct_size = (uint16_t)sizeof(ninlil_time_sample_t);
             out_sample->clock_epoch_id = clock->epoch_id;
             out_sample->now_ms = clock->sim_time_ms + clock->offset_ms;
             out_sample->trust = clock->trust;
