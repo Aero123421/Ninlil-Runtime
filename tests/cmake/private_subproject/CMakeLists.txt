@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 17)
-    message(FATAL_ERROR "private source count is not 17: ${_private_sources}")
+if(NOT _private_source_count EQUAL 18)
+    message(FATAL_ERROR "private source count is not 18: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -86,6 +86,7 @@ foreach(_source IN LISTS _private_sources)
 endforeach()
 list(SORT _private_source_names)
 set(_expected_private_source_names
+    airtime_calculator.c
     control_frame_codec.c
     control_session.c
     domain_store_body_codec.c

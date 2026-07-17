@@ -227,7 +227,8 @@ M3 complete 前でも、component packaging と basic platform adapters の回�
 | `pcp_r2_consumer_compile` | private header complete type C11 strict compile | authority runtime body |
 | `pcp_r2_time_sample_abi` (+ `…_ilp32`) | platform.h offsetof LP64 + arm-none ILP32 static_assert | ESP flash HIL |
 | R2 host pure（implementation PR Required） | [24章 §14](24-r2-physical-compliance-permit-authority.md) A-* vectors; owner S1→S3 | legal / Japan / ledger / RF SLO |
-| R3–R9 host/spy | airtime / profile loader / SX1262 / wire; R9≥R4+R5+R7 | legal certification / RF SLO |
+| R3 host (`airtime_r3_bridge` + `airtime_r3_gate` + `airtime_r3_oracle` + [27章](27-r3-airtime-calculator.md) / [ADR-0007](adr/0007-r3-airtime-calculator.md)) | closed SX1262 LoRa ToA; integer ceil-us; independent Fraction oracle; C bridge vectors; private archive wiring; mutation gate; **vector freshness/determinism**（oracle を独立 temp で 2 回実行し run1==run2 かつ committed JSON/`.gen.h` と byte 一致; 手編集/stale は FAIL）; **R3 host candidate only** | Japan production 数値; duty/LBT/legal; R3 complete; RF/HIL; R5 profile |
+| R4–R9 host/spy | SX1262 backend / profile loader / wire; R9≥R4+R5+R7 | legal certification / RF SLO |
 | R10 HIL | SKU 測定 evidence | production candidate |
 
 **compile success must not equal HIL。** Required HIL 未実施なら USB series 完成を名乗らない。PR 説明・CI job 名・release note で混同してはならない。

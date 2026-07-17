@@ -1,0 +1,1836 @@
+{
+  "formula_version": 1,
+  "vectors": [
+    {
+      "expect": {
+        "airtime_ms_ceil": 16,
+        "airtime_us": 15936,
+        "ldro_effective": 0,
+        "n_payload_symbols": 48,
+        "status": 0,
+        "toa_numerator": 1992,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_0_sf5_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 27,
+        "airtime_us": 26752,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 3344,
+        "tsym_us_ceil": 512
+      },
+      "id": "ok_1_sf6_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 6
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 1319,
+        "airtime_us": 1318912,
+        "ldro_effective": 1,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 164864,
+        "tsym_us_ceil": 32768
+      },
+      "id": "ok_2_sf12_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 2,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 824,
+        "airtime_us": 823349,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 16386
+      },
+      "id": "ok_3_sf7_bw7812_pl16",
+      "input": {
+        "bw_hz": 7812,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 174,
+        "airtime_us": 173068,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 4097
+      },
+      "id": "ok_4_sf5_bw7812_pl8",
+      "input": {
+        "bw_hz": 7812,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 618,
+        "airtime_us": 617453,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 12288
+      },
+      "id": "ok_5_sf7_bw10417_pl16",
+      "input": {
+        "bw_hz": 10417,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 130,
+        "airtime_us": 129788,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 3072
+      },
+      "id": "ok_6_sf5_bw10417_pl8",
+      "input": {
+        "bw_hz": 10417,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 412,
+        "airtime_us": 411648,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 8192
+      },
+      "id": "ok_7_sf7_bw15625_pl16",
+      "input": {
+        "bw_hz": 15625,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 87,
+        "airtime_us": 86528,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 2048
+      },
+      "id": "ok_8_sf5_bw15625_pl8",
+      "input": {
+        "bw_hz": 15625,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 309,
+        "airtime_us": 308741,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 6145
+      },
+      "id": "ok_9_sf7_bw20833_pl16",
+      "input": {
+        "bw_hz": 20833,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 65,
+        "airtime_us": 64898,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 1537
+      },
+      "id": "ok_10_sf5_bw20833_pl8",
+      "input": {
+        "bw_hz": 20833,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 206,
+        "airtime_us": 205824,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 4096
+      },
+      "id": "ok_11_sf7_bw31250_pl16",
+      "input": {
+        "bw_hz": 31250,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 44,
+        "airtime_us": 43264,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_12_sf5_bw31250_pl8",
+      "input": {
+        "bw_hz": 31250,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 155,
+        "airtime_us": 154367,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 3072
+      },
+      "id": "ok_13_sf7_bw41667_pl16",
+      "input": {
+        "bw_hz": 41667,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 33,
+        "airtime_us": 32448,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 768
+      },
+      "id": "ok_14_sf5_bw41667_pl8",
+      "input": {
+        "bw_hz": 41667,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 103,
+        "airtime_us": 102912,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 2048
+      },
+      "id": "ok_15_sf7_bw62500_pl16",
+      "input": {
+        "bw_hz": 62500,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 22,
+        "airtime_us": 21632,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 512
+      },
+      "id": "ok_16_sf5_bw62500_pl8",
+      "input": {
+        "bw_hz": 62500,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 52,
+        "airtime_us": 51456,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_17_sf7_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 11,
+        "airtime_us": 10816,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_18_sf5_bw125000_pl8",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 26,
+        "airtime_us": 25728,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 512
+      },
+      "id": "ok_19_sf7_bw250000_pl16",
+      "input": {
+        "bw_hz": 250000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 6,
+        "airtime_us": 5408,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 128
+      },
+      "id": "ok_20_sf5_bw250000_pl8",
+      "input": {
+        "bw_hz": 250000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 13,
+        "airtime_us": 12864,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_21_sf7_bw500000_pl16",
+      "input": {
+        "bw_hz": 500000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 3,
+        "airtime_us": 2704,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 1352,
+        "tsym_us_ceil": 64
+      },
+      "id": "ok_22_sf5_bw500000_pl8",
+      "input": {
+        "bw_hz": 500000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 8,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 52,
+        "airtime_us": 51456,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6432,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_23_sf7_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 70,
+        "airtime_us": 69888,
+        "ldro_effective": 0,
+        "n_payload_symbols": 56,
+        "status": 0,
+        "toa_numerator": 8736,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_24_sf7_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 4,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 6,
+        "airtime_us": 5696,
+        "ldro_effective": 0,
+        "n_payload_symbols": 8,
+        "status": 0,
+        "toa_numerator": 712,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_25_sf5_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 137,
+        "airtime_us": 136256,
+        "ldro_effective": 0,
+        "n_payload_symbols": 518,
+        "status": 0,
+        "toa_numerator": 17032,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_26_sf5_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 7,
+        "airtime_us": 6976,
+        "ldro_effective": 0,
+        "n_payload_symbols": 13,
+        "status": 0,
+        "toa_numerator": 872,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_27_sf5_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 138,
+        "airtime_us": 137536,
+        "ldro_effective": 0,
+        "n_payload_symbols": 523,
+        "status": 0,
+        "toa_numerator": 17192,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_28_sf5_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 6,
+        "airtime_us": 5696,
+        "ldro_effective": 0,
+        "n_payload_symbols": 8,
+        "status": 0,
+        "toa_numerator": 712,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_29_sf5_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 135,
+        "airtime_us": 134976,
+        "ldro_effective": 0,
+        "n_payload_symbols": 513,
+        "status": 0,
+        "toa_numerator": 16872,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_30_sf5_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 6,
+        "airtime_us": 5696,
+        "ldro_effective": 0,
+        "n_payload_symbols": 8,
+        "status": 0,
+        "toa_numerator": 712,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_31_sf5_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 137,
+        "airtime_us": 136256,
+        "ldro_effective": 0,
+        "n_payload_symbols": 518,
+        "status": 0,
+        "toa_numerator": 17032,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_32_sf5_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 21,
+        "airtime_us": 20736,
+        "ldro_effective": 0,
+        "n_payload_symbols": 8,
+        "status": 0,
+        "toa_numerator": 2592,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_33_sf7_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 395,
+        "airtime_us": 394496,
+        "ldro_effective": 0,
+        "n_payload_symbols": 373,
+        "status": 0,
+        "toa_numerator": 49312,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_34_sf7_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 26,
+        "airtime_us": 25856,
+        "ldro_effective": 0,
+        "n_payload_symbols": 13,
+        "status": 0,
+        "toa_numerator": 3232,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_35_sf7_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 400,
+        "airtime_us": 399616,
+        "ldro_effective": 0,
+        "n_payload_symbols": 378,
+        "status": 0,
+        "toa_numerator": 49952,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_36_sf7_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 21,
+        "airtime_us": 20736,
+        "ldro_effective": 0,
+        "n_payload_symbols": 8,
+        "status": 0,
+        "toa_numerator": 2592,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_37_sf7_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 395,
+        "airtime_us": 394496,
+        "ldro_effective": 0,
+        "n_payload_symbols": 373,
+        "status": 0,
+        "toa_numerator": 49312,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_38_sf7_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 21,
+        "airtime_us": 20736,
+        "ldro_effective": 0,
+        "n_payload_symbols": 8,
+        "status": 0,
+        "toa_numerator": 2592,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_39_sf7_bw125000_pl0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 395,
+        "airtime_us": 394496,
+        "ldro_effective": 0,
+        "n_payload_symbols": 373,
+        "status": 0,
+        "toa_numerator": 49312,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_40_sf7_bw125000_pl255",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 50,
+        "airtime_us": 49408,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6176,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_41_sf7_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 6,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 56,
+        "airtime_us": 55552,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 6944,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_42_sf7_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 12,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 109,
+        "airtime_us": 108800,
+        "ldro_effective": 0,
+        "n_payload_symbols": 38,
+        "status": 0,
+        "toa_numerator": 13600,
+        "tsym_us_ceil": 1024
+      },
+      "id": "ok_43_sf7_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 64,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 16782,
+        "airtime_us": 16781376,
+        "ldro_effective": 0,
+        "n_payload_symbols": 13,
+        "status": 0,
+        "toa_numerator": 8390688,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_44_sf7_bw500000_pl1",
+      "input": {
+        "bw_hz": 500000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 1,
+        "preamble_len_symbols": 65535,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 330,
+        "airtime_us": 329728,
+        "ldro_effective": 0,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 41216,
+        "tsym_us_ceil": 8192
+      },
+      "id": "ok_45_sf10_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 2,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 10
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 660,
+        "airtime_us": 659456,
+        "ldro_effective": 1,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 82432,
+        "tsym_us_ceil": 16384
+      },
+      "id": "ok_46_sf11_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 2,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 11
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 1156,
+        "airtime_us": 1155072,
+        "ldro_effective": 0,
+        "n_payload_symbols": 23,
+        "status": 0,
+        "toa_numerator": 144384,
+        "tsym_us_ceil": 32768
+      },
+      "id": "ok_47_sf12_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 1319,
+        "airtime_us": 1318912,
+        "ldro_effective": 1,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 164864,
+        "tsym_us_ceil": 32768
+      },
+      "id": "ok_48_sf12_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 1,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 660,
+        "airtime_us": 659456,
+        "ldro_effective": 1,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 164864,
+        "tsym_us_ceil": 16384
+      },
+      "id": "ok_49_sf12_bw250000_pl16",
+      "input": {
+        "bw_hz": 250000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 2,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 289,
+        "airtime_us": 288768,
+        "ldro_effective": 0,
+        "n_payload_symbols": 23,
+        "status": 0,
+        "toa_numerator": 72192,
+        "tsym_us_ceil": 8192
+      },
+      "id": "ok_50_sf11_bw250000_pl16",
+      "input": {
+        "bw_hz": 250000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 2,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 11
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 16,
+        "airtime_us": 15936,
+        "ldro_effective": 0,
+        "n_payload_symbols": 48,
+        "status": 0,
+        "toa_numerator": 1992,
+        "tsym_us_ceil": 256
+      },
+      "id": "ok_51_sf5_bw125000_pl16",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 2,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 34581760,
+        "airtime_us": 0,
+        "ldro_effective": 1,
+        "n_payload_symbols": 0,
+        "status": 3,
+        "toa_numerator": 270152704,
+        "tsym_us_ceil": 0
+      },
+      "id": "ok_52_sf12_bw7812_pl255",
+      "input": {
+        "bw_hz": 7812,
+        "cr": 4,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 1,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 65535,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 540306,
+        "airtime_us": 540305408,
+        "ldro_effective": 1,
+        "n_payload_symbols": 416,
+        "status": 0,
+        "toa_numerator": 270152704,
+        "tsym_us_ceil": 8192
+      },
+      "id": "ok_53_sf12_bw500000_pl255",
+      "input": {
+        "bw_hz": 500000,
+        "cr": 4,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 1,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 65535,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_sf_low",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 4
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_sf_high",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 13
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_cr_0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 0,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_cr_5_long_il",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 5,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_cr_6_long_il",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 6,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_cr_7_long_il",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 7,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_preamble_low",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 5,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 2,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_bw_old_7810",
+      "input": {
+        "bw_hz": 7810,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 2,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_bw_old_10420",
+      "input": {
+        "bw_hz": 10420,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 4,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_reserved",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 1,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_header_bad",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 2,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_crc_bad",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 2,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 0,
+        "airtime_us": 0,
+        "ldro_effective": 0,
+        "n_payload_symbols": 0,
+        "status": 1,
+        "toa_numerator": 0,
+        "tsym_us_ceil": 0
+      },
+      "id": "neg_ldro_bad",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 9,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 21,
+        "airtime_us": 20736,
+        "expect_airtime_ms_ceil": 21,
+        "ldro_effective": 0,
+        "n_payload_symbols": 8,
+        "status": 0,
+        "toa_numerator": 2592,
+        "tsym_us_ceil": 1024
+      },
+      "id": "hv_sf7_p0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 0,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 26,
+        "airtime_us": 25856,
+        "expect_airtime_ms_ceil": 26,
+        "ldro_effective": 0,
+        "n_payload_symbols": 13,
+        "status": 0,
+        "toa_numerator": 3232,
+        "tsym_us_ceil": 1024
+      },
+      "id": "hv_sf7_p3",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 3,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 31,
+        "airtime_us": 30976,
+        "expect_airtime_ms_ceil": 31,
+        "ldro_effective": 0,
+        "n_payload_symbols": 18,
+        "status": 0,
+        "toa_numerator": 3872,
+        "tsym_us_ceil": 1024
+      },
+      "id": "hv_sf7_p4",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 4,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 31,
+        "airtime_us": 30976,
+        "expect_airtime_ms_ceil": 31,
+        "ldro_effective": 0,
+        "n_payload_symbols": 18,
+        "status": 0,
+        "toa_numerator": 3872,
+        "tsym_us_ceil": 1024
+      },
+      "id": "hv_sf7_p5_explicit",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 5,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 26,
+        "airtime_us": 25856,
+        "expect_airtime_ms_ceil": 26,
+        "ldro_effective": 0,
+        "n_payload_symbols": 13,
+        "status": 0,
+        "toa_numerator": 3232,
+        "tsym_us_ceil": 1024
+      },
+      "id": "hv_sf7_p5_implicit",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 0,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 5,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 7
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 17,
+        "airtime_us": 16960,
+        "expect_airtime_ms_ceil": 17,
+        "ldro_effective": 0,
+        "n_payload_symbols": 48,
+        "status": 0,
+        "toa_numerator": 2120,
+        "tsym_us_ceil": 256
+      },
+      "id": "hv_sf5_p16_pre12_de0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 12,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 17,
+        "airtime_us": 16960,
+        "expect_airtime_ms_ceil": 17,
+        "ldro_effective": 1,
+        "n_payload_symbols": 48,
+        "status": 0,
+        "toa_numerator": 2120,
+        "tsym_us_ceil": 256
+      },
+      "id": "hv_sf5_p16_pre12_de1_on",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 1,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 12,
+        "reserved_zero": 0,
+        "sf": 5
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 34,
+        "airtime_us": 33920,
+        "expect_airtime_ms_ceil": 34,
+        "ldro_effective": 0,
+        "n_payload_symbols": 48,
+        "status": 0,
+        "toa_numerator": 4240,
+        "tsym_us_ceil": 512
+      },
+      "id": "hv_sf6_p16_pre12_cr4_impl",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 4,
+        "crc_on": 0,
+        "header_implicit": 1,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 12,
+        "reserved_zero": 0,
+        "sf": 6
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 578,
+        "airtime_us": 577536,
+        "expect_airtime_ms_ceil": 578,
+        "ldro_effective": 0,
+        "n_payload_symbols": 23,
+        "status": 0,
+        "toa_numerator": 72192,
+        "tsym_us_ceil": 16384
+      },
+      "id": "hv_sf11_de0",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 0,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 11
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 660,
+        "airtime_us": 659456,
+        "expect_airtime_ms_ceil": 660,
+        "ldro_effective": 1,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 82432,
+        "tsym_us_ceil": 16384
+      },
+      "id": "hv_sf11_de1",
+      "input": {
+        "bw_hz": 125000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 1,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 11
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 660,
+        "airtime_us": 659456,
+        "expect_airtime_ms_ceil": 660,
+        "ldro_effective": 1,
+        "n_payload_symbols": 28,
+        "status": 0,
+        "toa_numerator": 164864,
+        "tsym_us_ceil": 16384
+      },
+      "id": "hv_sf12_bw250_de1",
+      "input": {
+        "bw_hz": 250000,
+        "cr": 1,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 1,
+        "payload_len_bytes": 16,
+        "preamble_len_symbols": 8,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    },
+    {
+      "expect": {
+        "airtime_ms_ceil": 34581760,
+        "airtime_us": 0,
+        "expect_airtime_ms_ceil": 34581760,
+        "expect_toa_numerator": 270152704,
+        "forbid_driver_ms_wrapper": 494718,
+        "ldro_effective": 1,
+        "n_payload_symbols": 0,
+        "status": 3,
+        "toa_numerator": 270152704,
+        "tsym_us_ceil": 0
+      },
+      "id": "max_sf12_bw7812_overflow_us",
+      "input": {
+        "bw_hz": 7812,
+        "cr": 4,
+        "crc_on": 1,
+        "header_implicit": 0,
+        "ldro": 1,
+        "payload_len_bytes": 255,
+        "preamble_len_symbols": 65535,
+        "reserved_zero": 0,
+        "sf": 12
+      }
+    }
+  ]
+}
