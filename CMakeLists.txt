@@ -140,6 +140,21 @@ function(ninlil_apply_posix_sqlite_feature_macros target)
     endif()
 endfunction()
 
+# Feature macros for A1 POSIX USB serial (termios/poll/TIOCEXCL) under
+# C_EXTENSIONS OFF. Host-only; not installed; not part of public package.
+function(ninlil_apply_posix_usb_serial_feature_macros target)
+    if(APPLE)
+        target_compile_definitions(${target} PRIVATE
+            _DARWIN_C_SOURCE
+        )
+    else()
+        target_compile_definitions(${target} PRIVATE
+            _XOPEN_SOURCE=700
+            _DEFAULT_SOURCE
+        )
+    endif()
+endfunction()
+
 # Host-only durable storage port. Missing SQLite must not break portable core.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_posix_sqlite_sqlite3.cmake)
 set(NINLIL_POSIX_SQLITE_STORAGE_ENABLED FALSE)
@@ -367,6 +382,42 @@ endif()
 if(NINLIL_BUILD_TESTS)
     target_compile_definitions(ninlil_runtime_private PRIVATE
         NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1)
+endif()
+
+# U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
+# C1 byte-stream contract. NOT installed; NOT public include/ninlil; NOT
+# linked into ESP packaging. Required HIL Linux+macOS still pending — do not
+# treat this target as U1 complete.
+set(NINLIL_POSIX_USB_SERIAL_ENABLED FALSE)
+# U1 host adapter targets Linux and macOS only (docs/23 §3.2). Not all UNIX.
+if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(NINLIL_POSIX_USB_SERIAL_ENABLED TRUE)
+    add_library(ninlil_posix_usb_serial STATIC EXCLUDE_FROM_ALL
+        ports/posix/usb_serial/ninlil_posix_usb_serial.c
+    )
+    add_library(Ninlil::ninlil_posix_usb_serial ALIAS ninlil_posix_usb_serial)
+    target_include_directories(ninlil_posix_usb_serial
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transport>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+    )
+    set_target_properties(ninlil_posix_usb_serial PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        POSITION_INDEPENDENT_CODE ON
+        C_VISIBILITY_PRESET hidden
+        NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE
+    )
+    ninlil_apply_posix_usb_serial_feature_macros(ninlil_posix_usb_serial)
+    ninlil_apply_strict_warnings(ninlil_posix_usb_serial)
+    # pthread for owner-thread fencing; util only needed by tests (openpty).
+    find_package(Threads REQUIRED)
+    target_link_libraries(ninlil_posix_usb_serial PUBLIC Threads::Threads)
+    message(STATUS
+        "POSIX USB serial adapter (U1 A1): enabled (host private; not installed)")
 endif()
 
 if(NINLIL_BUILD_TESTS)
@@ -1658,7 +1709,7 @@ if(NINLIL_BUILD_TESTS)
     )
 
     # U0 radio/USB boundary freeze: docs consistency + terminology only.
-    # Does not implement USB CDC or SX1262 production code.
+    # Does not claim U1 complete / USB series complete / SX1262 production.
     add_test(
         NAME radio_usb_boundary_docs_gate
         COMMAND ${Python3_EXECUTABLE}
@@ -1671,6 +1722,118 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_usb_boundary_docs_gate.py
             self-test
     )
+
+    # C1 portable contract must stay free of termios/fd/pthread/platform types.
+    add_test(
+        NAME byte_stream_portability_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/byte_stream_portability_gate.py
+            check
+    )
+    add_test(
+        NAME byte_stream_portability_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/byte_stream_portability_gate.py
+            self-test
+    )
+
+    # U1 host CTest: PTY + syscall seam. Not Required HIL; not U1 complete.
+    # Host-test-only FORCE fcntl CLOEXEC twin library+test live only in this
+    # NINLIL_BUILD_TESTS block — never in tests-OFF configure/target graph,
+    # install, export, or ESP packaging.
+    if(NINLIL_POSIX_USB_SERIAL_ENABLED)
+        add_executable(ninlil_posix_usb_serial_test
+            tests/port/posix_usb_serial_test.c
+        )
+        target_include_directories(ninlil_posix_usb_serial_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        )
+        target_link_libraries(ninlil_posix_usb_serial_test PRIVATE
+            ninlil_posix_usb_serial
+        )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            # openpty lives in libutil on glibc hosts.
+            target_link_libraries(ninlil_posix_usb_serial_test PRIVATE util)
+        endif()
+        set_target_properties(ninlil_posix_usb_serial_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_usb_serial_feature_macros(ninlil_posix_usb_serial_test)
+        ninlil_apply_strict_warnings(ninlil_posix_usb_serial_test)
+        add_test(
+            NAME posix_usb_serial_u1
+            COMMAND ninlil_posix_usb_serial_test
+        )
+
+        # Host-test-only private twin: FORCE fcntl CLOEXEC fallback so modern
+        # Linux/macOS CI compiles the path production omits when O_CLOEXEC
+        # exists. Defined only under NINLIL_BUILD_TESTS=ON.
+        add_library(ninlil_posix_usb_serial_cloexec_fallback STATIC
+            EXCLUDE_FROM_ALL
+            ports/posix/usb_serial/ninlil_posix_usb_serial.c
+        )
+        target_include_directories(ninlil_posix_usb_serial_cloexec_fallback
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial>
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transport>
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        )
+        set_target_properties(ninlil_posix_usb_serial_cloexec_fallback PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            POSITION_INDEPENDENT_CODE ON
+            C_VISIBILITY_PRESET hidden
+            NINLIL_TEST_ONLY_ARTIFACT TRUE
+        )
+        ninlil_apply_posix_usb_serial_feature_macros(
+            ninlil_posix_usb_serial_cloexec_fallback)
+        ninlil_apply_strict_warnings(ninlil_posix_usb_serial_cloexec_fallback)
+        target_compile_definitions(
+            ninlil_posix_usb_serial_cloexec_fallback PRIVATE
+            NINLIL_POSIX_USB_SERIAL_FORCE_FCNTL_CLOEXEC_FALLBACK=1
+        )
+        target_link_libraries(ninlil_posix_usb_serial_cloexec_fallback
+            PUBLIC Threads::Threads)
+
+        add_executable(ninlil_posix_usb_serial_cloexec_fallback_test
+            tests/port/posix_usb_serial_cloexec_fallback_test.c
+        )
+        target_include_directories(
+            ninlil_posix_usb_serial_cloexec_fallback_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        )
+        target_link_libraries(ninlil_posix_usb_serial_cloexec_fallback_test
+            PRIVATE ninlil_posix_usb_serial_cloexec_fallback
+        )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_link_libraries(
+                ninlil_posix_usb_serial_cloexec_fallback_test PRIVATE util)
+        endif()
+        set_target_properties(
+            ninlil_posix_usb_serial_cloexec_fallback_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_usb_serial_feature_macros(
+            ninlil_posix_usb_serial_cloexec_fallback_test)
+        ninlil_apply_strict_warnings(
+            ninlil_posix_usb_serial_cloexec_fallback_test)
+        target_compile_definitions(
+            ninlil_posix_usb_serial_cloexec_fallback_test PRIVATE
+            NINLIL_POSIX_USB_SERIAL_FORCE_FCNTL_CLOEXEC_FALLBACK=1
+        )
+        add_test(
+            NAME posix_usb_serial_cloexec_fallback
+            COMMAND ninlil_posix_usb_serial_cloexec_fallback_test
+        )
+    endif()
 
     add_executable(ninlil_submission_preflight_test
         tests/model/submission_preflight_test.c
@@ -1796,6 +1959,10 @@ if(NINLIL_BUILD_TESTS)
     # acquire the synthetic TEST grant provider as a direct dependency.
     ninlil_assert_no_test_only_link(ninlil)
     ninlil_assert_no_test_only_link(ninlil_runtime_private)
+    if(NINLIL_POSIX_USB_SERIAL_ENABLED)
+        # Production port must not link host-test FORCE twin / other test-only.
+        ninlil_assert_no_test_only_link(ninlil_posix_usb_serial)
+    endif()
 
     add_executable(ninlil_typed_simulated_bearer_test
         tests/port/typed_simulated_bearer_test.c
