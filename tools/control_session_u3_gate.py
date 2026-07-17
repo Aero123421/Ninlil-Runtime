@@ -250,47 +250,57 @@ def check_source() -> None:
 
 
 def check_tests_off_seam_absent() -> None:
-    """Build tests-OFF private archive and prove seam symbol is absent."""
+    """Compile the U3 production translation unit and prove seam absence.
+
+    Keep this probe scoped to U3. Building the whole private archive here
+    would make the U3 gate depend on unrelated implementation slices and can
+    turn their compiler diagnostics into a false U3 failure.
+    """
     with tempfile.TemporaryDirectory(prefix="u3-seam-absent-") as td:
-        build = pathlib.Path(td) / "build"
-        cfg = subprocess.run(
+        obj = pathlib.Path(td) / "control_session_prod.o"
+        compiler = shutil.which("cc")
+        if compiler is None:
+            fail("C compiler 'cc' not found for production seam probe")
+        compile_result = subprocess.run(
             [
-                "cmake",
-                "-S",
-                str(REPO_ROOT),
-                "-B",
-                str(build),
-                "-DCMAKE_BUILD_TYPE=Release",
-                "-DNINLIL_BUILD_TESTS=OFF",
+                compiler,
+                "-std=c11",
+                "-Wall",
+                "-Wextra",
+                "-Wpedantic",
+                "-Werror",
+                "-I",
+                str(REPO_ROOT / "include"),
+                "-I",
+                str(REPO_ROOT / "src" / "model"),
+                "-I",
+                str(REPO_ROOT / "src" / "transport"),
+                "-c",
+                str(SESSION_C),
+                "-o",
+                str(obj),
             ],
             capture_output=True,
             text=True,
         )
-        if cfg.returncode != 0:
-            fail(f"tests-OFF configure failed:\n{cfg.stdout}\n{cfg.stderr}")
-        bld = subprocess.run(
-            ["cmake", "--build", str(build), "--target", "ninlil_runtime_private", "--parallel"],
-            capture_output=True,
-            text=True,
-        )
-        if bld.returncode != 0:
-            fail(f"tests-OFF private build failed:\n{bld.stdout}\n{bld.stderr}")
-        archives = list(build.rglob("libninlil_runtime_private.a"))
-        if not archives:
-            fail("tests-OFF private archive not found")
+        if compile_result.returncode != 0:
+            fail(
+                "production U3 compile failed:\n"
+                f"{compile_result.stdout}\n{compile_result.stderr}"
+            )
         nm = subprocess.run(
-            ["nm", "-g", str(archives[0])],
+            ["nm", "-g", str(obj)],
             capture_output=True,
             text=True,
         )
         if nm.returncode != 0:
             fail(f"nm failed: {nm.stderr}")
         if SEAM_SYMBOL in nm.stdout or SEAM_SYMBOL in nm.stderr:
-            fail(f"test seam symbol present in tests-OFF archive: {SEAM_SYMBOL}")
+            fail(f"test seam symbol present in production U3 object: {SEAM_SYMBOL}")
         if "ninlil_ctrl_session_pump" not in nm.stdout and "ninlil_ctrl_session_pump" not in nm.stderr:
             # Apple nm prefixes with _
             if "_ninlil_ctrl_session_pump" not in nm.stdout:
-                fail("ctrl_session_pump missing from tests-OFF archive")
+                fail("ctrl_session_pump missing from production U3 object")
 
 
 def check(root: pathlib.Path | None = None, *, run_archive_probe: bool = True) -> None:
