@@ -8,9 +8,10 @@
 #
 # Includes M3-basic (clock/entropy/execution), M3 owner/cell/loopback skeleton,
 # format-4 dual-slot durable-storage candidate, and U2 A2 USB CDC-ACM adapter
-# candidate (esp_tinyusb). Does not implement Wi-Fi, SX1262, radio MAC, Join,
-# or KGuard adapters. Does not claim storage FULL attestation, physical
-# power-cut HIL, U2 HIL, or field-ready.
+# candidate (esp_tinyusb), and R1 portable radio_hal (sole transmit-with-permit;
+# default-deny without R2 permit ops). Does not implement Wi-Fi, SX1262 SPI TX,
+# radio MAC, Join, or KGuard adapters. Does not claim storage FULL attestation,
+# physical power-cut HIL, U2 HIL, R1 production radio complete, or field-ready.
 
 get_filename_component(NINLIL_REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
@@ -41,6 +42,7 @@ idf_component_register(
         "${NINLIL_REPO_ROOT}/src/model"
         "${NINLIL_REPO_ROOT}/src/runtime"
         "${NINLIL_REPO_ROOT}/src/transport"
+        "${NINLIL_REPO_ROOT}/src/radio"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/src"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/storage/model"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/storage/private"

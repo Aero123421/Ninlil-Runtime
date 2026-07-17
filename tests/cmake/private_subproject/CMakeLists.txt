@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 14)
-    message(FATAL_ERROR "private source count is not 14: ${_private_sources}")
+if(NOT _private_source_count EQUAL 15)
+    message(FATAL_ERROR "private source count is not 15: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -94,6 +94,7 @@ set(_expected_private_source_names
     domain_store_d3s2.c
     domain_store_scanner.c
     ncl1_codec.c
+    radio_hal.c
     runtime_lifecycle_model.c
     runtime_store_bootstrap.c
     runtime_store_codec.c
@@ -174,6 +175,12 @@ check_c_source_compiles(
     NINLIL_PRIVATE_BYTE_STREAM_HEADER_LEAKED)
 if(NINLIL_PRIVATE_BYTE_STREAM_HEADER_LEAKED)
     message(FATAL_ERROR "private byte-stream header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"radio_hal.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_RADIO_HAL_HEADER_LEAKED)
+if(NINLIL_PRIVATE_RADIO_HAL_HEADER_LEAKED)
+    message(FATAL_ERROR "private radio_hal header is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)

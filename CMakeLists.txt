@@ -351,6 +351,7 @@ target_include_directories(ninlil_runtime_private PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
     ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
 )
 target_link_libraries(ninlil_runtime_private PRIVATE ninlil)
 set_target_properties(ninlil_runtime_private PROPERTIES
@@ -1858,6 +1859,44 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/control_session_u3_gate.py
             self-test
+    )
+
+    # R1: ninlil_radio_hal sole transmit-with-permit + host spy structural gate.
+    # Does not claim R2/R4/SX1262/RF/legal/HIL/production radio complete.
+    add_test(
+        NAME radio_hal_r1_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_hal_r1_gate.py
+            check
+    )
+    add_test(
+        NAME radio_hal_r1_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_hal_r1_gate.py
+            self-test
+    )
+
+    add_executable(ninlil_radio_hal_r1_test
+        tests/radio/radio_hal_r1_test.c
+        tests/support/radio_hal_spy.c
+    )
+    target_include_directories(ninlil_radio_hal_r1_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_radio_hal_r1_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_radio_hal_r1_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_radio_hal_r1_test)
+    add_test(
+        NAME radio_hal_r1
+        COMMAND ninlil_radio_hal_r1_test
     )
 
     add_executable(ninlil_control_session_u3_test
