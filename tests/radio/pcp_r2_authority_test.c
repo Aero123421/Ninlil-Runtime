@@ -1977,6 +1977,133 @@ static int test_clock_partial_ok_illformed(void)
 }
 
 
+/* live↔out_error must reject before any error write (const input preserved). */
+static int test_commit_live_live_out_error_alias(void)
+{
+    env_t e;
+    ninlil_pcp_live_profile_t live;
+    ninlil_pcp_live_profile_t live_before;
+    ninlil_pcp_error_t *alias_err;
+    uint64_t gen = 0u;
+
+    CHECK(env_setup(&e) == 0);
+    fill_live(&live, 100000u);
+    live_before = live;
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen) == NINLIL_PCP_OK);
+    alias_err = (ninlil_pcp_error_t *)(void *)&live;
+    CHECK(
+        ninlil_pcp_commit_live_binding(e.pcp, &live, gen + 1u, alias_err)
+        == NINLIL_PCP_ALIAS);
+    CHECK(memcmp(&live, &live_before, sizeof(live)) == 0);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen) == NINLIL_PCP_OK);
+
+    env_teardown(&e);
+    return 0;
+}
+
+/* Reopen authority from durable storage (not RAM fill_live). */
+static int reopen_recover_from_storage(env_t *e)
+{
+    ninlil_pcp_status_t st;
+
+    (void)ninlil_pcp_shutdown(e->pcp, &e->err);
+    e->obj = (ninlil_pcp_object_t)NINLIL_PCP_OBJECT_INIT;
+    e->pcp = NULL;
+    CHECK(ninlil_pcp_init_object(&e->obj, &e->pcp) == NINLIL_PCP_OK);
+    CHECK(
+        ninlil_pcp_bind_storage(
+            e->pcp, ninlil_test_storage_ops(e->storage), &e->err)
+        == NINLIL_PCP_OK);
+    CHECK(
+        ninlil_pcp_bind_clock(e->pcp, ninlil_test_clock_ops(e->clock), &e->err)
+        == NINLIL_PCP_OK);
+    CHECK(
+        ninlil_pcp_bind_entropy(
+            e->pcp, ninlil_test_entropy_ops(e->entropy), &e->err)
+        == NINLIL_PCP_OK);
+    st = ninlil_pcp_recover_storage(e->pcp, &e->err);
+    CHECK_ST(st, NINLIL_PCP_OK);
+    return 0;
+}
+
+/*
+ * SEMANTIC: COMMIT_LIVE_SAME_GEN_EXACT_ONLY
+ * Same generation + different L_core/ceiling must be rejected; identical
+ * same-gen is idempotent OK; different live requires strict gen increase.
+ * Durable state verified after reopen+recover_storage (not only RAM getter).
+ */
+static int test_commit_live_same_gen_different_live(void)
+{
+    env_t e;
+    ninlil_pcp_live_profile_t live;
+    ninlil_pcp_live_profile_t live2;
+    uint64_t gen0 = 0u;
+    uint64_t gen1 = 0u;
+    uint32_t ch0;
+    uint32_t ceil0;
+
+    CHECK(env_setup(&e) == 0);
+    fill_live(&live, 100000u);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen0) == NINLIL_PCP_OK);
+    CHECK(gen0 >= 1u);
+    ch0 = live.channel_id;
+    ceil0 = live.max_airtime_us;
+
+    /* Idempotent same-gen same-live → OK. */
+    CHECK_ST(
+        ninlil_pcp_commit_live_binding(e.pcp, &live, gen0, &e.err),
+        NINLIL_PCP_OK);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen1) == NINLIL_PCP_OK);
+    CHECK(gen1 == gen0);
+
+    /* Same gen, different channel (L_core) → STRUCT; durable gen unchanged. */
+    live2 = live;
+    live2.channel_id = ch0 + 1u;
+    CHECK_ST(
+        ninlil_pcp_commit_live_binding(e.pcp, &live2, gen0, &e.err),
+        NINLIL_PCP_STRUCT);
+    CHECK(e.err.reason == NINLIL_PCP_REASON_STRUCT_INVALID);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen1) == NINLIL_PCP_OK);
+    CHECK(gen1 == gen0);
+    CHECK(e.pcp->bound_live.channel_id == ch0);
+
+    /* Same gen, different ceiling only → STRUCT. */
+    live2 = live;
+    live2.max_airtime_us = live.max_airtime_us + 1u;
+    CHECK_ST(
+        ninlil_pcp_commit_live_binding(e.pcp, &live2, gen0, &e.err),
+        NINLIL_PCP_STRUCT);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen1) == NINLIL_PCP_OK);
+    CHECK(gen1 == gen0);
+    CHECK(e.pcp->bound_live.max_airtime_ceiling_us == live.max_airtime_us);
+
+    /* Reopen+recover after same-gen rejects: durable still old gen/channel. */
+    CHECK(reopen_recover_from_storage(&e) == 0);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen1) == NINLIL_PCP_OK);
+    CHECK(gen1 == gen0);
+    CHECK(e.pcp->bound_live.channel_id == ch0);
+    CHECK(e.pcp->bound_live.max_airtime_ceiling_us == ceil0);
+
+    /* Different live with strict gen increase → OK, durable after reopen. */
+    fill_live(&live, 100000u);
+    live2 = live;
+    live2.channel_id = ch0 + 1u;
+    CHECK_ST(
+        ninlil_pcp_commit_live_binding(e.pcp, &live2, gen0 + 1u, &e.err),
+        NINLIL_PCP_OK);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen1) == NINLIL_PCP_OK);
+    CHECK(gen1 == gen0 + 1u);
+    CHECK(e.pcp->bound_live.channel_id == ch0 + 1u);
+
+    CHECK(reopen_recover_from_storage(&e) == 0);
+    CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen1) == NINLIL_PCP_OK);
+    CHECK(gen1 == gen0 + 1u);
+    CHECK(e.pcp->bound_live.channel_id == ch0 + 1u);
+
+    env_teardown(&e);
+    return 0;
+}
+
 int main(void)
 {
     if (test_crc_golden() != 0) {
@@ -2056,6 +2183,12 @@ int main(void)
     }
     if (test_consume_rw_scan_corrupt_no_put() != 0) {
         return 26;
+    }
+    if (test_commit_live_same_gen_different_live() != 0) {
+        return 27;
+    }
+    if (test_commit_live_live_out_error_alias() != 0) {
+        return 28;
     }
     return 0;
 }

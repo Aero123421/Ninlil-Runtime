@@ -949,6 +949,9 @@ Durability: authority mutation は **FULL=3 only**。
 | 188 | 8 | reserved_zero |
 | 196 | 4 | crc32 of `[0..196)` |
 
+Post-publish full live rebind (`ninlil_pcp_commit_live_binding`, R5 host path):
+**SEMANTIC: COMMIT_LIVE_SAME_GEN_EXACT_ONLY** — same `assignment_generation` is allowed only as an exact identical L_core+ceiling no-op; any L_core / legal ceiling / live-binding change requires a strict generation increase (`generation > current`). Same-gen different-live → STRUCT (no durable write). Schema1 layout above is unchanged.
+
 ### 8.3 Issued 232B LE（exact offsets）
 
 | off | sz | field |

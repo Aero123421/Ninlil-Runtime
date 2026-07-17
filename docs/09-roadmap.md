@@ -250,6 +250,20 @@ closed SX1262 LoRa domain の決定的 ToA（µs）。正本: [27-r3-airtime-cal
 
 含まない: Japan production 数値、duty/LBT/legal、R5 profile、R2 authority body、SX1262 SPI TX、RF/HIL、**R3 complete**、public ABI。
 
+### R5: LAB_ONLY profile loader + full permit bind（host candidate）
+
+正本: [29-r5-lab-only-profile-loader.md](29-r5-lab-only-profile-loader.md)、[ADR-0009](adr/0009-r5-lab-only-profile-loader.md)、`src/radio/profile_loader.{h,c}`。
+
+含む:
+
+- LAB_ONLY HardwareProfile / RegulatoryProfile canonical loader（非 LAB fail-closed）
+- §9.3 全 bind 項目の発行時・consume 時 exact 検査（SiteAssignment / controller_term / assignment_digest / permit_bind_generation 含む）
+- R3 airtime → R2 per-permit max_airtime + profile ceiling
+- R1 permit_ops 互換（sole transmit-with-permit 迂回なし）
+- `profile_r5` CTest + `profile_r5_gate` mutation self-test
+
+含まない: FIELD/PRODUCTION、Japan production 数値、legal certification、RF/HIL、**R5 complete**、U5 wire apply、R4/R7/R9、public ABI。
+
 ## M4: Identity Lifecycle
 
 内容:

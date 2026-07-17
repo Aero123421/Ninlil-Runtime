@@ -73,13 +73,13 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 19)
-    message(FATAL_ERROR "private source count is not 19: ${_private_sources}")
+if(NOT _private_source_count EQUAL 20)
+    message(FATAL_ERROR "private source count is not 20: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
     if(_source MATCHES "tests/support")
-        message(FATAL_ERROR "TEST fixture leaked into private target: ${_source}")
+        message(FATAL_ERROR "test fixture leaked into private target: ${_source}")
     endif()
     get_filename_component(_source_name "${_source}" NAME)
     list(APPEND _private_source_names "${_source_name}")
@@ -97,6 +97,7 @@ set(_expected_private_source_names
     logical_session.c
     ncl1_codec.c
     pcp_authority.c
+    profile_loader.c
     radio_hal.c
     runtime_lifecycle_model.c
     runtime_store_bootstrap.c
@@ -191,6 +192,18 @@ check_c_source_compiles(
     NINLIL_PRIVATE_PCP_AUTHORITY_HEADER_LEAKED)
 if(NINLIL_PRIVATE_PCP_AUTHORITY_HEADER_LEAKED)
     message(FATAL_ERROR "private pcp_authority header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"profile_loader.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_PROFILE_LOADER_HEADER_LEAKED)
+if(NINLIL_PRIVATE_PROFILE_LOADER_HEADER_LEAKED)
+    message(FATAL_ERROR "private profile_loader header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"airtime_calculator.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_AIRTIME_HEADER_LEAKED)
+if(NINLIL_PRIVATE_AIRTIME_HEADER_LEAKED)
+    message(FATAL_ERROR "private airtime_calculator header is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)

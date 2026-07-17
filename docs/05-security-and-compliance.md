@@ -128,6 +128,8 @@ Production Runtimeは`DEPLOYMENT_APPROVED`だけを使用できます。
 
 **R3 airtime 算出正本:** [27章](27-r3-airtime-calculator.md) / [ADR-0007](adr/0007-r3-airtime-calculator.md) / `src/radio/airtime_calculator.{h,c}` / `airtime_r3_*`（closed SX1262 LoRa domain・整数 ceil-to-us; **R3 host candidate; Japan production 数値 / duty·LBT / HIL / R3 complete ではない**）。出力 `airtime_us` は R2 per-permit `max_airtime_us` 候補（ceiling 比較は R2）。
 
+**R5 LAB_ONLY profile / full bind 正本:** [29章](29-r5-lab-only-profile-loader.md) / [ADR-0009](adr/0009-r5-lab-only-profile-loader.md) / `src/radio/profile_loader.{h,c}` / `profile_r5_*`（LAB_ONLY fail-closed; §9.3 全項目 issue/consume; **R5 host candidate; FIELD / Japan / legal / HIL / R5 complete ではない**）。
+
 Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-boundary.md)）。発行・consume の両方で検査する。
 
 - hardware profile ID / revision

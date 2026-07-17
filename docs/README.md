@@ -64,6 +64,7 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 26 | [U6 Transport Custody](26-u6-transport-custody.md) | custody OFFER/ACCEPT/REJECT/BUSY、dual FULL、COMMIT_UNKNOWN 両 truth、Application Receipt 分離（docs freeze; ESP FULL success は HIL 後） |
 | 27 | [R3 LoRa airtime calculator](27-r3-airtime-calculator.md) | closed SX1262 LoRa ToA host candidate（[ADR-0007](adr/0007-r3-airtime-calculator.md); integer ceil-us; **R3 complete / Japan / HIL 非主張**） |
 | 28 | [R4 SX1262 control-plane backend](28-r4-sx1262-control-plane-backend.md) | D1 reset/init/SPI only + TX deny（[ADR-0008](adr/0008-r4-sx1262-control-plane-backend.md); host candidate; **RF TX/HIL/legal 未; R4 complete ではない**; docs/25–26 / ADR-0005–0006 は U5/U6 予約、docs/27 / ADR-0007 は R3 予約） |
+| 29 | [R5 LAB_ONLY profile loader + full permit bind](29-r5-lab-only-profile-loader.md) | LAB_ONLY Hardware/Regulatory loader + §9.3 full bind matrix（[ADR-0009](adr/0009-r5-lab-only-profile-loader.md); **R5 complete / FIELD / Japan / HIL 非主張**） |
 
 ## 実装開始条件
 
