@@ -1,15 +1,17 @@
-## ESP-IDF Component Manager metadata (M3-prep packaging only).
+## ESP-IDF Component Manager metadata (M3-prep packaging + U2 A2 CDC).
 ##
 ## This does not publish the component to the Espressif registry.
 ## ESP-IDF version is pinned project-wide in ports/esp-idf/ESP_IDF_VERSION
 ## and documented in docs/18-m3-prep-esp-idf-component.md.
+## esp_tinyusb exact version/lock is U2 (docs/23 §3.1 / §10.1).
 
 version: "0.1.0"
 description: >-
   Ninlil Runtime portable Core / private library packaging for ESP-IDF
-  target builds, M3-basic clock/entropy/execution adapters, and the format 4
-  dual-slot durable-storage candidate. Not a complete ESP-IDF port; storage
-  FULL durability remains ESP_UNPROVEN until physical power-cut HIL.
+  target builds, M3-basic clock/entropy/execution adapters, format 4
+  dual-slot durable-storage candidate, and U2 ESP CDC-ACM adapter candidate.
+  Not a complete ESP-IDF port; storage FULL durability remains ESP_UNPROVEN
+  until physical power-cut HIL; U2 Required HIL pending.
 url: https://github.com/Aero123421/Ninlil-Runtime
 license: "Apache-2.0"
 targets:
@@ -17,3 +19,7 @@ targets:
 dependencies:
   idf:
     version: "==5.5.3"
+  # U2: exact pin ==2.1.1 (comment decoy must not satisfy structural gate).
+  # Apache-2.0; IDF >=5.0. Do not float with ^/~.
+  espressif/esp_tinyusb:
+    version: "==2.1.1"

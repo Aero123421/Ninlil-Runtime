@@ -21,6 +21,9 @@ set(NINLIL_ESP_IDF_PORT_PURE_RELATIVE_SOURCES
     ports/esp-idf/src/abi_header_stage_logic.c
     ports/esp-idf/src/owner_config_stage_logic.c
     ports/esp-idf/src/tx_gate_lease_logic.c
+    ports/esp-idf/src/usb_cdc_ring_logic.c
+    ports/esp-idf/src/usb_cdc_state_logic.c
+    ports/esp-idf/src/usb_cdc_orch_logic.c
 )
 
 set(NINLIL_ESP_IDF_PORT_BACKEND_RELATIVE_SOURCES
@@ -30,6 +33,14 @@ set(NINLIL_ESP_IDF_PORT_BACKEND_RELATIVE_SOURCES
     ports/esp-idf/src/esp_idf_owner_task.c
     ports/esp-idf/src/esp_idf_cell_agent.c
     ports/esp-idf/src/esp_idf_loopback_tx_permit.c
+    ports/esp-idf/src/esp_idf_usb_cdc.c
+)
+
+# U2 pure CDC sources that host CTest can compile without ESP-IDF/TinyUSB.
+set(NINLIL_ESP_IDF_USB_CDC_PURE_RELATIVE_SOURCES
+    ports/esp-idf/src/usb_cdc_ring_logic.c
+    ports/esp-idf/src/usb_cdc_state_logic.c
+    ports/esp-idf/src/usb_cdc_orch_logic.c
 )
 
 set(NINLIL_ESP_IDF_PORT_ALL_RELATIVE_SOURCES

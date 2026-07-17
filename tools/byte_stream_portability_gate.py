@@ -62,6 +62,8 @@ REQUIRED_TOKENS = (
     "WOULD_BLOCK",
     "RX_OVERFLOW",
     "ERR_LINK_DOWN",
+    "endpoint_token",
+    "LINK_LISTENING",
 )
 
 
@@ -265,6 +267,8 @@ def self_test() -> None:
         ("drop_RX_OVERFLOW", _mut_drop_token("RX_OVERFLOW")),
         ("drop_link_generation", _mut_drop_ops_member("link_generation")),
         ("drop_ERR_LINK_DOWN", _mut_drop_token("ERR_LINK_DOWN")),
+        ("drop_endpoint_token", _mut_drop_token("endpoint_token")),
+        ("drop_LINK_LISTENING", _mut_drop_token("LINK_LISTENING")),
         ("include_termios", _mut_add_include("termios.h")),
         ("include_poll", _mut_add_include("poll.h")),
         ("include_pthread", _mut_add_include("pthread.h")),

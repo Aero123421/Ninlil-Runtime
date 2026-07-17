@@ -28,3 +28,10 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+
+# U2: dedicated control CDC-ACM on USB OTG Device (esp_tinyusb).
+# Console/logging stays on UART — do NOT enable CDC console redirection.
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=1
+# Explicit non-claim: control CDC must never receive printf/ESP_LOG.
+# Leave any CDC console / VFS stdio redirect options OFF (default).

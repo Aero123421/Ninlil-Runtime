@@ -5,7 +5,9 @@
  * A1: POSIX controller USB/serial byte-stream adapter (production-private).
  *
  * Host Linux/macOS only. Implements C1 (src/transport/byte_stream.h) with
- * raw termios + poll, fixed 4 KiB RX/TX rings, explicit absolute path open.
+ * raw termios + poll, fixed 4 KiB RX/TX rings. C1 open uses an adapter-neutral
+ * endpoint_token; A1 requires that token to be an explicit absolute path
+ * (no fake device path invention on other adapters).
  *
  * Placement: ports/posix (not public include/ninlil; not installed package).
  * Normative UX: docs/23 §3.2, ownership/rings §4, backpressure §6, U1 §10.1.
@@ -92,9 +94,14 @@ ninlil_byte_stream_status_t ninlil_posix_usb_serial_init_object(
  * Direct typed entry points (same contract as ops vtable). Prefer the C1
  * stream view for portable code.
  */
+/*
+ * A1 open: endpoint_token MUST be an absolute device path (docs/23 §3.2).
+ * Successful open is immediately LINK_UP and advances link_generation
+ * (synchronous physical open). Never parks LISTENING.
+ */
 ninlil_byte_stream_status_t ninlil_posix_usb_serial_open(
     ninlil_byte_stream_t *stream,
-    const char *absolute_path,
+    const char *endpoint_token,
     ninlil_byte_stream_error_t *out_error);
 
 /*

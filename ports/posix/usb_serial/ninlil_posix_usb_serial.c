@@ -1172,7 +1172,7 @@ void ninlil_posix_usb_serial_test_force_generation(
 
 ninlil_byte_stream_status_t ninlil_posix_usb_serial_open(
     ninlil_byte_stream_t *stream,
-    const char *absolute_path,
+    const char *endpoint_token,
     ninlil_byte_stream_error_t *out_error)
 {
     ninlil_posix_usb_serial_t *self = self_from(stream);
@@ -1197,7 +1197,7 @@ ninlil_byte_stream_status_t ninlil_posix_usb_serial_open(
      * only). Open is allowed only from LINK_CLOSED with fd already fenced
      * (initial or after the owner's explicit close). LINK_DOWN does not
      * permit reopen even for the same owner — must close first so residual
-     * RX is not silently dropped by a new open.
+     * RX is not silently dropped by a new open. A1 never uses LISTENING.
      */
     if (self->owner_set
         && self->link != NINLIL_BYTE_STREAM_LINK_CLOSED) {
@@ -1235,8 +1235,9 @@ ninlil_byte_stream_status_t ninlil_posix_usb_serial_open(
     /* Clear stale last_error from a previous session/attempt. */
     error_clear(&self->last_error);
 
-    if (!path_is_absolute(absolute_path)) {
-        copy_path(self, absolute_path != NULL ? absolute_path : "");
+    /* A1: C1 endpoint_token must be an absolute device path. */
+    if (!path_is_absolute(endpoint_token)) {
+        copy_path(self, endpoint_token != NULL ? endpoint_token : "");
         error_set(
             self,
             NINLIL_BYTE_STREAM_INVALID_ARGUMENT,
@@ -1248,9 +1249,9 @@ ninlil_byte_stream_status_t ninlil_posix_usb_serial_open(
         return NINLIL_BYTE_STREAM_INVALID_ARGUMENT;
     }
 
-    copy_path(self, absolute_path);
+    copy_path(self, endpoint_token);
 
-    if (path_is_macos_tty_dev(absolute_path)) {
+    if (path_is_macos_tty_dev(endpoint_token)) {
         error_set(
             self,
             NINLIL_BYTE_STREAM_OK,
@@ -1269,7 +1270,7 @@ ninlil_byte_stream_status_t ninlil_posix_usb_serial_open(
     /* Linux/macOS modern path: atomic close-on-exec (docs/23 §3.2.2). */
     flags = O_RDWR | O_NOCTTY | O_NONBLOCK | O_CLOEXEC;
 #endif
-    fd = sys_open(self, absolute_path, flags);
+    fd = sys_open(self, endpoint_token, flags);
     if (fd < 0) {
         map_open_errno(self, errno, out_error);
         return self->last_error.status;
@@ -1347,6 +1348,8 @@ ninlil_byte_stream_status_t ninlil_posix_usb_serial_open(
     if (self->link_generation == 0u) {
         self->link_generation = 1u;
     }
+    self->stats.link_up_count = ninlil_byte_stream_sat_add_u64(
+        self->stats.link_up_count, 1u);
     self->stats.open_count =
         ninlil_byte_stream_sat_add_u64(self->stats.open_count, 1u);
 
