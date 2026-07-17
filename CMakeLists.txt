@@ -1041,6 +1041,30 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_runtime_store_stage5_seam_test
     )
 
+    add_executable(ninlil_stage5_empty_metadata_test
+        tests/runtime/stage5_empty_metadata_test.c
+    )
+    target_include_directories(ninlil_stage5_empty_metadata_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_stage5_empty_metadata_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_storage_fixture
+        ninlil_test_platform_fixtures
+        ninlil
+    )
+    set_target_properties(ninlil_stage5_empty_metadata_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_stage5_empty_metadata_test)
+    add_test(
+        NAME stage5_empty_metadata
+        COMMAND ninlil_stage5_empty_metadata_test
+    )
+
     add_library(ninlil_test_scripted_storage_spy STATIC
         tests/support/scripted_storage_spy.c
     )
