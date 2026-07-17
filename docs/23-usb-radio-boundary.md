@@ -1,6 +1,6 @@
 # 23. USB control transport and physical radio boundary freeze
 
-状態: **Normative for U0 / physical radio boundary freeze** + **U1 implementation candidate / host tests** + **U2 A2 ESP CDC implementation candidate / host pure tests + target compile/link** + **U3 C3 control-session + C4 pump implementation candidate / host fake-stream tests**（**U1 complete ではない** — **Required HIL Linux+macOS pending**; **U2 complete ではない** — **Required HIL ESP flash + host CDC roundtrip pending**; **U3 は host framing/session candidate のみ** — **HELLO/NCL1 未実装 / USB series 未完成**; **SX1262 production code 未実装**; M3 incomplete / M5 incomplete）<br>
+状態: **Normative for U0 / physical radio boundary freeze** + **U1 implementation candidate / host tests** + **U2 A2 ESP CDC implementation candidate / host pure tests + target compile/link** + **U3 C3 control-session + C4 pump implementation candidate / host fake-stream tests** + **U4 NCL1 pure codec candidate / host vectors**（**U1 complete ではない** — **Required HIL Linux+macOS pending**; **U2 complete ではない** — **Required HIL ESP flash + host CDC roundtrip pending**; **U3 は host framing/session candidate のみ**; **U4 は pure codec/wire slice のみで HELLO session state machine 未実装**; **USB series 未完成**; **SX1262 production code 未実装**; M3 incomplete / M5 incomplete）<br>
 対象: Controller↔Cell Agent USB 境界、最小 logical control envelope、physical Compliance Permit 境界、実装 slice U1–U7 / R1–R10<br>
 依存決定: [ADR-0003](adr/0003-radio-usb-dependency-direction.md)（Accepted）<br>
 関連: [01](01-architecture.md), [03](03-identity-and-join.md), [05](05-security-and-compliance.md), [06](06-versioning-and-compatibility.md), [07](07-testing-and-quality.md), [09](09-roadmap.md), [15](15-glossary.md), [19](19-m3-control-byte-stream-framing.md), [21](21-m3-esp-idf-durable-storage.md), [22](22-m3-owner-cell-agent-skeleton.md)
@@ -20,7 +20,7 @@
 | 完全な assignment / Transport Custody / security session protocol | **しない** | 後続 freeze |
 | Network Attachment / Join、relay、multi-parent topology | **しない** | 後続 freeze（§14） |
 | secure compact radio wire の production bytes / version | **しない**（version **unallocated**） | 後続 Normative（R6） |
-| USB / SX1262 production 実装 | U0 時点は **しない**（docs freeze） | **U1 host candidate** + **U2 A2 ESP CDC candidate** + **U3 C3/C4 host candidate**（いずれも complete ではない; U1/U2 Required HIL pending; U3 は HELLO/NCL1 非実装）。**SX1262 未実装** |
+| USB / SX1262 production 実装 | U0 時点は **しない**（docs freeze） | **U1 host candidate** + **U2 A2 ESP CDC candidate** + **U3 C3/C4 host candidate** + **U4 NCL1 pure codec candidate**（いずれも complete ではない; U1/U2 Required HIL pending; U4 HELLO session state machine 未実装）。**SX1262 未実装** |
 
 次を **主張しない**（forbidden claims）:
 

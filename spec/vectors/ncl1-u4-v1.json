@@ -1,0 +1,404 @@
+{
+  "format": "ninlil-ncl1-u4-v1",
+  "vector_count": 47,
+  "required_id_count": 46,
+  "required_ids": [
+    "U4-G-ACKLOSS-LAST0-HALFOPEN",
+    "U4-G-ACKLOSS-REVERSE-SEQ1-BASELINE",
+    "U4-G-CELL-CONTINUITY-RESET-SESSION",
+    "U4-G-CELL-RESTART-ACK0-RETRY",
+    "U4-G-CELL-RXCOLD-HIGH-HELLO",
+    "U4-G-CONTINUITY-RESET-ACCEPTED-FIFO-BEFORE-ACK",
+    "U4-G-CONTINUITY-RESET-NOTICE-CANCEL-ON-HELLO",
+    "U4-G-CTRL-RXCOLD-HELLO-HIGH-ACK",
+    "U4-G-DUP-HELLO-RECEIVED",
+    "U4-G-HALFOPEN-REHELLO",
+    "U4-G-HELLO-OK",
+    "U4-G-HELLO-RETRY-NEXT-SEQ",
+    "U4-G-PING-PONG",
+    "U4-G-RESET-SESSION",
+    "U4-G-RESTART-ACK-HIGH-BASELINE",
+    "U4-G-RESTART-SEQ0-LAST-HIGH",
+    "U4-G-RESTART-SEQ0-LAST0",
+    "U4-N-ACK-BASELINE-NONMATCH",
+    "U4-N-BAD-MAGIC",
+    "U4-N-BASELINE-NONHELLO",
+    "U4-N-BODY-LEN",
+    "U4-N-CONTINUITY-RESET-STALE-NEW-SESSION",
+    "U4-N-CONTINUITY-RESET-STALE-SEQ-ADVANCE",
+    "U4-N-COOKIE-RNG-FAIL",
+    "U4-N-COOKIE-ZERO",
+    "U4-N-CTRL-ERROR-LOOP",
+    "U4-N-EMPTY-PING",
+    "U4-N-FLAGS",
+    "U4-N-HELLO-ACTIVE-COOKIE-REJECT",
+    "U4-N-HELLO-BAD-BOOTSTRAP",
+    "U4-N-HELLO-INVALID-ROLE",
+    "U4-N-HELLO-OK-COOKIE-ZERO",
+    "U4-N-HELLO-RETRY-SEQ0-COLD",
+    "U4-N-REQ-ZERO",
+    "U4-N-SEQ-DISCARD-NO-NCL1-PEEK",
+    "U4-N-SEQ-DUP",
+    "U4-N-SEQ-GAP",
+    "U4-N-SEQ-U32-MAX",
+    "U4-N-SESS-ZERO",
+    "U4-N-STALE-COOKIE",
+    "U4-N-STALE-GEN",
+    "U4-N-STREAM-ID",
+    "U4-N-TYPE-BIND-HELLO-IN-PING",
+    "U4-N-TYPE-BIND-PING-IN-DATA",
+    "U4-N-UNKNOWN-TYPE",
+    "U4-N-VER"
+  ],
+  "notes": "NCL1 U4 codec+wire vectors. vector_count=actual unique rows (47). required_ids=\u00a78.9\u222a\u00a75.6.2 unique (46). Independent generator. Pure decode does not reject reserved (step7). HELLO U4 exact min=max=1 flags_supported=0. behavior_catalog pins are not LC-complete. Does not claim U4 session / assignment / security / HIL / series complete.",
+  "result_codes": {
+    "OK": 0,
+    "INVALID_ARGUMENT": 1,
+    "REJECT_SHORT": 2,
+    "REJECT_MAGIC": 3,
+    "REJECT_VERSION": 4,
+    "REJECT_FLAGS": 5,
+    "REJECT_BODY_LEN": 6,
+    "REJECT_UNKNOWN": 7,
+    "REJECT_TYPE_BINDING": 8,
+    "REJECT_BODY_LAYOUT": 9,
+    "REJECT_RESERVED": 10
+  },
+  "vectors": [
+    {
+      "id": "U4-G-ACKLOSS-LAST0-HALFOPEN",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-ACKLOSS-REVERSE-SEQ1-BASELINE",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-CELL-CONTINUITY-RESET-SESSION",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-CELL-RESTART-ACK0-RETRY",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-CELL-RXCOLD-HIGH-HELLO",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-CONTINUITY-RESET-ACCEPTED-FIFO-BEFORE-ACK",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-CONTINUITY-RESET-NOTICE-CANCEL-ON-HELLO",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-CTRL-RXCOLD-HELLO-HIGH-ACK",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-DUP-HELLO-RECEIVED",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-HALFOPEN-REHELLO",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-HELLO-OK",
+      "kind": "golden_bytes",
+      "codec_case": true,
+      "hello_ncl1_hex": "4e434c31010100000000100100000000000000000000000000080001000100000000",
+      "hello_ncg1_hex": "4e434731010300000000000000000000002298a1c7cc4e434c31010100000000100100000000000000000000000000080001000100000000457fd7b8",
+      "ack_ncl1_hex": "4e434c31010200000000100100000007c0ffee012345678900080001000000000000",
+      "ack_ncg1_hex": "4e434731010300000000000000000000002298a1c7cc4e434c31010200000000100100000007c0ffee012345678900080001000000000000175a5be2",
+      "expected_decode": 0,
+      "bootstrap_valid": true,
+      "structurally_valid_ack": true
+    },
+    {
+      "id": "U4-G-HELLO-RETRY-NEXT-SEQ",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-PING-PONG",
+      "kind": "golden_bytes",
+      "codec_case": true,
+      "ping_ncl1_hex": "4e434c31011000000000200200000007c0ffee01234567890008a1b2c3d4e5f60718",
+      "ping_ncg1_hex": "4e43473101010000000000000000000100225c4425784e434c31011000000000200200000007c0ffee01234567890008a1b2c3d4e5f607188d95ae4d",
+      "pong_ncl1_hex": "4e434c31011100000000200200000007c0ffee01234567890008a1b2c3d4e5f60718",
+      "pong_ncg1_hex": "4e43473101020000000000000000000100220d326dd74e434c31011100000000200200000007c0ffee01234567890008a1b2c3d4e5f607188c84ffce",
+      "expected_decode": 0
+    },
+    {
+      "id": "U4-G-RESET-SESSION",
+      "kind": "golden_bytes",
+      "codec_case": true,
+      "reset_ncl1_hex": "4e434c31011200000000300300000007c0ffee0123456789000401000000",
+      "reset_ncg1_hex": "4e434731010400000000000000000002001e3850ba9b4e434c31011200000000300300000007c0ffee01234567890004010000005d79d75f",
+      "stale_ping_ncl1_hex": "4e434c31011000000000200200000007c0ffee01234567890008a1b2c3d4e5f60718",
+      "expected_decode": 0
+    },
+    {
+      "id": "U4-G-RESTART-ACK-HIGH-BASELINE",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-RESTART-SEQ0-LAST-HIGH",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-G-RESTART-SEQ0-LAST0",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-ACK-BASELINE-NONMATCH",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-BAD-MAGIC",
+      "kind": "negative_decode",
+      "codec_case": true,
+      "payload_hex": "4f434c31010100000000100100000000000000000000000000080001000100000000",
+      "ncg1_type": 3,
+      "expected_decode": 3
+    },
+    {
+      "id": "U4-N-BASELINE-NONHELLO",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-BODY-LEN",
+      "kind": "negative_decode",
+      "codec_case": true,
+      "payload_hex": "4e434c310101000000000001000000000000000000000000000800000000",
+      "ncg1_type": 3,
+      "expected_decode": 6
+    },
+    {
+      "id": "U4-N-CONTINUITY-RESET-STALE-NEW-SESSION",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-CONTINUITY-RESET-STALE-SEQ-ADVANCE",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-COOKIE-RNG-FAIL",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-COOKIE-ZERO",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "4e434c31011000000000005500000007000000000000000000080000000000000001",
+      "ncg1_type": 1,
+      "expected_decode": 0
+    },
+    {
+      "id": "U4-N-CTRL-ERROR-LOOP",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-EMPTY-PING",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "",
+      "ncg1_type": 1,
+      "expected_decode": 2,
+      "ncg1_hex": "4e43473101010000000000000000000000003883492ff96eb54d"
+    },
+    {
+      "id": "U4-N-FLAGS",
+      "kind": "negative_decode",
+      "codec_case": true,
+      "payload_hex": "4e434c31010100010000000100000000000000000000000000080001000100000000",
+      "ncg1_type": 3,
+      "expected_decode": 5
+    },
+    {
+      "id": "U4-N-HELLO-ACTIVE-COOKIE-REJECT",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-HELLO-BAD-BOOTSTRAP",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "4e434c31010100000000000100000003000000000000000000080001000100000000",
+      "ncg1_type": 3,
+      "expected_decode": 0,
+      "bootstrap_valid": false
+    },
+    {
+      "id": "U4-N-HELLO-INVALID-ROLE",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-HELLO-OK-COOKIE-ZERO",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "4e434c31010200000000100100000007000000000000000000080001000000000000",
+      "ncg1_type": 3,
+      "expected_decode": 0,
+      "structurally_valid_ack": false
+    },
+    {
+      "id": "U4-N-HELLO-RETRY-SEQ0-COLD",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-REQ-ZERO",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "4e434c31010100000000000000000000000000000000000000080001000100000000",
+      "ncg1_type": 3,
+      "expected_decode": 0,
+      "bootstrap_valid": false
+    },
+    {
+      "id": "U4-N-SEQ-DISCARD-NO-NCL1-PEEK",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-SEQ-DUP",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-SEQ-GAP",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-SEQ-U32-MAX",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-SESS-ZERO",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "4e434c31011000000000005500000000c0ffee012345678900080000000000000001",
+      "ncg1_type": 1,
+      "expected_decode": 0,
+      "notes": "session gen=0 illegal for active PING (session layer)"
+    },
+    {
+      "id": "U4-N-STALE-COOKIE",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "4e434c31011000000000005500000007deadbeefcafebabe00080000000000000001",
+      "ncg1_type": 1,
+      "expected_decode": 0
+    },
+    {
+      "id": "U4-N-STALE-GEN",
+      "kind": "negative_semantic",
+      "codec_case": true,
+      "payload_hex": "4e434c31011000000000005500000006c0ffee012345678900080000000000000001",
+      "ncg1_type": 1,
+      "expected_decode": 0
+    },
+    {
+      "id": "U4-N-STREAM-ID",
+      "kind": "behavior_catalog",
+      "codec_case": false,
+      "notes": "required ID pin; LC/session bridge not in this slice"
+    },
+    {
+      "id": "U4-N-TYPE-BIND-HELLO-IN-PING",
+      "kind": "negative_decode",
+      "codec_case": true,
+      "payload_hex": "4e434c31010100000000000100000000000000000000000000080001000100000000",
+      "ncg1_type": 1,
+      "expected_decode": 8
+    },
+    {
+      "id": "U4-N-TYPE-BIND-PING-IN-DATA",
+      "kind": "negative_decode",
+      "codec_case": true,
+      "payload_hex": "4e434c31011000000000000100000007c0ffee012345678900080000000000000001",
+      "ncg1_type": 3,
+      "expected_decode": 8
+    },
+    {
+      "id": "U4-N-UNKNOWN-TYPE",
+      "kind": "negative_decode",
+      "codec_case": true,
+      "payload_hex": "4e434c31017f00000000000100000000000000000000000000080001000100000000",
+      "ncg1_type": 3,
+      "expected_decode": 7
+    },
+    {
+      "id": "U4-N-VER",
+      "kind": "negative_decode",
+      "codec_case": true,
+      "payload_hex": "4e434c31020100000000100100000000000000000000000000080001000100000000",
+      "ncg1_type": 3,
+      "expected_decode": 4
+    },
+    {
+      "id": "U4-N-RESERVED-ORDER",
+      "kind": "order_check",
+      "codec_case": true,
+      "payload_hex": "4e434c31010100000000000100000000000000000000000000080001000100000001",
+      "ncg1_type": 3,
+      "expected_decode": 0,
+      "bootstrap_valid": false,
+      "reserved_ok": false,
+      "notes": "pure decode OK; step7 reserved fails; not in required 46"
+    }
+  ]
+}
