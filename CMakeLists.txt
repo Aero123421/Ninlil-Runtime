@@ -1459,6 +1459,10 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE} -c
             "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s2_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_D3S1_VECTOR_COUNT ((size_t)94u)' in ta, 'd3s1 vector count pin missing'; assert b'NINLIL_D3S2_VECTOR_COUNT ((size_t)49u)' in ta, 'd3s2 vector count pin missing'; print('crossrow fixture freshness+determinism ok', len(ta), 'bytes')"
     )
+    # Single generator rule for the shared bridge fixture header.
+    # Do NOT list this OUTPUT as a source on multiple executables: Ninja will
+    # schedule the same custom command twice and compile can read a partial
+    # header (build reliability; independent of U2 USB CDC).
     add_custom_command(
         OUTPUT ${_ninlil_d3s1_fixture}
         COMMAND ${Python3_EXECUTABLE}
@@ -1479,10 +1483,23 @@ if(NINLIL_BUILD_TESTS)
         COMMENT "Generate domain-scan-crossrow production bridge fixture (d3s1+d3s2)"
         VERBATIM
     )
+    add_custom_target(ninlil_domain_scan_crossrow_vector_fixture
+        DEPENDS ${_ninlil_d3s1_fixture}
+    )
     # D3-S1 production bridge: still executes the frozen 94-vector prefix only.
+    # Generated header is NOT a source (shared OUTPUT race); include dir +
+    # OBJECT_DEPENDS + add_dependencies guarantee generation-before-compile.
+    set(_ninlil_crossrow_bridge_c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c)
+    set(_ninlil_crossrow_d3s2_bridge_c
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/domain_store_scanner_crossrow_d3s2_oracle_bridge_test.c)
+    set_source_files_properties(
+        ${_ninlil_crossrow_bridge_c}
+        ${_ninlil_crossrow_d3s2_bridge_c}
+        PROPERTIES OBJECT_DEPENDS ${_ninlil_d3s1_fixture}
+    )
     add_executable(ninlil_domain_store_scanner_crossrow_oracle_bridge_test
-        tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c
-        ${_ninlil_d3s1_fixture}
+        ${_ninlil_crossrow_bridge_c}
     )
     target_include_directories(
         ninlil_domain_store_scanner_crossrow_oracle_bridge_test PRIVATE
@@ -1504,6 +1521,10 @@ if(NINLIL_BUILD_TESTS)
     )
     ninlil_apply_strict_warnings(
         ninlil_domain_store_scanner_crossrow_oracle_bridge_test)
+    add_dependencies(
+        ninlil_domain_store_scanner_crossrow_oracle_bridge_test
+        ninlil_domain_scan_crossrow_vector_fixture
+    )
     add_test(
         NAME domain_store_scanner_crossrow_oracle_bridge
         COMMAND ninlil_domain_store_scanner_crossrow_oracle_bridge_test
@@ -1511,8 +1532,7 @@ if(NINLIL_BUILD_TESTS)
     # D3-S2 first product-smoke bridge: 6 empty-carrier/empty-secondary sessions.
     # Not a full D3-S2 oracle complete claim.
     add_executable(ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test
-        tests/runtime/domain_store_scanner_crossrow_d3s2_oracle_bridge_test.c
-        ${_ninlil_d3s1_fixture}
+        ${_ninlil_crossrow_d3s2_bridge_c}
     )
     target_include_directories(
         ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test PRIVATE
@@ -1534,6 +1554,10 @@ if(NINLIL_BUILD_TESTS)
     )
     ninlil_apply_strict_warnings(
         ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test)
+    add_dependencies(
+        ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test
+        ninlil_domain_scan_crossrow_vector_fixture
+    )
     add_test(
         NAME domain_store_scanner_crossrow_d3s2_oracle_bridge
         COMMAND ninlil_domain_store_scanner_crossrow_d3s2_oracle_bridge_test
@@ -1734,6 +1758,37 @@ if(NINLIL_BUILD_TESTS)
         NAME byte_stream_portability_gate_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/byte_stream_portability_gate.py
+            self-test
+    )
+
+    # Build reliability: generated fixture headers must not be multi-exec
+    # SOURCES (Ninja shared OUTPUT race / partial-header compile). Independent
+    # of U2 USB CDC. Crossrow fixture uses custom_target + add_dependencies.
+    add_test(
+        NAME cmake_generated_fixture_source_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake_generated_fixture_source_gate.py
+            check
+    )
+    add_test(
+        NAME cmake_generated_fixture_source_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake_generated_fixture_source_gate.py
+            self-test
+    )
+
+    # U2: exact esp_tinyusb pin+locks, A2 hygiene, no control-CDC console.
+    # Full check requires committed dependencies.lock (generated via Docker).
+    add_test(
+        NAME esp_usb_cdc_u2_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_usb_cdc_u2_gate.py
+            check
+    )
+    add_test(
+        NAME esp_usb_cdc_u2_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_usb_cdc_u2_gate.py
             self-test
     )
 
@@ -2345,7 +2400,7 @@ if(NINLIL_BUILD_TESTS)
     )
 
     # ESP-IDF port pure logic + port-owned header contracts (host only;
-    # no ESP-IDF / FreeRTOS backend link). Spec: docs/20 + docs/22.
+    # no ESP-IDF / FreeRTOS backend link). Spec: docs/20 + docs/22 + U2 pure.
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_esp_idf_port_sources.cmake)
     add_library(ninlil_esp_idf_port_pure STATIC
         ${NINLIL_ESP_IDF_PORT_PURE_RELATIVE_SOURCES}
@@ -2356,6 +2411,7 @@ if(NINLIL_BUILD_TESTS)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
             ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
     )
     # control_boundary_logic reuses private NCG1 codec (docs/19 boundary).
     target_link_libraries(ninlil_esp_idf_port_pure PRIVATE
@@ -2391,6 +2447,28 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME esp_idf_port_logic
         COMMAND ninlil_esp_idf_port_logic_test
+    )
+
+    # U2 A2 pure state/ring/ownership tests (host only; not physical HIL).
+    add_executable(ninlil_esp_usb_cdc_logic_test
+        tests/port/esp_usb_cdc_logic_test.c
+    )
+    target_include_directories(ninlil_esp_usb_cdc_logic_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+    )
+    target_link_libraries(ninlil_esp_usb_cdc_logic_test PRIVATE
+        ninlil_esp_idf_port_pure
+    )
+    set_target_properties(ninlil_esp_usb_cdc_logic_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_esp_usb_cdc_logic_test)
+    add_test(
+        NAME esp_usb_cdc_u2_logic
+        COMMAND ninlil_esp_usb_cdc_logic_test
     )
 
     add_executable(ninlil_owner_cell_agent_logic_test

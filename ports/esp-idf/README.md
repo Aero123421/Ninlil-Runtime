@@ -1,13 +1,15 @@
-# Ninlil ESP-IDF component (M3-prep + M3-basic + owner/cell + storage candidate)
+# Ninlil ESP-IDF component (M3-prep + M3-basic + owner/cell + storage + U2 CDC candidate)
 
-この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** し、加えて **M3-basic**（clock / entropy / execution）、**experimental M3 owner-task / Cell Agent / loopback TxPermit**（docs/22）、および **format 4 dual-slot durable-storage candidate**（docs/21）を port-owned API として提供します。
+この directory は、実装済みの **portable Core / private Runtime library** を ESP-IDF component として ESP32-S3 向けに **compile** し、加えて **M3-basic**（clock / entropy / execution）、**experimental M3 owner-task / Cell Agent / loopback TxPermit**（docs/22）、**format 4 dual-slot durable-storage candidate**（docs/21）、および **U2 A2 USB CDC-ACM adapter candidate**（docs/23）を port-owned API として提供します。
 
-**実装済み（experimental）:** owner-task + FreeRTOS queue/notify、Cell Agent assignment、loopback TxPermit、durable-storage flash bind / host conformance、combined smoke self-test **source**（dual-core + real ISR timer config + storage COMMIT_UNKNOWN）。
+**実装済み（experimental）:** owner-task + FreeRTOS queue/notify、Cell Agent assignment、loopback TxPermit、durable-storage flash bind / host conformance、U2 control CDC adapter candidate（`esp_tinyusb==2.1.1`）、combined smoke self-test **source**（dual-core + real ISR timer config + storage COMMIT_UNKNOWN + CDC **init CLOSED snapshot** — no USB install/open in smoke）。
 
-**これは M3 の部分 slice です。** 次を提供・主張しません。
+**これは M3 の部分 slice + U2 candidate です。** 次を提供・主張しません。
 
-- storage の実機 FULL attestation / power-cut HIL PASS / USB / Wi-Fi / SX1262
-- radio MAC、Join、KGuard adapter
+- storage の実機 FULL attestation / power-cut HIL PASS
+- **U2 Required HIL**（実機 flash + host CDC 往復 + DTR down/up old-generation payload negative）/ USB series complete
+- TinyUSB complete TX/RX FIFO purge or recall of endpoint/hardware-in-flight / already-transmitted bytes（U2 は Ninlil ring generation isolation + software FIFO soft-clear のみ）
+- Wi-Fi / SX1262 / radio MAC、Join、KGuard adapter
 - public Runtime の production 実行経路
 - **compile/link を HIL PASS / dual-core race PASS とみなすこと**
 - PSRAM workspace の caller 所有や二重bind許可
@@ -19,6 +21,7 @@
 - basic adapters: [docs/20-m3-basic-esp-idf-platform-adapters.md](../../docs/20-m3-basic-esp-idf-platform-adapters.md)
 - owner/cell/loopback: [docs/22-m3-owner-cell-agent-skeleton.md](../../docs/22-m3-owner-cell-agent-skeleton.md)
 - durable storage: [docs/21-m3-esp-idf-durable-storage.md](../../docs/21-m3-esp-idf-durable-storage.md)
+- USB CDC (U2): [docs/23-usb-radio-boundary.md](../../docs/23-usb-radio-boundary.md)
 
 ## Pinned ESP-IDF version
 
@@ -27,10 +30,11 @@ ports/esp-idf/ESP_IDF_VERSION  →  v5.5.3
 ```
 
 - 公式 Docker image: `espressif/idf:v5.5.3`
-- Component Manager: `idf.version: "==5.5.3"`（`components/ninlil/idf_component.yml`）
+- Component Manager: `idf.version: "==5.5.3"` + **`espressif/esp_tinyusb: "==2.1.1"`**（U2; `components/ninlil/idf_component.yml`）
+- Committed locks: `smoke_app/dependencies.lock` + `hil_app/dependencies.lock`（**do not commit `managed_components/`**）
 - 必須 build target: **`esp32s3`**
 
-この pin は「最新 stable の自動追従」ではなく、M3-prep / M3-basic の **再現可能な既知安定版** です。変更する場合は `ESP_IDF_VERSION`・docs・CI・`idf_component.yml` を同一変更で揃えてください。
+この pin は「最新 stable の自動追従」ではなく、M3-prep / M3-basic / U2 の **再現可能な既知安定版** です。変更する場合は `ESP_IDF_VERSION`・docs・CI・`idf_component.yml`・locks を同一変更で揃えてください。
 
 ## Layout
 

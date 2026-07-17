@@ -1,11 +1,12 @@
 # ESP-IDF target build (M3-prep + M3-basic + experimental owner/cell/loopback
-# + durable-storage target gates).
+# + durable-storage + U2 A2 CDC adapter target gates).
 # Separated from host GCC/Clang CI in ci.yml.
 # Pins ESP-IDF via the official Docker image tag that matches
 # ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
-# Smoke links clock/entropy/execution + owner-task/cell/loopback + storage.
+# Smoke links clock/entropy/execution + owner-task/cell/loopback + storage + U2 CDC.
 # Evidence is esp32s3 compile/link only — not device HIL / dual-core race PASS /
-# physical power-cut HIL. Does not claim M3 complete, USB, radio, or hardware verify.
+# physical power-cut HIL / U2 host CDC roundtrip. Does not claim M3 complete,
+# U2 complete, USB series complete, radio, or hardware verify.
 
 name: ESP-IDF
 
@@ -50,6 +51,16 @@ jobs:
           test "$rel" = "../partitions/ninlil_storage.csv"
           test -f "ports/esp-idf/smoke_app/${rel}"
 
+      - name: U2 exact esp_tinyusb pin + committed locks (no drift)
+        run: |
+          # Real Python hygiene/lock gate (comment-safe; structural lock version).
+          python3 tools/esp_usb_cdc_u2_gate.py check
+          # Never commit managed_components / build trees
+          test ! -d ports/esp-idf/smoke_app/managed_components
+          test ! -d ports/esp-idf/hil_app/managed_components
+          test ! -f ports/esp-idf/smoke_app/sdkconfig.old
+          test ! -f ports/esp-idf/hil_app/sdkconfig.old
+
       - name: Build combined smoke and storage HIL app for esp32s3
         # Official Espressif setup: published Docker image tag vX.Y.Z
         # (espressif/idf). Image tag must match ports/esp-idf/ESP_IDF_VERSION.
@@ -58,62 +69,93 @@ jobs:
         # / nm / readelf are always present — tools missing ⇒ fail, never false-green.
         run: |
           pin="${{ steps.pin.outputs.version }}"
-          docker run --rm \
+          docker run --rm --interactive \
             --user 0:0 \
             -v "$PWD:/project" \
             -w /project \
             "espressif/idf:${pin}" \
-            bash -lc '
-              set -euo pipefail
-              . "${IDF_PATH}/export.sh"
-              idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
-              idf.py -C ports/esp-idf/hil_app set-target esp32s3 build
-              ELF=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.elf
-              SMOKE_MAP=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.map
-              HIL_MAP=ports/esp-idf/hil_app/build/ninlil_storage_powercut_hil.map
-              HIL_ELF=ports/esp-idf/hil_app/build/ninlil_storage_powercut_hil.elf
-              ARCHIVE=ports/esp-idf/smoke_app/build/esp-idf/ninlil/libninlil.a
-              SDK=ports/esp-idf/smoke_app/sdkconfig
-              # Prefer build/sdkconfig when present (idf may rewrite it there).
-              if [[ -f ports/esp-idf/smoke_app/build/config/sdkconfig.h ]]; then
-                if [[ -f ports/esp-idf/smoke_app/build/sdkconfig ]]; then
-                  SDK=ports/esp-idf/smoke_app/build/sdkconfig
-                fi
-              fi
-              test -f "$ELF"
-              test -f "$SMOKE_MAP"
-              test -f "$HIL_MAP"
-              test -f "$HIL_ELF"
-              test -f "$ARCHIVE"
-              python3 tools/esp_idf_app_main_frame_gate.py check \
-                --elf "${ELF}" \
-                --sdkconfig "${SDK}" \
-                --objdump xtensa-esp32s3-elf-objdump
-              python3 tools/esp_idf_private_symbol_gate.py check \
-                --elf "${ELF}" \
-                --readelf xtensa-esp32s3-elf-readelf
-              # nm cross-check: private helper must not be text GLOBAL default-looking T
-              # without hidden (readelf is authoritative for DEFAULT vs HIDDEN).
-              xtensa-esp32s3-elf-nm -g "${ELF}" | tee /tmp/ninlil_nm_g.txt >/dev/null
-              if xtensa-esp32s3-elf-nm -g "${ELF}" | grep -E " ninlil_esp_idf_cell_config_stage_nested_owner$"; then
-                echo "cell_config_stage_nested_owner must not be a global nm symbol" >&2
-                exit 1
-              fi
-              python3 tools/esp_storage_public_api_gate.py \
-                --archive "${ARCHIVE}" \
-                --archive-kind target \
-                --elf "${HIL_ELF}" \
-                --nm xtensa-esp32s3-elf-nm \
-                --readelf xtensa-esp32s3-elf-readelf \
-                --compile-commands ports/esp-idf/smoke_app/build/compile_commands.json
-              # Both official maps are required (smoke placement + HIL placement).
-              python3 tools/esp_storage_map_gate.py "${SMOKE_MAP}"
-              python3 tools/esp_storage_map_gate.py "${HIL_MAP}"
-              find ports/esp-idf/smoke_app/build \( \
-                -name "esp_storage_*.su" -o \
-                -name "*esp_storage_model*.su" \) \
-                | tee ports/esp-idf/smoke_app/build/ninlil_su_list.txt
-            '
+            bash -s <<'NINLIL_ESP_CI'
+          set -euo pipefail
+          . "${IDF_PATH}/export.sh"
+          idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
+          idf.py -C ports/esp-idf/hil_app set-target esp32s3 build
+          ELF=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.elf
+          SMOKE_MAP=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.map
+          HIL_MAP=ports/esp-idf/hil_app/build/ninlil_storage_powercut_hil.map
+          HIL_ELF=ports/esp-idf/hil_app/build/ninlil_storage_powercut_hil.elf
+          ARCHIVE=ports/esp-idf/smoke_app/build/esp-idf/ninlil/libninlil.a
+          SDK=ports/esp-idf/smoke_app/sdkconfig
+          # Prefer build/sdkconfig when present (idf may rewrite it there).
+          if [[ -f ports/esp-idf/smoke_app/build/config/sdkconfig.h ]]; then
+            if [[ -f ports/esp-idf/smoke_app/build/sdkconfig ]]; then
+              SDK=ports/esp-idf/smoke_app/build/sdkconfig
+            fi
+          fi
+          test -f "$ELF"
+          test -f "$SMOKE_MAP"
+          test -f "$HIL_MAP"
+          test -f "$HIL_ELF"
+          test -f "$ARCHIVE"
+          python3 tools/esp_idf_app_main_frame_gate.py check \
+            --elf "${ELF}" \
+            --sdkconfig "${SDK}" \
+            --objdump xtensa-esp32s3-elf-objdump
+          python3 tools/esp_idf_private_symbol_gate.py check \
+            --elf "${ELF}" \
+            --readelf xtensa-esp32s3-elf-readelf
+          # nm cross-check: private helper must not be text GLOBAL default-looking T
+          # without hidden (readelf is authoritative for DEFAULT vs HIDDEN).
+          xtensa-esp32s3-elf-nm -g "${ELF}" | tee /tmp/ninlil_nm_g.txt >/dev/null
+          if xtensa-esp32s3-elf-nm -g "${ELF}" | grep -E " ninlil_esp_idf_cell_config_stage_nested_owner$"; then
+            echo "cell_config_stage_nested_owner must not be a global nm symbol" >&2
+            exit 1
+          fi
+          python3 tools/esp_storage_public_api_gate.py \
+            --archive "${ARCHIVE}" \
+            --archive-kind target \
+            --elf "${HIL_ELF}" \
+            --nm xtensa-esp32s3-elf-nm \
+            --readelf xtensa-esp32s3-elf-readelf \
+            --compile-commands ports/esp-idf/smoke_app/build/compile_commands.json
+          # Both official maps are required (smoke placement + HIL placement).
+          python3 tools/esp_storage_map_gate.py "${SMOKE_MAP}"
+          python3 tools/esp_storage_map_gate.py "${HIL_MAP}"
+          find ports/esp-idf/smoke_app/build \( \
+            -name "esp_storage_*.su" -o \
+            -name "*esp_storage_model*.su" \) \
+            | tee ports/esp-idf/smoke_app/build/ninlil_su_list.txt
+          # U2: real public port symbols linked (init_object + ops, not link_anchor).
+          xtensa-esp32s3-elf-nm "${ELF}" | tee /tmp/ninlil_u2_nm.txt >/dev/null
+          grep -E 'ninlil_esp_idf_usb_cdc_(init_object|open|close|object_size)' \
+            /tmp/ninlil_u2_nm.txt
+          if grep -E 'link_anchor' /tmp/ninlil_u2_nm.txt; then
+            echo "link_anchor testing smell must not appear in ELF" >&2
+            exit 1
+          fi
+          # No U1 POSIX usb serial object in ESP archive
+          if xtensa-esp32s3-elf-nm "${ARCHIVE}" | grep -E 'ninlil_posix_usb_serial'; then
+            echo "U1 POSIX usb serial must not appear in ESP component archive" >&2
+            exit 1
+          fi
+          # Control CDC isolation: no console init symbol in smoke ELF
+          if xtensa-esp32s3-elf-nm "${ELF}" | grep -E 'esp_tusb_init_console'; then
+            echo "esp_tusb_init_console must not be linked for control CDC path" >&2
+            exit 1
+          fi
+          # Expected USB CDC config in build sdkconfig / generated header
+          if ! grep -E '^CONFIG_TINYUSB_CDC_ENABLED=y' "${SDK}" 2>/dev/null; then
+            grep -E 'CONFIG_TINYUSB_CDC_ENABLED[[:space:]]+1' \
+              ports/esp-idf/smoke_app/build/config/sdkconfig.h
+          fi
+          # No test-only FORCE macro in target object compile commands
+          if grep -R 'NINLIL_POSIX_USB_SERIAL_FORCE' \
+              ports/esp-idf/smoke_app/build/compile_commands.json 2>/dev/null; then
+            echo "test-only FORCE macro must not appear in target compile" >&2
+            exit 1
+          fi
+          # Structural lock pin still exact after resolve
+          python3 tools/esp_usb_cdc_u2_gate.py check
+          NINLIL_ESP_CI
 
       - name: Enforce target storage stack budget
         run: |

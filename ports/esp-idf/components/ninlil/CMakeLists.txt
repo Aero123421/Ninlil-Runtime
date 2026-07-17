@@ -7,9 +7,10 @@
 # portable authority.
 #
 # Includes M3-basic (clock/entropy/execution), M3 owner/cell/loopback skeleton,
-# and format-4 dual-slot durable-storage candidate. Does not implement USB,
-# Wi-Fi, SX1262, radio MAC, Join, or KGuard adapters. Does not claim storage
-# FULL attestation, physical power-cut HIL, or field-ready.
+# format-4 dual-slot durable-storage candidate, and U2 A2 USB CDC-ACM adapter
+# candidate (esp_tinyusb). Does not implement Wi-Fi, SX1262, radio MAC, Join,
+# or KGuard adapters. Does not claim storage FULL attestation, physical
+# power-cut HIL, U2 HIL, or field-ready.
 
 get_filename_component(NINLIL_REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
@@ -35,9 +36,11 @@ idf_component_register(
         "${NINLIL_REPO_ROOT}/include"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/include"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/storage/include"
+        "${NINLIL_REPO_ROOT}/src/transport"
     PRIV_INCLUDE_DIRS
         "${NINLIL_REPO_ROOT}/src/model"
         "${NINLIL_REPO_ROOT}/src/runtime"
+        "${NINLIL_REPO_ROOT}/src/transport"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/src"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/storage/model"
         "${NINLIL_REPO_ROOT}/ports/esp-idf/storage/private"
@@ -49,6 +52,7 @@ idf_component_register(
         spi_flash
         esp_partition
         wear_levelling
+        esp_tinyusb
 )
 
 # Portable Core remains C11-compatible (enforced by the host build). The

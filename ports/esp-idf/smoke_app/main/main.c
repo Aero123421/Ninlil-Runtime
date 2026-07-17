@@ -15,6 +15,7 @@
 #include "ninlil_esp_idf/execution.h"
 #include "ninlil_esp_idf/loopback_tx_permit.h"
 #include "ninlil_esp_idf/owner_task_storage.h"
+#include "ninlil_esp_idf/usb_cdc.h"
 #include "ninlil_port/esp_storage.h"
 #include "ninlil_port/esp_storage_flash.h"
 
@@ -61,6 +62,49 @@ static uint32_t s_isr_fail;
 static uint32_t s_prod_ok;
 static uint32_t s_prod_full;
 
+
+/*
+ * U2 A2 compile/link smoke: real non-destructive public port symbols.
+ * init_object + CLOSED snapshot links the adapter (ops open/close/read/...).
+ * Does NOT install USB / open host path here (Required HIL remains pending).
+ * Control CDC never receives ESP_LOG (this path uses UART TAG).
+ */
+static ninlil_esp_idf_usb_cdc_object_t s_usb_cdc_obj;
+static ninlil_byte_stream_t s_usb_stream;
+
+static int smoke_usb_cdc_init_closed(void)
+{
+    ninlil_byte_stream_status_t st;
+    ninlil_byte_stream_link_t link;
+    uint64_t gen;
+
+    (void)memset(&s_usb_cdc_obj, 0, sizeof(s_usb_cdc_obj));
+    (void)memset(&s_usb_stream, 0, sizeof(s_usb_stream));
+    st = ninlil_esp_idf_usb_cdc_init_object(&s_usb_cdc_obj, &s_usb_stream);
+    if (st != NINLIL_BYTE_STREAM_OK || s_usb_stream.ops == NULL
+        || s_usb_stream.ops->open == NULL || s_usb_stream.ops->close == NULL
+        || s_usb_stream.ops->read == NULL || s_usb_stream.ops->write == NULL
+        || s_usb_stream.ops->poll == NULL || s_usb_stream.ops->link == NULL) {
+        ESP_LOGE(TAG, "usb cdc init failed status=%u", (unsigned)st);
+        return -1;
+    }
+    link = s_usb_stream.ops->link(&s_usb_stream);
+    gen = s_usb_stream.ops->link_generation(&s_usb_stream);
+    if (link != NINLIL_BYTE_STREAM_LINK_CLOSED || gen != 0u) {
+        ESP_LOGE(TAG, "usb cdc initial state must be CLOSED gen=0");
+        return -1;
+    }
+    /* Touch object_size/align so they stay linked. */
+    if (ninlil_esp_idf_usb_cdc_object_size() < 4096u
+        || ninlil_esp_idf_usb_cdc_object_align() == 0u) {
+        ESP_LOGE(TAG, "usb cdc object size/align unexpected");
+        return -1;
+    }
+    ESP_LOGI(TAG,
+        "usb cdc init CLOSED snapshot linked; compile!=HIL; "
+        "Required host CDC roundtrip pending");
+    return 0;
+}
 
 /* Storage self-test: production bind path; FULL stays ESP_UNPROVEN/COMMIT_UNKNOWN.
  * Large media/workspace is binder-owned (not app_main stack). Keep locals small.
@@ -598,8 +642,11 @@ void app_main(void)
     }
     smoke_cleanup_basic();
 
-    /* Owner/cell first, then storage bind/COMMIT_UNKNOWN on the same app_main. */
+    /* Owner/cell first, then storage, then U2 CDC init CLOSED snapshot (no USB open). */
     if (smoke_storage_commit_unknown() != 0) {
+        fail = 1;
+    }
+    if (smoke_usb_cdc_init_closed() != 0) {
         fail = 1;
     }
 
@@ -607,7 +654,7 @@ void app_main(void)
         ESP_LOGE(TAG, "SELFTEST FAIL (device HIL required for runtime verdict)");
     } else {
         ESP_LOGI(TAG,
-            "SELFTEST owner/cell + storage paths exercised; "
-            "compile!=HIL; flash monitor for runtime");
+            "SELFTEST owner/cell + storage + U2 CDC init CLOSED exercised; "
+            "compile!=HIL; U2 Required HIL pending; flash monitor for runtime");
     }
 }

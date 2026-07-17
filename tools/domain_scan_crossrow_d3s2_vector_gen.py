@@ -121,6 +121,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -16531,7 +16532,27 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
     lines.append("#endif /* NINLIL_DOMAIN_SCAN_CROSSROW_VECTOR_FIXTURE_H */")
     lines.append("")
     header_path.parent.mkdir(parents=True, exist_ok=True)
-    header_path.write_text("\n".join(lines), encoding="utf-8")
+    # Temp + atomic replace so a concurrent reader never sees a partial header
+    # if a generator rule is ever double-scheduled (defense in depth; CMake
+    # custom_target ownership is the primary race stop).
+    payload = "\n".join(lines)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=header_path.name + ".",
+        suffix=".tmp",
+        dir=str(header_path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_f:
+            tmp_f.write(payload)
+            tmp_f.flush()
+            os.fsync(tmp_f.fileno())
+        os.replace(tmp_name, header_path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     print(
         f"wrote {header_path} "
         f"(d3s1={len(d3s1_vectors)} d3s2={len(d3s2_vectors)} vectors)"
