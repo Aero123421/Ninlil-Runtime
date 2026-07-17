@@ -19,6 +19,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 SESSION_H = REPO_ROOT / "src" / "transport" / "control_session.h"
 SESSION_C = REPO_ROOT / "src" / "transport" / "control_session.c"
+SESSION_LAYOUT = REPO_ROOT / "src" / "transport" / "control_session_layout.h"
 C1_H = REPO_ROOT / "src" / "transport" / "byte_stream.h"
 CODEC_H = REPO_ROOT / "src" / "model" / "control_frame_codec.h"
 PRIVATE_AUTH = REPO_ROOT / "cmake" / "ninlil_runtime_private_sources.cmake"
@@ -68,6 +69,8 @@ REQUIRED_HEADER_TOKENS = (
     "Not HELLO",
     "Not U4 complete",
     "NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM",
+    "NINLIL_CTRL_SESSION_OBJECT_INIT",
+    "control_session_layout.h",
 )
 
 REQUIRED_SOURCE_TOKENS = (
@@ -98,6 +101,7 @@ REQUIRED_SOURCE_TOKENS = (
     "read WOULD_BLOCK with length!=0",
     "feed guard residual not consumed",
     "g1/link/g2",
+    "&object->session",
 )
 
 # Host-test-only symbols. Must be absent from tests-off production objects
@@ -234,6 +238,111 @@ def check_docs_nonclaims() -> None:
         fail("docs/07 still says partial TX without all-or-none")
 
 
+def check_typed_object() -> None:
+    """C11: object embeds typed session; no unsigned-char type-pun shell."""
+    if not SESSION_LAYOUT.is_file():
+        fail("control_session_layout.h missing (typed complete layout)")
+    h = read_text(SESSION_H)
+    c = read_text(SESSION_C)
+    layout = read_text(SESSION_LAYOUT)
+    if re.search(
+        r"ninlil_ctrl_session_object\s*\{[^}]*unsigned\s+char\s+bytes\s*\[",
+        h,
+        re.S,
+    ):
+        fail("ctrl_session object must not use unsigned char bytes[] storage shell")
+    if "struct ninlil_ctrl_session session" not in h:
+        fail("ctrl_session object must embed typed struct ninlil_ctrl_session session")
+    if "NINLIL_CTRL_SESSION_OBJECT_INIT" not in h:
+        fail("NINLIL_CTRL_SESSION_OBJECT_INIT required for typed object zero-init")
+    if "control_session_layout.h" not in h:
+        fail("control_session.h must include control_session_layout.h")
+    if "object->bytes" in c:
+        fail("control_session.c must not access object->bytes (type-pun path)")
+    if "&object->session" not in c:
+        fail("init_object must use &object->session")
+    if "struct ninlil_ctrl_session" not in layout:
+        fail("layout must define complete struct ninlil_ctrl_session")
+    if "sizeof(ninlil_ctrl_session_object_t) <= NINLIL_CTRL_SESSION_OBJECT_BYTES" not in h.replace(
+        "\n", " "
+    ) and "sizeof(ninlil_ctrl_session_object_t)" not in h:
+        fail("typed object size must static-assert against OBJECT_BYTES ceiling")
+    if "NINLIL_CTRL_SESSION_LAYOUT_ALLOW" not in h:
+        fail("header must define LAYOUT_ALLOW before layout include")
+    if "#error" not in layout:
+        fail("layout must #error without LAYOUT_ALLOW")
+    if not re.search(
+        r"ninlil_ctrl_session_object_align\s*\([^)]*\)\s*\{[^}]*?"
+        r"return\s+_Alignof\s*\(\s*struct\s+ninlil_ctrl_session\s*\)\s*;",
+        c,
+        re.S,
+    ):
+        fail("object_align must return _Alignof(complete type)")
+
+
+def check_layout_sentinel_compile() -> None:
+    compiler = shutil.which("cc")
+    if compiler is None:
+        fail("C compiler 'cc' not found for layout sentinel probe")
+    with tempfile.TemporaryDirectory(prefix="u3-layout-sentinel-") as td:
+        root = pathlib.Path(td)
+        bad = root / "bad.c"
+        good = root / "good.c"
+        bad.write_text(
+            '#include "control_session_layout.h"\nint main(void){return 0;}\n',
+            encoding="utf-8",
+        )
+        good.write_text(
+            '#include "control_session.h"\nint main(void){return 0;}\n',
+            encoding="utf-8",
+        )
+        inc = [
+            "-std=c11",
+            "-Wall",
+            "-Werror",
+            "-I",
+            str(REPO_ROOT / "include"),
+            "-I",
+            str(REPO_ROOT / "src" / "model"),
+            "-I",
+            str(REPO_ROOT / "src" / "transport"),
+        ]
+        # When check(root=temp) is used, SESSION_H may be under a mutation tree;
+        # always compile against absolute REPO transport headers for the allow
+        # path, and for the alone path use the active SESSION_LAYOUT if present.
+        transport = SESSION_LAYOUT.parent if SESSION_LAYOUT.is_file() else (
+            REPO_ROOT / "src" / "transport"
+        )
+        inc_mut = [
+            "-std=c11",
+            "-Wall",
+            "-Werror",
+            "-I",
+            str(REPO_ROOT / "include"),
+            "-I",
+            str(REPO_ROOT / "src" / "model"),
+            "-I",
+            str(transport),
+        ]
+        r_bad = subprocess.run(
+            [compiler, *inc_mut, "-c", str(bad), "-o", str(root / "bad.o")],
+            capture_output=True,
+            text=True,
+        )
+        if r_bad.returncode == 0:
+            fail("control_session_layout.h must #error when included alone")
+        r_good = subprocess.run(
+            [compiler, *inc, "-c", str(good), "-o", str(root / "good.o")],
+            capture_output=True,
+            text=True,
+        )
+        if r_good.returncode != 0:
+            fail(
+                "control_session.h (with layout allow) must compile:\n"
+                f"{r_good.stderr}"
+            )
+
+
 def check_header_api() -> None:
     text = read_text(SESSION_H)
     for tok in REQUIRED_HEADER_TOKENS:
@@ -246,6 +355,7 @@ def check_header_api() -> None:
         fail("control_session.h must include C1 byte_stream.h")
     if "control_frame_codec.h" not in text:
         fail("control_session.h must include C2 control_frame_codec.h")
+    check_typed_object()
 
 
 def check_source() -> None:
@@ -342,10 +452,11 @@ def check_tests_off_seam_absent() -> None:
 
 
 def check(root: pathlib.Path | None = None, *, run_archive_probe: bool = True) -> None:
-    global SESSION_H, SESSION_C, C1_H, CODEC_H, PRIVATE_AUTH, CMAKE_LISTS, DOC23, DOC07, PUBLIC_INCLUDE
+    global SESSION_H, SESSION_C, SESSION_LAYOUT, C1_H, CODEC_H, PRIVATE_AUTH, CMAKE_LISTS, DOC23, DOC07, PUBLIC_INCLUDE
     if root is not None:
         SESSION_H = root / "src" / "transport" / "control_session.h"
         SESSION_C = root / "src" / "transport" / "control_session.c"
+        SESSION_LAYOUT = root / "src" / "transport" / "control_session_layout.h"
         C1_H = root / "src" / "transport" / "byte_stream.h"
         CODEC_H = root / "src" / "model" / "control_frame_codec.h"
         PRIVATE_AUTH = root / "cmake" / "ninlil_runtime_private_sources.cmake"
@@ -364,6 +475,7 @@ def check(root: pathlib.Path | None = None, *, run_archive_probe: bool = True) -
     check_cmake_test_seam_define()
     check_public_abi_clean()
     check_docs_nonclaims()
+    check_layout_sentinel_compile()
     # Archive probe uses SESSION_C (real tree or mutation root). Always run when
     # requested so self-test can prove each SEAM_SYMBOL nm leak is caught.
     if run_archive_probe:
@@ -375,6 +487,7 @@ def _copy_tree(dst: pathlib.Path) -> None:
     for rel in (
         "src/transport/control_session.h",
         "src/transport/control_session.c",
+        "src/transport/control_session_layout.h",
         "src/transport/byte_stream.h",
         "src/model/control_frame_codec.h",
         "cmake/ninlil_runtime_private_sources.cmake",
@@ -497,6 +610,30 @@ def self_test() -> None:
             encoding="utf-8",
         )
 
+    def mut_char_object_shell(root: pathlib.Path) -> None:
+        p = root / "src" / "transport" / "control_session.h"
+        text = p.read_text(encoding="utf-8")
+        mut = text.replace(
+            "struct ninlil_ctrl_session session;",
+            "_Alignas(8) unsigned char bytes[NINLIL_CTRL_SESSION_OBJECT_BYTES];",
+        )
+        if mut == text:
+            fail("self-test: could not rewrite ctrl_session object session member")
+        p.write_text(mut, encoding="utf-8")
+
+    def mut_object_bytes_path(root: pathlib.Path) -> None:
+        p = root / "src" / "transport" / "control_session.c"
+        text = p.read_text(encoding="utf-8")
+        mut = text.replace("&object->session", "object->bytes")
+        if mut == text:
+            fail("self-test: could not rewrite object->session to object->bytes")
+        p.write_text(mut, encoding="utf-8")
+
+    def mut_drop_layout(root: pathlib.Path) -> None:
+        p = root / "src" / "transport" / "control_session_layout.h"
+        if p.is_file():
+            p.unlink()
+
     # Structural mutations: static checks only (archive probe optional).
     structural_mutations: list[tuple[str, Callable[[pathlib.Path], None]]] = [
         ("drop pump API token", mut_drop_pump),
@@ -511,6 +648,37 @@ def self_test() -> None:
         ("drop read over-capacity fence token", mut_drop_read_over_cap),
         ("drop feed residual fence token", mut_drop_feed_residual),
         ("drop cmake TEST_SEAM define", mut_drop_cmake_seam),
+        ("revive unsigned-char object shell", mut_char_object_shell),
+        ("revive object->bytes type-pun path", mut_object_bytes_path),
+        ("drop control_session_layout.h", mut_drop_layout),
+        (
+            "object_align floor-constant regression",
+            lambda root: (
+                root.joinpath("src/transport/control_session.c").write_text(
+                    root.joinpath("src/transport/control_session.c")
+                    .read_text(encoding="utf-8")
+                    .replace(
+                        "return _Alignof(struct ninlil_ctrl_session);",
+                        "return NINLIL_CTRL_SESSION_OBJECT_ALIGN;",
+                    ),
+                    encoding="utf-8",
+                )
+            ),
+        ),
+        (
+            "layout sentinel #error removal",
+            lambda root: (
+                root.joinpath("src/transport/control_session_layout.h").write_text(
+                    root.joinpath("src/transport/control_session_layout.h")
+                    .read_text(encoding="utf-8")
+                    .replace(
+                        '#error "control_session_layout.h is private; include control_session.h only"',
+                        "/* sentinel removed */",
+                    ),
+                    encoding="utf-8",
+                )
+            ),
+        ),
     ]
 
     # Each SEAM_SYMBOL leak must fail tests-off compile+nm (archive probe on).

@@ -384,7 +384,8 @@ endif()
 if(NINLIL_BUILD_TESTS)
     target_compile_definitions(ninlil_runtime_private PRIVATE
         NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1
-        NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM=1)
+        NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM=1
+        NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1)
 endif()
 
 # U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
@@ -1949,6 +1950,112 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME control_session_u3
         COMMAND ninlil_control_session_u3_test
+    )
+
+    # U4 logical session host candidate: engine + §8.9 engine IDs (38) + gates.
+    # Does not claim USB series complete / HIL / assignment / security.
+    add_test(
+        NAME logical_session_u4_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/logical-session-u4-v1.json
+    )
+    add_test(
+        NAME logical_session_u4_vector_gen_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_vector_gen.py
+            self-test
+    )
+    add_test(
+        NAME logical_session_u4_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_gate.py
+            check
+    )
+    add_test(
+        NAME logical_session_u4_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_gate.py
+            self-test
+    )
+    add_test(
+        NAME logical_session_u4_assert_hygiene
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_assert_hygiene.py
+            check
+    )
+    set(_ninlil_ls_u4_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/logical_session_u4_vector_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_ls_u4_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/logical-session-u4-v1.json
+            ${_ninlil_ls_u4_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/logical-session-u4-v1.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/ncl1-u4-v1.json
+        COMMENT "Generate U4 logical session engine behavior fixture"
+        VERBATIM
+    )
+    add_custom_target(ninlil_ls_u4_fixture_gen DEPENDS ${_ninlil_ls_u4_fixture})
+
+    add_executable(ninlil_logical_session_u4_test
+        tests/transport/logical_session_u4_test.c
+        tests/support/fake_byte_stream.c
+    )
+    add_dependencies(ninlil_logical_session_u4_test ninlil_ls_u4_fixture_gen)
+    target_include_directories(ninlil_logical_session_u4_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_BINARY_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    set_property(SOURCE tests/transport/logical_session_u4_test.c
+        APPEND PROPERTY OBJECT_DEPENDS ${_ninlil_ls_u4_fixture})
+    target_link_libraries(ninlil_logical_session_u4_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    target_compile_definitions(ninlil_logical_session_u4_test PRIVATE
+        NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1)
+    set_target_properties(ninlil_logical_session_u4_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_logical_session_u4_test)
+    add_test(
+        NAME logical_session_u4
+        COMMAND ninlil_logical_session_u4_test
+    )
+    add_test(
+        NAME logical_session_u4_expect_mutation
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/logical_session_u4_assert_hygiene.py
+            mutation
+            --build-dir ${CMAKE_CURRENT_BINARY_DIR}
+            --exe $<TARGET_FILE:ninlil_logical_session_u4_test>
+            --fixture ${_ninlil_ls_u4_fixture}
+    )
+    set_tests_properties(logical_session_u4_expect_mutation PROPERTIES
+        DEPENDS logical_session_u4
+        TIMEOUT 600
+        RUN_SERIAL TRUE
+        RESOURCE_LOCK logical_session_u4_fixture
+    )
+    add_test(
+        NAME logical_session_u4_fixture_freshness
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'logical_session_u4_vector_gen.py'; js=root/'spec'/'vectors'/'logical-session-u4-v1.json'; build=pathlib.Path(r'${_ninlil_ls_u4_fixture}'); assert build.is_file(), 'missing build fixture'; td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(a)]); subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(b)]); ta,tb,tbld=a.read_bytes(),b.read_bytes(),build.read_bytes(); assert ta==tb, 'emit non-deterministic'; assert ta==tbld, 'build fixture stale'; assert b'NINLIL_LS_U4_ENGINE_REQUIRED_ID_COUNT' in ta; assert b'U4-G-HELLO-OK' in ta; assert b'tx_blob' in ta or b'tx_hex' in ta or b'EF_TX_HEX' in ta; print('logical_session_u4 fixture freshness ok', len(ta), 'bytes')"
+    )
+    set_tests_properties(logical_session_u4_fixture_freshness PROPERTIES
+        DEPENDS logical_session_u4
+        RESOURCE_LOCK logical_session_u4_fixture
     )
 
     # Build reliability: generated fixture headers must not be multi-exec

@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 16)
-    message(FATAL_ERROR "private source count is not 16: ${_private_sources}")
+if(NOT _private_source_count EQUAL 17)
+    message(FATAL_ERROR "private source count is not 17: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -93,6 +93,7 @@ set(_expected_private_source_names
     domain_store_d3s1.c
     domain_store_d3s2.c
     domain_store_scanner.c
+    logical_session.c
     ncl1_codec.c
     radio_hal.c
     runtime_lifecycle_model.c

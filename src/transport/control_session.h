@@ -316,9 +316,37 @@ typedef uint32_t ninlil_ctrl_session_rx_cold_reason_t;
 
 typedef struct ninlil_ctrl_session ninlil_ctrl_session_t;
 
+/*
+ * Complete private layout (production-private header surface only).
+ * Object embeds the typed session member — never unsigned-char storage
+ * with struct cast (C11 effective type / strict aliasing).
+ */
+#define NINLIL_CTRL_SESSION_LAYOUT_ALLOW 1
+#include "control_session_layout.h"
+/* Keep ALLOW defined so nested re-includes of the layout guard pass. */
+
 typedef struct ninlil_ctrl_session_object {
-    _Alignas(8) unsigned char bytes[NINLIL_CTRL_SESSION_OBJECT_BYTES];
+    struct ninlil_ctrl_session session;
 } ninlil_ctrl_session_object_t;
+
+#define NINLIL_CTRL_SESSION_OBJECT_INIT \
+    {                                   \
+        .session = { 0 }                \
+    }
+
+_Static_assert(
+    sizeof(ninlil_ctrl_session_object_t) <= NINLIL_CTRL_SESSION_OBJECT_BYTES,
+    "typed ctrl_session object must fit portable ceiling");
+_Static_assert(
+    _Alignof(ninlil_ctrl_session_object_t) >= NINLIL_CTRL_SESSION_OBJECT_ALIGN,
+    "typed ctrl_session object align must meet OBJECT_ALIGN");
+_Static_assert(
+    sizeof(ninlil_ctrl_session_object_t) == sizeof(struct ninlil_ctrl_session),
+    "object is exactly the typed session (no char-array padding shell)");
+_Static_assert(
+    _Alignof(ninlil_ctrl_session_object_t)
+        == _Alignof(struct ninlil_ctrl_session),
+    "object align must equal complete session align");
 
 size_t ninlil_ctrl_session_object_size(void);
 size_t ninlil_ctrl_session_object_align(void);
