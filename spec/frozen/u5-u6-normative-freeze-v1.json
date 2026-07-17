@@ -1,0 +1,61 @@
+{
+  "authority_prose_required_in_u5": [
+    "Sole Normative authority",
+    "唯一の Normative authority",
+    "block 外の自由文・表・補足は authority ではなく",
+    "immutability / freshness pin",
+    "自然言語セマンティック / NLP 分類による安全性証明ではない"
+  ],
+  "description": "Review-accepted Normative bytes pin for U5/U6 docs freeze. Immutability/freshness over accepted document bytes only; not a natural-language semantic/NLP classifier; not a substitute for human review. Integration-status wording refresh after origin/main(R2) rebase (freeze v1 meaning unchanged: Normative bytes pin).",
+  "documents": [
+    {
+      "byte_length": 50395,
+      "path": "docs/25-u5-cell-operating-assignment.md",
+      "sha256": "08bfdec87112c31bf2e019da7cd2e5ce3c36e7ac67b372122dafae6e896aa224"
+    },
+    {
+      "byte_length": 58142,
+      "path": "docs/26-u6-transport-custody.md",
+      "sha256": "1189f992aa25386ff4d9ce08472a424458878debf5cef40169ae04c085f9edc1"
+    },
+    {
+      "byte_length": 7918,
+      "path": "docs/adr/0005-u5-cell-operating-assignment-control-v2.md",
+      "sha256": "787cc38cb4b159bfa2899d1f4270295fc85046c251c3f873de7cc9757d726042"
+    },
+    {
+      "byte_length": 6117,
+      "path": "docs/adr/0006-u6-transport-custody.md",
+      "sha256": "d4ea04596d0fb0a1d802c4043f537c21c82da84cd5581bd0a215f53f286bc2bc"
+    }
+  ],
+  "freeze_id": "u5-u6-normative-freeze",
+  "freeze_version": "1",
+  "hash_algorithm": "SHA-256",
+  "l6_algorithm": {
+    "body": "L0  NCL1 validation + selected_control_version==2 + role matrix\nL1  layout / reserved / body_length=148+L / digest recompute / zero-nonzero §6.6\nL2  recipient / capability / authority §5\nL3  floor / duplicate / conflict §7.6–§8.4\nL4  decision:\n      REJECT_*  → enqueue REJECT; **stop**（storage mutation 0; permit 不変）\n      RESTORE/DUP §7.6.5 → enqueue ACK; **stop**（ARW/permit_generation 不変; active 必要なら SET から構築）\n      HIGHER_APPLY → continue L5\nL5  permit fence candidate: new_permit_bind_generation = arw.permit_bind_generation+1\n      （ARW 不在 first apply なら generation=1）\nL6  **FULL atomic group**（single RW slot; 1 storage txn; **下位 bullet の相対順は固定**）:\n      # Sole Normative machine-readable order (unique in chapter; free prose MUST NOT override):\n      L6_ORDER=FENCE_BEFORE_COMMIT; DEFERRED_FENCE_FORBIDDEN=1\n      L6a encode ARW value（新 floor fields + digest + proof_digest + permit_bind_generation）\n      L6b **permit_fence_before_commit:** outstanding Physical Compliance Permit を\n          generation < new で revoke/fence（in-memory registry clear; durable generation は ARW に bind;\n          旧 generation の consume 拒否）\n      L6c put ARW key（36B canonical）\n      L6d commit(FULL)\n      # Closed constraints (inside algorithm block only; not free-prose exceptions):\n      L6_CONSTRAINT: FENCE_STEP=L6b; COMMIT_STEP=L6d; FENCE_BEFORE_COMMIT=1; SAME_OWNER_SYNC=1\n      L6_CONSTRAINT: DEFERRED_AFTER_COMMIT_OR_PERSIST_FORBIDDEN=1\nL7  commit 結果:\n      STORAGE_OK → L8\n      COMMIT_UNKNOWN → **active 非公開; ACK 禁止; permit 新 generation 未公開**\n                      → §7.6.8 recovery（ESP は success 禁止）\n                      → reentry: 同一 SET 再処理または Controller retry\n      definite fail → REJECT WATERMARK_STORAGE; active/permit 旧状態\nL8  **active publish**（volatile ASSIGN_ACTIVE = SET fields; Permit 入力可）\nL9  enqueue ASSIGNMENT_ACK",
+    "body_byte_length": 2015,
+    "body_sha256": "dc72d0cf07829d64132518905b389a5a026ecdf60ae54c2a7253157e0e6fbdcd",
+    "constraints": {
+      "COMMIT_STEP": "L6d",
+      "DEFERRED_AFTER_COMMIT_OR_PERSIST_FORBIDDEN": "1",
+      "FENCE_BEFORE_COMMIT": "1",
+      "FENCE_STEP": "L6b",
+      "SAME_OWNER_SYNC": "1"
+    },
+    "declarations": {
+      "DEFERRED_FENCE_FORBIDDEN": "1",
+      "L6_ORDER": "FENCE_BEFORE_COMMIT"
+    },
+    "fence_language": "text",
+    "ordered_phases": [
+      "L6a",
+      "L6b",
+      "L6c",
+      "L6d"
+    ],
+    "section_marker": "### 8.5 ACK linearization + permit fence",
+    "source_path": "docs/25-u5-cell-operating-assignment.md"
+  },
+  "schema_version": 1
+}
