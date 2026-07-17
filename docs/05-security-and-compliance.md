@@ -124,7 +124,7 @@ Production Runtimeは`DEPLOYMENT_APPROVED`だけを使用できます。
 
 対象にはapplication dataだけでなく、beacon、Network Join / Attachment control、ACK、receipt、retry、relay、diagnostics、emergency trafficを含みます。
 
-**R2 authority 実装正本:** [24章 §14](24-r2-physical-compliance-permit-authority.md) / [ADR-0004](adr/0004-r2-durable-permit-authority.md) / `pcp_r2_docs_gate` semantic（FIFO·advance·fresh-epoch·ops→user·publish·airtime ceiling; **docs freeze; R2 code / legal / re-review GO ではない**）。
+**R2 authority 実装正本:** [24章 §14](24-r2-physical-compliance-permit-authority.md) / [ADR-0004](adr/0004-r2-durable-permit-authority.md) / private `src/radio/pcp_authority.{h,c}` / `pcp_r2_docs_gate` semantic（FIFO·advance·fresh-epoch·ops→user·publish·airtime ceiling; **private host candidate; legal / production profile / RF / HIL completeではない**）。
 
 **R3 airtime 算出正本:** [27章](27-r3-airtime-calculator.md) / [ADR-0007](adr/0007-r3-airtime-calculator.md) / `src/radio/airtime_calculator.{h,c}` / `airtime_r3_*`（closed SX1262 LoRa domain・整数 ceil-to-us; **R3 host candidate; Japan production 数値 / duty·LBT / HIL / R3 complete ではない**）。出力 `airtime_us` は R2 per-permit `max_airtime_us` 候補（ceiling 比較は R2）。
 

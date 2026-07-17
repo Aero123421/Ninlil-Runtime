@@ -342,6 +342,9 @@ install(FILES
 # ESP-IDF component packaging under ports/esp-idf/components/ninlil.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_runtime_private_sources.cmake)
 
+# R4 SX1262 portable control-plane (D1). Not public ABI. Not RF TX complete.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
+
 add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     ${NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES}
 )
@@ -353,6 +356,34 @@ target_include_directories(ninlil_runtime_private PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
     ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
 )
+
+# R4 production-private portable SX1262 backend (drivers/sx126x). Host tests
+# and ESP packaging share cmake/ninlil_sx1262_sources.cmake. Spy stays tests-only.
+add_library(ninlil_sx1262 STATIC EXCLUDE_FROM_ALL
+    ${NINLIL_SX1262_PORTABLE_RELATIVE_SOURCES}
+    ${NINLIL_SX1262_ESP_PURE_RELATIVE_SOURCES}
+)
+set_property(TARGET ninlil_sx1262
+    PROPERTY NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE)
+target_include_directories(ninlil_sx1262 PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include>
+)
+set_target_properties(ninlil_sx1262 PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+    POSITION_INDEPENDENT_CODE ON
+    C_VISIBILITY_PRESET hidden
+)
+ninlil_apply_strict_warnings(ninlil_sx1262)
+if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    target_compile_options(ninlil_sx1262 PRIVATE -Wvla)
+endif()
+if(NINLIL_ENABLE_SANITIZERS)
+    target_link_options(ninlil_sx1262 INTERFACE
+        -fsanitize=address,undefined)
+endif()
 target_link_libraries(ninlil_runtime_private PRIVATE ninlil)
 set_target_properties(ninlil_runtime_private PROPERTIES
     C_STANDARD 11
@@ -1916,6 +1947,36 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
 
+    # R4: SX1262 control-plane backend structural gate (docs/28 + ADR-0008).
+    # Does not claim R4 complete / RF TX / HIL / legal / R9 sole-edge.
+    add_test(
+        NAME sx1262_r4_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/sx1262_r4_gate.py
+            check
+    )
+    add_test(
+        NAME sx1262_r4_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/sx1262_r4_gate.py
+            self-test
+    )
+    # Pure pending_logic single-TU C11 strict compile (stddef/NULL; -Werror).
+    add_test(
+        NAME sx1262_spi_pending_logic_strict_compile
+        COMMAND ${CMAKE_C_COMPILER}
+            -std=c11
+            -Wall
+            -Wextra
+            -Werror
+            -pedantic
+            -c
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src/sx1262_spi_pending_logic.c
+            -I${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+            -o
+            ${CMAKE_CURRENT_BINARY_DIR}/sx1262_spi_pending_logic_strict.o
+    )
+
     # R2: Physical Compliance Permit authority Normative freeze docs gate.
     # Does not claim R2 body implementation / legal / RF / HIL / re-review GO.
     add_test(
@@ -2096,6 +2157,30 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME pcp_r2_authority
         COMMAND ninlil_pcp_r2_authority_test
+    )
+
+    # R4 host control-plane tests + bus spy (tests-only; not production archive).
+    add_executable(ninlil_sx1262_r4_test
+        tests/radio/sx1262_r4_test.c
+        tests/support/sx1262_bus_spy.c
+    )
+    target_include_directories(ninlil_sx1262_r4_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+    )
+    target_link_libraries(ninlil_sx1262_r4_test PRIVATE
+        ninlil_sx1262
+    )
+    set_target_properties(ninlil_sx1262_r4_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_sx1262_r4_test)
+    add_test(
+        NAME sx1262_r4
+        COMMAND ninlil_sx1262_r4_test
     )
 
     add_executable(ninlil_control_session_u3_test
