@@ -2009,6 +2009,53 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_radio_hal_r1_test
     )
 
+    # R3: LoRa airtime calculator (host candidate) — docs/oracle/C bridge.
+    # airtime_r3_gate check includes VECTORS_FRESH_DETERMINISTIC:
+    #   oracle emit-json/emit-c twice in independent temp dirs;
+    #   run1==run2 and byte-identical to committed
+    #   tests/radio/airtime_r3_vectors.json + airtime_r3_vectors.gen.h.
+    # Does not claim R3 complete / Japan / HIL / RF.
+    # tools/ and vector fixtures are tests-ON only (not private archive).
+    add_test(
+        NAME airtime_r3_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/airtime_r3_gate.py
+            check
+    )
+    add_test(
+        NAME airtime_r3_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/airtime_r3_gate.py
+            self-test
+    )
+    add_test(
+        NAME airtime_r3_oracle_self_check
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/airtime_r3_oracle.py
+            self-check
+    )
+    add_executable(ninlil_airtime_r3_bridge_test
+        tests/radio/airtime_r3_bridge_test.c
+    )
+    target_include_directories(ninlil_airtime_r3_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio
+    )
+    target_link_libraries(ninlil_airtime_r3_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_airtime_r3_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_airtime_r3_bridge_test)
+    add_test(
+        NAME airtime_r3_bridge
+        COMMAND ninlil_airtime_r3_bridge_test
+    )
+
     add_executable(ninlil_control_session_u3_test
         tests/transport/control_session_u3_test.c
         tests/support/fake_byte_stream.c

@@ -126,6 +126,8 @@ Production Runtimeは`DEPLOYMENT_APPROVED`だけを使用できます。
 
 **R2 authority 実装正本:** [24章 §14](24-r2-physical-compliance-permit-authority.md) / [ADR-0004](adr/0004-r2-durable-permit-authority.md) / `pcp_r2_docs_gate` semantic（FIFO·advance·fresh-epoch·ops→user·publish·airtime ceiling; **docs freeze; R2 code / legal / re-review GO ではない**）。
 
+**R3 airtime 算出正本:** [27章](27-r3-airtime-calculator.md) / [ADR-0007](adr/0007-r3-airtime-calculator.md) / `src/radio/airtime_calculator.{h,c}` / `airtime_r3_*`（closed SX1262 LoRa domain・整数 ceil-to-us; **R3 host candidate; Japan production 数値 / duty·LBT / HIL / R3 complete ではない**）。出力 `airtime_us` は R2 per-permit `max_airtime_us` 候補（ceiling 比較は R2）。
+
 Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-boundary.md)）。発行・consume の両方で検査する。
 
 - hardware profile ID / revision
@@ -137,7 +139,7 @@ Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-bou
 - **physical transmitter identity**（physical radio path; Foundation `ninlil_bearer_*` ではない）
 - channel / PHY（live radio settings; R1 `live_binding` / 24章 Live bind set L）
 - frame digest and byte length（immutable TX plan; permit 発行後の変更禁止）
-- conservatively calculated maximum airtime
+- conservatively calculated maximum airtime（**R3** が ToA 候補を算出し owner が R2/R1 へ渡す; profile 上限は R5）
 - not-before / expiry
 - permit sequence
 
@@ -231,7 +233,7 @@ M5 physical compliance（M1a gateではない）:
 
 - spy radio portでpermitなしTXがゼロ
 - profile、hardware、antenna、channel、power、revisionの各1項目不一致を拒否
-- airtime calculatorを独立reference vectorと比較
+- airtime calculatorを独立reference vectorと比較（**R3 host:** `airtime_r3_oracle` + `airtime_r3_bridge`; Japan/HIL 非主張）
 - ledger境界、concurrent request、retry/ACK加算、reboot、clock rollback、corruption
 - 設定周波数、出力、time-on-air、LBT timingを対象SKUで測定
 

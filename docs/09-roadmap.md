@@ -223,7 +223,21 @@ P1 durable one-shot と R1 watermark の関係を閉じる。正本: [24-r2-phys
 - **ceiling vs per-permit airtime**; Algorithm R **clockless**; GC exact; close void
 - **`pcp_r2_docs_gate`** semantic + §14 vectors; **re-review GO 禁止**
 
-含まない: R2 **code**、R3 airtime calculator、R5 profile loader、SX1262 TX、Japan production 数値、legal certification、public ABI。
+含まない: R2 **code**、R5 profile loader、SX1262 TX、Japan production 数値、legal certification、public ABI。
+
+### R3: LoRa airtime calculator（host candidate）
+
+closed SX1262 LoRa domain の決定的 ToA（µs）。正本: [27-r3-airtime-calculator.md](27-r3-airtime-calculator.md)、[ADR-0007](adr/0007-r3-airtime-calculator.md)、`src/radio/airtime_calculator.{h,c}`。
+
+含む:
+
+- SF/BW/CR/header/CRC/preamble/LDRO closed domain + AUTO 閾値一意
+- float 無し整数 ceil-to-us; overflow taxonomy
+- independent Python oracle + C bridge + `airtime_r3_gate`
+- private runtime archive / ESP component 配線（tests-OFF に oracle 非混入）
+- R2 per-permit `max_airtime_us` 候補の受渡し契約
+
+含まない: Japan production 数値、duty/LBT/legal、R5 profile、R2 authority body、SX1262 SPI TX、RF/HIL、**R3 complete**、public ABI。
 
 ## M4: Identity Lifecycle
 
