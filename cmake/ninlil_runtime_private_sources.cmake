@@ -9,6 +9,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/model/control_frame_codec.c
     src/model/domain_store_body_codec.c
     src/model/domain_store_codec.c
+    src/model/ncl1_codec.c
     src/model/runtime_lifecycle_model.c
     src/model/runtime_store_bootstrap.c
     src/model/runtime_store_codec.c
@@ -22,6 +23,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
 )
 
 set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
+    src/model/ncl1_codec.c
     src/runtime/domain_store_scanner.c
     src/runtime/domain_store_d3s1.c
     src/runtime/domain_store_d3s2.c

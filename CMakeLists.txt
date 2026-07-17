@@ -837,6 +837,89 @@ if(NINLIL_BUILD_TESTS)
         DEPENDS control_frame_vector_oracle_bridge
     )
 
+    # U4 NCL1 pure codec + authoritative vectors (codec/wire slice only).
+    # Does not claim U4 session/LC complete / HIL / series complete.
+    add_executable(ninlil_ncl1_codec_test
+        tests/model/ncl1_codec_test.c
+    )
+    target_include_directories(ninlil_ncl1_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_link_libraries(ninlil_ncl1_codec_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_ncl1_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_ncl1_codec_test)
+    add_test(
+        NAME ncl1_codec
+        COMMAND ninlil_ncl1_codec_test
+    )
+
+    add_test(
+        NAME ncl1_u4_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/ncl1_u4_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/ncl1-u4-v1.json
+    )
+    add_test(
+        NAME ncl1_u4_vector_gen_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/ncl1_u4_vector_gen.py
+            self-test
+    )
+
+    set(_ninlil_ncl1_u4_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/ncl1_u4_vector_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_ncl1_u4_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/ncl1_u4_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/ncl1-u4-v1.json
+            ${_ninlil_ncl1_u4_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/ncl1_u4_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/ncl1-u4-v1.json
+        COMMENT "Generate NCL1 U4 production codec bridge fixture"
+        VERBATIM
+    )
+    add_executable(ninlil_ncl1_vector_oracle_bridge_test
+        tests/model/ncl1_vector_oracle_bridge_test.c
+        ${_ninlil_ncl1_u4_fixture}
+    )
+    target_include_directories(ninlil_ncl1_vector_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(ninlil_ncl1_vector_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_ncl1_vector_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_ncl1_vector_oracle_bridge_test)
+    add_test(
+        NAME ncl1_vector_oracle_bridge
+        COMMAND ninlil_ncl1_vector_oracle_bridge_test
+    )
+    add_test(
+        NAME ncl1_u4_vector_fixture_freshness
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'ncl1_u4_vector_gen.py'; js=root/'spec'/'vectors'/'ncl1-u4-v1.json'; build=pathlib.Path(r'${_ninlil_ncl1_u4_fixture}'); assert build.is_file(), 'missing build fixture'; td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(a)]); subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(b)]); ta,tb,tbld=a.read_bytes(),b.read_bytes(),build.read_bytes(); assert ta==tb, 'emit non-deterministic'; assert ta==tbld, 'build fixture stale'; assert b'NINLIL_NCL1_U4_CODEC_CASE_COUNT' in ta; assert b'U4-N-BAD-MAGIC' in ta; assert b'U4-N-RESERVED-ORDER' in ta; print('ncl1_u4 fixture freshness+determinism ok', len(ta), 'bytes')"
+    )
+    set_tests_properties(ncl1_u4_vector_fixture_freshness PROPERTIES
+        DEPENDS ncl1_vector_oracle_bridge
+    )
+
     add_test(
         NAME domain_store_vector_oracle
         COMMAND ${Python3_EXECUTABLE}
