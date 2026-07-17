@@ -350,6 +350,7 @@ set_property(TARGET ninlil_runtime_private
 target_include_directories(ninlil_runtime_private PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
 )
 target_link_libraries(ninlil_runtime_private PRIVATE ninlil)
 set_target_properties(ninlil_runtime_private PROPERTIES
@@ -381,7 +382,8 @@ endif()
 # tests-OFF release private archive must not contain ninlil_domain_scan_begin.
 if(NINLIL_BUILD_TESTS)
     target_compile_definitions(ninlil_runtime_private PRIVATE
-        NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1)
+        NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1
+        NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM=1)
 endif()
 
 # U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
@@ -1759,6 +1761,48 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/byte_stream_portability_gate.py
             self-test
+    )
+
+    # U3: C3 control session + C4 pump structural/mutation gate (not marker-only).
+    add_test(
+        NAME control_session_u3_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/control_session_u3_gate.py
+            check
+    )
+    add_test(
+        NAME control_session_u3_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/control_session_u3_gate.py
+            self-test
+    )
+
+    add_executable(ninlil_control_session_u3_test
+        tests/transport/control_session_u3_test.c
+        tests/support/fake_byte_stream.c
+    )
+    target_include_directories(ninlil_control_session_u3_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_control_session_u3_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    # Host-test-only declaration of private stats seam (symbol lives in private
+    # archive; not public ABI / not in include/ninlil).
+    target_compile_definitions(ninlil_control_session_u3_test PRIVATE
+        NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM=1)
+    set_target_properties(ninlil_control_session_u3_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_control_session_u3_test)
+    add_test(
+        NAME control_session_u3
+        COMMAND ninlil_control_session_u3_test
     )
 
     # Build reliability: generated fixture headers must not be multi-exec
