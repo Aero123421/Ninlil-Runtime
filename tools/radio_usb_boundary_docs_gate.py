@@ -545,8 +545,10 @@ def check_doc23(paths: Paths) -> None:
 
     require_contains(text, "主張しない", "docs/23 non-claims")
     require_contains(text, "forbidden claims", "docs/23")
-    require_contains(text, "USB production code 未実装", "docs/23")
+    # U1 may land as host implementation candidate; still forbid complete/HIL lies.
     require_contains(text, "SX1262 production code 未実装", "docs/23")
+    require_contains(text, "U1 implementation candidate", "docs/23 U1 honesty")
+    require_contains(text, "Required HIL", "docs/23 Required HIL pending")
     require_contains(
         text,
         "assignment/custody/security protocol is complete",
@@ -1882,9 +1884,18 @@ def check_network_join_vocabulary(paths: Paths) -> None:
 
 
 def check_no_usb_radio_production_sources(paths: Paths) -> None:
+    """Honesty: SX1262 unfinished; U1 may be candidate only; series not complete."""
     text23 = read_text(paths.doc23)
-    if "未実装" not in text23:
-        fail("docs/23 must state production code is not implemented")
+    if "SX1262 production code 未実装" not in text23:
+        fail("docs/23 must state SX1262 production code is not implemented")
+    if "U1 implementation candidate" not in text23:
+        fail("docs/23 must state U1 is implementation candidate (not complete)")
+    if "Required HIL" not in text23:
+        fail("docs/23 must keep Required HIL language")
+    for line in text23.splitlines():
+        if re.search(r"\bU1 complete\b", line) and "名乗らない" not in line and not line_negated(line):
+            if "ではない" not in line and "pending" not in line.lower():
+                fail(f"docs/23 bare U1 complete claim: {line!r}")
 
 
 def run_check(paths: Paths | None = None) -> None:
