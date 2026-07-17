@@ -141,6 +141,30 @@ static ninlil_byte_stream_status_t fake_write(
         fake->gen_bump_on_next_write = 0;
         bump_generation(fake);
     }
+    if (fake->force_write_ok_accepted_raw_once) {
+        /* Raw accepted: deliberately no clamp (may exceed length). */
+        fake->force_write_ok_accepted_raw_once = 0;
+        *out_accepted = fake->force_write_ok_accepted_raw;
+        fake->force_write_ok_accepted_raw = 0u;
+        if (out_error != NULL) {
+            (void)memset(out_error, 0, sizeof(*out_error));
+        }
+        return NINLIL_BYTE_STREAM_OK;
+    }
+    if (fake->force_write_status != 0u) {
+        ninlil_byte_stream_status_t st = fake->force_write_status;
+        uint32_t acc = fake->force_write_status_accepted;
+        fake->force_write_status = 0u;
+        fake->force_write_status_accepted = 0u;
+        if (acc > length) {
+            acc = length;
+        }
+        *out_accepted = acc;
+        set_err(
+            fake, out_error, st, NINLIL_BYTE_STREAM_STAGE_WRITE,
+            "forced write status");
+        return st;
+    }
     if (fake->force_status != 0u) {
         ninlil_byte_stream_status_t st = fake->force_status;
         fake->force_status = 0u;
@@ -264,6 +288,16 @@ static ninlil_byte_stream_status_t fake_read(
             fake, out_error, NINLIL_BYTE_STREAM_INVALID_ARGUMENT,
             NINLIL_BYTE_STREAM_STAGE_READ, "capacity 0");
         return NINLIL_BYTE_STREAM_INVALID_ARGUMENT;
+    }
+    if (fake->force_read_rx_overflow_once) {
+        fake->force_read_rx_overflow_once = 0;
+        *out_length = 0u;
+        fake->stats.rx_overflow_count =
+            ninlil_byte_stream_sat_add_u64(fake->stats.rx_overflow_count, 1u);
+        set_err(
+            fake, out_error, NINLIL_BYTE_STREAM_RX_OVERFLOW,
+            NINLIL_BYTE_STREAM_STAGE_RX_RING, "forced read overflow");
+        return NINLIL_BYTE_STREAM_RX_OVERFLOW;
     }
     if (fake->force_read_ok_over_capacity_once) {
         fake->force_read_ok_over_capacity_once = 0;
@@ -682,5 +716,36 @@ void ninlil_fake_byte_stream_force_write_would_block_nonzero_once(
 {
     if (fake != NULL) {
         fake->force_write_would_block_nonzero_once = 1;
+    }
+}
+
+void ninlil_fake_byte_stream_force_write_status_once(
+    ninlil_fake_byte_stream_t *fake,
+    ninlil_byte_stream_status_t status,
+    uint32_t accepted)
+{
+    if (fake == NULL || status == 0u) {
+        return;
+    }
+    fake->force_write_status = status;
+    fake->force_write_status_accepted = accepted;
+}
+
+void ninlil_fake_byte_stream_force_write_ok_accepted_raw_once(
+    ninlil_fake_byte_stream_t *fake,
+    uint32_t accepted)
+{
+    if (fake == NULL) {
+        return;
+    }
+    fake->force_write_ok_accepted_raw_once = 1;
+    fake->force_write_ok_accepted_raw = accepted;
+}
+
+void ninlil_fake_byte_stream_force_read_rx_overflow_once(
+    ninlil_fake_byte_stream_t *fake)
+{
+    if (fake != NULL) {
+        fake->force_read_rx_overflow_once = 1;
     }
 }

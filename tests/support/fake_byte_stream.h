@@ -54,6 +54,21 @@ typedef struct ninlil_fake_byte_stream {
     int force_write_would_block_nonzero_once;
     /* Force next read/write/poll status (0 = disabled). */
     ninlil_byte_stream_status_t force_status;
+    /*
+     * Write-only one-shot: return force_write_status with out_accepted set to
+     * force_write_status_accepted (for non-OK + accepted>0 adversarial tests).
+     * 0 status = disabled.
+     */
+    ninlil_byte_stream_status_t force_write_status;
+    uint32_t force_write_status_accepted;
+    /*
+     * Write-only one-shot: return OK with out_accepted set to raw value with
+     * NO clamp to length (adversarial accepted>requested). 0 = disabled.
+     */
+    int force_write_ok_accepted_raw_once;
+    uint32_t force_write_ok_accepted_raw;
+    /* Read-only one-shot RX_OVERFLOW (poll does not consume this flag). */
+    int force_read_rx_overflow_once;
 
     ninlil_byte_stream_stats_t stats;
     ninlil_byte_stream_error_t last_error;
@@ -114,6 +129,30 @@ void ninlil_fake_byte_stream_force_read_ok_over_capacity_once(
 void ninlil_fake_byte_stream_force_read_would_block_nonzero_once(
     ninlil_fake_byte_stream_t *fake);
 void ninlil_fake_byte_stream_force_write_would_block_nonzero_once(
+    ninlil_fake_byte_stream_t *fake);
+
+/*
+ * Next write returns status with accepted (for CLOSED/LINK_DOWN/IO_ERROR +
+ * accepted>0 → INDETERMINATE_PARTIAL). Does not affect read.
+ */
+void ninlil_fake_byte_stream_force_write_status_once(
+    ninlil_fake_byte_stream_t *fake,
+    ninlil_byte_stream_status_t status,
+    uint32_t accepted);
+
+/*
+ * Next write returns OK with accepted set exactly (no clamp to length).
+ * Use accepted > length to exercise C4 INDETERMINATE_PARTIAL on over-report.
+ */
+void ninlil_fake_byte_stream_force_write_ok_accepted_raw_once(
+    ninlil_fake_byte_stream_t *fake,
+    uint32_t accepted);
+
+/*
+ * Next read returns RX_OVERFLOW. Poll path does not consume this flag
+ * (unlike inject_overflow which hits poll first).
+ */
+void ninlil_fake_byte_stream_force_read_rx_overflow_once(
     ninlil_fake_byte_stream_t *fake);
 
 #ifdef __cplusplus
