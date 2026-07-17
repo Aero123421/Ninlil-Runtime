@@ -69,7 +69,7 @@ jobs:
         # / nm / readelf are always present — tools missing ⇒ fail, never false-green.
         run: |
           pin="${{ steps.pin.outputs.version }}"
-          docker run --rm \
+          docker run --rm --interactive \
             --user 0:0 \
             -v "$PWD:/project" \
             -w /project \
