@@ -23,7 +23,7 @@
 | security session protocol | **しない** | 後続 freeze |
 | Network Attachment / Join、relay、multi-parent topology | **しない** | 後続 freeze（§14） |
 | secure compact radio wire の production bytes / version | **しない**（version **unallocated**） | 後続 Normative（R6） |
-| USB / SX1262 production 実装 | U0 時点は **しない**（docs freeze） | **U1 host candidate** + **U2 A2 ESP CDC candidate** + **U3 C3/C4 host candidate** + **U3↔U4 boundary candidate** + **U4 NCL1 pure codec + logical session host candidate** + **R1 radio_hal host candidate**（いずれも complete ではない; U1/U2 Required HIL pending; U4 series complete ではない; R1 は R2 permit authority / real SX1262 なし）。**SX1262 production TX 未実装** |
+| USB / SX1262 production 実装 | U0 時点は **しない**（docs freeze） | **U1 host candidate** + **U2 A2 ESP CDC candidate** + **U3 C3/C4 host candidate** + **U3↔U4 boundary candidate** + **U4 NCL1 pure codec + logical session host candidate** + **R1 radio_hal host candidate**。R2 permit authority / R3 airtime / R4 SX1262 control-plane / R5 LAB_ONLY profile は別 candidate として統合済み（いずれも complete ではない; U1/U2 Required HIL pending; U4 series complete ではない）。**SX1262 physical RF TX / production TX 未実装** |
 
 次を **主張しない**（forbidden claims）:
 
