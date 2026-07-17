@@ -29,7 +29,7 @@ extern "C" {
 
 #define NINLIL_PCP_SCHEMA_VERSION ((uint16_t)1u)
 #define NINLIL_PCP_MAGIC ((uint32_t)0x31504350u) /* LE 'PCP1' */
-#define NINLIL_PCP_NAMESPACE_BYTES ((size_t)12u)  /* "ninlil.pcp.v1" */
+#define NINLIL_PCP_NAMESPACE_BYTES ((size_t)13u)  /* "ninlil.pcp.v1" exact strlen */
 #define NINLIL_PCP_META_KEY_BYTES ((size_t)4u)
 #define NINLIL_PCP_ISS_KEY_BYTES ((size_t)20u)
 #define NINLIL_PCP_META_VALUE_BYTES ((size_t)200u)
@@ -484,8 +484,8 @@ void ninlil_pcp_last_error(
  *   - storage handle is authority-owned after successful open inside recover/publish;
  *     close only on shutdown/unbind (platform close is void).
  *   - Sole owner; reentry → BUSY_REENTRY; no heap; no VLA.
- *   - Functions are declared here; R2 implementation TU is a later PR.
- *     This header is the compile-time contract freeze (docs gate + consumer test).
+ *   - Implementation TU: src/radio/pcp_authority.c (private archive only).
+ *   - Not public include/ninlil ABI; not installed; not legal/R3/HIL complete.
  */
 
 #ifdef __cplusplus

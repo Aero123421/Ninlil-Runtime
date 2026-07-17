@@ -294,15 +294,20 @@ static int test_clock(void)
     output = caller_output();
     REQUIRE(ops->now(ops->user, &output) == NINLIL_PORT_OK
         && memcmp(&output, &raw, sizeof(output)) == 0);
-    REQUIRE(ninlil_test_clock_script(clock,
-        NINLIL_PORT_TEMPORARY_FAILURE, NULL, 1u));
     REQUIRE(ops->now(ops->user, NULL) == NINLIL_PORT_PERMANENT_FAILURE);
+    /* Zero/poison input is allowed: port owns OK output (full V1–V5 write). */
     (void)memset(&output, 0x33, sizeof(output));
     output.abi_version = 0u;
-    output.struct_size = (uint16_t)sizeof(output);
-    before = output;
-    REQUIRE(ops->now(ops->user, &output) == NINLIL_PORT_PERMANENT_FAILURE);
-    REQUIRE(memcmp(&output, &before, sizeof(output)) == 0);
+    output.struct_size = 0u;
+    REQUIRE(ops->now(ops->user, &output) == NINLIL_PORT_OK);
+    REQUIRE(output.abi_version == NINLIL_ABI_VERSION);
+    REQUIRE(output.struct_size >= (uint16_t)sizeof(output));
+    REQUIRE(output.reserved_zero == 0u);
+    REQUIRE(output.trust == NINLIL_CLOCK_TRUSTED
+        || output.trust == NINLIL_CLOCK_UNCERTAIN);
+    /* TEMP leaves sample bytes untouched (not treated as poison). */
+    REQUIRE(ninlil_test_clock_script(clock,
+        NINLIL_PORT_TEMPORARY_FAILURE, NULL, 1u));
     output = caller_output();
     before = output;
     REQUIRE(ops->now(ops->user, &output) == NINLIL_PORT_TEMPORARY_FAILURE);

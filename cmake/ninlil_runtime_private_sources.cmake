@@ -23,6 +23,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/transport/control_session.c
     src/radio/airtime_calculator.c
     src/radio/radio_hal.c
+    src/radio/pcp_authority.c
     src/transport/logical_session.c
 )
 
@@ -38,5 +39,6 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/transport/control_session.c
     src/radio/airtime_calculator.c
     src/radio/radio_hal.c
+    src/radio/pcp_authority.c
     src/transport/logical_session.c
 )

@@ -903,7 +903,7 @@ Durability: authority mutation は **FULL=3 only**。
 | --- | ---: |
 | PCP_SCHEMA_VERSION | 1 |
 | PCP_MAGIC | 0x31504350 |
-| PCP_NAMESPACE | `ninlil.pcp.v1` (12) |
+| PCP_NAMESPACE | `ninlil.pcp.v1` (13) |
 | PCP_META_KEY | `meta` (4) |
 | PCP_ISS_KEY_BYTES | 20 |
 | PCP_META_VALUE_BYTES | 200 |

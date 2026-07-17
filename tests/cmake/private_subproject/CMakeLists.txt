@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 18)
-    message(FATAL_ERROR "private source count is not 18: ${_private_sources}")
+if(NOT _private_source_count EQUAL 19)
+    message(FATAL_ERROR "private source count is not 19: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -96,6 +96,7 @@ set(_expected_private_source_names
     domain_store_scanner.c
     logical_session.c
     ncl1_codec.c
+    pcp_authority.c
     radio_hal.c
     runtime_lifecycle_model.c
     runtime_store_bootstrap.c
@@ -184,6 +185,12 @@ check_c_source_compiles(
     NINLIL_PRIVATE_RADIO_HAL_HEADER_LEAKED)
 if(NINLIL_PRIVATE_RADIO_HAL_HEADER_LEAKED)
     message(FATAL_ERROR "private radio_hal header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"pcp_authority.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_PCP_AUTHORITY_HEADER_LEAKED)
+if(NINLIL_PRIVATE_PCP_AUTHORITY_HEADER_LEAKED)
+    message(FATAL_ERROR "private pcp_authority header is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)
