@@ -22,6 +22,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
     src/radio/radio_hal.c
+    src/transport/logical_session.c
 )
 
 set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
@@ -35,4 +36,5 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
     src/radio/radio_hal.c
+    src/transport/logical_session.c
 )

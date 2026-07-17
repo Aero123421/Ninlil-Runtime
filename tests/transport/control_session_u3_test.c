@@ -75,7 +75,11 @@ static int stats_equal(
 static int test_object_ceilings(void)
 {
     REQUIRE(ninlil_ctrl_session_object_size() <= NINLIL_CTRL_SESSION_OBJECT_BYTES);
-    REQUIRE(ninlil_ctrl_session_object_align() == 8u);
+    REQUIRE(
+        ninlil_ctrl_session_object_align()
+        == _Alignof(ninlil_ctrl_session_object_t));
+    REQUIRE(
+        ninlil_ctrl_session_object_align() >= NINLIL_CTRL_SESSION_OBJECT_ALIGN);
     REQUIRE(NINLIL_CTRL_SESSION_INGRESS_MAX_ENTRIES == 16u);
     REQUIRE(NINLIL_CTRL_SESSION_INGRESS_BYTE_CAP == 8192u);
     return 0;

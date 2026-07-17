@@ -6,86 +6,22 @@
  * U3 C3 session + C4 pump implementation, plus U3↔U4 production-private
  * logical epoch / tracked TX / RX-only cold boundary.
  * Portable C11. No heap / no VLA / no platform headers.
+ *
+ * Storage model: ninlil_ctrl_session_object_t embeds a typed
+ * struct ninlil_ctrl_session session member. init_object initializes
+ * that member in place — no unsigned-char array type punning.
  */
 
 #define MAGIC ((uint32_t)0x43335355u) /* 'C3SU' */
-#define RX_CHUNK_BYTES ((uint32_t)256u)
 
-#define TRACKED_PHASE_NONE ((uint8_t)0u)
-#define TRACKED_PHASE_INTENT ((uint8_t)1u)
-#define TRACKED_PHASE_WIRE ((uint8_t)2u)
-#define TRACKED_PHASE_TERMINAL ((uint8_t)3u)
-
-typedef struct ingress_entry {
-    uint8_t type;
-    uint8_t reserved0;
-    uint16_t flags;
-    uint32_t stream_or_cell_id;
-    uint32_t sequence;
-    uint16_t payload_length;
-    uint16_t payload_off;
-} ingress_entry_t;
-
-typedef struct intent_entry {
-    uint8_t type;
-    uint8_t reserved0;
-    uint16_t flags;
-    uint32_t stream_or_cell_id;
-    uint32_t sequence;
-    uint16_t payload_length;
-    uint16_t payload_off;
-    uint64_t tracked_token; /* 0 = legacy untracked intent */
-} intent_entry_t;
-
-struct ninlil_ctrl_session {
-    uint32_t magic;
-    ninlil_ctrl_session_state_t state;
-    uint32_t reserved_pad;
-    ninlil_byte_stream_t *stream;
-    uint64_t bound_generation;
-
-    ninlil_model_control_frame_parser_t parser;
-    uint8_t parser_payload[NINLIL_MODEL_CONTROL_FRAME_MAX_PAYLOAD_BYTES];
-
-    ingress_entry_t ingress[NINLIL_CTRL_SESSION_INGRESS_MAX_ENTRIES];
-    uint8_t ingress_pool[NINLIL_CTRL_SESSION_INGRESS_BYTE_CAP];
-    uint32_t ingress_head;
-    uint32_t ingress_count;
-    uint32_t ingress_bytes;
-
-    intent_entry_t intent[NINLIL_CTRL_SESSION_TX_INTENT_MAX_ENTRIES];
-    uint8_t intent_pool[NINLIL_CTRL_SESSION_TX_INTENT_BYTE_CAP];
-    uint32_t intent_head;
-    uint32_t intent_count;
-    uint32_t intent_bytes;
-
-    /* Full encoded frame owned until all-or-none C1 write accepts it. */
-    uint8_t tx_wire[NINLIL_MODEL_CONTROL_FRAME_MAX_BYTES];
-    uint32_t tx_wire_len;
-    uint32_t tx_wire_off;
-    uint64_t tx_wire_tracked_token; /* nonzero if wire holds tracked frame */
-
-    uint8_t rx_chunk[RX_CHUNK_BYTES];
-
-    /* Logical epoch claim (0 epoch_active / claimed=0 ⇒ no claim). */
-    uint8_t epoch_claimed;
-    uint8_t reserved_epoch[7];
-    uint64_t epoch_active;
-    uint64_t epoch_bound_gen;
-    uint64_t epoch_next; /* next id to mint; 0 ⇒ exhausted */
-
-    /* Tracked TX slot (raw outstanding max 1). */
-    uint8_t tracked_phase;
-    uint8_t reserved_tracked[3];
-    ninlil_ctrl_session_tx_resolution_t tracked_resolution;
-    uint64_t tracked_token;
-    uint64_t token_next; /* next token to mint; 0 ⇒ exhausted */
-
-    ninlil_ctrl_session_stats_t stats;
-    ninlil_ctrl_session_error_t last_error;
-    uint8_t had_prior_fence;
-    uint8_t reserved_tail[7];
-};
+/* Layout-private aliases used throughout this TU. */
+#define RX_CHUNK_BYTES NINLIL_CS_RX_CHUNK_BYTES
+#define TRACKED_PHASE_NONE NINLIL_CS_TRACKED_PHASE_NONE
+#define TRACKED_PHASE_INTENT NINLIL_CS_TRACKED_PHASE_INTENT
+#define TRACKED_PHASE_WIRE NINLIL_CS_TRACKED_PHASE_WIRE
+#define TRACKED_PHASE_TERMINAL NINLIL_CS_TRACKED_PHASE_TERMINAL
+typedef ninlil_cs_ingress_entry_t ingress_entry_t;
+typedef ninlil_cs_intent_entry_t intent_entry_t;
 
 _Static_assert(
     sizeof(struct ninlil_ctrl_session) <= NINLIL_CTRL_SESSION_OBJECT_BYTES,
@@ -1260,7 +1196,8 @@ size_t ninlil_ctrl_session_object_size(void)
 
 size_t ninlil_ctrl_session_object_align(void)
 {
-    return NINLIL_CTRL_SESSION_OBJECT_ALIGN;
+    /* Actual complete-type alignment — not a floor constant alone. */
+    return _Alignof(struct ninlil_ctrl_session);
 }
 
 ninlil_ctrl_session_status_t ninlil_ctrl_session_init(
@@ -1279,7 +1216,7 @@ ninlil_ctrl_session_status_t ninlil_ctrl_session_init(
         return NINLIL_CTRL_SESSION_INVALID_ARGUMENT;
     }
     addr = (uintptr_t)storage;
-    if ((addr % NINLIL_CTRL_SESSION_OBJECT_ALIGN) != 0u) {
+    if ((addr % _Alignof(struct ninlil_ctrl_session)) != 0u) {
         return NINLIL_CTRL_SESSION_INVALID_ARGUMENT;
     }
     session = as_session(storage);
@@ -1308,7 +1245,9 @@ ninlil_ctrl_session_status_t ninlil_ctrl_session_init_object(
     if (object == NULL) {
         return NINLIL_CTRL_SESSION_INVALID_ARGUMENT;
     }
-    return ninlil_ctrl_session_init(object->bytes, sizeof(object->bytes), out_session);
+    /* Typed member address — not char-array storage cast. */
+    return ninlil_ctrl_session_init(
+        &object->session, sizeof(object->session), out_session);
 }
 
 ninlil_ctrl_session_status_t ninlil_ctrl_session_bind(
