@@ -932,37 +932,18 @@ ninlil_r5_status_t ninlil_r5_activate_profiles(
         return NINLIL_R5_PROFILE_DENIED;
     }
     /*
-     * Assignment already bound: candidate REG must still admit assignment
-     * channel + PHY before any durable rebind or active swap. Fail-closed
-     * preserves active HW/REG, assignment, pcp, registry, and durable state.
-     * Distinct bind_item: CHANNEL vs PHY for diagnostics.
+     * Identity / revision / idempotent before assignment compatibility
+     * (docs/29 §5 activate precedence). Same id+rev with different full
+     * content is DUPLICATE even when the content also fails channel/PHY
+     * admit — compatibility must not mask the identity contract.
      */
-    if (r5->assignment_bound != 0u) {
-        if (r5->assignment.channel_id < cand_reg.channel_id_min
-            || r5->assignment.channel_id > cand_reg.channel_id_max) {
-            r5_sat_inc(&r5->stats.activate_deny);
-            r5_set_error(
-                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,
-                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,
-                NINLIL_R5_BIND_CHANNEL, "assign_ch");
-            return NINLIL_R5_PROFILE_DENIED;
-        }
-        if (!r5_phy_in_reg(&cand_reg, &r5->assignment.phy)) {
-            r5_sat_inc(&r5->stats.activate_deny);
-            r5_set_error(
-                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,
-                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,
-                NINLIL_R5_BIND_PHY, "assign_phy");
-            return NINLIL_R5_PROFILE_DENIED;
-        }
-    }
-    /* same-id revision rollback fail-closed (docs/29 §2.1) */
     if (r5->profiles_active != 0u) {
         int hw_id_rev_match;
         int reg_id_rev_match;
         int hw_full;
         int reg_full;
 
+        /* same-id revision rollback fail-closed (docs/29 §2.1) */
         if (r5_id_equal(&r5->hw.profile_id, &cand_hw.profile_id)
             && cand_hw.profile_rev < r5->hw.profile_rev) {
             r5_sat_inc(&r5->stats.activate_deny);
@@ -1009,6 +990,31 @@ ninlil_r5_status_t ninlil_r5_activate_profiles(
                 r5, out_error, out_safe, NINLIL_R5_OK, NINLIL_R5_STAGE_ACTIVATE,
                 NINLIL_R5_REASON_IDEMPOTENT, NINLIL_R5_BIND_NONE, "idem");
             return NINLIL_R5_OK;
+        }
+    }
+    /*
+     * Assignment already bound: after identity resolution, candidate REG must
+     * still admit assignment channel + PHY before any durable rebind or active
+     * swap. Fail-closed preserves active HW/REG, assignment, pcp, registry,
+     * and durable state. Distinct bind_item: CHANNEL vs PHY for diagnostics.
+     */
+    if (r5->assignment_bound != 0u) {
+        if (r5->assignment.channel_id < cand_reg.channel_id_min
+            || r5->assignment.channel_id > cand_reg.channel_id_max) {
+            r5_sat_inc(&r5->stats.activate_deny);
+            r5_set_error(
+                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,
+                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,
+                NINLIL_R5_BIND_CHANNEL, "assign_ch");
+            return NINLIL_R5_PROFILE_DENIED;
+        }
+        if (!r5_phy_in_reg(&cand_reg, &r5->assignment.phy)) {
+            r5_sat_inc(&r5->stats.activate_deny);
+            r5_set_error(
+                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,
+                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,
+                NINLIL_R5_BIND_PHY, "assign_phy");
+            return NINLIL_R5_PROFILE_DENIED;
         }
     }
 

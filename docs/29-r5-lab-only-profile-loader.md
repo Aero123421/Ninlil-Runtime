@@ -189,12 +189,17 @@ R2 durable に term/digest は載せない（schema1 不変; U5 ARW が term/dig
 ```text
 init R5
 load HW doc + REG doc (LAB_ONLY)
-activate profiles (outstanding==0)
-  - assignment unbound: staged→active only
-  - assignment bound: strict gen++ + full durable L_core rebind first;
-    only then swap active (definite fail preserves old active; COMMIT_UNKNOWN
-    preserves local active but durable may need recover — not claimed atomic)
-  - same id+rev with different full content → DUPLICATE deny; only full-struct equal is idempotent
+activate profiles (outstanding==0) — precedence before durable rebind/active swap:
+  1. staged / outstanding / fence gates; HW↔REG applicability; LAB_ONLY
+  2. identity/revision: same-id rev rollback → ROLLBACK; same id+rev with
+     different full content → DUPLICATE; only full-struct equal is idempotent
+  3. assignment bound: candidate REG must admit assignment channel+PHY
+     (else RANGE + BIND_CHANNEL/PHY). Must not precede step 2 — same-id+rev
+     content change (e.g. channel 1..3→1..1) is DUPLICATE, never RANGE
+  4. assignment bound: strict gen++ + full durable L_core rebind first;
+     only then swap active (definite fail preserves old active; COMMIT_UNKNOWN
+     preserves local active but durable may need recover — not claimed atomic)
+  5. assignment unbound: staged→active only
 bind site assignment (term/digest/generation/tx/channel/phy)
   - if pcp published: commit_live full L_core+gen; else local only until publish
 bind R2 live_profile from R5 (ceiling = regulatory max_airtime_ceiling_us)

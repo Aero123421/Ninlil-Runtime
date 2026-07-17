@@ -363,16 +363,19 @@ ninlil_r5_status_t ninlil_r5_load_regulatory_profile(
     ninlil_r5_error_t *out_error);
 
 /*
- * Activate staged HW+REG pair.
- * - outstanding registry non-empty or same-id revision rollback → deny.
- * - Same id+rev with different full content → PROFILE_DENIED DUPLICATE;
- *   only exact full-struct HW+REG equality is idempotent.
- * - When assignment is bound: candidate REG must admit assignment channel+PHY
- *   (else PROFILE_DENIED RANGE, no active/durable mutation); then strict
- *   generation bump + full durable L_core rebind before swapping active.
- *   Definite durable failure preserves local active. COMMIT_UNKNOWN preserves
- *   local active but durable outcome is unknown until recover.
- * - When assignment unbound: staged→active only (no durable gen).
+ * Activate staged HW+REG pair. Precedence (before durable rebind/active swap):
+ * 1) staged / outstanding / fence gates
+ * 2) HW↔REG applicability + LAB_ONLY
+ * 3) same-id revision rollback; same id+rev full-content DUPLICATE;
+ *    exact full-struct HW+REG equality → idempotent OK
+ * 4) when assignment bound: candidate REG must admit assignment channel+PHY
+ *    (else PROFILE_DENIED RANGE; bind_item CHANNEL vs PHY) — must not run
+ *    before identity/duplicate so same-id+rev content change is never masked
+ *    as RANGE/BIND_CHANNEL
+ * 5) assignment-bound: strict gen++ + durable L_core rebind, then active swap
+ *    (definite durable fail preserves local active; COMMIT_UNKNOWN preserves
+ *    local active but durable is unknown until recover)
+ * 6) assignment unbound: staged→active only (no durable gen)
  */
 ninlil_r5_status_t ninlil_r5_activate_profiles(
     ninlil_r5_t *r5,

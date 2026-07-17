@@ -1945,6 +1945,148 @@ static int test_activate_rebind_commit_unknown_preserves(void)
     return 0;
 }
 
+/*
+ * Same REG id+rev content change that would also fail assignment channel/PHY
+ * admit must still be DUPLICATE (identity before compatibility). Caller
+ * mutates *reg_mut in place (same id+rev); helper stages, activates, and
+ * checks active/staged/assignment/registry/fence/PCP/durable gen/live and
+ * all storage op counts unchanged; activate_deny only +1.
+ */
+static int activate_same_id_rev_reg_mutate_is_duplicate(
+    void (*mutate_reg)(ninlil_r5_regulatory_profile_t *reg))
+{
+    env_t e;
+    ninlil_r5_regulatory_profile_t r;
+    uint8_t hd[NINLIL_R5_HW_DOC_BYTES];
+    uint8_t rd[NINLIL_R5_REG_DOC_BYTES];
+    ninlil_r5_hardware_profile_t hw_act;
+    ninlil_r5_regulatory_profile_t reg_act;
+    ninlil_r5_hardware_profile_t hw_staged;
+    ninlil_r5_regulatory_profile_t reg_staged;
+    ninlil_r5_site_assignment_t assign_before;
+    ninlil_r5_registry_slot_t reg_slots_before[NINLIL_R5_MAX_OUTSTANDING];
+    ninlil_pcp_bound_live_t live_before;
+    pcp_snap_t pcp_before;
+    ninlil_pcp_t *pcp_ptr;
+    ninlil_r5_stats_t stats;
+    uint32_t reg_count_before;
+    uint32_t fence_pending_before;
+    uint64_t fence_target_before;
+    uint64_t gen_before = 0u;
+    uint64_t gen_after = 0u;
+    uint64_t storage_before[NINLIL_TEST_STORAGE_OP_COUNT];
+    uint64_t deny_before;
+    size_t si;
+
+    if (mutate_reg == NULL) {
+        return 1;
+    }
+    CHECK(env_setup(&e) == 0);
+
+    /* Keep HW exact; mutate REG content only, keep same id+rev. */
+    CHECK(ninlil_r5_encode_hardware_profile(&e.r5->hw, hd) == NINLIL_R5_OK);
+    CHECK_ST(
+        ninlil_r5_load_hardware_profile(e.r5, hd, sizeof(hd), &e.err),
+        NINLIL_R5_OK);
+    r = e.r5->reg;
+    mutate_reg(&r);
+    CHECK(r.profile_rev == e.r5->reg.profile_rev);
+    CHECK(memcmp(r.profile_id.bytes, e.r5->reg.profile_id.bytes, 16u) == 0);
+    CHECK(ninlil_r5_encode_regulatory_profile(&r, rd) == NINLIL_R5_OK);
+    CHECK_ST(
+        ninlil_r5_load_regulatory_profile(e.r5, rd, sizeof(rd), &e.err),
+        NINLIL_R5_OK);
+
+    hw_act = e.r5->hw;
+    reg_act = e.r5->reg;
+    hw_staged = e.r5->hw_staged;
+    reg_staged = e.r5->reg_staged;
+    assign_before = e.r5->assignment;
+    (void)memcpy(reg_slots_before, e.r5->registry, sizeof(reg_slots_before));
+    reg_count_before = e.r5->registry_count;
+    fence_pending_before = e.r5->fence_pending;
+    fence_target_before = e.r5->fence_target_generation;
+    pcp_ptr = e.r5->pcp;
+    live_before = e.pcp->bound_live;
+    pcp_snap_take(e.pcp, &pcp_before);
+    CHECK(
+        ninlil_pcp_get_assignment_generation(e.pcp, &gen_before)
+        == NINLIL_PCP_OK);
+    for (si = 0u; si < (size_t)NINLIL_TEST_STORAGE_OP_COUNT; ++si) {
+        storage_before[si] = ninlil_test_storage_call_count(
+            e.storage, (ninlil_test_storage_operation_t)si);
+    }
+    ninlil_r5_stats(e.r5, &stats);
+    deny_before = stats.activate_deny;
+
+    CHECK(
+        ninlil_r5_activate_profiles(e.r5, &e.err) == NINLIL_R5_PROFILE_DENIED);
+    CHECK(e.err.reason == NINLIL_R5_REASON_DUPLICATE);
+    CHECK(e.err.bind_item == NINLIL_R5_BIND_NONE);
+    CHECK(e.err.status == NINLIL_R5_PROFILE_DENIED);
+
+    CHECK(memcmp(&e.r5->hw, &hw_act, sizeof(hw_act)) == 0);
+    CHECK(memcmp(&e.r5->reg, &reg_act, sizeof(reg_act)) == 0);
+    CHECK(memcmp(&e.r5->hw_staged, &hw_staged, sizeof(hw_staged)) == 0);
+    CHECK(memcmp(&e.r5->reg_staged, &reg_staged, sizeof(reg_staged)) == 0);
+    CHECK(memcmp(&e.r5->assignment, &assign_before, sizeof(assign_before))
+          == 0);
+    CHECK(memcmp(e.r5->registry, reg_slots_before, sizeof(reg_slots_before))
+          == 0);
+    CHECK(e.r5->registry_count == reg_count_before);
+    CHECK(e.r5->fence_pending == fence_pending_before);
+    CHECK(e.r5->fence_target_generation == fence_target_before);
+    CHECK(e.r5->pcp == pcp_ptr);
+    CHECK(memcmp(&e.pcp->bound_live, &live_before, sizeof(live_before)) == 0);
+    CHECK(pcp_snap_unchanged(e.pcp, &pcp_before) != 0);
+    CHECK(
+        ninlil_pcp_get_assignment_generation(e.pcp, &gen_after)
+        == NINLIL_PCP_OK);
+    CHECK(gen_after == gen_before);
+    CHECK(
+        e.r5->assignment.permit_bind_generation
+        == assign_before.permit_bind_generation);
+    for (si = 0u; si < (size_t)NINLIL_TEST_STORAGE_OP_COUNT; ++si) {
+        CHECK(
+            ninlil_test_storage_call_count(
+                e.storage, (ninlil_test_storage_operation_t)si)
+            == storage_before[si]);
+    }
+    ninlil_r5_stats(e.r5, &stats);
+    CHECK(stats.activate_deny == deny_before + 1u);
+
+    (void)env_teardown(&e);
+    return 0;
+}
+
+/* channel 1..3 → 1..1 excludes assigned channel 2; must not surface as RANGE. */
+static void mutate_reg_narrow_channel_excludes_assign(
+    ninlil_r5_regulatory_profile_t *reg)
+{
+    reg->channel_id_min = 1u;
+    reg->channel_id_max = 1u;
+}
+
+/* SF 7..9 → 8..9 excludes assignment SF=7; must not surface as RANGE/BIND_PHY. */
+static void mutate_reg_narrow_sf_excludes_assign(
+    ninlil_r5_regulatory_profile_t *reg)
+{
+    reg->sf_min = 8u;
+    reg->sf_max = 9u;
+}
+
+static int test_activate_same_id_rev_channel_narrow_is_duplicate(void)
+{
+    return activate_same_id_rev_reg_mutate_is_duplicate(
+        mutate_reg_narrow_channel_excludes_assign);
+}
+
+static int test_activate_same_id_rev_phy_narrow_is_duplicate(void)
+{
+    return activate_same_id_rev_reg_mutate_is_duplicate(
+        mutate_reg_narrow_sf_excludes_assign);
+}
+
 /* Same id+rev with different content must DUPLICATE; exact full equal idempotent. */
 static int test_activate_profile_identity_full_struct(void)
 {
@@ -4191,6 +4333,14 @@ int main(void)
     }
     n++;
     if (test_activate_profile_identity_full_struct() != 0) {
+        return 1;
+    }
+    n++;
+    if (test_activate_same_id_rev_channel_narrow_is_duplicate() != 0) {
+        return 1;
+    }
+    n++;
+    if (test_activate_same_id_rev_phy_narrow_is_duplicate() != 0) {
         return 1;
     }
     n++;
