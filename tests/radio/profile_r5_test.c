@@ -312,7 +312,6 @@ static int test_lab_only_load_and_non_lab_deny(void)
     ninlil_r5_object_t obj = NINLIL_R5_OBJECT_INIT;
     ninlil_r5_t *r5 = NULL;
     uint8_t doc[NINLIL_R5_REG_DOC_BYTES];
-    ninlil_r5_regulatory_profile_t reg;
     ninlil_r5_error_t err;
     uint8_t approvals[] = {
         T_EXPECT_CANDIDATE, T_EXPECT_DEPLOY, T_EXPECT_REVOKED,
@@ -335,8 +334,6 @@ static int test_lab_only_load_and_non_lab_deny(void)
         NINLIL_R5_OK);
 
     for (i = 0u; i < sizeof(approvals); ++i) {
-        reg = e.reg;
-        reg.approval_state = approvals[i];
         /* encode rejects non-LAB at encode; forge bytes after encode */
         CHECK(ninlil_r5_encode_regulatory_profile(&e.reg, doc) == NINLIL_R5_OK);
         doc[6] = approvals[i];
@@ -4147,15 +4144,30 @@ static int test_r5_api_alias_output_order_named(void)
                     &obj, (ninlil_r5_t **)(void *)&obj)
                 == NINLIL_R5_ALIAS);
             break;
-        case C_ENCODE_DOC:
+        case C_ENCODE_DOC: {
+            /*
+             * Same-base profile/out ALIAS: use a union whose storage is at
+             * least NINLIL_R5_HW_DOC_BYTES so GCC does not treat the out
+             * object as undersized relative to the fixed doc length.
+             */
+            union {
+                ninlil_r5_hardware_profile_t hw;
+                uint8_t doc[NINLIL_R5_HW_DOC_BYTES];
+            } u;
+            uint8_t u_before[sizeof(u)];
+
+            (void)memset(&u, 0xA5, sizeof(u));
+            u.hw = e.hw;
+            (void)memcpy(u_before, &u, sizeof(u));
             CHECK(
-                ninlil_r5_encode_hardware_profile(
-                    &e.hw, (uint8_t *)(void *)&e.hw)
+                ninlil_r5_encode_hardware_profile(&u.hw, u.doc)
                 == NINLIL_R5_ALIAS);
+            CHECK(memcmp(&u, u_before, sizeof(u)) == 0);
             CHECK(
                 ninlil_r5_encode_hardware_profile(&e.hw, hw_doc)
                 == NINLIL_R5_OK);
             break;
+        }
         case C_STATS_OWNER: {
             uint8_t saved = *((uint8_t *)(void *)e.r5);
             ninlil_r5_stats(e.r5, (ninlil_r5_stats_t *)(void *)e.r5);
