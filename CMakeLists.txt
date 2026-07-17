@@ -1901,6 +1901,76 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
 
+    # R2: Physical Compliance Permit authority Normative freeze docs gate.
+    # Does not claim R2 body implementation / legal / RF / HIL / re-review GO.
+    add_test(
+        NAME pcp_r2_docs_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/pcp_r2_docs_gate.py
+            check
+    )
+    add_test(
+        NAME pcp_r2_docs_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/pcp_r2_docs_gate.py
+            self-test
+    )
+
+    # R2 complete private header consumer compile (types/sizeof only).
+    add_executable(ninlil_pcp_r2_consumer_compile
+        tests/radio/pcp_r2_consumer_compile_test.c
+    )
+    target_include_directories(ninlil_pcp_r2_consumer_compile PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    set_target_properties(ninlil_pcp_r2_consumer_compile PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_pcp_r2_consumer_compile)
+    add_test(NAME pcp_r2_consumer_compile COMMAND ninlil_pcp_r2_consumer_compile)
+
+    # R2 time_sample ABI: real platform.h offsetof (POSIX LP64 host).
+    add_executable(ninlil_pcp_r2_time_sample_abi
+        tests/radio/pcp_r2_time_sample_abi_test.c
+    )
+    target_include_directories(ninlil_pcp_r2_time_sample_abi PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    set_target_properties(ninlil_pcp_r2_time_sample_abi PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_pcp_r2_time_sample_abi)
+    add_test(NAME pcp_r2_time_sample_abi COMMAND ninlil_pcp_r2_time_sample_abi)
+
+    # ILP32-class static_assert compile (ESP32-S3 layout class) via arm-none-eabi when present.
+    find_program(NINLIL_ARM_NONE_EABI_GCC arm-none-eabi-gcc)
+    if(NINLIL_ARM_NONE_EABI_GCC)
+        add_custom_target(pcp_r2_time_sample_abi_ilp32_obj
+            COMMAND ${NINLIL_ARM_NONE_EABI_GCC}
+                -std=c11
+                -ffreestanding
+                -I${CMAKE_CURRENT_SOURCE_DIR}/include
+                -c ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio/pcp_r2_time_sample_abi_static.c
+                -o ${CMAKE_CURRENT_BINARY_DIR}/pcp_r2_time_sample_abi_ilp32.o
+            DEPENDS
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio/pcp_r2_time_sample_abi_static.c
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/ninlil/platform.h
+                ${CMAKE_CURRENT_SOURCE_DIR}/include/ninlil/version.h
+            COMMENT "R2 time_sample ABI static_assert ILP32 (arm-none-eabi)"
+            VERBATIM
+        )
+        add_test(
+            NAME pcp_r2_time_sample_abi_ilp32
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+                --target pcp_r2_time_sample_abi_ilp32_obj
+        )
+    endif()
+
     add_executable(ninlil_radio_hal_r1_test
         tests/radio/radio_hal_r1_test.c
         tests/support/radio_hal_spy.c

@@ -124,13 +124,15 @@ Production Runtimeは`DEPLOYMENT_APPROVED`だけを使用できます。
 
 対象にはapplication dataだけでなく、beacon、Network Join / Attachment control、ACK、receipt、retry、relay、diagnostics、emergency trafficを含みます。
 
+**R2 authority 実装正本:** [24章 §14](24-r2-physical-compliance-permit-authority.md) / [ADR-0004](adr/0004-r2-durable-permit-authority.md) / `pcp_r2_docs_gate` semantic（FIFO·advance·fresh-epoch·ops→user·publish·airtime ceiling; **docs freeze; R2 code / legal / re-review GO ではない**）。
+
 Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-boundary.md)）。発行・consume の両方で検査する。
 
 - hardware profile ID / revision
 - regulatory profile ID / revision
 - **SiteAssignment identity / revision / epoch**（`NIN-CMP-001` 必須）
-- physical transmitter identity
-- bearer / radio / channel / PHY
+- **physical transmitter identity**（physical radio path; Foundation `ninlil_bearer_*` ではない）
+- channel / PHY（live radio settings; R1 `live_binding` / 24章 Live bind set L）
 - frame digest and byte length（immutable TX plan; permit 発行後の変更禁止）
 - conservatively calculated maximum airtime
 - not-before / expiry

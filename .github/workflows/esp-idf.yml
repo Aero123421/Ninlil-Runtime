@@ -77,6 +77,14 @@ jobs:
             bash -s <<'NINLIL_ESP_CI'
           set -euo pipefail
           . "${IDF_PATH}/export.sh"
+          # R2: mandatory Xtensa ESP32-S3 ABI compile of time_sample offsetof static_assert.
+          # Missing toolchain or compile failure ⇒ job fail (not optional / not host-only).
+          command -v xtensa-esp32s3-elf-gcc
+          xtensa-esp32s3-elf-gcc -std=c11 -ffreestanding \
+            -I include \
+            -c tests/radio/pcp_r2_time_sample_abi_static.c \
+            -o /tmp/pcp_r2_time_sample_abi_esp32s3.o
+          test -s /tmp/pcp_r2_time_sample_abi_esp32s3.o
           idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
           idf.py -C ports/esp-idf/hil_app set-target esp32s3 build
           ELF=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.elf
@@ -96,6 +104,8 @@ jobs:
           test -f "$HIL_MAP"
           test -f "$HIL_ELF"
           test -f "$ARCHIVE"
+          # R2 ABI static_assert TU must be in ninlil component archive (ESP32-S3).
+          xtensa-esp32s3-elf-nm "${ARCHIVE}" | grep -E 'ninlil_pcp_r2_time_sample_abi_static_anchor'
           python3 tools/esp_idf_app_main_frame_gate.py check \
             --elf "${ELF}" \
             --sdkconfig "${SDK}" \

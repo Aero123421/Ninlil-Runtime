@@ -24,6 +24,9 @@ set(NINLIL_ESP_IDF_PORT_PURE_RELATIVE_SOURCES
     ports/esp-idf/src/usb_cdc_ring_logic.c
     ports/esp-idf/src/usb_cdc_state_logic.c
     ports/esp-idf/src/usb_cdc_orch_logic.c
+    # R2: ninlil_time_sample_t offsetof static_assert (ESP32-S3 / Xtensa ILP32 evidence).
+    # Compile-only contract; no runtime dependency. Required in esp-idf CI.
+    tests/radio/pcp_r2_time_sample_abi_static.c
 )
 
 set(NINLIL_ESP_IDF_PORT_BACKEND_RELATIVE_SOURCES
