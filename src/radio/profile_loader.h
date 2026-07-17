@@ -367,10 +367,11 @@ ninlil_r5_status_t ninlil_r5_load_regulatory_profile(
  * - outstanding registry non-empty or same-id revision rollback → deny.
  * - Same id+rev with different full content → PROFILE_DENIED DUPLICATE;
  *   only exact full-struct HW+REG equality is idempotent.
- * - When assignment is bound: strict generation bump + full durable L_core
- *   rebind (commit_live) before swapping active. Definite durable failure
- *   preserves local active. COMMIT_UNKNOWN preserves local active but durable
- *   outcome is unknown until recover (not claimed mixed-free atomic).
+ * - When assignment is bound: candidate REG must admit assignment channel+PHY
+ *   (else PROFILE_DENIED RANGE, no active/durable mutation); then strict
+ *   generation bump + full durable L_core rebind before swapping active.
+ *   Definite durable failure preserves local active. COMMIT_UNKNOWN preserves
+ *   local active but durable outcome is unknown until recover.
  * - When assignment unbound: staged→active only (no durable gen).
  */
 ninlil_r5_status_t ninlil_r5_activate_profiles(

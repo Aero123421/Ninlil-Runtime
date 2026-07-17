@@ -463,9 +463,10 @@ ninlil_pcp_status_t ninlil_pcp_revoke_all_outstanding(
  *   - RAM bound_live updated ONLY after FULL commit OK (no RAM-first)
  *   - COMMIT_UNKNOWN / BUSY-on-commit → F_s + sticky fence best-effort
  *   - definite rollback failure → mapped fence/error (not silent OK)
- *   - alias/output order before mutation:
- *       owner↔live, owner↔out_error, and live↔out_error all rejected
- *       (live is const input; out_error is mutable — never overwrite live)
+ *   - alias/output order before any owner mutation (stats/last_error/in_api):
+ *       owner↔live, owner↔out_error, and live↔out_error → NINLIL_PCP_ALIAS only
+ *       with zero mutation of owner, live, and unsafe out_error canaries
+ *       (live is const input; never overwrite live via out_error)
  *
  * ninlil_pcp_set_assignment_generation delegates here keeping durable L_core
  * (read in-txn) so gen-only bumps cannot desync L_core.

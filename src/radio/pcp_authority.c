@@ -3245,28 +3245,27 @@ ninlil_pcp_status_t ninlil_pcp_commit_live_binding(
     int live_equal;
     int gen_equal;
 
-    if (!pcp_guard_active(pcp, out_error, &out_safe, NINLIL_PCP_STAGE_BIND)) {
-        return pcp != NULL ? pcp->last_error.status : NINLIL_PCP_INVALID_ARGUMENT;
+    if (pcp == NULL) {
+        return NINLIL_PCP_INVALID_ARGUMENT;
+    }
+    /*
+     * Alias/output order before any owner mutation (stats/last_error/in_api):
+     * owner↔live, owner↔out_error, live↔out_error → ALIAS only, zero mutation.
+     */
+    if (live != NULL
+        && pcp_ranges_overlap(pcp, sizeof(*pcp), live, sizeof(*live))) {
+        return NINLIL_PCP_ALIAS;
     }
     if (out_error != NULL
         && pcp_ranges_overlap(pcp, sizeof(*pcp), out_error, sizeof(*out_error))) {
-        out_safe = 0;
-        pcp_sat_inc(&pcp->stats.alias_reject);
-    }
-    if (live != NULL
-        && pcp_ranges_overlap(pcp, sizeof(*pcp), live, sizeof(*live))) {
-        pcp_sat_inc(&pcp->stats.alias_reject);
-        pcp_set_error(
-            pcp, out_error, out_safe, NINLIL_PCP_ALIAS, NINLIL_PCP_STAGE_BIND,
-            NINLIL_PCP_REASON_ALIAS, "alias_live");
         return NINLIL_PCP_ALIAS;
     }
-    /* live is const input; out_error is mutable — reject before any write. */
     if (live != NULL && out_error != NULL
         && pcp_ranges_overlap(live, sizeof(*live), out_error, sizeof(*out_error))) {
-        pcp_sat_inc(&pcp->stats.alias_reject);
-        /* Do not write out_error (would corrupt live). */
         return NINLIL_PCP_ALIAS;
+    }
+    if (!pcp_guard_active(pcp, out_error, &out_safe, NINLIL_PCP_STAGE_BIND)) {
+        return pcp->last_error.status;
     }
     if (!pcp_live_struct_ok(live) || generation == 0u) {
         pcp_set_error(

@@ -156,8 +156,62 @@ def check_source(root: pathlib.Path) -> None:
         fail("test must include issue-time bind mismatch matrix")
     if "test_issue_bind_mismatch_matrix()" not in test:
         fail("main must call issue-time bind mismatch matrix")
-    if "profile_r5_golden_profiles.h" not in test and "k_r5_golden_hw_v1" not in test:
-        fail("tests must use independent golden profile fixtures")
+    if "profile_r5_golden_profiles.h" not in test:
+        fail("tests must include profile_r5_golden_profiles.h")
+    if "k_r5_golden_hw_v1" not in test:
+        fail("tests must reference k_r5_golden_hw_v1")
+    if "k_r5_golden_reg_v1" not in test:
+        fail("tests must reference k_r5_golden_reg_v1")
+    if "(void)memcpy(e->hw_doc, k_r5_golden_hw_v1, NINLIL_R5_HW_DOC_BYTES);" not in test:
+        fail("env_setup must load golden HW fixture by name")
+    if "(void)memcpy(e->reg_doc, k_r5_golden_reg_v1, NINLIL_R5_REG_DOC_BYTES);" not in test:
+        fail("env_setup must load golden REG fixture by name")
+    # effective/expiry operator correctness is enforced by runtime mutation
+    # self-tests (token-only check is insufficient).
+    if "test_activate_assignment_channel_phy_revalidate()" not in test:
+        fail("main must call activate assignment channel/PHY revalidate test")
+    if "test_issue_profile_effective_expiry_boundaries()" not in test:
+        fail("main must call issue profile effective/expiry boundary test")
+    if "assign_ch" not in c or "assign_phy" not in c:
+        fail("activate must distinct CHANNEL vs PHY diagnostics for assignment REG")
+    if "NINLIL_R5_BIND_CHANNEL" not in c or "NINLIL_R5_BIND_PHY" not in c:
+        fail("activate assignment revalidate must set BIND_CHANNEL and BIND_PHY")
+    if "NAME profile_r5_golden_oracle\n" not in cm and "NAME profile_r5_golden_oracle\r\n" not in cm:
+        # exact CTest name line (not *_DISABLED)
+        if not re.search(r"NAME profile_r5_golden_oracle\s*$", cm, re.M):
+            fail("CMakeLists must register profile_r5_golden_oracle CTest")
+    oracle = read(root, "tools/profile_r5_golden_oracle.py")
+    # Anchors match reconstruct+byte-identical oracle (not legacy field-only fail strings).
+    for tok in (
+        "def reconstruct_hw",
+        "def reconstruct_reg",
+        "HW_PROFILE_ID = id_pattern(0x10)",
+        "DEVICE_MODEL_ID = id_pattern(0x11)",
+        "RADIO_SKU_ID = id_pattern(0x12)",
+        "ANTENNA_MODEL_ID = id_pattern(0x13)",
+        "REG_PROFILE_ID = id_pattern(0x20)",
+        "REGION_CODE = 0x4C4142",
+        "SERVICE_CATEGORY = 1",
+        "committed_hw != expect_hw",
+        "committed_reg != expect_reg",
+        "hw array not byte-identical to reconstructed golden",
+        "reg array not byte-identical to reconstructed golden",
+        "K_R5_GOLDEN_HW_CRC32 mismatch",
+        "K_R5_GOLDEN_REG_CRC32 mismatch",
+    ):
+        if tok not in oracle:
+            fail(f"golden oracle missing reconstruct-oracle token: {tok}")
+    for legacy in (
+        'fail("hw profile_id exact")',
+        'fail("reg profile_id exact")',
+        'fail("device_model_id exact")',
+        'fail("radio_sku_id exact")',
+        'fail("antenna_model_id exact")',
+    ):
+        if legacy in oracle:
+            fail(f"oracle still has legacy anchor {legacy!r}; sync to reconstruct style")
+    if not re.search(r"NAME profile_r5_golden_oracle\s*$", cm, re.M):
+        fail("CMake must wire profile_r5_golden_oracle test by name")
     if "test_dynamic_rebind_e2e()" not in test:
         fail("main must call dynamic rebind e2e")
     if "test_r2_assignment_generation_sync()" not in test:
@@ -296,6 +350,23 @@ def check_source(root: pathlib.Path) -> None:
         fail("R2 test must cover COMMIT_LIVE_SAME_GEN_EXACT_ONLY")
     if "reopen_recover_from_storage" not in pcp_test:
         fail("R2 same-gen test must reopen/recover durable state")
+    if "pcp_owner_snap_unchanged" not in pcp_test:
+        fail("R2 commit_live alias test must full-snap owner for zero-mutation")
+    if "NINLIL_TEST_STORAGE_OP_COUNT" not in pcp_test:
+        fail("R2 commit_live alias must check all storage op call counts")
+    if "interior" not in pcp_test or "3-way composite" not in pcp_test:
+        fail("R2 commit_live alias must cover interior + 3-way composite")
+    # commit_live ALIAS path must not sat_inc before return
+    if re.search(
+        r"ninlil_pcp_commit_live_binding\([\s\S]{0,800}?return NINLIL_PCP_ALIAS",
+        pcp_c,
+    ):
+        early = re.search(
+            r"ninlil_pcp_commit_live_binding\([\s\S]*?if \(!pcp_guard_active",
+            pcp_c,
+        )
+        if early and "pcp_sat_inc" in early.group(0):
+            fail("commit_live must not sat_inc before alias return / guard")
 
     if "T_EXPECT_LAB_ONLY" not in test:
         fail("tests must use independent expected constants")
@@ -363,7 +434,7 @@ def check_r2_schema_unchanged(root: pathlib.Path) -> None:
 
 
 def compile_and_run_mutation(name: str, rel: str, old: str, new: str) -> None:
-    """Catch semantic defects by building and running profile_r5 after mutation."""
+    """Catch semantic defects only via successful configure+build + failing tests."""
     with tempfile.TemporaryDirectory() as td:
         troot = pathlib.Path(td) / "repo"
         shutil.copytree(
@@ -376,7 +447,7 @@ def compile_and_run_mutation(name: str, rel: str, old: str, new: str) -> None:
         path = troot / rel
         text = path.read_text(encoding="utf-8")
         if old not in text:
-            fail(f"compile-mutation setup missing {name}: {old!r}")
+            fail(f"runtime-mutation setup missing {name}: {old!r}")
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
         bdir = pathlib.Path(td) / "build"
         conf = subprocess.run(
@@ -387,22 +458,91 @@ def compile_and_run_mutation(name: str, rel: str, old: str, new: str) -> None:
             capture_output=True, text=True,
         )
         if conf.returncode != 0:
-            print(f"mutation caught (configure): {name}")
-            return
+            fail(
+                f"mutation must still configure (compile-fail not a catch): {name}\n"
+                f"{conf.stderr[-500:]}"
+            )
         build = subprocess.run(
             ["cmake", "--build", str(bdir), "-j", "4", "--target", "ninlil_profile_r5_test"],
             capture_output=True, text=True,
         )
         if build.returncode != 0:
-            print(f"mutation caught (build): {name}")
-            return
+            fail(
+                f"mutation must still build (compile-fail not a catch): {name}\n"
+                f"{build.stderr[-800:]}"
+            )
         run = subprocess.run(
             [str(bdir / "ninlil_profile_r5_test")],
             capture_output=True, text=True,
         )
         if run.returncode == 0:
-            fail(f"compile-mutation NOT caught (tests still pass): {name}")
+            fail(f"runtime mutation NOT caught (tests still pass): {name}")
         print(f"mutation caught (runtime): {name}")
+
+
+def run_oracle_fixture_crc_mutation() -> None:
+    """Change golden HW profile_id interior byte + recompute CRC; oracle must FAIL."""
+
+    def crc32(data: bytes) -> int:
+        crc = 0xFFFFFFFF
+        for b in data:
+            crc ^= b
+            for _ in range(8):
+                crc = (crc >> 1) ^ (0xEDB88320 if (crc & 1) else 0)
+        return crc ^ 0xFFFFFFFF
+
+    with tempfile.TemporaryDirectory() as td:
+        troot = pathlib.Path(td) / "repo"
+        shutil.copytree(
+            REPO,
+            troot,
+            ignore=shutil.ignore_patterns(
+                "build", ".git", "cmake-build*", "*.o", "*.a", "install*"
+            ),
+        )
+        hpath = troot / "tests/radio/profile_r5_golden_profiles.h"
+        h = hpath.read_text(encoding="utf-8")
+        m = re.search(
+            r"static const uint8_t k_r5_golden_hw_v1\[(\d+)\] = \{([^}]+)\}", h
+        )
+        if not m:
+            fail("oracle fixture mutation: missing k_r5_golden_hw_v1")
+        n = int(m.group(1))
+        vals = [
+            int(x.strip().rstrip("u"), 0)
+            for x in m.group(2).split(",")
+            if x.strip()
+        ]
+        if len(vals) != n or n < 128:
+            fail("oracle fixture mutation: bad hw array")
+        # Flip interior of profile_id (offset 8) and recompute CRC at 124.
+        vals[8] = vals[8] ^ 0x5A
+        body = bytes(vals[:124])
+        new_crc = crc32(body)
+        vals[124] = new_crc & 0xFF
+        vals[125] = (new_crc >> 8) & 0xFF
+        vals[126] = (new_crc >> 16) & 0xFF
+        vals[127] = (new_crc >> 24) & 0xFF
+        arr = ", ".join(f"0x{v:02x}u" for v in vals)
+        new_block = f"static const uint8_t k_r5_golden_hw_v1[{n}] = {{ {arr} }}"
+        h2 = h[: m.start()] + new_block + h[m.end() :]
+        # Keep macro CRC in sync so only reconstruct mismatch fails.
+        h2 = re.sub(
+            r"#define K_R5_GOLDEN_HW_CRC32\s+0x[0-9a-fA-F]+u?",
+            f"#define K_R5_GOLDEN_HW_CRC32 0x{new_crc:08x}u",
+            h2,
+            count=1,
+        )
+        hpath.write_text(h2, encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(troot / "tools" / "profile_r5_golden_oracle.py")],
+            cwd=str(troot),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            fail("oracle fixture CRC mutation NOT caught (oracle still OK)")
+        print("mutation caught (oracle): fixture_interior_id_crc_recalc")
 
 def run_self_test() -> None:
     mutations: list[tuple[str, str, str, str, bool]] = [
@@ -439,6 +579,71 @@ def run_self_test() -> None:
             TEST,
             "static int test_full_bind_mismatch_matrix(void)",
             "static int test_full_bind_mismatch_matrix_disabled(void)",
+            False,
+        ),
+        (
+            "drop_activate_assign_ch_check",
+            SRC,
+            "if (r5->assignment.channel_id < cand_reg.channel_id_min\n"
+            "            || r5->assignment.channel_id > cand_reg.channel_id_max) {\n"
+            "            r5_sat_inc(&r5->stats.activate_deny);\n"
+            "            r5_set_error(\n"
+            "                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,\n"
+            "                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,\n"
+            "                NINLIL_R5_BIND_CHANNEL, \"assign_ch\");\n"
+            "            return NINLIL_R5_PROFILE_DENIED;\n"
+            "        }",
+            "/* mutation: channel assign check removed */",
+            False,
+        ),
+        (
+            "drop_activate_assign_phy_check",
+            SRC,
+            "if (!r5_phy_in_reg(&cand_reg, &r5->assignment.phy)) {\n"
+            "            r5_sat_inc(&r5->stats.activate_deny);\n"
+            "            r5_set_error(\n"
+            "                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,\n"
+            "                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,\n"
+            "                NINLIL_R5_BIND_PHY, \"assign_phy\");\n"
+            "            return NINLIL_R5_PROFILE_DENIED;\n"
+            "        }",
+            "/* mutation: phy assign check removed */",
+            False,
+        ),
+        (
+            "drop_golden_profiles_include",
+            TEST,
+            '#include "profile_r5_golden_profiles.h"',
+            "/* golden profiles include removed */",
+            False,
+        ),
+        (
+            "drop_golden_hw_array_ref",
+            TEST,
+            "(void)memcpy(e->hw_doc, k_r5_golden_hw_v1, NINLIL_R5_HW_DOC_BYTES);",
+            "(void)memcpy(e->hw_doc, k_r5_golden_hw_MISSING, NINLIL_R5_HW_DOC_BYTES);",
+            False,
+        ),
+        (
+            "drop_golden_reg_array_ref",
+            TEST,
+            "(void)memcpy(e->reg_doc, k_r5_golden_reg_v1, NINLIL_R5_REG_DOC_BYTES);",
+            "(void)memcpy(e->reg_doc, k_r5_golden_reg_MISSING, NINLIL_R5_REG_DOC_BYTES);",
+            False,
+        ),
+        (
+            "drop_oracle_reconstruct_compare",
+            "tools/profile_r5_golden_oracle.py",
+            "if committed_hw != expect_hw:\n"
+            '        fail(f"hw array not byte-identical to reconstructed golden ({len(committed_hw)} vs {len(expect_hw)})")',
+            "pass  # mutation: reconstruct compare removed",
+            False,
+        ),
+        (
+            "drop_ctest_golden_oracle_wire",
+            CMAKELISTS,
+            "NAME profile_r5_golden_oracle",
+            "NAME profile_r5_golden_oracle_DISABLED",
             False,
         ),
         (
@@ -496,7 +701,8 @@ def run_self_test() -> None:
             if proc.returncode == 0:
                 fail(f"mutation NOT caught: {name}\n{proc.stdout}\n{proc.stderr}")
             print(f"mutation caught: {name}")
-    # Semantic runtime mutations (build+run) — must fail profile_r5_test
+    # Semantic runtime mutations (build+run) — must fail profile_r5_test.
+    # Compile/configure failure alone is NOT accepted as a catch.
     compile_and_run_mutation(
         "drop_frame_digest_alg_compare",
         SRC,
@@ -513,6 +719,62 @@ def run_self_test() -> None:
         "&& cand.permit_bind_generation <= r5->assignment.permit_bind_generation)",
         "&& 0 && cand.permit_bind_generation <= r5->assignment.permit_bind_generation)",
     )
+    # Comparison-operator mutations: configure+build MUST succeed; only
+    # profile_r5_test runtime failure counts as caught.
+    compile_and_run_mutation(
+        "runtime_drop_effective_lt",
+        SRC,
+        "if (plan->not_before_ms < r5->reg.effective_not_before_ms) {",
+        "if (0 && plan->not_before_ms < r5->reg.effective_not_before_ms) {",
+    )
+    compile_and_run_mutation(
+        "runtime_effective_lt_to_le",
+        SRC,
+        "if (plan->not_before_ms < r5->reg.effective_not_before_ms) {",
+        "if (plan->not_before_ms <= r5->reg.effective_not_before_ms) {",
+    )
+    compile_and_run_mutation(
+        "runtime_effective_lt_to_gt",
+        SRC,
+        "if (plan->not_before_ms < r5->reg.effective_not_before_ms) {",
+        "if (plan->not_before_ms > r5->reg.effective_not_before_ms) {",
+    )
+    compile_and_run_mutation(
+        "runtime_drop_expiry_gt",
+        SRC,
+        "&& plan->expiry_ms > r5->reg.profile_expiry_ms) {",
+        "&& 0 && plan->expiry_ms > r5->reg.profile_expiry_ms) {",
+    )
+    compile_and_run_mutation(
+        "runtime_expiry_gt_to_ge",
+        SRC,
+        "&& plan->expiry_ms > r5->reg.profile_expiry_ms) {",
+        "&& plan->expiry_ms >= r5->reg.profile_expiry_ms) {",
+    )
+    compile_and_run_mutation(
+        "runtime_expiry_zero_guard_flip",
+        SRC,
+        "if (r5->reg.profile_expiry_ms != 0u\n"
+        "        && plan->expiry_ms > r5->reg.profile_expiry_ms) {",
+        "if (r5->reg.profile_expiry_ms == 0u\n"
+        "        && plan->expiry_ms > r5->reg.profile_expiry_ms) {",
+    )
+    compile_and_run_mutation(
+        "runtime_drop_activate_channel_check",
+        SRC,
+        "if (r5->assignment.channel_id < cand_reg.channel_id_min\n"
+        "            || r5->assignment.channel_id > cand_reg.channel_id_max) {\n"
+        "            r5_sat_inc(&r5->stats.activate_deny);\n"
+        "            r5_set_error(\n"
+        "                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,\n"
+        "                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,\n"
+        "                NINLIL_R5_BIND_CHANNEL, \"assign_ch\");\n"
+        "            return NINLIL_R5_PROFILE_DENIED;\n"
+        "        }",
+        "/* channel check disabled for mutation */",
+    )
+    # Fixture interior ID change with recalculated CRC must fail oracle.
+    run_oracle_fixture_crc_mutation()
 
 
 def main(argv: list[str]) -> int:

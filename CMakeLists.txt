@@ -2144,6 +2144,11 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/profile_r5_gate.py
             self-test
     )
+    add_test(
+        NAME profile_r5_golden_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/profile_r5_golden_oracle.py
+    )
     add_executable(ninlil_profile_r5_test
         tests/radio/profile_r5_test.c
         tests/support/in_memory_storage.c

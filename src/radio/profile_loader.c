@@ -132,6 +132,11 @@ static int r5_ranges_overlap_ptr(const void *a, size_t asz, const void *b, size_
     return r5_ranges_overlap_u((uintptr_t)a, asz, (uintptr_t)b, bsz);
 }
 
+/* Used by activate (defined later with assignment helpers). */
+static int r5_phy_in_reg(
+    const ninlil_r5_regulatory_profile_t *reg,
+    const ninlil_radio_hal_phy_t *phy);
+
 /*
  * Fixed-length profile docs (HW/REG): geometric alias length for untrusted
  * doc_len. Cap at expected_bytes+1 so SIZE_MAX / pure oversize does not
@@ -925,6 +930,31 @@ ninlil_r5_status_t ninlil_r5_activate_profiles(
             NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_NOT_LAB_ONLY,
             NINLIL_R5_BIND_NONE, "not_lab");
         return NINLIL_R5_PROFILE_DENIED;
+    }
+    /*
+     * Assignment already bound: candidate REG must still admit assignment
+     * channel + PHY before any durable rebind or active swap. Fail-closed
+     * preserves active HW/REG, assignment, pcp, registry, and durable state.
+     * Distinct bind_item: CHANNEL vs PHY for diagnostics.
+     */
+    if (r5->assignment_bound != 0u) {
+        if (r5->assignment.channel_id < cand_reg.channel_id_min
+            || r5->assignment.channel_id > cand_reg.channel_id_max) {
+            r5_sat_inc(&r5->stats.activate_deny);
+            r5_set_error(
+                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,
+                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,
+                NINLIL_R5_BIND_CHANNEL, "assign_ch");
+            return NINLIL_R5_PROFILE_DENIED;
+        }
+        if (!r5_phy_in_reg(&cand_reg, &r5->assignment.phy)) {
+            r5_sat_inc(&r5->stats.activate_deny);
+            r5_set_error(
+                r5, out_error, out_safe, NINLIL_R5_PROFILE_DENIED,
+                NINLIL_R5_STAGE_ACTIVATE, NINLIL_R5_REASON_RANGE,
+                NINLIL_R5_BIND_PHY, "assign_phy");
+            return NINLIL_R5_PROFILE_DENIED;
+        }
     }
     /* same-id revision rollback fail-closed (docs/29 §2.1) */
     if (r5->profiles_active != 0u) {

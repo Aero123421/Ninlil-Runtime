@@ -132,7 +132,7 @@ R5 active assignment（U5 wire 非実装; host bind API）:
 | `bind_site_assignment`（pcp already published） | `ninlil_pcp_commit_live_binding(live, gen)` full L_core+ceiling+gen（outstanding==0; strict gen rules below） |
 | `bind_pcp`（assignment already bound） | same `commit_live_binding` when R2 is published; if not yet published → `INVALID_STATE` tolerated and deferred to publish/`bind_live` |
 | `fence_after_revoke` | two-phase on R5 RAM object: store target=`old+1`, durable `commit_live` at target; same-object retry uses stored target; local gen/registry clear only after verified durable success. **Not process-restart durable** (R5 RAM empty after restart) |
-| `activate_profiles`（assignment bound, profile change） | strict gen++ + full durable L_core rebind before swapping active |
+| `activate_profiles`（assignment bound, profile change） | candidate REG must admit assignment channel+PHY (else PROFILE_DENIED RANGE, no mutation); then strict gen++ + full durable L_core rebind before swapping active |
 | `issue` / `issue_with_bind` | R2 `get_assignment_generation` が plan の gen と **exact 一致**必須 |
 
 `ninlil_pcp_set_assignment_generation` is a gen-only convenience that delegates to `commit_live_binding` keeping durable L_core; R5 rebind paths that change L_core/ceiling use `commit_live_binding` directly.

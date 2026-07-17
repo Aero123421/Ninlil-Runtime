@@ -1977,24 +1977,143 @@ static int test_clock_partial_ok_illformed(void)
 }
 
 
-/* live↔out_error must reject before any error write (const input preserved). */
+/* Full PCP object snap for commit_live ALIAS zero-mutation. */
+typedef struct pcp_owner_snap {
+    uint8_t bytes[NINLIL_PCP_OBJECT_BYTES];
+    size_t nbytes;
+} pcp_owner_snap_t;
+
+static void pcp_owner_snap_take(const ninlil_pcp_t *pcp, pcp_owner_snap_t *s)
+{
+    s->nbytes = sizeof(*pcp);
+    if (s->nbytes == 0u || s->nbytes > NINLIL_PCP_OBJECT_BYTES) {
+        s->nbytes = 0u;
+        return;
+    }
+    (void)memcpy(s->bytes, pcp, s->nbytes);
+}
+
+static int pcp_owner_snap_unchanged(const ninlil_pcp_t *pcp, const pcp_owner_snap_t *s)
+{
+    if (s->nbytes == 0u || s->nbytes != sizeof(*pcp)) {
+        return 0;
+    }
+    return memcmp(s->bytes, pcp, s->nbytes) == 0 ? 1 : 0;
+}
+
+/*
+ * commit_live alias: 3 pairwise + composite + interior overlap; full owner/live
+ * canary zero mutation; storage PUT/COMMIT not called.
+ */
 static int test_commit_live_live_out_error_alias(void)
 {
     env_t e;
     ninlil_pcp_live_profile_t live;
     ninlil_pcp_live_profile_t live_before;
     ninlil_pcp_error_t *alias_err;
+    ninlil_pcp_error_t err_canary;
+    ninlil_pcp_error_t err;
+    pcp_owner_snap_t os;
     uint64_t gen = 0u;
+    uint64_t put0;
+    uint64_t commit0;
 
     CHECK(env_setup(&e) == 0);
     fill_live(&live, 100000u);
     live_before = live;
+    (void)memset(&err_canary, 0x5a, sizeof(err_canary));
     CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen) == NINLIL_PCP_OK);
-    alias_err = (ninlil_pcp_error_t *)(void *)&live;
-    CHECK(
-        ninlil_pcp_commit_live_binding(e.pcp, &live, gen + 1u, alias_err)
-        == NINLIL_PCP_ALIAS);
-    CHECK(memcmp(&live, &live_before, sizeof(live)) == 0);
+    {
+        uint64_t counts0[NINLIL_TEST_STORAGE_OP_COUNT];
+        uint64_t counts1[NINLIL_TEST_STORAGE_OP_COUNT];
+        size_t oi;
+
+        for (oi = 0u; oi < (size_t)NINLIL_TEST_STORAGE_OP_COUNT; ++oi) {
+            counts0[oi] = ninlil_test_storage_call_count(
+                e.storage, (ninlil_test_storage_operation_t)oi);
+        }
+        put0 = counts0[NINLIL_TEST_STORAGE_OP_PUT];
+        commit0 = counts0[NINLIL_TEST_STORAGE_OP_COMMIT];
+
+        /* live↔out_error */
+        alias_err = (ninlil_pcp_error_t *)(void *)&live;
+        pcp_owner_snap_take(e.pcp, &os);
+        CHECK(
+            ninlil_pcp_commit_live_binding(e.pcp, &live, gen + 1u, alias_err)
+            == NINLIL_PCP_ALIAS);
+        CHECK(memcmp(&live, &live_before, sizeof(live)) == 0);
+        CHECK(pcp_owner_snap_unchanged(e.pcp, &os) != 0);
+
+        /* owner↔live */
+        live = live_before;
+        err = err_canary;
+        pcp_owner_snap_take(e.pcp, &os);
+        CHECK(
+            ninlil_pcp_commit_live_binding(
+                e.pcp, (const ninlil_pcp_live_profile_t *)(const void *)e.pcp,
+                gen + 1u, &err)
+            == NINLIL_PCP_ALIAS);
+        CHECK(memcmp(&err, &err_canary, sizeof(err)) == 0);
+        CHECK(pcp_owner_snap_unchanged(e.pcp, &os) != 0);
+
+        /* owner↔out_error (live disjoint) */
+        live = live_before;
+        pcp_owner_snap_take(e.pcp, &os);
+        CHECK(
+            ninlil_pcp_commit_live_binding(
+                e.pcp, &live, gen + 1u, (ninlil_pcp_error_t *)(void *)e.pcp)
+            == NINLIL_PCP_ALIAS);
+        CHECK(memcmp(&live, &live_before, sizeof(live)) == 0);
+        CHECK(pcp_owner_snap_unchanged(e.pcp, &os) != 0);
+
+        /* 3-way composite: owner↔live + owner↔out_error + live↔out_error
+         * (live and out_error both alias owner storage). */
+        live = live_before;
+        pcp_owner_snap_take(e.pcp, &os);
+        CHECK(
+            ninlil_pcp_commit_live_binding(
+                e.pcp, (const ninlil_pcp_live_profile_t *)(const void *)e.pcp,
+                gen + 1u, (ninlil_pcp_error_t *)(void *)e.pcp)
+            == NINLIL_PCP_ALIAS);
+        CHECK(pcp_owner_snap_unchanged(e.pcp, &os) != 0);
+
+        /* Interior overlap: live view mid-owner (not object base). */
+        {
+            const ninlil_pcp_live_profile_t *interior =
+                (const ninlil_pcp_live_profile_t *)(const void *)(
+                    (const uint8_t *)(const void *)e.pcp + 64u);
+            err = err_canary;
+            pcp_owner_snap_take(e.pcp, &os);
+            CHECK(
+                ninlil_pcp_commit_live_binding(
+                    e.pcp, interior, gen + 1u, &err)
+                == NINLIL_PCP_ALIAS);
+            CHECK(memcmp(&err, &err_canary, sizeof(err)) == 0);
+            CHECK(pcp_owner_snap_unchanged(e.pcp, &os) != 0);
+        }
+
+        /* Composite interior: live interior + out_error into owner */
+        {
+            const ninlil_pcp_live_profile_t *interior =
+                (const ninlil_pcp_live_profile_t *)(const void *)(
+                    (const uint8_t *)(const void *)e.pcp + 32u);
+            pcp_owner_snap_take(e.pcp, &os);
+            CHECK(
+                ninlil_pcp_commit_live_binding(
+                    e.pcp, interior, gen + 1u,
+                    (ninlil_pcp_error_t *)(void *)e.pcp)
+                == NINLIL_PCP_ALIAS);
+            CHECK(pcp_owner_snap_unchanged(e.pcp, &os) != 0);
+        }
+
+        for (oi = 0u; oi < (size_t)NINLIL_TEST_STORAGE_OP_COUNT; ++oi) {
+            counts1[oi] = ninlil_test_storage_call_count(
+                e.storage, (ninlil_test_storage_operation_t)oi);
+            CHECK(counts1[oi] == counts0[oi]);
+        }
+        (void)put0;
+        (void)commit0;
+    }
     CHECK(ninlil_pcp_get_assignment_generation(e.pcp, &gen) == NINLIL_PCP_OK);
 
     env_teardown(&e);
