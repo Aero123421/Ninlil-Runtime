@@ -73,8 +73,8 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 12)
-    message(FATAL_ERROR "private source count is not 12: ${_private_sources}")
+if(NOT _private_source_count EQUAL 13)
+    message(FATAL_ERROR "private source count is not 13: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -87,6 +87,7 @@ endforeach()
 list(SORT _private_source_names)
 set(_expected_private_source_names
     control_frame_codec.c
+    control_session.c
     domain_store_body_codec.c
     domain_store_codec.c
     domain_store_d3s1.c
@@ -154,6 +155,18 @@ check_c_source_compiles(
     NINLIL_PRIVATE_CONTROL_FRAME_HEADER_LEAKED)
 if(NINLIL_PRIVATE_CONTROL_FRAME_HEADER_LEAKED)
     message(FATAL_ERROR "private control frame header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"control_session.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_CONTROL_SESSION_HEADER_LEAKED)
+if(NINLIL_PRIVATE_CONTROL_SESSION_HEADER_LEAKED)
+    message(FATAL_ERROR "private control session header is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"byte_stream.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_BYTE_STREAM_HEADER_LEAKED)
+if(NINLIL_PRIVATE_BYTE_STREAM_HEADER_LEAKED)
+    message(FATAL_ERROR "private byte-stream header is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)
