@@ -95,6 +95,15 @@ if(NINLIL_ENABLE_POINTER_COMPARE_SANITIZER)
     endif()
 endif()
 
+# Any active sanitizer instrumentation (ASan/UBSan and/or active pointer-compare
+# ASan). Production N6 frame ceiling and .su multipass gate are non-authoritative
+# under redzones / dynamic .su rewrite — skip those only when this is TRUE.
+# Self-test/structure and all non-sanitizer Release/ESP gates stay strict.
+set(_ninlil_any_sanitizer_active FALSE)
+if(NINLIL_ENABLE_SANITIZERS OR _ninlil_pointer_compare_sanitizer_supported)
+    set(_ninlil_any_sanitizer_active TRUE)
+endif()
+
 set(NINLIL_STRICT_C_FLAGS
     -Wall
     -Wextra
@@ -413,12 +422,13 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     # that directory is the sole authoritative host input to n6_frame_stack_gate
     # (not testbuild, not an unused side directory). AppleClang emits .su and
     # supports -Wframe-larger-than; do not host-skip.
-    # ASan/UBSan inflate frames (redzones) and rewrite .su kind to dynamic —
-    # skip -Wframe-larger-than under sanitizers. Production .su CTest gate is
-    # registered only when NINLIL_ENABLE_SANITIZERS is OFF (see tests below).
+    # ASan/UBSan (including pointer-compare ASan) inflate frames (redzones) and
+    # rewrite .su kind to dynamic — skip -Wframe-larger-than when any sanitizer
+    # is active (_ninlil_any_sanitizer_active). Production .su CTest gate is
+    # registered only when that flag is FALSE (see tests below).
     foreach(_n6_src IN LISTS NINLIL_N6_PRODUCTION_RELATIVE_SOURCES)
         set(_n6_compile_opts -Wvla -Werror -fstack-usage)
-        if(NOT NINLIL_ENABLE_SANITIZERS)
+        if(NOT _ninlil_any_sanitizer_active)
             list(APPEND _n6_compile_opts -Wframe-larger-than=2048)
         endif()
         set_property(
@@ -2295,9 +2305,10 @@ if(NINLIL_BUILD_TESTS)
     # (host substitute forbidden; see n6_frame_stack_gate check-structure).
     #
     # Production .su gate is authoritative only for non-sanitize host builds
-    # (matches -Wframe-larger-than skip above). ASan/UBSan rewrite .su kind to
-    # dynamic and inflate frames — do not register/run the production gate under
-    # NINLIL_ENABLE_SANITIZERS=ON. Self-test always runs (logic regression only).
+    # (matches -Wframe-larger-than skip above). ASan/UBSan — including active
+    # pointer-compare ASan — rewrite .su kind to dynamic and inflate frames;
+    # do not register/run the production gate when _ninlil_any_sanitizer_active.
+    # Self-test and check-structure always run (logic/wiring regression only).
     add_test(
         NAME n6_frame_stack_gate_self_test
         COMMAND ${Python3_EXECUTABLE}
@@ -2310,7 +2321,7 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_frame_stack_gate.py
             check-structure
     )
-    if(NOT NINLIL_ENABLE_SANITIZERS)
+    if(NOT _ninlil_any_sanitizer_active)
         add_test(
             NAME n6_frame_stack_gate
             COMMAND ${Python3_EXECUTABLE}
@@ -2322,9 +2333,11 @@ if(NINLIL_BUILD_TESTS)
             DEPENDS ninlil_runtime_private)
     else()
         message(STATUS
-            "n6_frame_stack_gate: not registered under NINLIL_ENABLE_SANITIZERS=ON "
-            "(production .su non-authoritative under instrumentation; "
-            "n6_frame_stack_gate_self_test still enabled; non-sanitize CI owns .su)")
+            "n6_frame_stack_gate: not registered under active sanitizer "
+            "(NINLIL_ENABLE_SANITIZERS or pointer-compare; production .su "
+            "non-authoritative under instrumentation; "
+            "n6_frame_stack_gate_self_test/structure still enabled; "
+            "non-sanitize CI owns .su)")
     endif()
 
     add_executable(ninlil_n6_record_codec_test
