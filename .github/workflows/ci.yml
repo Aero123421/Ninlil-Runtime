@@ -107,6 +107,49 @@ jobs:
           done
           rm -rf "$tmp"
 
+  # Host production n6_frame_stack_gate authority: GNU Release only (not Debug).
+  # GCC Debug .su is often dynamic and is non-authoritative; self-test/structure
+  # still run on Debug/sanitize jobs. This job owns the production .su check.
+  ubuntu-gcc-release-n6-frame:
+    name: Ubuntu GCC Release N6 frame authority
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Configure (GCC Release, SQLite OFF, strict ON)
+        run: >-
+          cmake -S . -B build/ci-ubuntu-gcc-rel-n6
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=gcc
+          -DCMAKE_CXX_COMPILER=g++
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
+      - name: Build ninlil_runtime_private
+        run: >-
+          cmake --build build/ci-ubuntu-gcc-rel-n6 --parallel 2
+          --target ninlil_runtime_private
+      - name: Assert production n6_frame_stack_gate registered exactly once
+        run: |
+          set -euo pipefail
+          listing=$(ctest --test-dir build/ci-ubuntu-gcc-rel-n6 -N)
+          prod=$(printf '%s\n' "$listing" \
+            | grep -E 'Test #[0-9]+: n6_frame_stack_gate$' | wc -l | tr -d ' ')
+          test "$prod" = "1"
+          trio=$(printf '%s\n' "$listing" \
+            | grep -E 'Test #[0-9]+: n6_frame_stack_gate(_self_test|_structure)?$' \
+            | wc -l | tr -d ' ')
+          test "$trio" = "3"
+      - name: Run N6 frame self-test/structure/production (exact 3)
+        run: >-
+          ctest --test-dir build/ci-ubuntu-gcc-rel-n6
+          -R 'n6_frame_stack_gate(_self_test|_structure)?$'
+          --output-on-failure
+
   ubuntu-static-strict:
     name: Ubuntu static SQLite strict full
     runs-on: ubuntu-24.04
