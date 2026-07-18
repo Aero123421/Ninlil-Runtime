@@ -39,7 +39,7 @@ Artifactとruntime configurationは次を明示します。
 | Requirement set | First mandatory milestone | Foundation M1a |
 | --- | --- | --- |
 | `NIN-SEC-001`〜`NIN-SEC-015` production identity/session requirements | M4〜M5 | cryptographic/session provider ABIなし。TEST identity/origin authorizationとenvelope binding validationだけ |
-| `NIN-CMP-001`〜`NIN-CMP-013` physical radio requirements（012/013 は logical permit 流用禁止・wire memcpy 禁止・radio wire unallocated） | M5（概念は U0 boundary freeze で先行定義; [23章](23-usb-radio-boundary.md)） | virtual TxPermit pathだけ。physical TXは存在しない |
+| `NIN-CMP-001`〜`NIN-CMP-013` physical radio requirements（012/013 は logical permit 流用禁止・wire memcpy 禁止; **U0 当時** radio wire unallocated → **R6** で `wire_profile_id=0x11` draft 割当） | M5（概念は U0 boundary freeze で先行定義; wire 正本は [30章](30-r6-secure-radio-wire.md)） | virtual TxPermit pathだけ。physical TXは存在しない |
 | secretをlog/support bundleへ出さない基本境界 | M1a | TEST dataを含め全実装必須 |
 | unknown environmentをproductionへfallbackしない | M1a | 必須 |
 
@@ -53,13 +53,13 @@ Artifactとruntime configurationは次を明示します。
 - `NIN-SEC-004`: root credentialをdata frame keyとして直接使用してはならない。Attachmentごとにsession keyとkey epochを確立する。
 - `NIN-SEC-005`: key rotation、revocation、quarantine、site move時のold-session fenceを実装しなければならない。
 
-初期suite候補は`AES-128-GCM + HKDF-SHA-256 + 128-bit tag`です。これは後続session RFCでbyte単位まで固定する候補であり、M1aはcryptographic provider/session ABIを公開または実装しません。Legacy golden fixtureはlegacy regression用に保持できますが、M1a Core interfaceやNinlil Wire適合の証明に使いません。
+初期suite候補は`AES-128-GCM + HKDF-SHA-256 + 128-bit tag`です。**R6** は secure compact radio wire について本 suite を **`wire_profile_id=0x11`（NRW1; major/minor domain なし）で pin**し、outer/E2E layout・**一方向 context**・hop DATA/ACK 別 lane・**E2E `e2e_security_id`/`e2e_security_epoch`（Attachment 非 bind）**・context lifecycle / durable counter 回復・CELL_64_V1 を [30章](30-r6-secure-radio-wire.md) / [ADR-0010](adr/0010-r6-secure-radio-wire.md) で固定する（**docs-only Accepted 仮; R7 実装・M4/M5 handshake 実装・HIL ではない**）。M1aはcryptographic provider/session ABIを公開または実装しません。Legacy golden fixtureはlegacy regression用に保持できますが、M1a Core interfaceやNinlil Wire適合の証明に使いません。
 
 ### Nonceとreplay
 
 - `NIN-SEC-006`: 同一key epochでnonceを再利用してはならない。
 - `NIN-SEC-007`: counter範囲を送信前にdurable storageへ先行予約する。reservation失敗、wrap、破損、epoch不明時はprotected TXを停止する。
-- `NIN-SEC-008`: replay windowはduplicate、window外、別attachment/membership epochのframeを拒否する。
+- `NIN-SEC-008`: replay windowはduplicate、window外を拒否する。**Hop layer** は `attachment_id`/`attachment_epoch` と `membership_epoch` を binding に含む（[30章](30-r6-secure-radio-wire.md) hop binding）。**E2E layer** は `membership_epoch` と `e2e_security_id`/`e2e_security_epoch` を binding に含む（Attachment id/epoch は E2E binding に含めない）。**Attachment-only change** では E2E context を fence しない（hop は fence/rekey 対象になり得る）。
 - `NIN-SEC-009`: 未認証frameを受けてsession、reassembly、queue、logを無制限に割り当ててはならない。
 
 ### Application evidence
@@ -130,6 +130,8 @@ Production Runtimeは`DEPLOYMENT_APPROVED`だけを使用できます。
 
 **R5 LAB_ONLY profile / full bind 正本:** [29章](29-r5-lab-only-profile-loader.md) / [ADR-0009](adr/0009-r5-lab-only-profile-loader.md) / `src/radio/profile_loader.{h,c}` / `profile_r5_*`（LAB_ONLY fail-closed; §9.3 全項目 issue/consume; **R5 host candidate; FIELD / Japan / legal / HIL / R5 complete ではない**）。
 
+**R6 secure compact radio wire 正本:** [30章](30-r6-secure-radio-wire.md) / [ADR-0010](adr/0010-r6-secure-radio-wire.md) / `radio_wire_r6_docs_gate`（`wire_profile_id=0x11` post-attachment data; one-way contexts; DATA/ACK lanes; E2E security id≠Attachment; durable lifecycle; CELL_64_V1; **docs-only Accepted 仮; R7 実装 / handshake 実装 / HIL / R6 complete ではない**）。
+
 Physical Compliance Permit binding（**MUST** bind; [23章 §9](23-usb-radio-boundary.md)）。発行・consume の両方で検査する。
 
 - hardware profile ID / revision
@@ -163,7 +165,7 @@ CellOperatingAssignment mutation/replacement 時は outstanding permit を **ato
 - `NIN-CMP-004`: application、scheduler、operator、USB control pathのpriorityはCompliance denialを上書きできない。
 - `NIN-CMP-005`: permit denialをqueued、sent、received、appliedとして表示してはならない。
 - `NIN-CMP-012`: Foundation logical / virtual / loopback TxPermit を physical RF 送信許可として流用してはならない。
-- `NIN-CMP-013`: logical bearer message や public transaction struct を `memcpy` して radio wire にしてはならない。secure compact radio wire の production version は [23章](23-usb-radio-boundary.md) 時点で **unallocated** であり、別 Normative freeze まで固定しない。
+- `NIN-CMP-013`: logical bearer message や public transaction struct を `memcpy` して radio wire にしてはならない。**U0 時点**では secure radio wire version は unallocated だった。**R6** で `wire_profile_id=0x11` として docs-only draft 固定（[30章](30-r6-secure-radio-wire.md) / [ADR-0010](adr/0010-r6-secure-radio-wire.md); major/minor なし）。**R7 encode/decode·AEAD 実装 / HIL / production radio complete ではない**。
 
 ## Airtime ledger
 

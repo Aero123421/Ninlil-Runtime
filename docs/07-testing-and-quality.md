@@ -230,10 +230,113 @@ M3 complete 前でも、component packaging と basic platform adapters の回�
 | R2 host pure (`pcp_r2_authority`) | [24章 §14](24-r2-physical-compliance-permit-authority.md) A-* vectors; owner S1→S3; durability/fault paths | legal / Japan production profile / ledger / RF SLO / HIL |
 | R3 host (`airtime_r3_bridge` + `airtime_r3_gate` + `airtime_r3_oracle` + [27章](27-r3-airtime-calculator.md) / [ADR-0007](adr/0007-r3-airtime-calculator.md)) | closed SX1262 LoRa ToA; integer ceil-us; independent Fraction oracle; C bridge vectors; private archive wiring; mutation gate; **vector freshness/determinism**（oracle を独立 temp で 2 回実行し run1==run2 かつ committed JSON/`.gen.h` と byte 一致; 手編集/stale は FAIL）; **R3 host candidate only** | Japan production 数値; duty/LBT/legal; R3 complete; RF/HIL; R5 profile |
 | R5 host (`profile_r5` + `profile_r5_gate` + [29章](29-r5-lab-only-profile-loader.md) / [ADR-0009](adr/0009-r5-lab-only-profile-loader.md)) | LAB_ONLY Hardware/Regulatory profile loader; non-LAB fail-closed; full §9.3 bind matrix issue+consume single-mismatch (`issue_with_bind` + validate); R2 commit_live_binding full L_core rebind; independent golden profiles; R3 airtime handoff + ceiling; R2 issue/consume; restart registry miss + fence; mutation self-test; **R5 host candidate only** | FIELD/PRODUCTION; Japan production 数値; legal; RF/HIL; R5 complete |
+| R6 docs (`radio_wire_r6_docs_gate` + [30章](30-r6-secure-radio-wire.md) / [ADR-0010](adr/0010-r6-secure-radio-wire.md)) | NRW1 compact context-handle **Normative draft**（`wire_profile_id=0x11` no minor; one-way contexts; hop DATA/ACK lanes; E2E security id≠Attachment; phased namespace recovery; exact Permit issue/R1 matrices+FIFO; bounded burn/retry; closed outbound owner matrix; FRAG_ACK-before-LINK_ACK; incomplete/full CONT split; CELL_64_V1 21-row bounds+timers; outer 19B + E2E 14B; SINGLE 65+N→81/89/97; R7 materialization requirements frozen (artifacts pending); Stage 9 exported private-module drain + private checked-issue + timer-domain + ACK intent SM + TERMINAL_PENDING + one closed baseline/adopt family (FULL_OK sample copy-out / COMMIT_UNKNOWN→ADOPT_COMMITTED durable proof; public recover_clock no sample); drain storage→revoke→clock + post-DRAIN_OK disposition; START ACK0-only; sample RO classes; exact not_before/expiry; TERMINAL_PENDING RX + **32 mutations**; exact structured probes only, not arbitrary NL; **docs-only; Accepted 仮; Stage 9** | independent three-track re-GO; R7 C codec/AEAD; handshake 実装; HIL; Japan legal; R6 complete; production radio |
+| R6 N6 host pin (`n6_storage_callsite_gate` + self-test; see **N6 storage callsite gate** below) | accepted production source **byte SHA-256 pin** authority (store.c / store.h / crypto_host.c) + docs/07 manifest table exact set/hash match; bounded regular-file read; no-symlink. **Not** C semantic proof / human review / product GO | AEAD/HIL; R6 complete; production radio; unpinned source edit |
 | R4 / R6–R9 host/spy | SX1262 backend / wire; R9≥R4+R5+R7 | legal certification / RF SLO |
 | R10 HIL | SKU 測定 evidence | production candidate |
 
 **compile success must not equal HIL。** Required HIL 未実施なら USB series 完成を名乗らない。PR 説明・CI job 名・release note で混同してはならない。
+
+### N6 storage callsite gate（`n6_storage_callsite_gate`）
+
+Normative host gate for private N6 storage / crypto **accepted source byte**
+immutability (`tools/n6_storage_callsite_gate.py` + self-test corpus
+`tools/n6_storage_callsite_gate_selftest.py`). Commands: `check`, `self-test`.
+
+#### Authority（Normative, fail-closed）
+
+`check` / `check_tree` / `run_check` authority is **only**:
+
+1. **Code pin** — exact ordered path → SHA-256 set in
+   `tools/n6_storage_callsite_gate.py` (`ACCEPTED_SOURCE_MANIFEST`).
+2. **Docs pin** — the accepted-manifest table below (markers
+   `n6-storage-accepted-manifest:begin/end`). Gate requires **exact set and
+   hash equality** between code pin and this table (no self-reference loop:
+   production disk bytes are a third independent leg).
+3. **Disk bytes** — each pinned path under `--src-root` must be a **regular
+   file**, **not a symlink**, path-traversal-safe, and **bound-before-read**
+   (size check + hard max byte read). SHA-256 of those bytes must match the
+   pin. **Any 1-byte / comment / format change is RED.**
+
+PASS means “pinned bytes + docs table + code constants still match.” It is
+**not** C semantic proof, **not** product GO, **not** AEAD/HIL/legal completion,
+and **not** a substitute for independent human review of source changes.
+The public `check_tree` / `run_check` authority surface has no injectable
+manifest/docs policy; the compatibility `store_path` argument is fail-closed,
+and the CLI exposes no pinned-file override.
+
+Updating accepted source requires **all** of: independent human review,
+production tests green, and **simultaneous** update of (a) this docs table,
+(b) the code `ACCEPTED_SOURCE_MANIFEST`, and (c) the real files. Updating only
+one side is RED. Bypass by editing both docs and the gate constant without
+review is a general CI-gate limitation — **human review remains mandatory**.
+
+This gate **does not claim** arbitrary C meaning analysis. A prior mini-C
+semantic parser was removed from authority after independent false-greens
+(multi-declarator, anonymous promoted aggregate, tag shadow / alias chain,
+runtime-conditional consume, `pending_copy` shadow substring, `secure_zero`
+`n/2` / stride / unreachable). Those shapes are covered in self-test only as
+**source-byte mutations that must go RED under the pin**, not as semantic
+coverage.
+
+`check_store_text` remains import-callable for compatibility but is a
+**non-authoritative bounded diagnostic** on free text (hash pin does not apply).
+Do not treat its result as GO.
+
+#### Accepted source manifest（Normative）
+
+<!-- n6-storage-accepted-manifest:begin -->
+
+| Path | SHA-256 |
+| --- | --- |
+| `src/radio/n6_context_store.c` | `4686edcb01f5d16aa5b1649db938e80eccbef9ded8add1b62ab3c8ddb97c267d` |
+| `src/radio/n6_context_store.h` | `1901a595b29e91af938cfa1f9acc0cc7eaf8151698eb44885c08b8d38833844c` |
+| `src/radio/n6_crypto_host.c` | `bdbb9a2bf2cc860101da41d2425192904c12c7f42fd2fcf77b3c42716bdc71b2` |
+
+<!-- n6-storage-accepted-manifest:end -->
+
+Pinned path count: **3**. Algorithm: **SHA-256** (lowercase hex).
+
+#### Self-test counts（honest; pin authority）
+
+Self-test is fast and deterministic. It does **not** run a 36-compiler-fixture
+matrix and does **not** claim the withdrawn “64 structural / 8 green-keep /
+36 compile-valid” suite as semantic coverage.
+
+| Class | Count (approx.) | Meaning |
+| --- | ---: | --- |
+| Exact manifest GREEN | 1 | real tree pins + docs table match |
+| Simultaneous pin co-update GREEN | 1 | docs+code+disk updated together |
+| Single-byte RED (per pinned file) | 3 | each of 3 paths |
+| Missing / wrong / extra path or hash | 9 | missing file; extra code path; wrong path; wrong code hash; docs hash mismatch; docs missing/extra path; duplicate docs marker; uppercase/noncanonical docs hash |
+| Docs↔code one-sided pin update RED | 2 | code-only or docs-only pin update |
+| Policy RED | 5 | symlink; non-regular; oversize bound; invalid/traversal path; store-path override |
+| Historical false-green **byte** RED | 8 | multi-declarator; anonymous; tag shadow; consume conditional; pending shadow; secure_zero n/2; stride; unreachable — RED because bytes change, not because of a C parser |
+| Diagnostic helper smoke | 2 | `check_store_text` empty vs tiny text (not authority) |
+
+Total designed RED cases: **27** (3+9+2+5+8). GREEN-keep: **2** (real +
+simultaneous). Counts are pin/mutation KATs only.
+
+Runtime target: Mac self-test **&lt; 10 s**, Linux **&lt; 15 s**. CTest outer
+caps (exact names): `n6_storage_callsite_gate` **TIMEOUT 30**;
+`n6_storage_callsite_gate_self_test` **TIMEOUT 60**. Tests-ON only (no
+tests-OFF leakage of this gate).
+
+#### OSS contributor workflow（short）
+
+1. Edit production N6 source only with review intent; run production N6 tests.
+2. Recompute SHA-256 of each pinned path (`shasum -a 256` / `sha256sum`).
+3. Update **both** this table and `ACCEPTED_SOURCE_MANIFEST` in the same change.
+4. Run: `python3 tools/n6_storage_callsite_gate.py check --src-root .` and
+   `python3 tools/n6_storage_callsite_gate.py self-test --src-root .`.
+5. Record human review; do not treat gate PASS as product GO.
+
+#### Layout
+
+- Core checker/CLI: `tools/n6_storage_callsite_gate.py` (importable
+  `check_store_text` / `check_tree` / `run_check` / `self_test` / `main`).
+- Pin mutation self-test: `tools/n6_storage_callsite_gate_selftest.py`.
+  Missing selftest module ⇒ `self-test` fail-closed.
 
 ### Release candidate
 

@@ -58,11 +58,53 @@ static int ascii_digit(unsigned char ch)
     return ch >= '0' && ch <= '9';
 }
 
+/*
+ * Bounded NUL-terminated copy for any error_out_size > 0.
+ * Avoids snprintf path-sized payloads (-Wformat-truncation under GCC13).
+ */
 static int set_error(char *error_out, size_t error_out_size, const char *message)
 {
     if (error_out != NULL && error_out_size > 0u) {
-        snprintf(error_out, error_out_size, "%s", message);
+        size_t n = 0u;
+        if (message != NULL) {
+            n = strlen(message);
+            if (n >= error_out_size) {
+                n = error_out_size - 1u;
+            }
+            if (n > 0u) {
+                (void)memcpy(error_out, message, n);
+            }
+        }
+        error_out[n] = '\0';
     }
+    return -1;
+}
+
+/* "prefix" + "path" with always-NUL-terminated truncation for any size. */
+static int set_error_prefix_path(
+    char *error_out,
+    size_t error_out_size,
+    const char *prefix,
+    const char *path)
+{
+    size_t pos = 0u;
+    size_t cap;
+    const char *p;
+    const char *q;
+
+    if (error_out == NULL || error_out_size == 0u) {
+        return -1;
+    }
+    cap = error_out_size - 1u;
+    p = (prefix != NULL) ? prefix : "";
+    q = (path != NULL) ? path : "";
+    while (pos < cap && *p != '\0') {
+        error_out[pos++] = *p++;
+    }
+    while (pos < cap && *q != '\0') {
+        error_out[pos++] = *q++;
+    }
+    error_out[pos] = '\0';
     return -1;
 }
 
@@ -753,15 +795,14 @@ static char *read_file(
     long size;
     char *content;
     size_t read_size;
-    char message[NINLIL_OPERATOR_PROJECTION_MAX_ERROR];
     if (path == NULL || out_length == NULL) {
         set_error(error_out, error_out_size, "invalid operator model read arguments");
         return NULL;
     }
     file = fopen(path, "rb");
     if (file == NULL) {
-        snprintf(message, sizeof(message), "cannot open %s", path);
-        set_error(error_out, error_out_size, message);
+        (void)set_error_prefix_path(
+            error_out, error_out_size, "cannot open ", path);
         return NULL;
     }
     if (fseek(file, 0, SEEK_END) != 0 || (size = ftell(file)) < 0

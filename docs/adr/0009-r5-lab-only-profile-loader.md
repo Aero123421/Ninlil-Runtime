@@ -4,6 +4,8 @@
 決定日: 2026-07-17<br>
 対象: R5 host candidate only（FIELD / PRODUCTION / HIL / legal 完成を主張しない）
 
+R6 amendment: [ADR-0010](0010-r6-secure-radio-wire.md)（通常 drain の generation bit-exact と authority-clock profile sidecar）
+
 ## Context
 
 [23章 §9.3](../23-usb-radio-boundary.md) と [05章](../05-security-and-compliance.md) は Physical Compliance Permit の **全 bind 項目**（Hardware/Regulatory identity+revision、SiteAssignment identity/revision/epoch、controller_term、assignment_digest、permit_bind_generation、transmitter、channel、PHY、frame digest/length、conservative max airtime、not-before/expiry、permit sequence）を発行時・consume 時に exact bind する。
@@ -19,7 +21,7 @@ R1 は live L_core の一部を H1 で再検証する。R2 は durable one-shot 
 1. **R5 は production-private 合成層**（`src/radio/profile_loader.{h,c}`）とする。public `include/ninlil` 非露出。
 2. **LAB_ONLY のみ** active にできる。`CANDIDATE` / `DEPLOYMENT_APPROVED` / `REVOKED` / unknown は load または activate で fail-closed。Japan production 数値・法的認証は **捏造しない**（合成 LAB 値のみ）。
 3. **全 §9.3 bind 項目**は R5 が **発行時・consume 時**に exact 比較する。R2 durable に無い term/digest は R5 RAM registry（outstanding ≤8、seq keyed）で保持する。
-4. **R2 durable schema 1 を変更しない。** `assignment_generation`（meta off 156）は R5 `permit_bind_generation` と **exact durable sync via ninlil_pcp_commit_live_binding (full L_core+gen FULL txn)**（`ninlil_pcp_set_assignment_generation` / get; bind/fence/issue で一致検査）。publish 時 generation≥1; assignment fence で R2 `revoke_all` + R5 registry clear + generation++ + durable set。
+4. **R2 durable schema 1 を変更しない。** `assignment_generation`（meta off 156）は R5 `permit_bind_generation` と **exact durable sync via ninlil_pcp_commit_live_binding (full L_core+gen FULL txn)**（`ninlil_pcp_set_assignment_generation` / get; bind/fence/issue で一致検査）。publish 時 generation≥1。LAB standalone assignment fence の既存 `old+1` helper は R6 通常 cleanup へ流用しない。R6 の通常 drain は generation bit-exact、実際の assignment mutation は U5 SET L5–L9 が決めた generation を durable bind する。
 5. **R1 sole transmit-with-permit を迂回しない。** R5 は `ninlil_radio_hal_permit_ops` 互換 validate/consume を提供し、内部で R5 full-bind 検査の後に R2 `ninlil_pcp_validate` / `ninlil_pcp_consume` を呼ぶ。
 6. **R3** が算出した `airtime_us` を per-permit `max_airtime_us` 候補とし、RegulatoryProfile ceiling と比較。OVERFLOW / ceiling 超過は issue 拒否。
 7. Profile 変更: active outstanding がある in-place 変更禁止; revision rollback は REVOKED/未知へ fail-closed; truncation/corruption/duplicate/未知 approval は fail-closed。
@@ -29,7 +31,8 @@ R1 は live L_core の一部を H1 で再検証する。R2 は durable one-shot 
 
 - 実装・host tests・semantic gate は [29章](../29-r5-lab-only-profile-loader.md) に従う。
 - R1/R2/R3 既存 CTest と durable layout / CRC golden を壊してはならない。
-- restart 後: R2 recover は durable L_core を復元するが、R5 RAM registry は空。outstanding が残る場合 R5 は **consume を full-bind 欠落で拒否**し、owner は `fence_and_bump_generation`（R2 revoke_all + registry clear）してから再 bind する。
+- restart 後: R2 recover は durable L_core を復元するが、R5 RAM registry は空。outstanding が残る場合 R5 は **consume を full-bind 欠落で拒否**する。R6 owner は ADR-0010 の exported private-module drain で outstanding を 0 にし、generation を変えずに R5 rebuild と U5 resume を行う。`fence_and_bump_generation` は R6 通常 restart では禁止。
+- R6 RegulatoryProfile window は R2 authority-clock `profile_clock_epoch_id` sidecarへ束縛する。authority epoch変更後は新epochでのreload/revalidationまでTX 0。host wall clockを使用しない。
 
 ## Related
 

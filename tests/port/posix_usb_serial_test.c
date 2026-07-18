@@ -80,24 +80,25 @@ static void close_pty_pair(pty_pair_t *pair)
     }
 }
 
-static int write_master_all(int master, const uint8_t *data, size_t len)
+/* Exact full write: EINTR retry, EAGAIN poll, partial advance. Returns 1 iff all. */
+static int write_fd_all(int fd, const uint8_t *data, size_t len)
 {
     size_t off = 0u;
     int spins = 0;
-    int flags = fcntl(master, F_GETFL, 0);
+    int flags = fcntl(fd, F_GETFL, 0);
 
     if (flags >= 0) {
-        (void)fcntl(master, F_SETFL, flags | O_NONBLOCK);
+        (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     }
     while (off < len && spins < 256) {
-        ssize_t n = write(master, data + off, len - off);
+        ssize_t n = write(fd, data + off, len - off);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
             }
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 struct pollfd pfd;
-                pfd.fd = master;
+                pfd.fd = fd;
                 pfd.events = POLLOUT;
                 pfd.revents = 0;
                 (void)poll(&pfd, 1, 20);
@@ -114,6 +115,84 @@ static int write_master_all(int master, const uint8_t *data, size_t len)
         spins = 0;
     }
     return off == len;
+}
+
+static int write_master_all(int master, const uint8_t *data, size_t len)
+{
+    return write_fd_all(master, data, len);
+}
+
+/* Best-effort write for overflow injection: contracts EINTR/EAGAIN/partial. */
+static size_t write_fd_best_effort(int fd, const uint8_t *data, size_t len)
+{
+    size_t off = 0u;
+    int spins = 0;
+
+    while (off < len && spins < 64) {
+        ssize_t n = write(fd, data + off, len - off);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                struct pollfd pfd;
+                pfd.fd = fd;
+                pfd.events = POLLOUT;
+                pfd.revents = 0;
+                if (poll(&pfd, 1, 5) <= 0) {
+                    break;
+                }
+                ++spins;
+                continue;
+            }
+            break;
+        }
+        if (n == 0) {
+            ++spins;
+            continue;
+        }
+        off += (size_t)n;
+        spins = 0;
+    }
+    return off;
+}
+
+/* Best-effort read (drain): EINTR retry; EAGAIN → 0; hard error → -1. */
+static ssize_t read_fd_best_effort(int fd, void *buf, size_t len)
+{
+    for (;;) {
+        ssize_t n = read(fd, buf, len);
+        if (n >= 0) {
+            return n;
+        }
+        if (errno == EINTR) {
+            continue;
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 0;
+        }
+        return -1;
+    }
+}
+
+/* Exact full read: EINTR retry, partial advance. Returns 1 iff all. */
+static int read_fd_all(int fd, void *buf, size_t len)
+{
+    size_t off = 0u;
+    while (off < len) {
+        ssize_t n = read(fd, (uint8_t *)buf + off, len - off);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 0;
+        }
+        if (n == 0) {
+            return 0; /* EOF before complete */
+        }
+        off += (size_t)n;
+    }
+    return 1;
 }
 
 static int push_to_adapter(
@@ -2029,7 +2108,8 @@ static int test_tx_backpressure_4k_and_recovery(void)
                 == NINLIL_BYTE_STREAM_OK);
             {
                 uint8_t tmp[64];
-                (void)read(pty.master, tmp, sizeof(tmp));
+                ssize_t dn = read_fd_best_effort(pty.master, tmp, sizeof(tmp));
+                REQUIRE(dn >= 0); /* EINTR handled; EAGAIN → 0; hard I/O fails test */
             }
         }
         REQUIRE(recovered);
@@ -2073,22 +2153,25 @@ static int test_rx_overflow_continuity(void)
 
     {
         int flags = fcntl(pty.master, F_GETFL, 0);
+        size_t injected = 0u;
         if (flags >= 0) {
             (void)fcntl(pty.master, F_SETFL, flags | O_NONBLOCK);
         }
-        (void)write(pty.master, extra, sizeof(extra));
-    }
-    for (tries = 0; tries < 32; ++tries) {
-        events = NINLIL_BYTE_STREAM_EVENT_NONE;
-        (void)stream.ops->poll(&stream, 10u, &events, &err);
-        if ((events & NINLIL_BYTE_STREAM_EVENT_RX_OVERFLOW) != 0u
-            || err.status == NINLIL_BYTE_STREAM_RX_OVERFLOW) {
-            saw_overflow = 1;
-            break;
+        /* Best-effort inject past full ring; EINTR/EAGAIN/partial handled. */
+        injected += write_fd_best_effort(pty.master, extra, sizeof(extra));
+        for (tries = 0; tries < 32; ++tries) {
+            events = NINLIL_BYTE_STREAM_EVENT_NONE;
+            (void)stream.ops->poll(&stream, 10u, &events, &err);
+            if ((events & NINLIL_BYTE_STREAM_EVENT_RX_OVERFLOW) != 0u
+                || err.status == NINLIL_BYTE_STREAM_RX_OVERFLOW) {
+                saw_overflow = 1;
+                break;
+            }
+            injected += write_fd_best_effort(pty.master, extra, 8u);
         }
-        (void)write(pty.master, extra, 8u);
+        REQUIRE(saw_overflow);
+        REQUIRE(injected > 0u); /* overflow path must have accepted host I/O */
     }
-    REQUIRE(saw_overflow);
     REQUIRE(stream.ops->link(&stream) == NINLIL_BYTE_STREAM_LINK_UP);
     stream.ops->stats(&stream, &stats);
     REQUIRE(stats.rx_overflow_count >= 1u);
@@ -2570,15 +2653,20 @@ static int test_wrong_owner_process(void)
         ninlil_byte_stream_status_t st =
             stream.ops->write(&stream, &b, 1u, &accepted, &err);
         (void)close(pipefd[0]);
-        (void)write(pipefd[1], &st, sizeof(st));
+        /* Exact sizeof status to parent; EINTR/partial handled; fail → exit 2. */
+        if (!write_fd_all(pipefd[1], (const uint8_t *)&st, sizeof(st))) {
+            (void)close(pipefd[1]);
+            _exit(2);
+        }
         (void)close(pipefd[1]);
         _exit(0);
     }
     (void)close(pipefd[1]);
-    REQUIRE(read(pipefd[0], &child_st, sizeof(child_st)) == (ssize_t)sizeof(child_st));
+    REQUIRE(read_fd_all(pipefd[0], &child_st, sizeof(child_st)));
     (void)close(pipefd[0]);
     REQUIRE(waitpid(child, &status, 0) == child);
     REQUIRE(WIFEXITED(status));
+    REQUIRE(WEXITSTATUS(status) == 0); /* exact pipe write succeeded in child */
     REQUIRE(child_st == NINLIL_BYTE_STREAM_WRONG_OWNER);
     REQUIRE(stream.ops->close(&stream, &err) == NINLIL_BYTE_STREAM_OK);
     return 0;

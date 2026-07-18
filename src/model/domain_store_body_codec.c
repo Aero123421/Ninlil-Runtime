@@ -1847,6 +1847,12 @@ static int ordered_ingress_semantic_empty_ok(
     ninlil_model_domain_digest_t dig;
     ninlil_bytes_view_t empty;
 
+    /*
+     * Zero-init: message_semantic_digest fully writes out_digest on OK
+     * (and zeros it on non-alias failure). dig.bytes is only read after
+     * NINLIL_OK; GCC cannot see callee write — zero-init is contract-safe.
+     */
+    (void)memset(&dig, 0, sizeof(dig));
     (void)memset(&prefix, 0, sizeof(prefix));
     prefix.kind = body->message_kind;
     prefix.flags = body->message_flags;

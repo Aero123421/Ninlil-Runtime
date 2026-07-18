@@ -108,6 +108,27 @@ R5 は:
 | 112 | 44 | reserved1 = 0 |
 | 156 | 4 | crc32 of `[0..156)` |
 
+**Schema 1 (this table):** total **160 B**; offsets 112..155 **MUST be zero**. Existing R5 LAB loaders that reject nonzero reserved remain compatible. **Schema 1 MUST NOT be used for R6 `wire_profile_id=0x11` TX.**
+
+#### 2.4.1 RegulatoryProfile schema 2（160 B; R6 0x11 required）
+
+| off | sz | field |
+| ---: | ---: | --- |
+| 0 | 4 | magic `0x31505247` LE `'GRP1'`（same as schema 1） |
+| 4 | 2 | **schema = 2** |
+| 6 | 1 | approval_state（1 = LAB_ONLY only） |
+| 7 | 1 | reserved0 = 0 |
+| 8..111 | 104 | **identical field layout to schema 1** (ids, revs, channel, PHY, airtime, effective/expiry) |
+| 112 | 16 | **authority_clock_epoch_id** nonzero (R2 authority domain; text form 32-char lowercase hex) |
+| 128 | 28 | reserved2 = 0 |
+| 156 | 4 | crc32 of `[0..156)` |
+
+**Accept rules:** magic GRP1; schema ∈ {1,2}; schema1 ⇒ reserved1 all zero; schema2 ⇒ authority_clock_epoch_id ≠ 0 and reserved2 zero; CRC. Unknown schema ⇒ fail-closed.
+**R6 0x11:** activation **requires schema 2**. Schema 1 may load for pure LAB R5 tests only.
+**R7 blocker:** production `profile_loader` currently schema1-only; schema2 decode/activate is **not implemented** in this freeze — do not claim shipped. docs/06 versioning: additive schema 2 within fixed 160 B envelope.
+
+**Provenance:** `profile_clock_epoch_id` RAM sidecar is copied **only** from schema2 `authority_clock_epoch_id` by `ninlil_r5_private_activate_profiles_with_authority_epoch` (docs/30). Re-tagging forbidden.
+
 **LAB 合成値の例（規範ではなく test fixture 用）:** channel 1..3、BW 125000、SF 7..9、CR denom 5..8、preamble 8..16、tx_power 0..14000 mdb、ceiling 2_000_000 µs。**Japan 920 MHz / 法的 duty を表さない。**
 
 ## 3. SiteAssignment + U5 bind fields（R5 live）
@@ -230,7 +251,43 @@ assignment fence (two-phase, same R5 object only):
 - R2 recover は durable FIFO を復元する。
 - R5 RAM registry は **空**。
 - registry に無い outstanding seq の consume → R5 **BIND_REGISTRY_MISS** fail-closed（edge 0）。
-- owner MUST: fence（revoke_all + clear + generation bump）後に profiles/assignment を再 bind。
+- **R6 `0x11` の通常 restart / issued cleanup:** owner は [30章 §15.3.3](30-r6-secure-radio-wire.md) の **exported private-module drain**（storage-only recover が必要なら実行 → clockless `revoke_all` で durable outstanding 0 → clock/baseline → R5 clear/rebuild → U5 resume）を使う。`permit_bind_generation` / U5 ARW generation は **bit-exact 不変**であり、R5 が独自に `old+1` を選んではならない。
+- 上記は assignment mutation ではない。実際の CellOperatingAssignment 変更時だけ [25章 §8.5](25-u5-cell-operating-assignment.md) の authenticated SET L5–L9 が新 generation を決定し、R5 はその U5-authoritative generation を bind する。既存 `fence_after_revoke` / `old+1` helper は LAB standalone assignment-fence 用であり、R6 の通常 drain には使用禁止。
+- drain 後も authenticated U5 SET/RESTORE と active profile epoch bind が完了するまで TX 0。
+
+### 5.2 R6 authority-clock profile field + activation
+
+R6 `wire_profile_id=0x11` では RegulatoryProfile document の **`authority_clock_epoch_id[16]`**（§2.4; CRC-bound）が sole provenance である。active R5 RAM は **`profile_clock_epoch_id`** をその field から **一度だけ** copy する。host-time / Unix time は使用禁止。呼出側や W1 からの epoch/window 注入は禁止。
+
+**Sole activation API:** `ninlil_r5_private_activate_profiles_with_authority_epoch`（docs/30 §15.3.1.1; single `in_api`）。
+
+| check | exact |
+| --- | --- |
+| document | magic/CRC/LAB_ONLY; **schema=2** for R6 0x11; `authority_clock_epoch_id != 0` |
+| sample | L1 accepted class-D path; fences clear; `S.epoch == authority_clock_epoch_id` |
+| window | effective/expiry vs same `S.now_ms` under that epoch only |
+| result | OK → `profile_clock_epoch_id := authority_clock_epoch_id`; fail → no active swap; TX 0 |
+
+- Permit 発行は `profile_clock_epoch_id == S.epoch_id` と same-S not-before/expiry を要求する。
+- authority epoch adoption 後は旧 active を invalid とし、新 document（新 epoch field + CRC）で activation が成功するまで TX 0。**旧 document への epoch 付け直し禁止。**
+- process restart: R5 RAM empty → re-activate required（activation は RAM-only; durable は document bytes）。
+
+統合契約は [ADR-0010](adr/0010-r6-secure-radio-wire.md) / ADR-0009 R6 amendment。R7 実装まで R6 TX 0。
+
+### 5.3 R6 consume reason passthrough (typed two-catalog mapping)
+
+When R5 `permit_ops` consume returns to R1 for R6 `wire_profile_id=0x11`:
+
+**Catalogs:** R2 `PCP_REASON_*` ≠ R1 `NINLIL_RADIO_HAL_REASON_*`. R5 applies **typed provenance-preserving exact mapping** (docs/24 §10.10 + docs/30 §15.3.4.1). **Forbidden:** claiming numeric bit-exact preservation across catalogs (PCP 9 → HAL 16 is a **map**, not a bit copy). For 43/44/45, equal numbers are **coincidence** of separate catalog values.
+
+| R2 PCP reason | R5 action | R1 HAL reason field |
+| --- | --- | --- |
+| **43** `PCP_REASON_FIFO_OUT_OF_ORDER` | map (numeric coincidence) | **43** `NINLIL_RADIO_HAL_REASON_FIFO_OUT_OF_ORDER` (R7; separate catalog) |
+| **44** `PCP_REASON_CONSUME_CLOCK_UNCERTAIN` | map (numeric coincidence) | **44** `NINLIL_RADIO_HAL_REASON_CONSUME_CLOCK_UNCERTAIN` (R7) |
+| **45** `PCP_REASON_CONSUME_BUSY` | map (numeric coincidence) | **45** `NINLIL_RADIO_HAL_REASON_CONSUME_BUSY` (R7) |
+| **9** `PCP_REASON_NOT_BEFORE` | **map** (not bit-exact) | **16** `NINLIL_RADIO_HAL_REASON_NOT_BEFORE` (not a PCP code) |
+
+No bare `NINLIL_R5_PCP` collapse; no hint-only discrimination. Sample `PCP_REASON_CLOCK_UNCERTAIN=6` is not a consume path code. Current production HAL 41/42 collapse is non-conformant for R6 TX until R7.
 
 ## 6. Packaging
 
@@ -260,5 +317,3 @@ assignment fence (two-phase, same R5 object only):
 - [x] honest nonclaims in docs/CHANGELOG/roadmap
 
 ## 9. 関連
-
-[ADR-0009](adr/0009-r5-lab-only-profile-loader.md) · [05](05-security-and-compliance.md) · [07](07-testing-and-quality.md) · [09](09-roadmap.md) · [23](23-usb-radio-boundary.md) · [24](24-r2-physical-compliance-permit-authority.md) · [25](25-u5-cell-operating-assignment.md) · [27](27-r3-airtime-calculator.md)

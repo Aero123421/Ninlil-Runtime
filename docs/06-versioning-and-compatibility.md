@@ -12,9 +12,9 @@ Ninlilは複数の独立したversion domainを持ちます。単一の`protocol
 | Runtime / SDK release | SemVer | source/API behavior |
 | Public C ABI | ABI major/minor | header + binary |
 | Data wire | family/major/minor | Endpoint間application transport |
-| Control/gateway protocol | major/minor | Controller–Cell semantic catalog（HELLO 交渉の `control_version`）。byte-stream framing `NCG1` v1 は [19章](19-m3-control-byte-stream-framing.md)。**NCL1 envelope `logical_version` とは別 domain**（[23章](23-usb-radio-boundary.md)）。**private control protocol v1**（HELLO/PING/PONG/RESET）は [23章](23-usb-radio-boundary.md)。**private control protocol v2**（assignment [25章](25-u5-cell-operating-assignment.md) + custody [26章](26-u6-transport-custody.md)）は negotiated `selected_control_version=2` でのみ合法。**public control protocol / public ABI catalog** は **未割当** |
+| Control/gateway protocol | major/minor | Controller–Cell semantic catalog（HELLO 交渉の `control_version`）。byte-stream framing `NCG1` v1 は [19章](19-m3-control-byte-stream-framing.md)。**NCL1 envelope `logical_version` とは別 domain**（[23章](23-usb-radio-boundary.md)）。**private control protocol v1**（HELLO/PING/PONG/RESET）は [23章](23-usb-radio-boundary.md)。**private control protocol v2**（assignment [25章](25-u5-cell-operating-assignment.md) + custody [26章](26-u6-transport-custody.md)）は negotiated `selected_control_version=2` でのみ合法。**public control protocol / public ABI catalog** は **未割当 (unallocated)** |
 | NCL1 envelope format | `logical_version` byte | NCG1 payload 内 header 形式（U4: `NCL1_HEADER_BYTES=26`、offset 16 `session_cookie` u64、`MAX_NCL1_BODY=998`）。U4 は exact 1。v2 は reject または別 freeze（control protocol major と番号空間を共有しない） |
-| Secure compact radio wire | major/minor | Endpoint/Cell physical RF frame。**version unallocated**（[23章 §9](23-usb-radio-boundary.md); production bytes は後続 Normative） |
+| Secure compact radio wire | **wire_profile_id only**（**no major/minor domain**） | Endpoint/Cell physical RF frame。**R6 draft:** `wire_profile_id=0x11` = NRW1/AES-128-GCM/HKDF-SHA-256 + one-way contexts / DATA·ACK lanes / E2E security id（[30章](30-r6-secure-radio-wire.md) / [ADR-0010](adr/0010-r6-secure-radio-wire.md) Accepted 仮）。post-attachment data profile; M4 join/bootstrap は別 profile。**R7 codec/AEAD 実装・HIL・production radio complete ではない**。USB NCG1/NCL1 と番号空間非共有（[23章 §9](23-usb-radio-boundary.md)） |
 | Application schema | namespace/schema/major/minor | payload semantics |
 | Service descriptor | immutable revision | admission/policy snapshot |
 | Capability manifest | schema version + revision | supported feature set |
@@ -200,3 +200,7 @@ Release tag前に、次がすべて必要です。
 - Ninlil **private control protocol v2**（U5 assignment + U6 custody; [25章](25-u5-cell-operating-assignment.md) / [26章](26-u6-transport-custody.md); ADR-0005/0006）: private Normative（`selected_control_version=2`）。NCL1 envelope v1 は維持。v1 closed catalog へ type を silent 追加しない。public 採番・ABI 昇格とは別
 
 Wireを実装していないFoundationで`wire v1`を先取り採番しません。private U4 catalog の存在を public control protocol v1 割当とみなしません。private U5/U6 catalog も public 割当とみなしません。
+
+### R5 RegulatoryProfile schema 2 (R6)
+
+Fixed 160-byte envelope; schema field 1→2; schema1 reserved[112..155]=0; schema2 authority_clock_epoch_id at [112..128). R6 0x11 requires schema 2. Loader support is R7.

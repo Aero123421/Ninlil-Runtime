@@ -441,7 +441,13 @@ def compile_and_run_mutation(name: str, rel: str, old: str, new: str) -> None:
             REPO,
             troot,
             ignore=shutil.ignore_patterns(
-                "build", ".git", "cmake-build*", "*.o", "*.a", "install*"
+                "build",
+                "build-*",
+                ".git",
+                "cmake-build*",
+                "*.o",
+                "*.a",
+                "install*",
             ),
         )
         path = troot / rel
@@ -497,7 +503,13 @@ def run_oracle_fixture_crc_mutation() -> None:
             REPO,
             troot,
             ignore=shutil.ignore_patterns(
-                "build", ".git", "cmake-build*", "*.o", "*.a", "install*"
+                "build",
+                "build-*",
+                ".git",
+                "cmake-build*",
+                "*.o",
+                "*.a",
+                "install*",
             ),
         )
         hpath = troot / "tests/radio/profile_r5_golden_profiles.h"
@@ -681,6 +693,7 @@ def run_self_test() -> None:
                 troot,
                 ignore=shutil.ignore_patterns(
                     "build",
+                    "build-*",
                     ".git",
                     "cmake-build*",
                     "*.o",

@@ -97,5 +97,18 @@ set_source_files_properties(${_ninlil_storage_srcs} PROPERTIES
     COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048"
 )
 
+# N6 production set (docs/30 §20.4.1): stack-usage artifacts + frame ceiling.
+# Apply to every NINLIL_N6_PRODUCTION_RELATIVE_SOURCES member from the shared
+# private authority. ESP GCC supports both flags; .su files land next to the
+# component objects and are collected by esp-idf.yml for n6_frame_stack_gate
+# (--su-dir / --esp-su-dir). Missing N6 .su is FAIL; host substitute forbidden.
+set(_ninlil_n6_srcs "")
+foreach(_rel IN LISTS NINLIL_N6_PRODUCTION_RELATIVE_SOURCES)
+    list(APPEND _ninlil_n6_srcs "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
+set_source_files_properties(${_ninlil_n6_srcs} PROPERTIES
+    COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048"
+)
+
 # Match host production private build: TEST-only transport begin is OFF.
 # Do not define NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN here.
