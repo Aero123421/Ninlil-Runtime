@@ -164,6 +164,26 @@ def check() -> None:
         fail("component missing durable-storage authority")
     if "NINLIL_ESP_STORAGE_TARGET_RELATIVE_SOURCES" not in component:
         fail("component must consume storage TARGET sources")
+    # N6 production stack-usage: every NINLIL_N6_PRODUCTION_RELATIVE_SOURCES
+    # member must get -fstack-usage and -Wframe-larger-than=2048 (docs/30 §20.4.1).
+    if "NINLIL_N6_PRODUCTION_RELATIVE_SOURCES" not in component:
+        fail(
+            "component must reference NINLIL_N6_PRODUCTION_RELATIVE_SOURCES "
+            "for N6 stack-usage flags"
+        )
+    if "-fstack-usage" not in component:
+        fail("component missing -fstack-usage (required for N6 .su generation)")
+    if "-Wframe-larger-than=2048" not in component:
+        fail("component missing -Wframe-larger-than=2048 for N6 frame ceiling")
+    if not re.search(
+        r"NINLIL_N6_PRODUCTION_RELATIVE_SOURCES[\s\S]{0,800}?"
+        r"-fstack-usage[\s\S]{0,200}?-Wframe-larger-than=2048",
+        component,
+    ):
+        fail(
+            "component must apply -fstack-usage and -Wframe-larger-than=2048 "
+            "to NINLIL_N6_PRODUCTION_RELATIVE_SOURCES (not storage-only)"
+        )
     component_code = "\n".join(
         line.split("#", 1)[0] for line in component.splitlines()
     )
@@ -338,9 +358,44 @@ def check() -> None:
         "ninlil_m3_combined_smoke.map",
         "ninlil_storage_powercut_hil.map",
         "ninlil_storage_powercut_hil.elf",
+        # N6 ESP stack-usage collection + frame gate (docs/30 §20.4.1)
+        "n6_frame_stack_gate.py",
+        "--esp-su-dir",
+        "--su-dir",
+        "n6_context_store.c.su",
+        "n6_record_codec.c.su",
+        "n6_crypto_host.c.su",
+        "ninlil_n6_su",
+        "exactly 1 match",
     ):
         if needle not in ci:
-            fail(f"esp-idf.yml missing storage target gate {needle!r}")
+            fail(f"esp-idf.yml missing storage/N6 target gate {needle!r}")
+    # Host substitute for ESP N6 .su is forbidden.
+    if re.search(
+        r"--esp-su-dir[=\s]+[^\n]*ninlil_runtime_private\.dir",
+        ci,
+    ):
+        fail(
+            "esp-idf.yml --esp-su-dir must not use host "
+            "ninlil_runtime_private.dir (host substitute forbidden)"
+        )
+    # N6 .su collection must not use head -1 (duplicate-selection weakening).
+    n6_ci_m = re.search(
+        r"N6_SU_DIR=.*?n6_frame_stack_gate\.py.*?(?:\n\s*[A-Za-z#]|\Z)",
+        ci,
+        re.S,
+    )
+    n6_ci = n6_ci_m.group(0) if n6_ci_m else ""
+    if n6_ci and ("head -1" in n6_ci or "head -n 1" in n6_ci):
+        fail(
+            "esp-idf.yml N6 .su collection must not use head -1 "
+            "(require find match count exactly 1)"
+        )
+    if n6_ci and not re.search(r"exactly 1 match|-ne 1", n6_ci):
+        fail(
+            "esp-idf.yml N6 .su collection must enforce exactly 1 find match "
+            "per exact .su basename"
+        )
     # Official target archive inspection must declare --archive-kind target
     # (host CTest uses host kind; refuse silent default / inverted wiring).
     if "--archive-kind target" not in ci:

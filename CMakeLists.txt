@@ -95,6 +95,42 @@ if(NINLIL_ENABLE_POINTER_COMPARE_SANITIZER)
     endif()
 endif()
 
+# Any active sanitizer instrumentation (ASan/UBSan and/or active pointer-compare
+# ASan). Production N6 frame ceiling and .su multipass gate are non-authoritative
+# under redzones / dynamic .su rewrite — skip those only when this is TRUE.
+# Self-test/structure and all non-sanitizer Debug/Release/ESP gates stay strict.
+set(_ninlil_any_sanitizer_active FALSE)
+if(NINLIL_ENABLE_SANITIZERS OR _ninlil_pointer_compare_sanitizer_supported)
+    set(_ninlil_any_sanitizer_active TRUE)
+endif()
+
+# Native GNU x86/x86_64 host builds only: -maccumulate-outgoing-args fixes
+# .su kind=dynamic
+# caused by push/pop of outgoing call arguments (GCC classifies those frames as
+# dynamic even without VLAs). Feature-detect; fail closed when unavailable on
+# this host. Do not apply to AppleClang, Clang, non-x86 hosts, or ESP Xtensa.
+set(_ninlil_n6_maccumulate_outgoing_args FALSE)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND NOT CMAKE_CROSSCOMPILING)
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _ninlil_target_cpu)
+    if(_ninlil_target_cpu MATCHES "^(x86_64|amd64|x64|i[3-6]86|x86)$")
+        include(CheckCCompilerFlag)
+        check_c_compiler_flag(
+            -maccumulate-outgoing-args
+            NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS)
+        if(NOT NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS)
+            message(FATAL_ERROR
+                "GNU x86/x86_64 host requires -maccumulate-outgoing-args for "
+                "N6 production static .su classification, but the C compiler "
+                "rejected the flag (target=${CMAKE_SYSTEM_PROCESSOR})")
+        endif()
+        set(_ninlil_n6_maccumulate_outgoing_args TRUE)
+        message(STATUS
+            "N6 production: -maccumulate-outgoing-args enabled "
+            "(native GNU target ${CMAKE_SYSTEM_PROCESSOR}; "
+            "NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS=1)")
+    endif()
+endif()
+
 set(NINLIL_STRICT_C_FLAGS
     -Wall
     -Wextra
@@ -348,6 +384,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
 add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     ${NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES}
 )
+# N6 production set (codec+crypto+context) comes only from
+# cmake/ninlil_runtime_private_sources.cmake — no host-only re-injection.
+
 set_property(TARGET ninlil_runtime_private
     PROPERTY NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE)
 target_include_directories(ninlil_runtime_private PRIVATE
@@ -403,6 +442,30 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
         set_property(
             SOURCE ${_vla_source}
             APPEND PROPERTY COMPILE_OPTIONS -Wvla
+        )
+    endforeach()
+    # N6 production: frame ceiling + stack-usage artifacts for multipass boot gate.
+    # .su lands next to objects under CMakeFiles/ninlil_runtime_private.dir/ —
+    # that directory is the sole authoritative host input to n6_frame_stack_gate
+    # (not testbuild, not an unused side directory). AppleClang emits .su and
+    # supports -Wframe-larger-than; do not host-skip.
+    # ASan/UBSan (including pointer-compare ASan) inflate frames (redzones) and
+    # rewrite .su kind to dynamic — skip -Wframe-larger-than when any sanitizer
+    # is active (_ninlil_any_sanitizer_active). Production .su CTest gate is
+    # registered only when that flag is FALSE (see tests below).
+    # GNU host x86: also -maccumulate-outgoing-args (see detection above) so
+    # outgoing-arg push/pop does not force dynamic .su on Debug or Release.
+    foreach(_n6_src IN LISTS NINLIL_N6_PRODUCTION_RELATIVE_SOURCES)
+        set(_n6_compile_opts -Wvla -Werror -fstack-usage)
+        if(NOT _ninlil_any_sanitizer_active)
+            list(APPEND _n6_compile_opts -Wframe-larger-than=2048)
+        endif()
+        if(_ninlil_n6_maccumulate_outgoing_args)
+            list(APPEND _n6_compile_opts -maccumulate-outgoing-args)
+        endif()
+        set_property(
+            SOURCE ${_n6_src}
+            APPEND PROPERTY COMPILE_OPTIONS ${_n6_compile_opts}
         )
     endforeach()
 endif()
@@ -2142,6 +2205,208 @@ if(NINLIL_BUILD_TESTS)
         NAME profile_r5_gate_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/profile_r5_gate.py
+            self-test
+    )
+    # R6: secure compact radio wire Normative freeze (docs-only).
+    # Does not claim R7 codec/AEAD, handshake implementation, HIL, or R6 complete.
+    # Chunk D N6 private record codec (exact length / CRC / alias / closed domain).
+    # Host candidate only — not R6 complete / not ESP N6 ready.
+    # Test-build N6 store: same N6 production sources + fixture binders.
+    # Marked NINLIL_TEST_ONLY_ARTIFACT — never installed.
+    add_library(ninlil_n6_store_testbuild STATIC EXCLUDE_FROM_ALL
+        ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
+        src/model/domain_store_codec.c
+    )
+    target_compile_definitions(ninlil_n6_store_testbuild PRIVATE NINLIL_N6_TEST_BUILD=1)
+    target_include_directories(ninlil_n6_store_testbuild PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    set_target_properties(ninlil_n6_store_testbuild PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+        NINLIL_TEST_ONLY_ARTIFACT TRUE)
+    ninlil_apply_strict_warnings(ninlil_n6_store_testbuild)
+
+    add_executable(ninlil_n6_context_store_test
+        tests/radio/n6_context_store_test.c
+        tests/support/n6_mem_storage.c
+        tests/support/n6_local_identity_fixture.c
+    )
+    target_compile_definitions(ninlil_n6_context_store_test PRIVATE NINLIL_N6_TEST_BUILD=1)
+    target_include_directories(ninlil_n6_context_store_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ninlil_n6_context_store_test PRIVATE
+        ninlil_n6_store_testbuild
+        ninlil
+    )
+    set_target_properties(ninlil_n6_context_store_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_n6_context_store_test)
+    add_test(
+        NAME n6_context_store
+        COMMAND ninlil_n6_context_store_test
+    )
+
+    # Production private archive leakage + canonical N6 source authority.
+    # Host tests-ON archive probe (DEPENDS explicit private target because
+    # ninlil_runtime_private is EXCLUDE_FROM_ALL).
+    add_test(
+        NAME n6_chunk_d_private_symbol_leakage
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_chunk_d_leakage_gate.py
+            check
+            --archive $<TARGET_FILE:ninlil_runtime_private>
+            --src-root ${CMAKE_CURRENT_SOURCE_DIR}
+            --build-dir ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    add_test(
+        NAME n6_chunk_d_private_symbol_leakage_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_chunk_d_leakage_gate.py
+            self-test
+            --src-root ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(n6_chunk_d_private_symbol_leakage PROPERTIES
+        DEPENDS ninlil_runtime_private)
+
+    # Fresh tests-OFF Release packaging gate (docs/30 §20.2 / ADR-0010):
+    # isolated subbuild, ctest -N = 0, explicit --target ninlil_runtime_private
+    # (EXCLUDE_FROM_ALL pin), temp install public-only, ar N6 exact-once,
+    # fixture/test/oracle/spy 0, nm/strings + leakage leak 0.
+    # Mutation self-tests live in n6_chunk_d_leakage_gate.py self-test.
+    add_test(
+        NAME n6_tests_off_packaging_gate
+        COMMAND ${CMAKE_COMMAND}
+            -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            "-DNINLIL_GENERATOR=${CMAKE_GENERATOR}"
+            -DNINLIL_PYTHON=${Python3_EXECUTABLE}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/n6_tests_off_packaging.cmake
+    )
+
+    # Heap ban: sources + exact three N6 members of production private archive.
+    add_test(
+        NAME n6_heap_ban_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_heap_ban_gate.py
+            check
+            --src-root ${CMAKE_CURRENT_SOURCE_DIR}
+            --archive $<TARGET_FILE:ninlil_runtime_private>
+    )
+    add_test(
+        NAME n6_heap_ban_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_heap_ban_gate.py
+            self-test
+            --src-root ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(n6_heap_ban_gate PROPERTIES
+        DEPENDS ninlil_runtime_private)
+
+    # N6 accepted-source SHA-256 pin gate (docs/07 manifest; not C semantics).
+    add_test(
+        NAME n6_storage_callsite_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_storage_callsite_gate.py
+            check
+            --src-root ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME n6_storage_callsite_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_storage_callsite_gate.py
+            self-test
+            --src-root ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(n6_storage_callsite_gate PROPERTIES TIMEOUT 30)
+    set_tests_properties(n6_storage_callsite_gate_self_test PROPERTIES TIMEOUT 60)
+
+    # Stack-usage: recursive discover under production object dir only
+    # (CMakeFiles/ninlil_runtime_private.dir). Never whole-build or testbuild.
+    # Host AppleClang/GCC both emit .su — missing artifacts fail (no host skip).
+    # ESP N6 .su is separate: without --esp-su-dir the gate reports ESP NOT-RUN
+    # (not a PASS). When an ESP object dir is available, pass --esp-su-dir.
+    # ESP CI collects actual ESP N6 .su and passes both --su-dir/--esp-su-dir
+    # (host substitute forbidden; see n6_frame_stack_gate check-structure).
+    #
+    # Production .su gate is authoritative only for non-sanitize host builds
+    # (matches -Wframe-larger-than skip above). ASan/UBSan — including active
+    # pointer-compare ASan — rewrite .su kind to dynamic and inflate frames;
+    # do not register/run the production gate when _ninlil_any_sanitizer_active.
+    # Self-test and check-structure always run (logic/wiring regression only).
+    # GNU x86 Debug/Release both register production (static .su via
+    # -maccumulate-outgoing-args); only sanitizer builds skip production.
+    add_test(
+        NAME n6_frame_stack_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_frame_stack_gate.py
+            self-test
+    )
+    add_test(
+        NAME n6_frame_stack_gate_structure
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_frame_stack_gate.py
+            check-structure
+    )
+    if(NOT _ninlil_any_sanitizer_active)
+        add_test(
+            NAME n6_frame_stack_gate
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_frame_stack_gate.py
+                check
+                --su-dir ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ninlil_runtime_private.dir
+        )
+        set_tests_properties(n6_frame_stack_gate PROPERTIES
+            DEPENDS ninlil_runtime_private)
+    else()
+        message(STATUS
+            "n6_frame_stack_gate: not registered under active sanitizer "
+            "(NINLIL_ENABLE_SANITIZERS or pointer-compare; production .su "
+            "non-authoritative under instrumentation; "
+            "n6_frame_stack_gate_self_test/structure still enabled; "
+            "non-sanitize CI owns .su)")
+    endif()
+
+    add_executable(ninlil_n6_record_codec_test
+        tests/radio/n6_record_codec_test.c
+    )
+    target_include_directories(ninlil_n6_record_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ninlil_n6_record_codec_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_n6_record_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_n6_record_codec_test)
+    add_test(
+        NAME n6_record_codec
+        COMMAND ninlil_n6_record_codec_test
+    )
+
+    add_test(
+        NAME radio_wire_r6_docs_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_wire_r6_docs_gate.py
+            check
+    )
+    add_test(
+        NAME radio_wire_r6_docs_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_wire_r6_docs_gate.py
             self-test
     )
     add_test(

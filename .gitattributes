@@ -1,0 +1,3 @@
+# CommonMark uses two trailing spaces for an intentional hard line break.
+# Keep Git's other whitespace checks active for Markdown and all source files.
+*.md whitespace=-blank-at-eol

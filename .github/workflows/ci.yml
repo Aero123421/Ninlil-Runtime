@@ -107,6 +107,89 @@ jobs:
           done
           rm -rf "$tmp"
 
+  # Host production n6_frame_stack_gate authority under GCC Release (x86_64).
+  # Non-sanitize Debug also registers the production gate exactly once; this
+  # job is the Release-config authority and proves GNU x86 flag detection:
+  # CheckCCompilerFlag → NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS in CMakeCache,
+  # applied as -maccumulate-outgoing-args on N6 production sources so .su
+  # kind is static (dynamic .su is still a hard FAIL; gate is not skipped).
+  ubuntu-gcc-release-n6-frame:
+    name: Ubuntu GCC Release N6 frame authority
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Configure (GCC Release, SQLite OFF, strict ON)
+        run: >-
+          cmake -S . -B build/ci-ubuntu-gcc-rel-n6
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=gcc
+          -DCMAKE_CXX_COMPILER=g++
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
+      - name: Assert -maccumulate-outgoing-args feature detection effective
+        run: |
+          set -euo pipefail
+          cache=build/ci-ubuntu-gcc-rel-n6/CMakeCache.txt
+          test -f "$cache"
+          # CheckCCompilerFlag result must be affirmative on Ubuntu GCC x86_64.
+          if ! grep -E '^NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS:(INTERNAL|BOOL)=1$' \
+               "$cache"; then
+            echo "false-green: NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS not 1" >&2
+            grep -E 'MACCUMULATE|HOST_SYSTEM_PROCESSOR|CMAKE_C_COMPILER' \
+              "$cache" || true
+            exit 1
+          fi
+          echo "NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS=1 (feature detection OK)"
+      - name: Build ninlil_runtime_private and capture verbose compile commands
+        run: |
+          set -euo pipefail
+          cmake --build build/ci-ubuntu-gcc-rel-n6 --parallel 2 --verbose \
+            --target ninlil_runtime_private \
+            | tee build/ci-ubuntu-gcc-rel-n6/n6-compile.log
+      - name: Assert flag applied to every N6 source and production gate exactly once
+        run: |
+          set -euo pipefail
+          dir=build/ci-ubuntu-gcc-rel-n6/CMakeFiles/ninlil_runtime_private.dir
+          log=build/ci-ubuntu-gcc-rel-n6/n6-compile.log
+          test -d "$dir"
+          test -s "$log"
+          # Prove the flag on each actual -c command, not merely somewhere in
+          # the target directory: one source losing COMPILE_OPTIONS must fail.
+          for src in n6_context_store.c n6_record_codec.c n6_crypto_host.c; do
+            count=$(awk -v src="src/radio/${src}" '
+              index($0, src) &&
+              index($0, "-maccumulate-outgoing-args") &&
+              $0 ~ /(^|[[:space:]])-c([[:space:]]|$)/ { n++ }
+              END { print n + 0 }
+            ' "$log")
+            if test "$count" != "1"; then
+              echo "false-green: expected one flagged compile command for $src; got $count" >&2
+              grep -F "src/radio/${src}" "$log" || true
+              exit 1
+            fi
+            test -f "$dir/src/radio/${src}.o" || test -f "$dir/src/radio/${src}.su"
+          done
+          echo "all N6 production compile commands include -maccumulate-outgoing-args"
+          listing=$(ctest --test-dir build/ci-ubuntu-gcc-rel-n6 -N)
+          prod=$(printf '%s\n' "$listing" \
+            | grep -E 'Test #[0-9]+: n6_frame_stack_gate$' | wc -l | tr -d ' ')
+          test "$prod" = "1"
+          trio=$(printf '%s\n' "$listing" \
+            | grep -E 'Test #[0-9]+: n6_frame_stack_gate(_self_test|_structure)?$' \
+            | wc -l | tr -d ' ')
+          test "$trio" = "3"
+      - name: Run N6 frame self-test/structure/production (exact 3)
+        run: >-
+          ctest --test-dir build/ci-ubuntu-gcc-rel-n6
+          -R 'n6_frame_stack_gate(_self_test|_structure)?$'
+          --output-on-failure
+
   ubuntu-static-strict:
     name: Ubuntu static SQLite strict full
     runs-on: ubuntu-24.04

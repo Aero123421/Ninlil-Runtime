@@ -296,7 +296,7 @@ Secure wire/MAC (immutable TX plan/bytes)
       -> SX1262 HAL/backend
 ```
 
-Foundation の logical / virtual / loopback TxPermit は physical RF を認可しない。logical bearer message の `memcpy` 直列化は禁止する。secure radio wire version は **unallocated**。
+Foundation の logical / virtual / loopback TxPermit は physical RF を認可しない。logical bearer message の `memcpy` 直列化は禁止する。secure compact radio wire は **R6** で `wire_profile_id=0x11` を **docs-only Accepted 仮** として draft 割当（正本 [30章](30-r6-secure-radio-wire.md) / [ADR-0010](adr/0010-r6-secure-radio-wire.md); **R7 実装・HIL・R6 complete ではない**）。
 
 ## Legacy lab slice との関係
 

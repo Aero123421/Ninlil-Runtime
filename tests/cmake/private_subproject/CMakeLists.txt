@@ -73,8 +73,9 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-if(NOT _private_source_count EQUAL 20)
-    message(FATAL_ERROR "private source count is not 20: ${_private_sources}")
+# Exact 20 base private sources + exact 3 N6 production set = 23 (single authority expand).
+if(NOT _private_source_count EQUAL 23)
+    message(FATAL_ERROR "private source count is not 23: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -95,6 +96,9 @@ set(_expected_private_source_names
     domain_store_d3s2.c
     domain_store_scanner.c
     logical_session.c
+    n6_context_store.c
+    n6_crypto_host.c
+    n6_record_codec.c
     ncl1_codec.c
     pcp_authority.c
     profile_loader.c

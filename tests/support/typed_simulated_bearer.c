@@ -1290,9 +1290,15 @@ static ninlil_bearer_status_t fixture_receive_next(
 {
     ninlil_test_bearer_t *bearer = (ninlil_test_bearer_t *)user;
     bearer_handle_t *handle = (bearer_handle_t *)opaque_handle;
+    /*
+     * Zero-init: raw_receive_pop fully assigns *out when count > 0 (caller
+     * path). GCC cannot prove that through the call; leave out unpoisoned
+     * so post-pop field reads are defined if analysis is conservative.
+     */
     raw_receive_entry_t raw;
     bearer_message_copy_t *copy;
     size_t incoming_direction;
+    (void)memset(&raw, 0, sizeof(raw));
     if (bearer == NULL || !handle_is_live(bearer, handle)
         || out_message == NULL) {
         if (bearer != NULL) {

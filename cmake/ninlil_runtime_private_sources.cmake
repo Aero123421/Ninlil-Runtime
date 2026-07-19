@@ -28,6 +28,20 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/transport/logical_session.c
 )
 
+# Exact N6 production private set — single authority (define once).
+# Host runtime list, VLA/frame options, ESP packaging, and testbuild expand
+# this variable; do not repeat literal path lists.
+set(NINLIL_N6_PRODUCTION_RELATIVE_SOURCES
+    src/radio/n6_record_codec.c
+    src/radio/n6_crypto_host.c
+    src/radio/n6_context_store.c
+)
+
+# Expand N6 production set into the shared private runtime source list once.
+list(APPEND NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
+    ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
+)
+
 set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/model/ncl1_codec.c
     src/runtime/domain_store_scanner.c
@@ -43,4 +57,5 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/radio/pcp_authority.c
     src/radio/profile_loader.c
     src/transport/logical_session.c
+    ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
 )

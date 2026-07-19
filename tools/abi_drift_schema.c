@@ -8,11 +8,56 @@
 
 #define STRUCT_HEADER_BODY "uint16_t abi_version; uint16_t struct_size"
 
+/*
+ * Bounded NUL-terminated copy into error_out for any error_out_size > 0.
+ * Does not use snprintf for path-sized payloads (avoids -Wformat-truncation).
+ */
 static int set_error(char *error_out, size_t error_out_size, const char *message)
 {
     if (error_out != NULL && error_out_size > 0u) {
-        snprintf(error_out, error_out_size, "%s", message);
+        size_t n = 0u;
+        if (message != NULL) {
+            n = strlen(message);
+            if (n >= error_out_size) {
+                n = error_out_size - 1u;
+            }
+            if (n > 0u) {
+                (void)memcpy(error_out, message, n);
+            }
+        }
+        error_out[n] = '\0';
     }
+    return -1;
+}
+
+/*
+ * Format "prefix" + "path" into error_out without truncation UB/warnings:
+ * always NUL-terminates; copies as much of prefix then path as fits.
+ */
+static int set_error_prefix_path(
+    char *error_out,
+    size_t error_out_size,
+    const char *prefix,
+    const char *path)
+{
+    size_t pos = 0u;
+    size_t cap;
+    const char *p;
+    const char *q;
+
+    if (error_out == NULL || error_out_size == 0u) {
+        return -1;
+    }
+    cap = error_out_size - 1u;
+    p = (prefix != NULL) ? prefix : "";
+    q = (path != NULL) ? path : "";
+    while (pos < cap && *p != '\0') {
+        error_out[pos++] = *p++;
+    }
+    while (pos < cap && *q != '\0') {
+        error_out[pos++] = *q++;
+    }
+    error_out[pos] = '\0';
     return -1;
 }
 
@@ -1873,9 +1918,9 @@ static int parse_header_file(
         return set_error(error_out, error_out_size, "out of memory");
     }
     if (read_file_to_buffer(path, source, NINLIL_ABI_DRIFT_MAX_SOURCE) != 0) {
-        snprintf(error_out, error_out_size, "cannot read %s", path);
         free(source);
-        return -1;
+        return set_error_prefix_path(
+            error_out, error_out_size, "cannot read ", path);
     }
     partial = (ninlil_abi_catalog_t *)calloc(1, sizeof(*partial));
     if (partial == NULL) {

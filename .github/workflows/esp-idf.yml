@@ -134,6 +134,35 @@ jobs:
             -name "esp_storage_*.su" -o \
             -name "*esp_storage_model*.su" \) \
             | tee ports/esp-idf/smoke_app/build/ninlil_su_list.txt
+          # N6 production .su: collect actual ESP component objects only.
+          # Host ninlil_runtime_private.dir substitute is forbidden.
+          # Each exact .su basename must have find match count exactly 1
+          # (0 or 2+ ⇒ FAIL). head -1 first-match selection is forbidden.
+          N6_SU_DIR=ports/esp-idf/smoke_app/build/ninlil_n6_su
+          rm -rf "${N6_SU_DIR}"
+          mkdir -p "${N6_SU_DIR}"
+          for name in n6_context_store.c.su n6_record_codec.c.su n6_crypto_host.c.su; do
+            mapfile -t matches < <(find ports/esp-idf/smoke_app/build/esp-idf/ninlil \
+              -name "${name}" -type f 2>/dev/null | sort)
+            n="${#matches[@]}"
+            if [[ "${n}" -ne 1 ]]; then
+              echo "ESP N6 .su ${name}: expected exactly 1 match, got ${n}" >&2
+              echo "searched under ports/esp-idf/smoke_app/build/esp-idf/ninlil" >&2
+              printf '%s\n' "${matches[@]}" >&2
+              find ports/esp-idf/smoke_app/build -name '*.su' 2>/dev/null | head -50 >&2 || true
+              exit 1
+            fi
+            found="${matches[0]}"
+            test -f "${found}"
+            cp "${found}" "${N6_SU_DIR}/${name}"
+            test -s "${N6_SU_DIR}/${name}"
+          done
+          ls -la "${N6_SU_DIR}" | tee ports/esp-idf/smoke_app/build/ninlil_n6_su_list.txt
+          # Both --su-dir and --esp-su-dir point at the actual ESP N6 .su dir
+          # (not a host build tree). Gate enforces boot_scan<=1024 / all N6<=2048.
+          python3 tools/n6_frame_stack_gate.py check \
+            --su-dir "${N6_SU_DIR}" \
+            --esp-su-dir "${N6_SU_DIR}"
           # U2: real public port symbols linked (init_object + ops, not link_anchor).
           xtensa-esp32s3-elf-nm "${ELF}" | tee /tmp/ninlil_u2_nm.txt >/dev/null
           grep -E 'ninlil_esp_idf_usb_cdc_(init_object|open|close|object_size)' \

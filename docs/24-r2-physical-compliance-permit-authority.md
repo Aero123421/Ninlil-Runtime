@@ -196,6 +196,22 @@ meta/`fence_code` および RAM に保持（解除判定に使用）:
 
 UNCERTAIN/TEMP は **CLOCK_FENCE を立てない**。
 
+**FENCE_CODE_NORMALIZE_CLOSED（全 bit 設定・解除の唯一規則）:**
+
+```text
+normalize_fence_code(bits, prior_code):
+  if bits & CORRUPT: return PCP_FC_CORRUPT
+  if bits & STORAGE: return PCP_FC_STORAGE
+  if bits & CLOCK:
+    if prior_code in {PCP_FC_CLOCK_REGRESSION, PCP_FC_CLOCK_PERM,
+                      PCP_FC_CLOCK_ILLFORMED, PCP_FC_CLOCK_UNKNOWN}:
+      return prior_code
+    return PCP_FC_CLOCK_UNKNOWN
+  return PCP_FC_NONE
+```
+
+全ての fence bit 設定・解除は、bit の post-image と `fence_code = normalize_fence_code(post_bits, cause_or_prior_code)` を **同じ FULL** に書く。上位優先の CORRUPT/STORAGE を解除した後も CLOCK が残り、元の clock 原因を復元できない場合は `PCP_FC_CLOCK_UNKNOWN` に正規化する。code と bit の不整合は CORRUPT。
+
 ### 3.6 Half-open / RAM watermarks
 
 ```text
@@ -273,11 +289,23 @@ same-epoch regression vs `ram_trust_*`: TRUSTED で `epoch==ram_trust_epoch && n
 
 ```text
 C0 if CLOCK bit clear → NOOP OK
-C1 sample S (§3)
-C2 if not fresh_epoch(S) for codes 1–4 → FAIL; fence 維持
+C1 sample S (§3)  // S は sample 後にのみ参照可; sample 前の S 比較は逐語不能
+C1a if meta_state==INITIAL_UNTRUSTED_FENCED (state2):
+      // sample S 後の state2 専用 precheck（ordinary floor compare 禁止）
+      ram_trust is invalid; trusted baseline is invalid zero baseline
+      do not compare S against zero epoch/now as a trusted or ordinary floor
+      require well-formed TRUSTED nonzero S and outstanding_count==0
+      // ordinary fresh_epoch(S) vs last_trusted is N/A while state2 (last_trusted zero)
+C2 if meta_state==TRUSTED_BASELINE_PRESENT (state1):
+      // ordinary fresh_epoch(S) against last_trusted / ram_trust
+      if not fresh_epoch(S) for codes 1–4 → FAIL; fence 維持
 C3 if outstanding>0 and any ISSUED.epoch != S.epoch → FAIL BUSY_OUTSTANDING
    (caller が Algorithm R を先に実行; R は clock 不要)
-C4 begin RW; meta.last_trusted_*=S; fence_bits&=~CLOCK; fence_code=0 if no other bits;
+C4 begin RW; meta.last_trusted_*=S;
+   if old meta_state==INITIAL_UNTRUSTED_FENCED:
+     meta_state=TRUSTED_BASELINE_PRESENT
+   fence_bits&=~CLOCK
+   fence_code=normalize_fence_code(fence_bits, old_fence_code)
    put; commit FULL
 C5 OK → ram_trust_*=S; clear RAM CLOCK; clear ram_validate
 ```
@@ -302,7 +330,7 @@ Issue 窓: `expiry > not_before`, `expiry > now`, TTL ≤ 600000。
 
 1. R1 watermark ABI 非変更。
 2. consume OK / terminal burn 対象は **head のみ**（H1+R2 consume）。
-3. non-head ISSUED → CONSUME_DENIED OUT_OF_ORDER。
+3. non-head ISSUED → CONSUME_DENIED + reason=`PCP_REASON_FIFO_OUT_OF_ORDER` (43); hint 禁止; docs/30 §15.3.4.1。
 4. 未発行 seq → CONSUME_FENCED FABRICATED。
 5. `issue_generation := permit_sequence`（schema 1）。
 6. caller issue request は **permit_sequence を持たない**。authority が `next_issue_seq` を採番。
@@ -428,7 +456,7 @@ I14 if outstanding_count == 0:
 pre: storage+clock bound; not nested
 A0 sample clock S once (§3) — loop 内で再 sample しない
 A1 TEMP/UNCERTAIN → PCP_CLOCK_UNCERTAIN; durable 0; RAM trust 不変
-A2 PERM/ill-formed/regression → F_c; PCP_CLOCK_FAULT; durable 0
+A2 PERM/ill-formed/regression → require meta published (else INVALID_STATE / not advance path); call shared helper `ninlil_r2_private_commit_clock_fault_fence` (FULL CLOCK+F_c on existing meta); then PCP_CLOCK_FAULT; business ISSUED mutation 0; durable_meta_mutation=F_c_FULL
 A3 advanced_any = false
 A4 loop:
    begin RW; verify I1–I14
@@ -554,12 +582,17 @@ E6-definite fail:
 ```text
 U0  Immediate after E6 returns COMMIT_UNKNOWN (same process, before return to caller):
     U0a  T_e is consumed by commit() (platform: all statuses consume txn)
-    U0b  RAM: fence_bits |= STORAGE; fence_code = PCP_FC_STORAGE; clear ram_validate
+    U0b  RAM: post_bits := fence_bits | STORAGE;
+         fence_bits := post_bits;
+         fence_code := normalize_fence_code(post_bits, old_RAM_fence_code);
+         clear ram_validate
          // do NOT write ram_trust from S
     U0c  Best-effort durable fence sticky (optional attempt; must itself be closed):
          begin(RW) T_f
          get meta → M
-         M.fence_bits |= STORAGE; M.fence_code = STORAGE (or keep stronger CORRUPT)
+         post_bits := M.fence_bits | STORAGE
+         M.fence_bits := post_bits
+         M.fence_code := normalize_fence_code(post_bits, old_M_fence_code)
          put meta; commit FULL T_f
          if COMMIT_UNKNOWN again: retain RAM F_s only; do not loop forever (max 1 attempt)
          if definite fail: rollback if needed; retain RAM F_s
@@ -596,22 +629,33 @@ U3  Dual-truth convergence (observe-only; no speculation):
 
 U4  STORAGE fence clear (only C_COMMITTED or C_PRE_E with clean I*):
     begin RW; get meta; fence_bits &= ~STORAGE if no CORRUPT;
+    fence_code = normalize_fence_code(fence_bits, old_fence_code)
     put meta; commit FULL
     if COMMIT_UNKNOWN: retain F_s; close handle; return RECOVER_FAIL
        // next recover must U1 reopen + U2 rescan (loop bound: caller retries; no auto infinite)
     if definite fail: rollback; retain F_s; return mapped fail
-    if OK: clear RAM STORAGE bit; fence_code clear if no other bits
+    if OK: clear RAM STORAGE bit; RAM fence_code = durable normalized fence_code
     // always: no live txn after
 
 U5  Post-recover RAM rebuild (no volatile S):
-    ram_trust_epoch := meta.last_trusted_epoch_id
-    ram_trust_now   := meta.last_trusted_now_ms
-    ram_trust.valid := 1 if meta present else 0
-    clear ram_validate
     published := 1 if meta present else 0
+    trusted_baseline_valid :=
+      meta present
+      AND meta.meta_state == TRUSTED_BASELINE_PRESENT(1)
+      AND meta.last_trusted_epoch_id is nonzero
+    if trusted_baseline_valid:
+      ram_trust_epoch := meta.last_trusted_epoch_id
+      ram_trust_now   := meta.last_trusted_now_ms
+      ram_trust.valid := 1
+    else:
+      ram_trust_epoch := 16x00
+      ram_trust_now   := 0
+      ram_trust.valid := 0
+    clear ram_validate
 
 U6  Issue-possible unique condition (all required):
     published==1
+    AND trusted_baseline_valid==1
     AND storage_handle_live==1
     AND (fence_bits & (STORAGE|CLOCK|CORRUPT)) == 0
     AND I1–I14 hold on last successful scan
@@ -920,7 +964,7 @@ Durability: authority mutation は **FULL=3 only**。
 | ---: | ---: | --- |
 | 0 | 4 | magic |
 | 4 | 2 | schema |
-| 6 | 1 | meta_state 1=ACTIVE 2=FENCED |
+| 6 | 1 | meta_state 1=TRUSTED_BASELINE_PRESENT (historical ACTIVE) 2=INITIAL_UNTRUSTED_FENCED |
 | 7 | 1 | fence_bits b0=STORAGE b1=CLOCK b2=CORRUPT |
 | 8 | 16 | authority_instance_id |
 | 24 | 8 | next_issue_seq |
@@ -948,6 +992,21 @@ Durability: authority mutation は **FULL=3 only**。
 | 180 | 8 | last_trusted_now_ms |
 | 188 | 8 | reserved_zero |
 | 196 | 4 | crc32 of `[0..196)` |
+
+### 8.2.1 meta_state schema1 compatibility (exact)
+
+Wire numeric values remain schema1: **1** and **2**. Semantic freeze:
+
+| meta_state | name | meaning (exact) |
+| ---: | --- | --- |
+| **1** | `TRUSTED_BASELINE_PRESENT` (historical name **ACTIVE**) | Durable trusted baseline present. **Requires** `last_trusted_epoch_id` nonzero. Fence bits **may** be set (CLOCK/STORAGE/CORRUPT). **Permission blocking is solely `fence_bits`** (and fence_code), not the state value itself. |
+| **2** | `INITIAL_UNTRUSTED_FENCED` | Created **only** by first-publish **P3-FENCED**. CLOCK bit **must** remain set until the first trusted baseline FULL. P3 post-image has only CLOCK and its exact PERM/ILLFORMED/UNKNOWN cause; later STORAGE/CORRUPT bits MAY coexist and `fence_code` is then the exact `normalize_fence_code()` result. `last_trusted_epoch_id` = 16×0; `last_trusted_now_ms` = 0; `next_issue_seq` = 1; `last_consumed_seq` = 0; `outstanding_count` = 0. **Not** a trusted baseline. |
+
+**Invalid combinations ⇒ CORRUPT** (closed checks): state=1 with zero `last_trusted_epoch_id`; state=2 without CLOCK bit; state=2 with nonzero trusted epoch/now; state=2 with outstanding≠0 or next_issue≠1 or last_consumed≠0; any `fence_code != normalize_fence_code(fence_bits, fence_code)` after normalization; state ∉ {1,2}. For the initial P3 state specifically, bits must equal CLOCK only and code must equal the observed PERM/ILLFORMED/UNKNOWN cause.
+
+**Shared F_c helper on state=1:** sets/preserves CLOCK + F_c; **MUST preserve meta_state=1** (does not demote to state 2).
+
+**Fresh recover/adopt leaving state=2:** in the **same FULL**, set `meta_state=1`, write trusted `last_trusted_*=S`, clear CLOCK bit and clock fence_code (preserve stronger STORAGE/CORRUPT bits if set).
 
 Post-publish full live rebind (`ninlil_pcp_commit_live_binding`, R5 host path):
 **SEMANTIC: COMMIT_LIVE_SAME_GEN_EXACT_ONLY** — same `assignment_generation` is allowed only as an exact identical L_core+ceiling no-op; any L_core / legal ceiling / live-binding change requires a strict generation increase (`generation > current`). Same-gen different-live → STRUCT (no durable write). Schema1 layout above is unchanged.
@@ -1058,11 +1117,15 @@ P1-SCAN  PUBLISH_FULL_NAMESPACE_SCAN (same grammar as §12 recover):
          if iss_count>0: rollback; F_k  // meta absent + iss = not EMPTY (same as §12 R-S5)
          // EMPTY iff meta_count==0 AND iss_count==0 AND foreign==0
 P2 rollback RO
-P3 sample clock S; require TRUSTED well-formed (TEMP→UNCERTAIN fail; no fence unless PERM)
+P3 sample clock S once (§3) — sole path that may sample while meta still unpublished after EMPTY proof:
+   TEMP / OK+UNCERTAIN well-formed → return PCP_CLOCK_UNCERTAIN; durable 0; no put; no FENCED invent
+   PERM / ill-formed / unknown → **P3-FENCED path** (state=2 INITIAL_UNTRUSTED_FENCED only; TRUSTED_BASELINE state1 forbidden here)
+   TRUSTED well-formed → **P3-ACTIVE path**
+P3-ACTIVE (TRUSTED only):
 P4 instance_id = seed nonzero ? seed : entropy.fill(16); all-zero fail
 P5 build meta value exact:
    magic, schema=1
-   meta_state=ACTIVE(1)
+   meta_state=TRUSTED_BASELINE_PRESENT(1)  /* historical ACTIVE */
    fence_bits=0
    fence_code=0
    authority_instance_id = instance_id
@@ -1077,12 +1140,37 @@ P5 build meta value exact:
    body_crc32
 P6 begin RW; put meta; commit FULL
    COMMIT_UNKNOWN → F_s; MUST NOT return OK; recover_storage 後も meta 曖昧なら F_s
-   fail → no OK
-P7 OK → ram_trust_*=S; clear ram_validate; return PCP_OK
+   definite fail → no OK
+P7 OK → ram_trust_*=S (TRUSTED); clear ram_validate; return PCP_OK
+P3-FENCED (PERM/ill-formed/unknown only; unique first-publish CLOCK_FAULT; sole creator of state=2):
+P4f instance_id = seed nonzero ? seed : entropy.fill(16); all-zero fail
+P5f build meta value exact (state=1 TRUSTED_BASELINE forbidden):
+   magic, schema=1
+   meta_state=INITIAL_UNTRUSTED_FENCED(2)
+   fence_bits = CLOCK bit set (b1); other fence bits 0 unless stronger required
+   fence_code = exact closed F_c ∈ {PCP_FC_CLOCK_PERM, PCP_FC_CLOCK_ILLFORMED, PCP_FC_CLOCK_UNKNOWN} only
+   authority_instance_id = instance_id
+   next_issue_seq=1
+   last_consumed_seq=0
+   outstanding_count=0
+   bound L_core + bound_max_airtime_ceiling_us from RAM live (prerequisites already bound)
+   assignment_generation=1
+   last_trusted_epoch_id = 16×0x00 (invalid / not trusted)
+   last_trusted_now_ms = 0
+   reserved_zero=0
+   body_crc32 recomputed over exact 200 B LE image
+P6f begin RW; put meta; commit FULL
+   FULL OK → clear ram_validate; ram_trust invalid (not TRUSTED from bad S); return PCP_CLOCK_FAULT with provenance CLOCK_FENCE_COMMITTED
+   COMMIT_UNKNOWN → F_s; return PCP_COMMIT_UNKNOWN (do not claim CLOCK_FAULT latched)
+   definite fail → map STORAGE/CORRUPT; no OK
 ```
 
+**General sample primitive (not publish):** if meta unpublished/empty → return unbound/unpublished typed result **without** calling clock.now and **without** creating meta. First meta is only this §9.2 procedure.
+
 **SEMANTIC: PUBLISH_FULL_NAMESPACE_SCAN uses iter_open empty prefix and classifies KEY_FOREIGN**
-Crash: P5 前 durable 0; P6 UNKNOWN → F_s。
+**SEMANTIC: PUBLISH_P3_FENCED_INITIAL_FULL** — PERM/illformed/unknown on first publish FULL-commits meta_state=2 INITIAL_UNTRUSTED_FENCED then CLOCK_FAULT; never state=1 TRUSTED_BASELINE_PRESENT.
+**SEMANTIC: META_STATE_TRUSTED_BASELINE_PRESENT_1** / **SEMANTIC: META_STATE_INITIAL_UNTRUSTED_FENCED_2** / **SEMANTIC: PCP_FC_CLOCK_UNKNOWN**
+Crash: P5/P5f 前 durable 0; P6/P6f UNKNOWN → F_s。
 ### 9.3 Identity
 
 instance_id: publish のみ mint; re-init は meta から採用。recover 詳細は §12。
@@ -1150,6 +1238,11 @@ PCP_REASON_CORRUPT_FENCE       18
 PCP_REASON_COMMIT_UNKNOWN      19
 PCP_REASON_STORAGE_IO          20
 PCP_REASON_STORAGE_CORRUPT     21
+/* R6 consume-path typed reasons (docs/30); do not reuse for generic sample */
+PCP_REASON_FIFO_OUT_OF_ORDER          43
+PCP_REASON_CONSUME_CLOCK_UNCERTAIN    44
+PCP_REASON_CONSUME_BUSY               45
+
 PCP_REASON_BUSY_REENTRY        22
 PCP_REASON_BUSY_OUTSTANDING    23
 PCP_REASON_ALIAS               24
@@ -1240,7 +1333,7 @@ PCP_REASON_HEAD_ADVANCED       34
 | `expiry_ms <= sample.now_ms`（既閉窓） | **10 EXPIRED** | **1 PCP_INVALID_ARGUMENT** | 0 |
 | `expiry_ms - not_before_ms > 600000` | 2 STRUCT_INVALID | 3 PCP_STRUCT | 0 |
 | sample TEMP/UNCERTAIN | 6 CLOCK_UNCERTAIN | 4 PCP_CLOCK_UNCERTAIN | 0 |
-| sample PERM/ill-formed/regression | 7 CLOCK_FAULT | 5 PCP_CLOCK_FAULT | 0 |
+| sample PERM/ill-formed/regression | 7 CLOCK_FAULT | 5 PCP_CLOCK_FAULT | F_c FULL via common helper (business ISSUED mut 0) |
 
 out_snapshot: 失敗時 **zero**（partial fill 禁止）。
 
@@ -1285,7 +1378,7 @@ out_snapshot: 失敗時 **zero**（partial fill 禁止）。
 - 失敗時: `out_error` が non-NULL かつ alias-safe なら **status/stage/reason を書き、hint は NUL 終端短文（秘密・payload 禁止）、reserved_zero=0**。
 - 成功 OK: out_error を **success 値で埋めない**（call-entry 不変、または status=OK/stage=NONE/reason=NONE の zero 拡張は **禁止** — **call-entry 不変**が唯一）。
 - out_error NULL: 書き込み 0。
-- validate は durable put 0。
+- validate の Permit/ISSUED **business mutation は常に 0**。TEMP/UNCERTAIN/通常 deny/OK は `durable_meta_mutation=NONE`。CLOCK_FAULT のみ共通 helper が `durable_meta_mutation=F_c_FULL` を同一 call 内で完了してから返し、`txn_provenance=CLOCK_FENCE_COMMITTED` とする。F_c が COMMIT_UNKNOWN なら通常の validate error へ縮退せず、typed COMMIT_UNKNOWN / reconcile を返す。
 
 | PCP 条件 | HAL status | stage | reason | hint token |
 | --- | ---: | ---: | ---: | --- |
@@ -1301,22 +1394,47 @@ out_snapshot: 失敗時 **zero**（partial fill 禁止）。
 
 **SEMANTIC: validate_stage_value=7**（`NINLIL_RADIO_HAL_STAGE_PERMIT_VALIDATE`）。consume stage は **8**。validate 行を 8 に書き換えてはならない。
 
-### 10.10 consume → R1 status + out_error（exact）
+### 10.10 consume → R1 status + out_error（exact; two catalogs）
 
-| PCP 条件 | HAL status | stage | reason | hint | durable mut |
-| --- | ---: | ---: | ---: | --- | --- |
-| OK CONSUMED | 0 | unchanged | unchanged | — | yes FULL |
-| OUT_OF_ORDER | 6 CONSUME_DENIED | 8 PERMIT_CONSUME | 41 UNCONSUMED | `pcp_ooo` | 0 |
-| CLOCK_UNCERTAIN / NOT_BEFORE / BUSY pre-put | 6 CONSUME_DENIED | 8 | 41 UNCONSUMED | `pcp_retry` | 0 |
-| ALREADY/REVOKED | 17 CONSUME_FENCED | 8 | 42 FENCED | `pcp_terminal` | 0 |
-| FABRICATED/EPOCH | 17 CONSUME_FENCED | 8 | 42 FENCED | `pcp_fabricated` | 0 |
-| bare EXPIRED head | 17 CONSUME_FENCED | 8 | 42 FENCED | `pcp_expired_head` | 0 |
-| COMMIT_UNKNOWN | 17 CONSUME_FENCED | 8 | 42 FENCED | `pcp_commit_unknown` | unknown+F_s |
-| IO/CORRUPT/contract | 7 CONSUME_ERROR | 8 | 11 CONSUME_ERROR | `pcp_storage` | fence |
-| CLOCK_FAULT | 17 CONSUME_FENCED | 5 TIME | 42 FENCED | `pcp_clock_fault` | F_c |
-| BUSY_REENTRY | 9 BUSY | 8 | 13 REENTRANT | `pcp_busy` | 0 |
+**Two catalogs (Normative; never conflate):**
+- **R2 PCP reason** namespace = `ninlil_pcp_reason_t` / `PCP_REASON_*` (this document §10.2).
+- **R1 HAL reason** namespace = `ninlil_radio_hal_reason_t` / `NINLIL_RADIO_HAL_REASON_*` (radio_hal.h).
+Numeric coincidence does **not** merge namespaces. Code **16** is **only** `NINLIL_RADIO_HAL_REASON_NOT_BEFORE` (R1 HAL). It is **not** a PCP reason code (`PCP_REASON_SEQ_EXHAUSTED` is PCP 16).
 
-**DENIED 必要十分条件:** put 未実施 ∧ 未消費確定 ∧ reason∈{UNCERTAIN, NOT_BEFORE, BUSY pre-put, OUT_OF_ORDER}。
+#### 10.10.1 R2 PCP → R1 HAL mapping (R6 freeze target; sole authority)
+
+| R2 PCP condition | R2 PCP reason | HAL status | stage | R1 HAL reason | hint (non-authority) | durable mut |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| OK CONSUMED | 0 NONE | 0 OK | unchanged | unchanged | — | yes FULL |
+| non-head ISSUED FIFO | **43** `PCP_REASON_FIFO_OUT_OF_ORDER` | 6 CONSUME_DENIED | 8 PERMIT_CONSUME | **43** `NINLIL_RADIO_HAL_REASON_FIFO_OUT_OF_ORDER` (R1 catalog; R7) | `pcp_ooo` | 0 |
+| consume TEMP/UNCERTAIN | **44** `PCP_REASON_CONSUME_CLOCK_UNCERTAIN` | 6 CONSUME_DENIED | 8 | **44** `NINLIL_RADIO_HAL_REASON_CONSUME_CLOCK_UNCERTAIN` (R1; R7) | `pcp_clock_uncertain` | 0 |
+| NOT_BEFORE pre-put | **9** `PCP_REASON_NOT_BEFORE` | 6 CONSUME_DENIED | 8 | **16** `NINLIL_RADIO_HAL_REASON_NOT_BEFORE` | `pcp_not_before` | 0 |
+| BUSY pre-put (capacity/outstanding safe) | **45** `PCP_REASON_CONSUME_BUSY` | 6 CONSUME_DENIED | 8 | **45** `NINLIL_RADIO_HAL_REASON_CONSUME_BUSY` (R1; R7) | `pcp_busy` | 0 |
+| ALREADY/REVOKED | 13/14 | 17 CONSUME_FENCED | 8 | 42 CONSUME_FENCED (legacy HAL) | `pcp_terminal` | 0 |
+| FABRICATED/EPOCH | 12/8 | 17 CONSUME_FENCED | 8 | 42 CONSUME_FENCED | `pcp_fabricated` | 0 |
+| bare EXPIRED head | 10 EXPIRED | 17 CONSUME_FENCED | 8 | 42 CONSUME_FENCED | `pcp_expired_head` | 0 |
+| COMMIT_UNKNOWN | 19 | 17 CONSUME_FENCED | 8 | 42 CONSUME_FENCED | `pcp_commit_unknown` | unknown+F_s |
+| IO/CORRUPT/contract | 20/21/28 | 7 CONSUME_ERROR | 8 | 11 CONSUME_ERROR | `pcp_storage` | fence |
+| CLOCK_FAULT (after F_c helper) | 7 CLOCK_FAULT | 17 CONSUME_FENCED | 5 TIME | 42 CONSUME_FENCED (legacy) or typed CLOCK_FAULT path | `pcp_clock_fault` | **F_c FULL** |
+| BUSY_REENTRY | 22 | 9 BUSY | 8 | 13 REENTRANT | `pcp_busy` | 0 |
+
+**Legacy production fact (not R6 target):** current shipped HAL collapses several pre-put denies to reason **41** `CONSUME_UNCONSUMED` / **42** `CONSUME_FENCED`. That is **current-production only**. R6 Normative target is the typed mapping above. Until R7 adds HAL reasons 43/44/45 and R2 emits PCP 43/44/45/9 on the consume path, R6 ESP/runtime TX remains **NOT READY**.
+
+**DENIED 必要十分条件 (R6):** put 未実施 ∧ 未消費確定 ∧ R2 reason ∈ {**9** NOT_BEFORE, **43** FIFO_OUT_OF_ORDER, **44** CONSUME_CLOCK_UNCERTAIN, **45** CONSUME_BUSY}. Same-Permit full-pipeline retry is allowed **only** for HAL **16** NOT_BEFORE and HAL **45** CONSUME_BUSY. HAL **43** ⇒ drain; HAL **44** ⇒ CLOCK_PATH_DROP (no same-Permit).
+
+#### 10.10.2 Shared CLOCK_FAULT helper (all sample-observing APIs)
+
+**Name:** `ninlil_r2_private_commit_clock_fault_fence` (private; R7).
+
+**APIs that MUST call it before returning CLOCK_FAULT to any caller:** private sample; issue; validate; consume; advance_expired_heads (Algorithm A A2); recover paths that classify PERM/ill-formed/regression clock; private adopt precheck when sample is CLOCK_FAULT.
+
+**Preconditions:** KEY_META already present (published). If NOT_FOUND/unpublished → caller must **not** use this helper; general sample returns META_UNPUBLISHED; first meta is only §9.2 publish (ACTIVE or P3-FENCED).
+
+**Exact steps on published meta:** (1) begin RW; get meta; shape/CRC/I*/meta_state OK else CORRUPT; (2) set CLOCK bit, then set `fence_code=normalize_fence_code(post_bits, observed_clock_cause)` where the observed cause is one of PCP_FC_CLOCK_PERM/ILLFORMED/UNKNOWN/REGRESSION; preserve STORAGE/CORRUPT bits; **if meta_state was 1, keep meta_state=1** (helper never creates state=2); recompute CRC; put meta; commit FULL; (3) FULL OK → return CLOCK_FAULT + CLOCK_FENCE_COMMITTED; (4) COMMIT_UNKNOWN → return COMMIT_UNKNOWN (do not claim latch); (5) definite fail → STORAGE/CORRUPT freeze.
+
+**Two-axis:** business ISSUED/profile mutation 0; durable_meta_mutation = F_c FULL on success. TEMP/UNCERTAIN: no helper, durable 0.
+
+**Forbidden:** CLOCK_FAULT from PERM_* on published meta with durable=0; helper creating first meta; general sample calling clock when unpublished.
 
 ---
 
@@ -1353,10 +1471,19 @@ R-S5 if meta_absent && iss_count>0: F_k; rollback; RECOVER_FAIL
 R-S6 verify I1–I14 on scanned set; fail → F_k
 R-S7 rollback RO; rollback fail → F_s; handle may require close+reopen before retry
 R-S8 STORAGE clear only if I1–I14+CRC+no foreign:
-     begin RW; fence_bits &= ~STORAGE; put meta; commit FULL
+     begin RW; fence_bits &= ~STORAGE;
+     fence_code=normalize_fence_code(fence_bits, old_fence_code);
+     put meta; commit FULL
      COMMIT_UNKNOWN → retain F_s; RECOVER_FAIL
      OK → clear RAM STORAGE bit
-R-S9 load meta counters/instance/bound into RAM; clear ram_validate; return OK
+R-S9 load meta counters/instance/bound into RAM; clear ram_validate;
+     published := 1
+     trusted_baseline_valid :=
+       (meta_state==TRUSTED_BASELINE_PRESENT AND last_trusted_epoch_id nonzero)
+     ram_trust.valid := trusted_baseline_valid
+     if trusted_baseline_valid: copy last_trusted_epoch/now to ram_trust
+     else: zero ram_trust epoch/now; never use state2 zero fields as a floor
+     return OK
 CLEANUP_FAIL:
      if iter open: iter_close
      rollback if txn live
