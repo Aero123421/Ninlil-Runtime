@@ -100,6 +100,18 @@ static int is_canary(const uint8_t *p, size_t n)
     return 1;
 }
 
+/* Canary check for a subspan of a buffer filled from index 0 (absolute i). */
+static int is_canary_from(const uint8_t *base, size_t off, size_t n)
+{
+    size_t i;
+    for (i = 0u; i < n; i++) {
+        if (base[off + i] != (uint8_t)(0xA5u ^ (uint8_t)(off + i))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Fake T0 raw provider                                                       */
 /* -------------------------------------------------------------------------- */
@@ -594,6 +606,7 @@ static void test_positive_matrix(void)
         }
         need = hop_need(&hop);
         expect_size(hop_cases[i].name, need, hop_cases[i].want_need);
+        fill_canary(out, sizeof(out));
         out_len = 0u;
         st = ninlil_r7_encode_hop_binding(&hop, out, need, &out_len);
         expect_status(hop_cases[i].name, st, NINLIL_R7_BINDING_OK);
@@ -601,6 +614,9 @@ static void test_positive_matrix(void)
         expect_true(hop_cases[i].name, out[20] == 0x11u);
         expect_true(hop_cases[i].name, out[need - 2u] == 0x00u);
         expect_true(hop_cases[i].name, out[need - 1u] == 0x03u);
+        /* Rear guard: bytes beyond exact published length stay canary. */
+        expect_true(hop_cases[i].name,
+            is_canary_from(out, need, sizeof(out) - need));
     }
 
     for (i = 0u; i < sizeof(e2e_cases) / sizeof(e2e_cases[0]); i++) {
@@ -616,11 +632,14 @@ static void test_positive_matrix(void)
         }
         need = e2e_need(&e2e);
         expect_size(e2e_cases[i].name, need, e2e_cases[i].want_need);
+        fill_canary(out, sizeof(out));
         out_len = 0u;
         st = ninlil_r7_encode_e2e_binding(&e2e, out, need, &out_len);
         expect_status(e2e_cases[i].name, st, NINLIL_R7_BINDING_OK);
         expect_size(e2e_cases[i].name, out_len, need);
         expect_true(e2e_cases[i].name, out[20] == 0x11u);
+        expect_true(e2e_cases[i].name,
+            is_canary_from(out, need, sizeof(out) - need));
     }
 
     fake_reset(&f);
@@ -1708,8 +1727,60 @@ static void test_mutation_zero_classes(void)
 }
 
 /* -------------------------------------------------------------------------- */
-/* 6. Alias matrix                                                            */
+/* 6. Alias matrix (portable C11 overlap; no uint8_t[]→typed* cast+deref)     */
 /* -------------------------------------------------------------------------- */
+
+/*
+ * Character representation of a live object (C11 6.5p7). Used only to form
+ * overlapping mutable/RO spans without type-punning via inactive union values
+ * or misaligned typed lvalues.
+ */
+static uint8_t *alias_bytes(void *p)
+{
+    return (uint8_t *)p;
+}
+
+/*
+ * Provider/bundle overlap: one storage object, two address views.
+ * Only the active member is written (provider setup). Bundle address is taken
+ * for span geometry only; on ALIAS the production path does not write it.
+ * offsetof lead keeps hop/e2e bundle naturally aligned (uint8_t arrays).
+ */
+typedef union {
+    ninlil_r7_crypto_provider prov;
+    struct {
+        uint8_t lead[8];
+        ninlil_r7_hop_key_bundle bundle;
+    } hop_ov;
+    struct {
+        uint8_t lead[8];
+        ninlil_r7_e2e_key_bundle bundle;
+    } e2e_ov;
+} alias_prov_bundle_u;
+
+/*
+ * Enclosing objects keep the entire caller-declared span inside one live C
+ * object while its prefix overlaps the typed member under test.
+ */
+typedef struct {
+    ninlil_r7_hop_binding_input input;
+    uint8_t tail[NINLIL_R7_BINDING_HOP_CANON_MAX];
+} alias_hop_input_out;
+
+typedef struct {
+    ninlil_r7_e2e_binding_input input;
+    uint8_t tail[NINLIL_R7_BINDING_E2E_CANON_MAX];
+} alias_e2e_input_out;
+
+typedef struct {
+    size_t out_len;
+    uint8_t tail[NINLIL_R7_BINDING_HOP_CANON_MAX];
+} alias_len_out;
+
+typedef struct {
+    ninlil_r7_e2e_key_bundle bundle;
+    uint8_t tail[32u];
+} alias_e2e_bundle_span;
 
 static void test_alias_complete(void)
 {
@@ -1733,20 +1804,19 @@ static void test_alias_complete(void)
     fake_reset(&f);
     make_provider(&p, &f);
 
-    /* encode: out overlaps top-level */
+    /* encode: out overlaps top-level input via character representation */
     {
-        uint8_t arena[512];
-        ninlil_r7_hop_binding_input *hin =
-            (ninlil_r7_hop_binding_input *)(void *)arena;
-        *hin = hop;
+        alias_hop_input_out storage;
+        storage.input = hop;
         out_len = 0u;
         fake_reset(&f);
-        st = ninlil_r7_encode_hop_binding(hin, arena + 4u, need, &out_len);
+        st = ninlil_r7_encode_hop_binding(
+            &storage.input, alias_bytes(&storage) + 4u, need, &out_len);
         expect_fail_calls0("alias hop out/in", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
 
-    /* encode: out overlaps each pointed span */
+    /* encode: out overlaps each pointed span (both character buffers) */
     {
         const char *names[] = {
             "alias hop out/site", "alias hop out/att", "alias hop out/init",
@@ -1777,37 +1847,33 @@ static void test_alias_complete(void)
         hop_fill(&hop, &hb, 2, 0, 0, 0);
     }
 
-    /* encode out/out_len */
+    /* encode out/out_len: real size_t; out is its character representation */
     {
-        uint8_t arena[sizeof(size_t) + 256u];
-        size_t *ol = (size_t *)(void *)arena;
-        *ol = 0u;
+        alias_len_out storage;
+        storage.out_len = 0u;
         fake_reset(&f);
         st = ninlil_r7_encode_hop_binding(
-            &hop, (uint8_t *)(void *)ol, need, ol);
+            &hop, alias_bytes(&storage), need, &storage.out_len);
         expect_fail_calls0("alias hop out/len", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
 
     /* digest: out overlaps provider / input / each span */
     {
-        uint8_t storage[sizeof(ninlil_r7_crypto_provider) + 64u];
-        ninlil_r7_crypto_provider *pp =
-            (ninlil_r7_crypto_provider *)(void *)storage;
-        make_provider(pp, &f);
+        ninlil_r7_crypto_provider pp;
+        make_provider(&pp, &f);
         fake_reset(&f);
-        st = ninlil_r7_digest_hop_binding(pp, &hop, storage + 8u);
+        st = ninlil_r7_digest_hop_binding(&pp, &hop, alias_bytes(&pp) + 8u);
         expect_fail_calls0("alias dig hop/prov", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
     {
-        uint8_t arena[512];
-        ninlil_r7_hop_binding_input *hin =
-            (ninlil_r7_hop_binding_input *)(void *)arena;
-        *hin = hop;
+        alias_hop_input_out storage;
+        storage.input = hop;
         fake_reset(&f);
         make_provider(&p, &f);
-        st = ninlil_r7_digest_hop_binding(&p, hin, arena + 4u);
+        st = ninlil_r7_digest_hop_binding(
+            &p, &storage.input, alias_bytes(&storage) + 4u);
         expect_fail_calls0("alias dig hop/in", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
@@ -1838,73 +1904,67 @@ static void test_alias_complete(void)
         hop_fill(&hop, &hb, 2, 0, 0, 0);
     }
 
-    /* derive hop: bundle vs provider/input/spans/expected/secret */
+    /* derive hop: bundle vs provider (typed union address views only) */
     {
-        uint8_t storage[sizeof(ninlil_r7_crypto_provider) + 128u];
-        ninlil_r7_crypto_provider *pp =
-            (ninlil_r7_crypto_provider *)(void *)storage;
-        ninlil_r7_hop_key_bundle *b =
-            (ninlil_r7_hop_key_bundle *)(void *)(storage + 8u);
-        make_provider(pp, &f);
+        alias_prov_bundle_u u;
+        memset(&u, 0, sizeof(u));
+        make_provider(&u.prov, &f);
         fake_reset(&f);
         st = ninlil_r7_derive_hop_key_bundle_verified(
-            pp, &hop, f.digest32, secret, b);
+            &u.prov, &hop, f.digest32, secret, &u.hop_ov.bundle);
         expect_fail_calls0("alias der hop/prov", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
+    /* bundle vs expected: expected is character view into live bundle */
     {
-        uint8_t storage[sizeof(ninlil_r7_hop_key_bundle) + 64u];
-        ninlil_r7_hop_key_bundle *b =
-            (ninlil_r7_hop_key_bundle *)(void *)storage;
-        uint8_t *exp = storage + 4u;
-        memcpy(exp, f.digest32, 32u);
-        fill_canary((uint8_t *)b, sizeof(*b));
+        ninlil_r7_hop_key_bundle b;
+        uint8_t *exp = alias_bytes(&b) + 4u;
+        fill_canary(alias_bytes(&b), sizeof(b));
         fake_reset(&f);
         make_provider(&p, &f);
         st = ninlil_r7_derive_hop_key_bundle_verified(
-            &p, &hop, exp, secret, b);
+            &p, &hop, exp, secret, &b);
         expect_status("alias der hop/exp", st, NINLIL_R7_BINDING_ALIAS);
         expect_true("alias der hop/exp canary",
-            is_canary((uint8_t *)b, sizeof(*b)));
+            is_canary(alias_bytes(&b), sizeof(b)));
         expect_calls("alias der hop/exp",
             f.sha_calls, f.extract_calls, f.expand_calls, 0, 0, 0);
     }
+    /* bundle vs secret: secret is character view into live bundle */
     {
-        uint8_t storage[128];
-        ninlil_r7_hop_key_bundle *b =
-            (ninlil_r7_hop_key_bundle *)(void *)storage;
-        uint8_t *sec = storage + 8u;
-        memcpy(sec, secret, 32u);
+        ninlil_r7_hop_key_bundle b;
+        const uint8_t *sec = alias_bytes(&b) + 8u;
+        fill_canary(alias_bytes(&b), sizeof(b));
         fake_reset(&f);
         make_provider(&p, &f);
         st = ninlil_r7_derive_hop_key_bundle_verified(
-            &p, &hop, f.digest32, sec, b);
+            &p, &hop, f.digest32, sec, &b);
         expect_fail_calls0("alias der hop/sec", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
+    /* bundle vs each opaque span: span is character view into live bundle */
     {
         size_t i;
         for (i = 0u; i < 5u; i++) {
-            uint8_t buf[128];
-            ninlil_r7_hop_key_bundle *b =
-                (ninlil_r7_hop_key_bundle *)(void *)buf;
+            ninlil_r7_hop_key_bundle b;
+            uint8_t *span = alias_bytes(&b) + 8u;
             hop_fill(&hop, &hb, 2, 0, 0, 0);
+            fill_bytes(span, 32u, 0x40u);
             if (i == 0u) {
-                hop.site_domain.bytes = buf + 8u;
+                hop.site_domain.bytes = span;
             } else if (i == 1u) {
-                hop.attachment_id.bytes = buf + 8u;
+                hop.attachment_id.bytes = span;
             } else if (i == 2u) {
-                hop.initiator_stable_id.bytes = buf + 8u;
+                hop.initiator_stable_id.bytes = span;
             } else if (i == 3u) {
-                hop.responder_stable_id.bytes = buf + 8u;
+                hop.responder_stable_id.bytes = span;
             } else {
-                hop.controller_authority_id.bytes = buf + 8u;
+                hop.controller_authority_id.bytes = span;
             }
-            fill_bytes(buf + 8u, 32u, 0x40u);
             fake_reset(&f);
             make_provider(&p, &f);
             st = ninlil_r7_derive_hop_key_bundle_verified(
-                &p, &hop, f.digest32, secret, b);
+                &p, &hop, f.digest32, secret, &b);
             expect_true("alias der hop span", st == NINLIL_R7_BINDING_ALIAS);
             expect_calls("alias der hop span",
                 f.sha_calls, f.extract_calls, f.expand_calls, 0, 0, 0);
@@ -1915,13 +1975,12 @@ static void test_alias_complete(void)
     /* E2E encode/digest/derive alias samples for each span + provider + out_len */
     need = e2e_need(&e2e);
     {
-        uint8_t arena[512];
-        ninlil_r7_e2e_binding_input *ein =
-            (ninlil_r7_e2e_binding_input *)(void *)arena;
-        *ein = e2e;
+        alias_e2e_input_out storage;
+        storage.input = e2e;
         out_len = 0u;
         fake_reset(&f);
-        st = ninlil_r7_encode_e2e_binding(ein, arena + 4u, need, &out_len);
+        st = ninlil_r7_encode_e2e_binding(
+            &storage.input, alias_bytes(&storage) + 4u, need, &out_len);
         expect_fail_calls0("alias e2e out/in", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
@@ -1952,71 +2011,70 @@ static void test_alias_complete(void)
         e2e_fill(&e2e, &eb, 2, 0, 0, 0);
     }
     {
-        uint8_t arena[sizeof(size_t) + 256u];
-        size_t *ol = (size_t *)(void *)arena;
-        *ol = 0u;
+        alias_len_out storage;
+        storage.out_len = 0u;
         fake_reset(&f);
         st = ninlil_r7_encode_e2e_binding(
-            &e2e, (uint8_t *)(void *)ol, need, ol);
+            &e2e, alias_bytes(&storage), need, &storage.out_len);
         expect_fail_calls0("alias e2e out/len", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
     {
-        uint8_t storage[sizeof(ninlil_r7_crypto_provider) + 64u];
-        ninlil_r7_crypto_provider *pp =
-            (ninlil_r7_crypto_provider *)(void *)storage;
-        make_provider(pp, &f);
+        ninlil_r7_crypto_provider pp;
+        make_provider(&pp, &f);
         fake_reset(&f);
-        st = ninlil_r7_digest_e2e_binding(pp, &e2e, storage + 8u);
+        st = ninlil_r7_digest_e2e_binding(&pp, &e2e, alias_bytes(&pp) + 8u);
         expect_fail_calls0("alias dig e2e/prov", st, NINLIL_R7_BINDING_ALIAS,
             &f, NULL, NULL, 0, 0, (size_t)-1);
     }
     {
-        uint8_t storage[128];
-        ninlil_r7_e2e_key_bundle *b =
-            (ninlil_r7_e2e_key_bundle *)(void *)storage;
-        uint8_t *exp = storage + 4u; /* overlaps b (sizeof b == 28) */
-        uint8_t *sec = storage + 8u; /* also overlaps b */
-        memcpy(exp, f.digest32, 32u);
-        memcpy(sec, secret, 32u);
+        alias_e2e_bundle_span storage;
+        const uint8_t *exp = alias_bytes(&storage) + 4u;
+        const uint8_t *sec = alias_bytes(&storage) + 8u;
+        fill_canary(alias_bytes(&storage), sizeof(storage));
         fake_reset(&f);
         make_provider(&p, &f);
         st = ninlil_r7_derive_e2e_key_bundle_verified(
-            &p, &e2e, exp, secret, b);
+            &p, &e2e, exp, secret, &storage.bundle);
         expect_status("alias der e2e/exp", st, NINLIL_R7_BINDING_ALIAS);
         expect_calls("alias der e2e/exp",
             f.sha_calls, f.extract_calls, f.expand_calls, 0, 0, 0);
+        expect_true("alias der e2e/exp canary",
+            is_canary(alias_bytes(&storage.bundle), sizeof(storage.bundle)));
         fake_reset(&f);
         make_provider(&p, &f);
+        fill_canary(alias_bytes(&storage), sizeof(storage));
         st = ninlil_r7_derive_e2e_key_bundle_verified(
-            &p, &e2e, f.digest32, sec, b);
+            &p, &e2e, f.digest32, sec, &storage.bundle);
         expect_status("alias der e2e/sec", st, NINLIL_R7_BINDING_ALIAS);
         expect_calls("alias der e2e/sec",
             f.sha_calls, f.extract_calls, f.expand_calls, 0, 0, 0);
+        expect_true("alias der e2e/sec canary",
+            is_canary(alias_bytes(&storage.bundle), sizeof(storage.bundle)));
     }
     {
         size_t i;
         for (i = 0u; i < 5u; i++) {
-            uint8_t buf[128];
-            ninlil_r7_e2e_key_bundle *b =
-                (ninlil_r7_e2e_key_bundle *)(void *)buf;
+            ninlil_r7_e2e_key_bundle b;
+            /* Span lives inside the live bundle object (no past-the-end write). */
+            uint8_t *span = alias_bytes(&b);
             e2e_fill(&e2e, &eb, 2, 0, 0, 0);
+            fill_bytes(span, sizeof(b), 0x41u);
             if (i == 0u) {
-                e2e.site_domain.bytes = buf + 4u;
+                e2e.site_domain.bytes = span;
             } else if (i == 1u) {
-                e2e.e2e_security_id.bytes = buf + 4u;
+                e2e.e2e_security_id.bytes = span;
             } else if (i == 2u) {
-                e2e.sender_stable_id.bytes = buf + 4u;
+                e2e.sender_stable_id.bytes = span;
             } else if (i == 3u) {
-                e2e.receiver_stable_id.bytes = buf + 4u;
+                e2e.receiver_stable_id.bytes = span;
             } else {
-                e2e.authority_id.bytes = buf + 4u;
+                e2e.authority_id.bytes = span;
             }
-            fill_bytes(buf + 4u, 32u, 0x41u);
             fake_reset(&f);
             make_provider(&p, &f);
             st = ninlil_r7_derive_e2e_key_bundle_verified(
-                &p, &e2e, f.digest32, secret, b);
+                &p, &e2e, f.digest32, secret, &b);
             expect_true("alias der e2e span", st == NINLIL_R7_BINDING_ALIAS);
             expect_calls("alias der e2e span",
                 f.sha_calls, f.extract_calls, f.expand_calls, 0, 0, 0);
@@ -2266,6 +2324,73 @@ static void test_secure_zero_evidence(void)
 }
 
 /* -------------------------------------------------------------------------- */
+/* 9. Expected digest: all 32 bytes × each of 8 single-bit flips               */
+/* -------------------------------------------------------------------------- */
+
+static void test_expected_digest_bit_flips(void)
+{
+    hop_bufs hb;
+    e2e_bufs eb;
+    ninlil_r7_hop_binding_input hop;
+    ninlil_r7_e2e_binding_input e2e;
+    fake_ctx f;
+    ninlil_r7_crypto_provider p;
+    uint8_t secret[32];
+    uint8_t wrong[32];
+    ninlil_r7_hop_key_bundle hbnd;
+    ninlil_r7_e2e_key_bundle ebnd;
+    size_t bi;
+    size_t bit;
+    size_t hop_n = 0u;
+    size_t e2e_n = 0u;
+    int32_t st;
+
+    hop_bufs_init(&hb);
+    e2e_bufs_init(&eb);
+    hop_fill(&hop, &hb, 2, 0, 0, 0);
+    e2e_fill(&e2e, &eb, 2, 0, 0, 0);
+    fill_bytes(secret, 32u, 0x66u);
+
+    for (bi = 0u; bi < 32u; bi++) {
+        for (bit = 0u; bit < 8u; bit++) {
+            fake_reset(&f);
+            make_provider(&p, &f);
+            memcpy(wrong, f.digest32, 32u);
+            wrong[bi] = (uint8_t)(wrong[bi] ^ (uint8_t)(1u << bit));
+            fill_canary(alias_bytes(&hbnd), sizeof(hbnd));
+            st = ninlil_r7_derive_hop_key_bundle_verified(
+                &p, &hop, wrong, secret, &hbnd);
+            expect_status("hop dig bitflip", st, NINLIL_R7_BINDING_MISMATCH);
+            expect_calls("hop dig bitflip",
+                f.sha_calls, f.extract_calls, f.expand_calls, 1, 0, 0);
+            expect_true("hop dig bitflip canary",
+                is_canary(alias_bytes(&hbnd), sizeof(hbnd)));
+            hop_n++;
+        }
+    }
+    expect_size("hop dig bitflip count", hop_n, 32u * 8u);
+
+    for (bi = 0u; bi < 32u; bi++) {
+        for (bit = 0u; bit < 8u; bit++) {
+            fake_reset(&f);
+            make_provider(&p, &f);
+            memcpy(wrong, f.digest32, 32u);
+            wrong[bi] = (uint8_t)(wrong[bi] ^ (uint8_t)(1u << bit));
+            fill_canary(alias_bytes(&ebnd), sizeof(ebnd));
+            st = ninlil_r7_derive_e2e_key_bundle_verified(
+                &p, &e2e, wrong, secret, &ebnd);
+            expect_status("e2e dig bitflip", st, NINLIL_R7_BINDING_MISMATCH);
+            expect_calls("e2e dig bitflip",
+                f.sha_calls, f.extract_calls, f.expand_calls, 1, 0, 0);
+            expect_true("e2e dig bitflip canary",
+                is_canary(alias_bytes(&ebnd), sizeof(ebnd)));
+            e2e_n++;
+        }
+    }
+    expect_size("e2e dig bitflip count", e2e_n, 32u * 8u);
+}
+
+/* -------------------------------------------------------------------------- */
 /* main                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -2282,6 +2407,7 @@ int main(void)
     test_alias_complete();
     test_pointer_end_overflow_seam();
     test_secure_zero_evidence();
+    test_expected_digest_bit_flips();
 
     if (g_failures != 0) {
         fprintf(stderr, "r7_t1b_binding_test: %d failures / %d checks\n",
