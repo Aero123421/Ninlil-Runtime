@@ -128,11 +128,13 @@ if(NINLIL_ENABLE_SANITIZERS OR _ninlil_pointer_compare_sanitizer_supported)
 endif()
 
 # Native GNU x86/x86_64 host builds only: -maccumulate-outgoing-args fixes
-# .su kind=dynamic
-# caused by push/pop of outgoing call arguments (GCC classifies those frames as
-# dynamic even without VLAs). Feature-detect; fail closed when unavailable on
-# this host. Do not apply to AppleClang, Clang, non-x86 hosts, or ESP Xtensa.
-set(_ninlil_n6_maccumulate_outgoing_args FALSE)
+# .su kind=dynamic caused by push/pop of outgoing call arguments (GCC classifies
+# those frames as dynamic even without VLAs). Feature-detect; fail closed when
+# unavailable on this host. Shared by N6 production and R7 portable production
+# sources (AES-GCM seal/open wrappers need static .su on the same host class).
+# Do not apply to AppleClang, Clang, non-x86 hosts, cross builds, or ESP Xtensa.
+# Cache probe name NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS is stable for CI assert.
+set(_ninlil_maccumulate_outgoing_args FALSE)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND NOT CMAKE_CROSSCOMPILING)
     string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _ninlil_target_cpu)
     if(_ninlil_target_cpu MATCHES "^(x86_64|amd64|x64|i[3-6]86|x86)$")
@@ -143,12 +145,12 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND NOT CMAKE_CROSSCOMPILING)
         if(NOT NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS)
             message(FATAL_ERROR
                 "GNU x86/x86_64 host requires -maccumulate-outgoing-args for "
-                "N6 production static .su classification, but the C compiler "
+                "N6/R7 production static .su classification, but the C compiler "
                 "rejected the flag (target=${CMAKE_SYSTEM_PROCESSOR})")
         endif()
-        set(_ninlil_n6_maccumulate_outgoing_args TRUE)
+        set(_ninlil_maccumulate_outgoing_args TRUE)
         message(STATUS
-            "N6 production: -maccumulate-outgoing-args enabled "
+            "N6/R7 production: -maccumulate-outgoing-args enabled "
             "(native GNU target ${CMAKE_SYSTEM_PROCESSOR}; "
             "NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS=1)")
     endif()
@@ -485,12 +487,13 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     # registered only when that flag is FALSE (see tests below).
     # GNU host x86: also -maccumulate-outgoing-args (see detection above) so
     # outgoing-arg push/pop does not force dynamic .su on Debug or Release.
+    # Same conditional flag is applied to R7 portable production sources below.
     foreach(_n6_src IN LISTS NINLIL_N6_PRODUCTION_RELATIVE_SOURCES)
         set(_n6_compile_opts -Wvla -Werror -fstack-usage)
         if(NOT _ninlil_any_sanitizer_active)
             list(APPEND _n6_compile_opts -Wframe-larger-than=2048)
         endif()
-        if(_ninlil_n6_maccumulate_outgoing_args)
+        if(_ninlil_maccumulate_outgoing_args)
             list(APPEND _n6_compile_opts -maccumulate-outgoing-args)
         endif()
         set_property(
@@ -500,10 +503,15 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
     endforeach()
     # R7 portable wrapper: docs/31 §11.6 candidate static-frame ceiling.
     # Adapter call-chain/task stack sufficiency remains a separate ESP gate.
+    # Native GNU x86: share -maccumulate-outgoing-args with N6 so AES-GCM
+    # seal/open .su kind stays static (not dynamic,bounded).
     foreach(_r7_src IN LISTS NINLIL_R7_CRYPTO_PORTABLE_RELATIVE_SOURCES)
         set(_r7_compile_opts -Werror -fstack-usage)
         if(NOT _ninlil_any_sanitizer_active)
             list(APPEND _r7_compile_opts -Wframe-larger-than=2560)
+        endif()
+        if(_ninlil_maccumulate_outgoing_args)
+            list(APPEND _r7_compile_opts -maccumulate-outgoing-args)
         endif()
         set_property(
             SOURCE ${_r7_src}

@@ -169,6 +169,44 @@ jobs:
             fi
             echo "${tool} version OK: ${ver} (major=13)"
           done
+      # Fail-closed oracle: force the stable cache probe FALSE so native GNU
+      # x86 configure must FATAL_ERROR before the positive authority tree runs.
+      # Unique build dir; log is always printed (success / wrong failure = RED).
+      - name: Fail-closed negative configure (maccumulate probe forced FALSE)
+        run: |
+          set -euo pipefail
+          neg=build/ci-ubuntu-gcc-rel-n6-macc-neg
+          log=${neg}-configure.log
+          mkdir -p build
+          rm -rf "$neg"
+          set +e
+          cmake -S . -B "$neg" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-13 \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_C_FLAGS_RELEASE='-O2 -DNDEBUG' \
+            -DCMAKE_CXX_FLAGS_RELEASE='-O2 -DNDEBUG' \
+            -DNINLIL_ENABLE_STRICT_WARNINGS=ON \
+            -DNINLIL_ENABLE_SANITIZERS=OFF \
+            -DNINLIL_SQLITE_LINKAGE=SHARED \
+            -DNINLIL_HAS_MACCUMULATE_OUTGOING_ARGS=FALSE \
+            >"$log" 2>&1
+          rc=$?
+          set -e
+          echo "----- negative configure log (rc=${rc}) -----"
+          cat "$log"
+          echo "----- end negative configure log -----"
+          if test "${rc}" -eq 0; then
+            echo "false-green: negative configure succeeded (expected FATAL_ERROR)" >&2
+            exit 1
+          fi
+          if ! grep -F 'GNU x86/x86_64 host requires -maccumulate-outgoing-args' \
+               "$log"; then
+            echo "false-green: negative configure failed without exact" \
+              "maccumulate fatal reason" >&2
+            exit 1
+          fi
+          echo "negative configure FAIL-CLOSED OK (exact fatal reason present)"
       # docs/31 §11.6: exact -O2 authority (CMake default Release is often -O3).
       # EXPORT_COMPILE_COMMANDS feeds n6_gcc13 + r7_crypto_stack_gate evidence.
       - name: Configure (GCC 13 Release -O2 exact, shared SQLite, strict, compile_commands)
@@ -343,7 +381,8 @@ jobs:
           fi
           python3 tools/r7_crypto_stack_gate.py check \
             --su-dir "$su" \
-            --compile-commands "$cc"
+            --compile-commands "$cc" \
+            --require-maccumulate-outgoing-args
       - name: R7 T0 crypto acceptance (register + focused + production stack)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
