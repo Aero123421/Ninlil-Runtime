@@ -1,7 +1,8 @@
 # 32. R7 T1 NRW1 SINGLE Wire Codec
 
-状態: **Proposed / implementation candidate; local PRE-CI acceptance P0=P1=P2=0 GO、push/PR/ESP CIと独立POST-CI acceptance pending**  
-正本 ADR: [ADR-0012](adr/0012-r7-t1-nrw1-single-wire-codec.md)（Proposed）  
+状態: **Accepted / R7 T1 NRW1 SINGLE private pure wire codec implementation candidate; independent POST-CI 2026-07-19 P0=P1=P2=0 GO**  
+正本 ADR: [ADR-0012](adr/0012-r7-t1-nrw1-single-wire-codec.md)（Accepted）  
+受入記録: [2026-07-19 R7 T1 Accepted review](reviews/2026-07-19-r7-t1-single-wire-codec-accepted.md)  
 前提: [30章](30-r6-secure-radio-wire.md) の R6 wire freeze、
 [31章](31-r7-crypto-provider-and-aead.md) の Accepted T0 private crypto provider
 

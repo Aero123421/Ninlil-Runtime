@@ -1,7 +1,9 @@
 # ADR-0012: R7 T1 NRW1 SINGLE Pure Wire Codec
 
-状態: **Proposed**  
+状態: **Accepted — R7 T1 private pure SINGLE codec implementation candidate only**  
 提案日: 2026-07-19  
+受入日: 2026-07-19  
+受入実装SHA: `b3d367e7ac57d420894797517283dbca8d827eeb`  
 非主張: R7 full、counter/storage、FRAG/LINK/CELL/HA、W1/L1、M4/M5、実機HIL、legal、production radio
 
 ## Context
@@ -41,6 +43,16 @@ Exact API、wire fields、validation order、test matrix、non-claimsは
 - 後続T1bでbinding/HKDF schedule、T2以降でLINK/FRAG/W1/N6 integrationを追加する。
 - full R7 materializationまでT1 subset artifactとfull normative artifactの二つの概念が存在する。
   名前と受入表示を分離し、部分成果をfull completionに見せない。
+
+## Acceptance evidence
+
+固定実装SHAに対するpush/PR CIとpush/PR ESP-IDF CIは全成功し、独立POST-CI監査は
+**P0=0 / P1=0 / P2=0 GO**。7-vector subset、normal 13 / sanitizer 12 exact CTest set、
+tests-OFF private packaging、GCC 13 exact `-O2` / `-fstack-usage` / frame ceiling 2560、
+ESP32-S3 final-ELF exact 8 private APIを確認した。run IDと境界は
+[Accepted review record](../reviews/2026-07-19-r7-t1-single-wire-codec-accepted.md)へ固定する。
+
+このAcceptedはT1 private pure SINGLE codec候補だけを対象とし、上記の非主張を完成へ変更しない。
 
 ## Rejected alternatives
 
