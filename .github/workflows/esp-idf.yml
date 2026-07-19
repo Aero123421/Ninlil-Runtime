@@ -3,7 +3,8 @@
 # Separated from host GCC/Clang CI in ci.yml.
 # Pins ESP-IDF via the official Docker image tag that matches
 # ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
-# Smoke links clock/entropy/execution + owner-task/cell/loopback + storage + U2 CDC.
+# Smoke links clock/entropy/execution + owner-task/cell/loopback + storage + U2 CDC
+# + the R7 private mbedTLS provider into the final ESP32-S3 ELF.
 # Evidence is esp32s3 compile/link only — not device HIL / dual-core race PASS /
 # physical power-cut HIL / U2 host CDC roundtrip. Does not claim M3 complete,
 # U2 complete, USB series complete, radio, or hardware verify.
@@ -163,6 +164,45 @@ jobs:
           python3 tools/n6_frame_stack_gate.py check \
             --su-dir "${N6_SU_DIR}" \
             --esp-su-dir "${N6_SU_DIR}"
+          # R7: after N6 stack gate only.  Inline python/heredoc before the N6
+          # gate confuses n6_frame_stack_gate structure analysis ($() + if).
+          # Component-archive compile alone is a false green: require exact
+          # source composition plus a real final-ELF reference.
+          test -f ports/esp-idf/smoke_app/build/compile_commands.json
+          python3 tools/r7_esp_link_presence_gate.py check \
+            --compile-commands ports/esp-idf/smoke_app/build/compile_commands.json
+          grep -E '^CONFIG_MBEDTLS_HKDF_C=y$' "${SDK}"
+          for member in \
+            r7_crypto_portable.c.obj \
+            r7_crypto_nonce.c.obj \
+            r7_crypto_mbedtls.c.obj
+          do
+            count="$(xtensa-esp32s3-elf-ar t "${ARCHIVE}" \
+              | grep -E "^${member}$" | wc -l | tr -d ' ')"
+            test "${count}" = "1"
+          done
+          xtensa-esp32s3-elf-nm "${ELF}" > /tmp/ninlil_r7_nm.txt
+          for symbol in \
+            ninlil_r7_crypto_mbedtls_provider_init \
+            ninlil_r7_mbedtls_sha256 \
+            ninlil_r7_mbedtls_hkdf_extract_sha256 \
+            ninlil_r7_mbedtls_hkdf_expand_sha256 \
+            ninlil_r7_mbedtls_aes128_gcm_seal \
+            ninlil_r7_mbedtls_aes128_gcm_open \
+            mbedtls_hkdf_extract \
+            mbedtls_hkdf_expand
+          do
+            grep -E "[[:space:]][Tt][[:space:]]${symbol}$" \
+              /tmp/ninlil_r7_nm.txt
+          done
+          r7_hidden_count="$(xtensa-esp32s3-elf-readelf -Ws "${ELF}" \
+            | awk '$4 == "FUNC" && $5 == "GLOBAL" && $6 == "HIDDEN" \
+              && $8 == "ninlil_r7_crypto_mbedtls_provider_init" { n++ } \
+              END { print n + 0 }')"
+          test "${r7_hidden_count}" = "1"
+          grep -F 'libninlil.a(r7_crypto_mbedtls.c.obj)' "${SMOKE_MAP}"
+          grep -F 'mbedtls_hkdf_extract' "${SMOKE_MAP}"
+          grep -F 'mbedtls_hkdf_expand' "${SMOKE_MAP}"
           # U2: real public port symbols linked (init_object + ops, not link_anchor).
           xtensa-esp32s3-elf-nm "${ELF}" | tee /tmp/ninlil_u2_nm.txt >/dev/null
           grep -E 'ninlil_esp_idf_usb_cdc_(init_object|open|close|object_size)' \

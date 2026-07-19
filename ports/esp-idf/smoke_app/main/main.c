@@ -19,6 +19,9 @@
 #include "ninlil_port/esp_storage.h"
 #include "ninlil_port/esp_storage_flash.h"
 
+/* R7 production-private link probe; not a public component include. */
+#include "r7_crypto_mbedtls.h"
+
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -61,6 +64,40 @@ static uint32_t s_isr_ok;
 static uint32_t s_isr_fail;
 static uint32_t s_prod_ok;
 static uint32_t s_prod_full;
+
+/*
+ * Keep provider storage out of app_main's measured stack frame. The smoke
+ * initializes the real private adapter so its archive member and all mbedTLS
+ * dependencies must resolve into the final ESP32-S3 ELF.
+ */
+static ninlil_r7_crypto_provider s_r7_crypto_provider;
+
+static int smoke_r7_crypto_link(void)
+{
+    ninlil_r7_crypto_status st;
+
+    (void)memset(&s_r7_crypto_provider, 0, sizeof(s_r7_crypto_provider));
+    st = ninlil_r7_crypto_mbedtls_provider_init(&s_r7_crypto_provider);
+    if (st != NINLIL_R7_CRYPTO_OK
+        || s_r7_crypto_provider.abi_version
+            != NINLIL_R7_CRYPTO_PROVIDER_ABI_VERSION
+        || s_r7_crypto_provider.struct_size
+            != (uint32_t)sizeof(s_r7_crypto_provider)
+        || s_r7_crypto_provider.reserved_zero != 0u
+        || s_r7_crypto_provider.sha256 == NULL
+        || s_r7_crypto_provider.hkdf_extract_sha256 == NULL
+        || s_r7_crypto_provider.hkdf_expand_sha256 == NULL
+        || s_r7_crypto_provider.aes128_gcm_seal == NULL
+        || s_r7_crypto_provider.aes128_gcm_open == NULL) {
+        ESP_LOGE(TAG, "R7 mbedTLS provider init/link failed status=%u",
+            (unsigned)st);
+        return -1;
+    }
+    ESP_LOGI(TAG,
+        "R7 mbedTLS provider initialized; compile/link evidence only; "
+        "device KAT/HIL pending");
+    return 0;
+}
 
 
 /*
@@ -642,11 +679,14 @@ void app_main(void)
     }
     smoke_cleanup_basic();
 
-    /* Owner/cell first, then storage, then U2 CDC init CLOSED snapshot (no USB open). */
+    /* Owner/cell first, then storage, U2 CDC, and R7 private crypto link probe. */
     if (smoke_storage_commit_unknown() != 0) {
         fail = 1;
     }
     if (smoke_usb_cdc_init_closed() != 0) {
+        fail = 1;
+    }
+    if (smoke_r7_crypto_link() != 0) {
         fail = 1;
     }
 
@@ -654,7 +694,7 @@ void app_main(void)
         ESP_LOGE(TAG, "SELFTEST FAIL (device HIL required for runtime verdict)");
     } else {
         ESP_LOGI(TAG,
-            "SELFTEST owner/cell + storage + U2 CDC init CLOSED exercised; "
-            "compile!=HIL; U2 Required HIL pending; flash monitor for runtime");
+            "SELFTEST owner/cell + storage + U2 CDC + R7 crypto init exercised; "
+            "compile!=HIL; U2/R7 Required HIL pending; flash monitor for runtime");
     }
 }
