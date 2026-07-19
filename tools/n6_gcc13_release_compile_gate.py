@@ -18,10 +18,20 @@ entry.directory (production candidates):
 
 entry.file / argv -c / entry.output / argv -o:
   raw ``..`` components are RED before any resolve;
-  every path component is lstat'd (parent and leaf); symlinks are RED;
+  source / -c: every path component is lstat'd; symlinks are RED;
   source must bind to exact src_root/<rel> (regular non-symlink file);
   relative -c/-o use only the verified entry.directory;
-  -c exact-one; -o exact-one; entry.output ≡ argv -o (canonical).
+  -c exact-one; -o exact-one; entry.output ≡ argv -o (identity).
+
+Outputs (production authority vs exact testbuild out-of-authority):
+  raw ``..`` RED; entry.output / argv -o disagreement RED;
+  every *existing* path component is lstat'd — symlinks RED even on
+  testbuild prefixes; missing components after a clean prefix are allowed
+  only long enough to classify exact ``build_root`` testbuild and ignore it
+  (CI may compile production-only while compile_commands still lists
+  ``ninlil_n6_store_testbuild``). Exact production outputs remain fail-closed:
+  all components must exist and be non-symlink. Suffix-only / external-prefix
+  absolute paths stay ``ambiguous`` RED (never silent testbuild skip).
 
 Compiler: argv0 basename gcc-13, or argv0 in {ccache,sccache} + argv1 gcc-13.
 All -O* tokens must be exactly ['-O2']. Required flags include -Wall -Wextra
@@ -88,28 +98,58 @@ def _lstat_walk_parts(
     start: Path, parts: Sequence[str], *, where: str
 ) -> tuple[Path | None, str | None]:
     """Walk start/parts with lstat; reject symlink/missing on every component."""
+    leaf, err, complete = _lstat_walk_parts_allow_missing(
+        start, parts, where=where
+    )
+    if err is not None:
+        return None, err
+    if not complete:
+        # Preserve historical fail-closed wording for full-existence walks.
+        return None, f"{where}: missing path component: {leaf}"
+    return leaf, None
+
+
+def _lstat_walk_parts_allow_missing(
+    start: Path, parts: Sequence[str], *, where: str
+) -> tuple[Path | None, str | None, bool]:
+    """Walk start/parts with lstat on every existing component.
+
+    Symlink / ``..`` / non-ENOENT lstat errors are hard RED.
+    When a component is missing, remaining parts are joined without requiring
+    existence and ``complete=False`` is returned so callers may classify exact
+    testbuild-out-of-authority paths that CI has not materialized yet.
+    Existing prefix components remain fail-closed (symlink RED).
+    Returns (path, err, complete).
+    """
     cur = start
     try:
         st0 = os.lstat(cur)
     except OSError as e:
-        return None, f"{where}: lstat start failed: {e}"
+        return None, f"{where}: lstat start failed: {e}", False
     if stmod.S_ISLNK(st0.st_mode):
-        return None, f"{where}: symlink forbidden at start: {cur}"
+        return None, f"{where}: symlink forbidden at start: {cur}", False
+    missing = False
     for part in parts:
         if part in ("", "."):
             continue
         if part == "..":
-            return None, f"{where}: path traversal forbidden"
-        cur = cur / part
+            return None, f"{where}: path traversal forbidden", False
+        if missing:
+            cur = cur / part
+            continue
+        nxt = cur / part
         try:
-            st = os.lstat(cur)
+            st = os.lstat(nxt)
         except FileNotFoundError:
-            return None, f"{where}: missing path component: {cur}"
+            missing = True
+            cur = nxt
+            continue
         except OSError as e:
-            return None, f"{where}: lstat failed: {e}"
+            return None, f"{where}: lstat failed: {e}", False
         if stmod.S_ISLNK(st.st_mode):
-            return None, f"{where}: symlink forbidden: {cur}"
-    return cur, None
+            return None, f"{where}: symlink forbidden: {nxt}", False
+        cur = nxt
+    return cur, None, not missing
 
 
 def _bind_path_under(
@@ -120,28 +160,14 @@ def _bind_path_under(
     Returns the non-followed leaf Path (lstat-walked). Caller may compare
     resolve() results for identity when needed.
     """
-    if not isinstance(path_str, str) or not path_str.strip():
-        return None, f"{where}: empty path"
-    if _raw_has_dotdot(path_str):
-        return None, f"{where}: raw path traversal (..): {path_str!r}"
-    if _raw_has_dotdot(str(base)):
-        return None, f"{where}: base path traversal: {base}"
-
-    p = Path(path_str)
-    if p.is_absolute():
-        # Walk every component from filesystem root; no symlink follow.
-        parts = p.parts
-        # parts[0] is root anchor on POSIX ('/')
-        anchor = Path(parts[0])
-        leaf, err = _lstat_walk_parts(anchor, parts[1:], where=where)
-        if err is not None:
-            return None, err
-        assert leaf is not None
-    else:
-        leaf, err = _lstat_walk_parts(base, Path(path_str).parts, where=where)
-        if err is not None:
-            return None, err
-        assert leaf is not None
+    leaf, err, complete = _bind_path_under_allow_missing(
+        base, path_str, where=where
+    )
+    if err is not None:
+        return None, err
+    if not complete:
+        return None, f"{where}: missing path component: {leaf}"
+    assert leaf is not None
 
     if require_regular_leaf:
         try:
@@ -153,6 +179,54 @@ def _bind_path_under(
         if stmod.S_ISLNK(st.st_mode):
             return None, f"{where}: leaf is symlink: {leaf}"
     return leaf, None
+
+
+def _bind_path_under_allow_missing(
+    base: Path, path_str: str, *, where: str
+) -> tuple[Path | None, str | None, bool]:
+    """Bind path_str relative to base or absolute; allow trailing missing comps.
+
+    Existing components: full lstat, symlink RED. Missing trailing components
+    yield complete=False with the intended joined Path for classification.
+    """
+    if not isinstance(path_str, str) or not path_str.strip():
+        return None, f"{where}: empty path", False
+    if _raw_has_dotdot(path_str):
+        return None, f"{where}: raw path traversal (..): {path_str!r}", False
+    if _raw_has_dotdot(str(base)):
+        return None, f"{where}: base path traversal: {base}", False
+
+    p = Path(path_str)
+    if p.is_absolute():
+        parts = p.parts
+        anchor = Path(parts[0])
+        return _lstat_walk_parts_allow_missing(anchor, parts[1:], where=where)
+    return _lstat_walk_parts_allow_missing(
+        base, Path(path_str).parts, where=where
+    )
+
+
+def _bind_output_path(
+    path_str: str,
+    *,
+    rel_base: Path | None,
+    where: str,
+) -> tuple[Path | None, str | None, bool]:
+    """Bind entry.output / argv -o for classify-then-authority.
+
+    Absolute from FS root; relative only from rel_base (never cwd guess).
+    complete=False means a clean existing prefix had a missing component —
+    exact build_root testbuild may still be ignored; production may not.
+    """
+    if not isinstance(path_str, str) or not path_str.strip():
+        return None, f"{where}: empty path", False
+    if Path(path_str).is_absolute():
+        return _bind_path_under_allow_missing(
+            Path(Path(path_str).anchor), path_str, where=where
+        )
+    if rel_base is None:
+        return None, f"{where}: relative path without bound base", False
+    return _bind_path_under_allow_missing(rel_base, path_str, where=where)
 
 
 def _canon_identity(path: Path) -> Path:
@@ -596,27 +670,33 @@ def check_compile_commands(
             )
             continue
         # Bind outputs: absolute from FS root; relative from verified directory.
-        out_leaf, oerr = _bind_abs_or_rel(
+        # Allow trailing missing components only for classify-then-skip of exact
+        # build_root testbuild (production remains fail-closed below).
+        out_leaf, oerr, out_complete = _bind_output_path(
             out_field,
             rel_base=dir_canon,
             where=f"{matched_rel}: output",
-            require_regular_leaf=False,
         )
         if oerr is not None or out_leaf is None:
             errs.append(oerr or f"{matched_rel}: output bind failed")
             continue
-        o_argv_leaf, oaerr = _bind_abs_or_rel(
+        o_argv_leaf, oaerr, o_complete = _bind_output_path(
             argv_outs[0],
             rel_base=dir_canon,
             where=f"{matched_rel}: -o",
-            require_regular_leaf=False,
         )
         if oaerr is not None or o_argv_leaf is None:
             errs.append(oaerr or f"{matched_rel}: -o bind failed")
             continue
         try:
-            out_canon = _canon_identity(out_leaf)
-            o_argv_canon = _canon_identity(o_argv_leaf)
+            if out_complete:
+                out_canon = _canon_identity(out_leaf)
+            else:
+                out_canon = out_leaf
+            if o_complete:
+                o_argv_canon = _canon_identity(o_argv_leaf)
+            else:
+                o_argv_canon = o_argv_leaf
         except OSError as e:
             errs.append(f"{matched_rel}: output resolve failed: {e}")
             continue
@@ -637,7 +717,17 @@ def check_compile_commands(
             )
             continue
         if kind == "testbuild":
-            continue  # out of authority (exact build_root testbuild only)
+            # Exact build_root testbuild is out of authority even when CI has
+            # not materialized the object dir (production-only builds).
+            # Symlink on any *existing* prefix already RED above.
+            continue
+        # Production: every output path component must exist (fail-closed).
+        if not out_complete or not o_complete:
+            missing = out_leaf if not out_complete else o_argv_leaf
+            errs.append(
+                f"{matched_rel}: missing path component: {missing}"
+            )
+            continue
         # dir_canon is already exact-matched to build_root; out_canon exact prod
         prod[matched_rel].append((argv, out_canon, dir_canon))
 
@@ -914,6 +1004,202 @@ def self_test() -> int:
             fail(f"GREEN both red: {e}")
         else:
             ok("production+testbuild GREEN")
+
+        # GREEN: production objects exist; exact testbuild listed in
+        # compile_commands but object dirs never created (CI production-only).
+        r = root / "prod_absent_testbuild"
+        r.mkdir()
+        for rel in N6_SRC:
+            (r / rel).parent.mkdir(parents=True, exist_ok=True)
+            (r / rel).write_text("/*x*/\n", encoding="utf-8")
+        build = r / "build"
+        build.mkdir()
+        arr: list[dict[str, Any]] = []
+        for rel in N6_SRC:
+            src_abs = str((r / rel).resolve())
+            prod_out = build / (PROD_DIR_MARKER + Path(rel).name + ".o")
+            prod_out.parent.mkdir(parents=True, exist_ok=True)
+            prod_out.write_bytes(b"")
+            test_out = build / (TESTBUILD_DIR_MARKER + Path(rel).name + ".o")
+            # Intentionally do NOT create test_out or its parent dirs.
+            prod_argv = _base_ok_argv() + [
+                "-c",
+                src_abs,
+                "-o",
+                str(prod_out.resolve()),
+            ]
+            arr.append(
+                {
+                    "directory": str(build.resolve()),
+                    "file": src_abs,
+                    "output": str(prod_out.resolve()),
+                    "arguments": prod_argv,
+                }
+            )
+            # Relative -o form as CMake often records; path not on disk.
+            test_rel_o = TESTBUILD_DIR_MARKER + Path(rel).name + ".o"
+            test_argv = ["clang", "-O0", "-c", src_abs, "-o", test_rel_o]
+            arr.append(
+                {
+                    "directory": str(build.resolve()),
+                    "file": src_abs,
+                    "output": test_rel_o,
+                    "arguments": test_argv,
+                }
+            )
+        cc = build / "compile_commands.json"
+        cc.write_text(json.dumps(arr, indent=2) + "\n", encoding="utf-8")
+        e = check_compile_commands(cc, src_root=r)
+        if e:
+            fail(f"GREEN prod+absent-testbuild red (false-RED CI): {e}")
+        else:
+            ok("production+absent_exact_testbuild_output GREEN")
+
+        # RED: only exact testbuild entries, objects also absent → still no prod.
+        r = root / "absent_testbuild_only"
+        r.mkdir()
+        for rel in N6_SRC:
+            (r / rel).parent.mkdir(parents=True, exist_ok=True)
+            (r / rel).write_text("/*x*/\n", encoding="utf-8")
+        build = r / "build"
+        build.mkdir()
+        arr = []
+        for rel in N6_SRC:
+            src_abs = str((r / rel).resolve())
+            test_rel_o = TESTBUILD_DIR_MARKER + Path(rel).name + ".o"
+            arr.append(
+                {
+                    "directory": str(build.resolve()),
+                    "file": src_abs,
+                    "output": test_rel_o,
+                    "arguments": [
+                        "clang",
+                        "-O0",
+                        "-c",
+                        src_abs,
+                        "-o",
+                        test_rel_o,
+                    ],
+                }
+            )
+        cc = build / "compile_commands.json"
+        cc.write_text(json.dumps(arr, indent=2) + "\n", encoding="utf-8")
+        e = check_compile_commands(cc, src_root=r)
+        blob = " ".join(e)
+        if not e:
+            fail("absent_testbuild_only: expected RED missing production, got GREEN")
+        elif "no production compile entry" not in blob:
+            fail(f"absent_testbuild_only: RED but missing no-production: {e}")
+        else:
+            red_ok("absent_exact_testbuild_only (no objects) still RED missing production")
+
+        # RED: symlink in *existing* testbuild output prefix remains RED even
+        # when production is present (do not weaken all output lstat checks).
+        r = root / "testbuild_symlink_prefix"
+        r.mkdir()
+        for rel in N6_SRC:
+            (r / rel).parent.mkdir(parents=True, exist_ok=True)
+            (r / rel).write_text("/*x*/\n", encoding="utf-8")
+        build = r / "build"
+        build.mkdir()
+        arr = []
+        # Real directory that the symlink will point at (must exist for link).
+        real_tb_parent = build / "real_testbuild_parent"
+        real_tb_parent.mkdir(parents=True, exist_ok=True)
+        # CMakeFiles/ is real; ninlil_n6_store_testbuild.dir is a symlink.
+        cmake_files = build / "CMakeFiles"
+        cmake_files.mkdir(parents=True, exist_ok=True)
+        tb_link = cmake_files / "ninlil_n6_store_testbuild.dir"
+        if tb_link.exists() or tb_link.is_symlink():
+            tb_link.unlink()
+        tb_link.symlink_to(real_tb_parent, target_is_directory=True)
+        for rel in N6_SRC:
+            src_abs = str((r / rel).resolve())
+            prod_out = build / (PROD_DIR_MARKER + Path(rel).name + ".o")
+            prod_out.parent.mkdir(parents=True, exist_ok=True)
+            prod_out.write_bytes(b"")
+            arr.append(
+                {
+                    "directory": str(build.resolve()),
+                    "file": src_abs,
+                    "output": str(prod_out.resolve()),
+                    "arguments": _base_ok_argv()
+                    + ["-c", src_abs, "-o", str(prod_out.resolve())],
+                }
+            )
+            test_rel_o = TESTBUILD_DIR_MARKER + Path(rel).name + ".o"
+            arr.append(
+                {
+                    "directory": str(build.resolve()),
+                    "file": src_abs,
+                    "output": test_rel_o,
+                    "arguments": [
+                        "clang",
+                        "-O0",
+                        "-c",
+                        src_abs,
+                        "-o",
+                        test_rel_o,
+                    ],
+                }
+            )
+        cc = build / "compile_commands.json"
+        cc.write_text(json.dumps(arr, indent=2) + "\n", encoding="utf-8")
+        e = check_compile_commands(cc, src_root=r)
+        blob = " ".join(e).lower()
+        if not e:
+            fail(
+                "TESTBUILD_SYMLINK_PREFIX: production present + symlink in "
+                "existing testbuild output prefix GREEN (false-GREEN)"
+            )
+        elif "symlink" not in blob:
+            fail(f"TESTBUILD_SYMLINK_PREFIX: RED but missing symlink: {e}")
+        else:
+            red_ok("TESTBUILD_SYMLINK_PREFIX existing testbuild output prefix RED")
+
+        # RED: absent exact-looking testbuild path with entry.output / -o disagree
+        r = root / "absent_testbuild_disagree"
+        r.mkdir()
+        for rel in N6_SRC:
+            (r / rel).parent.mkdir(parents=True, exist_ok=True)
+            (r / rel).write_text("/*x*/\n", encoding="utf-8")
+        build = r / "build"
+        build.mkdir()
+        arr = []
+        for rel in N6_SRC:
+            src_abs = str((r / rel).resolve())
+            prod_out = build / (PROD_DIR_MARKER + Path(rel).name + ".o")
+            prod_out.parent.mkdir(parents=True, exist_ok=True)
+            prod_out.write_bytes(b"")
+            arr.append(
+                {
+                    "directory": str(build.resolve()),
+                    "file": src_abs,
+                    "output": str(prod_out.resolve()),
+                    "arguments": _base_ok_argv()
+                    + ["-c", src_abs, "-o", str(prod_out.resolve())],
+                }
+            )
+            out_a = TESTBUILD_DIR_MARKER + Path(rel).name + ".o"
+            out_b = TESTBUILD_DIR_MARKER + "alt_" + Path(rel).name + ".o"
+            arr.append(
+                {
+                    "directory": str(build.resolve()),
+                    "file": src_abs,
+                    "output": out_a,
+                    "arguments": ["clang", "-O0", "-c", src_abs, "-o", out_b],
+                }
+            )
+        cc = build / "compile_commands.json"
+        cc.write_text(json.dumps(arr, indent=2) + "\n", encoding="utf-8")
+        e = check_compile_commands(cc, src_root=r)
+        if not e or "disagree" not in " ".join(e):
+            fail(
+                f"absent_testbuild_output_argv_disagree: expected disagree RED, "
+                f"got {e}"
+            )
+        else:
+            red_ok("absent_testbuild entry.output/-o disagree RED")
 
         # GREEN ccache
         r, cc = make(

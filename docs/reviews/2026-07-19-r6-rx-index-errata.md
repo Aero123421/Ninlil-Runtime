@@ -76,7 +76,7 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 | Host `ninlil_n6_context_store_test` | **PASS** (**54** cases; includes `rx_lane_idx_errata` + `cu_post_lane_idx_errata` + `tx_burn_lane_idx_errata` + full CU envelope field KATs) |
 | Full CTest Release strict | **PASS 183/183** |
 | `n6_storage_callsite_gate` check + self-test | **PASS** (structural RED=**87** pin-co-update; total designed RED=**114**; GREEN-keep=**2**; rule7b full live if-predicate pin + dual post-TX selector exact-pin/role association + single-site invert ×2 RED; true-no-CU / preflight / DATA·E2E↔ACK / mask_c_lexical direct) |
-| `n6_gcc13_release_compile_gate` self-test | **PASS** (local synthetic; GREEN≈5 / RED=31; external production/testbuild suffix false-GREEN regressions included) |
+| `n6_gcc13_release_compile_gate` self-test | **PASS** (local synthetic; GREEN≈6 / RED=34; absent exact testbuild out-of-authority GREEN when production exists; testbuild-only still RED; symlink in existing testbuild output prefix RED; external production/testbuild suffix + output/-o disagree false-GREEN regressions included) |
 | ASan/UBSan focused store test | **PASS** (54 cases) |
 | tests-OFF packaging | **PASS** (fresh Release; `ctest -N=0`; bare-all private archive absent; explicit target archive exact; N6 members exact-once; fixture/test/oracle/spy 0; `nm`/`strings` leakage 0; install public-only) |
 | `radio_wire_r6_docs_gate` | **PASS** (via full CTest) |
