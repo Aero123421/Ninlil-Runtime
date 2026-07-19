@@ -64,6 +64,25 @@ static void set_header(uint16_t *version, uint16_t *size, size_t value)
     *size = (uint16_t)value;
 }
 
+/* Semantic fields only: struct assignment / poison patterns leave padding
+ * after NINLIL_STRUCT_HEADER (before u64 epoch) unspecified on LP64. */
+static int bearer_state_equal(
+    const ninlil_bearer_state_t *left,
+    const ninlil_bearer_state_t *right)
+{
+    return left->abi_version == right->abi_version
+        && left->struct_size == right->struct_size
+        && left->availability_epoch == right->availability_epoch
+        && left->available == right->available
+        && left->reserved_zero == right->reserved_zero;
+}
+
+static int bearer_state_is_zero(const ninlil_bearer_state_t *state)
+{
+    static const ninlil_bearer_state_t zero = {0};
+    return bearer_state_equal(state, &zero);
+}
+
 static void set_text(ninlil_text_id_t *text, const char *value)
 {
     size_t length = strlen(value);
@@ -553,7 +572,7 @@ static int test_tb7_tb8_tb9(void)
         (ninlil_bearer_status_t)99u, &raw_state, 1u));
     (void)memset(&state, 0, sizeof(state));
     REQUIRE(context.ops->state(context.ops->user, context.a, &state) == 99u);
-    REQUIRE(memcmp(&state, &raw_state, sizeof(state)) == 0);
+    REQUIRE(bearer_state_equal(&state, &raw_state));
 
     message = make_message(&context, 1, NINLIL_BEARER_MESSAGE_APPLICATION,
         11u, &payload, 1u, NULL, 0u);
@@ -575,7 +594,7 @@ static int test_tb7_tb8_tb9(void)
     (void)memset(&state, 0xa5, sizeof(state));
     REQUIRE(context.ops->state(context.ops->user, context.a, &state)
         == NINLIL_BEARER_CORRUPT);
-    REQUIRE(memcmp(&state, &(ninlil_bearer_state_t){0}, sizeof(state)) == 0);
+    REQUIRE(bearer_state_is_zero(&state));
     destroy_context(&context);
     return 0;
 }
@@ -817,7 +836,7 @@ static int test_open_raw_and_pair_max(void)
     REQUIRE(b == NULL);
     (void)memset(&state, 0xa5, sizeof(state));
     REQUIRE(ops->state(ops->user, a, &state) == NINLIL_BEARER_CORRUPT);
-    REQUIRE(memcmp(&state, &(ninlil_bearer_state_t){0}, sizeof(state)) == 0);
+    REQUIRE(bearer_state_is_zero(&state));
     ops->close(ops->user, a);
     ninlil_test_bearer_destroy(bearer);
 
