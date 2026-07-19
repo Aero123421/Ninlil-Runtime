@@ -3,7 +3,7 @@
 **Date:** 2026-07-19  
 **Branch:** `codex/r6-rx-index-errata`  
 **Class:** non-normative review record; Normative behavior = **docs/30 §20.12**; ADR-0010 records limited host pin withdrawal + candidate pin  
-**Status:** errata **implemented** on host candidate; fresh root QA **green** after the live-CU `n_keys=0` repair; independent final re-review **pending**; **source pin re-accept still pending official GCC13 CI**; **not** product GO
+**Status:** errata **implemented and re-accepted** for the R6 host source pin; fresh root QA **green** after the live-CU `n_keys=0` repair; independent final re-review **GO (P0=0 / P1=0 / P2=0)**; official GCC13 and ESP-IDF CI **green**; **not** product GO
 
 ## Discovery
 
@@ -12,16 +12,16 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 - file: `src/radio/n6_context_store.c`
 - `n6_rx_precheck_window` / admit / `tx_burn`: `idx = n6_lane_idx(...)` may be **`-1`** without range guard → OOB (**P1** on internal admit authority)
 
-## Limited pin withdrawal + candidate (not re-accepted)
+## Limited pin withdrawal and re-acceptance
 
 | Path | Pre-errata SHA-256 | Post-errata |
 | --- | --- | --- |
-| `src/radio/n6_context_store.c` | `4686edcb…` (**limited temporary withdrawal** of Chunk D host pin GO) | `bc8633657a1033fb16cc473794ad8cfab54b17ec00a741814682194d5c7789f6` (**candidate / NOT YET ACCEPTED** lockstep in gate+docs/07; GCC13 CI + fresh independent final review pending) |
+| `src/radio/n6_context_store.c` | `4686edcb…` (**limited temporary withdrawal** of Chunk D host pin GO) | `bc8633657a1033fb16cc473794ad8cfab54b17ec00a741814682194d5c7789f6` (**re-accepted R6 host source pin**; gate+docs/07 lockstep, official GCC13 CI and independent final review green) |
 | `src/radio/n6_context_store.h` | `1901a595…` | **byte-stable** (unchanged) |
 | `src/radio/n6_crypto_host.c` | unchanged | unchanged |
 
-**R6 docs freeze / wire Accepted remains in force.** Only the Chunk D **host source pin** axis is withdrawn→candidate.  
-**Re-accept later** (status-only append after): official GCC13 CI green **and** independent re-review. Historical reviews are **not** rewritten.
+**R6 docs freeze / wire Accepted remains in force.** Only the Chunk D **host source pin** axis was temporarily withdrawn and is now re-accepted at the post-errata hash.  
+The re-acceptance conditions are satisfied by official GCC13 CI and independent re-review. Historical reviews are **not** rewritten.
 
 ## Fix summary
 
@@ -57,7 +57,7 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 
 `test_rx_lane_idx_errata` snapshots all **12** before/after external 0/4/255, both cross-layer directions, internal range-invalid, and internal catalog-valid cross-layer paths and requires **exact equality**. CU envelope KATs require force-close **once** (close delta 1 when the COMMIT_UNKNOWN handle was open) and **delta 0** on open/begin/get/put/**erase**/commit/rollback/iter_*/capacity, with all 3 lane × (TX2 / RX4) arrays unchanged. With every non-close storage call delta 0, durable mutation and array posts are impossible on those fail-closed paths.
 
-## CI (pending runner success)
+## CI (accepted runner evidence)
 
 `ubuntu-gcc-release-n6-frame` is the OSS GCC13 authority job:
 
@@ -67,7 +67,7 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 - unfiltered full CTest once
 - clang-sanitizers unchanged
 
-**GitHub runner not executed from this implementer host.** Keep status **CI pending**.
+Official authority evidence is [CI run 29673619672](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/29673619672): exact GCC 13 `-O2`, production compile-command gate, all-target strict build, required-test identity and unfiltered full CTest are green. [ESP-IDF run 29673619686](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/29673619686) is also green.
 
 ## Verification (implementer worktree)
 
@@ -81,8 +81,8 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 | tests-OFF packaging | **PASS** (fresh Release; `ctest -N=0`; bare-all private archive absent; explicit target archive exact; N6 members exact-once; fixture/test/oracle/spy 0; `nm`/`strings` leakage 0; install public-only) |
 | `radio_wire_r6_docs_gate` | **PASS** (via full CTest) |
 | `git diff --check` | **PASS** |
-| Official GCC 13 CI authority job | **pending / not run on this host** (also covers pre-existing R5 `profile_loader.c` `proposed_placeholder` -Wmaybe-uninitialized repair ported from `858c202` / `codex/r7-wire-aead`: `r5_issue_alias_gate` allows `proposed==NULL`; `ninlil_r5_issue` passes NULL — no stack placeholder; `issue_with_bind` non-NULL path preserved) |
-| Independent final re-review | **pending** (gate/selftest/docs bytes changed for dual post-TX selector exact-pin residual-P2 close + R5 profile_loader NULL-proposed alias-gate port; not closed by this implementer pass) |
+| Official GCC 13 CI authority job | **PASS** ([29673619672](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/29673619672); exact GCC13 `-O2`, production gate, all-target strict build, required identity, unfiltered full CTest). Includes R5 `profile_loader.c` NULL-proposed alias-gate port, resource-ledger fail-closed total propagation and padding-independent semantic test comparisons discovered by the authority run. |
+| Independent final re-review | **GO — P0=0 / P1=0 / P2=0** (store/CU envelope, dual-selector structural pin, R5 alias port, absent-testbuild compile-gate handling, resource-ledger status propagation and semantic test comparisons all independently re-reviewed) |
 
 ## Residual P2 close (structural dual post-TX selector pin) + R5 GCC13 alias port
 
@@ -92,14 +92,14 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 | Single-site invert RED (slot-only + decode-only) + both-sites KAT retained | **implementer closed** (structural RED **87** = 85+2; total designed RED **114**) |
 | `n6_context_store.c` / test hashes | **unchanged** (candidate store pin byte-stable this pass) |
 | R5 `profile_loader.c` NULL-proposed alias gate (GCC13 `-Wmaybe-uninitialized`) | **implementer closed** (port of `src/radio/profile_loader.c` portion of `858c202` only; no R7 crypto/test) |
-| Independent re-review of this residual-P2 + R5 port | **pending** |
-| Official GCC13 CI re-run | **pending** |
+| Independent re-review of this residual-P2 + R5 port | **GO — P0=0 / P1=0 / P2=0** |
+| Official GCC13 CI re-run | **PASS** ([29673619672](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/29673619672)) |
 
 ## Non-claims
 
-- Not product GO; not host pin re-accepted until official GCC13 CI and fresh independent re-review are green  
-- Independent re-review remains **pending** after this residual-P2 dual-selector pin + R5 NULL-proposed alias-gate port (new gate/selftest/docs + `profile_loader.c` bytes)  
-- Official GCC13 CI remains **pending** (local host has Apple clang only; no GCC13 authority claim)  
+- R6 host source pin is re-accepted, but this is **not product GO** or Ninlil-wide completion  
+- Independent re-review is **GO (P0=0 / P1=0 / P2=0)** for the complete accepted delta  
+- Official GCC13 and ESP-IDF CI are green; local AppleClang and Ubuntu GCC13-container checks remain supplemental evidence  
 - Not R7/M4/M5/ESP capacity/HIL/legal/production complete  
 - Not public ABI / wire / layout / schema change  
 - gate PASS ≠ product GO
