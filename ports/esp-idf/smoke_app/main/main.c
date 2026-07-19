@@ -21,6 +21,7 @@
 
 /* R7 production-private link probe; not a public component include. */
 #include "r7_crypto_mbedtls.h"
+#include "r7_wire_codec.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -95,6 +96,141 @@ static int smoke_r7_crypto_link(void)
     }
     ESP_LOGI(TAG,
         "R7 mbedTLS provider initialized; compile/link evidence only; "
+        "device KAT/HIL pending");
+    return 0;
+}
+
+/*
+ * R7 T1 pure wire codec final-ELF presence probe (docs/32 §9.9).
+ * BSS-backed minimal pack/seal/open — not device KAT / RF / HIL.
+ */
+static ninlil_r7_wire_e2e_single_fields s_r7_wire_e2e_fields;
+static ninlil_r7_wire_outer_data_fields s_r7_wire_outer_fields;
+static uint8_t s_r7_wire_key16[16];
+static uint8_t s_r7_wire_iv12[12];
+static uint8_t s_r7_wire_app[1];
+static uint8_t s_r7_wire_e2e_blob[31];
+static uint8_t s_r7_wire_frame[66];
+static uint8_t s_r7_wire_opened[31];
+
+static int smoke_r7_wire_link(void)
+{
+    size_t e2e_len = 0u;
+    size_t frame_len = 0u;
+    size_t opened_len = 0u;
+    ninlil_r7_wire_status st;
+    ninlil_r7_wire_e2e_single_fields e2e_out;
+    ninlil_r7_wire_outer_data_fields outer_out;
+    uint8_t aad14[NINLIL_R7_WIRE_E2E_AAD_LEN];
+    uint8_t aad19[NINLIL_R7_WIRE_OUTER_AAD_LEN];
+
+    if (s_r7_crypto_provider.aes128_gcm_seal == NULL) {
+        ESP_LOGE(TAG, "R7 T1 wire link requires prior crypto provider init");
+        return -1;
+    }
+
+    (void)memset(&s_r7_wire_e2e_fields, 0, sizeof(s_r7_wire_e2e_fields));
+    s_r7_wire_e2e_fields.e2e_context_id = 1u;
+    s_r7_wire_e2e_fields.e2e_counter = 1u;
+    (void)memset(aad14, 0xA5, sizeof(aad14));
+    st = ninlil_r7_wire_pack_e2e_single_aad(
+        &s_r7_wire_e2e_fields, aad14, NINLIL_R7_WIRE_E2E_AAD_LEN);
+    if (st != NINLIL_R7_WIRE_OK || aad14[0] != NINLIL_R7_WIRE_PROFILE_ID) {
+        ESP_LOGE(TAG, "R7 T1 wire pack_e2e link failed status=%ld", (long)st);
+        return -1;
+    }
+    (void)memset(&e2e_out, 0xA5, sizeof(e2e_out));
+    st = ninlil_r7_wire_parse_e2e_single_aad(
+        aad14, NINLIL_R7_WIRE_E2E_AAD_LEN, &e2e_out);
+    if (st != NINLIL_R7_WIRE_OK || e2e_out.e2e_context_id != 1u) {
+        ESP_LOGE(TAG, "R7 T1 wire parse_e2e link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    (void)memset(&s_r7_wire_outer_fields, 0, sizeof(s_r7_wire_outer_fields));
+    s_r7_wire_outer_fields.ack_requested = 0u;
+    s_r7_wire_outer_fields.hop_remaining = 0u;
+    s_r7_wire_outer_fields.hop_context_id = 1u;
+    s_r7_wire_outer_fields.hop_counter = 1u;
+    (void)memset(aad19, 0xA5, sizeof(aad19));
+    st = ninlil_r7_wire_pack_outer_data_aad(
+        &s_r7_wire_outer_fields, aad19, NINLIL_R7_WIRE_OUTER_AAD_LEN);
+    if (st != NINLIL_R7_WIRE_OK || aad19[0] != NINLIL_R7_WIRE_PROFILE_ID) {
+        ESP_LOGE(TAG, "R7 T1 wire pack_outer link failed status=%ld", (long)st);
+        return -1;
+    }
+    (void)memset(&outer_out, 0xA5, sizeof(outer_out));
+    st = ninlil_r7_wire_parse_outer_data_aad(
+        aad19, NINLIL_R7_WIRE_OUTER_AAD_LEN, &outer_out);
+    if (st != NINLIL_R7_WIRE_OK || outer_out.hop_context_id != 1u) {
+        ESP_LOGE(TAG, "R7 T1 wire parse_outer link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    (void)memset(s_r7_wire_key16, 0x11, sizeof(s_r7_wire_key16));
+    (void)memset(s_r7_wire_iv12, 0x22, sizeof(s_r7_wire_iv12));
+    s_r7_wire_app[0] = 0x41u;
+    st = ninlil_r7_wire_seal_e2e_single(
+        &s_r7_crypto_provider,
+        s_r7_wire_key16,
+        s_r7_wire_iv12,
+        &s_r7_wire_e2e_fields,
+        s_r7_wire_app,
+        1u,
+        s_r7_wire_e2e_blob,
+        sizeof(s_r7_wire_e2e_blob),
+        &e2e_len);
+    if (st != NINLIL_R7_WIRE_OK || e2e_len != sizeof(s_r7_wire_e2e_blob)) {
+        ESP_LOGE(TAG, "R7 T1 wire seal_e2e link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    st = ninlil_r7_wire_seal_outer_single(
+        &s_r7_crypto_provider,
+        s_r7_wire_key16,
+        s_r7_wire_iv12,
+        &s_r7_wire_outer_fields,
+        s_r7_wire_e2e_blob,
+        e2e_len,
+        s_r7_wire_frame,
+        sizeof(s_r7_wire_frame),
+        &frame_len);
+    if (st != NINLIL_R7_WIRE_OK || frame_len != sizeof(s_r7_wire_frame)) {
+        ESP_LOGE(TAG, "R7 T1 wire seal_outer link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    st = ninlil_r7_wire_open_outer_single(
+        &s_r7_crypto_provider,
+        s_r7_wire_key16,
+        s_r7_wire_iv12,
+        s_r7_wire_frame,
+        frame_len,
+        &outer_out,
+        s_r7_wire_opened,
+        e2e_len,
+        &opened_len);
+    if (st != NINLIL_R7_WIRE_OK || opened_len != e2e_len) {
+        ESP_LOGE(TAG, "R7 T1 wire open_outer link failed status=%ld", (long)st);
+        return -1;
+    }
+    st = ninlil_r7_wire_open_e2e_single(
+        &s_r7_crypto_provider,
+        s_r7_wire_key16,
+        s_r7_wire_iv12,
+        s_r7_wire_opened,
+        opened_len,
+        &e2e_out,
+        s_r7_wire_app,
+        1u,
+        &opened_len);
+    if (st != NINLIL_R7_WIRE_OK || opened_len != 1u || s_r7_wire_app[0] != 0x41u) {
+        ESP_LOGE(TAG, "R7 T1 wire open_e2e link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    ESP_LOGI(TAG,
+        "R7 T1 wire codec dual-envelope link exercised; compile/link only; "
         "device KAT/HIL pending");
     return 0;
 }
@@ -679,7 +815,7 @@ void app_main(void)
     }
     smoke_cleanup_basic();
 
-    /* Owner/cell first, then storage, U2 CDC, and R7 private crypto link probe. */
+    /* Owner/cell first, then storage, U2 CDC, and R7 crypto/wire link probes. */
     if (smoke_storage_commit_unknown() != 0) {
         fail = 1;
     }
@@ -689,12 +825,16 @@ void app_main(void)
     if (smoke_r7_crypto_link() != 0) {
         fail = 1;
     }
+    if (smoke_r7_wire_link() != 0) {
+        fail = 1;
+    }
 
     if (fail != 0) {
         ESP_LOGE(TAG, "SELFTEST FAIL (device HIL required for runtime verdict)");
     } else {
         ESP_LOGI(TAG,
-            "SELFTEST owner/cell + storage + U2 CDC + R7 crypto init exercised; "
-            "compile!=HIL; U2/R7 Required HIL pending; flash monitor for runtime");
+            "SELFTEST owner/cell + storage + U2 CDC + R7 crypto/wire link "
+            "exercised; compile!=HIL; U2/R7 Required HIL pending; "
+            "flash monitor for runtime");
     }
 }

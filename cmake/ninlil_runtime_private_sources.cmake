@@ -6,6 +6,7 @@
 # contract/reducer sources must not appear here.
 
 include("${CMAKE_CURRENT_LIST_DIR}/ninlil_r7_crypto_sources.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/ninlil_r7_wire_sources.cmake")
 
 set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/model/control_frame_codec.c
@@ -39,10 +40,18 @@ set(NINLIL_N6_PRODUCTION_RELATIVE_SOURCES
     src/radio/n6_context_store.c
 )
 
-# Expand N6 production set into the shared private runtime source list once.
+# Expand N6 production set and R7 T0 portable crypto into the shared private
+# runtime source list. Keep this exact two-variable append block so T0
+# platform-split mutation authority remains honest (do not fold T1 into it).
 list(APPEND NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
     ${NINLIL_R7_CRYPTO_PORTABLE_RELATIVE_SOURCES}
+)
+
+# R7 T1 NRW1 SINGLE pure wire codec (docs/32): separate append so T0 authority
+# tokens stay exact-once and are not weakened.
+list(APPEND NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
+    ${NINLIL_R7_WIRE_PORTABLE_RELATIVE_SOURCES}
 )
 
 set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
@@ -63,4 +72,5 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
     ${NINLIL_R7_CRYPTO_PORTABLE_RELATIVE_SOURCES}
     ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}
+    ${NINLIL_R7_WIRE_PORTABLE_RELATIVE_SOURCES}
 )
