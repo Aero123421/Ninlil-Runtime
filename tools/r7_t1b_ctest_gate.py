@@ -318,6 +318,148 @@ def _synthetic_tests(names: list[str]) -> list[dict[str, Any]]:
     ]
 
 
+def _replace_nth(text: str, needle: str, replacement: str, ordinal: int) -> str:
+    """Replace one exact occurrence, failing closed on source-shape drift."""
+    positions: list[int] = []
+    start = 0
+    while True:
+        pos = text.find(needle, start)
+        if pos < 0:
+            break
+        positions.append(pos)
+        start = pos + len(needle)
+    if ordinal < 0 or ordinal >= len(positions):
+        raise ValueError(
+            f"mutation needle occurrence {ordinal} missing; count={len(positions)}"
+        )
+    pos = positions[ordinal]
+    return text[:pos] + replacement + text[pos + len(needle) :]
+
+
+def production_mutation_errors() -> list[str]:
+    """Prove the portable test rejects the three audited production defects.
+
+    This compiles the real portable test against a temporary copy of the
+    production TU.  A compile failure is not accepted as a red test: every
+    mutant must compile successfully and the resulting executable itself must
+    fail.  Repository files are read-only throughout this check.
+    """
+    errors: list[str] = []
+    compiler = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
+    if compiler is None:
+        return ["production mutation gate requires cc, clang, or gcc on PATH"]
+
+    source_path = REPO / "src" / "radio" / "r7_context_binding.c"
+    test_path = REPO / "tests" / "radio" / "private" / "r7_t1b_binding_test.c"
+    try:
+        source = source_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return [f"cannot read production mutation source: {exc}"]
+
+    copy_needle = "ninlil_r7_binding_copy(out, candidate, need);"
+    compare_needle = "for (i = 0u; i < 32u; i++) {"
+    if source.count(copy_needle) != 2:
+        errors.append(
+            "production mutation source-shape drift: exact encode publish "
+            f"count want 2 got {source.count(copy_needle)}"
+        )
+    if source.count(compare_needle) != 1:
+        errors.append(
+            "production mutation source-shape drift: digest compare loop "
+            f"count want 1 got {source.count(compare_needle)}"
+        )
+    if errors:
+        return errors
+
+    mutants: list[tuple[str, str]] = []
+    for ordinal, layer in enumerate(("hop", "e2e")):
+        mutants.append(
+            (
+                f"encode_overpublish_{layer}",
+                _replace_nth(
+                    source,
+                    copy_needle,
+                    "ninlil_r7_binding_copy(out, candidate, sizeof(candidate));",
+                    ordinal,
+                ),
+            )
+        )
+    mutants.append(
+        (
+            "digest_compare_first_byte_only",
+            _replace_nth(
+                source,
+                compare_needle,
+                "for (i = 0u; i < 1u; i++) {",
+                0,
+            ),
+        )
+    )
+    if len(mutants) != 3:
+        return [f"production mutation count want 3 got {len(mutants)}"]
+
+    with tempfile.TemporaryDirectory(prefix="nrw1-t1b-prod-mut-") as td:
+        root = Path(td)
+        common = [
+            compiler,
+            "-std=c11",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+            "-Werror",
+            "-Wvla",
+            "-DNINLIL_R7_BINDING_TEST_BUILD=1",
+            f"-I{REPO / 'src' / 'radio'}",
+            str(test_path),
+            str(REPO / "src" / "radio" / "r7_crypto_portable.c"),
+            str(REPO / "src" / "radio" / "r7_crypto_nonce.c"),
+        ]
+        for label, mutated_source in mutants:
+            mutant_c = root / f"r7_context_binding_{label}.c"
+            binary = root / f"r7_t1b_{label}"
+            mutant_c.write_text(mutated_source, encoding="utf-8")
+            try:
+                compile_proc = subprocess.run(
+                    common + [str(mutant_c), "-o", str(binary)],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=30,
+                )
+            except subprocess.TimeoutExpired:
+                errors.append(
+                    f"production mutation {label} compile timed out after 30s"
+                )
+                continue
+            if compile_proc.returncode != 0:
+                errors.append(
+                    f"production mutation {label} did not compile; a compile "
+                    f"failure is not accepted as detection:\n{compile_proc.stdout}\n"
+                    f"{compile_proc.stderr}"
+                )
+                continue
+            try:
+                run_proc = subprocess.run(
+                    [str(binary)],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=10,
+                )
+            except subprocess.TimeoutExpired:
+                errors.append(
+                    f"production mutation {label} execution timed out after 10s"
+                )
+                continue
+            if run_proc.returncode == 0:
+                errors.append(
+                    f"production mutation {label} false-green: portable test "
+                    f"returned 0; stdout={run_proc.stdout!r} stderr={run_proc.stderr!r}"
+                )
+    return errors
+
+
 def run_self_test() -> int:
     failures: list[str] = []
     normal = set(required_for_profile("normal"))
@@ -506,6 +648,8 @@ def run_self_test() -> int:
                     f"integration mutation {prop_name} raised: {exc}"
                 )
 
+    failures.extend(production_mutation_errors())
+
     if failures:
         for f in failures:
             print(f"r7_t1b_ctest_gate self-test FAIL: {f}", file=sys.stderr)
@@ -515,7 +659,8 @@ def run_self_test() -> int:
         f"(core={len(NRW1_T1B_CORE_REQUIRED)}, "
         f"normal={len(required_for_profile('normal'))}, "
         f"sanitizer={len(required_for_profile('sanitizer'))}, "
-        f"json-v1+skip/PASS_REGEX/WILL_FAIL+cmake-integration=yes)"
+        f"json-v1+skip/PASS_REGEX/WILL_FAIL+cmake-integration=yes, "
+        f"production_mutations=3)"
     )
     return 0
 
