@@ -2706,9 +2706,11 @@ static void test_backend_failure_paths(void)
 
 static void test_spans_forbidden_seam(void)
 {
-    uint8_t a[8];
-    uint8_t b[8];
-    uint8_t adj[16];
+    /* Real init: seam uses only addresses/lengths, but GCC -O2 may still
+     * diagnose uninit objects when their address is passed as const void*. */
+    uint8_t a[8] = {0};
+    uint8_t b[8] = {0};
+    uint8_t adj[16] = {0};
 
     /* non-overlap */
     expect_true(
