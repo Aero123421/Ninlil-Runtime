@@ -33,7 +33,7 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 | Internal invalid / catalog-valid cross-layer | `CORRUPT` + fence + full ticket wipe + I/O0 + window snapshot equal |
 | CU envelope (rule 7) | full plan preflight + array-post integrity **before** classify I/O; side/key/codec/identity/`post_u64_*`; fail → force-close once → FENCED wipe → `CORRUPT`, **12 counters** with close-only delta when handle was open, zero posts |
 | Test seams | `NINLIL_N6_TEST_BUILD` + test TU `extern` only (header byte-stable); per-field CU mutate seam |
-| Structural gate | C lexical mask (comment+string+char); exact `n6_lane_idx` branch association (DATA/E2E→`return 0`, ACK→`return 1`, default→`return -1`); exact `n6_lane_ok_for_slot` predicates; exact 6 `_Static_assert` exprs; complete live (non-`if(0)`/`0&&`) true-no-CU, CU preflight, and **rule7b full live if-predicate pin** (post filter/op+old_present/vlen/canary/live/side/range/lane/layer/encode/canon key/TX·RX decode+identity+post_u64+order); **85** pin+docs co-update structural RED mutations (self-test) |
+| Structural gate | C lexical mask (comment+string+char); exact `n6_lane_idx` branch association (DATA/E2E→`return 0`, ACK→`return 1`, default→`return -1`); exact `n6_lane_ok_for_slot` predicates; exact 6 `_Static_assert` exprs; complete live (non-`if(0)`/`0&&`) true-no-CU, CU preflight, and **rule7b full live if-predicate pin** (post filter/op+old_present/vlen/canary/live/side/range/lane/layer/encode/canon key/TX·RX decode+identity+post_u64+order); **dual exact-pin** of both live `if (e->post == N6_CU_POST_TX_LIMIT)` selectors in `n6_cu_validate_array_posts` with brace-role association (slot-side then/else → TX/RX alloc_side; decode then/else → TX/RX decode+identity+post_u64+order; set membership alone insufficient); **87** pin+docs co-update structural RED mutations (self-test; includes single-site invert ×2 + both-sites invert) |
 | Compile gate | production `ninlil_runtime_private.dir` output selection; gcc-13 / unique `-O2`; self-test + CI |
 
 ### Storage I/O0 oracle (exact) — all 12 operations / 12 counters
@@ -75,20 +75,31 @@ GitHub CI / independent review with **GCC 13 `-O2` strict** and subsequent indep
 | --- | --- |
 | Host `ninlil_n6_context_store_test` | **PASS** (**54** cases; includes `rx_lane_idx_errata` + `cu_post_lane_idx_errata` + `tx_burn_lane_idx_errata` + full CU envelope field KATs) |
 | Full CTest Release strict | **PASS 183/183** |
-| `n6_storage_callsite_gate` check + self-test | **PASS** (structural RED=**85** pin-co-update; total designed RED=**112**; GREEN-keep=**2**; rule7b full live if-predicate pin + audit-7 if0/invert RED; true-no-CU / preflight / DATA·E2E↔ACK / mask_c_lexical direct) |
+| `n6_storage_callsite_gate` check + self-test | **PASS** (structural RED=**87** pin-co-update; total designed RED=**114**; GREEN-keep=**2**; rule7b full live if-predicate pin + dual post-TX selector exact-pin/role association + single-site invert ×2 RED; true-no-CU / preflight / DATA·E2E↔ACK / mask_c_lexical direct) |
 | `n6_gcc13_release_compile_gate` self-test | **PASS** (local synthetic; GREEN≈5 / RED=31; external production/testbuild suffix false-GREEN regressions included) |
 | ASan/UBSan focused store test | **PASS** (54 cases) |
 | tests-OFF packaging | **PASS** (fresh Release; `ctest -N=0`; bare-all private archive absent; explicit target archive exact; N6 members exact-once; fixture/test/oracle/spy 0; `nm`/`strings` leakage 0; install public-only) |
 | `radio_wire_r6_docs_gate` | **PASS** (via full CTest) |
 | `git diff --check` | **PASS** |
-| Official GCC 13 CI authority job | **pending / not run on this host** |
-| Independent final re-review | **pending** (gate/selftest/docs bytes changed for rule7b complete live if-predicate pin; not closed by this implementer pass) |
+| Official GCC 13 CI authority job | **pending / not run on this host** (also covers pre-existing R5 `profile_loader.c` `proposed_placeholder` -Wmaybe-uninitialized repair ported from `858c202` / `codex/r7-wire-aead`: `r5_issue_alias_gate` allows `proposed==NULL`; `ninlil_r5_issue` passes NULL — no stack placeholder; `issue_with_bind` non-NULL path preserved) |
+| Independent final re-review | **pending** (gate/selftest/docs bytes changed for dual post-TX selector exact-pin residual-P2 close + R5 profile_loader NULL-proposed alias-gate port; not closed by this implementer pass) |
+
+## Residual P2 close (structural dual post-TX selector pin) + R5 GCC13 alias port
+
+| Item | Status |
+| --- | --- |
+| Dual exact-pin of both `if (e->post == N6_CU_POST_TX_LIMIT)` in `n6_cu_validate_array_posts` | **implementer closed** (gate + self-test KATs; slot-side / decode roles brace-associated) |
+| Single-site invert RED (slot-only + decode-only) + both-sites KAT retained | **implementer closed** (structural RED **87** = 85+2; total designed RED **114**) |
+| `n6_context_store.c` / test hashes | **unchanged** (candidate store pin byte-stable this pass) |
+| R5 `profile_loader.c` NULL-proposed alias gate (GCC13 `-Wmaybe-uninitialized`) | **implementer closed** (port of `src/radio/profile_loader.c` portion of `858c202` only; no R7 crypto/test) |
+| Independent re-review of this residual-P2 + R5 port | **pending** |
+| Official GCC13 CI re-run | **pending** |
 
 ## Non-claims
 
 - Not product GO; not host pin re-accepted until official GCC13 CI and fresh independent re-review are green  
-- Independent re-review remains **pending** after this gate-only residual-P2 close (new gate/selftest/docs bytes)  
-- Official GCC13 CI remains **pending**  
+- Independent re-review remains **pending** after this residual-P2 dual-selector pin + R5 NULL-proposed alias-gate port (new gate/selftest/docs + `profile_loader.c` bytes)  
+- Official GCC13 CI remains **pending** (local host has Apple clang only; no GCC13 authority claim)  
 - Not R7/M4/M5/ESP capacity/HIL/legal/production complete  
 - Not public ABI / wire / layout / schema change  
-- gate PASS ≠ product GO  
+- gate PASS ≠ product GO

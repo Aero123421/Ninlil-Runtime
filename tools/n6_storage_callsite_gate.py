@@ -584,6 +584,59 @@ def _live_if_conditions(body: str) -> set[str]:
     return out
 
 
+def _live_if_then_else_blocks(body: str) -> list[tuple[str, str, str]]:
+    """Live ``if (cond) { then } [else { else }]`` in source order.
+
+    Returns ``(cond_norm, then_inner, else_inner)`` for each live brace-bodied
+    ``if``. ``else_inner`` is ``""`` when no brace ``else`` follows. Nested
+    ``if (0)`` / ``if (0 && ...)`` heads are excluded (same dead spans as
+    :func:`_live_if_conditions`). Used to pin *each* occurrence of a repeated
+    predicate to its intended brace-balanced role — set membership alone is
+    insufficient when two sites share the same normalized condition.
+    """
+    dead = _if0_spans(body)
+    out: list[tuple[str, str, str]] = []
+    for m in re.finditer(r"\bif\s*\(", body):
+        if not _is_live_pos(m.start(), dead):
+            continue
+        p0 = body.find("(", m.start(), m.end())
+        if p0 < 0:
+            continue
+        p1 = _balanced_paren_end(body, p0)
+        if p1 < 0:
+            continue
+        k = p1 + 1
+        while k < len(body) and body[k] in " \t\r\n":
+            k += 1
+        if k >= len(body) or body[k] != "{":
+            continue
+        b1 = _balanced_brace_end(body, k)
+        if b1 < 0:
+            continue
+        then_inner = body[k + 1 : b1]
+        else_inner = ""
+        j = b1 + 1
+        while j < len(body) and body[j] in " \t\r\n":
+            j += 1
+        if (
+            j + 4 <= len(body)
+            and body.startswith("else", j)
+            and (
+                j + 4 >= len(body)
+                or not (body[j + 4].isalnum() or body[j + 4] == "_")
+            )
+        ):
+            j2 = j + 4
+            while j2 < len(body) and body[j2] in " \t\r\n":
+                j2 += 1
+            if j2 < len(body) and body[j2] == "{":
+                b2 = _balanced_brace_end(body, j2)
+                if b2 >= 0:
+                    else_inner = body[j2 + 1 : b2]
+        out.append((_norm_expr(body[p0 + 1 : p1]), then_inner, else_inner))
+    return out
+
+
 def _static_assert_allowed_expr(arr: str) -> set[str]:
     """Normalized first-arg expressions allowed for named-lane array asserts."""
     base = f"((n6_slot_t*)0)->{arr}"
@@ -1521,6 +1574,164 @@ def check_rx_index_errata_structural(store_text: str) -> list[str]:
                         f"rx-index-errata structural: CU validate missing exact "
                         f"live predicate ({label})"
                     )
+            # Dual live post-TX selectors: set membership of
+            # e->post==N6_CU_POST_TX_LIMIT is insufficient — either of the two
+            # sites can be inverted while the other keeps the set GREEN.
+            # Require exactly two live brace-bodied occurrences, in order:
+            # (1) slot-side selector whose then/else hold TX/RX alloc_side pins;
+            # (2) decode+identity selector whose then/else hold the full TX/RX
+            # decode / identity / post_u64 / order pins.
+            _POST_TX_SEL = "e->post==N6_CU_POST_TX_LIMIT"
+            post_tx_sites = [
+                (then_b, else_b)
+                for cond, then_b, else_b in _live_if_then_else_blocks(cu_body)
+                if cond == _POST_TX_SEL
+            ]
+            if len(post_tx_sites) != 2:
+                errs.append(
+                    "rx-index-errata structural: CU validate must have exactly "
+                    "2 live if (e->post == N6_CU_POST_TX_LIMIT) selectors "
+                    "(slot-side + decode/identity); "
+                    f"found {len(post_tx_sites)} (single-site invert/drop RED)"
+                )
+            else:
+                slot_then, slot_else = post_tx_sites[0]
+                dec_then, dec_else = post_tx_sites[1]
+                slot_then_conds = _live_if_conditions(slot_then)
+                slot_else_conds = _live_if_conditions(slot_else)
+                if (
+                    "s->alloc_side!=NINLIL_N6_ALLOC_OUTBOUND_TX"
+                    not in slot_then_conds
+                ):
+                    errs.append(
+                        "rx-index-errata structural: CU validate slot-side "
+                        "selector then-block missing exact live TX slot side "
+                        "(s->alloc_side!=NINLIL_N6_ALLOC_OUTBOUND_TX)"
+                    )
+                if (
+                    "s->alloc_side!=NINLIL_N6_ALLOC_INBOUND_RX"
+                    not in slot_else_conds
+                ):
+                    errs.append(
+                        "rx-index-errata structural: CU validate slot-side "
+                        "selector else-block missing exact live RX slot side "
+                        "(s->alloc_side!=NINLIL_N6_ALLOC_INBOUND_RX)"
+                    )
+                dec_then_conds = _live_if_conditions(dec_then)
+                dec_else_conds = _live_if_conditions(dec_else)
+                dec_tx_exact: list[tuple[str, str]] = [
+                    (
+                        "TX old decode",
+                        "ninlil_n6_decode_n6tx_value(e->old_val,e->old_vlen,"
+                        "&old_tv)!=NINLIL_N6_CODEC_OK",
+                    ),
+                    (
+                        "TX prop decode",
+                        "ninlil_n6_decode_n6tx_value(e->prop_val,e->prop_vlen,"
+                        "&prop_tv)!=NINLIL_N6_CODEC_OK",
+                    ),
+                    (
+                        "TX identity key_generation",
+                        "old_tv.key_generation!=s->key_generation"
+                        "||prop_tv.key_generation!=s->key_generation",
+                    ),
+                    (
+                        "TX identity binding",
+                        "memcmp(old_tv.binding_digest_prefix16,"
+                        "s->binding_digest32,16u)!=0"
+                        "||memcmp(prop_tv.binding_digest_prefix16,"
+                        "s->binding_digest32,16u)!=0",
+                    ),
+                    (
+                        "TX identity membership_epoch",
+                        "old_tv.membership_epoch!=s->membership_epoch"
+                        "||prop_tv.membership_epoch!=s->membership_epoch",
+                    ),
+                    (
+                        "TX identity ns",
+                        "memcmp(old_tv.ns_fingerprint12,s->ns_fingerprint12,"
+                        "12u)!=0||memcmp(prop_tv.ns_fingerprint12,"
+                        "s->ns_fingerprint12,12u)!=0",
+                    ),
+                    (
+                        "TX identity alloc_side",
+                        "old_tv.alloc_side!=NINLIL_N6_ALLOC_OUTBOUND_TX"
+                        "||prop_tv.alloc_side!=NINLIL_N6_ALLOC_OUTBOUND_TX",
+                    ),
+                    (
+                        "TX post_u64 exclusive",
+                        "old_tv.reserved_exclusive!=e->post_u64_b"
+                        "||prop_tv.reserved_exclusive!=e->post_u64_a",
+                    ),
+                    (
+                        "TX post_u64 order",
+                        "!(e->post_u64_b<e->post_u64_a)",
+                    ),
+                ]
+                dec_rx_exact: list[tuple[str, str]] = [
+                    (
+                        "RX old decode",
+                        "ninlil_n6_decode_n6rx_value(e->old_val,e->old_vlen,"
+                        "&old_rv)!=NINLIL_N6_CODEC_OK",
+                    ),
+                    (
+                        "RX prop decode",
+                        "ninlil_n6_decode_n6rx_value(e->prop_val,e->prop_vlen,"
+                        "&prop_rv)!=NINLIL_N6_CODEC_OK",
+                    ),
+                    (
+                        "RX identity key_generation",
+                        "old_rv.key_generation!=s->key_generation"
+                        "||prop_rv.key_generation!=s->key_generation",
+                    ),
+                    (
+                        "RX identity binding",
+                        "memcmp(old_rv.binding_digest_prefix16,"
+                        "s->binding_digest32,16u)!=0"
+                        "||memcmp(prop_rv.binding_digest_prefix16,"
+                        "s->binding_digest32,16u)!=0",
+                    ),
+                    (
+                        "RX identity membership_epoch",
+                        "old_rv.membership_epoch!=s->membership_epoch"
+                        "||prop_rv.membership_epoch!=s->membership_epoch",
+                    ),
+                    (
+                        "RX identity ns",
+                        "memcmp(old_rv.ns_fingerprint12,s->ns_fingerprint12,"
+                        "12u)!=0||memcmp(prop_rv.ns_fingerprint12,"
+                        "s->ns_fingerprint12,12u)!=0",
+                    ),
+                    (
+                        "RX identity alloc_side",
+                        "old_rv.alloc_side!=NINLIL_N6_ALLOC_INBOUND_RX"
+                        "||prop_rv.alloc_side!=NINLIL_N6_ALLOC_INBOUND_RX",
+                    ),
+                    (
+                        "RX post_u64",
+                        "prop_rv.accept_reserved_through!=e->post_u64_a"
+                        "||e->post_u64_b!=0u",
+                    ),
+                    (
+                        "RX order",
+                        "old_rv.accept_reserved_through"
+                        ">prop_rv.accept_reserved_through",
+                    ),
+                ]
+                for label, pred in dec_tx_exact:
+                    if pred not in dec_then_conds:
+                        errs.append(
+                            "rx-index-errata structural: CU validate decode "
+                            "selector then-block missing exact live predicate "
+                            f"({label})"
+                        )
+                for label, pred in dec_rx_exact:
+                    if pred not in dec_else_conds:
+                        errs.append(
+                            "rx-index-errata structural: CU validate decode "
+                            "selector else-block missing exact live predicate "
+                            f"({label})"
+                        )
 
     apply_body = _extract_c_function_body(
         masked, "static ninlil_n6_status_t n6_apply_cu_post("

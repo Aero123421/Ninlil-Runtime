@@ -1755,9 +1755,41 @@ def run_self_test(src_root: Path) -> int:
                 "RX order",
             )
 
+        def _invert_post_tx_selector_nth(data: bytes, n: int, what: str) -> bytes:
+            """Invert the n-th (1-based) live post-TX selector in validate only.
+
+            validate has exactly two ``if (e->post == N6_CU_POST_TX_LIMIT)``
+            sites: (1) slot-side, (2) decode+identity. Dual exact-pin + role
+            association must RED on either single-site invert (set membership
+            alone is insufficient).
+            """
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("cu validate bounds")
+            region = s[p0:p1]
+            old = "if (e->post == N6_CU_POST_TX_LIMIT)"
+            new = "if (e->post != N6_CU_POST_TX_LIMIT)"
+            if region.count(old) < 2:
+                raise RuntimeError("post TX branch sites missing")
+            if n < 1:
+                raise RuntimeError(f"{what}: bad n")
+            idx = -1
+            start = 0
+            for _ in range(n):
+                idx = region.find(old, start)
+                if idx < 0:
+                    raise RuntimeError(f"{what}: site {n} missing")
+                start = idx + len(old)
+            region2 = region[:idx] + new + region[idx + len(old) :]
+            if region2 == region:
+                raise RuntimeError(f"{what}: no change")
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
         def mut_validate_post_tx_branch_invert(data: bytes) -> bytes:
-            # Both TX branch selectors (slot-side + decode/identity) must flip;
-            # a single-site invert leaves the other live pin and stays GREEN.
+            # Both TX branch selectors (slot-side + decode/identity) must flip.
             s = data.decode("utf-8")
             sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
             p0 = s.find(sig)
@@ -1770,6 +1802,18 @@ def run_self_test(src_root: Path) -> int:
             if region.count(old) < 2:
                 raise RuntimeError("post TX branch sites missing")
             return (s[:p0] + region.replace(old, new) + s[p1:]).encode("utf-8")
+
+        def mut_validate_post_tx_branch_invert_slot_only(data: bytes) -> bytes:
+            # Residual P2 co-pin: invert only the slot-side selector (1st site).
+            return _invert_post_tx_selector_nth(
+                data, 1, "post TX slot-side selector invert"
+            )
+
+        def mut_validate_post_tx_branch_invert_decode_only(data: bytes) -> bytes:
+            # Residual P2 co-pin: invert only the decode/identity selector (2nd).
+            return _invert_post_tx_selector_nth(
+                data, 2, "post TX decode selector invert"
+            )
 
         def mut_recover_preflight_after_open(data: bytes) -> bytes:
             # Move first preflight if after n6_cu_open_storage (order RED).
@@ -2053,6 +2097,18 @@ def run_self_test(src_root: Path) -> int:
             ("struct_validate_rx_order_invert", mut_validate_rx_order_invert),
             ("struct_validate_rx_order_if0", mut_validate_rx_order_if0),
             ("struct_validate_post_tx_branch_invert", mut_validate_post_tx_branch_invert),
+            # Residual P2: each of the two post-TX selectors independently
+            # exact-pinned (slot-side vs decode+identity); single-site invert
+            # must RED even with pin+docs co-update (set membership alone no longer
+            # greenwashes the remaining live site).
+            (
+                "struct_validate_post_tx_branch_invert_slot_only",
+                mut_validate_post_tx_branch_invert_slot_only,
+            ),
+            (
+                "struct_validate_post_tx_branch_invert_decode_only",
+                mut_validate_post_tx_branch_invert_decode_only,
+            ),
         )
         for st_name, mutator in structural_mutators:
             _co_update_store(st_name, mutator)
@@ -2122,8 +2178,9 @@ def run_self_test(src_root: Path) -> int:
         else:
             ok("mask_c_lexical preserves newline positions")
 
-    # Structural RED mutations: 85 (43 prior + 42 rule7b complete-predicate pins).
-    _STRUCT_RED_N = 85
+    # Structural RED mutations: 87 (85 prior + 2 residual-P2 dual post-TX
+    # selector co-pins: slot-side-only invert + decode-only invert).
+    _STRUCT_RED_N = 87
     elapsed = time.perf_counter() - t0
     if fails:
         print(

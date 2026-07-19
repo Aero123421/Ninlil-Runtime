@@ -312,10 +312,10 @@ matrix and does **not** claim the withdrawn “64 structural / 8 green-keep /
 | Docs↔code one-sided pin update RED | 2 | code-only or docs-only pin update |
 | Policy RED | 5 | symlink; non-regular; oversize bound; invalid/traversal path; store-path override |
 | Historical false-green **byte** RED | 8 | multi-declarator; anonymous; tag shadow; consume conditional; pending shadow; secure_zero n/2; stride; unreachable — RED because bytes change, not because of a C parser |
-| RX/TX lane-index structural guard RED | 85 | brace-aware order/condition/return/dimension mutations (window order, cond relax, precheck invert, tx order, admit fence/return strip, layer relax, bare-3, static-assert/drop/comment-only, CU validation/key/decode removal, lane mapping/index swap, true-no-CU AND, complete live preflight predicates, **rule7b full live if-predicate pin** for post filter/op+old_present/vlen/canary/live/side/range/lane/layer/encode/canon key/TX·RX decode+identity+post_u64+order, invert/if0/drop/relax) even with pin co-update |
+| RX/TX lane-index structural guard RED | 87 | brace-aware order/condition/return/dimension mutations (window order, cond relax, precheck invert, tx order, admit fence/return strip, layer relax, bare-3, static-assert/drop/comment-only, CU validation/key/decode removal, lane mapping/index swap, true-no-CU AND, complete live preflight predicates, **rule7b full live if-predicate pin** for post filter/op+old_present/vlen/canary/live/side/range/lane/layer/encode/canon key/TX·RX decode+identity+post_u64+order, invert/if0/drop/relax, **dual exact-pin of both `if (e->post == N6_CU_POST_TX_LIMIT)` selectors** with brace-role association: slot-side then/else must hold TX/RX alloc_side pins; decode then/else must hold TX/RX decode+identity+post_u64+order; single-site invert RED KATs ×2) even with pin co-update |
 | Diagnostic helper smoke | 2 | `check_store_text` empty vs tiny text (not authority) |
 
-Total designed RED cases: **112** (3+9+2+5+8+85). GREEN-keep: **2** (real +
+Total designed RED cases: **114** (3+9+2+5+8+87). GREEN-keep: **2** (real +
 simultaneous). Counts are pin/mutation KATs + brace-aware structural order/
 condition mutations for the 2026-07-19 RX/TX lane-index erratum (not full C AST
 / NLP proof). The `store.c` hash is a **candidate / NOT YET ACCEPTED** pin
