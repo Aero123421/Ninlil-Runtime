@@ -13,8 +13,8 @@
   "crossrow_authority": {
     "path": "spec/vectors/domain-scan-crossrow-v1.json",
     "format": "ninlil-domain-scan-crossrow-v1-d3s2",
-    "sha256": "12c163d8f37dd740ad78fed24bef8cc8aec3c99605a0964c82db849f5184f7ed",
-    "vector_count": 143,
+    "sha256": "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec",
+    "vector_count": 144,
     "note": "Frozen sibling authority; this composition oracle does not append to or rewrite crossrow vectors."
   },
   "workspace": {
