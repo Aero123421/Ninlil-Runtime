@@ -1,7 +1,8 @@
 # ADR-0011: R7 Private Crypto Provider Boundary
 
-状態: **Proposed**  
+状態: **Accepted**  
 提案日: 2026-07-19  
+受入日: 2026-07-19（R7 T0 private crypto provider implementation candidate only）  
 非主張: R7 full codec/W1/L1、M4/M5、ESP実行、RF/USB HIL、Japan legal、production radio
 
 ## Context
@@ -36,7 +37,9 @@ Exact contract、limits、status、test matrix、非主張は [docs/31](../31-r7
 - 一時的に N6 provider と R7 provider の2 private familyが存在する。これは暗黙の ABI 破壊
   より安全だが、重複の統一には別ADR/移行監査が必要。
 - OpenSSL/mbedTLS の保証を越える side-channel claim は行わない。
-- ADR は implementation、全gate、独立監査が完了するまで Proposed のまま。
+- R7 T0 private crypto provider implementation candidateは、push/PR/ESP-IDF CI全成功と
+  独立POST-CI監査 **P0=0 / P1=0 / P2=0 GO**によりAccepted。R7全体の未完了範囲は
+  [docs/31 §12](../31-r7-crypto-provider-and-aead.md)に従う。
 
 ## Rejected alternatives
 
