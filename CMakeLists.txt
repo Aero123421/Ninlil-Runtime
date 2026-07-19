@@ -518,6 +518,21 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
             APPEND PROPERTY COMPILE_OPTIONS ${_r7_compile_opts}
         )
     endforeach()
+    # R7 T1 NRW1 SINGLE pure wire codec: docs/32 §9.8 host candidate ceiling
+    # 2560 static. Adapter/ESP task stack sufficiency is not claimed.
+    foreach(_r7_wire_src IN LISTS NINLIL_R7_WIRE_PORTABLE_RELATIVE_SOURCES)
+        set(_r7_wire_compile_opts -Werror -fstack-usage)
+        if(NOT _ninlil_any_sanitizer_active)
+            list(APPEND _r7_wire_compile_opts -Wframe-larger-than=2560)
+        endif()
+        if(_ninlil_maccumulate_outgoing_args)
+            list(APPEND _r7_wire_compile_opts -maccumulate-outgoing-args)
+        endif()
+        set_property(
+            SOURCE ${_r7_wire_src}
+            APPEND PROPERTY COMPILE_OPTIONS ${_r7_wire_compile_opts}
+        )
+    endforeach()
 endif()
 if(NINLIL_ENABLE_SANITIZERS)
     target_link_options(ninlil_runtime_private INTERFACE
@@ -531,7 +546,9 @@ if(NINLIL_BUILD_TESTS)
         NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM=1
         NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1
         # R7 portable span-overflow seam (docs/31); tests-OFF omits this symbol.
-        NINLIL_R7_CRYPTO_TEST_BUILD=1)
+        NINLIL_R7_CRYPTO_TEST_BUILD=1
+        # T1 wire pairwise-span seam; tests-OFF and production omit this symbol.
+        NINLIL_R7_WIRE_TEST_BUILD=1)
 endif()
 
 # U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
@@ -2480,6 +2497,9 @@ if(NINLIL_BUILD_TESTS)
     # Single authority: cmake/ninlil_r7_crypto_ctest.cmake. Does not claim
     # W1/L1 codec, ESP KAT execution, HIL, or R7 complete.
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_r7_crypto_ctest.cmake)
+    # R7 T1 NRW1 SINGLE pure wire codec (docs/32). Separate nrw1_t1_* CTest
+    # authority; does not weaken T0 r7_* exact 16/15. Not R7 full / W1 / HIL.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_r7_wire_ctest.cmake)
     add_test(
         NAME profile_r5_golden_oracle
         COMMAND ${Python3_EXECUTABLE}
