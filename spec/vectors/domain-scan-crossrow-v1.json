@@ -1,10 +1,10 @@
 {
   "version": 1,
   "format": "ninlil-domain-scan-crossrow-v1-d3s2",
-  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen 100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained; frozen 102-vector pin (100 + Mode25 slice) retained; frozen 104-vector pin (102 + Mode26 slice) retained; frozen 106-vector pin (104 + Mode24 slice) retained; frozen 108-vector pin (106 + Mode23 slice) retained; frozen 110-vector pin (108 + Mode22 slice) retained as append-only prefix; Mode21 slice appends live TRANSACTION_STATE (cumulative_attempts=1, cancel=0) carrier + TX-owned COMMAND ATTEMPT + matching ATTEMPT_ID_INDEX + true ANCHOR: FOCUS_ATTEMPT+FOCUS_INDEX stream (observed A=1/B=0/C=1; true iterator EXHAUSTED count bit0|bit1) + BIND_ATTEMPT (STATE carrier + ANCHOR PVD/raw + INDEX PRESENT pair) + BIND_INDEX (ANCHOR + ATTEMPT PRESENT pair; no STATE re-get) COMPLETE success, and STATE+ANCHOR+ATTEMPT without INDEX under CLEANUP_PLAN PRESENT (cleanup_skip so ordinary INDEX undercount does not preempt BIND) BIND_ATTEMPT INDEX peer ABSENT STORAGE_CORRUPT (note path; primary already proven before pair; BIND_INDEX must not run). Each vector is one mode per independent READ_ONLY txn; baseline once + sequential zero-prefix reopen; stream FOCUS closes only on true iterator EXHAUSTED; SHA256_COMPOSITE ATTEMPT rows complete-key lex sorted; mutation_calls=0. Frozen 113-vector origin/main pin retained (112 + P0-A multi-owner Mode25). P0-B appends Mode26 EVENT_SPOOL resume=1 + MANAGEMENT RESUME mid-FOCUS stream budget stop (B5): FOCUS_MANAGEMENT row_budget derived from fixture OK-row count so the last MANAGEMENT OK is observed then advance stops before NOT_FOUND; call-level checkpoint freezes phase/focus_live/observed/masks/flags/pass_kind/cleanup_skip/last_carrier_key_len + spy begin/iter_open/iter_close/trace_count; next drive resumes same iterator (B6 close; not B11 restart); final SELECT empty\u2192BIND\u2192COMPLETE matches one-shot Mode26 success semantics. Frozen 114-vector origin/main pin retained (113 + P0-B). P0-C appends Mode25 BIND exact_get Port IO_ERROR mid-BIND (after FOCUS known-slot matrix): sticky NINLIL_E_STORAGE / phase FAILED; formal JSON note_count=0 is reference-model only (not a production note_terminal_corrupt call counter); production bridge proves Port fault + STORAGE sticky/FAILED + incomplete BIND + exact trace. Fault is real spy get on_call after baseline 17 + FOCUS 5 peer gets. Frozen 115-vector origin/main pin retained (114 + P0-C). P0-D appends Mode22 unexpected ATTEMPT_ID_INDEX PRESENT (BIND_ATTEMPT ABSENT-peer fail after carrier+primary proven), Mode22 true-primary DELIVERY ABSENT (carrier RC proven first), Mode21 primary PVD mismatch, and Mode21 INDEX pair PRESENT subject/raw mismatch under CLEANUP_PLAN (constructible BIND pair subject residual after primary proven). True-primary raw after PRESENT+typed validate remains identity-tautological/unconstructible under D1 same-record + same READ_ONLY snapshot and is not claimed as P0-D coverage. Mode21 success BIND_INDEX no-STATE companion re-get remains pinned by d3_peer_get_count=7 and exact Port-trace (BIND_INDEX segment exact 2 gets). Frozen 119-vector origin/main pin retained (115 + P0-D). P1-A appends ordinary CLEANUP_PLAN ABSENT stream count failures: Mode21 app ATTEMPT overcount (declared A=0 observed A=1 at FOCUS_ATTEMPT H2), Mode21 cancel ATTEMPT overcount (declared B=0 observed B=1), Mode21 INDEX undercount (FOCUS_ATTEMPT green then FOCUS_INDEX C 0!=1; no CLEANUP skip), Mode22 APPLICATION_FIRST carrier PRESENT declared A=1 empty ATTEMPT band undercount, Mode22 CANCEL_FIRST cancel undercount (declared B=1 observed B=0 via DLV CANCEL_STATE), Mode26 MANAGEMENT overcount (ES resume+discard=0 observed A=1). All STORAGE_CORRUPT semantic findings; faults=[]; single READ_ONLY txn; mutation 0. Same-txn: every d3s2 suffix port_trace has exactly one begin:READ_ONLY; two-txn list-then-count models fail closed (self-test tamper). Frozen 127-vector origin/main pin retained (125 + P1-D evaluator-off). P1-D2 appends Mode21 count-green without BIND set: FOCUS count complete (bit0|bit1) while binding_complete_mask=0 at BIND_ATTEMPT entry (BIND_PHASE_ACTIVE, no COMPLETE_READY, sticky 0); call-level checkpoint freezes phase/masks/flags/pass_kind/last_carrier_key + spy begin/iter_open/iter_close/trace_count; test-only probe_false_terminal_finalize on session/context copy with copy.state=EXHAUSTED expects INVALID_STATE Port0 no cleanup/output mutation; original session resumes BIND\u2192COMPLETE/adopt1. Not orphan CORRUPT / Port fault / evaluator-off / metadata-only. Frozen 128-vector origin/main pin retained (127 + P1-D2). P1-B1 appends \u00a718.13.15 case5 / \u00a718.13.8 Modes22\u201323 only: Mode22 CLEANUP_PLAN PRESENT ordinary-skip positive (RC app>0, empty ATTEMPT band, matching DELIVERY plan \u2192 cleanup_skip=1, no ordinary undercount note, empty BIND COMPLETE/adopt1; checkpoint freezes cleanup_skip=1; Port-trace/get budget pin matching CLEANUP setup get); Mode23 matching TX CLEANUP_PLAN PRESENT still-ordinary negative (cleanup_skip forced 0; STATE PRESENT + known-slot EVIDENCE insufficient \u2192 STORAGE_CORRUPT). Frozen 130-vector origin/main pin retained (128 + P1-B1). P1-B2 appends \u00a718.13.15 case5 residual / \u00a718.13.8 Modes24\u201326 still-ordinary negatives (one formal vector each): Mode24 RC reply_count>0 + matching DELIVERY plan + REVERSE_REPLY known-kind absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode25 CUM total>0 + matching TX plan + RECENT required slot absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode26 ES resume/discard>0 + matching TX plan + MANAGEMENT empty \u2192 cleanup_skip=0 stream undercount STORAGE_CORRUPT. Modes24\u201326 force cleanup_skip=0 without CLEANUP setup get (plan presence via same-snapshot typed row + baseline visit; Port-trace/d3_peer_get_count pin zero extra plan get). Checkpoints freeze cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 existing + 22/23 P1-B1 + 24\u201326 this slice aligned; D3-S2 complete not claimed. Frozen 133-vector origin/main pin retained (130 + P1-B2). P1-C1 appends \u00a718.13.15 cases 3/19 / \u00a718.13.12.1 Mode23: (1) all required slots 0..L coherent empty equation + extra RAW slot L+1 (D1 typed-valid slot<=8, same owner/PVD) \u2192 FOCUS counts green then BIND illegal slot STORAGE_CORRUPT (not mere D1 invalid); (2) equation fail \u2014 all slots 0..L PRESENT, SUMMARY counters D1-valid, valid != M+overflow \u2192 FOCUS close CORRUPT; (3) late coherence fail \u2014 equation green, RAW MATERIALIZED late_material=1 with SUMMARY late_evidence_count=0 (D1 late_mat==(late>0) holds) \u2192 observed_c > declared_c CORRUPT (no false declared_c==observed_c requirement). Also: (4) CANCEL_FIRST + Evidence slot0 \u2192 BIND CORRUPT after carrier get (shape exact-0); (5) multi-owner TX legal 0..L + CANCEL empty with CANCEL last FOCUS (declared_L=0) \u2192 COMPLETE (anti last-declared_L); (6) multi-owner TX legal + CANCEL slot0 with key order STATE<RC and TX EV<EV_DLV \u2192 BIND CORRUPT after legal TX secondaries. Each vector single-txn mutation_calls=0. Frozen 139-vector origin/main pin retained (133 + P1-C1 / PR#70). P1-C2 appends \u00a718.13.15 case3 residual Modes24\u201325 known-slot legality: constructibility \u2014 D1 same-record already rejects reply_kind\u22091..4, CUM slot\u22600, RECENT slot>3 so those are not S2 formal rows; instead D1-valid declared/population shape fails: Mode24 RC reply_count=1 + zero RR undercount; Mode24 reply_count=1 + RECEIPT+DISPOSITION overcount/extra; Mode25 CUM total=1 + zero RECENT undercount; Mode25 CUM total=1 + RECENT cycle1/slot0 + cycle2/slot1 (D1 slot=(cycle-1)mod4) overcount. FOCUS B6k close notes STORAGE_CORRUPT (production declared vs observed compare; no production false COMPLETE; oracle/test-only). Single-txn mutation_calls=0. Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked for expected generation.",
-  "vector_count": 143,
+  "scope": "D3-S2 crossrow sibling oracle (append-only on domain-scan-crossrow-v1): frozen 94-vector D3-S1 exact-1 prefix retained byte-for-byte; frozen 100-vector pin (94 + 6 Mode21..26 empty-carrier smoke) retained; frozen 102-vector pin (100 + Mode25 slice) retained; frozen 104-vector pin (102 + Mode26 slice) retained; frozen 106-vector pin (104 + Mode24 slice) retained; frozen 108-vector pin (106 + Mode23 slice) retained; frozen 110-vector pin (108 + Mode22 slice) retained as append-only prefix; Mode21 slice appends live TRANSACTION_STATE (cumulative_attempts=1, cancel=0) carrier + TX-owned COMMAND ATTEMPT + matching ATTEMPT_ID_INDEX + true ANCHOR: FOCUS_ATTEMPT+FOCUS_INDEX stream (observed A=1/B=0/C=1; true iterator EXHAUSTED count bit0|bit1) + BIND_ATTEMPT (STATE carrier + ANCHOR PVD/raw + INDEX PRESENT pair) + BIND_INDEX (ANCHOR + ATTEMPT PRESENT pair; no STATE re-get) COMPLETE success, and STATE+ANCHOR+ATTEMPT without INDEX under CLEANUP_PLAN PRESENT (cleanup_skip so ordinary INDEX undercount does not preempt BIND) BIND_ATTEMPT INDEX peer ABSENT STORAGE_CORRUPT (note path; primary already proven before pair; BIND_INDEX must not run). Each vector is one mode per independent READ_ONLY txn; baseline once + sequential zero-prefix reopen; stream FOCUS closes only on true iterator EXHAUSTED; SHA256_COMPOSITE ATTEMPT rows complete-key lex sorted; mutation_calls=0. Frozen 113-vector origin/main pin retained (112 + P0-A multi-owner Mode25). P0-B appends Mode26 EVENT_SPOOL resume=1 + MANAGEMENT RESUME mid-FOCUS stream budget stop (B5): FOCUS_MANAGEMENT row_budget derived from fixture OK-row count so the last MANAGEMENT OK is observed then advance stops before NOT_FOUND; call-level checkpoint freezes phase/focus_live/observed/masks/flags/pass_kind/cleanup_skip/last_carrier_key_len + spy begin/iter_open/iter_close/trace_count; next drive resumes same iterator (B6 close; not B11 restart); final SELECT empty\u2192BIND\u2192COMPLETE matches one-shot Mode26 success semantics. Frozen 114-vector origin/main pin retained (113 + P0-B). P0-C appends Mode25 BIND exact_get Port IO_ERROR mid-BIND (after FOCUS known-slot matrix): sticky NINLIL_E_STORAGE / phase FAILED; formal JSON note_count=0 is reference-model only (not a production note_terminal_corrupt call counter); production bridge proves Port fault + STORAGE sticky/FAILED + incomplete BIND + exact trace. Fault is real spy get on_call after baseline 17 + FOCUS 5 peer gets. Frozen 115-vector origin/main pin retained (114 + P0-C). P0-D appends Mode22 unexpected ATTEMPT_ID_INDEX PRESENT (BIND_ATTEMPT ABSENT-peer fail after carrier+primary proven), Mode22 true-primary DELIVERY ABSENT (carrier RC proven first), Mode21 primary PVD mismatch, and Mode21 INDEX pair PRESENT subject/raw mismatch under CLEANUP_PLAN (constructible BIND pair subject residual after primary proven). True-primary raw after PRESENT+typed validate remains identity-tautological/unconstructible under D1 same-record + same READ_ONLY snapshot and is not claimed as P0-D coverage. Mode21 success BIND_INDEX no-STATE companion re-get remains pinned by d3_peer_get_count=7 and exact Port-trace (BIND_INDEX segment exact 2 gets). Frozen 119-vector origin/main pin retained (115 + P0-D). P1-A appends ordinary CLEANUP_PLAN ABSENT stream count failures: Mode21 app ATTEMPT overcount (declared A=0 observed A=1 at FOCUS_ATTEMPT H2), Mode21 cancel ATTEMPT overcount (declared B=0 observed B=1), Mode21 INDEX undercount (FOCUS_ATTEMPT green then FOCUS_INDEX C 0!=1; no CLEANUP skip), Mode22 APPLICATION_FIRST carrier PRESENT declared A=1 empty ATTEMPT band undercount, Mode22 CANCEL_FIRST cancel undercount (declared B=1 observed B=0 via DLV CANCEL_STATE), Mode26 MANAGEMENT overcount (ES resume+discard=0 observed A=1). All STORAGE_CORRUPT semantic findings; faults=[]; single READ_ONLY txn; mutation 0. Same-txn: every d3s2 suffix port_trace has exactly one begin:READ_ONLY; two-txn list-then-count models fail closed (self-test tamper). Frozen 127-vector origin/main pin retained (125 + P1-D evaluator-off). P1-D2 appends Mode21 count-green without BIND set: FOCUS count complete (bit0|bit1) while binding_complete_mask=0 at BIND_ATTEMPT entry (BIND_PHASE_ACTIVE, no COMPLETE_READY, sticky 0); call-level checkpoint freezes phase/masks/flags/pass_kind/last_carrier_key + spy begin/iter_open/iter_close/trace_count; test-only probe_false_terminal_finalize on session/context copy with copy.state=EXHAUSTED expects INVALID_STATE Port0 no cleanup/output mutation; original session resumes BIND\u2192COMPLETE/adopt1. Not orphan CORRUPT / Port fault / evaluator-off / metadata-only. Frozen 128-vector origin/main pin retained (127 + P1-D2). P1-B1 appends \u00a718.13.15 case5 / \u00a718.13.8 Modes22\u201323 only: Mode22 CLEANUP_PLAN PRESENT ordinary-skip positive (RC app>0, empty ATTEMPT band, matching DELIVERY plan \u2192 cleanup_skip=1, no ordinary undercount note, empty BIND COMPLETE/adopt1; checkpoint freezes cleanup_skip=1; Port-trace/get budget pin matching CLEANUP setup get); Mode23 matching TX CLEANUP_PLAN PRESENT still-ordinary negative (cleanup_skip forced 0; STATE PRESENT + known-slot EVIDENCE insufficient \u2192 STORAGE_CORRUPT). Frozen 130-vector origin/main pin retained (128 + P1-B1). P1-B2 appends \u00a718.13.15 case5 residual / \u00a718.13.8 Modes24\u201326 still-ordinary negatives (one formal vector each): Mode24 RC reply_count>0 + matching DELIVERY plan + REVERSE_REPLY known-kind absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode25 CUM total>0 + matching TX plan + RECENT required slot absent \u2192 cleanup_skip=0 STORAGE_CORRUPT; Mode26 ES resume/discard>0 + matching TX plan + MANAGEMENT empty \u2192 cleanup_skip=0 stream undercount STORAGE_CORRUPT. Modes24\u201326 force cleanup_skip=0 without CLEANUP setup get (plan presence via same-snapshot typed row + baseline visit; Port-trace/d3_peer_get_count pin zero extra plan get). Checkpoints freeze cleanup_skip=0 / phase FAILED / FOCUS_LIVE. Case5 Mode21 existing + 22/23 P1-B1 + 24\u201326 this slice aligned; D3-S2 complete not claimed. Frozen 133-vector origin/main pin retained (130 + P1-B2). P1-C1 appends \u00a718.13.15 cases 3/19 / \u00a718.13.12.1 Mode23: (1) all required slots 0..L coherent empty equation + extra RAW slot L+1 (D1 typed-valid slot<=8, same owner/PVD) \u2192 FOCUS counts green then BIND illegal slot STORAGE_CORRUPT (not mere D1 invalid); (2) equation fail \u2014 all slots 0..L PRESENT, SUMMARY counters D1-valid, valid != M+overflow \u2192 FOCUS close CORRUPT; (3) late coherence fail \u2014 equation green, RAW MATERIALIZED late_material=1 with SUMMARY late_evidence_count=0 (D1 late_mat==(late>0) holds) \u2192 observed_c > declared_c CORRUPT (no false declared_c==observed_c requirement). Also: (4) CANCEL_FIRST + Evidence slot0 \u2192 BIND CORRUPT after carrier get (shape exact-0); (5) multi-owner TX legal 0..L + CANCEL empty with CANCEL last FOCUS (declared_L=0) \u2192 COMPLETE (anti last-declared_L); (6) multi-owner TX legal + CANCEL slot0 with key order STATE<RC and TX EV<EV_DLV \u2192 BIND CORRUPT after legal TX secondaries. Each vector single-txn mutation_calls=0. Frozen 139-vector origin/main pin retained (133 + P1-C1 / PR#70). P1-C2 appends \u00a718.13.15 case3 residual Modes24\u201325 known-slot legality: constructibility \u2014 D1 same-record already rejects reply_kind\u22091..4, CUM slot\u22600, RECENT slot>3 so those are not S2 formal rows; instead D1-valid declared/population shape fails: Mode24 RC reply_count=1 + zero RR undercount; Mode24 reply_count=1 + RECEIPT+DISPOSITION overcount/extra; Mode25 CUM total=1 + zero RECENT undercount; Mode25 CUM total=1 + RECENT cycle1/slot0 + cycle2/slot1 (D1 slot=(cycle-1)mod4) overcount. FOCUS B6k close notes STORAGE_CORRUPT (production declared vs observed compare; no production false COMPLETE; oracle/test-only). Single-txn mutation_calls=0. Frozen 143-vector origin/main pin retained (139 + P1-C2). P1-E appends \u00a718.13.15 case11 residual / \u00a718.13.5 B9 H3 Mode26 mid-FOCUS stream iter_next Port IO_ERROR after \u22651 FOCUS OK (budget=1 progress then fault on next): sticky NINLIL_E_STORAGE / phase FAILED / formal JSON note_count=0 reference-model only (not production note call counter); incomplete count/binding masks; no fabricated undercount/orphan CORRUPT path; single READ_ONLY txn; abort; mutation_calls=0. Real spy fault iter_next on_call after baseline+SELECT full walks + 1 FOCUS OK. Complements P0-C Mode25 BIND exact_get Port (case11 BIND path). Does not claim full D3-S2 oracle complete, Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST transport begin forbidden. Independent generator \u2014 production C not invoked for expected generation.",
+  "vector_count": 144,
   "d3s1_prefix_count": 94,
-  "d3s2_suffix_count": 49,
+  "d3s2_suffix_count": 50,
   "d3s2_100_prefix_count": 100,
   "d3s2_102_prefix_count": 102,
   "d3s2_104_prefix_count": 104,
@@ -22,6 +22,7 @@
   "d3s2_130_prefix_count": 130,
   "d3s2_133_prefix_count": 133,
   "d3s2_139_prefix_count": 139,
+  "d3s2_143_prefix_count": 143,
   "required_kinds": [
     "begin_alias_poison",
     "begin_context_null",
@@ -150,6 +151,7 @@
     "mode26_es_resume1_mgmt_resume_anchor_ok",
     "mode26_mgmt_stream_overcount_corrupt",
     "mode26_mgmt_without_es_carrier_absent_corrupt",
+    "mode26_mid_focus_iter_next_port_failure_note0",
     "mode2_present_ok",
     "mode3_present_ok",
     "mode4_present_ok",
@@ -318,6 +320,12 @@
     "content_sha256": "c6e2bfe29e4e319f84133fa60faf180c6db5221d37c854cdd3c0132d520b0f3d",
     "prior_fingerprint_prefix_hash": "456a446a069fb65fed01f81b9ba9556d12a6bbe9796c7e7ed2317a707416e5be",
     "note": "append-only freeze of origin/main (94 D3S1 + 45 d3s2 suffix through P1-C1 / PR#70); P1-C2 Mode24/25 known-slot population legality residual vectors follow"
+  },
+  "d3s2_143_prefix_authority": {
+    "vector_count": 143,
+    "content_sha256": "2311c5443daf34ef7155a8a24b364ceb834fd60ddb5d0c6d5895e4682053f625",
+    "prior_fingerprint_prefix_hash": "02f7aad549d522893bc81338d3a5638a599dc0b6e68ffec0ded975a1c73595b9",
+    "note": "append-only freeze of origin/main (94 D3S1 + 49 d3s2 suffix through P1-C2); P1-E Mode26 mid-FOCUS iter_next Port failure note0 vector follows"
   },
   "prior_fingerprints": [
     {
@@ -1177,11 +1185,17 @@
       "kind": "mode25_cum_total1_recent_extra_slot_overcount_corrupt",
       "mode": 25,
       "fingerprint": "8d99f4f2139c5369da5150c2b0f6434afe111a8e3b565c1886de40c64f44d2a0"
+    },
+    {
+      "id": "D3S2_M26_MID_FOCUS_ITER_NEXT_PORT_FAILURE_NOTE0",
+      "kind": "mode26_mid_focus_iter_next_port_failure_note0",
+      "mode": 26,
+      "fingerprint": "7bd7ca1b5ad1c218b82e4bdce99bea9a9baae79453a75bdf6264bc7e371dfa0b"
     }
   ],
-  "prior_fingerprint_prefix_hash": "02f7aad549d522893bc81338d3a5638a599dc0b6e68ffec0ded975a1c73595b9",
+  "prior_fingerprint_prefix_hash": "bdcc143ce075bfa90f48d1f79a1c24d85139ef133befeefe26a14f4bc40cd282",
   "sha256_procedure": "Do not embed full-file sha256 inside this artifact. Generator `check` proves deterministic rebuild equality against tools/domain_scan_crossrow_d3s2_vector_gen.py and fail-closed freezes the exact 94-vector D3-S1 prefix, the 100-vector prior main, the 102-vector prior main, the 104-vector prior main, the 106-vector prior main, the 108-vector prior main, the 110-vector prior main, the 112-vector prior main, the 113-vector origin/main, the 114-vector origin/main, the 115-vector origin/main, the 119-vector origin/main, the 125-vector origin/main, the 127-vector origin/main, the 128-vector origin/main, the 130-vector origin/main, and the 133-vector origin/main (fingerprint/order/expected/rows/calls/full object equality). content_sha256 covers the document with sha256_procedure/content_sha256 fields set to empty strings before hashing.",
-  "content_sha256": "2311c5443daf34ef7155a8a24b364ceb834fd60ddb5d0c6d5895e4682053f625",
+  "content_sha256": "a9fccb12d932f0082111c94da3a23cd6680dc4bedecb2108e739bdca55d80fed",
   "vectors": [
     {
       "id": "D3S1_M01_SERVICE_QUOTA_PRESENT",
@@ -40078,6 +40092,330 @@
         "count_complete_mask": 0,
         "binding_complete_mask": 0,
         "flags": 3
+      }
+    },
+    {
+      "id": "D3S2_M26_MID_FOCUS_ITER_NEXT_PORT_FAILURE_NOTE0",
+      "kind": "mode26_mid_focus_iter_next_port_failure_note0",
+      "mode": 26,
+      "candidate_binding": {
+        "storage_schema": 1,
+        "role": 1,
+        "environment": 1,
+        "runtime_id_hex": "101112131415161718191a1b1c1d1e1f",
+        "limits": {
+          "max_services": 7,
+          "max_nonterminal_transactions": 20,
+          "max_targets_per_transaction": 1,
+          "max_logical_payload_bytes": 1000,
+          "max_durable_outbox_payload_bytes": 5000,
+          "max_attempts_per_target_per_cycle": 8,
+          "max_cancel_attempts_per_transaction": 1,
+          "max_evidence_per_target": 3,
+          "max_retained_terminal_transactions": 30,
+          "max_nonterminal_deliveries": 12,
+          "max_event_spool_count": 0,
+          "max_event_spool_bytes": 0,
+          "max_result_cache_entries": 13,
+          "max_retained_dispositions": 14,
+          "max_ingress_per_step": 15,
+          "max_callbacks_per_step": 16,
+          "max_state_transitions_per_step": 17,
+          "max_bearer_sends_per_step": 18,
+          "max_deferred_tokens": 19
+        },
+        "terminal_retention_ms": 0,
+        "result_cache_retention_ms": 0,
+        "observation_retention_ms": 0
+      },
+      "rows": [
+        {
+          "key_hex": "4e494e4c494c000101",
+          "value_hex": "4e4c523100010001000000a70000000100194e494e4c494c2d464f554e444154494f4e2d534d414c4c2d31000000010000000100000001101112131415161718191a1b1c1d1e1f000000070000001400000001000003e800000000000013880000000800000001000000030000001e0000000c0000000000000000000000000000000d0000000e0000000f00000010000000110000001200000013000000000000000000000000000000000000000000000000da7d61a6"
+        },
+        {
+          "key_hex": "4e494e4c494c000102",
+          "value_hex": "4e4c5231000200010000004400000007202122232425262728292a2b2c2d2e2f404142434445464748494a4b4c4d4e4f606162636465666768696a6b6c6d6e6f00000000000000010000000000000001f3c229c9"
+        },
+        {
+          "key_hex": "4e494e4c494c00010301",
+          "value_hex": "4e4c5231000300010000001000000001000000000000000000000000f26103c3"
+        },
+        {
+          "key_hex": "4e494e4c494c00010302",
+          "value_hex": "4e4c5231000300010000001000000002000000000000000000000000a3174b6c"
+        },
+        {
+          "key_hex": "4e494e4c494c00010303",
+          "value_hex": "4e4c523100030001000000100000000300000000000000000000000093c57309"
+        },
+        {
+          "key_hex": "4e494e4c494c00010304",
+          "value_hex": "4e4c523100030001000000100000000400000000000000000000000001fbda32"
+        },
+        {
+          "key_hex": "4e494e4c494c00010401",
+          "value_hex": "4e4c5231000400010000003400000001000000000000006b000000000000000000000000000000000000000000000000000000000000000100000000000000007f178337"
+        },
+        {
+          "key_hex": "4e494e4c494c00010402",
+          "value_hex": "4e4c5231000400010000003400000002000000000000006c0000000000000000000000000000000000000000000000000000000000000001000000000000000011d91503"
+        },
+        {
+          "key_hex": "4e494e4c494c00010403",
+          "value_hex": "4e4c5231000400010000003400000003000000000000006d000000000000000000000000000000000000000000000000000000000000000100000000000000006fb64ef1"
+        },
+        {
+          "key_hex": "4e494e4c494c00010404",
+          "value_hex": "4e4c5231000400010000003400000004000000000000006e00000000000000000000000000000000000000000000000000000000000000010000000000000000fd29c1fc"
+        },
+        {
+          "key_hex": "4e494e4c494c00010405",
+          "value_hex": "4e4c5231000400010000003400000005000000000000006f0000000000000000000000000000000000000000000000000000000000000001000000000000000083469a0e"
+        },
+        {
+          "key_hex": "4e494e4c494c00010406",
+          "value_hex": "4e4c52310004000100000034000000060000000000000070000000000000000000000000000000000000000000000000000000000000000100000000000000008f53fd14"
+        },
+        {
+          "key_hex": "4e494e4c494c00010407",
+          "value_hex": "4e4c5231000400010000003400000007000000000000007100000000000000000000000000000000000000000000000000000000000000010000000000000000f13ca6e6"
+        },
+        {
+          "key_hex": "4e494e4c494c00010408",
+          "value_hex": "4e4c523100040001000000340000000800000000000000720000000000000000000000000000000000000000000000000000000000000001000000000000000043ffefdd"
+        },
+        {
+          "key_hex": "4e494e4c494c00010409",
+          "value_hex": "4e4c52310004000100000034000000090000000000000073000000000000000000000000000000000000000000000000000000000000000100000000000000003d90b42f"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040a",
+          "value_hex": "4e4c523100040001000000340000000a000000000000007400000000000000000000000000000000000000000000000000000000000000010000000000000000535e221b"
+        },
+        {
+          "key_hex": "4e494e4c494c0001040b",
+          "value_hex": "4e4c523100040001000000340000000b0000000000000075000000000000000000000000000000000000000000000000000000000000000100000000000000002d3179e9"
+        },
+        {
+          "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+          "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d"
+        },
+        {
+          "key_hex": "4e494e4c494c0001065001021071000000000000000000000000000099",
+          "value_hex": "4e4c5231000600010000018c00015000000000000000000171000000000000000000000000000099e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea0000012c71000000000000000000000000000099b10000000000000000000000000000b2000000000000000100000001000000000000000000000001e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3c10000000000000000000000000000c20000000000000001e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4d10000000000000000000000000000d20000000000000001f10000000000000000000000000000f20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f82136ab3e421d"
+        },
+        {
+          "key_hex": "4e494e4c494c00010652010520f264bdc39a8a6d79ef330c28e323d8a9c5fb4ade10462c6268614b7184eeb02b",
+          "value_hex": "4e4c523100060001000001cc00015200000000000000000171000000000000000000000000000099e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea0000016cb00000000000000000000000000000b1000f0000000000000000000171000000000000000000000000000099c00000000000000000000000000000c1d00000000000000000000000000000d188f85b52e888836d383519e097ad132d61856178b277f3c45e559764c1d13d7700000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000001000041000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000100000000000000020000000000000000ef8c8f41"
+        }
+      ],
+      "alt_rows": {},
+      "faults": [
+        {
+          "op": "iter_next",
+          "on_call": 44,
+          "status": "IO_ERROR",
+          "shape": "natural"
+        }
+      ],
+      "calls": [
+        {
+          "op": "begin_profiled_d3s2",
+          "mode": 26,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "OK"
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 1,
+          "expected_status": "OK",
+          "has_checkpoint": 1,
+          "cp_phase": 8,
+          "cp_focus_live": 1,
+          "cp_observed_a": 0,
+          "cp_observed_b": 0,
+          "cp_observed_c": 0,
+          "cp_count_complete_mask": 0,
+          "cp_binding_complete_mask": 0,
+          "cp_flags": 3,
+          "cp_pass_kind": 1,
+          "cp_cleanup_skip": 0,
+          "cp_last_carrier_key_len": 29,
+          "cp_last_carrier_key_hex": "4e494e4c494c0001065001021071000000000000000000000000000099",
+          "cp_begin_calls": 1,
+          "cp_iter_open_calls": 3,
+          "cp_iter_close_calls": 2,
+          "cp_trace_count": 66
+        },
+        {
+          "op": "d3s2_drive",
+          "row_budget": 256,
+          "expected_status": "STORAGE"
+        },
+        {
+          "op": "abort",
+          "expected_status": "STORAGE"
+        }
+      ],
+      "d1_refs": [
+        "DSB3_ES_ACTIVE_TYPED",
+        "DSB3_ML_R_RSN1_TYPED",
+        "DSB2_ANCHOR_TYPED"
+      ],
+      "source_ref": {
+        "binding": "d1",
+        "id": "DSB3_ES_ACTIVE_TYPED",
+        "key_hex": "4e494e4c494c0001065001021071000000000000000000000000000099",
+        "value_hex": "4e4c5231000600010000018c00015000000000000000000171000000000000000000000000000099e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea0000012c71000000000000000000000000000099b10000000000000000000000000000b2000000000000000100000001000000000000000000000001e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3c10000000000000000000000000000c20000000000000001e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4d10000000000000000000000000000d20000000000000001f10000000000000000000000000000f20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f82136ab3e421d",
+        "mutations": [
+          {
+            "offset": 0,
+            "old_hex": "4e4c5231000600010000018c00015000000000000000000171000000000000000000000000000099e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e20000012c71000000000000000000000000000099b10000000000000000000000000000b2000000000000000100000001000000000000000000000001e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3c10000000000000000000000000000c20000000000000001e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4d10000000000000000000000000000d20000000000000001f10000000000000000000000000000f20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213689bbd63d",
+            "new_hex": "4e4c5231000600010000018c00015000000000000000000171000000000000000000000000000099e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea0000012c71000000000000000000000000000099b10000000000000000000000000000b2000000000000000100000001000000000000000000000001e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3c10000000000000000000000000000c20000000000000001e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4d10000000000000000000000000000d20000000000000001f10000000000000000000000000000f20000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f82136ab3e421d",
+            "recompute": "crc32c_trailer",
+            "directive": "replace_complete_value_recrc"
+          }
+        ],
+        "expect_presence": "PRESENT",
+        "note": "Mode26 carrier EVENT_SPOOL; FOCUS_MANAGEMENT live when mid-stream iter_next Port IO_ERROR injects"
+      },
+      "peer_ref": {
+        "binding": "d1",
+        "id": "DSB2_ANCHOR_TYPED",
+        "key_hex": "4e494e4c494c0001062001021071000000000000000000000000000099",
+        "value_hex": "4e4c523100060001000002fd00012000000000000000000171000000000000000000000000000099444444444444444444444444444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000000000000000029d710000000000000000000000000000990000000000000001000000000000000200000002b1000000000000000000000000000002a100000000000000000000000000000100000005e100000000000000000000000000000500000000000000000000000000000000f1000000000000000000000000000006000000000000000100000000000000020761636d652e6e73047376633107736368656d613100000000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690af6e0b559ae00010000000000024d7459b3eb4d7c8f99bbbf2baafb44db2dfdf2843ee16e956385a7dd0718bf16158e0a9b13bb17a29268c159dc9eaf3ade71d809dd6d06cab6322a0b8428fad00000000000000000000000000000000000000000000000011100000000000000000000000000002200000000000003e81100000000000000000000000000002200000000000023280000000000000032000000010000000100000005c1000000000000000000000000000003d1000000000000000000000000000004e100000000000000000000000000000500000000000000000000000000000000f100000000000000000000000000000600000000000000010000000000000002001da10000000000000000000000000000010761636d652e6e730473766331000b6964656d2d6b65792d3031e5bf5bca82c3b3c5c0dda76fae30517eb4dcc58c35a37e9c70a4c6e4f6fcb7877e63d97c45cd53efc1b55efe0299ad8c6df299076221cd9bc089d48b5d6e443800000000000000000000000000000000000000000000000000000000000000007425c8e9e365a852e26e8f7673848740178422ecc859730939b9cc7568f8213600000000000000029d724bdfbcea98c39359a7a7d3cb0ffe9dbc45ebb0c40026bc18cc2268d79efe06b1fd5d",
+        "mutations": [],
+        "expect_presence": "PRESENT",
+        "note": "true primary ANCHOR present; BIND must not run after Port"
+      },
+      "row_refs": [
+        {
+          "binding": "d1",
+          "id": "DSB3_ML_R_RSN1_TYPED",
+          "key_hex": "4e494e4c494c00010652010520f264bdc39a8a6d79ef330c28e323d8a9c5fb4ade10462c6268614b7184eeb02b",
+          "value_hex": "4e4c523100060001000001cc00015200000000000000000171000000000000000000000000000099e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea0000016cb00000000000000000000000000000b1000f0000000000000000000171000000000000000000000000000099c00000000000000000000000000000c1d00000000000000000000000000000d188f85b52e888836d383519e097ad132d61856178b277f3c45e559764c1d13d7700000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000001000041000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000100000000000000020000000000000000ef8c8f41",
+          "mutations": [
+            {
+              "offset": 72,
+              "old_hex": "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2",
+              "new_hex": "f41065f57ad189c9180bf7c05aa28850b48474eaa1fc81dad3812198dd60bcea",
+              "recompute": "crc32c_trailer",
+              "directive": "write_pvd_then_crc32c"
+            }
+          ],
+          "expect_presence": "PRESENT",
+          "note": "MANAGEMENT RESUME secondary material; mid-FOCUS Port stops before H2 compare/undercount note"
+        }
+      ],
+      "notes": "P1-E formal (\u00a718.13.15 case11 residual / \u00a718.13.5 B9 H3): Mode26 success material through BASELINE+SELECT into FOCUS_MANAGEMENT with focus_live; row_budget=1 observes \u22651 FOCUS OK so the fault is mid-FOCUS (not first next); call-level checkpoint freezes phase FOCUS_MANAGEMENT / PASS_INTERNAL / FOCUS_LIVE / observed_a=0 (budget=1 first zero-prefix OK is non-MANAGEMENT; match later) / incomplete masks / last_carrier ES key / begin=1 open=3 close=2 trace pin (same live txn). Next iter_next Port IO_ERROR. sticky STORAGE / phase FAILED / note_count=0 \u2014 must not fabricate undercount or orphan via note_terminal_corrupt (sticky is STORAGE not STORAGE_CORRUPT). count_complete_mask=0 / binding_complete_mask=0 / d3_peer_get_count=0. Real spy fault iter_next on_call=44 (21 baseline + 21 SELECT + 1 FOCUS OK + 1). Single READ_ONLY txn; abort; mutation_calls=0. Complements P0-C Mode25 BIND exact_get Port. Independent Python only. Not D3-S2 complete claim.",
+      "ownership": "D3-S2 independent crossrow oracle (tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; not Stage5 bridge; not D3-S2 complete claim (50-vector suffix on frozen 143-prefix only)",
+      "expected": {
+        "final_status": "STORAGE",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,
+        "ok_row_count": 20,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 131071,
+        "family14_iter_seen_mask": 131071,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": 3,
+        "port_trace": [
+          "begin:READ_ONLY",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "get",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "iter_open:prefix0",
+          "iter_next",
+          "iter_next",
+          "iter_close",
+          "rollback"
+        ],
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE",
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": 16,
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        "flags": 3,
+        "note_count": 0
       }
     }
   ]

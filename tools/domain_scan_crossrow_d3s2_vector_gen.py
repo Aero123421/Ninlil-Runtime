@@ -104,6 +104,13 @@ produced by tools/domain_scan_crossrow_vector_gen.py:
     D1-valid RECENT population under/over (missing or extra cycle/slot
     with correct body arithmetic). FOCUS known-slot/kind close notes
     STORAGE_CORRUPT; production already compare-fails (no false COMPLETE).
+  * P1-E slice (§18.13.15 case 11 / §18.13.5 B9 H3 residual): Mode26
+    mid-FOCUS stream iter_next Port IO_ERROR after ≥1 FOCUS OK — sticky
+    NINLIL_E_STORAGE / phase FAILED / note_count=0 (reference model only;
+    not a production note_terminal_corrupt call counter); incomplete
+    focus/count/bind masks; no fabricated undercount or orphan CORRUPT;
+    single READ_ONLY txn; mutation_calls=0. Complements P0-C Mode25 BIND
+    exact_get Port (case11 BIND path). Independent Python expected only.
 
 Does NOT invoke, import, link, or translate production C scanner/codec.
 Does NOT claim full D3-S2 oracle complete (docs/17 §18.13.4 / .5 / .9 / .15).
@@ -153,6 +160,7 @@ D3S2_P1B1_SLICE_COUNT = 2
 D3S2_P1B2_SLICE_COUNT = 3
 D3S2_P1C1_SLICE_COUNT = 6
 D3S2_P1C2_SLICE_COUNT = 4
+D3S2_P1E_SLICE_COUNT = 1
 D3S2_SUFFIX_COUNT = (
     D3S2_SMOKE_COUNT
     + D3S2_MODE25_SLICE_COUNT
@@ -172,8 +180,9 @@ D3S2_SUFFIX_COUNT = (
     + D3S2_P1B2_SLICE_COUNT
     + D3S2_P1C1_SLICE_COUNT
     + D3S2_P1C2_SLICE_COUNT
-)  # 49
-EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 143
+    + D3S2_P1E_SLICE_COUNT
+)  # 50
+EXPECTED_VECTOR_COUNT = D3S1_PREFIX_COUNT + D3S2_SUFFIX_COUNT  # 144
 D3S2_100_PREFIX_COUNT = D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT  # 100
 D3S2_102_PREFIX_COUNT = (
     D3S1_PREFIX_COUNT + D3S2_SMOKE_COUNT + D3S2_MODE25_SLICE_COUNT
@@ -547,6 +556,36 @@ D3S2_139_CONTENT_SHA256 = (
 D3S2_139_FINGERPRINT_HASH = (
     "456a446a069fb65fed01f81b9ba9556d12a6bbe9796c7e7ed2317a707416e5be"
 )
+# Frozen 143-vector append-only prefix (139 + P1-C2) — origin/main before P1-E.
+# content hash + fingerprint chain from origin/main 143-vector artifact
+# (full-object prefix absolute invariant before mid-FOCUS Port case11).
+D3S2_143_PREFIX_COUNT = (
+    D3S1_PREFIX_COUNT
+    + D3S2_SMOKE_COUNT
+    + D3S2_MODE25_SLICE_COUNT
+    + D3S2_MODE26_SLICE_COUNT
+    + D3S2_MODE24_SLICE_COUNT
+    + D3S2_MODE23_SLICE_COUNT
+    + D3S2_MODE22_SLICE_COUNT
+    + D3S2_MODE21_SLICE_COUNT
+    + D3S2_P0A_SLICE_COUNT
+    + D3S2_P0B_SLICE_COUNT
+    + D3S2_P0C_SLICE_COUNT
+    + D3S2_P0D_SLICE_COUNT
+    + D3S2_P1A_SLICE_COUNT
+    + D3S2_P1D_SLICE_COUNT
+    + D3S2_P1D2_SLICE_COUNT
+    + D3S2_P1B1_SLICE_COUNT
+    + D3S2_P1B2_SLICE_COUNT
+    + D3S2_P1C1_SLICE_COUNT
+    + D3S2_P1C2_SLICE_COUNT
+)  # 143 (origin/main freeze before P1-E)
+D3S2_143_CONTENT_SHA256 = (
+    "2311c5443daf34ef7155a8a24b364ceb834fd60ddb5d0c6d5895e4682053f625"
+)
+D3S2_143_FINGERPRINT_HASH = (
+    "02f7aad549d522893bc81338d3a5638a599dc0b6e68ffec0ded975a1c73595b9"
+)
 
 
 # D1 authority pins for Mode25 material (independent of production C).
@@ -816,6 +855,11 @@ D3S2_P1C2_KINDS = frozenset(
         "mode25_cum_total1_recent_extra_slot_overcount_corrupt",
     }
 )
+D3S2_P1E_KINDS = frozenset(
+    {
+        "mode26_mid_focus_iter_next_port_failure_note0",
+    }
+)
 D3S2_REQUIRED_KINDS = (
     D3S2_SMOKE_KINDS
     | D3S2_MODE25_KINDS
@@ -835,6 +879,7 @@ D3S2_REQUIRED_KINDS = (
     | D3S2_P1B2_KINDS
     | D3S2_P1C1_KINDS
     | D3S2_P1C2_KINDS
+    | D3S2_P1E_KINDS
 )
 
 SCANNER_CALL_OPS = frozenset(
@@ -1089,6 +1134,15 @@ SCOPE = (
     "(cycle-1)mod4) overcount. FOCUS B6k close notes STORAGE_CORRUPT "
     "(production declared vs observed compare; no production false "
     "COMPLETE; oracle/test-only). Single-txn mutation_calls=0. "
+    "Frozen 143-vector origin/main pin retained (139 + P1-C2). P1-E appends "
+    "§18.13.15 case11 residual / §18.13.5 B9 H3 Mode26 mid-FOCUS stream "
+    "iter_next Port IO_ERROR after ≥1 FOCUS OK (budget=1 progress then "
+    "fault on next): sticky NINLIL_E_STORAGE / phase FAILED / formal JSON "
+    "note_count=0 reference-model only (not production note call counter); "
+    "incomplete count/binding masks; no fabricated undercount/orphan "
+    "CORRUPT path; single READ_ONLY txn; abort; mutation_calls=0. Real spy "
+    "fault iter_next on_call after baseline+SELECT full walks + 1 FOCUS OK. "
+    "Complements P0-C Mode25 BIND exact_get Port (case11 BIND path). "
     "Does not claim full D3-S2 oracle complete, "
     "Stage5 D3 bind, D4, public Runtime, ESP-IDF, or hardware. TEST "
     "transport begin forbidden. Independent generator — production C not "
@@ -1235,6 +1289,14 @@ OWNERSHIP_P1C2 = (
     "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
     "not Stage5 bridge; not D3-S2 complete claim "
     "(49-vector suffix on frozen 139-prefix only)"
+)
+# P1-E ownership (50-vector suffix at P1-E append time). Hardcoded 50 so a
+# later append does not rewrite published P1-E objects.
+OWNERSHIP_P1E = (
+    "D3-S2 independent crossrow oracle "
+    "(tools/domain_scan_crossrow_d3s2_vector_gen.py); not production C; "
+    "not Stage5 bridge; not D3-S2 complete claim "
+    "(50-vector suffix on frozen 143-prefix only)"
 )
 
 
@@ -9185,6 +9247,351 @@ def build_d3s2_p1c2_slice_vectors() -> List[Dict[str, Any]]:
     return vectors
 
 
+
+# ---------------------------------------------------------------------------
+# P1-E Mode26 mid-FOCUS iter_next Port failure note0 (§18.13.15 case11 / B9)
+# ---------------------------------------------------------------------------
+
+
+def run_d3s2_mode26_mid_focus_iter_next_port_failure_note0(
+    binding: Dict[str, Any], rows: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Mode26 mid-FOCUS iter_next Port terminal → sticky STORAGE, note_count=0.
+
+    Independent reference model (docs/17 §18.13.5 B9 / §18.13.15 case11):
+      Same material as Mode26 ES resume=1 + MANAGEMENT RESUME + ANCHOR success
+      through BASELINE + SELECT carrier install into FOCUS_MANAGEMENT with
+      focus_live, then one FOCUS OK (row_budget=1) so the fault is mid-FOCUS
+      (not the first next). Call-level checkpoint freezes that mid-FOCUS shape
+      (phase/pass/flags/observed/masks/last_carrier/spy counts; same txn).
+      Next iter_next returns IO_ERROR. Sticky NINLIL_E_STORAGE / phase FAILED;
+      note_terminal_corrupt is NOT used (no fabricated undercount/orphan
+      CORRUPT note). Incomplete count_complete_mask / binding_complete_mask;
+      abort.
+
+    Fault: iter_next on_call = 21 baseline + 21 SELECT + 1 FOCUS OK + 1 = 44.
+    Single READ_ONLY txn; mutation_calls=0; d3_peer_get_count=0 (FOCUS stream
+    uses no exact_get; BIND never starts).
+    """
+    n_ok = _fixture_ok_row_count(rows)
+    if n_ok != 20:
+        raise SystemExit(
+            f"mode26 mid-focus port-fail expects 20 OK rows (17+3), got {n_ok}"
+        )
+    # ES carrier complete key (Mode26 live EVENT_SPOOL) for checkpoint pin.
+    es_rows = [
+        r
+        for r in rows
+        if len(from_hex(r["key_hex"])) >= 10
+        and from_hex(r["key_hex"])[8] == 6
+        and from_hex(r["key_hex"])[9] == 0x50  # EVENT_SPOOL subtype
+    ]
+    if len(es_rows) != 1:
+        raise SystemExit(
+            f"mode26 mid-focus port-fail expects exactly 1 ES carrier, "
+            f"got {len(es_rows)}"
+        )
+    es_key = from_hex(es_rows[0]["key_hex"])
+    es_key_len = len(es_key)
+    if es_key_len == 0 or es_key_len > 45:
+        raise SystemExit(
+            f"mode26 mid-focus port-fail ES key_len invalid: {es_key_len}"
+        )
+
+    n_drive = 4
+    n_open = 3  # begin open + SELECT reopen + FOCUS reopen; abort closes last
+    # Fault after full baseline walk + full SELECT walk + one FOCUS OK.
+    next_on_call = (n_ok + 1) + (n_ok + 1) + 1 + 1
+
+    walk = _walk_trace_segment(n_ok)
+    port_trace: List[str] = _begin_profile_port_prefix()
+    # drive1 BASELINE
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive2 SELECT carrier → reopen FOCUS stream
+    port_trace.append("iter_open:prefix0")
+    port_trace.extend(walk)
+    port_trace.append("iter_close")
+    # drive3 FOCUS_MANAGEMENT: one OK (mid-FOCUS progress; not first-next fault)
+    port_trace.append("iter_open:prefix0")
+    port_trace.append("iter_next")  # ≥1 OK observed
+    # Checkpoint freezes production context/spy after the successful budget=1.
+    cp_trace_count = len(port_trace)
+    # Spy counts at budget=1 mid-FOCUS checkpoint (after drive3):
+    # begin open + SELECT reopen + FOCUS reopen = 3 opens;
+    # baseline close + SELECT close = 2 closes; begin_calls = 1 (same txn).
+    cp_begin_calls = 1
+    cp_iter_open_calls = 3
+    cp_iter_close_calls = 2
+
+    checkpoint_drive: Dict[str, Any] = {
+        "op": "d3s2_drive",
+        "row_budget": 1,
+        "expected_status": "OK",
+        "has_checkpoint": 1,
+        "cp_phase": PHASE_FOCUS_MANAGEMENT,
+        "cp_focus_live": 1,
+        # budget=1 consumes one zero-prefix OK (first profile key); MANAGEMENT
+        # match is later in lex order, so observed_a stays 0. Mid-FOCUS is
+        # proven by phase/focus_live + one successful next, not observed yet.
+        "cp_observed_a": 0,
+        "cp_observed_b": 0,
+        "cp_observed_c": 0,
+        "cp_count_complete_mask": 0,  # mid-FOCUS: no H2 close yet
+        "cp_binding_complete_mask": 0,
+        "cp_flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        "cp_pass_kind": PASS_INTERNAL,
+        "cp_cleanup_skip": 0,
+        "cp_last_carrier_key_len": es_key_len,
+        "cp_last_carrier_key_hex": hex_of(es_key),
+        "cp_begin_calls": cp_begin_calls,
+        "cp_iter_open_calls": cp_iter_open_calls,
+        "cp_iter_close_calls": cp_iter_close_calls,
+        "cp_trace_count": cp_trace_count,
+    }
+
+    calls: List[Dict[str, Any]] = [
+        {"op": "begin_profiled_d3s2", "mode": 26, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        {"op": "d3s2_drive", "row_budget": 256, "expected_status": "OK"},
+        checkpoint_drive,
+        {
+            "op": "d3s2_drive",
+            "row_budget": 256,
+            "expected_status": "STORAGE",
+        },
+        {"op": "abort", "expected_status": "STORAGE"},
+    ]
+    if sum(1 for c in calls if c["op"] == "d3s2_drive") != n_drive:
+        raise SystemExit("mode26 mid-focus port-fail drive count drift")
+    if sum(1 for c in calls if int(c.get("has_checkpoint", 0)) == 1) != 1:
+        raise SystemExit("mode26 mid-focus port-fail expects one checkpoint")
+    if int(checkpoint_drive["cp_phase"]) != PHASE_FOCUS_MANAGEMENT:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint phase must be FOCUS_MANAGEMENT"
+        )
+    if int(checkpoint_drive["cp_focus_live"]) != 1:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint must freeze focus_live=1"
+        )
+    if int(checkpoint_drive["cp_observed_a"]) != 0:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint must freeze observed_a=0 "
+            "(budget=1 has not yet reached MANAGEMENT match)"
+        )
+    if int(checkpoint_drive["cp_count_complete_mask"]) != 0:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint count mask must be 0"
+        )
+    if int(checkpoint_drive["cp_binding_complete_mask"]) != 0:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint binding mask must be 0"
+        )
+    if (int(checkpoint_drive["cp_flags"]) & FLAG_FOCUS_LIVE) == 0:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint must set FOCUS_LIVE"
+        )
+    if (int(checkpoint_drive["cp_flags"]) & FLAG_COMPLETE_READY) != 0:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint must not set COMPLETE_READY"
+        )
+    if int(checkpoint_drive["cp_pass_kind"]) != PASS_INTERNAL:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint pass_kind must be INTERNAL"
+        )
+    if int(checkpoint_drive["cp_begin_calls"]) != 1:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint begin_calls must be 1"
+        )
+
+    # drive4: next Port IO_ERROR (recorded) then abort cleanup
+    port_trace.append("iter_next")  # Port IO_ERROR
+    port_trace.append("iter_close")  # abort cleanup
+    port_trace.append("rollback")
+
+    if port_trace.count("begin:READ_ONLY") != 1:
+        raise SystemExit("mode26 mid-focus port-fail must be single-txn")
+    if port_trace.count("iter_next") != next_on_call:
+        raise SystemExit(
+            f"mode26 mid-focus port-fail next count drift: "
+            f"{port_trace.count('iter_next')} != {next_on_call}"
+        )
+    if port_trace.count("get") != 17:
+        raise SystemExit(
+            f"mode26 mid-focus port-fail get count drift: "
+            f"{port_trace.count('get')}"
+        )
+    if port_trace.count("iter_open:prefix0") != n_open:
+        raise SystemExit("mode26 mid-focus port-fail open count drift")
+    # Mid-FOCUS exclusive window after third open: OK next then Port next.
+    open_idxs = [
+        i for i, t in enumerate(port_trace) if t == "iter_open:prefix0"
+    ]
+    if len(open_idxs) != 3:
+        raise SystemExit("mode26 mid-focus port-fail open index drift")
+    focus_open = open_idxs[2]
+    if port_trace[focus_open + 1 : focus_open + 3] != [
+        "iter_next",
+        "iter_next",
+    ]:
+        raise SystemExit(
+            "mode26 mid-focus port-fail FOCUS must be OK next then Port next"
+        )
+    if cp_trace_count != focus_open + 2:
+        raise SystemExit(
+            "mode26 mid-focus port-fail checkpoint trace_count must pin "
+            "after the single FOCUS OK next"
+        )
+
+    expected: Dict[str, Any] = {
+        "final_status": "STORAGE",
+        "adopted": 0,
+        "state_after": "DONE",
+        "recognizable_future_seen": 0,
+        "family14_row_count": 17,
+        "current_domain_key_count": 3,  # ANCHOR + ES + MANAGEMENT (baseline freeze)
+        "ok_row_count": 20,
+        "profile_exact_active": 1,
+        "profile_mismatch": 0,
+        "future_profile_candidate": 0,
+        "profile_get_present_mask": 0x1FFFF,
+        "family14_iter_seen_mask": 0x1FFFF,
+        "reopen_required": 0,
+        "close_count": 0,
+        "mutation_calls": 0,
+        "iter_open_count": n_open,
+        "port_trace": port_trace,
+        "has_sticky_primary": 1,
+        "sticky_primary": "STORAGE",
+        # FOCUS stream uses 0 exact_get; BIND never starts
+        "d3_peer_get_count": 0,
+        "d3_mode_applicable_count": 0,
+        "phase": PHASE_FAILED,
+        # Incomplete FOCUS: no MANAGEMENT count bit; no BIND
+        "count_complete_mask": 0,
+        "binding_complete_mask": 0,
+        # mid-FOCUS Port: FOCUS_LIVE retained (not cleared on H3 sticky)
+        "flags": FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE,
+        # Formal reference-model only (not production call-count).
+        "note_count": 0,
+    }
+    if rows != sorted(rows, key=lambda r: from_hex(r["key_hex"])):
+        raise SystemExit("mode26 mid-focus port-fail rows must be key-sorted")
+    _ = binding
+    _ = next_on_call  # mirrored in vector faults[]
+    return calls, expected
+
+
+def build_d3s2_p1e_slice_vectors() -> List[Dict[str, Any]]:
+    """P1-E append-only slice (1 vector) after the frozen 143-prefix."""
+    binding = _d3s1.default_binding_fields()
+    vectors: List[Dict[str, Any]] = []
+
+    rows, named, _pvd = _mode26_material_rows(
+        include_es=True, resume=1, discard=0
+    )
+    es_r, es_d = _parse_es_resume_discard(from_hex(named["es"]["value_hex"]))
+    if es_r != 1 or es_d != 0:
+        raise SystemExit(
+            f"P1-E Mode26 ES must declare resume=1 discard=0, got {es_r}/{es_d}"
+        )
+    n_ok = _fixture_ok_row_count(rows)
+    if n_ok != 20:
+        raise SystemExit(f"P1-E fixture OK rows must be 20, got {n_ok}")
+    calls, exp = run_d3s2_mode26_mid_focus_iter_next_port_failure_note0(
+        binding, rows
+    )
+    if int(exp.get("note_count", -1)) != 0:
+        raise SystemExit("P1-E expected note_count must be 0")
+    if exp.get("sticky_primary") != "STORAGE":
+        raise SystemExit("P1-E sticky must be STORAGE (not CORRUPT note path)")
+    if exp["port_trace"].count("begin:READ_ONLY") != 1:
+        raise SystemExit("P1-E port_trace must be single-txn")
+    if int(exp.get("count_complete_mask", -1)) != 0:
+        raise SystemExit("P1-E count_complete_mask must be incomplete (0)")
+    if int(exp.get("binding_complete_mask", -1)) != 0:
+        raise SystemExit("P1-E binding_complete_mask must be incomplete (0)")
+    if int(exp.get("d3_peer_get_count", -1)) != 0:
+        raise SystemExit("P1-E peer gets must be 0 (mid-FOCUS, no BIND)")
+    next_on_call = (n_ok + 1) + (n_ok + 1) + 1 + 1
+    vectors.append(
+        {
+            "id": "D3S2_M26_MID_FOCUS_ITER_NEXT_PORT_FAILURE_NOTE0",
+            "kind": "mode26_mid_focus_iter_next_port_failure_note0",
+            "mode": 26,
+            "candidate_binding": copy.deepcopy(binding),
+            "rows": copy.deepcopy(rows),
+            "alt_rows": {},
+            "faults": [
+                {
+                    "op": "iter_next",
+                    "on_call": next_on_call,
+                    "status": "IO_ERROR",
+                    "shape": "natural",
+                }
+            ],
+            "calls": calls,
+            "d1_refs": [D1_ES_ID, D1_ML_ID, D1_ANCHOR_ID],
+            "source_ref": _d3s1.d1_ref_from_id(
+                D1_ES_ID,
+                row=named["es"],
+                expect_presence="PRESENT",
+                note=(
+                    "Mode26 carrier EVENT_SPOOL; FOCUS_MANAGEMENT live when "
+                    "mid-stream iter_next Port IO_ERROR injects"
+                ),
+            ),
+            "peer_ref": _d3s1.d1_ref_from_id(
+                D1_ANCHOR_ID,
+                row=named["anchor"],
+                expect_presence="PRESENT",
+                note="true primary ANCHOR present; BIND must not run after Port",
+            ),
+            "row_refs": [
+                _d3s1.d1_ref_from_id(
+                    D1_ML_ID,
+                    row=named["mgmt"],
+                    expect_presence="PRESENT",
+                    note=(
+                        "MANAGEMENT RESUME secondary material; mid-FOCUS Port "
+                        "stops before H2 compare/undercount note"
+                    ),
+                )
+            ],
+            "notes": (
+                "P1-E formal (§18.13.15 case11 residual / §18.13.5 B9 H3): "
+                "Mode26 success material through BASELINE+SELECT into "
+                "FOCUS_MANAGEMENT with focus_live; row_budget=1 observes ≥1 "
+                "FOCUS OK so the fault is mid-FOCUS (not first next); "
+                "call-level checkpoint freezes phase FOCUS_MANAGEMENT / "
+                "PASS_INTERNAL / FOCUS_LIVE / observed_a=0 (budget=1 first "
+                "zero-prefix OK is non-MANAGEMENT; match later) / incomplete "
+                "masks / last_carrier ES key / begin=1 open=3 close=2 "
+                "trace pin (same live txn). Next iter_next Port IO_ERROR. "
+                "sticky STORAGE / phase FAILED / note_count=0 — must not "
+                "fabricate undercount or orphan via note_terminal_corrupt "
+                "(sticky is STORAGE not STORAGE_CORRUPT). "
+                "count_complete_mask=0 / binding_complete_mask=0 / "
+                "d3_peer_get_count=0. Real spy fault iter_next on_call=44 "
+                "(21 baseline + 21 SELECT + 1 FOCUS OK + 1). Single READ_ONLY "
+                "txn; abort; mutation_calls=0. Complements P0-C Mode25 BIND "
+                "exact_get Port. Independent Python only. Not D3-S2 complete "
+                "claim."
+            ),
+            "ownership": OWNERSHIP_P1E,
+            "expected": exp,
+        }
+    )
+
+    if len(vectors) != D3S2_P1E_SLICE_COUNT:
+        raise SystemExit("p1e slice count drift")
+    kinds = {v["kind"] for v in vectors}
+    if kinds != D3S2_P1E_KINDS:
+        raise SystemExit(f"p1e kinds inventory mismatch: {kinds}")
+    return vectors
+
+
 def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
     vectors = (
         build_d3s2_smoke_vectors()
@@ -9205,6 +9612,7 @@ def build_d3s2_suffix_vectors() -> List[Dict[str, Any]]:
         + build_d3s2_p1b2_slice_vectors()
         + build_d3s2_p1c1_slice_vectors()
         + build_d3s2_p1c2_slice_vectors()
+        + build_d3s2_p1e_slice_vectors()
     )
     if len(vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix count drift")
@@ -9309,6 +9717,7 @@ def build_document() -> Dict[str, Any]:
     p1b2_vectors = build_d3s2_p1b2_slice_vectors()
     p1c1_vectors = build_d3s2_p1c1_slice_vectors()
     p1c2_vectors = build_d3s2_p1c2_slice_vectors()
+    p1e_vectors = build_d3s2_p1e_slice_vectors()
     suffix_vectors = (
         smoke_vectors
         + mode25_vectors
@@ -9328,6 +9737,7 @@ def build_document() -> Dict[str, Any]:
         + p1b2_vectors
         + p1c1_vectors
         + p1c2_vectors
+        + p1e_vectors
     )
     if len(suffix_vectors) != D3S2_SUFFIX_COUNT:
         raise SystemExit("suffix assembly count drift")
@@ -9505,6 +9915,16 @@ def build_document() -> Dict[str, Any]:
             f"(got {hundred_thirty_nine_hash})"
         )
 
+    # Retained 143-vector chain pin (139 + P1-C2 = origin/main before P1-E).
+    hundred_forty_three_hash = _chain_hash(
+        prior_fingerprints[:D3S2_143_PREFIX_COUNT]
+    )
+    if hundred_forty_three_hash != D3S2_143_FINGERPRINT_HASH:
+        raise SystemExit(
+            "143-prefix fingerprint chain drift after suffix assembly "
+            f"(got {hundred_forty_three_hash})"
+        )
+
     required_kinds = sorted(
         set(prefix_doc["required_kinds"]) | set(D3S2_REQUIRED_KINDS)
     )
@@ -9533,6 +9953,7 @@ def build_document() -> Dict[str, Any]:
         "d3s2_130_prefix_count": D3S2_130_PREFIX_COUNT,
         "d3s2_133_prefix_count": D3S2_133_PREFIX_COUNT,
         "d3s2_139_prefix_count": D3S2_139_PREFIX_COUNT,
+        "d3s2_143_prefix_count": D3S2_143_PREFIX_COUNT,
         "required_kinds": required_kinds,
         "workspace": {
             "key_capacity": 255,
@@ -9721,6 +10142,16 @@ def build_document() -> Dict[str, Any]:
                 "append-only freeze of origin/main (94 D3S1 + 45 d3s2 suffix "
                 "through P1-C1 / PR#70); P1-C2 Mode24/25 known-slot population "
                 "legality residual vectors follow"
+            ),
+        },
+        "d3s2_143_prefix_authority": {
+            "vector_count": D3S2_143_PREFIX_COUNT,
+            "content_sha256": D3S2_143_CONTENT_SHA256,
+            "prior_fingerprint_prefix_hash": D3S2_143_FINGERPRINT_HASH,
+            "note": (
+                "append-only freeze of origin/main (94 D3S1 + 49 d3s2 suffix "
+                "through P1-C2); P1-E Mode26 mid-FOCUS iter_next Port "
+                "failure note0 vector follows"
             ),
         },
         "prior_fingerprints": prior_fingerprints,
@@ -10075,6 +10506,17 @@ def check_data(
         )
     if int(auth139.get("vector_count", -1)) != D3S2_139_PREFIX_COUNT:
         return _fail_check("d3s2_139_prefix_authority vector_count pin mismatch")
+    if int(data.get("d3s2_143_prefix_count", -1)) != D3S2_143_PREFIX_COUNT:
+        return _fail_check("d3s2_143_prefix_count pin mismatch")
+    auth143 = data.get("d3s2_143_prefix_authority") or {}
+    if auth143.get("content_sha256") != D3S2_143_CONTENT_SHA256:
+        return _fail_check("d3s2_143_prefix_authority content_sha256 pin mismatch")
+    if auth143.get("prior_fingerprint_prefix_hash") != D3S2_143_FINGERPRINT_HASH:
+        return _fail_check(
+            "d3s2_143_prefix_authority prior_fingerprint_prefix_hash pin mismatch"
+        )
+    if int(auth143.get("vector_count", -1)) != D3S2_143_PREFIX_COUNT:
+        return _fail_check("d3s2_143_prefix_authority vector_count pin mismatch")
 
     vectors = data["vectors"]
     if len(vectors) != EXPECTED_VECTOR_COUNT:
@@ -10335,6 +10777,40 @@ def check_data(
         return _fail_check(
             f"139-prefix fingerprint chain pin fail "
             f"(got {hundred_thirty_nine_chain})"
+        )
+
+    # Full-object 143-prefix equality (139 + P1-C2; origin/main before P1-E).
+    expected_143 = expected_doc["vectors"][:D3S2_143_PREFIX_COUNT]
+    if vectors[:D3S2_143_PREFIX_COUNT] != expected_143:
+        for i in range(D3S2_143_PREFIX_COUNT):
+            if i < D3S1_PREFIX_COUNT:
+                fp_got = d3s1_vector_fingerprint(vectors[i])
+                fp_exp = d3s1_vector_fingerprint(expected_143[i])
+            else:
+                fp_got = d3s2_vector_fingerprint(vectors[i])
+                fp_exp = d3s2_vector_fingerprint(expected_143[i])
+            if vectors[i] != expected_143[i] or fp_got != fp_exp:
+                return _fail_check(
+                    f"143-prefix full-object mismatch at [{i}] "
+                    f"id={vectors[i].get('id')}"
+                )
+        return _fail_check("143-prefix full-object mismatch")
+    hundred_forty_three_chain = _chain_hash(
+        [
+            {
+                "fingerprint": (
+                    d3s1_vector_fingerprint(vectors[i])
+                    if i < D3S1_PREFIX_COUNT
+                    else d3s2_vector_fingerprint(vectors[i])
+                )
+            }
+            for i in range(D3S2_143_PREFIX_COUNT)
+        ]
+    )
+    if hundred_forty_three_chain != D3S2_143_FINGERPRINT_HASH:
+        return _fail_check(
+            f"143-prefix fingerprint chain pin fail "
+            f"(got {hundred_forty_three_chain})"
         )
 
     err = _assert_prefix_identity(vectors, prefix_doc)
@@ -11106,6 +11582,8 @@ def check_data(
     p1c1 = suffix[p1c1_start : p1c1_start + D3S2_P1C1_SLICE_COUNT]
     p1c2_start = p1c1_start + D3S2_P1C1_SLICE_COUNT
     p1c2 = suffix[p1c2_start : p1c2_start + D3S2_P1C2_SLICE_COUNT]
+    p1e_start = p1c2_start + D3S2_P1C2_SLICE_COUNT
+    p1e = suffix[p1e_start : p1e_start + D3S2_P1E_SLICE_COUNT]
     if len(mode25) != D3S2_MODE25_SLICE_COUNT:
         return _fail_check("mode25 slice length mismatch")
     if len(mode26) != D3S2_MODE26_SLICE_COUNT:
@@ -11140,6 +11618,8 @@ def check_data(
         return _fail_check("p1c1 slice length mismatch")
     if len(p1c2) != D3S2_P1C2_SLICE_COUNT:
         return _fail_check("p1c2 slice length mismatch")
+    if len(p1e) != D3S2_P1E_SLICE_COUNT:
+        return _fail_check("p1e slice length mismatch")
 
     for j, vec in enumerate(smoke):
         mode = 21 + j
@@ -13873,6 +14353,167 @@ def check_data(
     )
     if err:
         return _fail_check(err)
+
+    # ---- P1-E Mode26 mid-FOCUS iter_next Port note0 (§18.13.15 case11 / B9) ----
+    p1e_kinds_got = {v["kind"] for v in p1e}
+    if p1e_kinds_got != D3S2_P1E_KINDS:
+        return _fail_check(f"p1e kinds inventory mismatch: {p1e_kinds_got}")
+    p1e_vec = p1e[0]
+    if p1e_vec["kind"] != "mode26_mid_focus_iter_next_port_failure_note0":
+        return _fail_check("p1e[0] kind pin fail")
+    if int(p1e_vec["mode"]) != 26:
+        return _fail_check(f"{p1e_vec['id']}: mode must be 26")
+    if p1e_vec.get("ownership") != OWNERSHIP_P1E:
+        return _fail_check(f"{p1e_vec['id']}: ownership pin fail")
+    if p1e_vec["id"] != "D3S2_M26_MID_FOCUS_ITER_NEXT_PORT_FAILURE_NOTE0":
+        return _fail_check(f"{p1e_vec['id']}: id pin fail")
+    if p1e_vec["expected"].get("final_status") != "STORAGE":
+        return _fail_check(f"{p1e_vec['id']}: final_status must be STORAGE")
+    if p1e_vec["expected"].get("sticky_primary") != "STORAGE":
+        return _fail_check(f"{p1e_vec['id']}: sticky must be STORAGE (Port path)")
+    if int(p1e_vec["expected"].get("note_count", -1)) != 0:
+        return _fail_check(f"{p1e_vec['id']}: note_count must be 0")
+    if int(p1e_vec["expected"]["phase"]) != PHASE_FAILED:
+        return _fail_check(f"{p1e_vec['id']}: phase must be FAILED")
+    if int(p1e_vec["expected"]["count_complete_mask"]) != 0:
+        return _fail_check(
+            f"{p1e_vec['id']}: count mask must be incomplete (0) mid-FOCUS Port"
+        )
+    if int(p1e_vec["expected"]["binding_complete_mask"]) != 0:
+        return _fail_check(f"{p1e_vec['id']}: binding mask must be 0")
+    if int(p1e_vec["expected"]["d3_peer_get_count"]) != 0:
+        return _fail_check(f"{p1e_vec['id']}: d3_peer_get_count must be 0")
+    if int(p1e_vec["expected"]["flags"]) != (FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE):
+        return _fail_check(
+            f"{p1e_vec['id']}: flags must be BASELINE_DONE|FOCUS_LIVE"
+        )
+    if int(p1e_vec["expected"].get("mutation_calls", -1)) != 0:
+        return _fail_check(f"{p1e_vec['id']}: mutation_calls must be 0")
+    faults = p1e_vec.get("faults") or []
+    if len(faults) != 1 or faults[0].get("op") != "iter_next":
+        return _fail_check(f"{p1e_vec['id']}: exactly one iter_next fault required")
+    if int(faults[0].get("on_call", -1)) != 44:
+        return _fail_check(
+            f"{p1e_vec['id']}: iter_next on_call must be 44 "
+            f"(21+21+1+1), got {faults[0].get('on_call')}"
+        )
+    if faults[0].get("status") != "IO_ERROR":
+        return _fail_check(f"{p1e_vec['id']}: fault status must be IO_ERROR")
+    pt_p1e = p1e_vec["expected"]["port_trace"]
+    if pt_p1e.count("begin:READ_ONLY") != 1:
+        return _fail_check(f"{p1e_vec['id']}: single-txn begin pin fail")
+    if pt_p1e.count("iter_next") != 44:
+        return _fail_check(
+            f"{p1e_vec['id']}: port_trace iter_next count must be 44, got "
+            f"{pt_p1e.count('iter_next')}"
+        )
+    if pt_p1e.count("get") != 17:
+        return _fail_check(
+            f"{p1e_vec['id']}: port_trace get count must be 17 (profile only)"
+        )
+    if pt_p1e[-3:] != ["iter_next", "iter_close", "rollback"]:
+        return _fail_check(
+            f"{p1e_vec['id']}: port_trace must end iter_next,iter_close,rollback"
+        )
+    # Mid-FOCUS: third open then exactly one OK next before the Port next.
+    open_idxs = [i for i, t in enumerate(pt_p1e) if t == "iter_open:prefix0"]
+    if len(open_idxs) != 3:
+        return _fail_check(
+            f"{p1e_vec['id']}: port_trace iter_open count must be 3, got "
+            f"{len(open_idxs)}"
+        )
+    focus_open = open_idxs[2]
+    if pt_p1e[focus_open + 1 : focus_open + 3] != ["iter_next", "iter_next"]:
+        return _fail_check(
+            f"{p1e_vec['id']}: FOCUS segment must be OK next then Port next"
+        )
+    # Call-level checkpoint on the successful row_budget=1 drive (mid-FOCUS).
+    cp_calls = [
+        c for c in p1e_vec["calls"] if int(c.get("has_checkpoint", 0)) == 1
+    ]
+    if len(cp_calls) != 1:
+        return _fail_check(
+            f"{p1e_vec['id']}: exactly one checkpoint call required"
+        )
+    cp = cp_calls[0]
+    if cp.get("op") != "d3s2_drive" or int(cp.get("row_budget", -1)) != 1:
+        return _fail_check(
+            f"{p1e_vec['id']}: checkpoint must be d3s2_drive row_budget=1"
+        )
+    if cp.get("expected_status") != "OK":
+        return _fail_check(
+            f"{p1e_vec['id']}: checkpoint drive expected_status must be OK"
+        )
+    if int(cp["cp_phase"]) != PHASE_FOCUS_MANAGEMENT:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_phase must be FOCUS_MANAGEMENT"
+        )
+    if int(cp["cp_focus_live"]) != 1:
+        return _fail_check(f"{p1e_vec['id']}: cp_focus_live must be 1")
+    if int(cp["cp_observed_a"]) != 0:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_observed_a must be 0 "
+            f"(budget=1 before MANAGEMENT match)"
+        )
+    if int(cp["cp_observed_b"]) != 0 or int(cp["cp_observed_c"]) != 0:
+        return _fail_check(
+            f"{p1e_vec['id']}: non-a observed lanes must be 0 at mid-FOCUS"
+        )
+    if int(cp["cp_count_complete_mask"]) != 0:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_count_complete_mask must be 0 mid-FOCUS"
+        )
+    if int(cp["cp_binding_complete_mask"]) != 0:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_binding_complete_mask must be 0 mid-FOCUS"
+        )
+    if int(cp["cp_flags"]) != (FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE):
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_flags must be BASELINE_DONE|FOCUS_LIVE"
+        )
+    if int(cp["cp_pass_kind"]) != PASS_INTERNAL:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_pass_kind must be PASS_INTERNAL"
+        )
+    if int(cp["cp_cleanup_skip"]) != 0:
+        return _fail_check(f"{p1e_vec['id']}: cp_cleanup_skip must be 0")
+    if int(cp["cp_last_carrier_key_len"]) <= 0:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_last_carrier_key_len must be > 0"
+        )
+    if not cp.get("cp_last_carrier_key_hex"):
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_last_carrier_key_hex required"
+        )
+    if int(cp["cp_begin_calls"]) != 1:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_begin_calls must be 1 (same live txn)"
+        )
+    if int(cp["cp_iter_open_calls"]) != 3:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_iter_open_calls at mid-FOCUS must be 3"
+        )
+    if int(cp["cp_iter_close_calls"]) != 2:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_iter_close_calls at mid-FOCUS must be 2"
+        )
+    if int(cp["cp_trace_count"]) != focus_open + 2:
+        return _fail_check(
+            f"{p1e_vec['id']}: cp_trace_count must pin after FOCUS OK next "
+            f"(want {focus_open + 2}, got {cp['cp_trace_count']})"
+        )
+    try:
+        exp_calls, exp_expected = (
+            run_d3s2_mode26_mid_focus_iter_next_port_failure_note0(
+                p1e_vec["candidate_binding"], p1e_vec["rows"]
+            )
+        )
+    except SystemExit as exc:
+        return _fail_check(f"{p1e_vec['id']}: model reject: {exc}")
+    if p1e_vec["calls"] != exp_calls:
+        return _fail_check(f"{p1e_vec['id']}: calls != independent model")
+    if p1e_vec["expected"] != exp_expected:
+        return _fail_check(f"{p1e_vec['id']}: expected != independent model")
     rec_slots = []
     for r in m25_extra["rows"]:
         k = from_hex(r["key_hex"])
@@ -15954,6 +16595,211 @@ def self_test() -> int:
             "p1c2_m25_extra_ownership_tamper",
             lambda d: d["vectors"][142].__setitem__("ownership", OWNERSHIP_P1C1),
         )
+        # 143-prefix freeze (includes P1-C2; P1-E follows at 143).
+        t(
+            "hundred_forty_three_prefix_row_tamper",
+            lambda d: d["vectors"][142].__setitem__(
+                "rows", list(d["vectors"][142]["rows"])[:-1]
+            ),
+        )
+        t(
+            "hundred_forty_three_prefix_expected_tamper",
+            lambda d: d["vectors"][142]["expected"].__setitem__(
+                "final_status", "OK"
+            ),
+        )
+        t(
+            "hundred_forty_three_prefix_fp_authority_tamper",
+            lambda d: d["d3s2_143_prefix_authority"].__setitem__(
+                "prior_fingerprint_prefix_hash", "0" * 64
+            ),
+        )
+        t(
+            "hundred_forty_three_prefix_content_authority_tamper",
+            lambda d: d["d3s2_143_prefix_authority"].__setitem__(
+                "content_sha256", "0" * 64
+            ),
+        )
+        # P1-E Mode26 mid-FOCUS Port note0 tampers (index 143).
+        t(
+            "p1e_fault_on_call_tamper",
+            lambda d: d["vectors"][143]["faults"][0].__setitem__(
+                "on_call", 1
+            ),
+        )
+        t(
+            "p1e_fault_status_ok_tamper",
+            lambda d: d["vectors"][143]["faults"][0].__setitem__(
+                "status", "OK"
+            ),
+        )
+        t(
+            "p1e_sticky_corrupt_tamper",
+            lambda d: d["vectors"][143]["expected"].__setitem__(
+                "sticky_primary", "STORAGE_CORRUPT"
+            ),
+        )
+        t(
+            "p1e_phase_complete_tamper",
+            lambda d: d["vectors"][143]["expected"].__setitem__(
+                "phase", PHASE_COMPLETE
+            ),
+        )
+        t(
+            "p1e_flags_mask_tamper",
+            lambda d: d["vectors"][143]["expected"].__setitem__(
+                "flags", FLAG_BASELINE_DONE | FLAG_COMPLETE_READY
+            ),
+        )
+        t(
+            "p1e_note_count_tamper",
+            lambda d: d["vectors"][143]["expected"].__setitem__(
+                "note_count", 1
+            ),
+        )
+        t(
+            "p1e_count_mask_green_tamper",
+            lambda d: d["vectors"][143]["expected"].__setitem__(
+                "count_complete_mask", MASK_MANAGEMENT
+            ),
+        )
+        t(
+            "p1e_prefix_ownership_tamper",
+            lambda d: d["vectors"][143].__setitem__("ownership", OWNERSHIP_P1C2),
+        )
+        # Mid-FOCUS checkpoint anti-false-green: collapse to early-fail / non-mid
+        # shapes must turn RED. Mutate all newly authoritative checkpoint fields.
+        t(
+            "p1e_cp_phase_failed_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_phase", PHASE_FAILED),
+        )
+        t(
+            "p1e_cp_phase_baseline_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_phase", PHASE_BASELINE),
+        )
+        t(
+            "p1e_cp_focus_live_clear_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_focus_live", 0),
+        )
+        t(
+            "p1e_cp_observed_a_false_match_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_observed_a", 1),
+        )
+        t(
+            "p1e_cp_count_mask_green_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_count_complete_mask", MASK_MANAGEMENT),
+        )
+        t(
+            "p1e_cp_binding_mask_green_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_binding_complete_mask", MASK_MANAGEMENT),
+        )
+        t(
+            "p1e_cp_flags_no_focus_live_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_flags", FLAG_BASELINE_DONE),
+        )
+        t(
+            "p1e_cp_flags_complete_ready_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__(
+                "cp_flags",
+                FLAG_BASELINE_DONE | FLAG_FOCUS_LIVE | FLAG_COMPLETE_READY,
+            ),
+        )
+        t(
+            "p1e_cp_pass_kind_baseline_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_pass_kind", PASS_BASELINE),
+        )
+        t(
+            "p1e_cp_cleanup_skip_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_cleanup_skip", 1),
+        )
+        t(
+            "p1e_cp_begin_calls_restart_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_begin_calls", 2),
+        )
+        t(
+            "p1e_cp_iter_open_under_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_iter_open_calls", 2),
+        )
+        t(
+            "p1e_cp_iter_close_over_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_iter_close_calls", 3),
+        )
+        t(
+            "p1e_cp_trace_count_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_trace_count", 1),
+        )
+        t(
+            "p1e_cp_drop_checkpoint_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("has_checkpoint", 0),
+        )
+        t(
+            "p1e_cp_last_carrier_key_len_tamper",
+            lambda d: next(
+                c
+                for c in d["vectors"][143]["calls"]
+                if int(c.get("has_checkpoint", 0)) == 1
+            ).__setitem__("cp_last_carrier_key_len", 0),
+        )
         t(
             "content_sha_tamper",
             lambda d: d.__setitem__("content_sha256", "0" * 64),
@@ -15997,9 +16843,10 @@ def self_test() -> int:
             return 1
         print(
             "self-test ok (94+100+102+104+106+108+110+112+113+114+115+119+125+"
-            "127+128+130+133+139 prefix freeze + mode25/mode26/mode24/mode23/"
+            "127+128+130+133+139+143 prefix freeze + mode25/mode26/mode24/mode23/"
             "mode22/mode21/p0a/p0b/p0c/p0d/p1a/p1d/p1d2/p1b1/p1b2/p1c1(6)/"
-            "p1c2(4) slice pins + two-txn anti-pass + forbidden ops + clean pass)"
+            "p1c2(4)/p1e(1) slice pins + two-txn anti-pass + forbidden ops + "
+            "clean pass)"
         )
         return 0
 
