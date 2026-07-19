@@ -2050,10 +2050,13 @@ static int test_id_wrap_fail_closed(void)
 
 static int test_init_alias_overflow_canary(void)
 {
+    struct alias_backing {
+        ninlil_n6_context_pool_t descriptor;
+        uint8_t bytes[1024u];
+    } alias_backing;
     ninlil_n6_t *n6 = NULL;
     ninlil_n6_context_pool_t pool;
     size_t need = ninlil_n6_context_pool_bytes(2u);
-    uint8_t *pool_alias;
 
     n6_mem_storage_reset();
     (void)memset(g_obj, 0, sizeof(g_obj));
@@ -2070,13 +2073,23 @@ static int test_init_alias_overflow_canary(void)
             == NINLIL_N6_ALIAS);
     }
     /* pool struct aliases pool bytes */
-    pool_alias = (uint8_t *)&pool;
     {
-        ninlil_n6_context_pool_t p2 = pool;
-        p2.bytes = pool_alias;
-        p2.bytes_size = need;
-        REQUIRE(ninlil_n6_init(g_obj, sizeof(g_obj), &p2, &n6)
+        (void)memset(&alias_backing, 0x5a, sizeof(alias_backing));
+        REQUIRE(need <= sizeof(alias_backing));
+        alias_backing.descriptor = pool;
+        alias_backing.descriptor.bytes = (uint8_t *)(void *)&alias_backing;
+        alias_backing.descriptor.bytes_size = need;
+        REQUIRE(ninlil_n6_init(
+                    g_obj, sizeof(g_obj), &alias_backing.descriptor, &n6)
             == NINLIL_N6_ALIAS);
+        REQUIRE(n6 == NULL);
+        REQUIRE(alias_backing.descriptor.max_slots == 2u);
+        REQUIRE(alias_backing.descriptor.reserved_zero == 0u);
+        REQUIRE(alias_backing.descriptor.bytes
+            == (uint8_t *)(void *)&alias_backing);
+        REQUIRE(alias_backing.descriptor.bytes_size == need);
+        REQUIRE(alias_backing.bytes[0] == 0x5au);
+        REQUIRE(((uint8_t *)(void *)&alias_backing)[need - 1u] == 0x5au);
     }
     /* unaligned pool bytes */
     {
