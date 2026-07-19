@@ -403,6 +403,12 @@ install(FILES
 # ESP-IDF component packaging under ports/esp-idf/components/ninlil.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_runtime_private_sources.cmake)
 
+# R7 T1b context binding (docs/33): single source/test authority. Appends the
+# portable binding TU into the shared private/VLA lists exactly once before
+# ninlil_runtime_private is created. Test registration is a separate function
+# call under NINLIL_BUILD_TESTS (does not recompile production sources).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_nrw1_t1b_ctest.cmake)
+
 # R4 SX1262 portable control-plane (D1). Not public ABI. Not RF TX complete.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
 
@@ -533,6 +539,24 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
             APPEND PROPERTY COMPILE_OPTIONS ${_r7_wire_compile_opts}
         )
     endforeach()
+    # R7 T1b context binding: docs/33 §8/§10 host candidate static-frame
+    # ceiling 2560. Release must be effectively -O2 (the source-local option
+    # intentionally follows CMake's default -O3, so the last option wins).
+    # Production binding TU only; tests link the private archive.
+    foreach(_r7_t1b_src IN LISTS NINLIL_R7_BINDING_PORTABLE_RELATIVE_SOURCES)
+        set(_r7_t1b_compile_opts -Werror -fstack-usage)
+        list(APPEND _r7_t1b_compile_opts "$<$<CONFIG:Release>:-O2>")
+        if(NOT _ninlil_any_sanitizer_active)
+            list(APPEND _r7_t1b_compile_opts -Wframe-larger-than=2560)
+        endif()
+        if(_ninlil_maccumulate_outgoing_args)
+            list(APPEND _r7_t1b_compile_opts -maccumulate-outgoing-args)
+        endif()
+        set_property(
+            SOURCE ${_r7_t1b_src}
+            APPEND PROPERTY COMPILE_OPTIONS ${_r7_t1b_compile_opts}
+        )
+    endforeach()
 endif()
 if(NINLIL_ENABLE_SANITIZERS)
     target_link_options(ninlil_runtime_private INTERFACE
@@ -548,7 +572,9 @@ if(NINLIL_BUILD_TESTS)
         # R7 portable span-overflow seam (docs/31); tests-OFF omits this symbol.
         NINLIL_R7_CRYPTO_TEST_BUILD=1
         # T1 wire pairwise-span seam; tests-OFF and production omit this symbol.
-        NINLIL_R7_WIRE_TEST_BUILD=1)
+        NINLIL_R7_WIRE_TEST_BUILD=1
+        # T1b binding secret-zero / span seams; tests-OFF and ESP omit these.
+        NINLIL_R7_BINDING_TEST_BUILD=1)
 endif()
 
 # U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
@@ -2500,6 +2526,10 @@ if(NINLIL_BUILD_TESTS)
     # R7 T1 NRW1 SINGLE pure wire codec (docs/32). Separate nrw1_t1_* CTest
     # authority; does not weaken T0 r7_* exact 16/15. Not R7 full / W1 / HIL.
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_r7_wire_ctest.cmake)
+    # R7 T1b context binding (docs/33). Source authority already included once
+    # above private-target creation; register nrw1_t1b_* CTests exactly once.
+    # Prefix is disjoint from T0 r7_* (16/15) and T1 nrw1_t1_* (12/11).
+    ninlil_nrw1_t1b_register_tests()
     add_test(
         NAME profile_r5_golden_oracle
         COMMAND ${Python3_EXECUTABLE}

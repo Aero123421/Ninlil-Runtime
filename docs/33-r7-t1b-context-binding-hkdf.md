@@ -1,7 +1,7 @@
 # 33. R7 T1b Context Binding and HKDF Schedule
 
-状態: **Proposed / docs-only; implementation and acceptance pending**  
-提案 ADR: [ADR-0013](adr/0013-r7-t1b-context-binding-hkdf.md)（Proposed）  
+状態: **Accepted — R7 T1b private stateless implementation candidate only**  
+ADR: [ADR-0013](adr/0013-r7-t1b-context-binding-hkdf.md)（Accepted）  
 前提: [30章](30-r6-secure-radio-wire.md) の Accepted R6 wire freeze、
 [31章](31-r7-crypto-provider-and-aead.md) の Accepted T0、
 [32章](32-r7-t1-nrw1-single-wire-codec.md) の Accepted T1
@@ -452,8 +452,15 @@ atomic bundleを持つverified deriveだけを採用する。
 
 ## 12. Acceptance boundary and next tranche
 
-本章とADRがmergeされてもT1bはdocs-only Proposedである。production source、subset artifact、
-全gate、固定SHAのCI、独立reviewが揃うまでAcceptedまたはimplementedと表示しない。
+T1b private stateless implementation candidateは固定SHA
+`ec4c39ec5d37176de63646f5bcc9d48140684760`で、subset artifact、全gate、push/PR CI、
+push/PR ESP-IDF CI、独立PRE/POST-CI review P0=0/P1=0/P2=0 GOを満たしたためAcceptedとする。
+証跡は[review record](reviews/2026-07-19-r7-t1b-context-binding-hkdf-accepted.md)に固定する。
+
+このAcceptedはexpected digest / traffic secretの生成・認証・配布・保存、capsule parse、context
+install、counter/nonce/AEAD/replay/durable state、T1 composite、W1/L1/N6/M4/M5、Attachment/Join、
+LINK/FRAG/CELL/HA、relay/routing/MAC、full R7 artifact、実機KAT、RF/USB HIL、FIELD/Japan legal、
+production radioまたはR7 full completionを含まない。compile/link ≠ HIL。
 
 T1b Accepted後の次trancheは、authenticated capsule provenanceとN6 context installの間に
 `verified derive -> durable lane initialization -> handle publish`をfail-closedに接続する

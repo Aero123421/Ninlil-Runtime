@@ -74,11 +74,12 @@ endif()
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
 # Exact 20 base private sources + exact 3 N6 + exact 2 R7 T0 portable crypto +
-# exact 1 R7 T1 wire codec = 26 (single authority expand). Host OpenSSL 3
+# exact 1 R7 T1 wire codec + exact 1 R7 T1b context binding = 27 (single
+# authority expand). Host OpenSSL 3
 # adapter is top-level/tests only and must not appear in this add_subdirectory
 # consumer (NINLIL_R7_HOST_CRYPTO_ENABLED=FALSE).
-if(NOT _private_source_count EQUAL 26)
-    message(FATAL_ERROR "private source count is not 26: ${_private_sources}")
+if(NOT _private_source_count EQUAL 27)
+    message(FATAL_ERROR "private source count is not 27: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -111,6 +112,7 @@ set(_expected_private_source_names
     profile_loader.c
     r7_crypto_nonce.c
     r7_crypto_portable.c
+    r7_context_binding.c
     r7_wire_codec.c
     radio_hal.c
     runtime_lifecycle_model.c
@@ -230,6 +232,12 @@ check_c_source_compiles(
     NINLIL_PRIVATE_R7_CRYPTO_HEADER_LEAKED)
 if(NINLIL_PRIVATE_R7_CRYPTO_HEADER_LEAKED)
     message(FATAL_ERROR "private r7_crypto_provider.h is publicly includable")
+endif()
+check_c_source_compiles(
+    "#include \"r7_context_binding.h\"\nint main(void) { return 0; }"
+    NINLIL_PRIVATE_R7_T1B_HEADER_LEAKED)
+if(NINLIL_PRIVATE_R7_T1B_HEADER_LEAKED)
+    message(FATAL_ERROR "private r7_context_binding.h is publicly includable")
 endif()
 
 add_executable(ninlil_subproject_public_consumer consumer.c)

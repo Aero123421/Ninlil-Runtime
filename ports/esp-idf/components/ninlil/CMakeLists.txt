@@ -1,6 +1,8 @@
 # Ninlil portable Core / private Runtime + M3 ESP-IDF port adapters + storage.
 #
 # Portable sources: cmake/ninlil_runtime_private_sources.cmake
+# R7 T1b binding source: cmake/ninlil_nrw1_t1b_ctest.cmake (include exactly once
+# after the shared private authority; appends r7_context_binding.c once).
 # ESP-IDF port sources: cmake/ninlil_esp_idf_port_sources.cmake
 # Durable storage: cmake/ninlil_esp_storage_sources.cmake
 # R4 SX1262 control-plane: cmake/ninlil_sx1262_sources.cmake
@@ -13,17 +15,24 @@
 # default-deny without R2 permit ops), R2 private pcp_authority (durable permit
 # authority body; private only), R3 airtime_calculator (private), R4 SX1262
 # control-plane backend (reset/init/SPI only; SetTx denied; not RF TX/RX
-# complete), and R5 private LAB_ONLY profile_loader + PCP bind candidate
-# (profile_loader.c via portable private authority; host/ESP packaging only).
+# complete), R5 private LAB_ONLY profile_loader + PCP bind candidate
+# (profile_loader.c via portable private authority; host/ESP packaging only),
+# R7 T0 mbedTLS adapter, T1 wire codec, and T1b context binding (private).
 # Does not implement Wi-Fi, SX1262 physical RF TX/RX path, SetTx path, radio
 # MAC, Join, or KGuard adapters. Does not claim storage FULL attestation,
-# physical power-cut HIL, U2 HIL, R1/R2/R3/R4/R5 complete, FIELD, PRODUCTION,
+# physical power-cut HIL, U2 HIL, R1/R2/R3/R4/R5/R7 complete, FIELD, PRODUCTION,
 # Japan legal, RF HIL, production radio, or field-ready.
+# Never define NINLIL_R7_BINDING_TEST_BUILD here (test seams stay host-only).
 
 get_filename_component(NINLIL_REPO_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_runtime_private_sources.cmake")
+# T1b source authority exact once after shared private (docs/33 §1 / §10).
+# Appends NINLIL_R7_BINDING_PORTABLE_RELATIVE_SOURCES into the shared private
+# list under an include guard so r7_context_binding.c is packaged exact once.
+# Do not call ninlil_nrw1_t1b_register_tests() on ESP (host CTest only).
+include("${NINLIL_REPO_ROOT}/cmake/ninlil_nrw1_t1b_ctest.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_idf_port_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_storage_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_sx1262_sources.cmake")
@@ -114,5 +123,17 @@ set_source_files_properties(${_ninlil_n6_srcs} PROPERTIES
     COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048"
 )
 
+# R7 T1b binding production (docs/33 §8 / §10): -Wvla, -fstack-usage, and
+# 2560-byte frame ceiling on the authority source set only. Test seam macro
+# NINLIL_R7_BINDING_TEST_BUILD must remain undefined on ESP.
+set(_ninlil_t1b_srcs "")
+foreach(_rel IN LISTS NINLIL_R7_BINDING_PORTABLE_RELATIVE_SOURCES)
+    list(APPEND _ninlil_t1b_srcs "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
+set_source_files_properties(${_ninlil_t1b_srcs} PROPERTIES
+    COMPILE_OPTIONS "-Wvla;-fstack-usage;-Wframe-larger-than=2560"
+)
+
 # Match host production private build: TEST-only transport begin is OFF.
 # Do not define NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN here.
+# Do not define NINLIL_R7_BINDING_TEST_BUILD (T1b test seams stay host-only).

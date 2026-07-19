@@ -72,12 +72,15 @@ jobs:
         run: cmake --build build/ci-ubuntu-dyn --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
-      - name: R7 T0 crypto + T1 private wire acceptance (focused, non-sanitize)
+      - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-dyn
           --profile normal &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-dyn
+          --profile normal &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-dyn
           --profile normal
       - name: Debug archive path hygiene (DWARF4 + strings/readelf)
@@ -395,12 +398,15 @@ jobs:
           python3 tools/r7_wire_stack_gate.py check \
             --su-dir "$su" \
             --compile-commands "$cc"
-      - name: R7 T0 crypto + T1 private wire acceptance (focused + production stack)
+      - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused + production stack)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-gcc-rel-n6
           --profile normal &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-gcc-rel-n6
+          --profile normal &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-gcc-rel-n6
           --profile normal
 
@@ -437,12 +443,15 @@ jobs:
         run: cmake --build build/ci-ubuntu-clang-rel --parallel 2
       - name: Full CTest matrix (Clang Release strict)
         run: ctest --test-dir build/ci-ubuntu-clang-rel --output-on-failure
-      - name: R7 T0 crypto + T1 private wire acceptance (focused + production stack)
+      - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused + production stack)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-clang-rel
           --profile normal &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-clang-rel
+          --profile normal &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-clang-rel
           --profile normal
 
@@ -480,12 +489,15 @@ jobs:
         run: cmake --build build/ci-ubuntu-static --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-ubuntu-static --output-on-failure
-      - name: R7 T0 crypto + T1 private wire acceptance (focused, non-sanitize)
+      - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-static
           --profile normal &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-static
+          --profile normal &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused
           --build-dir build/ci-ubuntu-static
           --profile normal
       - name: Assert wrap backend and no shared sqlite on test binary
@@ -675,7 +687,7 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build/ci-clang-sanitize --output-on-failure
-      - name: R7 T0 crypto + T1 private wire under ASan/UBSan (no production .su gate)
+      - name: R7 T0 crypto + T1 private wire + T1b binding under ASan/UBSan (no production .su gate)
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -684,6 +696,9 @@ jobs:
           --build-dir build/ci-clang-sanitize
           --profile sanitizer &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused
+          --build-dir build/ci-clang-sanitize
+          --profile sanitizer &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused
           --build-dir build/ci-clang-sanitize
           --profile sanitizer
       - name: Sanitizer artifacts are non-ship (hygiene scan skipped by explicit flag only)
@@ -726,12 +741,15 @@ jobs:
         run: cmake --build build/ci-clang-nosan --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-clang-nosan --output-on-failure
-      - name: R7 T0 crypto + T1 private wire acceptance (focused, non-sanitize)
+      - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
           --build-dir build/ci-clang-nosan
           --profile normal &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused
+          --build-dir build/ci-clang-nosan
+          --profile normal &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused
           --build-dir build/ci-clang-nosan
           --profile normal
       - name: Strict archive strings/ar/readelf path hygiene (ship gate)
@@ -814,12 +832,15 @@ jobs:
         run: cmake --build build/ci-macos --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-macos --output-on-failure
-      - name: R7 T0 crypto + T1 private wire acceptance (focused, non-sanitize)
+      - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
           --build-dir build/ci-macos
           --profile normal &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused
+          --build-dir build/ci-macos
+          --profile normal &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused
           --build-dir build/ci-macos
           --profile normal
       - name: Archive path hygiene (strings/ar; AppleClang standard tools)
@@ -900,7 +921,7 @@ jobs:
           ctest --test-dir build/ci-macos-asan
           -R 'posix_sqlite_storage'
           --output-on-failure
-      - name: Build and run R7 T0 crypto + T1 private wire under ASan
+      - name: Build and run R7 T0 crypto + T1 private wire + T1b binding under ASan
         env:
           ASAN_OPTIONS: halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
@@ -912,11 +933,16 @@ jobs:
             ninlil_r7_crypto_openssl3_test \
             ninlil_r7_crypto_vectors_bridge_test \
             ninlil_r7_wire_portable_test \
-            ninlil_r7_wire_vectors_bridge_test
+            ninlil_r7_wire_vectors_bridge_test \
+            ninlil_r7_t1b_binding_portable_test \
+            ninlil_r7_t1b_vectors_bridge_test
           python3 tools/r7_t0_ctest_gate.py run-focused \
             --build-dir "$dir" \
             --profile sanitizer &&
           python3 tools/nrw1_t1_ctest_gate.py run-focused \
+            --build-dir "$dir" \
+            --profile sanitizer &&
+          python3 tools/r7_t1b_ctest_gate.py run-focused \
             --build-dir "$dir" \
             --profile sanitizer
 
