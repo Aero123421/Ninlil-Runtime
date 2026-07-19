@@ -3386,3 +3386,56 @@ Require typed authority/proof arguments. Without proof ⇒ reject. Retire/shutdo
 ### 20.11 Host completion bar (Chunk D)
 
 Portable private host candidate + exhaustive host gates (codec KAT/faults, HKDF/nonce KAT, install/TX/RX/fence/storage fault sweep, CU classes, boot permutations, alias/reentry/canary, mutation gates, installed-artifact leakage). **Not** production radio complete.
+
+### 20.12 Frozen erratum — RX/TX lane → array index bounds (2026-07-19; Accepted)
+
+**Status:** Normative Accepted erratum to Chunk D host engine behavior.  
+**Wire / layout / schema / public ABI / version:** **unchanged** (no NRW1 frame, N6 durable record layout, codec magic/schema, or public Runtime ABI delta).
+
+#### Problem
+
+`n6_lane_idx(lane_kind)` may return **`-1`** for non-catalog `lane_kind`. Call paths that trusted a prior `lane_ok` (or an internal ticket field) and then indexed per-lane RAM arrays (`rx_boot_floor` / `rx_ram_highest` / `rx_bitmap` / `tx_ram_next` / `tx_ram_limit` / related) without an explicit range check were fail-open under:
+
+1. compiler-conservativeness (`-Warray-bounds` / GCC 13 `-O2` cannot always prove `lane_ok ⇒ idx ∈ range`); and  
+2. **internal immutable ticket** corruption / future branch mistakes on `ninlil_n6_rx_admit_after_aead`, where the internal token is otherwise treated as authority.
+
+#### Normative rules (exact)
+
+1. **Named private lane-array dimension.** Production source **MUST** define a single private named count (`N6_PRIVATE_NAMED_LANE_COUNT`) for per-lane slot arrays. `rx_boot_floor`, `rx_ram_highest`, `rx_bitmap`, `rx_live_reserved`, `tx_ram_next`, and `tx_ram_limit` **MUST** use that count. Compile-time `_Static_assert` **MUST** prove each array’s element count equals the named count. **Magic bare `3` at those array sites is forbidden.**
+
+2. **Lane → array index range at every boundary.** After every `n6_lane_idx` (or equivalent) conversion, and **before** any per-lane array load/store, code **MUST** range-check the index. Out-of-range **MUST NOT** touch the arrays.
+
+3. **`n6_rx_precheck_window`.** The helper **MUST** reject out-of-range `idx` before reading `rx_boot_floor` / `rx_ram_highest` / `rx_bitmap`.
+
+4. **External / public `rx_precheck`.** After lane catalog/layer checks and `n6_lane_idx`, an explicit range check is **required**. Invalid external lane (including out-of-catalog and cross-layer mismatch already rejected by `lane_ok_for_slot`) **MUST** return **`INVALID_ARGUMENT`**, leave the returned ticket **all-zero**, allocate **no** internal ticket, perform **zero** storage I/O on **all 12 storage operations / 12 counters** (open/close/begin/get/put/**erase**/commit/rollback/iter_open/iter_next/iter_close/capacity — host tests prove every provider counter delta 0), and leave durable snapshot and RAM replay window/bitmap **unmutated**. With all storage call deltas 0, durable mutation is impossible on that path.
+
+5. **`rx_admit_after_aead` (internal authority).**  
+   - Immediately after snapshotting the internal token, convert `lane_kind` and range-check.  
+   - **Range-invalid internal lane** ⇒ **`CORRUPT`**, enter **fenced** when the existing corrupt path requires fence, **consume/wipe** internal live ticket + caller ticket + local copy, **no** array access, **no** storage I/O, **no** window/bitmap mutation.  
+   - After slot acquisition (canary/live/handle checks), re-validate internal `lane_kind` against the slot layer with **`n6_lane_ok_for_slot` (or equivalent)**. Catalog-valid but **cross-layer** internal tokens **MUST** fail the same way: **`CORRUPT` + full ticket wipe + fence + storage I/O 0 + window/bitmap mutation 0**.
+
+6. **`tx_burn`.** After `n6_lane_idx` and **before** any `tx_ram_*` array access, a range guard is **required**. Invalid external lane (out-of-catalog 0/4/255 or catalog-valid cross-layer) **MUST** return **`INVALID_ARGUMENT`**, leave the returned lease **all-zero**, publish **no** lease, perform **zero** storage I/O on **all 12 storage operations / 12 counters** (open/close/begin/get/put/**erase**/commit/rollback/iter_open/iter_next/iter_close/capacity), and leave all per-lane `tx_ram_next` / `tx_ram_limit` arrays **unmutated**.
+
+7. **Full CU plan envelope + array-post integrity (recover path).** Wire / layout / schema / public ABI / version remain **unchanged**. On `recover_cu`, **before any** storage classify I/O (`open` / `begin` / `get` / iterator / capacity used for classify) and **before any** per-lane array post:
+
+   **7a. Plan envelope preflight (all entries).** Production **MUST** reject the live plan unless:
+   - `cu.live == 1` and `1 ≤ n_keys ≤ NINLIL_N6_CU_PLAN_MAX_KEYS`;
+   - `phase` is a valid live recovery domain (`NEED_CLOSE_OLD` / `NEED_OPEN` / `READ_CLASSIFY`, including the `NONE→NEED_CLOSE_OLD` remap domain);
+   - `pending_install` and each entry’s `old_present` are boolean `{0,1}`;
+   - each entry `op ∈ {PUT, DELETE}` and `post ∈ {NONE, INSTALL_HANDLE, TX_LIMIT, RX_ACCEPT}` (closed domain — unknown/flip **MUST** fail);
+   - each entry `klen ≤ 48`, `old_vlen ≤ 68`, `prop_vlen ≤ 68` (oversize / `SIZE_MAX` **MUST** fail).
+
+   **7b. Array-post integrity (every `TX_LIMIT` / `RX_ACCEPT` entry, all-or-nothing).** Production **MUST** validate **every** such entry **before applying any** post (one failure ⇒ zero posts):
+   - `TX_LIMIT` only on `slot.alloc_side == OUTBOUND_TX`; `RX_ACCEPT` only on `INBOUND_RX`;
+   - `slot_index` in range; slot live + canary OK; `expected = n6_lane_idx(lane_kind)` in range; `lane_idx == expected`; `n6_lane_ok_for_slot(slot, lane_kind)`;
+   - re-encode the canonical lane key from slot+lane: `klen == NINLIL_N6_LANE_KEY_BYTES (48)` and key bytes exact-match the plan key;
+   - `op == PUT`, `old_present == 1`, `old_vlen == prop_vlen == 68`;
+   - decode `old`/`prop` with the matching TX or RX codec (CRC-valid); both values **MUST** match slot identity (`key_generation`, binding prefix16, `membership_epoch`, `ns_fingerprint12`, `alloc_side`);
+   - **TX:** `old.reserved_exclusive == post_u64_b`, `prop.reserved_exclusive == post_u64_a`, and `post_u64_b < post_u64_a`;
+   - **RX:** `prop.accept_reserved_through == post_u64_a`, `post_u64_b == 0`, and `old.accept_reserved_through ≤ prop.accept_reserved_through`.
+
+   **7c. Failure contract.** Any 7a/7b mismatch **MUST** force-close storage **once** (if open), enter **FENCED** (wipe CU / tickets / leases / secrets), return **`CORRUPT`**, perform **zero** provider classify I/O relative to the preflight point, and **MUST NOT** apply any array post (including earlier entries). Bare `lane_idx < 3` magic checks are forbidden. Happy-path TX/RX CU `ALL_PROPOSED` posts remain required when 7a/7b pass.
+
+8. **Test-only fault seams.** Seams that inject arbitrary internal `lane_kind` values or mutate individual CU plan fields exist **only** under `NINLIL_N6_TEST_BUILD` and **MUST NOT** appear in tests-OFF production objects, install trees, or archives. Production public/private headers **SHOULD** remain free of new seam declarations when tests can use test-build-only `extern` linkage.
+
+9. **Non-claims.** This erratum does **not** claim R6 product complete, R7 AEAD codec complete, M4/M5, ESP N6 capacity, RF/USB HIL, Japan legal, or production radio. gate PASS ≠ product GO.

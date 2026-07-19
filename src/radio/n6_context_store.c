@@ -8,6 +8,11 @@
  * SEMANTIC: N6_M4_REQUIRED_WITHOUT_AUTHENTICATED_CAPSULE
  * SEMANTIC: N6_NO_HEAP_NO_VLA
  * SEMANTIC: N6_NO_TEST_SYMBOLS_IN_PRODUCTION
+ * SEMANTIC: N6_PRIVATE_NAMED_LANE_COUNT_STATIC_ASSERT
+ * SEMANTIC: N6_RX_PRECHECK_WINDOW_LANE_IDX_GUARD
+ * SEMANTIC: N6_RX_PRECHECK_LANE_IDX_GUARD
+ * SEMANTIC: N6_RX_ADMIT_LANE_RANGE_LAYER_GUARD
+ * SEMANTIC: N6_TX_BURN_LANE_IDX_GUARD
  */
 
 #include "n6_context_store.h"
@@ -22,6 +27,14 @@ _Static_assert(
 
 #define N6_MAGIC ((uint32_t)0x4E365354u)
 #define N6_CANARY ((uint32_t)0xC4A4A4C4u)
+
+/*
+ * Private named dimension for per-lane RAM / durable-covered arrays.
+ * Catalog mapping (n6_lane_idx): HOP_DATA/E2E → 0, HOP_ACK → 1; other → -1.
+ * Index 2 is reserved capacity (not a third catalog lane). Never hard-code 3
+ * at array sites; use this name + static asserts below.
+ */
+enum { N6_PRIVATE_NAMED_LANE_COUNT = 3 };
 
 typedef enum n6_cu_phase {
     N6_CU_PHASE_NONE = 0,
@@ -60,16 +73,42 @@ typedef struct n6_slot {
     uint8_t local_node_id[16];
     uint8_t receiver_node_id[16];
     /* Durable-covered counter window [ram_next, ram_limit) — one counter per burn */
-    uint64_t tx_ram_next[3];
-    uint64_t tx_ram_limit[3];
+    uint64_t tx_ram_next[N6_PRIVATE_NAMED_LANE_COUNT];
+    uint64_t tx_ram_limit[N6_PRIVATE_NAMED_LANE_COUNT];
     /* RX sliding-64 (docs/30 §10): RAM-only bitmap; durable live_reserved */
-    uint64_t rx_live_reserved[3];
-    uint64_t rx_boot_floor[3];
-    uint64_t rx_ram_highest[3];
-    uint64_t rx_bitmap[3]; /* bit0=ram_highest, bit k = ram_highest-k */
+    uint64_t rx_live_reserved[N6_PRIVATE_NAMED_LANE_COUNT];
+    uint64_t rx_boot_floor[N6_PRIVATE_NAMED_LANE_COUNT];
+    uint64_t rx_ram_highest[N6_PRIVATE_NAMED_LANE_COUNT];
+    uint64_t rx_bitmap[N6_PRIVATE_NAMED_LANE_COUNT]; /* bit0=ram_highest, bit k = ram_highest-k */
     ninlil_n6_handle_t handle;
     uint32_t canary1;
 } n6_slot_t;
+
+/* SEMANTIC: N6_PRIVATE_NAMED_LANE_COUNT_STATIC_ASSERT */
+_Static_assert(
+    (sizeof(((n6_slot_t *)0)->tx_ram_next) / sizeof(uint64_t))
+        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT,
+    "tx_ram_next must equal N6_PRIVATE_NAMED_LANE_COUNT");
+_Static_assert(
+    (sizeof(((n6_slot_t *)0)->tx_ram_limit) / sizeof(uint64_t))
+        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT,
+    "tx_ram_limit must equal N6_PRIVATE_NAMED_LANE_COUNT");
+_Static_assert(
+    (sizeof(((n6_slot_t *)0)->rx_live_reserved) / sizeof(uint64_t))
+        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT,
+    "rx_live_reserved must equal N6_PRIVATE_NAMED_LANE_COUNT");
+_Static_assert(
+    (sizeof(((n6_slot_t *)0)->rx_boot_floor) / sizeof(uint64_t))
+        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT,
+    "rx_boot_floor must equal N6_PRIVATE_NAMED_LANE_COUNT");
+_Static_assert(
+    (sizeof(((n6_slot_t *)0)->rx_ram_highest) / sizeof(uint64_t))
+        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT,
+    "rx_ram_highest must equal N6_PRIVATE_NAMED_LANE_COUNT");
+_Static_assert(
+    (sizeof(((n6_slot_t *)0)->rx_bitmap) / sizeof(uint64_t))
+        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT,
+    "rx_bitmap must equal N6_PRIVATE_NAMED_LANE_COUNT");
 
 /* Boot pack (docs/30 §20.4.1): fits in live slot (304 B). Layout budget:
  * 2×AL(48) + active payload(40) + 4×HW(40) + active meta(8) = 304.
@@ -2822,27 +2861,259 @@ ninlil_n6_status_t ninlil_n6_boot_scan(ninlil_n6_t *n6)
 
 /* ---- recover_cu with correct classification ---- */
 
-static void n6_apply_cu_post(ninlil_n6_t *n6, ninlil_n6_cu_class_t cls)
+/*
+ * docs/30 §20.12 rule 7: full CU plan envelope + array-post integrity before
+ * any storage classify I/O and before any per-lane array post. Fail closed:
+ * force-close once, fence (wipe CU/tickets/leases/secrets), CORRUPT, I/O0
+ * beyond the close, zero array posts.
+ *
+ * Forward decls: helpers defined later in this TU (same dual-order pattern).
+ */
+static int n6_lane_idx(uint8_t lane_kind);
+static int n6_lane_idx_in_range(int idx);
+static int n6_lane_ok_for_slot(const n6_slot_t *s, uint8_t lane_kind);
+static void n6_make_lane_key(
+    const n6_slot_t *s, uint8_t lane_kind, ninlil_n6_lane_key_t *lk);
+
+/* SEMANTIC: N6_CU_PLAN_ENVELOPE_PREFLIGHT */
+static ninlil_n6_status_t n6_cu_preflight_plan(const ninlil_n6_t *n6)
+{
+    uint32_t i;
+    if (n6 == NULL || n6->cu.live != 1) {
+        return NINLIL_N6_CORRUPT;
+    }
+    if (n6->cu.n_keys < 1u || n6->cu.n_keys > NINLIL_N6_CU_PLAN_MAX_KEYS) {
+        return NINLIL_N6_CORRUPT;
+    }
+    if (n6->cu.phase != N6_CU_PHASE_NONE
+        && n6->cu.phase != N6_CU_PHASE_NEED_CLOSE_OLD
+        && n6->cu.phase != N6_CU_PHASE_NEED_OPEN
+        && n6->cu.phase != N6_CU_PHASE_READ_CLASSIFY) {
+        return NINLIL_N6_CORRUPT;
+    }
+    if (n6->cu.pending_install != 0 && n6->cu.pending_install != 1) {
+        return NINLIL_N6_CORRUPT;
+    }
+    for (i = 0u; i < n6->cu.n_keys; ++i) {
+        const n6_cu_entry_t *e = &n6->cu.entries[i];
+        if (e->op != N6_CU_OP_PUT && e->op != N6_CU_OP_DELETE) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->post != N6_CU_POST_NONE && e->post != N6_CU_POST_INSTALL_HANDLE
+            && e->post != N6_CU_POST_TX_LIMIT
+            && e->post != N6_CU_POST_RX_ACCEPT) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->old_present != 0 && e->old_present != 1) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->klen > NINLIL_N6_LANE_KEY_BYTES) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->old_vlen > NINLIL_N6_TX_VALUE_BYTES
+            || e->prop_vlen > NINLIL_N6_TX_VALUE_BYTES) {
+            return NINLIL_N6_CORRUPT;
+        }
+    }
+    return NINLIL_N6_OK;
+}
+
+/* SEMANTIC: N6_CU_ARRAY_POST_INTEGRITY */
+static ninlil_n6_status_t n6_cu_validate_array_posts(ninlil_n6_t *n6)
+{
+    uint32_t i;
+    for (i = 0u; i < n6->cu.n_keys; ++i) {
+        const n6_cu_entry_t *e = &n6->cu.entries[i];
+        n6_slot_t *s;
+        int expected;
+        ninlil_n6_lane_key_t lk;
+        uint8_t canon_key[NINLIL_N6_LANE_KEY_BYTES];
+        size_t canon_klen = 0u;
+
+        if (e->post != N6_CU_POST_TX_LIMIT && e->post != N6_CU_POST_RX_ACCEPT) {
+            continue;
+        }
+        /* Closed domain already preflighted; post flip to wrong side fails below. */
+        if (e->op != N6_CU_OP_PUT || e->old_present != 1) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->old_vlen != NINLIL_N6_TX_VALUE_BYTES
+            || e->prop_vlen != NINLIL_N6_TX_VALUE_BYTES) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->slot_index >= n6->slot_count) {
+            return NINLIL_N6_CORRUPT;
+        }
+        s = &n6->cells[e->slot_index].live;
+        if (s->canary0 != N6_CANARY || s->canary1 != N6_CANARY) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (s->live == 0u) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->post == N6_CU_POST_TX_LIMIT) {
+            if (s->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX) {
+                return NINLIL_N6_CORRUPT;
+            }
+        } else {
+            if (s->alloc_side != NINLIL_N6_ALLOC_INBOUND_RX) {
+                return NINLIL_N6_CORRUPT;
+            }
+        }
+        expected = n6_lane_idx(e->lane_kind);
+        if (!n6_lane_idx_in_range(expected)) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if ((int)e->lane_idx != expected) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (!n6_lane_ok_for_slot(s, e->lane_kind)) {
+            return NINLIL_N6_CORRUPT;
+        }
+        n6_make_lane_key(s, e->lane_kind, &lk);
+        if (ninlil_n6_encode_lane_key(
+                &lk, canon_key, sizeof(canon_key), &canon_klen)
+            != NINLIL_N6_CODEC_OK) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (canon_klen != NINLIL_N6_LANE_KEY_BYTES
+            || e->klen != NINLIL_N6_LANE_KEY_BYTES) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (memcmp(e->key, canon_key, NINLIL_N6_LANE_KEY_BYTES) != 0) {
+            return NINLIL_N6_CORRUPT;
+        }
+        if (e->post == N6_CU_POST_TX_LIMIT) {
+            ninlil_n6_tx_value_t old_tv;
+            ninlil_n6_tx_value_t prop_tv;
+            if (ninlil_n6_decode_n6tx_value(e->old_val, e->old_vlen, &old_tv)
+                != NINLIL_N6_CODEC_OK) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (ninlil_n6_decode_n6tx_value(e->prop_val, e->prop_vlen, &prop_tv)
+                != NINLIL_N6_CODEC_OK) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_tv.key_generation != s->key_generation
+                || prop_tv.key_generation != s->key_generation) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (memcmp(old_tv.binding_digest_prefix16, s->binding_digest32, 16u)
+                    != 0
+                || memcmp(prop_tv.binding_digest_prefix16, s->binding_digest32,
+                       16u)
+                    != 0) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_tv.membership_epoch != s->membership_epoch
+                || prop_tv.membership_epoch != s->membership_epoch) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (memcmp(old_tv.ns_fingerprint12, s->ns_fingerprint12, 12u) != 0
+                || memcmp(prop_tv.ns_fingerprint12, s->ns_fingerprint12, 12u)
+                    != 0) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_tv.alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX
+                || prop_tv.alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_tv.reserved_exclusive != e->post_u64_b
+                || prop_tv.reserved_exclusive != e->post_u64_a) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (!(e->post_u64_b < e->post_u64_a)) {
+                return NINLIL_N6_CORRUPT;
+            }
+        } else {
+            ninlil_n6_rx_value_t old_rv;
+            ninlil_n6_rx_value_t prop_rv;
+            if (ninlil_n6_decode_n6rx_value(e->old_val, e->old_vlen, &old_rv)
+                != NINLIL_N6_CODEC_OK) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (ninlil_n6_decode_n6rx_value(e->prop_val, e->prop_vlen, &prop_rv)
+                != NINLIL_N6_CODEC_OK) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_rv.key_generation != s->key_generation
+                || prop_rv.key_generation != s->key_generation) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (memcmp(old_rv.binding_digest_prefix16, s->binding_digest32, 16u)
+                    != 0
+                || memcmp(prop_rv.binding_digest_prefix16, s->binding_digest32,
+                       16u)
+                    != 0) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_rv.membership_epoch != s->membership_epoch
+                || prop_rv.membership_epoch != s->membership_epoch) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (memcmp(old_rv.ns_fingerprint12, s->ns_fingerprint12, 12u) != 0
+                || memcmp(prop_rv.ns_fingerprint12, s->ns_fingerprint12, 12u)
+                    != 0) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_rv.alloc_side != NINLIL_N6_ALLOC_INBOUND_RX
+                || prop_rv.alloc_side != NINLIL_N6_ALLOC_INBOUND_RX) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (prop_rv.accept_reserved_through != e->post_u64_a
+                || e->post_u64_b != 0u) {
+                return NINLIL_N6_CORRUPT;
+            }
+            if (old_rv.accept_reserved_through
+                > prop_rv.accept_reserved_through) {
+                return NINLIL_N6_CORRUPT;
+            }
+        }
+    }
+    return NINLIL_N6_OK;
+}
+
+/* Force-close once → FENCED wipe → CORRUPT leave (recover preflight/post). */
+static ninlil_n6_status_t n6_cu_fail_corrupt(ninlil_n6_t *n6, const char *hint)
+{
+    n6_storage_force_close(n6);
+    if (n6->state != NINLIL_N6_STATE_FENCED) {
+        n6_enter_fenced(n6);
+    }
+    n6_set_err(n6, NINLIL_N6_CORRUPT, NINLIL_N6_REASON_CORRUPT,
+        hint != NULL ? hint : "cu");
+    n6_leave(n6);
+    return NINLIL_N6_CORRUPT;
+}
+
+/* SEMANTIC: N6_CU_POST_LANE_IDX_VALIDATE */
+static ninlil_n6_status_t n6_apply_cu_post(ninlil_n6_t *n6, ninlil_n6_cu_class_t cls)
 {
     uint32_t i;
     if (cls == NINLIL_N6_CU_ALL_PROPOSED) {
+        /* Re-validate all array posts before any mutation (docs/30 §20.12). */
+        if (n6_cu_validate_array_posts(n6) != NINLIL_N6_OK) {
+            return n6_cu_fail_corrupt(n6, "cu_post_integrity");
+        }
         for (i = 0u; i < n6->cu.n_keys; ++i) {
             n6_cu_entry_t *e = &n6->cu.entries[i];
-            if (e->slot_index >= n6->slot_count) {
+            n6_slot_t *s;
+            int idx;
+            if (e->post != N6_CU_POST_TX_LIMIT && e->post != N6_CU_POST_RX_ACCEPT) {
                 continue;
             }
-            n6_slot_t *s = &n6->cells[e->slot_index].live;
-            if (e->post == N6_CU_POST_TX_LIMIT && e->lane_idx < 3u) {
-                s->tx_ram_next[e->lane_idx] = e->post_u64_b;
-                s->tx_ram_limit[e->lane_idx] = e->post_u64_a;
-            }
-            if (e->post == N6_CU_POST_RX_ACCEPT && e->lane_idx < 3u) {
-                /* post_a = live_reserved; post_b = ram_highest; bitmap cleared on
-                 * proposed reservation advance (docs/30 §10 CU committed path). */
-                s->rx_live_reserved[e->lane_idx] = e->post_u64_a;
-                s->rx_boot_floor[e->lane_idx] = e->post_u64_a;
-                s->rx_ram_highest[e->lane_idx] = e->post_u64_a;
-                s->rx_bitmap[e->lane_idx] = 0u;
+            /* Pre-validated: slot_index and lane_idx are in range. */
+            s = &n6->cells[e->slot_index].live;
+            idx = (int)e->lane_idx;
+            if (e->post == N6_CU_POST_TX_LIMIT) {
+                s->tx_ram_next[idx] = e->post_u64_b;
+                s->tx_ram_limit[idx] = e->post_u64_a;
+            } else {
+                /* RX_ACCEPT: post_a = live_reserved; bitmap cleared (docs/30 §10). */
+                s->rx_live_reserved[idx] = e->post_u64_a;
+                s->rx_boot_floor[idx] = e->post_u64_a;
+                s->rx_ram_highest[idx] = e->post_u64_a;
+                s->rx_bitmap[idx] = 0u;
             }
         }
         if (n6->cu.pending_install != 0) {
@@ -2863,6 +3134,7 @@ static void n6_apply_cu_post(ninlil_n6_t *n6, ninlil_n6_cu_class_t cls)
             n6->state = NINLIL_N6_STATE_BOOTED;
         }
     }
+    return NINLIL_N6_OK;
 }
 
 /* recover_cu: rollback child → close shared → fence (CORRUPT path). */
@@ -2982,9 +3254,29 @@ ninlil_n6_status_t ninlil_n6_recover_cu(ninlil_n6_t *n6)
     if (st != NINLIL_N6_OK) {
         return st;
     }
-    if (n6->cu.live == 0 || n6->cu.n_keys == 0u) {
+    /*
+     * True no-CU only: live==0 && n_keys==0 → INVALID_STATE.
+     * Any other plan inconsistency (including live=1 with n_keys=0 from a
+     * test seam / corruption) MUST reach rule-7 preflight → CORRUPT fence.
+     * Do NOT use (live==0 || n_keys==0): that bypasses preflight and leaves
+     * an open COMMIT_UNKNOWN storage handle / residual CU plan.
+     */
+    /* SEMANTIC: N6_RECOVER_TRUE_NO_CU_AND */
+    if (n6->cu.live == 0 && n6->cu.n_keys == 0u) {
         n6_leave(n6);
         return NINLIL_N6_INVALID_STATE;
+    }
+
+    /*
+     * docs/30 §20.12 rule 7: full envelope + array-post integrity BEFORE any
+     * storage classify I/O (force-close of a COMMIT_UNKNOWN handle is the only
+     * storage call permitted on the fail path; open/begin/get stay at 0).
+     */
+    if (n6_cu_preflight_plan(n6) != NINLIL_N6_OK) {
+        return n6_cu_fail_corrupt(n6, "cu_preflight");
+    }
+    if (n6_cu_validate_array_posts(n6) != NINLIL_N6_OK) {
+        return n6_cu_fail_corrupt(n6, "cu_post_integrity");
     }
 
     /* COMMIT_UNKNOWN left handle open at NEED_CLOSE_OLD — close exactly once. */
@@ -3083,7 +3375,13 @@ ninlil_n6_status_t ninlil_n6_recover_cu(ninlil_n6_t *n6)
         return NINLIL_N6_FENCED;
     }
 
-    n6_apply_cu_post(n6, cls);
+    {
+        ninlil_n6_status_t post_st = n6_apply_cu_post(n6, cls);
+        if (post_st != NINLIL_N6_OK) {
+            /* apply already force-closed, fenced, set_err, left */
+            return post_st;
+        }
+    }
     if (cls == NINLIL_N6_CU_ALL_PROPOSED) {
         uint32_t j;
         for (j = 0u; j < NINLIL_N6_MAX_LIVE_TICKETS; ++j) {
@@ -3177,6 +3475,12 @@ static n6_slot_t *n6_alloc_slot(ninlil_n6_t *n6, int *out_corrupt)
     return NULL;
 }
 
+/*
+ * Per-lane RAM windows (tx_ram_next/limit, rx_boot_floor/...) are size
+ * N6_PRIVATE_NAMED_LANE_COUNT. n6_lane_idx returns 0 (DATA/E2E), 1 (ACK),
+ * or -1 (invalid external/corrupt). Callers MUST range-check before any
+ * array index (GCC -Warray-bounds / O2; RAM corruption / future branches).
+ */
 static int n6_lane_idx(uint8_t lane_kind)
 {
     if (lane_kind == NINLIL_N6_LANE_HOP_DATA || lane_kind == NINLIL_N6_LANE_E2E) {
@@ -3186,6 +3490,12 @@ static int n6_lane_idx(uint8_t lane_kind)
         return 1;
     }
     return -1;
+}
+
+/* 1 if idx is a legal index into per-lane arrays of N6_PRIVATE_NAMED_LANE_COUNT. */
+static int n6_lane_idx_in_range(int idx)
+{
+    return idx >= 0 && idx < (int)N6_PRIVATE_NAMED_LANE_COUNT;
 }
 
 static int n6_lane_ok_for_slot(const n6_slot_t *s, uint8_t lane_kind)
@@ -3743,12 +4053,17 @@ static ninlil_n6_status_t n6_install_engine(
     memcpy(n6->cu.pending_slot.ns_fingerprint12, nsfp, 12);
     memcpy(n6->cu.pending_slot.local_node_id, cap->local_node_id, 16);
     memcpy(n6->cu.pending_slot.receiver_node_id, cap->receiver_node_id, 16);
-    n6->cu.pending_slot.tx_ram_next[0] = 1;
-    n6->cu.pending_slot.tx_ram_limit[0] = 1;
-    n6->cu.pending_slot.tx_ram_next[1] = 1;
-    n6->cu.pending_slot.tx_ram_limit[1] = 1;
-    n6->cu.pending_slot.tx_ram_next[2] = 1;
-    n6->cu.pending_slot.tx_ram_limit[2] = 1;
+    {
+        int li;
+        for (li = 0; li < (int)N6_PRIVATE_NAMED_LANE_COUNT; ++li) {
+            n6->cu.pending_slot.tx_ram_next[li] = 1u;
+            n6->cu.pending_slot.tx_ram_limit[li] = 1u;
+            n6->cu.pending_slot.rx_live_reserved[li] = 0u;
+            n6->cu.pending_slot.rx_boot_floor[li] = 0u;
+            n6->cu.pending_slot.rx_ram_highest[li] = 0u;
+            n6->cu.pending_slot.rx_bitmap[li] = 0u;
+        }
+    }
 
     /* Commit clears CU plan on success; copy-own pending before FULL_OK publish. */
     {
@@ -3843,6 +4158,12 @@ ninlil_n6_status_t ninlil_n6_tx_burn(
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
     idx = n6_lane_idx(lane_kind);
+    /* SEMANTIC: N6_TX_BURN_LANE_IDX_GUARD
+     * Defensive range check after lane_ok: catalog today maps only to 0/1,
+     * but never index per-lane arrays with -1/OOB (future branch / compiler). */
+    if (!n6_lane_idx_in_range(idx)) {
+        n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
+    }
     for (li = 0; li < (int)NINLIL_N6_MAX_LIVE_LEASES; ++li)
         if (!n6->leases[li].live) break;
     if (li >= (int)NINLIL_N6_MAX_LIVE_LEASES) {
@@ -3982,13 +4303,21 @@ ninlil_n6_status_t ninlil_n6_tx_lease_release(
     n6_leave(n6); return NINLIL_N6_NOT_FOUND;
 }
 
-/* docs/30 §10 RX sliding-64 precheck (mutation 0) */
+/* docs/30 §10 RX sliding-64 precheck (mutation 0). idx must be in-range. */
 static int n6_rx_precheck_window(const n6_slot_t *slot, int idx, uint64_t c)
 {
-    uint64_t boot_floor = slot->rx_boot_floor[idx];
-    uint64_t ram_highest = slot->rx_ram_highest[idx];
-    uint64_t bm = slot->rx_bitmap[idx];
+    uint64_t boot_floor;
+    uint64_t ram_highest;
+    uint64_t bm;
     uint64_t delta;
+    /* SEMANTIC: N6_RX_PRECHECK_WINDOW_LANE_IDX_GUARD
+     * Fail-closed before any array load: never index with -1 / OOB. */
+    if (!n6_lane_idx_in_range(idx)) {
+        return 0;
+    }
+    boot_floor = slot->rx_boot_floor[idx];
+    ram_highest = slot->rx_ram_highest[idx];
+    bm = slot->rx_bitmap[idx];
     if (c == 0u || c == UINT64_MAX) {
         return 0;
     }
@@ -4077,6 +4406,13 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
     idx = n6_lane_idx(lane_kind);
+    /* SEMANTIC: N6_RX_PRECHECK_LANE_IDX_GUARD
+     * Explicit range check after n6_lane_idx: invalid external lane is
+     * INVALID_ARGUMENT with zero mutation (out_ticket already zeroed; no
+     * internal ticket allocated). Also silences GCC -Warray-bounds at O2. */
+    if (!n6_lane_idx_in_range(idx)) {
+        n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
+    }
     if (!n6_rx_precheck_window(slot, idx, counter)) {
         n6_leave(n6); return NINLIL_N6_TICKET;
     }
@@ -4171,19 +4507,25 @@ ninlil_n6_status_t ninlil_n6_rx_admit_after_aead(
     }
     /* Snapshot internal; all exits from here consume pair exactly once. */
     tok = n6->tickets[i];
-    /* full field match against internal token */
-    if (ticket->handle != tok.handle || ticket->lane_kind != tok.lane_kind
-        || ticket->counter != tok.counter || ticket->context_id != tok.context_id
-        || ticket->layer_code != tok.layer_code
-        || ticket->direction_code != tok.direction_code
-        || memcmp(ticket->key16, tok.key16, 16u) != 0
-        || memcmp(ticket->iv12, tok.iv12, 12u) != 0) {
-        n6_rx_consume_ticket_pair(n6, i, ticket, &tok);
-        n6_leave(n6); return NINLIL_N6_TICKET;
-    }
-    /* use only internal copy from here */
-    c = tok.counter;
+    /*
+     * SEMANTIC: N6_RX_ADMIT_LANE_RANGE_LAYER_GUARD
+     * Internal immutable token is authoritative for lane index.
+     * Range-invalid lane_kind ⇒ CORRUPT + fence + full ticket wipe; never
+     * index per-lane RAM arrays (GCC / OOB / RAM-corruption defense).
+     * After slot acquisition, re-validate lane×layer with n6_lane_ok_for_slot
+     * before any window/storage mutation (catalog-valid cross-layer ⇒ CORRUPT).
+     */
     idx = n6_lane_idx(tok.lane_kind);
+    if (!n6_lane_idx_in_range(idx)) {
+        n6_enter_fenced(n6);
+        n6_rx_consume_ticket_pair(n6, i, ticket, &tok);
+        n6_set_err(n6, NINLIL_N6_CORRUPT, NINLIL_N6_REASON_CORRUPT,
+            "rx_lane_idx");
+        n6_leave(n6);
+        return NINLIL_N6_CORRUPT;
+    }
+    /* use only internal copy for counter / slot from here */
+    c = tok.counter;
     if (tok.slot_index >= n6->slot_count) {
         n6_rx_consume_ticket_pair(n6, i, ticket, &tok);
         n6_leave(n6); return NINLIL_N6_CORRUPT;
@@ -4201,6 +4543,25 @@ ninlil_n6_status_t ninlil_n6_rx_admit_after_aead(
         n6_rx_consume_ticket_pair(n6, i, ticket, &tok);
         n6_leave(n6);
         return NINLIL_N6_NOT_FOUND;
+    }
+    /* Cross-layer internal token (catalog-valid lane, wrong slot layer). */
+    if (!n6_lane_ok_for_slot(slot, tok.lane_kind)) {
+        n6_enter_fenced(n6);
+        n6_rx_consume_ticket_pair(n6, i, ticket, &tok);
+        n6_set_err(n6, NINLIL_N6_CORRUPT, NINLIL_N6_REASON_CORRUPT,
+            "rx_lane_layer");
+        n6_leave(n6);
+        return NINLIL_N6_CORRUPT;
+    }
+    /* full field match against internal token (caller tamper → TICKET) */
+    if (ticket->handle != tok.handle || ticket->lane_kind != tok.lane_kind
+        || ticket->counter != tok.counter || ticket->context_id != tok.context_id
+        || ticket->layer_code != tok.layer_code
+        || ticket->direction_code != tok.direction_code
+        || memcmp(ticket->key16, tok.key16, 16u) != 0
+        || memcmp(ticket->iv12, tok.iv12, 12u) != 0) {
+        n6_rx_consume_ticket_pair(n6, i, ticket, &tok);
+        n6_leave(n6); return NINLIL_N6_TICKET;
     }
     if (!n6_rx_precheck_window(slot, idx, c)) {
         n6_rx_consume_ticket_pair(n6, i, ticket, &tok);
@@ -4496,5 +4857,347 @@ int ninlil_n6_test_any_ticket_key_or_iv_nonzero(const ninlil_n6_t *n6)
         }
     }
     return 0;
+}
+
+/*
+ * Test-only fault seams / snapshots (not in production header — tests declare
+ * extern). Production object: not compiled (NINLIL_N6_TEST_BUILD only).
+ */
+int ninlil_n6_test_fault_corrupt_live_ticket_lane(
+    ninlil_n6_t *n6, uint8_t bad_lane_kind)
+{
+    uint32_t i;
+    int found = -1;
+    if (n6 == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < NINLIL_N6_MAX_LIVE_TICKETS; ++i) {
+        if (n6->tickets[i].live != 0u) {
+            if (found >= 0) {
+                return 0;
+            }
+            found = (int)i;
+        }
+    }
+    if (found < 0) {
+        return 0;
+    }
+    n6->tickets[(uint32_t)found].lane_kind = bad_lane_kind;
+    return 1;
+}
+
+/* 1 if every live/internal ticket slot is fully byte-zero (including dead). */
+int ninlil_n6_test_all_tickets_fully_zero(const ninlil_n6_t *n6)
+{
+    uint32_t i;
+    size_t j;
+    const uint8_t *p;
+    if (n6 == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < NINLIL_N6_MAX_LIVE_TICKETS; ++i) {
+        p = (const uint8_t *)&n6->tickets[i];
+        for (j = 0u; j < sizeof(n6->tickets[i]); ++j) {
+            if (p[j] != 0u) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/* 1 if every lease slot is fully byte-zero. */
+int ninlil_n6_test_all_leases_fully_zero(const ninlil_n6_t *n6)
+{
+    uint32_t i;
+    size_t j;
+    const uint8_t *p;
+    if (n6 == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < NINLIL_N6_MAX_LIVE_LEASES; ++i) {
+        p = (const uint8_t *)&n6->leases[i];
+        for (j = 0u; j < sizeof(n6->leases[i]); ++j) {
+            if (p[j] != 0u) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/* 1 if handle's live slot has traffic_secret32 all-zero (post-fence proof). */
+int ninlil_n6_test_slot_traffic_secret_zero(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle)
+{
+    uint32_t i;
+    size_t j;
+    if (n6 == NULL || handle == 0u) {
+        return 0;
+    }
+    for (i = 0u; i < n6->slot_count; ++i) {
+        const n6_slot_t *s = &n6->cells[i].live;
+        if (s->live != 0u && s->handle == handle) {
+            for (j = 0u; j < sizeof(s->traffic_secret32); ++j) {
+                if (s->traffic_secret32[j] != 0u) {
+                    return 0;
+                }
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Snapshot all named-lane RX arrays for a handle (N6_PRIVATE_NAMED_LANE_COUNT).
+ * out_* must each point to at least N6_PRIVATE_NAMED_LANE_COUNT elements.
+ */
+int ninlil_n6_test_rx_all_lanes_snapshot(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle,
+    uint64_t *out_live_reserved, uint64_t *out_boot_floor,
+    uint64_t *out_ram_highest, uint64_t *out_bitmap)
+{
+    uint32_t i;
+    int k;
+    if (n6 == NULL || handle == 0u || out_live_reserved == NULL
+        || out_boot_floor == NULL || out_ram_highest == NULL
+        || out_bitmap == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < n6->slot_count; ++i) {
+        const n6_slot_t *s = &n6->cells[i].live;
+        if (s->live != 0u && s->handle == handle) {
+            for (k = 0; k < (int)N6_PRIVATE_NAMED_LANE_COUNT; ++k) {
+                out_live_reserved[k] = s->rx_live_reserved[k];
+                out_boot_floor[k] = s->rx_boot_floor[k];
+                out_ram_highest[k] = s->rx_ram_highest[k];
+                out_bitmap[k] = s->rx_bitmap[k];
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int ninlil_n6_test_tx_all_lanes_snapshot(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle,
+    uint64_t *out_next, uint64_t *out_limit)
+{
+    uint32_t i;
+    int k;
+    if (n6 == NULL || handle == 0u || out_next == NULL || out_limit == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < n6->slot_count; ++i) {
+        const n6_slot_t *s = &n6->cells[i].live;
+        if (s->live != 0u && s->handle == handle) {
+            for (k = 0; k < (int)N6_PRIVATE_NAMED_LANE_COUNT; ++k) {
+                out_next[k] = s->tx_ram_next[k];
+                out_limit[k] = s->tx_ram_limit[k];
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Corrupt first CU plan entry with TX_LIMIT or RX_ACCEPT post.
+ * kind_corrupt!=0 ⇒ set lane_kind; idx_corrupt!=0 ⇒ set lane_idx.
+ * Requires live CU plan. Returns 1 on inject.
+ */
+int ninlil_n6_test_fault_corrupt_cu_array_post(
+    ninlil_n6_t *n6, int kind_corrupt, uint8_t bad_kind,
+    int idx_corrupt, uint8_t bad_idx)
+{
+    uint32_t i;
+    if (n6 == NULL || n6->cu.live == 0 || n6->cu.n_keys == 0u) {
+        return 0;
+    }
+    if (kind_corrupt == 0 && idx_corrupt == 0) {
+        return 0;
+    }
+    for (i = 0u; i < n6->cu.n_keys; ++i) {
+        n6_cu_entry_t *e = &n6->cu.entries[i];
+        if (e->post != N6_CU_POST_TX_LIMIT && e->post != N6_CU_POST_RX_ACCEPT) {
+            continue;
+        }
+        if (kind_corrupt != 0) {
+            e->lane_kind = bad_kind;
+        }
+        if (idx_corrupt != 0) {
+            e->lane_idx = bad_idx;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/*
+ * Test-only per-field CU plan mutator (docs/30 §20.12 rule 8).
+ * entry_index selects a plan entry; for plan-level fields entry_index is ignored.
+ * field_id closed domain (see tests/radio/n6_context_store_test.c).
+ * Returns 1 on successful inject.
+ */
+int ninlil_n6_test_fault_mutate_cu_field(
+    ninlil_n6_t *n6, uint32_t entry_index, int field_id, uint64_t u64_val)
+{
+    n6_cu_entry_t *e;
+    if (n6 == NULL || n6->cu.live == 0) {
+        return 0;
+    }
+    switch (field_id) {
+    case 1: /* N_KEYS */
+        n6->cu.n_keys = (uint32_t)u64_val;
+        return 1;
+    case 2: /* PHASE */
+        n6->cu.phase = (n6_cu_phase_t)u64_val;
+        return 1;
+    case 3: /* PENDING_INSTALL */
+        n6->cu.pending_install = (int)u64_val;
+        return 1;
+    default:
+        break;
+    }
+    if (n6->cu.n_keys == 0u || entry_index >= n6->cu.n_keys) {
+        return 0;
+    }
+    e = &n6->cu.entries[entry_index];
+    switch (field_id) {
+    case 4: /* OP */
+        e->op = (n6_cu_op_t)u64_val;
+        return 1;
+    case 5: /* POST */
+        e->post = (n6_cu_post_t)u64_val;
+        return 1;
+    case 6: /* SLOT_INDEX */
+        e->slot_index = (uint32_t)u64_val;
+        return 1;
+    case 7: /* LANE_KIND */
+        e->lane_kind = (uint8_t)u64_val;
+        return 1;
+    case 8: /* LANE_IDX */
+        e->lane_idx = (uint8_t)u64_val;
+        return 1;
+    case 9: /* KLEN */
+        e->klen = (size_t)u64_val;
+        return 1;
+    case 10: /* OLD_PRESENT */
+        e->old_present = (int)u64_val;
+        return 1;
+    case 11: /* OLD_VLEN */
+        e->old_vlen = (size_t)u64_val;
+        return 1;
+    case 12: /* PROP_VLEN */
+        e->prop_vlen = (size_t)u64_val;
+        return 1;
+    case 13: /* POST_U64_A */
+        e->post_u64_a = u64_val;
+        return 1;
+    case 14: /* POST_U64_B */
+        e->post_u64_b = u64_val;
+        return 1;
+    case 15: { /* PROP_BYTE xor: low 32 = offset, force one-byte flip */
+        size_t off = (size_t)u64_val;
+        if (off >= sizeof(e->prop_val)) {
+            return 0;
+        }
+        e->prop_val[off] ^= 0x01u;
+        return 1;
+    }
+    case 16: { /* KEY_BYTE xor */
+        size_t off = (size_t)u64_val;
+        if (off >= sizeof(e->key)) {
+            return 0;
+        }
+        e->key[off] ^= 0x01u;
+        return 1;
+    }
+    case 17: { /* APPEND_COPY of this entry (n_keys+1 if room) */
+        n6_cu_entry_t *dst;
+        if (n6->cu.n_keys >= NINLIL_N6_CU_PLAN_MAX_KEYS) {
+            return 0;
+        }
+        dst = &n6->cu.entries[n6->cu.n_keys];
+        *dst = *e;
+        n6->cu.n_keys += 1u;
+        return 1;
+    }
+    case 18: { /* REWRITE_PROP_TX_RESERVED: re-encode CRC-valid prop, leave post */
+        ninlil_n6_tx_value_t tv;
+        size_t vlen = 0u;
+        if (ninlil_n6_decode_n6tx_value(e->prop_val, e->prop_vlen, &tv)
+            != NINLIL_N6_CODEC_OK) {
+            return 0;
+        }
+        tv.reserved_exclusive = u64_val;
+        if (ninlil_n6_encode_n6tx_value(&tv, e->prop_val, sizeof(e->prop_val),
+                &vlen)
+            != NINLIL_N6_CODEC_OK) {
+            return 0;
+        }
+        e->prop_vlen = vlen;
+        return 1;
+    }
+    case 19: { /* REWRITE_PROP_RX_ACCEPT: re-encode CRC-valid prop, leave post */
+        ninlil_n6_rx_value_t rv;
+        size_t vlen = 0u;
+        if (ninlil_n6_decode_n6rx_value(e->prop_val, e->prop_vlen, &rv)
+            != NINLIL_N6_CODEC_OK) {
+            return 0;
+        }
+        rv.accept_reserved_through = u64_val;
+        if (ninlil_n6_encode_n6rx_value(&rv, e->prop_val, sizeof(e->prop_val),
+                &vlen)
+            != NINLIL_N6_CODEC_OK) {
+            return 0;
+        }
+        e->prop_vlen = vlen;
+        return 1;
+    }
+    case 20: { /* FIND_FIRST_POST: write entry index of first TX/RX post into *via */
+        /* u64_val unused; returns index+1 so 0 means not found. Caller uses return. */
+        uint32_t i;
+        (void)u64_val;
+        (void)entry_index;
+        for (i = 0u; i < n6->cu.n_keys; ++i) {
+            if (n6->cu.entries[i].post == N6_CU_POST_TX_LIMIT
+                || n6->cu.entries[i].post == N6_CU_POST_RX_ACCEPT) {
+                return (int)(i + 1u);
+            }
+        }
+        return 0;
+    }
+    default:
+        return 0;
+    }
+}
+
+/* Back-compat single-lane window snapshot (delegates to all-lanes). */
+int ninlil_n6_test_rx_window_snapshot(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle, uint8_t lane_kind,
+    uint64_t *out_boot_floor, uint64_t *out_ram_highest, uint64_t *out_bitmap)
+{
+    uint64_t live[N6_PRIVATE_NAMED_LANE_COUNT];
+    uint64_t boot[N6_PRIVATE_NAMED_LANE_COUNT];
+    uint64_t high[N6_PRIVATE_NAMED_LANE_COUNT];
+    uint64_t bm[N6_PRIVATE_NAMED_LANE_COUNT];
+    int idx;
+    if (out_boot_floor == NULL || out_ram_highest == NULL || out_bitmap == NULL) {
+        return 0;
+    }
+    idx = n6_lane_idx(lane_kind);
+    if (!n6_lane_idx_in_range(idx)) {
+        return 0;
+    }
+    if (ninlil_n6_test_rx_all_lanes_snapshot(n6, handle, live, boot, high, bm)
+        != 1) {
+        return 0;
+    }
+    *out_boot_floor = boot[idx];
+    *out_ram_highest = high[idx];
+    *out_bitmap = bm[idx];
+    return 1;
 }
 #endif /* NINLIL_N6_TEST_BUILD */

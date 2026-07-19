@@ -2328,6 +2328,20 @@ if(NINLIL_BUILD_TESTS)
     set_tests_properties(n6_storage_callsite_gate PROPERTIES TIMEOUT 30)
     set_tests_properties(n6_storage_callsite_gate_self_test PROPERTIES TIMEOUT 60)
 
+    # GCC 13 Release compile_commands structural self-test (false-green mutations).
+    # Live check against a real compile_commands.json is CI-only
+    # (ubuntu-gcc-release-n6-frame with gcc-13); do not register host check CTest
+    # that would false-red AppleClang / non-13 toolchains. R6 required identity
+    # set remains the exact 14 names asserted in that CI job.
+    add_test(
+        NAME n6_gcc13_release_compile_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/n6_gcc13_release_compile_gate.py
+            self-test
+    )
+    set_tests_properties(n6_gcc13_release_compile_gate_self_test PROPERTIES
+        TIMEOUT 30)
+
     # Stack-usage: recursive discover under production object dir only
     # (CMakeFiles/ninlil_runtime_private.dir). Never whole-build or testbuild.
     # Host AppleClang/GCC both emit .su — missing artifacts fail (no host skip).

@@ -146,6 +146,7 @@ uint32_t n6_mem_storage_commit_count(void);
 uint32_t n6_mem_storage_rollback_count(void);
 uint32_t n6_mem_storage_get_count(void);
 uint32_t n6_mem_storage_put_count(void);
+uint32_t n6_mem_storage_erase_count(void);
 uint32_t n6_mem_storage_capacity_count(void);
 
 #endif
