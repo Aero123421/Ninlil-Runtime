@@ -1,8 +1,9 @@
 # ADR-0013: R7 T1b Context Binding and Verified HKDF Schedule
 
-状態: **Proposed — docs-only; implementation and acceptance pending**  
+状態: **Accepted — R7 T1b private stateless implementation candidate only**  
 提案日: 2026-07-19  
-非主張: T1b implementation、R7 full、context install、counter/storage/replay、W1/N6、M4/M5、実機HIL、legal、production radio
+受入日: 2026-07-19  
+非主張: R7 full、context install、counter/storage/replay、W1/N6、M4/M5、実機HIL、legal、production radio
 
 ## Context
 
@@ -55,5 +56,12 @@ Exact type、API、bytes、validation順、call count、test matrix、non-claims
 
 ## Acceptance boundary
 
-このADRがmergeされても状態はProposedであり、T1b実装またはR7完成を意味しない。固定実装SHA、
-全CI、ESP final-link、独立review P0=0/P1=0/P2=0を記録した後だけ、別差分でAcceptedへ変更する。
+固定実装SHA `ec4c39ec5d37176de63646f5bcc9d48140684760`について、全CI、ESP final-link、
+独立PRE/POST-CI review P0=0/P1=0/P2=0 GOを満たしたため、T1b private stateless
+implementation candidateをAcceptedとする。固定証跡は
+[review record](../reviews/2026-07-19-r7-t1b-context-binding-hkdf-accepted.md)に置く。
+
+このAcceptedはexpected digest / traffic secretの生成・認証・配布・保存、capsule parse、context
+install、counter/nonce/AEAD/replay/durable state、T1 composite、W1/L1/N6/M4/M5、Attachment/Join、
+LINK/FRAG/CELL/HA、relay/routing/MAC、full R7 artifact、実機KAT、RF/USB HIL、FIELD/Japan legal、
+production radioまたはR7 full completionを意味しない。compile/link ≠ HIL。
