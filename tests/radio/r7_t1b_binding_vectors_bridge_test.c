@@ -34,6 +34,14 @@
 #define NINLIL_R7_T1B_BRIDGE_SITE_MAX ((size_t)16u)
 #define NINLIL_R7_T1B_BRIDGE_ID_MAX ((size_t)32u)
 #define NINLIL_R7_T1B_BRIDGE_CANON_MAX ((size_t)207u)
+/* Trailing sentinel after exact-capacity encode publish region. */
+#define NINLIL_R7_T1B_BRIDGE_ENCODE_GUARD ((size_t)32u)
+#define NINLIL_R7_T1B_BRIDGE_ENCODE_BUF \
+    (NINLIL_R7_T1B_BRIDGE_CANON_MAX + NINLIL_R7_T1B_BRIDGE_ENCODE_GUARD)
+/* Per-layer: 32 digest bytes × 8 single-bit flips; both layers fixed total. */
+#define NINLIL_R7_T1B_BRIDGE_MISMATCH_BITS_PER_LAYER ((size_t)(32u * 8u))
+#define NINLIL_R7_T1B_BRIDGE_MISMATCH_TOTAL \
+    (NINLIL_R7_T1B_BRIDGE_MISMATCH_BITS_PER_LAYER * 2u)
 
 _Static_assert(
     NINLIL_R7_T1B_VECTOR_COUNT == 24u, "T1b vector count pin");
@@ -235,12 +243,202 @@ static int ninlil_r7_t1b_bridge_is_canary(const uint8_t *p, size_t n)
     return 1;
 }
 
+/*
+ * Canary check for a subspan that was filled as part of a larger buffer.
+ * Pattern at absolute index base_index + i is (0xA5 ^ (base_index + i)).
+ */
+static int ninlil_r7_t1b_bridge_is_canary_from(
+    const uint8_t *p, size_t base_index, size_t n)
+{
+    size_t i;
+
+    if (n == 0u) {
+        return 1;
+    }
+    if (p == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < n; i++) {
+        if (p[i] != (uint8_t)(0xA5u ^ (uint8_t)(base_index + i))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int ninlil_r7_t1b_bridge_streq(const char *a, const char *b)
 {
     if (a == NULL || b == NULL) {
         return 0;
     }
     return strcmp(a, b) == 0;
+}
+
+/*
+ * Guard sentinel self-test: fill/check helpers must accept intact canaries and
+ * reject a single-byte corruption in both whole-buffer and trailing-range forms.
+ */
+static int ninlil_r7_t1b_bridge_guard_sentinel_self_test(void)
+{
+    uint8_t buf[NINLIL_R7_T1B_BRIDGE_ENCODE_GUARD + 8u];
+    size_t need = 8u;
+    size_t trail;
+
+    ninlil_r7_t1b_bridge_fill_canary(buf, sizeof(buf));
+    if (!ninlil_r7_t1b_bridge_is_canary(buf, sizeof(buf))) {
+        return ninlil_r7_t1b_bridge_fail("guard", "fill_intact");
+    }
+    trail = sizeof(buf) - need;
+    if (!ninlil_r7_t1b_bridge_is_canary_from(buf + need, need, trail)) {
+        return ninlil_r7_t1b_bridge_fail("guard", "trailing_intact");
+    }
+    buf[need] = (uint8_t)(buf[need] ^ 0x01u);
+    if (ninlil_r7_t1b_bridge_is_canary_from(buf + need, need, trail)
+        || ninlil_r7_t1b_bridge_is_canary(buf, sizeof(buf))) {
+        return ninlil_r7_t1b_bridge_fail("guard", "trailing_detect");
+    }
+    ninlil_r7_t1b_bridge_fill_canary(buf, sizeof(buf));
+    buf[0] = (uint8_t)(buf[0] ^ 0x01u);
+    if (ninlil_r7_t1b_bridge_is_canary(buf, sizeof(buf))) {
+        return ninlil_r7_t1b_bridge_fail("guard", "head_detect");
+    }
+    return 1;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Counting OpenSSL provider wrap (raw callback tallies only)                 */
+/* -------------------------------------------------------------------------- */
+
+typedef struct ninlil_r7_t1b_bridge_count_ctx {
+    const ninlil_r7_crypto_provider *inner;
+    size_t sha_calls;
+    size_t extract_calls;
+    size_t expand_calls;
+} ninlil_r7_t1b_bridge_count_ctx;
+
+static ninlil_r7_crypto_raw_status ninlil_r7_t1b_bridge_count_sha256(
+    void *ctx,
+    const uint8_t *msg,
+    size_t msg_len,
+    uint8_t out_digest[32])
+{
+    ninlil_r7_t1b_bridge_count_ctx *c =
+        (ninlil_r7_t1b_bridge_count_ctx *)ctx;
+
+    c->sha_calls++;
+    return c->inner->sha256(c->inner->ctx, msg, msg_len, out_digest);
+}
+
+static ninlil_r7_crypto_raw_status ninlil_r7_t1b_bridge_count_extract(
+    void *ctx,
+    const uint8_t *salt,
+    size_t salt_len,
+    const uint8_t *ikm,
+    size_t ikm_len,
+    uint8_t out_prk[32])
+{
+    ninlil_r7_t1b_bridge_count_ctx *c =
+        (ninlil_r7_t1b_bridge_count_ctx *)ctx;
+
+    c->extract_calls++;
+    return c->inner->hkdf_extract_sha256(
+        c->inner->ctx, salt, salt_len, ikm, ikm_len, out_prk);
+}
+
+static ninlil_r7_crypto_raw_status ninlil_r7_t1b_bridge_count_expand(
+    void *ctx,
+    const uint8_t prk[32],
+    const uint8_t *info,
+    size_t info_len,
+    uint8_t *out_okm,
+    size_t okm_len)
+{
+    ninlil_r7_t1b_bridge_count_ctx *c =
+        (ninlil_r7_t1b_bridge_count_ctx *)ctx;
+
+    c->expand_calls++;
+    return c->inner->hkdf_expand_sha256(
+        c->inner->ctx, prk, info, info_len, out_okm, okm_len);
+}
+
+static ninlil_r7_crypto_raw_status ninlil_r7_t1b_bridge_count_seal(
+    void *ctx,
+    const uint8_t key[16],
+    const uint8_t nonce[12],
+    const uint8_t *aad,
+    size_t aad_len,
+    const uint8_t *plaintext,
+    size_t plaintext_len,
+    uint8_t *out_sealed,
+    size_t out_capacity,
+    size_t *produced_len)
+{
+    ninlil_r7_t1b_bridge_count_ctx *c =
+        (ninlil_r7_t1b_bridge_count_ctx *)ctx;
+
+    return c->inner->aes128_gcm_seal(
+        c->inner->ctx,
+        key,
+        nonce,
+        aad,
+        aad_len,
+        plaintext,
+        plaintext_len,
+        out_sealed,
+        out_capacity,
+        produced_len);
+}
+
+static ninlil_r7_crypto_raw_status ninlil_r7_t1b_bridge_count_open(
+    void *ctx,
+    const uint8_t key[16],
+    const uint8_t nonce[12],
+    const uint8_t *aad,
+    size_t aad_len,
+    const uint8_t *sealed,
+    size_t sealed_len,
+    uint8_t *out_plaintext,
+    size_t out_capacity,
+    size_t *produced_len)
+{
+    ninlil_r7_t1b_bridge_count_ctx *c =
+        (ninlil_r7_t1b_bridge_count_ctx *)ctx;
+
+    return c->inner->aes128_gcm_open(
+        c->inner->ctx,
+        key,
+        nonce,
+        aad,
+        aad_len,
+        sealed,
+        sealed_len,
+        out_plaintext,
+        out_capacity,
+        produced_len);
+}
+
+static int ninlil_r7_t1b_bridge_wrap_counting(
+    const ninlil_r7_crypto_provider *inner,
+    ninlil_r7_t1b_bridge_count_ctx *count_ctx,
+    ninlil_r7_crypto_provider *out_provider)
+{
+    if (inner == NULL || count_ctx == NULL || out_provider == NULL) {
+        return 0;
+    }
+    (void)memset(count_ctx, 0, sizeof(*count_ctx));
+    count_ctx->inner = inner;
+    (void)memset(out_provider, 0, sizeof(*out_provider));
+    out_provider->abi_version = NINLIL_R7_CRYPTO_PROVIDER_ABI_VERSION;
+    out_provider->struct_size = (uint32_t)sizeof(*out_provider);
+    out_provider->reserved_zero = 0ull;
+    out_provider->ctx = count_ctx;
+    out_provider->sha256 = ninlil_r7_t1b_bridge_count_sha256;
+    out_provider->hkdf_extract_sha256 = ninlil_r7_t1b_bridge_count_extract;
+    out_provider->hkdf_expand_sha256 = ninlil_r7_t1b_bridge_count_expand;
+    out_provider->aes128_gcm_seal = ninlil_r7_t1b_bridge_count_seal;
+    out_provider->aes128_gcm_open = ninlil_r7_t1b_bridge_count_open;
+    return ninlil_r7_crypto_provider_validate(out_provider)
+        == NINLIL_R7_CRYPTO_OK;
 }
 
 static int ninlil_r7_t1b_bridge_decoder_self_test(void)
@@ -403,7 +601,8 @@ static int ninlil_r7_t1b_bridge_run_one(
     uint8_t auth[NINLIL_R7_T1B_BRIDGE_ID_MAX];
     uint8_t traffic[32];
     uint8_t exp_canon[NINLIL_R7_T1B_BRIDGE_CANON_MAX];
-    uint8_t got_canon[NINLIL_R7_T1B_BRIDGE_CANON_MAX];
+    /* Exact-capacity write region + trailing guard: [need, buffer_end). */
+    uint8_t got_canon[NINLIL_R7_T1B_BRIDGE_ENCODE_BUF];
     uint8_t exp_digest[32];
     uint8_t got_digest[32];
     uint8_t exp_prk[32];
@@ -423,6 +622,7 @@ static int ninlil_r7_t1b_bridge_run_one(
     size_t got_canon_len = 0u;
     size_t need = 0u;
     size_t min_len = 0u;
+    size_t trail_len = 0u;
     int is_hop;
     int no_controller;
     int32_t st;
@@ -650,7 +850,10 @@ static int ninlil_r7_t1b_bridge_run_one(
         e2e_in.direction_code = v->direction_code;
     }
 
-    /* Encode with exact capacity; compare canonical bytes + length. */
+    /*
+     * Encode with exact capacity only. Buffer is larger by ENCODE_GUARD so
+     * [need, buffer_end) is a trailing sentinel that must stay canary.
+     */
     ninlil_r7_t1b_bridge_fill_canary(got_canon, sizeof(got_canon));
     got_canon_len = (size_t)0xDEADBEEFu;
     if (is_hop) {
@@ -663,6 +866,12 @@ static int ninlil_r7_t1b_bridge_run_one(
     if (st != NINLIL_R7_BINDING_OK || got_canon_len != need
         || !ninlil_r7_t1b_bridge_bytes_eq(got_canon, exp_canon, need)) {
         return ninlil_r7_t1b_bridge_fail(v->id, "encode_canonical");
+    }
+    trail_len = sizeof(got_canon) - need;
+    if (trail_len < NINLIL_R7_T1B_BRIDGE_ENCODE_GUARD
+        || !ninlil_r7_t1b_bridge_is_canary_from(
+            got_canon + need, need, trail_len)) {
+        return ninlil_r7_t1b_bridge_fail(v->id, "encode_trailing_guard");
     }
 
     /* Fixed profile byte and Hop kind mask (not caller-selected). */
@@ -748,12 +957,21 @@ static int ninlil_r7_t1b_bridge_run_one(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Deliberate mismatch: one per layer, canary + mutation zero                 */
+/* Deliberate mismatch: full 32×8 single-bit expected-digest matrix per layer */
 /* -------------------------------------------------------------------------- */
 
-static int ninlil_r7_t1b_bridge_mismatch_once(
+/*
+ * For one layer sample vector: flip each of 32 expected-digest bytes × each of
+ * 8 bits alone (exactly 256 trials). Each trial must:
+ *   - return MISMATCH
+ *   - invoke SHA callback exact 1, Extract exact 0, Expand exact 0
+ *   - leave the entire output bundle canary-invariant
+ * Replaces the previous first-byte-only single mismatch probe.
+ */
+static int ninlil_r7_t1b_bridge_mismatch_layer(
     const ninlil_r7_crypto_provider *provider,
-    const ninlil_r7_t1b_binding_vector *v)
+    const ninlil_r7_t1b_binding_vector *v,
+    size_t *out_trials)
 {
     uint8_t site[NINLIL_R7_T1B_BRIDGE_SITE_MAX];
     uint8_t primary[NINLIL_R7_T1B_BRIDGE_ID_MAX];
@@ -768,17 +986,26 @@ static int ninlil_r7_t1b_bridge_mismatch_once(
     size_t left_len = 0u;
     size_t right_len = 0u;
     size_t auth_len = 0u;
+    size_t byte_i;
+    size_t bit_i;
+    size_t trials = 0u;
     int is_hop;
     int32_t st;
     ninlil_r7_hop_binding_input hop_in;
     ninlil_r7_e2e_binding_input e2e_in;
     ninlil_r7_hop_key_bundle hop_bundle;
     ninlil_r7_e2e_key_bundle e2e_bundle;
+    ninlil_r7_t1b_bridge_count_ctx count_ctx;
+    ninlil_r7_crypto_provider counted;
 
-    if (provider == NULL || v == NULL || v->id == NULL) {
+    if (provider == NULL || v == NULL || v->id == NULL || out_trials == NULL) {
         return ninlil_r7_t1b_bridge_fail("mismatch", "shape");
     }
+    *out_trials = 0u;
     is_hop = ninlil_r7_t1b_bridge_streq(v->layer, "hop");
+    if (!is_hop && !ninlil_r7_t1b_bridge_streq(v->layer, "e2e")) {
+        return ninlil_r7_t1b_bridge_fail(v->id, "mismatch_layer");
+    }
 
     if (!ninlil_r7_t1b_bridge_decode_hex(
             v->site_domain, site, sizeof(site), &site_len)
@@ -800,9 +1027,6 @@ static int ninlil_r7_t1b_bridge_mismatch_once(
                    v->authority_id, auth, sizeof(auth), &auth_len)) {
         return ninlil_r7_t1b_bridge_fail(v->id, "mismatch_authority");
     }
-
-    (void)memcpy(bad_digest, digest, sizeof(bad_digest));
-    bad_digest[0] = (uint8_t)(bad_digest[0] ^ 0x01u);
 
     (void)memset(&hop_in, 0, sizeof(hop_in));
     (void)memset(&e2e_in, 0, sizeof(e2e_in));
@@ -828,16 +1052,6 @@ static int ninlil_r7_t1b_bridge_mismatch_once(
         hop_in.controller_term = v->authority_term;
         hop_in.hop_context_id = v->context_id;
         hop_in.direction_code = v->direction_code;
-
-        ninlil_r7_t1b_bridge_fill_canary(
-            (uint8_t *)&hop_bundle, sizeof(hop_bundle));
-        st = ninlil_r7_derive_hop_key_bundle_verified(
-            provider, &hop_in, bad_digest, traffic, &hop_bundle);
-        if (st != NINLIL_R7_BINDING_MISMATCH
-            || !ninlil_r7_t1b_bridge_is_canary(
-                (const uint8_t *)&hop_bundle, sizeof(hop_bundle))) {
-            return ninlil_r7_t1b_bridge_fail(v->id, "hop_mismatch_canary");
-        }
     } else {
         e2e_in.environment_code = v->environment_code;
         e2e_in.site_domain.bytes = site;
@@ -860,17 +1074,55 @@ static int ninlil_r7_t1b_bridge_mismatch_once(
         e2e_in.authority_term = v->authority_term;
         e2e_in.e2e_context_id = v->context_id;
         e2e_in.direction_code = v->direction_code;
+    }
 
-        ninlil_r7_t1b_bridge_fill_canary(
-            (uint8_t *)&e2e_bundle, sizeof(e2e_bundle));
-        st = ninlil_r7_derive_e2e_key_bundle_verified(
-            provider, &e2e_in, bad_digest, traffic, &e2e_bundle);
-        if (st != NINLIL_R7_BINDING_MISMATCH
-            || !ninlil_r7_t1b_bridge_is_canary(
-                (const uint8_t *)&e2e_bundle, sizeof(e2e_bundle))) {
-            return ninlil_r7_t1b_bridge_fail(v->id, "e2e_mismatch_canary");
+    for (byte_i = 0u; byte_i < 32u; byte_i++) {
+        for (bit_i = 0u; bit_i < 8u; bit_i++) {
+            if (!ninlil_r7_t1b_bridge_wrap_counting(
+                    provider, &count_ctx, &counted)) {
+                return ninlil_r7_t1b_bridge_fail(v->id, "mismatch_count_wrap");
+            }
+            (void)memcpy(bad_digest, digest, sizeof(bad_digest));
+            bad_digest[byte_i] =
+                (uint8_t)(bad_digest[byte_i] ^ (uint8_t)(1u << bit_i));
+
+            if (is_hop) {
+                ninlil_r7_t1b_bridge_fill_canary(
+                    (uint8_t *)&hop_bundle, sizeof(hop_bundle));
+                st = ninlil_r7_derive_hop_key_bundle_verified(
+                    &counted, &hop_in, bad_digest, traffic, &hop_bundle);
+                if (st != NINLIL_R7_BINDING_MISMATCH
+                    || count_ctx.sha_calls != 1u
+                    || count_ctx.extract_calls != 0u
+                    || count_ctx.expand_calls != 0u
+                    || !ninlil_r7_t1b_bridge_is_canary(
+                        (const uint8_t *)&hop_bundle, sizeof(hop_bundle))) {
+                    return ninlil_r7_t1b_bridge_fail(
+                        v->id, "hop_mismatch_bit");
+                }
+            } else {
+                ninlil_r7_t1b_bridge_fill_canary(
+                    (uint8_t *)&e2e_bundle, sizeof(e2e_bundle));
+                st = ninlil_r7_derive_e2e_key_bundle_verified(
+                    &counted, &e2e_in, bad_digest, traffic, &e2e_bundle);
+                if (st != NINLIL_R7_BINDING_MISMATCH
+                    || count_ctx.sha_calls != 1u
+                    || count_ctx.extract_calls != 0u
+                    || count_ctx.expand_calls != 0u
+                    || !ninlil_r7_t1b_bridge_is_canary(
+                        (const uint8_t *)&e2e_bundle, sizeof(e2e_bundle))) {
+                    return ninlil_r7_t1b_bridge_fail(
+                        v->id, "e2e_mismatch_bit");
+                }
+            }
+            trials++;
         }
     }
+
+    if (trials != NINLIL_R7_T1B_BRIDGE_MISMATCH_BITS_PER_LAYER) {
+        return ninlil_r7_t1b_bridge_fail(v->id, "mismatch_trial_count");
+    }
+    *out_trials = trials;
     return 1;
 }
 
@@ -947,6 +1199,9 @@ int main(void)
     ninlil_r7_t1b_bridge_counts counts;
     uint8_t consumed_slot[NINLIL_R7_T1B_BRIDGE_VECTOR_COUNT];
     size_t i;
+    size_t mismatch_hop_trials = 0u;
+    size_t mismatch_e2e_trials = 0u;
+    size_t mismatch_total = 0u;
     const ninlil_r7_t1b_binding_vector *first_hop = NULL;
     const ninlil_r7_t1b_binding_vector *first_e2e = NULL;
 
@@ -955,6 +1210,9 @@ int main(void)
     (void)memset(&provider, 0, sizeof(provider));
 
     if (!ninlil_r7_t1b_bridge_decoder_self_test()) {
+        return 1;
+    }
+    if (!ninlil_r7_t1b_bridge_guard_sentinel_self_test()) {
         return 1;
     }
     if (!ninlil_r7_t1b_bridge_check_manifest_unique()) {
@@ -1031,13 +1289,27 @@ int main(void)
         (void)ninlil_r7_t1b_bridge_fail("final", "layer_sample");
         return 1;
     }
-    /* One deliberate digest mismatch per layer: MISMATCH + output canary. */
-    if (!ninlil_r7_t1b_bridge_mismatch_once(&provider, first_e2e)
-        || !ninlil_r7_t1b_bridge_mismatch_once(&provider, first_hop)) {
+    /*
+     * Full single-bit expected-digest matrix per layer (32×8 each). Fixed
+     * execution: 256 hop + 256 e2e = 512. First-byte-only probe removed.
+     */
+    if (!ninlil_r7_t1b_bridge_mismatch_layer(
+            &provider, first_e2e, &mismatch_e2e_trials)
+        || !ninlil_r7_t1b_bridge_mismatch_layer(
+            &provider, first_hop, &mismatch_hop_trials)) {
+        return 1;
+    }
+    mismatch_total = mismatch_hop_trials + mismatch_e2e_trials;
+    if (mismatch_hop_trials != NINLIL_R7_T1B_BRIDGE_MISMATCH_BITS_PER_LAYER
+        || mismatch_e2e_trials != NINLIL_R7_T1B_BRIDGE_MISMATCH_BITS_PER_LAYER
+        || mismatch_total != NINLIL_R7_T1B_BRIDGE_MISMATCH_TOTAL) {
+        (void)ninlil_r7_t1b_bridge_fail("final", "mismatch_total");
         return 1;
     }
 
     printf(
-        "nrw1_t1b_vectors_bridge PASS vector_count=24 consumed=24\n");
+        "nrw1_t1b_vectors_bridge PASS vector_count=24 consumed=24 "
+        "mismatch_trials=%zu\n",
+        mismatch_total);
     return 0;
 }
