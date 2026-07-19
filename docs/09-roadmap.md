@@ -296,6 +296,7 @@ Exit gate:
 - secure compact radio wire の **Normative freeze Accepted**（`wire_profile_id=0x11` NRW1 no minor; one-way contexts / DATA·ACK lanes / E2E security id / CELL_64_V1; **R6 docs freeze** — 正本 [30章](30-r6-secure-radio-wire.md) / [ADR-0010](adr/0010-r6-secure-radio-wire.md) **Accepted**; independent re-GO 2026-07-19 P0=P1=P2=0; R7 full AEAD / M4·M5 / ESP N6 capacity / RF·USB 実機 HIL / legal / production 未完）
 - **Chunk D private N6 host candidate**（`src/radio/n6_*`; portable private durable codec/context; fixed-hash integration GO; M4/M5/ESP fail-closed; **not** R7 full AEAD complete / **not** ESP N6 ready / **not** production radio; ESP `max_namespaces=2 < 3` 等は R7/port blocker）
 - **R7 T0 private crypto provider implementation candidate Accepted**（[31章](31-r7-crypto-provider-and-aead.md) / [ADR-0011](adr/0011-r7-crypto-provider-boundary.md) Accepted; portable validation + Host OpenSSL exact 3.x + ESP-IDF mbedTLS + 37-vector bridge; push/PR/ESP-IDF CI全成功; independent POST-CI P0=P1=P2=0 GO）。**AcceptedはT0候補のみ。T0はR7 full wire/state/FRAG/LINK/CELL/HA、実機KAT、RF/USB HIL、legal、production radioを完成させない。**
+- **R7 T1 NRW1 SINGLE pure wire codec Proposed**（[32章](32-r7-t1-nrw1-single-wire-codec.md) / [ADR-0012](adr/0012-r7-t1-nrw1-single-wire-codec.md) Proposed; DATA/SINGLE dual-envelope、private/stateless、独立subset vectors）。**現時点は仕様のみでcode/acceptance未完。full §18 artifact、counter/storage、FRAG/LINK/CELL/HA、W1/L1、HIL/legal/production radioを完成扱いにしない。**
 - SX1262 HAL/backend（R1–R10; permit なし TX path 0）
 - `LAB_ONLY` radio profile
 
