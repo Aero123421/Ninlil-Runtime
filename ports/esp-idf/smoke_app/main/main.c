@@ -21,6 +21,7 @@
 
 /* R7 production-private link probe; not a public component include. */
 #include "r7_crypto_mbedtls.h"
+#include "r7_context_binding.h"
 #include "r7_wire_codec.h"
 
 #include "esp_log.h"
@@ -97,6 +98,236 @@ static int smoke_r7_crypto_link(void)
     ESP_LOGI(TAG,
         "R7 mbedTLS provider initialized; compile/link evidence only; "
         "device KAT/HIL pending");
+    return 0;
+}
+
+/*
+ * R7 T1b context binding + verified HKDF final-ELF presence probe (docs/33 §10).
+ *
+ * BSS-backed fixed semantic inputs + committed expected digest/traffic secret
+ * from oracle vectors R7-T1B-HOP-FIELD-D0-MIN and R7-T1B-E2E-FIELD-D0-MIN.
+ * Byte constants are copied from the committed subset artifact; the test-only
+ * generated header is never included in ESP production.
+ *
+ * Exercises all six production APIs (Hop/E2E encode + digest + verified derive)
+ * via the accepted mbedTLS provider. Expected digest is the committed oracle
+ * constant — never recomputed from the same untrusted input and fed back as
+ * authority (docs/33 §7 / ADR-0013 prohibited pattern).
+ *
+ * Compile/link evidence only — not device KAT, RF/USB HIL, FIELD, or R7 complete.
+ */
+/* Hop FIELD D0 MIN committed semantic inputs (exact 16-byte site domain). */
+static const uint8_t s_r7_t1b_hop_site16[16] = {
+    0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb, 0xdc,
+    0xdd, 0xde, 0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4
+};
+static const uint8_t s_r7_t1b_hop_attachment1[1] = { 0xe6 };
+static const uint8_t s_r7_t1b_hop_initiator1[1] = { 0xf6 };
+static const uint8_t s_r7_t1b_hop_responder1[1] = { 0x07 };
+static const uint8_t s_r7_t1b_hop_authority1[1] = { 0x17 };
+/* Committed expected digest + traffic secret (oracle; not derived here). */
+static const uint8_t s_r7_t1b_hop_expected_digest32[32] = {
+    0x18, 0x68, 0x65, 0x3c, 0xb8, 0x5f, 0xce, 0x90,
+    0xb6, 0x22, 0x75, 0xd8, 0x2d, 0xac, 0x64, 0xba,
+    0xd9, 0x7f, 0x59, 0x40, 0x83, 0x25, 0xab, 0x0a,
+    0x4d, 0xf3, 0x41, 0xe7, 0x38, 0x3d, 0x96, 0x7f
+};
+static const uint8_t s_r7_t1b_hop_traffic_secret32[32] = {
+    0x28, 0xd4, 0xbc, 0xd5, 0xf4, 0x99, 0x04, 0xa3,
+    0x6c, 0xbe, 0x66, 0x62, 0x30, 0xc2, 0xe6, 0xe3,
+    0x19, 0x9e, 0xc5, 0x14, 0x8a, 0x7f, 0xa1, 0xf0,
+    0xab, 0x6f, 0x49, 0xf1, 0xce, 0xb5, 0xe4, 0x0e
+};
+/* First 8 bytes of committed hop DATA key (basic expected-byte check). */
+static const uint8_t s_r7_t1b_hop_data_key16_prefix8[8] = {
+    0x42, 0xa5, 0xbc, 0xac, 0x23, 0x3b, 0x9b, 0x0d
+};
+
+/* E2E FIELD D0 MIN committed semantic inputs. */
+static const uint8_t s_r7_t1b_e2e_site16[16] = {
+    0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, 0xb0, 0xb1,
+    0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9
+};
+static const uint8_t s_r7_t1b_e2e_security1[1] = { 0xbb };
+static const uint8_t s_r7_t1b_e2e_sender1[1] = { 0xcb };
+static const uint8_t s_r7_t1b_e2e_receiver1[1] = { 0xdb };
+static const uint8_t s_r7_t1b_e2e_authority1[1] = { 0xeb };
+static const uint8_t s_r7_t1b_e2e_expected_digest32[32] = {
+    0xa8, 0xb6, 0x6f, 0x1a, 0x4a, 0xbf, 0x1e, 0xaa,
+    0x59, 0x83, 0x26, 0x89, 0x02, 0xc2, 0xa7, 0x69,
+    0x45, 0xe3, 0xa7, 0x69, 0xd5, 0x59, 0x07, 0x51,
+    0x03, 0x08, 0xae, 0xce, 0x0f, 0x00, 0x95, 0x04
+};
+static const uint8_t s_r7_t1b_e2e_traffic_secret32[32] = {
+    0xb4, 0xa6, 0x87, 0x89, 0x6f, 0x6e, 0x31, 0x74,
+    0x24, 0x5c, 0x1f, 0xec, 0xe5, 0x8d, 0xef, 0xb5,
+    0xfe, 0xdf, 0x5e, 0xec, 0xb6, 0x7b, 0x1b, 0x7a,
+    0x32, 0x57, 0x31, 0xa1, 0x3d, 0x96, 0x7f, 0x23
+};
+/* First 8 bytes of committed e2e key (basic expected-byte check). */
+static const uint8_t s_r7_t1b_e2e_key16_prefix8[8] = {
+    0x3b, 0x62, 0x54, 0x27, 0xca, 0xb2, 0x77, 0xa9
+};
+
+/* Large outputs stay in BSS — not on app_main stack. */
+static ninlil_r7_hop_binding_input s_r7_t1b_hop_input;
+static ninlil_r7_e2e_binding_input s_r7_t1b_e2e_input;
+static uint8_t s_r7_t1b_hop_canon[NINLIL_R7_BINDING_HOP_CANON_MAX];
+static uint8_t s_r7_t1b_e2e_canon[NINLIL_R7_BINDING_E2E_CANON_MAX];
+static uint8_t s_r7_t1b_hop_digest32[32];
+static uint8_t s_r7_t1b_e2e_digest32[32];
+static ninlil_r7_hop_key_bundle s_r7_t1b_hop_bundle;
+static ninlil_r7_e2e_key_bundle s_r7_t1b_e2e_bundle;
+
+static int smoke_r7_t1b_binding_link(void)
+{
+    size_t hop_len = 0u;
+    size_t e2e_len = 0u;
+    int32_t st;
+
+    if (s_r7_crypto_provider.sha256 == NULL
+        || s_r7_crypto_provider.hkdf_extract_sha256 == NULL
+        || s_r7_crypto_provider.hkdf_expand_sha256 == NULL) {
+        ESP_LOGE(TAG,
+            "R7 T1b binding link requires prior crypto provider init");
+        return -1;
+    }
+
+    /* Fixed Hop FIELD D0 MIN semantic input (oracle; immutable constants). */
+    (void)memset(&s_r7_t1b_hop_input, 0, sizeof(s_r7_t1b_hop_input));
+    s_r7_t1b_hop_input.environment_code = NINLIL_R7_BINDING_ENV_FIELD;
+    s_r7_t1b_hop_input.site_domain.bytes = s_r7_t1b_hop_site16;
+    s_r7_t1b_hop_input.site_domain.length = 16u;
+    s_r7_t1b_hop_input.membership_epoch = 1ull;
+    s_r7_t1b_hop_input.attachment_id.bytes = s_r7_t1b_hop_attachment1;
+    s_r7_t1b_hop_input.attachment_id.length = 1u;
+    s_r7_t1b_hop_input.attachment_epoch = 1ull;
+    s_r7_t1b_hop_input.initiator_stable_id.bytes = s_r7_t1b_hop_initiator1;
+    s_r7_t1b_hop_input.initiator_stable_id.length = 1u;
+    s_r7_t1b_hop_input.responder_stable_id.bytes = s_r7_t1b_hop_responder1;
+    s_r7_t1b_hop_input.responder_stable_id.length = 1u;
+    s_r7_t1b_hop_input.controller_authority_id.bytes = s_r7_t1b_hop_authority1;
+    s_r7_t1b_hop_input.controller_authority_id.length = 1u;
+    s_r7_t1b_hop_input.controller_term = 1ull;
+    s_r7_t1b_hop_input.hop_context_id = 1u;
+    s_r7_t1b_hop_input.direction_code = NINLIL_R7_BINDING_DIR_IR;
+
+    hop_len = 0u;
+    (void)memset(s_r7_t1b_hop_canon, 0xA5, sizeof(s_r7_t1b_hop_canon));
+    st = ninlil_r7_encode_hop_binding(
+        &s_r7_t1b_hop_input,
+        s_r7_t1b_hop_canon,
+        83u,
+        &hop_len);
+    if (st != NINLIL_R7_BINDING_OK || hop_len != 83u
+        || s_r7_t1b_hop_canon[0] != (uint8_t)'N'
+        || s_r7_t1b_hop_canon[20] != NINLIL_R7_BINDING_PROFILE_ID
+        || s_r7_t1b_hop_canon[21] != NINLIL_R7_BINDING_ENV_FIELD) {
+        ESP_LOGE(TAG,
+            "R7 T1b hop encode link failed status=%ld len=%u",
+            (long)st, (unsigned)hop_len);
+        return -1;
+    }
+
+    (void)memset(s_r7_t1b_hop_digest32, 0xA5, sizeof(s_r7_t1b_hop_digest32));
+    st = ninlil_r7_digest_hop_binding(
+        &s_r7_crypto_provider,
+        &s_r7_t1b_hop_input,
+        s_r7_t1b_hop_digest32);
+    if (st != NINLIL_R7_BINDING_OK
+        || memcmp(s_r7_t1b_hop_digest32, s_r7_t1b_hop_expected_digest32, 32)
+            != 0) {
+        ESP_LOGE(TAG, "R7 T1b hop digest link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    /*
+     * Verified derive uses the committed expected digest constant above —
+     * not the just-computed digest buffer — so this path cannot demonstrate
+     * the prohibited untrusted-input digest-as-authority pattern.
+     */
+    (void)memset(&s_r7_t1b_hop_bundle, 0xA5, sizeof(s_r7_t1b_hop_bundle));
+    st = ninlil_r7_derive_hop_key_bundle_verified(
+        &s_r7_crypto_provider,
+        &s_r7_t1b_hop_input,
+        s_r7_t1b_hop_expected_digest32,
+        s_r7_t1b_hop_traffic_secret32,
+        &s_r7_t1b_hop_bundle);
+    if (st != NINLIL_R7_BINDING_OK
+        || memcmp(s_r7_t1b_hop_bundle.data_key16,
+               s_r7_t1b_hop_data_key16_prefix8, 8)
+            != 0) {
+        ESP_LOGE(TAG,
+            "R7 T1b hop verified-derive link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    /* Fixed E2E FIELD D0 MIN semantic input. */
+    (void)memset(&s_r7_t1b_e2e_input, 0, sizeof(s_r7_t1b_e2e_input));
+    s_r7_t1b_e2e_input.environment_code = NINLIL_R7_BINDING_ENV_FIELD;
+    s_r7_t1b_e2e_input.site_domain.bytes = s_r7_t1b_e2e_site16;
+    s_r7_t1b_e2e_input.site_domain.length = 16u;
+    s_r7_t1b_e2e_input.membership_epoch = 1ull;
+    s_r7_t1b_e2e_input.e2e_security_id.bytes = s_r7_t1b_e2e_security1;
+    s_r7_t1b_e2e_input.e2e_security_id.length = 1u;
+    s_r7_t1b_e2e_input.e2e_security_epoch = 1ull;
+    s_r7_t1b_e2e_input.sender_stable_id.bytes = s_r7_t1b_e2e_sender1;
+    s_r7_t1b_e2e_input.sender_stable_id.length = 1u;
+    s_r7_t1b_e2e_input.receiver_stable_id.bytes = s_r7_t1b_e2e_receiver1;
+    s_r7_t1b_e2e_input.receiver_stable_id.length = 1u;
+    s_r7_t1b_e2e_input.authority_id.bytes = s_r7_t1b_e2e_authority1;
+    s_r7_t1b_e2e_input.authority_id.length = 1u;
+    s_r7_t1b_e2e_input.authority_term = 1ull;
+    s_r7_t1b_e2e_input.e2e_context_id = 1u;
+    s_r7_t1b_e2e_input.direction_code = NINLIL_R7_BINDING_DIR_IR;
+
+    e2e_len = 0u;
+    (void)memset(s_r7_t1b_e2e_canon, 0xA5, sizeof(s_r7_t1b_e2e_canon));
+    st = ninlil_r7_encode_e2e_binding(
+        &s_r7_t1b_e2e_input,
+        s_r7_t1b_e2e_canon,
+        81u,
+        &e2e_len);
+    if (st != NINLIL_R7_BINDING_OK || e2e_len != 81u
+        || s_r7_t1b_e2e_canon[0] != (uint8_t)'N'
+        || s_r7_t1b_e2e_canon[20] != NINLIL_R7_BINDING_PROFILE_ID
+        || s_r7_t1b_e2e_canon[21] != NINLIL_R7_BINDING_ENV_FIELD) {
+        ESP_LOGE(TAG,
+            "R7 T1b e2e encode link failed status=%ld len=%u",
+            (long)st, (unsigned)e2e_len);
+        return -1;
+    }
+
+    (void)memset(s_r7_t1b_e2e_digest32, 0xA5, sizeof(s_r7_t1b_e2e_digest32));
+    st = ninlil_r7_digest_e2e_binding(
+        &s_r7_crypto_provider,
+        &s_r7_t1b_e2e_input,
+        s_r7_t1b_e2e_digest32);
+    if (st != NINLIL_R7_BINDING_OK
+        || memcmp(s_r7_t1b_e2e_digest32, s_r7_t1b_e2e_expected_digest32, 32)
+            != 0) {
+        ESP_LOGE(TAG, "R7 T1b e2e digest link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    (void)memset(&s_r7_t1b_e2e_bundle, 0xA5, sizeof(s_r7_t1b_e2e_bundle));
+    st = ninlil_r7_derive_e2e_key_bundle_verified(
+        &s_r7_crypto_provider,
+        &s_r7_t1b_e2e_input,
+        s_r7_t1b_e2e_expected_digest32,
+        s_r7_t1b_e2e_traffic_secret32,
+        &s_r7_t1b_e2e_bundle);
+    if (st != NINLIL_R7_BINDING_OK
+        || memcmp(s_r7_t1b_e2e_bundle.key16, s_r7_t1b_e2e_key16_prefix8, 8)
+            != 0) {
+        ESP_LOGE(TAG,
+            "R7 T1b e2e verified-derive link failed status=%ld", (long)st);
+        return -1;
+    }
+
+    ESP_LOGI(TAG,
+        "R7 T1b binding Hop/E2E encode+digest+verified-derive link exercised; "
+        "compile/link only; device KAT/HIL pending; not R7 complete");
     return 0;
 }
 
@@ -815,7 +1046,7 @@ void app_main(void)
     }
     smoke_cleanup_basic();
 
-    /* Owner/cell first, then storage, U2 CDC, and R7 crypto/wire link probes. */
+    /* Owner/cell first, then storage, U2 CDC, and R7 crypto/T1b/wire probes. */
     if (smoke_storage_commit_unknown() != 0) {
         fail = 1;
     }
@@ -823,6 +1054,10 @@ void app_main(void)
         fail = 1;
     }
     if (smoke_r7_crypto_link() != 0) {
+        fail = 1;
+    }
+    /* Binding after provider init, before wire smoke (docs/33 dependency). */
+    if (smoke_r7_t1b_binding_link() != 0) {
         fail = 1;
     }
     if (smoke_r7_wire_link() != 0) {
@@ -833,8 +1068,8 @@ void app_main(void)
         ESP_LOGE(TAG, "SELFTEST FAIL (device HIL required for runtime verdict)");
     } else {
         ESP_LOGI(TAG,
-            "SELFTEST owner/cell + storage + U2 CDC + R7 crypto/wire link "
+            "SELFTEST owner/cell + storage + U2 CDC + R7 crypto/T1b/wire link "
             "exercised; compile!=HIL; U2/R7 Required HIL pending; "
-            "flash monitor for runtime");
+            "not device KAT/RF/FIELD/R7 complete; flash monitor for runtime");
     }
 }

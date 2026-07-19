@@ -1,13 +1,15 @@
 # ESP-IDF target build (M3-prep + M3-basic + experimental owner/cell/loopback
-# + durable-storage + U2 A2 CDC adapter + R7 T0 crypto / T1 wire target gates).
-# Separated from host GCC/Clang CI in ci.yml.
+# + durable-storage + U2 A2 CDC adapter + R7 T0 crypto / T1 wire / T1b binding
+# target gates). Separated from host GCC/Clang CI in ci.yml.
 # Pins ESP-IDF via the official Docker image tag that matches
 # ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
 # Smoke links clock/entropy/execution + owner-task/cell/loopback + storage + U2 CDC
-# + the R7 private mbedTLS provider and T1 wire codec into the final ESP32-S3 ELF.
+# + the R7 private mbedTLS provider, T1b context binding, and T1 wire codec into
+# the final ESP32-S3 ELF.
 # Evidence is esp32s3 compile/link only — not device HIL / dual-core race PASS /
-# physical power-cut HIL / U2 host CDC roundtrip. Does not claim M3 complete,
-# U2 complete, USB series complete, radio, or hardware verify.
+# physical power-cut HIL / U2 host CDC roundtrip / device KAT / RF / FIELD.
+# Does not claim M3 complete, U2 complete, USB series complete, R7 complete,
+# T1b Accepted, radio, or hardware verify.
 
 name: ESP-IDF
 
@@ -176,12 +178,62 @@ jobs:
             r7_crypto_portable.c.obj \
             r7_crypto_nonce.c.obj \
             r7_crypto_mbedtls.c.obj \
+            r7_context_binding.c.obj \
             r7_wire_codec.c.obj
           do
             count="$(xtensa-esp32s3-elf-ar t "${ARCHIVE}" \
               | grep -E "^${member}$" | wc -l | tr -d ' ')"
             test "${count}" = "1"
           done
+          # compile_commands: binding production TU exact once; no TEST_BUILD.
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sys
+          cc = pathlib.Path(
+              "ports/esp-idf/smoke_app/build/compile_commands.json"
+          )
+          try:
+              entries = json.loads(cc.read_text(encoding="utf-8"))
+          except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+              print(f"false-green: cannot read compile_commands: {exc}", file=sys.stderr)
+              sys.exit(1)
+          if not isinstance(entries, list):
+              print("false-green: compile_commands is not a list", file=sys.stderr)
+              sys.exit(1)
+          binding = 0
+          test_build = 0
+          for entry in entries:
+              if not isinstance(entry, dict):
+                  continue
+              file_path = entry.get("file")
+              cmd = entry.get("command") or entry.get("arguments")
+              if isinstance(file_path, str) and file_path.replace("\\", "/").endswith(
+                  "/src/radio/r7_context_binding.c"
+              ):
+                  binding += 1
+              text = ""
+              if isinstance(cmd, str):
+                  text = cmd
+              elif isinstance(cmd, list):
+                  text = " ".join(str(x) for x in cmd)
+              if "NINLIL_R7_BINDING_TEST_BUILD" in text:
+                  test_build += 1
+          if binding != 1:
+              print(
+                  f"false-green: r7_context_binding.c compile commands={binding} "
+                  f"(expected exact 1)",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          if test_build != 0:
+              print(
+                  "false-green: NINLIL_R7_BINDING_TEST_BUILD present in ESP compile",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          print("T1b ESP compile_commands: binding=1 test_build=0")
+          PY
           xtensa-esp32s3-elf-nm "${ELF}" > /tmp/ninlil_r7_nm.txt
           for symbol in \
             ninlil_r7_crypto_mbedtls_provider_init \
@@ -196,6 +248,59 @@ jobs:
             grep -E "[[:space:]][Tt][[:space:]]${symbol}$" \
               /tmp/ninlil_r7_nm.txt
           done
+          # docs/33 exact private T1b API set (6): final-ELF T/t presence.
+          # Smoke must reference all six so archive-only dead code cannot
+          # false-green. Test seams must be absent.
+          t1b_symbols=(
+            ninlil_r7_encode_hop_binding
+            ninlil_r7_encode_e2e_binding
+            ninlil_r7_digest_hop_binding
+            ninlil_r7_digest_e2e_binding
+            ninlil_r7_derive_hop_key_bundle_verified
+            ninlil_r7_derive_e2e_key_bundle_verified
+          )
+          if [[ "${#t1b_symbols[@]}" -ne 6 ]]; then
+            echo "false-green: expected exact 6 R7 T1b binding symbols" >&2
+            exit 1
+          fi
+          for symbol in "${t1b_symbols[@]}"; do
+            grep -E "[[:space:]][Tt][[:space:]]${symbol}$" \
+              /tmp/ninlil_r7_nm.txt
+          done
+          if grep -E 'ninlil_r7_binding_test_' /tmp/ninlil_r7_nm.txt; then
+            echo "false-green: T1b test seam symbol present in ESP ELF" >&2
+            exit 1
+          fi
+          # No extra GLOBAL ninlil_r7_*binding* production API spellings
+          # beyond the four encode/digest names (derive APIs omit 'binding';
+          # local static helpers are nm 't' and excluded by T-only filter).
+          printf '%s\n' \
+            ninlil_r7_digest_e2e_binding \
+            ninlil_r7_digest_hop_binding \
+            ninlil_r7_encode_e2e_binding \
+            ninlil_r7_encode_hop_binding \
+            | sort > /tmp/ninlil_r7_t1b_binding_expected.txt
+          awk '$2 == "T" && $3 ~ /^ninlil_r7_.*binding/ { print $3 }' \
+            /tmp/ninlil_r7_nm.txt | sort -u \
+            > /tmp/ninlil_r7_t1b_binding_actual.txt
+          diff -u /tmp/ninlil_r7_t1b_binding_expected.txt \
+            /tmp/ninlil_r7_t1b_binding_actual.txt
+          # Exact full T1b API multiset (6) — GLOBAL T only, like T1 wire.
+          printf '%s\n' "${t1b_symbols[@]}" | sort \
+            > /tmp/ninlil_r7_t1b_api_expected.txt
+          {
+            for symbol in "${t1b_symbols[@]}"; do
+              awk -v s="${symbol}" \
+                '$2 == "T" && $3 == s { print $3 }' /tmp/ninlil_r7_nm.txt
+            done
+          } | sort -u > /tmp/ninlil_r7_t1b_api_actual.txt
+          diff -u /tmp/ninlil_r7_t1b_api_expected.txt \
+            /tmp/ninlil_r7_t1b_api_actual.txt
+          # Live link into smoke: production object in map + APIs in final ELF
+          # (archive-only dead code cannot satisfy both).
+          grep -F 'libninlil.a(r7_context_binding.c.obj)' "${SMOKE_MAP}"
+          grep -F 'ninlil_r7_encode_hop_binding' "${SMOKE_MAP}"
+          grep -F 'ninlil_r7_derive_e2e_key_bundle_verified' "${SMOKE_MAP}"
           # docs/32 exact private wire API set (8): final-ELF T/t presence.
           wire_symbols=(
             ninlil_r7_wire_pack_outer_data_aad
