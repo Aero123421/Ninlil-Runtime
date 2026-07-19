@@ -20,6 +20,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+      # OpenSSL 3 is required for R7 Host private crypto (tests-ON and tests-OFF top-level).
+      - name: Install OpenSSL 3 headers and SQLite3
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libssl-dev libsqlite3-dev
       - name: Build portable tests without SQLite discovery
         run: >-
           cmake -S . -B build/ci-no-sqlite
@@ -27,14 +32,14 @@ jobs:
           -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
           && cmake --build build/ci-no-sqlite --parallel 2
           && ctest --test-dir build/ci-no-sqlite --output-on-failure
-      - name: Install SQLite3 for tests-off storage composition
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - name: Build library composition with tests disabled
         run: >-
           cmake -S . -B build/ci-tests-off
           -DCMAKE_BUILD_TYPE=Release
           -DNINLIL_BUILD_TESTS=OFF
           && cmake --build build/ci-tests-off --parallel 2
+          && cmake --build build/ci-tests-off --parallel 2
+          --target ninlil_runtime_private
       - name: Verify tests-off registers no tests
         run: >-
           test "$(ctest --test-dir build/ci-tests-off -N | tail -1)"
@@ -51,10 +56,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install SQLite3 and ninja
+      - name: Install SQLite3, OpenSSL 3, and ninja
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libsqlite3-dev ninja-build binutils
+          libsqlite3-dev libssl-dev ninja-build binutils
       - name: Configure (shared libsqlite3, strict)
         run: >-
           cmake -S . -B build/ci-ubuntu-dyn -G Ninja
@@ -67,6 +72,11 @@ jobs:
         run: cmake --build build/ci-ubuntu-dyn --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
+      - name: R7 T0 crypto acceptance (register + focused run, non-sanitize)
+        run: >-
+          python3 tools/r7_t0_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-dyn
+          --profile normal
       - name: Debug archive path hygiene (DWARF4 + strings/readelf)
         run: |
           set -euo pipefail
@@ -120,10 +130,15 @@ jobs:
   #   - n6_chunk_d_private_symbol_leakage{,_self_test} → production nm/strings
   #   - n6_storage_callsite_gate{,_self_test} → accepted-source pin + mutation
   # clang-sanitizers remains the sole full ASan/UBSan CTest job (no dup here).
+  #
+  # R7 (docs/31 §11.1 / §11.6): same job also hosts GCC Release crypto evidence —
+  # libssl/OpenSSL 3, sanitizers OFF, r7_crypto_stack_gate (-O2 / -fstack-usage),
+  # and exact-16 normal focused acceptance via r7_t0_ctest_gate. Does not claim
+  # T0/R7/HIL complete.
   ubuntu-gcc-release-n6-frame:
-    name: Ubuntu GCC 13 Release N6 authority
+    name: Ubuntu GCC 13 Release N6+R7 authority
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -131,10 +146,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install gcc-13 g++-13 ninja SQLite shared headers
+      - name: Install gcc-13 g++-13 ninja OpenSSL 3 SQLite shared headers
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          gcc-13 g++-13 ninja-build libsqlite3-dev binutils
+          gcc-13 g++-13 ninja-build libsqlite3-dev libssl-dev binutils
       - name: Assert gcc-13 and g++-13 major is exact 13 (fail-closed)
         run: |
           set -euo pipefail
@@ -154,6 +169,8 @@ jobs:
             fi
             echo "${tool} version OK: ${ver} (major=13)"
           done
+      # docs/31 §11.6: exact -O2 authority (CMake default Release is often -O3).
+      # EXPORT_COMPILE_COMMANDS feeds n6_gcc13 + r7_crypto_stack_gate evidence.
       - name: Configure (GCC 13 Release -O2 exact, shared SQLite, strict, compile_commands)
         run: >-
           cmake -S . -B build/ci-ubuntu-gcc-rel-n6 -G Ninja
@@ -163,6 +180,7 @@ jobs:
           -DCMAKE_C_FLAGS_RELEASE='-O2 -DNDEBUG'
           -DCMAKE_CXX_FLAGS_RELEASE='-O2 -DNDEBUG'
           -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_ENABLE_SANITIZERS=OFF
           -DNINLIL_SQLITE_LINKAGE=SHARED
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Assert -maccumulate-outgoing-args feature detection effective
@@ -310,6 +328,66 @@ jobs:
         run: >-
           ctest --test-dir build/ci-ubuntu-gcc-rel-n6
           --output-on-failure
+      - name: R7 compile_commands -O2 / -fstack-usage evidence (docs/31 §11.6)
+        run: |
+          set -euo pipefail
+          cc=build/ci-ubuntu-gcc-rel-n6/compile_commands.json
+          su=build/ci-ubuntu-gcc-rel-n6/CMakeFiles/ninlil_runtime_private.dir
+          test -f "$cc"
+          # Prove cache actually carries -O2 authority (not merely YAML text).
+          if ! grep -E '^CMAKE_C_FLAGS_RELEASE:STRING=-O2 -DNDEBUG$' \
+               build/ci-ubuntu-gcc-rel-n6/CMakeCache.txt; then
+            echo "false-green: CMAKE_C_FLAGS_RELEASE is not exact -O2 -DNDEBUG" >&2
+            grep CMAKE_C_FLAGS_RELEASE build/ci-ubuntu-gcc-rel-n6/CMakeCache.txt || true
+            exit 1
+          fi
+          python3 tools/r7_crypto_stack_gate.py check \
+            --su-dir "$su" \
+            --compile-commands "$cc"
+      - name: R7 T0 crypto acceptance (register + focused + production stack)
+        run: >-
+          python3 tools/r7_t0_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-gcc-rel-n6
+          --profile normal
+
+  # Clang Release strict: docs/31 §11.1 pair with GCC Release (Debug Clang
+  # remains in clang-non-sanitizer-hygiene). Match -O2 for Release parity;
+  # GCC .su / compile_commands authority remains the §11.6 source of truth.
+  # Does not claim T0/R7/HIL complete.
+  ubuntu-clang-release-r7:
+    name: Ubuntu Clang Release R7 authority
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install SQLite3 and OpenSSL 3
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev
+      - name: Configure (Clang Release, strict ON, -O2 parity)
+        run: >-
+          cmake -S . -B build/ci-ubuntu-clang-rel
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG"
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_ENABLE_SANITIZERS=OFF
+          -DNINLIL_SQLITE_LINKAGE=SHARED
+      - name: Full Release build
+        run: cmake --build build/ci-ubuntu-clang-rel --parallel 2
+      - name: Full CTest matrix (Clang Release strict)
+        run: ctest --test-dir build/ci-ubuntu-clang-rel --output-on-failure
+      - name: R7 T0 crypto acceptance (register + focused + production stack)
+        run: >-
+          python3 tools/r7_t0_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-clang-rel
+          --profile normal
 
   ubuntu-static-strict:
     name: Ubuntu static SQLite strict full
@@ -322,10 +400,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install SQLite3 (static archive), zlib, ninja
+      - name: Install SQLite3 (static archive), OpenSSL 3, zlib, ninja
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libsqlite3-dev zlib1g-dev ninja-build binutils
+          libsqlite3-dev libssl-dev zlib1g-dev ninja-build binutils
       - name: Resolve static libsqlite3.a
         id: sqlite_static
         run: |
@@ -345,6 +423,11 @@ jobs:
         run: cmake --build build/ci-ubuntu-static --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-ubuntu-static --output-on-failure
+      - name: R7 T0 crypto acceptance (register + focused run, non-sanitize)
+        run: >-
+          python3 tools/r7_t0_ctest_gate.py run-focused
+          --build-dir build/ci-ubuntu-static
+          --profile normal
       - name: Assert wrap backend and no shared sqlite on test binary
         run: |
           set -euo pipefail
@@ -402,10 +485,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install SQLite3, zlib, ninja
+      - name: Install SQLite3, OpenSSL 3, zlib, ninja
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libsqlite3-dev zlib1g-dev ninja-build binutils
+          libsqlite3-dev libssl-dev zlib1g-dev ninja-build binutils
       - name: Resolve static libsqlite3.a
         id: sqlite
         run: |
@@ -425,6 +508,8 @@ jobs:
       - name: Build and install
         run: >-
           cmake --build build/ci-ubuntu-static-off --parallel 2
+          && cmake --build build/ci-ubuntu-static-off --parallel 2
+          --target ninlil_runtime_private
           && cmake --install build/ci-ubuntu-static-off
           --prefix build/ci-ubuntu-static-off/prefix
       - name: External installed consumer build/run with pinned .a
@@ -511,8 +596,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install SQLite3
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Install SQLite3 and OpenSSL 3
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev
       - name: Configure
         run: >-
           cmake -S . -B build/ci-clang-sanitize
@@ -528,6 +615,14 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build/ci-clang-sanitize --output-on-failure
+      - name: R7 T0 crypto under ASan/UBSan (no production .su gate)
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: >-
+          python3 tools/r7_t0_ctest_gate.py run-focused
+          --build-dir build/ci-clang-sanitize
+          --profile sanitizer
       - name: Sanitizer artifacts are non-ship (hygiene scan skipped by explicit flag only)
         run: |
           set -euo pipefail
@@ -551,10 +646,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install SQLite3, ninja, binutils
+      - name: Install SQLite3, OpenSSL 3, ninja, binutils
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          libsqlite3-dev ninja-build binutils
+          libsqlite3-dev libssl-dev ninja-build binutils
       - name: Configure (Clang, sanitizers OFF — ship hygiene gate)
         run: >-
           cmake -S . -B build/ci-clang-nosan -G Ninja
@@ -568,6 +663,11 @@ jobs:
         run: cmake --build build/ci-clang-nosan --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-clang-nosan --output-on-failure
+      - name: R7 T0 crypto acceptance (register + focused run, non-sanitize)
+        run: >-
+          python3 tools/r7_t0_ctest_gate.py run-focused
+          --build-dir build/ci-clang-nosan
+          --profile normal
       - name: Strict archive strings/ar/readelf path hygiene (ship gate)
         run: |
           set -euo pipefail
@@ -627,17 +727,32 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+      - name: Install OpenSSL 3 (Homebrew)
+        run: |
+          set -euo pipefail
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          echo "OPENSSL_ROOT=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+      # GITHUB_ENV is visible to subsequent shell steps; do not use the
+      # workflow env.OPENSSL_ROOT expression (may be empty at parse time).
       - name: Configure (shared/dylib SQLite)
-        run: >-
-          cmake -S . -B build/ci-macos
-          -DCMAKE_BUILD_TYPE=Debug
-          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
-          -DNINLIL_ENABLE_SANITIZERS=OFF
-          -DNINLIL_SQLITE_LINKAGE=SHARED
+        run: |
+          set -euo pipefail
+          test -n "${OPENSSL_ROOT:-}"
+          cmake -S . -B build/ci-macos \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_ENABLE_STRICT_WARNINGS=ON \
+            -DNINLIL_ENABLE_SANITIZERS=OFF \
+            -DNINLIL_SQLITE_LINKAGE=SHARED \
+            -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT"
       - name: Build
         run: cmake --build build/ci-macos --parallel 2
       - name: Test full matrix
         run: ctest --test-dir build/ci-macos --output-on-failure
+      - name: R7 T0 crypto acceptance (register + focused run, non-sanitize)
+        run: >-
+          python3 tools/r7_t0_ctest_gate.py run-focused
+          --build-dir build/ci-macos
+          --profile normal
       - name: Archive path hygiene (strings/ar; AppleClang standard tools)
         run: |
           set -euo pipefail
@@ -688,12 +803,20 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
+      - name: Install OpenSSL 3 (Homebrew)
+        run: |
+          set -euo pipefail
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          echo "OPENSSL_ROOT=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
       - name: Configure
-        run: >-
-          cmake -S . -B build/ci-macos-asan
-          -DCMAKE_BUILD_TYPE=Debug
-          -DNINLIL_ENABLE_SANITIZERS=ON
-          -DNINLIL_SQLITE_LINKAGE=SHARED
+        run: |
+          set -euo pipefail
+          test -n "${OPENSSL_ROOT:-}"
+          cmake -S . -B build/ci-macos-asan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_ENABLE_SANITIZERS=ON \
+            -DNINLIL_SQLITE_LINKAGE=SHARED \
+            -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT"
       - name: Build SQLite port targets
         run: >-
           cmake --build build/ci-macos-asan --parallel 2
@@ -708,6 +831,20 @@ jobs:
           ctest --test-dir build/ci-macos-asan
           -R 'posix_sqlite_storage'
           --output-on-failure
+      - name: Build and run R7 crypto under ASan (no production .su gate)
+        env:
+          ASAN_OPTIONS: halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          dir=build/ci-macos-asan
+          cmake --build "$dir" --parallel 2 --target \
+            ninlil_r7_crypto_portable_test \
+            ninlil_r7_crypto_openssl3_test \
+            ninlil_r7_crypto_vectors_bridge_test
+          python3 tools/r7_t0_ctest_gate.py run-focused \
+            --build-dir "$dir" \
+            --profile sanitizer
 
   # Dedicated pointer-compare sanitizer (docs/22). Ordinary ASan alone does
   # not enable invalid pointer-pair detection.
@@ -722,8 +859,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Install SQLite3
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Install SQLite3 and OpenSSL 3
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev
       - name: Configure pointer-compare sanitizer
         run: >-
           cmake -S . -B build/ci-clang-pointer-compare

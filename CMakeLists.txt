@@ -21,6 +21,29 @@ option(NINLIL_ENABLE_STRICT_WARNINGS "Build Ninlil with warnings as errors"
 option(NINLIL_BUILD_POSIX_SQLITE_STORAGE
     "Build POSIX SQLite storage port when SQLite3 is available" ON)
 
+# R7 Host private crypto uses OpenSSL major version exactly 3 (docs/31).
+# find_package(OpenSSL 3) means >=3 and would accept 4.x; fail-closed on
+# major >=4 and on empty OPENSSL_VERSION. Top-level builds (including the
+# tests-OFF packaging gate) must prove that production adapter. A downstream
+# add_subdirectory consumer that builds only the installable public interface
+# is not forced to acquire a dependency for an EXCLUDE_FROM_ALL private target.
+set(NINLIL_R7_HOST_CRYPTO_ENABLED FALSE)
+if(NINLIL_IS_TOP_LEVEL OR NINLIL_BUILD_TESTS)
+    find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+    if(NOT DEFINED OPENSSL_VERSION OR OPENSSL_VERSION STREQUAL "")
+        message(FATAL_ERROR
+            "OpenSSL discovered but OPENSSL_VERSION is empty; "
+            "R7 Host crypto requires OpenSSL major version exactly 3")
+    endif()
+    if(OPENSSL_VERSION VERSION_LESS "3"
+            OR NOT OPENSSL_VERSION VERSION_LESS "4")
+        message(FATAL_ERROR
+            "Ninlil R7 Host crypto requires OpenSSL major version exactly 3 "
+            "(found ${OPENSSL_VERSION})")
+    endif()
+    set(NINLIL_R7_HOST_CRYPTO_ENABLED TRUE)
+endif()
+
 add_library(ninlil INTERFACE)
 add_library(Ninlil::ninlil ALIAS ninlil)
 target_include_directories(ninlil INTERFACE
@@ -384,6 +407,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
 add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     ${NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES}
 )
+if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+    target_sources(ninlil_runtime_private PRIVATE
+        ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES})
+endif()
 # N6 production set (codec+crypto+context) comes only from
 # cmake/ninlil_runtime_private_sources.cmake — no host-only re-injection.
 
@@ -424,6 +451,9 @@ if(NINLIL_ENABLE_SANITIZERS)
         -fsanitize=address,undefined)
 endif()
 target_link_libraries(ninlil_runtime_private PRIVATE ninlil)
+if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+    target_link_libraries(ninlil_runtime_private PRIVATE OpenSSL::Crypto)
+endif()
 set_target_properties(ninlil_runtime_private PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON
@@ -468,6 +498,18 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
             APPEND PROPERTY COMPILE_OPTIONS ${_n6_compile_opts}
         )
     endforeach()
+    # R7 portable wrapper: docs/31 §11.6 candidate static-frame ceiling.
+    # Adapter call-chain/task stack sufficiency remains a separate ESP gate.
+    foreach(_r7_src IN LISTS NINLIL_R7_CRYPTO_PORTABLE_RELATIVE_SOURCES)
+        set(_r7_compile_opts -Werror -fstack-usage)
+        if(NOT _ninlil_any_sanitizer_active)
+            list(APPEND _r7_compile_opts -Wframe-larger-than=2560)
+        endif()
+        set_property(
+            SOURCE ${_r7_src}
+            APPEND PROPERTY COMPILE_OPTIONS ${_r7_compile_opts}
+        )
+    endforeach()
 endif()
 if(NINLIL_ENABLE_SANITIZERS)
     target_link_options(ninlil_runtime_private INTERFACE
@@ -479,7 +521,9 @@ if(NINLIL_BUILD_TESTS)
     target_compile_definitions(ninlil_runtime_private PRIVATE
         NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1
         NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM=1
-        NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1)
+        NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1
+        # R7 portable span-overflow seam (docs/31); tests-OFF omits this symbol.
+        NINLIL_R7_CRYPTO_TEST_BUILD=1)
 endif()
 
 # U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
@@ -2423,6 +2467,11 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/radio_wire_r6_docs_gate.py
             self-test
     )
+
+    # R7 T0 private crypto: portable/OpenSSL3/37-vector bridge + gates.
+    # Single authority: cmake/ninlil_r7_crypto_ctest.cmake. Does not claim
+    # W1/L1 codec, ESP KAT execution, HIL, or R7 complete.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_r7_crypto_ctest.cmake)
     add_test(
         NAME profile_r5_golden_oracle
         COMMAND ${Python3_EXECUTABLE}

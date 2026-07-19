@@ -5,6 +5,8 @@
 # Keep this list explicit: generated fixtures, tests/, tools/, and host-only
 # contract/reducer sources must not appear here.
 
+include("${CMAKE_CURRENT_LIST_DIR}/ninlil_r7_crypto_sources.cmake")
+
 set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/model/control_frame_codec.c
     src/model/domain_store_body_codec.c
@@ -40,6 +42,7 @@ set(NINLIL_N6_PRODUCTION_RELATIVE_SOURCES
 # Expand N6 production set into the shared private runtime source list once.
 list(APPEND NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
+    ${NINLIL_R7_CRYPTO_PORTABLE_RELATIVE_SOURCES}
 )
 
 set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
@@ -58,4 +61,6 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/radio/profile_loader.c
     src/transport/logical_session.c
     ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
+    ${NINLIL_R7_CRYPTO_PORTABLE_RELATIVE_SOURCES}
+    ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}
 )

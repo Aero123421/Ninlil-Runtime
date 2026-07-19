@@ -13,3 +13,7 @@ CONFIG_SPIRAM_USE_CAPS_ALLOC=y
 # U2: control CDC enabled for link of A2 adapter symbols; console stays UART.
 CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_CDC_COUNT=1
+
+# R7 component consumer requirement. This only enables target compile/link;
+# it does not turn the storage power-cut app into an R7 device/HIL verdict.
+CONFIG_MBEDTLS_HKDF_C=y

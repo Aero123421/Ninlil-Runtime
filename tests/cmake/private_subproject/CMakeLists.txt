@@ -73,14 +73,21 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-# Exact 20 base private sources + exact 3 N6 production set = 23 (single authority expand).
-if(NOT _private_source_count EQUAL 23)
-    message(FATAL_ERROR "private source count is not 23: ${_private_sources}")
+# Exact 20 base private sources + exact 3 N6 production set + exact 2 R7
+# portable crypto sources = 25 (single authority expand).  Host OpenSSL 3
+# adapter is top-level/tests only and must not appear in this add_subdirectory
+# consumer (NINLIL_R7_HOST_CRYPTO_ENABLED=FALSE).
+if(NOT _private_source_count EQUAL 25)
+    message(FATAL_ERROR "private source count is not 25: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
     if(_source MATCHES "tests/support")
         message(FATAL_ERROR "test fixture leaked into private target: ${_source}")
+    endif()
+    if(_source MATCHES "r7_crypto_openssl3" OR _source MATCHES "r7_crypto_mbedtls")
+        message(FATAL_ERROR
+            "platform crypto adapter leaked into default private sources: ${_source}")
     endif()
     get_filename_component(_source_name "${_source}" NAME)
     list(APPEND _private_source_names "${_source_name}")
@@ -102,6 +109,8 @@ set(_expected_private_source_names
     ncl1_codec.c
     pcp_authority.c
     profile_loader.c
+    r7_crypto_nonce.c
+    r7_crypto_portable.c
     radio_hal.c
     runtime_lifecycle_model.c
     runtime_store_bootstrap.c

@@ -35,3 +35,7 @@ CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_CDC_COUNT=1
 # Explicit non-claim: control CDC must never receive printf/ESP_LOG.
 # Leave any CDC console / VFS stdio redirect options OFF (default).
+
+# R7 private crypto adapter uses the legacy mbedTLS HKDF Extract/Expand API.
+# ESP-IDF v5.5.3 leaves this implementation disabled unless selected.
+CONFIG_MBEDTLS_HKDF_C=y

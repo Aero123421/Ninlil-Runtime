@@ -32,6 +32,9 @@ set(NINLIL_COMPONENT_SRCS "")
 foreach(_rel IN LISTS NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES)
     list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
 endforeach()
+foreach(_rel IN LISTS NINLIL_R7_CRYPTO_ESP_RELATIVE_SOURCES)
+    list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
 foreach(_rel IN LISTS NINLIL_ESP_IDF_PORT_ALL_RELATIVE_SOURCES)
     list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
 endforeach()
@@ -71,6 +74,7 @@ idf_component_register(
         wear_levelling
         esp_tinyusb
         driver
+        mbedtls
 )
 
 # Portable Core remains C11-compatible (enforced by the host build). The
