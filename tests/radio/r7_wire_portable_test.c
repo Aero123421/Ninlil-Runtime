@@ -2225,12 +2225,13 @@ static void test_alias_all_pairs(rec_ctx *rc, ninlil_r7_crypto_provider *p)
                  * domain-valid pairwise length used by the public wire API
                  * is <= domain_span_max <= UINTPTR_MAX, so the production
                  * (len > UINTPTR_MAX) arm is not reachable via valid domain.
+                 * SIZE_MAX > UINTPTR_MAX itself proves a next size_t value
+                 * exists.  Do not spell that value as UINTPTR_MAX + 1 here:
+                 * equal-width GCC must still diagnose the dead expression's
+                 * unsigned wrap under -Wtype-limits -Werror.
                  */
                 if (!(SIZE_MAX > (size_t)UINTPTR_MAX)) {
                     failf("wide_size_t", "branch invariant broken");
-                }
-                if (!((size_t)UINTPTR_MAX + (size_t)1u > (size_t)UINTPTR_MAX)) {
-                    failf("wide_size_t", "cannot form >UINTPTR_MAX size_t");
                 }
                 if (domain_span_max > (size_t)UINTPTR_MAX) {
                     failf(
