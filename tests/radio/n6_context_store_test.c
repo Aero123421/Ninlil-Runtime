@@ -10,6 +10,7 @@
 #include "n6_mem_storage.h"
 #include "n6_record_codec.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -635,8 +636,11 @@ static int test_real_reentry_busy(void)
      * Host test: mark reentry by calling ops that nest via storage callback.
      * Here we inject a storage begin that re-enters N6. */
     REQUIRE(setup_ready(&n6, 2u) == 0);
-    /* Sequential double recover without plan is INVALID_STATE not BUSY */
+    /* True no-CU (live==0 && n_keys==0): INVALID_STATE, not BUSY/CORRUPT. */
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 0);
     REQUIRE(ninlil_n6_recover_cu(n6) == NINLIL_N6_INVALID_STATE);
+    REQUIRE(ninlil_n6_state(n6) != NINLIL_N6_STATE_FENCED);
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 0);
     REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
     return 0;
 }
@@ -847,6 +851,18 @@ static int ticket_bytes_all_zero(const ninlil_n6_rx_ticket_t *t)
     return 1;
 }
 
+static int lease_bytes_all_zero(const ninlil_n6_tx_lease_t *L)
+{
+    size_t i;
+    const uint8_t *p = (const uint8_t *)L;
+    for (i = 0u; i < sizeof(*L); ++i) {
+        if (p[i] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int test_rx_sliding64_ooo_and_ticket_tamper(void)
 {
     ninlil_n6_t *n6 = NULL;
@@ -927,6 +943,969 @@ static int obj_contains_key16(const uint8_t key16[16])
 }
 
 /* O3: admit/abort wipe evidence — pool free + key/iv residual 0 + object scan. */
+
+/*
+ * Test-build-only fault seam: declared here (not in production private header)
+ * so n6_context_store.h stays byte-stable with the pre-errata pin.
+ * Compiled only into NINLIL_N6_TEST_BUILD store object.
+ */
+#if defined(NINLIL_N6_TEST_BUILD)
+extern int ninlil_n6_test_fault_corrupt_live_ticket_lane(
+    ninlil_n6_t *n6, uint8_t bad_lane_kind);
+extern int ninlil_n6_test_all_tickets_fully_zero(const ninlil_n6_t *n6);
+extern int ninlil_n6_test_all_leases_fully_zero(const ninlil_n6_t *n6);
+extern int ninlil_n6_test_slot_traffic_secret_zero(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle);
+extern int ninlil_n6_test_rx_all_lanes_snapshot(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle,
+    uint64_t *out_live_reserved, uint64_t *out_boot_floor,
+    uint64_t *out_ram_highest, uint64_t *out_bitmap);
+extern int ninlil_n6_test_tx_all_lanes_snapshot(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle,
+    uint64_t *out_next, uint64_t *out_limit);
+extern int ninlil_n6_test_fault_corrupt_cu_array_post(
+    ninlil_n6_t *n6, int kind_corrupt, uint8_t bad_kind,
+    int idx_corrupt, uint8_t bad_idx);
+extern int ninlil_n6_test_fault_mutate_cu_field(
+    ninlil_n6_t *n6, uint32_t entry_index, int field_id, uint64_t u64_val);
+extern int ninlil_n6_test_rx_window_snapshot(
+    const ninlil_n6_t *n6, ninlil_n6_handle_t handle, uint8_t lane_kind,
+    uint64_t *out_boot_floor, uint64_t *out_ram_highest, uint64_t *out_bitmap);
+/* field_id for ninlil_n6_test_fault_mutate_cu_field */
+enum {
+    N6_TEST_CU_F_N_KEYS = 1,
+    N6_TEST_CU_F_PHASE = 2,
+    N6_TEST_CU_F_PENDING_INSTALL = 3,
+    N6_TEST_CU_F_OP = 4,
+    N6_TEST_CU_F_POST = 5,
+    N6_TEST_CU_F_SLOT_INDEX = 6,
+    N6_TEST_CU_F_LANE_KIND = 7,
+    N6_TEST_CU_F_LANE_IDX = 8,
+    N6_TEST_CU_F_KLEN = 9,
+    N6_TEST_CU_F_OLD_PRESENT = 10,
+    N6_TEST_CU_F_OLD_VLEN = 11,
+    N6_TEST_CU_F_PROP_VLEN = 12,
+    N6_TEST_CU_F_POST_U64_A = 13,
+    N6_TEST_CU_F_POST_U64_B = 14,
+    N6_TEST_CU_F_PROP_BYTE = 15,
+    N6_TEST_CU_F_KEY_BYTE = 16,
+    N6_TEST_CU_F_APPEND_COPY = 17,
+    N6_TEST_CU_F_REWRITE_PROP_TX = 18,
+    N6_TEST_CU_F_REWRITE_PROP_RX = 19,
+    N6_TEST_CU_F_FIND_FIRST_POST = 20
+};
+#endif
+
+/* Private named lane count matches production N6_PRIVATE_NAMED_LANE_COUNT. */
+enum { N6_TEST_LANE_N = 3 };
+
+/* All 12 n6_mem_storage counters — I/O0 oracle for errata fail-closed paths. */
+typedef struct n6_mem_io_snap {
+    uint32_t close_c;
+    uint32_t open_c;
+    uint32_t begin_c;
+    uint32_t iter_open_c;
+    uint32_t iter_close_c;
+    uint32_t iter_next_c;
+    uint32_t commit_c;
+    uint32_t rollback_c;
+    uint32_t get_c;
+    uint32_t put_c;
+    uint32_t erase_c;
+    uint32_t capacity_c;
+} n6_mem_io_snap_t;
+
+static void n6_mem_io_snap_capture(n6_mem_io_snap_t *s)
+{
+    s->close_c = n6_mem_storage_close_count();
+    s->open_c = n6_mem_storage_open_count();
+    s->begin_c = n6_mem_storage_begin_count();
+    s->iter_open_c = n6_mem_storage_iter_open_count();
+    s->iter_close_c = n6_mem_storage_iter_close_count();
+    s->iter_next_c = n6_mem_storage_iter_next_count();
+    s->commit_c = n6_mem_storage_commit_count();
+    s->rollback_c = n6_mem_storage_rollback_count();
+    s->get_c = n6_mem_storage_get_count();
+    s->put_c = n6_mem_storage_put_count();
+    s->erase_c = n6_mem_storage_erase_count();
+    s->capacity_c = n6_mem_storage_capacity_count();
+}
+
+static int n6_mem_io_snap_eq(const n6_mem_io_snap_t *a, const n6_mem_io_snap_t *b)
+{
+    return a->close_c == b->close_c && a->open_c == b->open_c
+        && a->begin_c == b->begin_c && a->iter_open_c == b->iter_open_c
+        && a->iter_close_c == b->iter_close_c && a->iter_next_c == b->iter_next_c
+        && a->commit_c == b->commit_c && a->rollback_c == b->rollback_c
+        && a->get_c == b->get_c && a->put_c == b->put_c
+        && a->erase_c == b->erase_c && a->capacity_c == b->capacity_c;
+}
+
+static int n6_u64n_eq(const uint64_t *a, const uint64_t *b, int n)
+{
+    int i;
+    for (i = 0; i < n; ++i) {
+        if (a[i] != b[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/*
+ * R6 RX index errata (docs/30 §20.12 Normative clarification):
+ * - external invalid lanes 0/4/255 and cross-layer → INVALID_ARGUMENT,
+ *   ticket all-zero, ALL 12 mem storage counters delta 0 (I/O0 ⇒ durable
+ *   mutation impossible), pool/window unchanged
+ * - internal ticket range-invalid / catalog-valid cross-layer → admit CORRUPT,
+ *   fence, full ticket wipe, I/O0, all 3×4 RX arrays unchanged
+ * Normal DATA/ACK/E2E regression is covered by rx_ticket_admit,
+ * install_tx_rx_storage_shapes, rx_sliding64_tamper (enumerated in review).
+ */
+static int test_rx_lane_idx_errata(void)
+{
+    ninlil_n6_t *n6 = NULL;
+    ninlil_n6_handle_t h = 0u;
+    ninlil_n6_handle_t h_e2e = 0u;
+    ninlil_n6_rx_ticket_t ticket;
+    ninlil_n6_install_capsule_t cap;
+    ninlil_n6_stats_t stats0, stats1;
+    ninlil_n6_error_t err;
+    uint64_t fence0;
+    n6_mem_io_snap_t io0, io1;
+    size_t pool_need;
+    static uint8_t pool_snap[256u * 1024u];
+    const uint8_t bad_lanes[] = {0u, 4u, 255u};
+    size_t bi;
+
+    pool_need = ninlil_n6_context_pool_bytes(4u);
+    REQUIRE(pool_need > 0u && pool_need <= sizeof(g_pool));
+    REQUIRE(pool_need <= sizeof(pool_snap));
+
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 1);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    n6_mem_io_snap_capture(&io0);
+    (void)memcpy(pool_snap, g_pool, pool_need);
+
+    /* A) external invalid lanes 0, 4, 255 — each independently fail-closed */
+    for (bi = 0u; bi < 3u; ++bi) {
+        (void)memset(&ticket, (int)(0xA5u ^ (unsigned)bi), sizeof(ticket));
+        REQUIRE(ninlil_n6_rx_precheck(n6, h, bad_lanes[bi], 1u + (uint64_t)bi,
+            &ticket) == NINLIL_N6_INVALID_ARGUMENT);
+        REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+        REQUIRE(ninlil_n6_test_live_ticket_count(n6) == 0u);
+        REQUIRE(ninlil_n6_test_any_ticket_key_or_iv_nonzero(n6) == 0);
+        n6_mem_io_snap_capture(&io1);
+        REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+        REQUIRE(memcmp(g_pool, pool_snap, pool_need) == 0);
+    }
+
+    /* B) external cross-layer: HOP slot + E2E lane (catalog-valid, layer mismatch) */
+    (void)memset(&ticket, 0x3C, sizeof(ticket));
+    REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_E2E, 10u, &ticket)
+        == NINLIL_N6_INVALID_ARGUMENT);
+    REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+    REQUIRE(ninlil_n6_test_live_ticket_count(n6) == 0u);
+    n6_mem_io_snap_capture(&io1);
+    REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+    REQUIRE(memcmp(g_pool, pool_snap, pool_need) == 0);
+
+    REQUIRE(ninlil_n6_stats(n6, &stats1) == NINLIL_N6_OK);
+    REQUIRE(stats1.rx_precheck_ok == stats0.rx_precheck_ok);
+    REQUIRE(stats1.rx_admit_ok == stats0.rx_admit_ok);
+    REQUIRE(stats1.fence_count == fence0);
+    REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_READY);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* B2) external E2E slot → HOP DATA and HOP ACK (both I/O12 + pool 0) */
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 0);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_e2e(n6, &cap, &h_e2e) == NINLIL_N6_OK);
+    n6_mem_io_snap_capture(&io0);
+    (void)memcpy(pool_snap, g_pool, pool_need);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+
+    (void)memset(&ticket, 0x55, sizeof(ticket));
+    REQUIRE(ninlil_n6_rx_precheck(n6, h_e2e, NINLIL_N6_LANE_HOP_DATA, 11u, &ticket)
+        == NINLIL_N6_INVALID_ARGUMENT);
+    REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+    REQUIRE(ninlil_n6_test_live_ticket_count(n6) == 0u);
+    n6_mem_io_snap_capture(&io1);
+    REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+    REQUIRE(memcmp(g_pool, pool_snap, pool_need) == 0);
+
+    (void)memset(&ticket, 0x66, sizeof(ticket));
+    REQUIRE(ninlil_n6_rx_precheck(n6, h_e2e, NINLIL_N6_LANE_HOP_ACK, 12u, &ticket)
+        == NINLIL_N6_INVALID_ARGUMENT);
+    REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+    REQUIRE(ninlil_n6_test_live_ticket_count(n6) == 0u);
+    n6_mem_io_snap_capture(&io1);
+    REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+    REQUIRE(memcmp(g_pool, pool_snap, pool_need) == 0);
+
+    REQUIRE(ninlil_n6_stats(n6, &stats1) == NINLIL_N6_OK);
+    REQUIRE(stats1.rx_precheck_ok == stats0.rx_precheck_ok);
+    REQUIRE(stats1.fence_count == fence0);
+    REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_READY);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* C) internal range-invalid lane (0xFE) → CORRUPT + fence + wipe + I/O0 */
+    {
+        uint64_t live0[N6_TEST_LANE_N], boot0[N6_TEST_LANE_N];
+        uint64_t high0[N6_TEST_LANE_N], bm0[N6_TEST_LANE_N];
+        uint64_t live1[N6_TEST_LANE_N], boot1[N6_TEST_LANE_N];
+        uint64_t high1[N6_TEST_LANE_N], bm1[N6_TEST_LANE_N];
+        REQUIRE(setup_booted(&n6, 4u) == 0);
+        fill_capsule(&cap, 1);
+        cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+        cap.context_id = 1u;
+        REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+        REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+        fence0 = stats0.fence_count;
+        REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 1u, &ticket)
+            == NINLIL_N6_OK);
+        REQUIRE(ticket.live == 1u && ticket.ticket_id != 0u);
+        REQUIRE(ninlil_n6_test_live_ticket_count(n6) == 1u);
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h, live0, boot0, high0, bm0) == 1);
+        n6_mem_io_snap_capture(&io0);
+        REQUIRE(ninlil_n6_test_fault_corrupt_live_ticket_lane(n6, 0xFEu) == 1);
+        REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_CORRUPT);
+        REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_FENCED);
+        REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+        REQUIRE(ninlil_n6_test_live_ticket_count(n6) == 0u);
+        REQUIRE(ninlil_n6_test_all_tickets_fully_zero(n6) == 1);
+        n6_mem_io_snap_capture(&io1);
+        REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+        /* Fence zeroes secrets; all named-lane RX arrays unchanged. */
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h, live1, boot1, high1, bm1) == 1);
+        REQUIRE(n6_u64n_eq(live0, live1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(boot0, boot1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(high0, high1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(bm0, bm1, N6_TEST_LANE_N) == 1);
+        REQUIRE(ninlil_n6_stats(n6, &stats1) == NINLIL_N6_OK);
+        REQUIRE(stats1.fence_count == fence0 + 1u);
+        REQUIRE(stats1.rx_admit_ok == stats0.rx_admit_ok);
+        REQUIRE(ninlil_n6_last_error(n6, &err) == NINLIL_N6_OK);
+        REQUIRE(err.status == NINLIL_N6_CORRUPT);
+        REQUIRE(err.reason == NINLIL_N6_REASON_CORRUPT);
+        REQUIRE(err.state == NINLIL_N6_STATE_FENCED);
+        REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket)
+            == NINLIL_N6_INVALID_ARGUMENT);
+        REQUIRE(ninlil_n6_test_live_ticket_count(n6) == 0u);
+        REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+    }
+
+    /* D) internal catalog-valid cross-layer HOP→E2E and E2E→HOP DATA/ACK */
+    {
+        uint64_t live0[N6_TEST_LANE_N], boot0[N6_TEST_LANE_N];
+        uint64_t high0[N6_TEST_LANE_N], bm0[N6_TEST_LANE_N];
+        uint64_t live1[N6_TEST_LANE_N], boot1[N6_TEST_LANE_N];
+        uint64_t high1[N6_TEST_LANE_N], bm1[N6_TEST_LANE_N];
+        REQUIRE(setup_booted(&n6, 4u) == 0);
+        fill_capsule(&cap, 1);
+        cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+        cap.context_id = 1u;
+        REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+        REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+        fence0 = stats0.fence_count;
+        REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 2u, &ticket)
+            == NINLIL_N6_OK);
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h, live0, boot0, high0, bm0) == 1);
+        n6_mem_io_snap_capture(&io0);
+        REQUIRE(ninlil_n6_test_fault_corrupt_live_ticket_lane(
+            n6, NINLIL_N6_LANE_E2E) == 1);
+        REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_CORRUPT);
+        REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_FENCED);
+        REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+        REQUIRE(ninlil_n6_test_all_tickets_fully_zero(n6) == 1);
+        n6_mem_io_snap_capture(&io1);
+        REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h, live1, boot1, high1, bm1) == 1);
+        REQUIRE(n6_u64n_eq(live0, live1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(boot0, boot1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(high0, high1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(bm0, bm1, N6_TEST_LANE_N) == 1);
+        REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+        /* E2E slot → HOP DATA: full 3×4 RX array equality */
+        REQUIRE(setup_booted(&n6, 4u) == 0);
+        fill_capsule(&cap, 0);
+        cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+        cap.context_id = 1u;
+        REQUIRE(ninlil_n6_install_e2e(n6, &cap, &h_e2e) == NINLIL_N6_OK);
+        REQUIRE(ninlil_n6_rx_precheck(n6, h_e2e, NINLIL_N6_LANE_E2E, 3u, &ticket)
+            == NINLIL_N6_OK);
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h_e2e, live0, boot0, high0, bm0) == 1);
+        n6_mem_io_snap_capture(&io0);
+        REQUIRE(ninlil_n6_test_fault_corrupt_live_ticket_lane(
+            n6, NINLIL_N6_LANE_HOP_DATA) == 1);
+        REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_CORRUPT);
+        REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_FENCED);
+        REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+        REQUIRE(ninlil_n6_test_all_tickets_fully_zero(n6) == 1);
+        n6_mem_io_snap_capture(&io1);
+        REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h_e2e, live1, boot1, high1, bm1) == 1);
+        REQUIRE(n6_u64n_eq(live0, live1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(boot0, boot1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(high0, high1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(bm0, bm1, N6_TEST_LANE_N) == 1);
+        REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+        /* E2E slot → HOP ACK: same full 3×4 strength (not weaker than DATA) */
+        REQUIRE(setup_booted(&n6, 4u) == 0);
+        fill_capsule(&cap, 0);
+        cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+        cap.context_id = 1u;
+        REQUIRE(ninlil_n6_install_e2e(n6, &cap, &h_e2e) == NINLIL_N6_OK);
+        REQUIRE(ninlil_n6_rx_precheck(n6, h_e2e, NINLIL_N6_LANE_E2E, 4u, &ticket)
+            == NINLIL_N6_OK);
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h_e2e, live0, boot0, high0, bm0) == 1);
+        n6_mem_io_snap_capture(&io0);
+        REQUIRE(ninlil_n6_test_fault_corrupt_live_ticket_lane(
+            n6, NINLIL_N6_LANE_HOP_ACK) == 1);
+        REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_CORRUPT);
+        REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_FENCED);
+        REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+        REQUIRE(ninlil_n6_test_all_tickets_fully_zero(n6) == 1);
+        n6_mem_io_snap_capture(&io1);
+        REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h_e2e, live1, boot1, high1, bm1) == 1);
+        REQUIRE(n6_u64n_eq(live0, live1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(boot0, boot1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(high0, high1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(bm0, bm1, N6_TEST_LANE_N) == 1);
+        REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+    }
+
+    /* E) happy-path regression in-suite: HOP DATA/ACK + E2E still work */
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 1);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 1u, &ticket)
+        == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_OK);
+    REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+    REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_ACK, 1u, &ticket)
+        == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 0);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_e2e(n6, &cap, &h_e2e) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_rx_precheck(n6, h_e2e, NINLIL_N6_LANE_E2E, 1u, &ticket)
+        == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+    return 0;
+}
+
+
+/*
+ * Helper: after COMMIT_UNKNOWN CU is live and storage handle is open.
+ * Corrupt recover must: CORRUPT + FENCED + full wipe; close delta exactly 1;
+ * open/begin/get/put/erase/commit/rollback/iter_open/iter_next/iter_close/capacity
+ * delta 0; TX and/or RX arrays unchanged when snapshots provided.
+ */
+static int cu_fail_closed_assert(
+    ninlil_n6_t *n6, ninlil_n6_handle_t h, uint64_t fence0,
+    const n6_mem_io_snap_t *io0,
+    const uint64_t *tn0, const uint64_t *tl0, int check_tx,
+    const uint64_t *live0, const uint64_t *boot0, const uint64_t *high0,
+    const uint64_t *bm0, int check_rx)
+{
+    n6_mem_io_snap_t io1;
+    ninlil_n6_stats_t stats1;
+    ninlil_n6_error_t err;
+    uint64_t tn1[N6_TEST_LANE_N], tl1[N6_TEST_LANE_N];
+    uint64_t live1[N6_TEST_LANE_N], boot1[N6_TEST_LANE_N];
+    uint64_t high1[N6_TEST_LANE_N], bm1[N6_TEST_LANE_N];
+
+    REQUIRE(ninlil_n6_recover_cu(n6) == NINLIL_N6_CORRUPT);
+    REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_FENCED);
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 0);
+    REQUIRE(ninlil_n6_test_all_tickets_fully_zero(n6) == 1);
+    REQUIRE(ninlil_n6_test_all_leases_fully_zero(n6) == 1);
+    REQUIRE(ninlil_n6_test_slot_traffic_secret_zero(n6, h) == 1);
+    n6_mem_io_snap_capture(&io1);
+    REQUIRE(io1.close_c == io0->close_c + 1u);
+    REQUIRE(io1.open_c == io0->open_c);
+    REQUIRE(io1.begin_c == io0->begin_c);
+    REQUIRE(io1.iter_open_c == io0->iter_open_c);
+    REQUIRE(io1.iter_close_c == io0->iter_close_c);
+    REQUIRE(io1.iter_next_c == io0->iter_next_c);
+    REQUIRE(io1.commit_c == io0->commit_c);
+    REQUIRE(io1.rollback_c == io0->rollback_c);
+    REQUIRE(io1.get_c == io0->get_c);
+    REQUIRE(io1.put_c == io0->put_c);
+    REQUIRE(io1.erase_c == io0->erase_c);
+    REQUIRE(io1.capacity_c == io0->capacity_c);
+    if (check_tx != 0) {
+        REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn1, tl1) == 1);
+        REQUIRE(n6_u64n_eq(tn0, tn1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(tl0, tl1, N6_TEST_LANE_N) == 1);
+    }
+    if (check_rx != 0) {
+        REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+            n6, h, live1, boot1, high1, bm1) == 1);
+        REQUIRE(n6_u64n_eq(live0, live1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(boot0, boot1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(high0, high1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(bm0, bm1, N6_TEST_LANE_N) == 1);
+    }
+    REQUIRE(ninlil_n6_stats(n6, &stats1) == NINLIL_N6_OK);
+    REQUIRE(stats1.fence_count == fence0 + 1u);
+    REQUIRE(ninlil_n6_last_error(n6, &err) == NINLIL_N6_OK);
+    REQUIRE(err.status == NINLIL_N6_CORRUPT);
+    REQUIRE(err.reason == NINLIL_N6_REASON_CORRUPT);
+    REQUIRE(err.state == NINLIL_N6_STATE_FENCED);
+    return 0;
+}
+
+/* Locate first TX_LIMIT/RX_ACCEPT entry index in live CU; -1 if none. */
+static int cu_first_array_post_index(ninlil_n6_t *n6)
+{
+    int r = ninlil_n6_test_fault_mutate_cu_field(
+        n6, 0u, N6_TEST_CU_F_FIND_FIRST_POST, 0u);
+    if (r <= 0) {
+        return -1;
+    }
+    return r - 1;
+}
+
+/*
+ * CU ALL_PROPOSED array-post corruption + full envelope KATs (docs/30 §20.12 r7).
+ * Single cap declaration (no duplicate).
+ */
+static int test_cu_post_lane_idx_errata(void)
+{
+    ninlil_n6_t *n6 = NULL;
+    ninlil_n6_handle_t h = 0u;
+    ninlil_n6_handle_t h2 = 0u;
+    ninlil_n6_tx_lease_t lease;
+    ninlil_n6_rx_ticket_t ticket;
+    ninlil_n6_install_capsule_t cap;
+    ninlil_n6_stats_t stats0;
+    uint64_t fence0;
+    uint64_t tn0[N6_TEST_LANE_N], tl0[N6_TEST_LANE_N];
+    uint64_t live0[N6_TEST_LANE_N], boot0[N6_TEST_LANE_N];
+    uint64_t high0[N6_TEST_LANE_N], bm0[N6_TEST_LANE_N];
+    n6_mem_io_snap_t io0;
+    int ei;
+    uint64_t post_a0;
+
+    /* ---- TX_LIMIT: corrupt lane_idx on CU post (no TX array mutation) ---- */
+    REQUIRE(setup_booted(&n6, 8u) == 0);
+    fill_capsule(&cap, 1);
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    REQUIRE(lease.live == 0u);
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 1);
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_test_fault_corrupt_cu_array_post(n6, 0, 0, 1, 255u) == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL, NULL,
+                NULL, NULL, 0)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* ---- RX_ACCEPT: corrupt lane_kind to E2E (cross-layer) on HOP ---- */
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 1);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+        n6, h, live0, boot0, high0, bm0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 5u, &ticket)
+        == NINLIL_N6_OK);
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    REQUIRE(ticket_bytes_all_zero(&ticket) == 1);
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 1);
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_test_fault_corrupt_cu_array_post(
+        n6, 1, NINLIL_N6_LANE_E2E, 0, 0) == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, NULL, NULL, 0, live0,
+                boot0, high0, bm0, 1)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* ---- Envelope / integrity KATs (each: CORRUPT+FENCED+close1+I/O0) ---- */
+    /*
+     * n_keys→0 seam on a live COMMIT_UNKNOWN open plan (P1 bypass residual).
+     * Independent oracle: CORRUPT + FENCED + CU/ticket/lease/secret wipe +
+     * close delta exactly 1 + other 11 storage counters delta 0 + all TX lane
+     * next/limit arrays byte-equal (no posts). Must NOT return INVALID_STATE
+     * (that status is reserved for true no-CU live==0 && n_keys==0 only).
+     */
+    REQUIRE(setup_booted(&n6, 8u) == 0);
+    fill_capsule(&cap, 1);
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    REQUIRE(lease.live == 0u);
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 1);
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, 0u, N6_TEST_CU_F_N_KEYS, 0u)
+        == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL, NULL,
+                NULL, NULL, 0)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* n_keys MAX+1 */
+    REQUIRE(setup_booted(&n6, 8u) == 0);
+    fill_capsule(&cap, 1);
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, 0u, N6_TEST_CU_F_N_KEYS,
+                (uint64_t)NINLIL_N6_CU_PLAN_MAX_KEYS + 1u)
+        == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL, NULL,
+                NULL, NULL, 0)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* klen 49 and SIZE_MAX */
+    {
+        const size_t klens[2] = { 49u, (size_t)SIZE_MAX };
+        size_t ki;
+        for (ki = 0u; ki < 2u; ++ki) {
+            REQUIRE(setup_booted(&n6, 8u) == 0);
+            fill_capsule(&cap, 1);
+            REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+            REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+            REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+            fence0 = stats0.fence_count;
+            n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+            REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+                == NINLIL_N6_COMMIT_UNKNOWN);
+            ei = cu_first_array_post_index(n6);
+            REQUIRE(ei >= 0);
+            n6_mem_io_snap_capture(&io0);
+            REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                        N6_TEST_CU_F_KLEN, (uint64_t)klens[ki])
+                == 1);
+            REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL,
+                        NULL, NULL, NULL, 0)
+                == 0);
+            REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+        }
+    }
+
+    /* post unknown (99) and post flip TX_LIMIT→RX_ACCEPT (side mismatch) */
+    {
+        const uint64_t posts[2] = { 99u, 3u /* RX_ACCEPT */ };
+        size_t pi;
+        for (pi = 0u; pi < 2u; ++pi) {
+            REQUIRE(setup_booted(&n6, 8u) == 0);
+            fill_capsule(&cap, 1);
+            REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+            REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+            REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+            fence0 = stats0.fence_count;
+            n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+            REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+                == NINLIL_N6_COMMIT_UNKNOWN);
+            ei = cu_first_array_post_index(n6);
+            REQUIRE(ei >= 0);
+            n6_mem_io_snap_capture(&io0);
+            REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                        N6_TEST_CU_F_POST, posts[pi])
+                == 1);
+            REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL,
+                        NULL, NULL, NULL, 0)
+                == 0);
+            REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+        }
+    }
+
+    /* RX→outbound: RX_ACCEPT plan with post flipped to TX_LIMIT */
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 1);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+        n6, h, live0, boot0, high0, bm0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 7u, &ticket)
+        == NINLIL_N6_OK);
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    ei = cu_first_array_post_index(n6);
+    REQUIRE(ei >= 0);
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                N6_TEST_CU_F_POST, 2u /* TX_LIMIT */)
+        == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, NULL, NULL, 0, live0,
+                boot0, high0, bm0, 1)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* same-side different-slot redirect */
+    REQUIRE(setup_booted(&n6, 8u) == 0);
+    fill_capsule(&cap, 1);
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    fill_capsule(&cap, 1);
+    cap.context_id = 2u;
+    cap.key_generation = 6u; /* HW floor raised by first install */
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h2) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    ei = cu_first_array_post_index(n6);
+    REQUIRE(ei >= 0);
+    n6_mem_io_snap_capture(&io0);
+    /* Redirect to second live outbound slot index (typically 1). */
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                N6_TEST_CU_F_SLOT_INDEX, 1u)
+        == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL, NULL,
+                NULL, NULL, 0)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* post_u64_a / post_u64_b mutation */
+    {
+        const int fields[2] = { N6_TEST_CU_F_POST_U64_A, N6_TEST_CU_F_POST_U64_B };
+        size_t fi;
+        for (fi = 0u; fi < 2u; ++fi) {
+            REQUIRE(setup_booted(&n6, 8u) == 0);
+            fill_capsule(&cap, 1);
+            REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+            REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+            REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+            fence0 = stats0.fence_count;
+            n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+            REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+                == NINLIL_N6_COMMIT_UNKNOWN);
+            ei = cu_first_array_post_index(n6);
+            REQUIRE(ei >= 0);
+            n6_mem_io_snap_capture(&io0);
+            REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                        fields[fi], 0xDEADBEEFu)
+                == 1);
+            REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL,
+                        NULL, NULL, NULL, 0)
+                == 0);
+            REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+        }
+    }
+
+    /* CRC-valid prop with post mismatch (re-encode prop reserved only) */
+    REQUIRE(setup_booted(&n6, 8u) == 0);
+    fill_capsule(&cap, 1);
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    ei = cu_first_array_post_index(n6);
+    REQUIRE(ei >= 0);
+    /* Capture original post_a by rewriting prop to a different valid exclusive. */
+    post_a0 = 999999u; /* distinct from typical small reserved windows */
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                N6_TEST_CU_F_REWRITE_PROP_TX, post_a0)
+        == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL, NULL,
+                NULL, NULL, 0)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* 2-entry: first valid + second invalid (append copy then mutate post_a) */
+    REQUIRE(setup_booted(&n6, 8u) == 0);
+    fill_capsule(&cap, 1);
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    ei = cu_first_array_post_index(n6);
+    REQUIRE(ei >= 0);
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                N6_TEST_CU_F_APPEND_COPY, 0u)
+        == 1);
+    /* Appended copy is at ei+1; first entry remains valid. */
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei + 1u,
+                N6_TEST_CU_F_POST_U64_A, 0xABCDu)
+        == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL, NULL,
+                NULL, NULL, 0)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /*
+     * Additional envelope field KATs (seam fields not already covered above):
+     * phase, pending_install, op, old_present, old_vlen, prop_vlen, key byte,
+     * RX CRC-valid prop rewrite (post mismatch). Same fail-closed oracle.
+     */
+    {
+        const int plan_fields[] = {
+            N6_TEST_CU_F_PHASE,
+            N6_TEST_CU_F_PENDING_INSTALL,
+        };
+        const uint64_t plan_vals[] = {
+            99u, /* invalid phase outside recovery domain */
+            2u,  /* pending_install not boolean */
+        };
+        size_t pi;
+        for (pi = 0u; pi < 2u; ++pi) {
+            REQUIRE(setup_booted(&n6, 8u) == 0);
+            fill_capsule(&cap, 1);
+            REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+            REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+            REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+            fence0 = stats0.fence_count;
+            n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+            REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+                == NINLIL_N6_COMMIT_UNKNOWN);
+            n6_mem_io_snap_capture(&io0);
+            REQUIRE(ninlil_n6_test_fault_mutate_cu_field(
+                        n6, 0u, plan_fields[pi], plan_vals[pi])
+                == 1);
+            REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL,
+                        NULL, NULL, NULL, 0)
+                == 0);
+            REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+        }
+    }
+    {
+        const int entry_fields[] = {
+            N6_TEST_CU_F_OP,
+            N6_TEST_CU_F_OLD_PRESENT,
+            N6_TEST_CU_F_OLD_VLEN,
+            N6_TEST_CU_F_PROP_VLEN,
+            N6_TEST_CU_F_KEY_BYTE,
+        };
+        const uint64_t entry_vals[] = {
+            99u, /* invalid op */
+            2u,  /* old_present not boolean */
+            69u, /* old_vlen > 68 */
+            69u, /* prop_vlen > 68 */
+            0u,  /* key[0] ^= 1 */
+        };
+        size_t fi;
+        for (fi = 0u; fi < 5u; ++fi) {
+            REQUIRE(setup_booted(&n6, 8u) == 0);
+            fill_capsule(&cap, 1);
+            REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+            REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+            REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+            fence0 = stats0.fence_count;
+            n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+            REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+                == NINLIL_N6_COMMIT_UNKNOWN);
+            ei = cu_first_array_post_index(n6);
+            REQUIRE(ei >= 0);
+            n6_mem_io_snap_capture(&io0);
+            REQUIRE(ninlil_n6_test_fault_mutate_cu_field(
+                        n6, (uint32_t)ei, entry_fields[fi], entry_vals[fi])
+                == 1);
+            REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, tn0, tl0, 1, NULL,
+                        NULL, NULL, NULL, 0)
+                == 0);
+            REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+        }
+    }
+    /* RX: CRC-valid prop rewrite vs post_u64_a mismatch + identity intact path */
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 1);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_rx_all_lanes_snapshot(
+        n6, h, live0, boot0, high0, bm0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    fence0 = stats0.fence_count;
+    REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 9u, &ticket)
+        == NINLIL_N6_OK);
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    ei = cu_first_array_post_index(n6);
+    REQUIRE(ei >= 0);
+    n6_mem_io_snap_capture(&io0);
+    /* Re-encode prop with a different accept_through; leave post_u64_a. */
+    REQUIRE(ninlil_n6_test_fault_mutate_cu_field(n6, (uint32_t)ei,
+                N6_TEST_CU_F_REWRITE_PROP_RX, 0xBEEFu)
+        == 1);
+    REQUIRE(cu_fail_closed_assert(n6, h, fence0, &io0, NULL, NULL, 0, live0,
+                boot0, high0, bm0, 1)
+        == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* Happy TX CU ALL_PROPOSED still applies */
+    REQUIRE(setup_booted(&n6, 8u) == 0);
+    fill_capsule(&cap, 1);
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    REQUIRE(ninlil_n6_recover_cu(n6) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_READY);
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* Happy RX CU ALL_PROPOSED still applies */
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 1);
+    cap.alloc_side = NINLIL_N6_ALLOC_INBOUND_RX;
+    cap.context_id = 1u;
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 3u, &ticket)
+        == NINLIL_N6_OK);
+    n6_mem_storage_inject_cu(N6_MEM_CU_ALL_PROPOSED);
+    REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket)
+        == NINLIL_N6_COMMIT_UNKNOWN);
+    REQUIRE(ninlil_n6_recover_cu(n6) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_READY);
+    REQUIRE(ninlil_n6_test_cu_live(n6) == 0);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+    return 0;
+}
+
+/*
+ * Direct tx_burn invalid lanes 0/4/255 + cross-layer:
+ * INVALID_ARGUMENT, lease all-zero, all 12 storage I/O deltas 0,
+ * all 3×TX next/limit arrays unchanged.
+ */
+static int test_tx_burn_lane_idx_errata(void)
+{
+    ninlil_n6_t *n6 = NULL;
+    ninlil_n6_handle_t h = 0u;
+    ninlil_n6_handle_t h_e2e = 0u;
+    ninlil_n6_tx_lease_t lease;
+    ninlil_n6_install_capsule_t cap;
+    ninlil_n6_stats_t stats0, stats1;
+    n6_mem_io_snap_t io0, io1;
+    uint64_t tn0[N6_TEST_LANE_N], tl0[N6_TEST_LANE_N];
+    uint64_t tn1[N6_TEST_LANE_N], tl1[N6_TEST_LANE_N];
+    const uint8_t bad_lanes[] = { 0u, 4u, 255u };
+    size_t bi;
+
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 1);
+    REQUIRE(ninlil_n6_install_hop(n6, &cap, &h) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn0, tl0) == 1);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+    n6_mem_io_snap_capture(&io0);
+
+    for (bi = 0u; bi < 3u; ++bi) {
+        (void)memset(&lease, (int)(0x5Au ^ (unsigned)bi), sizeof(lease));
+        REQUIRE(ninlil_n6_tx_burn(n6, h, bad_lanes[bi], &lease)
+            == NINLIL_N6_INVALID_ARGUMENT);
+        REQUIRE(lease_bytes_all_zero(&lease) == 1);
+        n6_mem_io_snap_capture(&io1);
+        REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+        REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn1, tl1) == 1);
+        REQUIRE(n6_u64n_eq(tn0, tn1, N6_TEST_LANE_N) == 1);
+        REQUIRE(n6_u64n_eq(tl0, tl1, N6_TEST_LANE_N) == 1);
+    }
+
+    /* cross-layer: HOP slot + E2E lane */
+    (void)memset(&lease, 0x3C, sizeof(lease));
+    REQUIRE(ninlil_n6_tx_burn(n6, h, NINLIL_N6_LANE_E2E, &lease)
+        == NINLIL_N6_INVALID_ARGUMENT);
+    REQUIRE(lease_bytes_all_zero(&lease) == 1);
+    n6_mem_io_snap_capture(&io1);
+    REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h, tn1, tl1) == 1);
+    REQUIRE(n6_u64n_eq(tn0, tn1, N6_TEST_LANE_N) == 1);
+    REQUIRE(n6_u64n_eq(tl0, tl1, N6_TEST_LANE_N) == 1);
+
+    REQUIRE(ninlil_n6_stats(n6, &stats1) == NINLIL_N6_OK);
+    REQUIRE(stats1.tx_burn_ok == stats0.tx_burn_ok);
+    REQUIRE(stats1.fence_count == stats0.fence_count);
+    REQUIRE(ninlil_n6_state(n6) == NINLIL_N6_STATE_READY);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+
+    /* E2E slot + HOP DATA/ACK */
+    REQUIRE(setup_booted(&n6, 4u) == 0);
+    fill_capsule(&cap, 0);
+    REQUIRE(ninlil_n6_install_e2e(n6, &cap, &h_e2e) == NINLIL_N6_OK);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h_e2e, tn0, tl0) == 1);
+    n6_mem_io_snap_capture(&io0);
+    REQUIRE(ninlil_n6_stats(n6, &stats0) == NINLIL_N6_OK);
+
+    (void)memset(&lease, 0x11, sizeof(lease));
+    REQUIRE(ninlil_n6_tx_burn(n6, h_e2e, NINLIL_N6_LANE_HOP_DATA, &lease)
+        == NINLIL_N6_INVALID_ARGUMENT);
+    REQUIRE(lease_bytes_all_zero(&lease) == 1);
+    n6_mem_io_snap_capture(&io1);
+    REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h_e2e, tn1, tl1) == 1);
+    REQUIRE(n6_u64n_eq(tn0, tn1, N6_TEST_LANE_N) == 1);
+    REQUIRE(n6_u64n_eq(tl0, tl1, N6_TEST_LANE_N) == 1);
+
+    (void)memset(&lease, 0x22, sizeof(lease));
+    REQUIRE(ninlil_n6_tx_burn(n6, h_e2e, NINLIL_N6_LANE_HOP_ACK, &lease)
+        == NINLIL_N6_INVALID_ARGUMENT);
+    REQUIRE(lease_bytes_all_zero(&lease) == 1);
+    n6_mem_io_snap_capture(&io1);
+    REQUIRE(n6_mem_io_snap_eq(&io0, &io1) == 1);
+    REQUIRE(ninlil_n6_test_tx_all_lanes_snapshot(n6, h_e2e, tn1, tl1) == 1);
+    REQUIRE(n6_u64n_eq(tn0, tn1, N6_TEST_LANE_N) == 1);
+    REQUIRE(n6_u64n_eq(tl0, tl1, N6_TEST_LANE_N) == 1);
+
+    REQUIRE(ninlil_n6_stats(n6, &stats1) == NINLIL_N6_OK);
+    REQUIRE(stats1.tx_burn_ok == stats0.tx_burn_ok);
+    REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
+    return 0;
+}
+
 static int test_rx_ticket_wipe_evidence_kat(void)
 {
     ninlil_n6_t *n6 = NULL;
@@ -5039,6 +6018,15 @@ int main(void)
     }
     if (run_one("rx_ticket_wipe_evidence", test_rx_ticket_wipe_evidence_kat)
         != 0) {
+        return 1;
+    }
+    if (run_one("rx_lane_idx_errata", test_rx_lane_idx_errata) != 0) {
+        return 1;
+    }
+    if (run_one("cu_post_lane_idx_errata", test_cu_post_lane_idx_errata) != 0) {
+        return 1;
+    }
+    if (run_one("tx_burn_lane_idx_errata", test_tx_burn_lane_idx_errata) != 0) {
         return 1;
     }
     if (run_one("id_wrap_fail_closed", test_id_wrap_fail_closed) != 0) {

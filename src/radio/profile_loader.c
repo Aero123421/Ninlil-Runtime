@@ -1610,6 +1610,15 @@ static ninlil_r5_status_t r5_compose_alias_gate(
     return NINLIL_R5_OK;
 }
 
+/*
+ * Issue alias gate: ALIAS only on actual overlaps; zero mutation of owner,
+ * inputs, and all outputs (including out_error). Pure oversize is not ALIAS.
+ *
+ * proposed may be NULL for ninlil_r5_issue: that public path has no
+ * caller-supplied proposed bind, so only plan / outs / frame geometry apply.
+ * ninlil_r5_issue_with_bind always passes a non-NULL proposed after its
+ * public null checks. Do not invent a stack bind_plan solely for this gate.
+ */
 static ninlil_r5_status_t r5_issue_alias_gate(
     ninlil_r5_t *r5,
     const ninlil_r5_issue_plan_t *plan,
@@ -1627,7 +1636,9 @@ static ninlil_r5_status_t r5_issue_alias_gate(
 
     /* Fixed containers only — never load plan->frame_* yet. */
     if (r5_ranges_overlap_ptr(r5, sizeof(*r5), plan, sizeof(*plan))
-        || r5_ranges_overlap_ptr(r5, sizeof(*r5), proposed, sizeof(*proposed))
+        || (proposed != NULL
+            && r5_ranges_overlap_ptr(
+                r5, sizeof(*r5), proposed, sizeof(*proposed)))
         || r5_ranges_overlap_ptr(
             r5, sizeof(*r5), out_full_bind, sizeof(*out_full_bind))
         || r5_ranges_overlap_ptr(
@@ -1636,11 +1647,14 @@ static ninlil_r5_status_t r5_issue_alias_gate(
             plan, sizeof(*plan), out_full_bind, sizeof(*out_full_bind))
         || r5_ranges_overlap_ptr(
             plan, sizeof(*plan), out_hal_snapshot, sizeof(*out_hal_snapshot))
-        || r5_ranges_overlap_ptr(
-            proposed, sizeof(*proposed), out_full_bind, sizeof(*out_full_bind))
-        || r5_ranges_overlap_ptr(
-            proposed, sizeof(*proposed), out_hal_snapshot,
-            sizeof(*out_hal_snapshot))
+        || (proposed != NULL
+            && r5_ranges_overlap_ptr(
+                proposed, sizeof(*proposed), out_full_bind,
+                sizeof(*out_full_bind)))
+        || (proposed != NULL
+            && r5_ranges_overlap_ptr(
+                proposed, sizeof(*proposed), out_hal_snapshot,
+                sizeof(*out_hal_snapshot)))
         || r5_ranges_overlap_ptr(
             out_full_bind, sizeof(*out_full_bind), out_hal_snapshot,
             sizeof(*out_hal_snapshot))
@@ -1649,8 +1663,10 @@ static ninlil_r5_status_t r5_issue_alias_gate(
                     r5, sizeof(*r5), out_error, sizeof(*out_error))
                 || r5_ranges_overlap_ptr(
                     plan, sizeof(*plan), out_error, sizeof(*out_error))
-                || r5_ranges_overlap_ptr(
-                    proposed, sizeof(*proposed), out_error, sizeof(*out_error))
+                || (proposed != NULL
+                    && r5_ranges_overlap_ptr(
+                        proposed, sizeof(*proposed), out_error,
+                        sizeof(*out_error)))
                 || r5_ranges_overlap_ptr(
                     out_full_bind, sizeof(*out_full_bind), out_error,
                     sizeof(*out_error))
@@ -1670,7 +1686,9 @@ static ninlil_r5_status_t r5_issue_alias_gate(
             || r5_ranges_overlap_ptr(
                 out_hal_snapshot, sizeof(*out_hal_snapshot), fb, clen)
             || r5_ranges_overlap_ptr(plan, sizeof(*plan), fb, clen)
-            || r5_ranges_overlap_ptr(proposed, sizeof(*proposed), fb, clen)
+            || (proposed != NULL
+                && r5_ranges_overlap_ptr(
+                    proposed, sizeof(*proposed), fb, clen))
             || (out_error != NULL
                 && r5_ranges_overlap_ptr(
                     out_error, sizeof(*out_error), fb, clen))) {
@@ -2012,7 +2030,6 @@ ninlil_r5_status_t ninlil_r5_issue(
     ninlil_r5_bind_plan_t expected;
     ninlil_r5_status_t st;
     int out_safe = 0;
-    ninlil_r5_bind_plan_t *dummy_proposed;
 
     if (r5 == NULL) {
         return NINLIL_R5_INVALID_ARGUMENT;
@@ -2029,15 +2046,19 @@ ninlil_r5_status_t ninlil_r5_issue(
         }
         return NINLIL_R5_INVALID_ARGUMENT;
     }
-    /* Wrapper gate before compose: ALIAS-only, zero mutation. */
+    /*
+     * Wrapper gate before compose: ALIAS-only, zero mutation.
+     * ninlil_r5_issue has no caller-supplied proposed bind; pass proposed=NULL
+     * so the gate checks only plan / outs / frame geometry. Do not invent a
+     * stack ninlil_r5_bind_plan_t placeholder (content unused; typed const
+     * pointer + sizeof range into private helper trips GCC -O2
+     * -Wmaybe-uninitialized on Ubuntu GCC 13 even with = {0}).
+     */
     {
-        ninlil_r5_bind_plan_t proposed_placeholder;
         ninlil_r5_status_t alias_st;
 
-        (void)memset(&proposed_placeholder, 0, sizeof(proposed_placeholder));
-        dummy_proposed = &proposed_placeholder;
         alias_st = r5_issue_alias_gate(
-            r5, plan, dummy_proposed, out_full_bind, out_hal_snapshot, out_error,
+            r5, plan, NULL, out_full_bind, out_hal_snapshot, out_error,
             &out_safe);
         if (alias_st != NINLIL_R5_OK) {
             return alias_st;

@@ -58,6 +58,7 @@ typedef struct n6ms_ctx {
     uint32_t rollback_count;
     uint32_t get_count;
     uint32_t put_count;
+    uint32_t erase_count;
     uint32_t capacity_count;
     uint8_t poison_scratch[128]; /* for pointer rewrite faults */
 } n6ms_ctx_t;
@@ -476,6 +477,7 @@ static ninlil_storage_status_t n6ms_erase(
     n6ms_ctx_t *c = (n6ms_ctx_t *)user;
     n6ms_entry_t *e;
     (void)txn;
+    c->erase_count += 1u;
     if (c->txn_rw == 0) {
         return NINLIL_STORAGE_IO_ERROR;
     }
@@ -1132,6 +1134,11 @@ uint32_t n6_mem_storage_get_count(void)
 uint32_t n6_mem_storage_put_count(void)
 {
     return g_n6ms.put_count;
+}
+
+uint32_t n6_mem_storage_erase_count(void)
+{
+    return g_n6ms.erase_count;
 }
 
 uint32_t n6_mem_storage_capacity_count(void)

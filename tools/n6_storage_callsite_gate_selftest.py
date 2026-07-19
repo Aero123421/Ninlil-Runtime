@@ -774,11 +774,1413 @@ def run_self_test(src_root: Path) -> int:
             else:
                 ok(f"{name} GREEN (docs+code+disk co-update)")
 
-    # Counts for summary (honest).
-    # RED cases: 3 single-byte + 9 manifest/file/docs mismatches +
-    # 2 one-sided pin updates + 5 policy cases (including the
-    # authority-forbidden store override) + 8 historical false-greens
-    # = 3 + 9 + 2 + 5 + 8 = 27 designed RED cases.
+        # --- 17) RX index errata structural mutations stay RED even with
+        # pin+docs co-update. These are order/condition/return/dimension
+        # attacks (not mere SEMANTIC marker scrub counts).
+        def _co_update_store(name: str, mutator) -> None:
+            nonlocal red_n, ok_n, fails
+            mroot = tdir / name
+            try:
+                orig = files[store_rel]
+                mut = mutator(orig)
+                mut = _must_change(orig, mut, name)
+                mfiles = dict(files)
+                mfiles[store_rel] = mut
+                new_hash = g.sha256_bytes(mut)
+                new_manifest = []
+                for path, digest in g.ACCEPTED_SOURCE_MANIFEST:
+                    if path == store_rel:
+                        new_manifest.append((path, new_hash))
+                    else:
+                        new_manifest.append((path, digest))
+                new_docs = _docs_with_manifest(new_manifest, g)
+                _write_tree_with_files(mroot, mfiles, docs_text=new_docs)
+            except Exception as ex:  # noqa: BLE001
+                fail(f"mutation {name} setup: {ex}")
+                return
+            errs = g._check_tree_with_policy(mroot, manifest=new_manifest)
+            msg = _expect_red(errs, name, "rx-index-errata structural")
+            if msg:
+                fail(msg)
+            else:
+                red_ok(
+                    f"{name} RED via structural errata gate "
+                    f"(pin co-update does not greenwash)"
+                )
+
+        def mut_window_order_reverse(data: bytes) -> bytes:
+            # Move first rx_boot_floor[idx] load before the range guard.
+            s = data.decode("utf-8")
+            guard = "if (!n6_lane_idx_in_range(idx))"
+            load = "boot_floor = slot->rx_boot_floor[idx];"
+            # Only touch the window helper region.
+            sig = "static int n6_rx_precheck_window("
+            p0 = s.find(sig)
+            if p0 < 0:
+                raise RuntimeError("window missing")
+            p1 = s.find("ninlil_n6_status_t ninlil_n6_rx_precheck(", p0)
+            region = s[p0:p1]
+            if guard not in region or load not in region:
+                raise RuntimeError("window guard/load missing")
+            region2 = region.replace(load, "/*moved*/", 1)
+            region2 = region2.replace(
+                guard, load + "\n    " + guard, 1
+            )
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_window_cond_zero(data: bytes) -> bytes:
+            return data.replace(
+                b"if (!n6_lane_idx_in_range(idx))",
+                b"if (0 && !n6_lane_idx_in_range(idx))",
+                1,  # first is window
+            )
+
+        def mut_precheck_cond_invert(data: bytes) -> bytes:
+            # Invert only the precheck public path occurrence (2nd overall
+            # after window, or the one after idx = n6_lane_idx(lane_kind)).
+            s = data.decode("utf-8")
+            sig = "ninlil_n6_status_t ninlil_n6_rx_precheck("
+            p0 = s.find(sig)
+            p1 = s.find("ninlil_n6_status_t ninlil_n6_rx_admit_after_aead(", p0)
+            region = s[p0:p1]
+            old = "if (!n6_lane_idx_in_range(idx))"
+            new = "if (n6_lane_idx_in_range(idx))"
+            if old not in region:
+                raise RuntimeError("precheck guard missing")
+            region2 = region.replace(old, new, 1)
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_tx_order_reverse(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "ninlil_n6_status_t ninlil_n6_tx_burn("
+            p0 = s.find(sig)
+            p1 = s.find("ninlil_n6_status_t ninlil_n6_tx_lease_release(", p0)
+            region = s[p0:p1]
+            guard = "if (!n6_lane_idx_in_range(idx))"
+            access = "if (slot->tx_ram_next[idx] >= slot->tx_ram_limit[idx])"
+            if guard not in region or access not in region:
+                raise RuntimeError("tx guard/access missing")
+            # Place a synthetic early access before the guard.
+            region2 = region.replace(
+                guard,
+                "slot->tx_ram_next[idx];\n    " + guard,
+                1,
+            )
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_admit_drop_fence_return(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "ninlil_n6_status_t ninlil_n6_rx_admit_after_aead("
+            p0 = s.find(sig)
+            if p0 < 0:
+                raise RuntimeError("admit missing")
+            # Within admit, neuter the first range-fail block's CORRUPT return.
+            body_start = s.find("{", p0)
+            # Find range guard then strip fence/consume/return CORRUPT once.
+            g = s.find("if (!n6_lane_idx_in_range(idx))", p0)
+            if g < 0:
+                raise RuntimeError("admit range guard missing")
+            chunk = s[g : g + 450]
+            chunk2 = chunk
+            for frag in (
+                "n6_enter_fenced(n6);",
+                "n6_rx_consume_ticket_pair(n6, i, ticket, &tok);",
+                "return NINLIL_N6_CORRUPT;",
+            ):
+                if frag not in chunk2:
+                    raise RuntimeError(f"admit range block missing {frag}")
+                chunk2 = chunk2.replace(frag, "/*stripped*/", 1)
+            return (s[:g] + chunk2 + s[g + 450 :]).encode("utf-8")
+
+        def mut_admit_layer_relax(data: bytes) -> bytes:
+            return data.replace(
+                b"if (!n6_lane_ok_for_slot(slot, tok.lane_kind))",
+                b"if (0 && !n6_lane_ok_for_slot(slot, tok.lane_kind))",
+                1,
+            )
+
+        def mut_bare_3_dimension(data: bytes) -> bytes:
+            # Force one array back to magic 3.
+            old = b"uint64_t rx_boot_floor[N6_PRIVATE_NAMED_LANE_COUNT];"
+            new = b"uint64_t rx_boot_floor[3];"
+            if old not in data:
+                raise RuntimeError("rx_boot_floor named dimension missing")
+            return data.replace(old, new, 1)
+
+        def mut_drop_static_assert_boot(data: bytes) -> bytes:
+            # Remove the rx_boot_floor static assert block (line-ish region).
+            s = data.decode("utf-8")
+            needle = 'sizeof(((n6_slot_t *)0)->rx_boot_floor)'
+            p = s.find(needle)
+            if p < 0:
+                raise RuntimeError("boot_floor static assert missing")
+            # Expand to enclosing _Static_assert( ... );
+            a = s.rfind("_Static_assert", 0, p)
+            b = s.find(";", p)
+            if a < 0 or b < 0:
+                raise RuntimeError("static assert bounds")
+            return (s[:a] + "/*assert removed*/" + s[b + 1 :]).encode("utf-8")
+
+        def mut_drop_cu_validate(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            if "n6_cu_validate_array_posts" not in s:
+                raise RuntimeError("cu validate missing")
+            return s.replace(
+                "n6_cu_validate_array_posts",
+                "n6_cu_validate_array_posts_REMOVED",
+                1,
+            ).encode("utf-8")
+
+        def mut_cu_bare3(data: bytes) -> bytes:
+            # Re-introduce bare magic if any residual path is added later;
+            # also corrupt apply to use lane_idx < 3u if present after rename.
+            s = data.decode("utf-8")
+            if "n6_apply_cu_post" not in s:
+                raise RuntimeError("apply missing")
+            # Force a forbidden bare check into apply body for structural RED.
+            sig = "static ninlil_n6_status_t n6_apply_cu_post("
+            p0 = s.find(sig)
+            if p0 < 0:
+                p0 = s.find("n6_apply_cu_post(")
+            brace = s.find("{", p0)
+            return (
+                s[: brace + 1]
+                + "\n    if (0) { if (e->lane_idx < 3u) { (void)e; } }\n"
+                + s[brace + 1 :]
+            ).encode("utf-8")
+
+        def mut_in_range_ge_minus1(data: bytes) -> bytes:
+            # Independent audit GREEN_FALSE (a): relax central helper to idx>=-1.
+            s = data.decode("utf-8")
+            old = "return idx >= 0 && idx < (int)N6_PRIVATE_NAMED_LANE_COUNT;"
+            new = "return idx >= -1 && idx < (int)N6_PRIVATE_NAMED_LANE_COUNT;"
+            if old not in s:
+                raise RuntimeError("in_range return form missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_lane_ok_default_return1(data: bytes) -> bytes:
+            # Independent audit GREEN_FALSE (b): default deny → return 1.
+            s = data.decode("utf-8")
+            # Prefer the definition (after recover_cu), not any earlier decl noise.
+            sig = "static int n6_lane_ok_for_slot("
+            p0 = s.rfind(sig)
+            if p0 < 0:
+                raise RuntimeError("lane_ok missing")
+            brace = s.find("{", p0)
+            if brace < 0:
+                raise RuntimeError("lane_ok brace missing")
+            depth = 0
+            j = brace
+            while j < len(s):
+                if s[j] == "{":
+                    depth += 1
+                elif s[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            region = s[p0 : j + 1]
+            if "return 0;" not in region:
+                raise RuntimeError("lane_ok return 0 missing")
+            idx = region.rfind("return 0;")
+            region2 = region[:idx] + "return 1;" + region[idx + len("return 0;") :]
+            return (s[:p0] + region2 + s[j + 1 :]).encode("utf-8")
+
+        def mut_static_assert_comment_only(data: bytes) -> bytes:
+            # Independent audit GREEN_FALSE (c): comment-out asserts, leave sizeof
+            # tokens only inside // comments (block wrap fails if cluster has */).
+            s = data.decode("utf-8")
+            marker = "/* SEMANTIC: N6_PRIVATE_NAMED_LANE_COUNT_STATIC_ASSERT */"
+            p = s.find(marker)
+            if p < 0:
+                raise RuntimeError("static assert cluster marker missing")
+            end = s.find("/* Boot pack", p)
+            if end < 0:
+                raise RuntimeError("boot pack marker missing")
+            cluster = s[p:end]
+            lines: list[str] = []
+            for line in cluster.splitlines(True):
+                if not line.strip() or line.lstrip().startswith("//"):
+                    lines.append(line)
+                    continue
+                if line.endswith("\n"):
+                    lines.append("// " + line)
+                else:
+                    lines.append("// " + line)
+            return (s[:p] + "".join(lines) + s[end:]).encode("utf-8")
+
+        def mut_guard_into_if0(data: bytes) -> bytes:
+            # Independent audit GREEN_FALSE (d): move exact window guard into if(0){}.
+            s = data.decode("utf-8")
+            sig = "static int n6_rx_precheck_window("
+            p0 = s.find(sig)
+            p1 = s.find("ninlil_n6_status_t ninlil_n6_rx_precheck(", p0)
+            region = s[p0:p1]
+            guard = "if (!n6_lane_idx_in_range(idx))"
+            g = region.find(guard)
+            if g < 0:
+                raise RuntimeError("window guard missing")
+            # Find the guard's brace block
+            brace = region.find("{", g)
+            if brace < 0:
+                raise RuntimeError("window guard brace missing")
+            depth = 0
+            j = brace
+            while j < len(region):
+                if region[j] == "{":
+                    depth += 1
+                elif region[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            block = region[g : j + 1]
+            # Remove live guard and reinsert inside if(0)
+            region2 = region[:g] + "if (0) {\n    " + block + "\n    }\n" + region[j + 1 :]
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_precheck_guard_into_if0(data: bytes) -> bytes:
+            # Independent audit: public precheck guard moved into if(0){...}.
+            s = data.decode("utf-8")
+            sig = "ninlil_n6_status_t ninlil_n6_rx_precheck("
+            p0 = s.find(sig)
+            p1 = s.find("ninlil_n6_status_t ninlil_n6_rx_admit_after_aead(", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("precheck bounds missing")
+            region = s[p0:p1]
+            guard = "if (!n6_lane_idx_in_range(idx))"
+            g = region.find(guard)
+            if g < 0:
+                raise RuntimeError("precheck guard missing")
+            brace = region.find("{", g)
+            if brace < 0:
+                raise RuntimeError("precheck guard brace missing")
+            depth = 0
+            j = brace
+            while j < len(region):
+                if region[j] == "{":
+                    depth += 1
+                elif region[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            block = region[g : j + 1]
+            region2 = (
+                region[:g] + "if (0) {\n    " + block + "\n    }\n" + region[j + 1 :]
+            )
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_cu_validate_if0_and(data: bytes) -> bytes:
+            # Independent audit: deaden apply CU validate with if(0 && ...).
+            s = data.decode("utf-8")
+            old = "if (n6_cu_validate_array_posts(n6) != NINLIL_N6_OK)"
+            new = "if (0 && n6_cu_validate_array_posts(n6) != NINLIL_N6_OK)"
+            # Mutate first in apply (may appear in recover too — mutate all apply
+            # by replacing only the first occurrence inside apply body).
+            sig = "static ninlil_n6_status_t n6_apply_cu_post("
+            p0 = s.find(sig)
+            if p0 < 0:
+                p0 = s.find("n6_apply_cu_post(")
+            p1 = s.find("static ninlil_n6_status_t n6_cu_rb_close_corrupt(", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("apply bounds")
+            region = s[p0:p1]
+            if old not in region:
+                raise RuntimeError("apply validate if missing")
+            region2 = region.replace(old, new, 1)
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_cu_range_if0_and(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("cu validate bounds")
+            region = s[p0:p1]
+            old = "if (!n6_lane_idx_in_range(expected))"
+            new = "if (0 && !n6_lane_idx_in_range(expected))"
+            if old not in region:
+                raise RuntimeError("cu range guard missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode("utf-8")
+
+        def mut_cu_layer_if0_and(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("cu validate bounds")
+            region = s[p0:p1]
+            old = "if (!n6_lane_ok_for_slot(s, e->lane_kind))"
+            new = "if (0 && !n6_lane_ok_for_slot(s, e->lane_kind))"
+            if old not in region:
+                raise RuntimeError("cu layer guard missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode("utf-8")
+
+        def mut_cu_preflight_if0_and(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = "if (n6_cu_preflight_plan(n6) != NINLIL_N6_OK)"
+            new = "if (0 && n6_cu_preflight_plan(n6) != NINLIL_N6_OK)"
+            if old not in s:
+                raise RuntimeError("preflight if missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_recover_no_cu_or(data: bytes) -> bytes:
+            # P1 residual: OR bypasses preflight for live=1 n_keys=0.
+            s = data.decode("utf-8")
+            old = "if (n6->cu.live == 0 && n6->cu.n_keys == 0u)"
+            new = "if (n6->cu.live == 0 || n6->cu.n_keys == 0u)"
+            if old not in s:
+                raise RuntimeError("true no-CU AND missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_recover_no_cu_live_only(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = "if (n6->cu.live == 0 && n6->cu.n_keys == 0u)"
+            new = "if (n6->cu.live == 0)"
+            if old not in s:
+                raise RuntimeError("true no-CU AND missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_recover_no_cu_nkeys_only(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = "if (n6->cu.live == 0 && n6->cu.n_keys == 0u)"
+            new = "if (n6->cu.n_keys == 0u)"
+            if old not in s:
+                raise RuntimeError("true no-CU AND missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_recover_no_cu_if0_and(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = "if (n6->cu.live == 0 && n6->cu.n_keys == 0u)"
+            new = "if (0 && n6->cu.live == 0 && n6->cu.n_keys == 0u)"
+            if old not in s:
+                raise RuntimeError("true no-CU AND missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_preflight_live_relax(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_preflight_plan("
+            p0 = s.find(sig)
+            p1 = s.find("/* SEMANTIC: N6_CU_ARRAY_POST_INTEGRITY */", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("preflight bounds")
+            region = s[p0:p1]
+            old = "n6->cu.live != 1"
+            new = "n6->cu.live != 0"
+            if old not in region:
+                raise RuntimeError("live!=1 missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode(
+                "utf-8"
+            )
+
+        def mut_preflight_live_if0_and(data: bytes) -> bytes:
+            # Keep the desired predicate text, but make the whole guard dead.
+            s = data.decode("utf-8")
+            old = "if (n6 == NULL || n6->cu.live != 1)"
+            new = "if (0 && (n6 == NULL || n6->cu.live != 1))"
+            if old not in s:
+                raise RuntimeError("preflight live predicate missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_preflight_nkeys_relax(data: bytes) -> bytes:
+            # <1u → <0u: unsigned n_keys never fails lower bound.
+            s = data.decode("utf-8")
+            old = "n6->cu.n_keys < 1u || n6->cu.n_keys > NINLIL_N6_CU_PLAN_MAX_KEYS"
+            new = "n6->cu.n_keys < 0u || n6->cu.n_keys > NINLIL_N6_CU_PLAN_MAX_KEYS"
+            if old not in s:
+                raise RuntimeError("n_keys bound missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_preflight_phase_drop(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = (
+                "n6->cu.phase != N6_CU_PHASE_NONE\n"
+                "        && n6->cu.phase != N6_CU_PHASE_NEED_CLOSE_OLD\n"
+                "        && n6->cu.phase != N6_CU_PHASE_NEED_OPEN\n"
+                "        && n6->cu.phase != N6_CU_PHASE_READ_CLASSIFY"
+            )
+            new = (
+                "n6->cu.phase != N6_CU_PHASE_NONE\n"
+                "        && n6->cu.phase != N6_CU_PHASE_NEED_CLOSE_OLD\n"
+                "        && n6->cu.phase != N6_CU_PHASE_NEED_OPEN"
+            )
+            if old not in s:
+                raise RuntimeError("phase domain missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_preflight_pending_drop(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = (
+                "if (n6->cu.pending_install != 0 && n6->cu.pending_install != 1) {\n"
+                "        return NINLIL_N6_CORRUPT;\n"
+                "    }"
+            )
+            new = "/* pending_install boolean dropped */"
+            if old not in s:
+                raise RuntimeError("pending_install boolean missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_preflight_op_drop_delete(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = "if (e->op != N6_CU_OP_PUT && e->op != N6_CU_OP_DELETE)"
+            new = "if (e->op != N6_CU_OP_PUT)"
+            if old not in s:
+                raise RuntimeError("op domain missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_preflight_klen_drop(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            old = (
+                "if (e->klen > NINLIL_N6_LANE_KEY_BYTES) {\n"
+                "            return NINLIL_N6_CORRUPT;\n"
+                "        }"
+            )
+            new = "/* klen bound dropped */"
+            if old not in s:
+                raise RuntimeError("klen bound missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_validate_side_tx_drop(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("validate bounds")
+            region = s[p0:p1]
+            old = (
+                "if (s->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX) {\n"
+                "                return NINLIL_N6_CORRUPT;\n"
+                "            }"
+            )
+            new = "/* TX side check dropped */"
+            if old not in region:
+                raise RuntimeError("TX side check missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode(
+                "utf-8"
+            )
+
+        def mut_validate_side_tx_if0_and(data: bytes) -> bytes:
+            # Keep the desired side predicate text, but make the check dead.
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("validate bounds")
+            region = s[p0:p1]
+            old = "if (s->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX)"
+            new = "if (0 && s->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX)"
+            if old not in region:
+                raise RuntimeError("TX side check missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode(
+                "utf-8"
+            )
+
+        def mut_validate_key_memcmp_drop(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            region = s[p0:p1]
+            old = (
+                "if (memcmp(e->key, canon_key, NINLIL_N6_LANE_KEY_BYTES) != 0) {\n"
+                "            return NINLIL_N6_CORRUPT;\n"
+                "        }"
+            )
+            new = "/* key memcmp dropped */"
+            if old not in region:
+                raise RuntimeError("key memcmp missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode(
+                "utf-8"
+            )
+
+        def mut_validate_post_u64_order_drop(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            region = s[p0:p1]
+            old = (
+                "if (!(e->post_u64_b < e->post_u64_a)) {\n"
+                "                return NINLIL_N6_CORRUPT;\n"
+                "            }"
+            )
+            new = "/* post_u64 order dropped */"
+            if old not in region:
+                raise RuntimeError("post_u64 order missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode(
+                "utf-8"
+            )
+
+        def mut_validate_slot_range_drop(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            region = s[p0:p1]
+            old = (
+                "if (e->slot_index >= n6->slot_count) {\n"
+                "            return NINLIL_N6_CORRUPT;\n"
+                "        }"
+            )
+            new = "/* slot_index range dropped */"
+            if old not in region:
+                raise RuntimeError("slot range missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode(
+                "utf-8"
+            )
+
+        # --- rule7b residual P2: complete live if-predicate pin co-update RED ---
+        def _cu_val_repl(data: bytes, old: str, new: str, what: str) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("cu validate bounds")
+            region = s[p0:p1]
+            if old not in region:
+                raise RuntimeError(f"{what} missing")
+            return (s[:p0] + region.replace(old, new, 1) + s[p1:]).encode(
+                "utf-8"
+            )
+
+        # Independent re-audit 7 minimal GREEN_FALSE reproductions (must RED):
+        def mut_validate_op_old_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->op != N6_CU_OP_PUT || e->old_present != 1)",
+                "if (0 && (e->op != N6_CU_OP_PUT || e->old_present != 1))",
+                "op+old_present",
+            )
+
+        def mut_validate_vlen_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->old_vlen != NINLIL_N6_TX_VALUE_BYTES\n"
+                "            || e->prop_vlen != NINLIL_N6_TX_VALUE_BYTES)",
+                "if (0 && (e->old_vlen != NINLIL_N6_TX_VALUE_BYTES\n"
+                "            || e->prop_vlen != NINLIL_N6_TX_VALUE_BYTES))",
+                "exact 68B vlen",
+            )
+
+        def mut_validate_live_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (s->live == 0u)",
+                "if (s->live != 0u)",
+                "live==0",
+            )
+
+        def mut_validate_tx_old_decode_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (ninlil_n6_decode_n6tx_value(e->old_val, e->old_vlen, &old_tv)\n"
+                "                != NINLIL_N6_CODEC_OK)",
+                "if (ninlil_n6_decode_n6tx_value(e->old_val, e->old_vlen, &old_tv)\n"
+                "                == NINLIL_N6_CODEC_OK)",
+                "TX old decode",
+            )
+
+        def mut_validate_tx_binding_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (memcmp(old_tv.binding_digest_prefix16, s->binding_digest32, 16u)\n"
+                "                    != 0\n"
+                "                || memcmp(prop_tv.binding_digest_prefix16, s->binding_digest32,\n"
+                "                       16u)\n"
+                "                    != 0)",
+                "if (memcmp(old_tv.binding_digest_prefix16, s->binding_digest32, 16u)\n"
+                "                    == 0\n"
+                "                || memcmp(prop_tv.binding_digest_prefix16, s->binding_digest32,\n"
+                "                       16u)\n"
+                "                    == 0)",
+                "TX binding",
+            )
+
+        def mut_validate_tx_ns_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (memcmp(old_tv.ns_fingerprint12, s->ns_fingerprint12, 12u) != 0\n"
+                "                || memcmp(prop_tv.ns_fingerprint12, s->ns_fingerprint12, 12u)\n"
+                "                    != 0)",
+                "if (memcmp(old_tv.ns_fingerprint12, s->ns_fingerprint12, 12u) == 0\n"
+                "                || memcmp(prop_tv.ns_fingerprint12, s->ns_fingerprint12, 12u)\n"
+                "                    == 0)",
+                "TX ns",
+            )
+
+        def mut_validate_tx_value_side_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_tv.alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX\n"
+                "                || prop_tv.alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX)",
+                "if (old_tv.alloc_side == NINLIL_N6_ALLOC_OUTBOUND_TX\n"
+                "                || prop_tv.alloc_side == NINLIL_N6_ALLOC_OUTBOUND_TX)",
+                "TX value alloc_side",
+            )
+
+        # Remaining predicate groups: if0 / invert / drop / relax coverage.
+        def mut_validate_post_filter_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->post != N6_CU_POST_TX_LIMIT && e->post != N6_CU_POST_RX_ACCEPT)",
+                "if (0 && (e->post != N6_CU_POST_TX_LIMIT && e->post != N6_CU_POST_RX_ACCEPT))",
+                "post filter",
+            )
+
+        def mut_validate_post_filter_drop(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->post != N6_CU_POST_TX_LIMIT && e->post != N6_CU_POST_RX_ACCEPT) {\n"
+                "            continue;\n"
+                "        }",
+                "/* post filter dropped */",
+                "post filter block",
+            )
+
+        def mut_validate_op_old_drop(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->op != N6_CU_OP_PUT || e->old_present != 1) {\n"
+                "            return NINLIL_N6_CORRUPT;\n"
+                "        }",
+                "/* op+old_present dropped */",
+                "op+old_present block",
+            )
+
+        def mut_validate_op_old_relax(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->op != N6_CU_OP_PUT || e->old_present != 1)",
+                "if (e->op != N6_CU_OP_PUT)",
+                "op+old_present",
+            )
+
+        def mut_validate_vlen_drop(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->old_vlen != NINLIL_N6_TX_VALUE_BYTES\n"
+                "            || e->prop_vlen != NINLIL_N6_TX_VALUE_BYTES) {\n"
+                "            return NINLIL_N6_CORRUPT;\n"
+                "        }",
+                "/* exact 68B vlen dropped */",
+                "exact 68B vlen block",
+            )
+
+        def mut_validate_canary_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (s->canary0 != N6_CANARY || s->canary1 != N6_CANARY)",
+                "if (s->canary0 == N6_CANARY || s->canary1 == N6_CANARY)",
+                "canary",
+            )
+
+        def mut_validate_canary_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (s->canary0 != N6_CANARY || s->canary1 != N6_CANARY)",
+                "if (0 && (s->canary0 != N6_CANARY || s->canary1 != N6_CANARY))",
+                "canary",
+            )
+
+        def mut_validate_live_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (s->live == 0u)",
+                "if (0 && s->live == 0u)",
+                "live==0",
+            )
+
+        def mut_validate_side_rx_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (s->alloc_side != NINLIL_N6_ALLOC_INBOUND_RX)",
+                "if (0 && s->alloc_side != NINLIL_N6_ALLOC_INBOUND_RX)",
+                "RX slot side",
+            )
+
+        def mut_validate_side_rx_drop(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (s->alloc_side != NINLIL_N6_ALLOC_INBOUND_RX) {\n"
+                "                return NINLIL_N6_CORRUPT;\n"
+                "            }",
+                "/* RX side check dropped */",
+                "RX slot side block",
+            )
+
+        def mut_validate_side_tx_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (s->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX)",
+                "if (s->alloc_side == NINLIL_N6_ALLOC_OUTBOUND_TX)",
+                "TX slot side",
+            )
+
+        def mut_validate_slot_range_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (e->slot_index >= n6->slot_count)",
+                "if (0 && e->slot_index >= n6->slot_count)",
+                "slot_index range",
+            )
+
+        def mut_validate_lane_idx_eq_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if ((int)e->lane_idx != expected)",
+                "if ((int)e->lane_idx == expected)",
+                "lane_idx==expected",
+            )
+
+        def mut_validate_encode_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (ninlil_n6_encode_lane_key(\n"
+                "                &lk, canon_key, sizeof(canon_key), &canon_klen)\n"
+                "            != NINLIL_N6_CODEC_OK)",
+                "if (ninlil_n6_encode_lane_key(\n"
+                "                &lk, canon_key, sizeof(canon_key), &canon_klen)\n"
+                "            == NINLIL_N6_CODEC_OK)",
+                "encode",
+            )
+
+        def mut_validate_encode_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (ninlil_n6_encode_lane_key(\n"
+                "                &lk, canon_key, sizeof(canon_key), &canon_klen)\n"
+                "            != NINLIL_N6_CODEC_OK)",
+                "if (0 && ninlil_n6_encode_lane_key(\n"
+                "                &lk, canon_key, sizeof(canon_key), &canon_klen)\n"
+                "            != NINLIL_N6_CODEC_OK)",
+                "encode",
+            )
+
+        def mut_validate_canon_klen_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (canon_klen != NINLIL_N6_LANE_KEY_BYTES\n"
+                "            || e->klen != NINLIL_N6_LANE_KEY_BYTES)",
+                "if (0 && (canon_klen != NINLIL_N6_LANE_KEY_BYTES\n"
+                "            || e->klen != NINLIL_N6_LANE_KEY_BYTES))",
+                "canonical key length",
+            )
+
+        def mut_validate_canon_klen_drop(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (canon_klen != NINLIL_N6_LANE_KEY_BYTES\n"
+                "            || e->klen != NINLIL_N6_LANE_KEY_BYTES) {\n"
+                "            return NINLIL_N6_CORRUPT;\n"
+                "        }",
+                "/* canonical key length dropped */",
+                "canonical key length block",
+            )
+
+        def mut_validate_key_memcmp_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (memcmp(e->key, canon_key, NINLIL_N6_LANE_KEY_BYTES) != 0)",
+                "if (0 && memcmp(e->key, canon_key, NINLIL_N6_LANE_KEY_BYTES) != 0)",
+                "key memcmp",
+            )
+
+        def mut_validate_key_memcmp_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (memcmp(e->key, canon_key, NINLIL_N6_LANE_KEY_BYTES) != 0)",
+                "if (memcmp(e->key, canon_key, NINLIL_N6_LANE_KEY_BYTES) == 0)",
+                "key memcmp",
+            )
+
+        def mut_validate_tx_prop_decode_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (ninlil_n6_decode_n6tx_value(e->prop_val, e->prop_vlen, &prop_tv)\n"
+                "                != NINLIL_N6_CODEC_OK)",
+                "if (ninlil_n6_decode_n6tx_value(e->prop_val, e->prop_vlen, &prop_tv)\n"
+                "                == NINLIL_N6_CODEC_OK)",
+                "TX prop decode",
+            )
+
+        def mut_validate_tx_keygen_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_tv.key_generation != s->key_generation\n"
+                "                || prop_tv.key_generation != s->key_generation)",
+                "if (old_tv.key_generation == s->key_generation\n"
+                "                || prop_tv.key_generation == s->key_generation)",
+                "TX key_generation",
+            )
+
+        def mut_validate_tx_epoch_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_tv.membership_epoch != s->membership_epoch\n"
+                "                || prop_tv.membership_epoch != s->membership_epoch)",
+                "if (old_tv.membership_epoch == s->membership_epoch\n"
+                "                || prop_tv.membership_epoch == s->membership_epoch)",
+                "TX membership_epoch",
+            )
+
+        def mut_validate_tx_post_u64_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_tv.reserved_exclusive != e->post_u64_b\n"
+                "                || prop_tv.reserved_exclusive != e->post_u64_a)",
+                "if (old_tv.reserved_exclusive == e->post_u64_b\n"
+                "                || prop_tv.reserved_exclusive == e->post_u64_a)",
+                "TX post_u64 exclusive",
+            )
+
+        def mut_validate_tx_post_u64_order_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (!(e->post_u64_b < e->post_u64_a))",
+                "if ((e->post_u64_b < e->post_u64_a))",
+                "TX post_u64 order",
+            )
+
+        def mut_validate_rx_old_decode_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (ninlil_n6_decode_n6rx_value(e->old_val, e->old_vlen, &old_rv)\n"
+                "                != NINLIL_N6_CODEC_OK)",
+                "if (ninlil_n6_decode_n6rx_value(e->old_val, e->old_vlen, &old_rv)\n"
+                "                == NINLIL_N6_CODEC_OK)",
+                "RX old decode",
+            )
+
+        def mut_validate_rx_prop_decode_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (ninlil_n6_decode_n6rx_value(e->prop_val, e->prop_vlen, &prop_rv)\n"
+                "                != NINLIL_N6_CODEC_OK)",
+                "if (ninlil_n6_decode_n6rx_value(e->prop_val, e->prop_vlen, &prop_rv)\n"
+                "                == NINLIL_N6_CODEC_OK)",
+                "RX prop decode",
+            )
+
+        def mut_validate_rx_keygen_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_rv.key_generation != s->key_generation\n"
+                "                || prop_rv.key_generation != s->key_generation)",
+                "if (old_rv.key_generation == s->key_generation\n"
+                "                || prop_rv.key_generation == s->key_generation)",
+                "RX key_generation",
+            )
+
+        def mut_validate_rx_binding_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (memcmp(old_rv.binding_digest_prefix16, s->binding_digest32, 16u)\n"
+                "                    != 0\n"
+                "                || memcmp(prop_rv.binding_digest_prefix16, s->binding_digest32,\n"
+                "                       16u)\n"
+                "                    != 0)",
+                "if (memcmp(old_rv.binding_digest_prefix16, s->binding_digest32, 16u)\n"
+                "                    == 0\n"
+                "                || memcmp(prop_rv.binding_digest_prefix16, s->binding_digest32,\n"
+                "                       16u)\n"
+                "                    == 0)",
+                "RX binding",
+            )
+
+        def mut_validate_rx_epoch_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_rv.membership_epoch != s->membership_epoch\n"
+                "                || prop_rv.membership_epoch != s->membership_epoch)",
+                "if (old_rv.membership_epoch == s->membership_epoch\n"
+                "                || prop_rv.membership_epoch == s->membership_epoch)",
+                "RX membership_epoch",
+            )
+
+        def mut_validate_rx_ns_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (memcmp(old_rv.ns_fingerprint12, s->ns_fingerprint12, 12u) != 0\n"
+                "                || memcmp(prop_rv.ns_fingerprint12, s->ns_fingerprint12, 12u)\n"
+                "                    != 0)",
+                "if (memcmp(old_rv.ns_fingerprint12, s->ns_fingerprint12, 12u) == 0\n"
+                "                || memcmp(prop_rv.ns_fingerprint12, s->ns_fingerprint12, 12u)\n"
+                "                    == 0)",
+                "RX ns",
+            )
+
+        def mut_validate_rx_value_side_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_rv.alloc_side != NINLIL_N6_ALLOC_INBOUND_RX\n"
+                "                || prop_rv.alloc_side != NINLIL_N6_ALLOC_INBOUND_RX)",
+                "if (old_rv.alloc_side == NINLIL_N6_ALLOC_INBOUND_RX\n"
+                "                || prop_rv.alloc_side == NINLIL_N6_ALLOC_INBOUND_RX)",
+                "RX value alloc_side",
+            )
+
+        def mut_validate_rx_post_u64_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (prop_rv.accept_reserved_through != e->post_u64_a\n"
+                "                || e->post_u64_b != 0u)",
+                "if (prop_rv.accept_reserved_through == e->post_u64_a\n"
+                "                || e->post_u64_b == 0u)",
+                "RX post_u64",
+            )
+
+        def mut_validate_rx_order_invert(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_rv.accept_reserved_through\n"
+                "                > prop_rv.accept_reserved_through)",
+                "if (old_rv.accept_reserved_through\n"
+                "                < prop_rv.accept_reserved_through)",
+                "RX order",
+            )
+
+        def mut_validate_rx_order_if0(data: bytes) -> bytes:
+            return _cu_val_repl(
+                data,
+                "if (old_rv.accept_reserved_through\n"
+                "                > prop_rv.accept_reserved_through)",
+                "if (0 && old_rv.accept_reserved_through\n"
+                "                > prop_rv.accept_reserved_through)",
+                "RX order",
+            )
+
+        def _invert_post_tx_selector_nth(data: bytes, n: int, what: str) -> bytes:
+            """Invert the n-th (1-based) live post-TX selector in validate only.
+
+            validate has exactly two ``if (e->post == N6_CU_POST_TX_LIMIT)``
+            sites: (1) slot-side, (2) decode+identity. Dual exact-pin + role
+            association must RED on either single-site invert (set membership
+            alone is insufficient).
+            """
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("cu validate bounds")
+            region = s[p0:p1]
+            old = "if (e->post == N6_CU_POST_TX_LIMIT)"
+            new = "if (e->post != N6_CU_POST_TX_LIMIT)"
+            if region.count(old) < 2:
+                raise RuntimeError("post TX branch sites missing")
+            if n < 1:
+                raise RuntimeError(f"{what}: bad n")
+            idx = -1
+            start = 0
+            for _ in range(n):
+                idx = region.find(old, start)
+                if idx < 0:
+                    raise RuntimeError(f"{what}: site {n} missing")
+                start = idx + len(old)
+            region2 = region[:idx] + new + region[idx + len(old) :]
+            if region2 == region:
+                raise RuntimeError(f"{what}: no change")
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_validate_post_tx_branch_invert(data: bytes) -> bytes:
+            # Both TX branch selectors (slot-side + decode/identity) must flip.
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            if p0 < 0 or p1 < 0:
+                raise RuntimeError("cu validate bounds")
+            region = s[p0:p1]
+            old = "if (e->post == N6_CU_POST_TX_LIMIT)"
+            new = "if (e->post != N6_CU_POST_TX_LIMIT)"
+            if region.count(old) < 2:
+                raise RuntimeError("post TX branch sites missing")
+            return (s[:p0] + region.replace(old, new) + s[p1:]).encode("utf-8")
+
+        def mut_validate_post_tx_branch_invert_slot_only(data: bytes) -> bytes:
+            # Residual P2 co-pin: invert only the slot-side selector (1st site).
+            return _invert_post_tx_selector_nth(
+                data, 1, "post TX slot-side selector invert"
+            )
+
+        def mut_validate_post_tx_branch_invert_decode_only(data: bytes) -> bytes:
+            # Residual P2 co-pin: invert only the decode/identity selector (2nd).
+            return _invert_post_tx_selector_nth(
+                data, 2, "post TX decode selector invert"
+            )
+
+        def mut_recover_preflight_after_open(data: bytes) -> bytes:
+            # Move first preflight if after n6_cu_open_storage (order RED).
+            s = data.decode("utf-8")
+            sig = "ninlil_n6_status_t ninlil_n6_recover_cu("
+            p0 = s.find(sig)
+            if p0 < 0:
+                raise RuntimeError("recover_cu missing")
+            # Extract function body roughly via next top-level-ish marker.
+            p1 = s.find("static n6_slot_t *n6_find_handle(", p0)
+            if p1 < 0:
+                p1 = s.find("/* Free slot:", p0)
+            region = s[p0:p1] if p1 > 0 else s[p0:]
+            guard = "if (n6_cu_preflight_plan(n6) != NINLIL_N6_OK)"
+            open_call = "st = n6_cu_open_storage(n6);"
+            g = region.find(guard)
+            o = region.find(open_call)
+            if g < 0 or o < 0 or g >= o:
+                raise RuntimeError("preflight/open order not as expected")
+            # Find preflight if-block end
+            brace = region.find("{", g)
+            depth = 0
+            j = brace
+            while j < len(region):
+                if region[j] == "{":
+                    depth += 1
+                elif region[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            block = region[g : j + 1]
+            region2 = region[:g] + "/* preflight moved */" + region[j + 1 :]
+            # Re-insert after open_call line
+            o2 = region2.find(open_call)
+            if o2 < 0:
+                raise RuntimeError("open lost after move")
+            insert_at = o2 + len(open_call)
+            region2 = region2[:insert_at] + "\n        " + block + region2[insert_at:]
+            end = p1 if p1 > 0 else len(s)
+            return (s[:p0] + region2 + s[end:]).encode("utf-8")
+
+        def mut_cu_drop_key_encode(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            if "ninlil_n6_encode_lane_key" not in s:
+                raise RuntimeError("encode_lane_key missing")
+            # Only strip from validate body
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            region = s[p0:p1]
+            if "ninlil_n6_encode_lane_key" not in region:
+                raise RuntimeError("validate encode missing")
+            region2 = region.replace(
+                "ninlil_n6_encode_lane_key", "ninlil_n6_encode_lane_key_REMOVED", 1
+            )
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_cu_drop_tx_decode(data: bytes) -> bytes:
+            s = data.decode("utf-8")
+            sig = "static ninlil_n6_status_t n6_cu_validate_array_posts("
+            p0 = s.find(sig)
+            p1 = s.find("/* Force-close once", p0)
+            region = s[p0:p1]
+            if "ninlil_n6_decode_n6tx_value" not in region:
+                raise RuntimeError("tx decode missing")
+            region2 = region.replace(
+                "ninlil_n6_decode_n6tx_value",
+                "ninlil_n6_decode_n6tx_value_REMOVED",
+                1,
+            )
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        def mut_lane_idx_ack_to_2(data: bytes) -> bytes:
+            # ACK mapping return 1 → 2 (exact semantic RED).
+            s = data.decode("utf-8")
+            sig = "static int n6_lane_idx("
+            p0 = s.rfind(sig)
+            if p0 < 0:
+                raise RuntimeError("n6_lane_idx missing")
+            brace = s.find("{", p0)
+            depth = 0
+            j = brace
+            while j < len(s):
+                if s[j] == "{":
+                    depth += 1
+                elif s[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            region = s[p0 : j + 1]
+            # Only change ACK branch return 1, not other returns.
+            ack = "if (lane_kind == NINLIL_N6_LANE_HOP_ACK)"
+            a = region.find(ack)
+            if a < 0:
+                raise RuntimeError("ACK if missing")
+            r = region.find("return 1;", a)
+            if r < 0:
+                raise RuntimeError("ACK return 1 missing")
+            region2 = region[:r] + "return 2;" + region[r + len("return 1;") :]
+            return (s[:p0] + region2 + s[j + 1 :]).encode("utf-8")
+
+        def mut_lane_idx_swap_returns(data: bytes) -> bytes:
+            # Swap DATA/E2E return 0 with ACK return 1 (branch association RED).
+            # Independent counts of predicates/returns still look "complete".
+            s = data.decode("utf-8")
+            sig = "static int n6_lane_idx("
+            p0 = s.rfind(sig)
+            if p0 < 0:
+                raise RuntimeError("n6_lane_idx missing")
+            brace = s.find("{", p0)
+            depth = 0
+            j = brace
+            while j < len(s):
+                if s[j] == "{":
+                    depth += 1
+                elif s[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            region = s[p0 : j + 1]
+            data_if = "if (lane_kind == NINLIL_N6_LANE_HOP_DATA"
+            ack = "if (lane_kind == NINLIL_N6_LANE_HOP_ACK)"
+            d = region.find(data_if)
+            a = region.find(ack)
+            if d < 0 or a < 0:
+                raise RuntimeError("lane_idx ifs missing")
+            r0 = region.find("return 0;", d)
+            r1 = region.find("return 1;", a)
+            if r0 < 0 or r1 < 0 or r0 >= a:
+                raise RuntimeError("lane_idx return association missing")
+            # Place holders then swap.
+            region2 = region.replace("return 0;", "return __SWAP1__;", 1)
+            region2 = region2.replace("return 1;", "return 0;", 1)
+            region2 = region2.replace("return __SWAP1__;", "return 1;", 1)
+            if region2 == region:
+                raise RuntimeError("swap did not change")
+            return (s[:p0] + region2 + s[j + 1 :]).encode("utf-8")
+
+        def mut_lane_ok_hop_add_e2e(data: bytes) -> bytes:
+            # Expand HOP predicate to admit E2E (exact predicate RED).
+            s = data.decode("utf-8")
+            old = (
+                "return lane_kind == NINLIL_N6_LANE_HOP_DATA\n"
+                "            || lane_kind == NINLIL_N6_LANE_HOP_ACK;"
+            )
+            new = (
+                "return lane_kind == NINLIL_N6_LANE_HOP_DATA\n"
+                "            || lane_kind == NINLIL_N6_LANE_HOP_ACK\n"
+                "            || lane_kind == NINLIL_N6_LANE_E2E;"
+            )
+            if old not in s:
+                raise RuntimeError("HOP return form missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_static_assert_or_1(data: bytes) -> bytes:
+            # 1 || original_expr — tautology false-green.
+            s = data.decode("utf-8")
+            old = (
+                "(sizeof(((n6_slot_t *)0)->rx_boot_floor) / sizeof(uint64_t))\n"
+                "        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT"
+            )
+            new = (
+                "1 || (sizeof(((n6_slot_t *)0)->rx_boot_floor) / sizeof(uint64_t))\n"
+                "        == (size_t)N6_PRIVATE_NAMED_LANE_COUNT"
+            )
+            if old not in s:
+                raise RuntimeError("boot_floor static assert expr missing")
+            return s.replace(old, new, 1).encode("utf-8")
+
+        def mut_markers_into_string(data: bytes) -> bytes:
+            # Move required live range guard into a string only (lexical mask RED).
+            s = data.decode("utf-8")
+            sig = "static int n6_rx_precheck_window("
+            p0 = s.find(sig)
+            p1 = s.find("ninlil_n6_status_t ninlil_n6_rx_precheck(", p0)
+            region = s[p0:p1]
+            guard = "if (!n6_lane_idx_in_range(idx))"
+            if guard not in region:
+                raise RuntimeError("window guard missing")
+            # Replace live guard with always-false if + stash text in a string.
+            region2 = region.replace(
+                guard,
+                'static const char *const _fake = "if (!n6_lane_idx_in_range(idx))";\n'
+                "    if (0)",
+                1,
+            )
+            return (s[:p0] + region2 + s[p1:]).encode("utf-8")
+
+        structural_mutators = (
+            ("struct_window_order_reverse", mut_window_order_reverse),
+            ("struct_window_cond_relax", mut_window_cond_zero),
+            ("struct_precheck_cond_invert", mut_precheck_cond_invert),
+            ("struct_tx_order_reverse", mut_tx_order_reverse),
+            ("struct_admit_drop_fence_return", mut_admit_drop_fence_return),
+            ("struct_admit_layer_relax", mut_admit_layer_relax),
+            ("struct_bare3_dimension", mut_bare_3_dimension),
+            ("struct_drop_static_assert", mut_drop_static_assert_boot),
+            ("struct_drop_cu_validate", mut_drop_cu_validate),
+            ("struct_cu_bare3", mut_cu_bare3),
+            # Independent audit GREEN_FALSE + pin co-update must RED:
+            ("struct_in_range_ge_minus1", mut_in_range_ge_minus1),
+            ("struct_lane_ok_default_return1", mut_lane_ok_default_return1),
+            ("struct_static_assert_comment_only", mut_static_assert_comment_only),
+            ("struct_precheck_guard_into_if0", mut_precheck_guard_into_if0),
+            ("struct_cu_validate_if0_and", mut_cu_validate_if0_and),
+            ("struct_cu_range_if0_and", mut_cu_range_if0_and),
+            ("struct_cu_layer_if0_and", mut_cu_layer_if0_and),
+            ("struct_guard_into_if0", mut_guard_into_if0),
+            ("struct_cu_preflight_if0_and", mut_cu_preflight_if0_and),
+            ("struct_cu_drop_key_encode", mut_cu_drop_key_encode),
+            ("struct_cu_drop_tx_decode", mut_cu_drop_tx_decode),
+            # Exact semantic / predicate / assert / lexical mask RED:
+            ("struct_lane_idx_ack_to_2", mut_lane_idx_ack_to_2),
+            ("struct_lane_idx_swap_returns", mut_lane_idx_swap_returns),
+            ("struct_lane_ok_hop_add_e2e", mut_lane_ok_hop_add_e2e),
+            ("struct_static_assert_or_1", mut_static_assert_or_1),
+            ("struct_markers_into_string", mut_markers_into_string),
+            # P1 recover true-no-CU + CU preflight/validate exact-predicate RED
+            # (pin co-update must not greenwash OR-bypass / relax / drop):
+            ("struct_recover_no_cu_or", mut_recover_no_cu_or),
+            ("struct_recover_no_cu_live_only", mut_recover_no_cu_live_only),
+            ("struct_recover_no_cu_nkeys_only", mut_recover_no_cu_nkeys_only),
+            ("struct_recover_no_cu_if0_and", mut_recover_no_cu_if0_and),
+            ("struct_recover_preflight_after_open", mut_recover_preflight_after_open),
+            ("struct_preflight_live_relax", mut_preflight_live_relax),
+            ("struct_preflight_live_if0_and", mut_preflight_live_if0_and),
+            ("struct_preflight_nkeys_relax", mut_preflight_nkeys_relax),
+            ("struct_preflight_phase_drop", mut_preflight_phase_drop),
+            ("struct_preflight_pending_drop", mut_preflight_pending_drop),
+            ("struct_preflight_op_drop_delete", mut_preflight_op_drop_delete),
+            ("struct_preflight_klen_drop", mut_preflight_klen_drop),
+            ("struct_validate_side_tx_drop", mut_validate_side_tx_drop),
+            ("struct_validate_side_tx_if0_and", mut_validate_side_tx_if0_and),
+            ("struct_validate_slot_range_drop", mut_validate_slot_range_drop),
+            ("struct_validate_key_memcmp_drop", mut_validate_key_memcmp_drop),
+            ("struct_validate_post_u64_order_drop", mut_validate_post_u64_order_drop),
+            # rule7b residual P2: full live if-predicate pin co-update RED
+            # (independent re-audit 7 minimal + remaining predicate groups):
+            ("struct_validate_op_old_if0", mut_validate_op_old_if0),
+            ("struct_validate_vlen_if0", mut_validate_vlen_if0),
+            ("struct_validate_live_invert", mut_validate_live_invert),
+            ("struct_validate_tx_old_decode_invert", mut_validate_tx_old_decode_invert),
+            ("struct_validate_tx_binding_invert", mut_validate_tx_binding_invert),
+            ("struct_validate_tx_ns_invert", mut_validate_tx_ns_invert),
+            ("struct_validate_tx_value_side_invert", mut_validate_tx_value_side_invert),
+            ("struct_validate_post_filter_if0", mut_validate_post_filter_if0),
+            ("struct_validate_post_filter_drop", mut_validate_post_filter_drop),
+            ("struct_validate_op_old_drop", mut_validate_op_old_drop),
+            ("struct_validate_op_old_relax", mut_validate_op_old_relax),
+            ("struct_validate_vlen_drop", mut_validate_vlen_drop),
+            ("struct_validate_canary_invert", mut_validate_canary_invert),
+            ("struct_validate_canary_if0", mut_validate_canary_if0),
+            ("struct_validate_live_if0", mut_validate_live_if0),
+            ("struct_validate_side_rx_if0", mut_validate_side_rx_if0),
+            ("struct_validate_side_rx_drop", mut_validate_side_rx_drop),
+            ("struct_validate_side_tx_invert", mut_validate_side_tx_invert),
+            ("struct_validate_slot_range_if0", mut_validate_slot_range_if0),
+            ("struct_validate_lane_idx_eq_invert", mut_validate_lane_idx_eq_invert),
+            ("struct_validate_encode_invert", mut_validate_encode_invert),
+            ("struct_validate_encode_if0", mut_validate_encode_if0),
+            ("struct_validate_canon_klen_if0", mut_validate_canon_klen_if0),
+            ("struct_validate_canon_klen_drop", mut_validate_canon_klen_drop),
+            ("struct_validate_key_memcmp_if0", mut_validate_key_memcmp_if0),
+            ("struct_validate_key_memcmp_invert", mut_validate_key_memcmp_invert),
+            ("struct_validate_tx_prop_decode_invert", mut_validate_tx_prop_decode_invert),
+            ("struct_validate_tx_keygen_invert", mut_validate_tx_keygen_invert),
+            ("struct_validate_tx_epoch_invert", mut_validate_tx_epoch_invert),
+            ("struct_validate_tx_post_u64_invert", mut_validate_tx_post_u64_invert),
+            ("struct_validate_tx_post_u64_order_invert", mut_validate_tx_post_u64_order_invert),
+            ("struct_validate_rx_old_decode_invert", mut_validate_rx_old_decode_invert),
+            ("struct_validate_rx_prop_decode_invert", mut_validate_rx_prop_decode_invert),
+            ("struct_validate_rx_keygen_invert", mut_validate_rx_keygen_invert),
+            ("struct_validate_rx_binding_invert", mut_validate_rx_binding_invert),
+            ("struct_validate_rx_epoch_invert", mut_validate_rx_epoch_invert),
+            ("struct_validate_rx_ns_invert", mut_validate_rx_ns_invert),
+            ("struct_validate_rx_value_side_invert", mut_validate_rx_value_side_invert),
+            ("struct_validate_rx_post_u64_invert", mut_validate_rx_post_u64_invert),
+            ("struct_validate_rx_order_invert", mut_validate_rx_order_invert),
+            ("struct_validate_rx_order_if0", mut_validate_rx_order_if0),
+            ("struct_validate_post_tx_branch_invert", mut_validate_post_tx_branch_invert),
+            # Residual P2: each of the two post-TX selectors independently
+            # exact-pinned (slot-side vs decode+identity); single-site invert
+            # must RED even with pin+docs co-update (set membership alone no longer
+            # greenwashes the remaining live site).
+            (
+                "struct_validate_post_tx_branch_invert_slot_only",
+                mut_validate_post_tx_branch_invert_slot_only,
+            ),
+            (
+                "struct_validate_post_tx_branch_invert_decode_only",
+                mut_validate_post_tx_branch_invert_decode_only,
+            ),
+        )
+        for st_name, mutator in structural_mutators:
+            _co_update_store(st_name, mutator)
+
+        # --- Direct _mask_c_lexical unit checks (not structural mutation count) ---
+        sample = (
+            "int x; // line comment keep\n"
+            "/* block\ncomment */ int y;\n"
+            'const char *s = "quote\\"in";\n'
+            "char c = '\\'';\n"
+            "if (x) { y = 1; }\n"
+        )
+        masked = g._mask_c_lexical(sample)
+        if len(masked) != len(sample):
+            fail(
+                f"mask_c_lexical length mismatch: {len(masked)} vs {len(sample)}"
+            )
+        else:
+            ok("mask_c_lexical length-preserving")
+        if "line comment" in masked or "block" in masked.replace("\n", ""):
+            # comment text must be blanked (spaces), not present as words
+            if "comment" in masked and "line comment keep" in masked:
+                fail("mask_c_lexical left line comment text")
+            elif "block" in masked and "comment */" in sample and "*/" not in masked:
+                # check comments blanked: non-newline comment chars are spaces
+                pass
+        # Explicit: comment content positions become spaces
+        if "// line" in sample:
+            idx = sample.index("//")
+            if not all(masked[i] in " \n" for i in range(idx, sample.index("\n", idx))):
+                fail("mask_c_lexical did not blank line comment")
+            else:
+                ok("mask_c_lexical blanks line comment")
+        if "/*" in sample:
+            b0 = sample.index("/*")
+            b1 = sample.index("*/") + 2
+            if not all(masked[i] in " \n" for i in range(b0, b1)):
+                fail("mask_c_lexical did not blank block comment")
+            else:
+                ok("mask_c_lexical blanks block comment")
+        # String with escaped quote must be fully blanked including escapes
+        sq = sample.index('"')
+        # find closing quote after escape
+        sq_end = sample.index('";', sq)
+        if not all(masked[i] == " " for i in range(sq, sq_end + 1)):
+            fail("mask_c_lexical did not blank escaped string")
+        else:
+            ok("mask_c_lexical blanks escaped string")
+        # Char with escaped quote
+        cq = sample.index("char c")
+        cq0 = sample.index("'", cq)
+        cq1 = sample.index("';", cq0)
+        if not all(masked[i] == " " for i in range(cq0, cq1 + 1)):
+            fail("mask_c_lexical did not blank escaped char")
+        else:
+            ok("mask_c_lexical blanks escaped char")
+        # Live tokens remain; string-only tokens must not.
+        if "if" not in masked or "{" not in masked or "}" not in masked:
+            fail("mask_c_lexical removed live brace/token code")
+        else:
+            ok("mask_c_lexical keeps live brace/paren/tokens")
+        # Newlines preserved at same indices
+        if [i for i, c in enumerate(sample) if c == "\n"] != [
+            i for i, c in enumerate(masked) if c == "\n"
+        ]:
+            fail("mask_c_lexical newline positions changed")
+        else:
+            ok("mask_c_lexical preserves newline positions")
+
+    # Structural RED mutations: 87 (85 prior + 2 residual-P2 dual post-TX
+    # selector co-pins: slot-side-only invert + decode-only invert).
+    _STRUCT_RED_N = 87
     elapsed = time.perf_counter() - t0
     if fails:
         print(
@@ -789,10 +2191,12 @@ def run_self_test(src_root: Path) -> int:
     print(
         "n6_storage_callsite_gate self-test: OK "
         f"in {elapsed:.3f}s "
-        f"[authority=accepted SHA-256 pin; "
+        f"[authority=accepted SHA-256 pin + brace-aware rx-index structural; "
         f"pinned_paths={len(g.ACCEPTED_SOURCE_MANIFEST)}; "
         f"RED_cases≈{red_n}; GREEN_keep=real+simultaneous; "
         f"known_false_green_byte_RED={len(KNOWN_FALSE_GREEN_MUTATIONS)}; "
+        f"rx_index_structural_RED={_STRUCT_RED_N}; "
+        f"mask_c_lexical_direct_OK; "
         f"no compiler fixtures as authority; "
         f"PASS is not C semantic proof / human review / product GO]"
     )

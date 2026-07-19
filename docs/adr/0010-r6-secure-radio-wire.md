@@ -128,3 +128,42 @@ Host candidate fixed-hash GO after re-GO 2026-07-19; R7 full AEAD / M4·M5 / ESP
 ## Gate honesty
 
 exact table/set/hash + enumerated mutations only; does not claim arbitrary natural-language contradiction detection; independent human review required; gate PASS ≠ GO; gate PASS ≠ arbitrary natural-language proof.
+
+## Normative erratum (behavior) + limited host pin withdrawal — RX/TX lane index bounds (2026-07-19)
+
+**Status (split):**
+
+| Axis | Status |
+| --- | --- |
+| R6 docs freeze / wire / layout / schema / public ABI | **Accepted** (unchanged; Stage 9 freeze stands) |
+| docs/30 §20.12 Normative behavior clarification | **Accepted clarification** (fail-closed range/layer rules) |
+| Chunk D host **source pin** fixed-hash integration GO for `n6_context_store.c` | **Limited temporary withdrawal** of pre-errata pin; **new hash is candidate only** |
+| Source pin **re-acceptance** | **Pending** official GCC 13 CI green **and** independent re-review |
+| Product / R7 / HIL / legal / production | **Not claimed** |
+
+### Discovery
+
+Independent GCC 13 `-O2` strict analysis and subsequent review found that `n6_rx_precheck_window` indexed per-lane RAM arrays with `idx = n6_lane_idx(lane_kind)` without an explicit range guard. On the external precheck path a prior `lane_ok` usually prevents `-1`, but **`ninlil_n6_rx_admit_after_aead` trusts the internal ticket `lane_kind`**, so RAM corruption / future branches can produce `idx = -1` and OOB read/write. Same pattern required a defensive range guard on **`tx_burn`**. Classified as fail-closed **P1** for the host candidate.
+
+### Limited host source-pin withdrawal (honest; not full re-accept)
+
+The prior 2026-07-19 fixed-hash integration GO for `src/radio/n6_context_store.c` (SHA-256 `4686edcb01f5d16aa5b1649db938e80eccbef9ded8add1b62ab3c8ddb97c267d`) is under **limited temporary withdrawal** for this P1 only (Chunk D host source pin axis). It is **not** a withdrawal of the R6 docs freeze / wire Accepted state.
+
+Lockstep **candidate** pin (tools + docs/07; not re-accepted GO):
+
+- `src/radio/n6_context_store.c` → `bc8633657a1033fb16cc473794ad8cfab54b17ec00a741814682194d5c7789f6` (**candidate / NOT YET ACCEPTED**; GCC13 CI + fresh independent final review pending)  
+- `src/radio/n6_context_store.h` → `1901a595b29e91af938cfa1f9acc0cc7eaf8151698eb44885c08b8d38833844c` (**byte-stable**)  
+- crypto host unchanged  
+
+**Re-acceptance gate (future status-only append):** official `ubuntu-gcc-release-n6-frame` GCC 13 job green **and** independent re-review close residual P0/P1 on this errata. Until then do **not** claim host pin re-accepted / product GO. Historical review records are **not** rewritten; see [docs/reviews/2026-07-19-r6-rx-index-errata.md](../reviews/2026-07-19-r6-rx-index-errata.md).
+
+### Decision (Normative behavior; wire unchanged)
+
+Adopt docs/30 **§20.12** exactly:
+
+- private named lane count + static asserts on RX/TX per-lane arrays;  
+- range check at `n6_rx_precheck_window`, public `rx_precheck`, `rx_admit_after_aead` (internal), and `tx_burn` before any array index;  
+- admit re-validates internal lane×slot layer (`n6_lane_ok_for_slot`);  
+- external invalid → `INVALID_ARGUMENT` + mutation zero (**all 12 storage call counters** delta 0: open/close/begin/get/put/**erase**/commit/rollback/iter_*/capacity); internal invalid/cross-layer → `CORRUPT` + ticket wipe + no storage/window mutation (+ fence per existing corrupt policy);  
+- **full CU plan envelope + array-post integrity** on `recover_cu` before classify I/O and before any `TX_LIMIT`/`RX_ACCEPT` RAM post (rule 7a–7c: closed op/post domains, klen/vlen bounds, side/key/codec/identity/`post_u64_*` exactness; fail → force-close once → FENCED wipe → `CORRUPT`, classify I/O 0, zero posts);  
+- **no** wire/layout/schema/public ABI/version change.

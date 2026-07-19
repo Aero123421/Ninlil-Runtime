@@ -75,7 +75,7 @@ static void copy_entry(
         source->counter_exhausted_marker;
 }
 
-static void reserve_or_block(
+static ninlil_status_t reserve_or_block(
     const ninlil_model_capacity_transition_input_t *input,
     ninlil_model_capacity_transition_result_t *result)
 {
@@ -85,10 +85,12 @@ static void reserve_or_block(
     copy_entry(&result->next, &input->current);
     if (input->current.counter_exhausted_marker != 0u) {
         result->action = NINLIL_MODEL_CAPACITY_COUNTER_EXHAUSTED;
-        return;
+        return NINLIL_OK;
     }
 
-    (void)checked_total(&input->current, &total);
+    if (!checked_total(&input->current, &total)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
     available = input->current.limit - total;
     if (input->amount <= available) {
         result->next.reserved += input->amount;
@@ -97,7 +99,7 @@ static void reserve_or_block(
             result->next.high_water = total;
         }
         result->action = NINLIL_MODEL_CAPACITY_RESERVED;
-        return;
+        return NINLIL_OK;
     }
 
     if (input->current.blocked == 0u) {
@@ -106,6 +108,7 @@ static void reserve_or_block(
     } else {
         result->action = NINLIL_MODEL_CAPACITY_ALREADY_BLOCKED;
     }
+    return NINLIL_OK;
 }
 
 static ninlil_status_t commit_reserved(
@@ -174,8 +177,7 @@ ninlil_status_t ninlil_model_capacity_entry_transition(
 
     switch (input->operation) {
     case NINLIL_MODEL_CAPACITY_RESERVE_OR_BLOCK:
-        reserve_or_block(input, out_result);
-        status = NINLIL_OK;
+        status = reserve_or_block(input, out_result);
         break;
     case NINLIL_MODEL_CAPACITY_COMMIT_RESERVED:
         status = commit_reserved(input, out_result);

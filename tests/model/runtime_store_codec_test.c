@@ -110,6 +110,31 @@ static ninlil_model_runtime_store_identity_t identity_fixture(void)
     return value;
 }
 
+/* Field-wise: brace-initialized counter/capacity leave enum→u64 padding
+ * unspecified; decode memset-zeros padding. Object memcmp is not portable. */
+static int counter_equal(
+    const ninlil_model_runtime_store_counter_t *left,
+    const ninlil_model_runtime_store_counter_t *right)
+{
+    return left->kind == right->kind
+        && left->value == right->value
+        && left->exhausted_marker == right->exhausted_marker;
+}
+
+static int capacity_equal(
+    const ninlil_model_runtime_store_capacity_t *left,
+    const ninlil_model_runtime_store_capacity_t *right)
+{
+    return left->kind == right->kind
+        && left->limit == right->limit
+        && left->used == right->used
+        && left->reserved == right->reserved
+        && left->high_water == right->high_water
+        && left->capacity_epoch == right->capacity_epoch
+        && left->blocked == right->blocked
+        && left->counter_exhausted == right->counter_exhausted;
+}
+
 static int test_exact_keys(void)
 {
     static const uint8_t ROOT[8] = {
@@ -377,7 +402,7 @@ static int test_typed_golden_and_round_trip(void)
     REQUIRE(ninlil_model_runtime_store_decode_counter(
         NINLIL_MODEL_RUNTIME_STORE_KEY_COUNTER_TRANSACTION,
         (ninlil_bytes_view_t){encoded, length}, &decoded_counter) == NINLIL_OK);
-    REQUIRE(memcmp(&counter, &decoded_counter, sizeof(counter)) == 0);
+    REQUIRE(counter_equal(&counter, &decoded_counter));
 
     REQUIRE(ninlil_model_runtime_store_encode_capacity(
         NINLIL_MODEL_RUNTIME_STORE_KEY_CAPACITY_SERVICE,
@@ -388,7 +413,7 @@ static int test_typed_golden_and_round_trip(void)
     REQUIRE(ninlil_model_runtime_store_decode_capacity(
         NINLIL_MODEL_RUNTIME_STORE_KEY_CAPACITY_SERVICE,
         (ninlil_bytes_view_t){encoded, length}, &decoded_entry) == NINLIL_OK);
-    REQUIRE(memcmp(&entry, &decoded_entry, sizeof(entry)) == 0);
+    REQUIRE(capacity_equal(&entry, &decoded_entry));
     return 0;
 }
 

@@ -107,16 +107,23 @@ jobs:
           done
           rm -rf "$tmp"
 
-  # Host production n6_frame_stack_gate authority under GCC Release (x86_64).
-  # Non-sanitize Debug also registers the production gate exactly once; this
-  # job is the Release-config authority and proves GNU x86 flag detection:
-  # CheckCCompilerFlag → NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS in CMakeCache,
-  # applied as -maccumulate-outgoing-args on N6 production sources so .su
-  # kind is static (dynamic .su is still a hard FAIL; gate is not skipped).
+  # OSS authority: Ubuntu GCC 13 -O2 Release strict for N6 production + full host
+  # CTest. No duplicate job — extends the existing ubuntu-gcc-release-n6-frame.
+  #
+  # GNU x86 flag detection: CheckCCompilerFlag →
+  # NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS, applied as -maccumulate-outgoing-args
+  # on N6 production sources so .su kind is static (dynamic .su hard FAIL).
+  #
+  # Among the R6 required exact-14 CTests (identity asserted below before the
+  # single unfiltered full CTest), these cover packaging / leakage / pin:
+  #   - n6_tests_off_packaging_gate  → tests-OFF Release install/archive leakage
+  #   - n6_chunk_d_private_symbol_leakage{,_self_test} → production nm/strings
+  #   - n6_storage_callsite_gate{,_self_test} → accepted-source pin + mutation
+  # clang-sanitizers remains the sole full ASan/UBSan CTest job (no dup here).
   ubuntu-gcc-release-n6-frame:
-    name: Ubuntu GCC Release N6 frame authority
+    name: Ubuntu GCC 13 Release N6 authority
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -124,14 +131,40 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Configure (GCC Release, SQLite OFF, strict ON)
+      - name: Install gcc-13 g++-13 ninja SQLite shared headers
         run: >-
-          cmake -S . -B build/ci-ubuntu-gcc-rel-n6
+          sudo apt-get update && sudo apt-get install -y
+          gcc-13 g++-13 ninja-build libsqlite3-dev binutils
+      - name: Assert gcc-13 and g++-13 major is exact 13 (fail-closed)
+        run: |
+          set -euo pipefail
+          command -v gcc-13
+          command -v g++-13
+          # Prefer -dumpfullversion; fall back to -dumpversion.
+          for tool in gcc-13 g++-13; do
+            ver="$("${tool}" -dumpfullversion 2>/dev/null || true)"
+            if test -z "${ver}"; then
+              ver="$("${tool}" -dumpversion)"
+            fi
+            major="${ver%%.*}"
+            if test "${major}" != "13"; then
+              echo "false-green: ${tool} major must be exact 13; got ver=${ver}" >&2
+              "${tool}" -v || true
+              exit 1
+            fi
+            echo "${tool} version OK: ${ver} (major=13)"
+          done
+      - name: Configure (GCC 13 Release -O2 exact, shared SQLite, strict, compile_commands)
+        run: >-
+          cmake -S . -B build/ci-ubuntu-gcc-rel-n6 -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=gcc
-          -DCMAKE_CXX_COMPILER=g++
+          -DCMAKE_C_COMPILER=gcc-13
+          -DCMAKE_CXX_COMPILER=g++-13
+          -DCMAKE_C_FLAGS_RELEASE='-O2 -DNDEBUG'
+          -DCMAKE_CXX_FLAGS_RELEASE='-O2 -DNDEBUG'
           -DNINLIL_ENABLE_STRICT_WARNINGS=ON
-          -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
+          -DNINLIL_SQLITE_LINKAGE=SHARED
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Assert -maccumulate-outgoing-args feature detection effective
         run: |
           set -euo pipefail
@@ -145,49 +178,137 @@ jobs:
               "$cache" || true
             exit 1
           fi
-          echo "NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS=1 (feature detection OK)"
-      - name: Build ninlil_runtime_private and capture verbose compile commands
+          # Compiler identity must be the gcc-13 / g++-13 we selected.
+          if ! grep -E 'CMAKE_C_COMPILER:(FILEPATH|STRING)=(.*/)?gcc-13$' "$cache"; then
+            echo "false-green: CMAKE_C_COMPILER is not gcc-13 exact" >&2
+            grep -E 'CMAKE_C_COMPILER' "$cache" || true
+            exit 1
+          fi
+          if ! grep -E 'CMAKE_CXX_COMPILER:(FILEPATH|STRING)=(.*/)?g\+\+-13$' "$cache"; then
+            echo "false-green: CMAKE_CXX_COMPILER is not g++-13 exact" >&2
+            grep -E 'CMAKE_CXX_COMPILER' "$cache" || true
+            exit 1
+          fi
+          echo "NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS=1; CMAKE_C_COMPILER=gcc-13; CMAKE_CXX_COMPILER=g++-13"
+      - name: Build ninlil_runtime_private (verbose) and capture compile log
         run: |
           set -euo pipefail
           cmake --build build/ci-ubuntu-gcc-rel-n6 --parallel 2 --verbose \
             --target ninlil_runtime_private \
             | tee build/ci-ubuntu-gcc-rel-n6/n6-compile.log
-      - name: Assert flag applied to every N6 source and production gate exactly once
+          test -s build/ci-ubuntu-gcc-rel-n6/n6-compile.log
+          test -f build/ci-ubuntu-gcc-rel-n6/compile_commands.json
+          # Production objects + -fstack-usage .su must both exist after private build
+          # (NINLIL strict frame / -fstack-usage evidence; .o alone is insufficient).
+          dir=build/ci-ubuntu-gcc-rel-n6/CMakeFiles/ninlil_runtime_private.dir
+          test -d "$dir"
+          for src in n6_context_store.c n6_record_codec.c n6_crypto_host.c; do
+            test -f "$dir/src/radio/${src}.o"
+            test -f "$dir/src/radio/${src}.su"
+          done
+      - name: N6 production compile_commands + strict verbose log gate (gcc-13 -O2 authority)
+        run: >-
+          python3 tools/n6_gcc13_release_compile_gate.py check
+          --src-root "$PWD"
+          --compile-commands build/ci-ubuntu-gcc-rel-n6/compile_commands.json
+          --verbose-log build/ci-ubuntu-gcc-rel-n6/n6-compile.log
+      - name: Full build (all tests/targets)
+        run: cmake --build build/ci-ubuntu-gcc-rel-n6 --parallel 2
+      - name: Assert core R6 14 + supplemental compile-gate self-test identity
         run: |
           set -euo pipefail
-          dir=build/ci-ubuntu-gcc-rel-n6/CMakeFiles/ninlil_runtime_private.dir
-          log=build/ci-ubuntu-gcc-rel-n6/n6-compile.log
-          test -d "$dir"
-          test -s "$log"
-          # Prove the flag on each actual -c command, not merely somewhere in
-          # the target directory: one source losing COMPILE_OPTIONS must fail.
-          for src in n6_context_store.c n6_record_codec.c n6_crypto_host.c; do
-            count=$(awk -v src="src/radio/${src}" '
-              index($0, src) &&
-              index($0, "-maccumulate-outgoing-args") &&
-              $0 ~ /(^|[[:space:]])-c([[:space:]]|$)/ { n++ }
-              END { print n + 0 }
-            ' "$log")
-            if test "$count" != "1"; then
-              echo "false-green: expected one flagged compile command for $src; got $count" >&2
-              grep -F "src/radio/${src}" "$log" || true
-              exit 1
-            fi
-            test -f "$dir/src/radio/${src}.o" || test -f "$dir/src/radio/${src}.su"
-          done
-          echo "all N6 production compile commands include -maccumulate-outgoing-args"
-          listing=$(ctest --test-dir build/ci-ubuntu-gcc-rel-n6 -N)
-          prod=$(printf '%s\n' "$listing" \
-            | grep -E 'Test #[0-9]+: n6_frame_stack_gate$' | wc -l | tr -d ' ')
-          test "$prod" = "1"
-          trio=$(printf '%s\n' "$listing" \
-            | grep -E 'Test #[0-9]+: n6_frame_stack_gate(_self_test|_structure)?$' \
-            | wc -l | tr -d ' ')
-          test "$trio" = "3"
-      - name: Run N6 frame self-test/structure/production (exact 3)
+          # Exact name match only (no regex ambiguity).
+          # Core required set remains the user-closed 14; supplemental
+          # n6_gcc13_release_compile_gate_self_test is exact-one + not-disabled.
+          # Full CTest runs once after this step with no -R filter.
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import sys
+          from collections import Counter
+
+          CORE_REQUIRED = [
+              "n6_context_store",
+              "n6_chunk_d_private_symbol_leakage",
+              "n6_chunk_d_private_symbol_leakage_self_test",
+              "n6_tests_off_packaging_gate",
+              "n6_heap_ban_gate",
+              "n6_heap_ban_gate_self_test",
+              "n6_storage_callsite_gate",
+              "n6_storage_callsite_gate_self_test",
+              "n6_frame_stack_gate",
+              "n6_frame_stack_gate_self_test",
+              "n6_frame_stack_gate_structure",
+              "n6_record_codec",
+              "radio_wire_r6_docs_gate",
+              "radio_wire_r6_docs_gate_self_test",
+          ]
+          SUPPLEMENTAL = [
+              "n6_gcc13_release_compile_gate_self_test",
+          ]
+          if len(CORE_REQUIRED) != 14 or len(set(CORE_REQUIRED)) != 14:
+              print("internal: CORE_REQUIRED must be exact 14 unique", file=sys.stderr)
+              sys.exit(1)
+
+          raw = subprocess.check_output(
+              [
+                  "ctest",
+                  "--test-dir",
+                  "build/ci-ubuntu-gcc-rel-n6",
+                  "--show-only=json-v1",
+              ],
+              text=True,
+          )
+          data = json.loads(raw)
+          tests = data.get("tests")
+          if not isinstance(tests, list):
+              print("false-green: ctest json-v1 missing tests array", file=sys.stderr)
+              sys.exit(1)
+
+          names = []
+          disabled = set()
+          for t in tests:
+              if not isinstance(t, dict):
+                  print("false-green: non-object test entry", file=sys.stderr)
+                  sys.exit(1)
+              name = t.get("name")
+              if not isinstance(name, str) or not name:
+                  print("false-green: test entry missing name", file=sys.stderr)
+                  sys.exit(1)
+              names.append(name)
+              props = t.get("properties") or []
+              if isinstance(props, list):
+                  for p in props:
+                      if not isinstance(p, dict):
+                          continue
+                      if p.get("name") == "DISABLED":
+                          val = str(p.get("value", "")).strip().lower()
+                          if val in ("1", "true", "on", "yes"):
+                              disabled.add(name)
+
+          counts = Counter(names)
+          errs = []
+          for req in CORE_REQUIRED + SUPPLEMENTAL:
+              c = counts.get(req, 0)
+              if c != 1:
+                  errs.append(f"{req}: expected exact-once registration, found {c}")
+              if req in disabled:
+                  errs.append(f"{req}: registered but DISABLED")
+          if errs:
+              print("R6 core 14 + supplemental identity FAIL:", file=sys.stderr)
+              for e in errs:
+                  print(" ", e, file=sys.stderr)
+              sys.exit(1)
+          print(
+              "R6 core required 14 + supplemental 1: exact-once and not disabled "
+              f"(suite total={len(names)}; core includes tests-OFF packaging, "
+              "chunk-D leakage, storage pin/mutation; supplemental is "
+              "n6_gcc13_release_compile_gate_self_test)"
+          )
+          PY
+      - name: Full CTest once (unfiltered; core 14 + supplemental compile self-test + rest)
         run: >-
           ctest --test-dir build/ci-ubuntu-gcc-rel-n6
-          -R 'n6_frame_stack_gate(_self_test|_structure)?$'
           --output-on-failure
 
   ubuntu-static-strict:
