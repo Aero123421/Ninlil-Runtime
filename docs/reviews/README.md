@@ -3,8 +3,10 @@
 Review recordは非規範です。指摘の採否と、どのnormative specへ反映したかを残します。
 
 - [2026-07-10 Fable review](2026-07-10-fable-review.md)
-- [2026-07-12 D3-S2 completion audit](2026-07-12-d3s2-completion-audit.md)
+- [2026-07-12 D3-S2 completion audit](2026-07-12-d3s2-completion-audit.md)（**historical NOT COMPLETE snapshot** @ `8205afc` / 94+18; 本文は改竄しない; **formal superseded** → [2026-07-20](2026-07-20-d3s2-implementation-accepted.md)）
+- [2026-07-12 D3-S2 post-P0 re-audit](2026-07-12-d3s2-post-p0-reaudit.md)（**historical NOT COMPLETE snapshot** @ `fec9edb` / 94+25; 本文は改竄しない; **formal superseded** → [2026-07-20](2026-07-20-d3s2-implementation-accepted.md)）
 - [2026-07-16 D3-S2 DSD1 multi-session composition review](2026-07-16-d3s2-dsd1-composition.md)
+- [2026-07-20 D3-S2 implementation accepted](2026-07-20-d3s2-implementation-accepted.md)（**D3-S2 implementation Accepted**; fixed candidate `39e4752` / merge `ca02e24` / PR #105; Sol P1-E GO P0=P1=P2=0 + Grok full 21-case verdict A; Sol status-delta initial review P0=0/P1=0/P2=2 NO-GO、文書P2 2件を修正しclosure re-review P0=P1=P2=0 GO; D3 overall / Stage5 D3 bind / D4 / public Runtime / ESP hardware / USB·LoRa HIL / SDK·V1 非claim; production `note_count` counter 非claim）
 - [2026-07-16 M3-prep ESP-IDF component review](2026-07-16-m3-prep-esp-idf-component.md)
 - [2026-07-16 D3-S3a BLOB lifecycle freeze self-review](2026-07-16-d3s3a-blob-lifecycle-freeze-self-review.md)
 - [2026-07-16 D3-S4a DSW1_ALL_OLD_NEW freeze self-review](2026-07-16-d3s4a-dsw1-all-old-new-freeze-self-review.md)
