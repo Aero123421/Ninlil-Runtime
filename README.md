@@ -10,6 +10,56 @@ KGuard は最初の reference application ですが、Ninlil Core は KGuard の
 
 **Pre-alpha** です。M0 specification baselineとFoundation PR1は完了しています。PR2の主要なadmission/reducer model、PR3a/b/c/dのcanonical TEST fixture、Runtime Lifecycle L1、Runtime Store v1のportable codec/bootstrap pure modelとbootstrap-only Storage orchestrationまで実装されていますが、public Runtimeとして動作する縦切りはまだ完成していません。
 
+## OSS V1完成までの進捗とTodo
+
+最終更新: **2026-07-20**  
+この節は、非エンジニアを含む利用者向けの進捗ダッシュボードです。実装順とexit gateの正本は[Roadmap](docs/09-roadmap.md)、現在の仕様は[Documentation Index](docs/README.md)です。部分実装やcompile成功だけでは完了にしません。
+
+現在地は **M0完了、M1a進行中、M3/M5の一部を先行実装済み** です。いまはpublic Runtimeを安全に成立させるDomain Store D3-S3の独立oracle・実装・検証を進めています。2026-07-20の独立再レビューで仕様とoracleの不一致が見つかったため、D3-S3はまだAcceptedでも完成でもありません。
+
+| Milestone | 状態 | 完了条件の要約 |
+| --- | --- | --- |
+| M0 Specification Baseline | **完了** | 仕様正本、名称、開発原則、初期レビューを固定 |
+| M1a Single-target Runtime | **進行中** | public API、永続command/event、再起動、single-target E2E |
+| M1b Composition | 未完了 | multi-target、集約結果、2 process loopback E2E |
+| M2 Application Contracts | 未完了 | LatestState、計測、設定、転送、subscription、複数Service |
+| M3 ESP-IDF / Cell Agent | **一部先行実装** | ESP32-S3実機、USB、永続storage、同一firmware、power-cut HIL |
+| M4 Identity / Join | 未完了 | QR設置・撤去・再配置、Site Membership、Attachment、fencing |
+| M5 Security / Compliance | **一部先行実装** | secure session、鍵/credential、TxPermit、法規profile、監査 |
+| M6 KGuard Reference | 未完了 | KGuardをpublic APIだけで接続し、Display/Leak flowを証明 |
+| M7 Scheduler / Sleep / Wi-Fi / USB | 未完了 | 優先度・期限・省電力・複数bearer運用を成立 |
+| M8 Relay Tree / Forest | 未完了 | 自動relay、再配置、障害時再収束、3-hop試験 |
+| M9 Multi-cell / Multi-parent | 未完了 | 複数親機・複数PC・traffic分散・failover |
+| M10 Field Pilot | 未完了 | 現場負荷、RF、電池、復旧、運用SLOを実測 |
+| M11 Public Alpha → 1.0 | 未完了 | API/format互換、文書、package、security監査、release gate |
+
+### 直近の実装キュー
+
+- [ ] D3-S3の仕様・oracle不一致を解消し、独立vector、anti-false-pass、typed C bridge、production scannerを同じ正本へ一致させる。
+- [ ] D3-S3を通常build、ASan/UBSan、独立レビュー、GitHub Actionsの全gateで通し、Acceptedとして記録する。
+- [ ] D3-S4〜S12、D4、Stage 5 recoveryを閉じ、Runtime Storeをpublic Runtimeから安全に利用可能にする。
+- [ ] public Runtime 14関数を実装し、generic Command/Eventのadmission→保存→配送→適用→Outcomeを再起動込みで縦に通す。
+- [ ] 1つのNodeが複数Capability/Serviceを公開し、request/response、event、latest state、優先度・期限・再送・定期送信を同時に扱うhost試験を通す。
+- [ ] Linux/macOS Controller daemon・CLI、POSIX durable storage、PC間loopbackを完成させる。
+- [ ] ESP32-S3 Cell Agent、USB CDC、SX1262 LoRa bearer、Display node、Leak nodeを実機で接続する。
+- [ ] Join/Attachment、QR設置・撤去・別現場への再配置、鍵更新、relay変更を工場再書込みなしで通す。
+- [ ] LoRaの優先制御、fragment/reassembly、ACK/retry、重複排除、帯域・airtime・法規制約を負荷試験で検証する。
+- [ ] relay、複数親機、複数PC、Wi-Fi/USB/LoRaのbearer選択とfailoverを実装・検証する。
+- [ ] KGuard固有語彙をCoreへ入れず、KGuard adapterだけで表示受信・入退室event・温度/漏水送信を同一Node上で同時実行するhost/実機E2Eを通す。
+- [ ] OSS利用者向けquickstart、API reference、porting guide、examples、troubleshooting、互換性方針、Apache-2.0配布物を完成させる。
+- [ ] 固定したV1 release candidateへ最終security監査を実施し、未解決の重大指摘0、CI/HIL/field gate成功後にだけ`1.0.0`を公開する。
+
+### V1の実機ゴール
+
+最低限、LinuxまたはmacOSのPCへUSB接続したController/Cell Agentと、ESP32-S3＋SX1262のDisplay node・battery-powered Leak nodeを使い、Join、双方向LoRa通信、再送、再起動復旧を実機で再現できることを必須とします。さらに、同じ1台のNodeで「表示命令の受信＋入退室event送信＋温度の定期送信/問い合わせ応答」を同時に動かすhost simulationとESP32-S3 E2Eを通します。
+
+### 更新ルール
+
+- 完了表示は、Normative仕様、Accepted ADR、実装、受入試験、独立レビュー、該当CIがすべて揃ったときだけ更新します。
+- 進捗はtranche完了、実機gate通過、milestone変更などの区切りごとに日付と根拠linkを更新してpushします。
+- 作業途中のREDや未レビュー実装はpushしても完成扱いにせず、mainへ統合する前にfail-closed gateを通します。
+- 最終security監査は開発中止ではなく、release candidateを固定した後の必須gateとして維持します。
+
 実装済みの範囲:
 
 - `include/ninlil/*.h`のpublic ABI宣言と、C11 / C++17 consumer compile smoke
