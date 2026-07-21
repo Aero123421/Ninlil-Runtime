@@ -1752,9 +1752,19 @@ static ninlil_status_t run_mode28_prefix_g(
     if (st != NINLIL_OK) {
         return st;
     }
-    /* Pin expected_semantic FIRST (before any later unit). */
-    (void)memcpy(ctx->expected_semantic_digest,
-        tr->ordered_ingress.message_semantic_digest, 32u);
+    /*
+     * Pin expected_semantic FIRST (before any later unit). Byte loop instead
+     * of memcpy: GCC 13 -O3 -Warray-bounds false-positive (union pointer
+     * reload derives object size 0 for ctx) rejects the memcpy form.
+     */
+    {
+        uint8_t *dst = ctx->expected_semantic_digest;
+        const uint8_t *sd = tr->ordered_ingress.message_semantic_digest;
+        uint32_t di;
+        for (di = 0u; di < 32u; di++) {
+            dst[di] = sd[di];
+        }
+    }
 
     (void)fill_prefix_from_ordered_ingress(
         &prefix, &tr->ordered_ingress, pay_len);
