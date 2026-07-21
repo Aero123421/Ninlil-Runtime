@@ -43,8 +43,10 @@ D3S2_PREFIX = 144
 # R21: complete independent Normative D1 for every used family6 subtype/variant;
 # EventFact deadline closures; CANCEL bijection via two D1-valid rows (cross-row).
 # R27-Sol: +7 Mode27 EF cross-row CORRUPT product vectors (family/avd/pvd/rev/state-park).
-D3S3_SUFFIX_COUNT = 136
-D3S3_PRODUCTION_COUNT = 135
+# R28 P1-1: +3 Mode27 EF state-dependent reason closure permanent negatives
+# (AWAITING cancel reason / WAITING CAPACITY_EXHAUSTED / DISPATCHING attempt_in_cycle=0).
+D3S3_SUFFIX_COUNT = 139
+D3S3_PRODUCTION_COUNT = 138
 D3S3_FORMAL_PRECHECK_COUNT = 1
 D3S2_CONTENT = "a9fccb12d932f0082111c94da3a23cd6680dc4bedecb2108e739bdca55d80fed"
 D3S2_RAW = "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec"
@@ -1019,6 +1021,19 @@ _D1_REASON_WAITING = frozenset({
     130,  # RECEIVER_UNAVAILABLE (APPLICATION_BUSY)
     132,  # RECONCILE_RETRY_LATER (RETRY_LATER)
 })
+# EventFact AWAITING closed set = {NONE(0)} only (docs/13 §964/§1061/§1149,
+# docs/12 §1758). EventFact has no deadline and no cancel; operator-action
+# Disposition parks (PARKED_RETRY), and the normal accepted-send AWAITING commit
+# resets reason to NONE. So 68 (deadline-after evidence wait, DS deadline),
+# 83/86 (cancel-family, DS-only), 128/129 (operator-action Disposition → EF parks)
+# are all EF-illegal in AWAITING.
+_D1_REASON_AWAITING_EF = frozenset({0})
+# EventFact WAITING: DesiredState WAITING set minus CAPACITY_EXHAUSTED(11). For
+# EventFact, CAPACITY_EXHAUSTED/NO_EFFECT_PROVEN parks immediately (PARKED_RETRY +
+# CAPACITY_UNAVAILABLE), never a retry window (docs/13 §964/§999).
+_D1_REASON_WAITING_EF = _D1_REASON_WAITING - frozenset({
+    11,  # CAPACITY_EXHAUSTED
+})
 # EventFact terminal Outcomes: Receipt → SATISFIED; audited discard → FAILED only
 # (docs/12: EF stays OUTCOME_NONE until terminal Receipt or explicit discard).
 _D1_EF_TERMINAL_OUTCOMES = frozenset({_D1_OUT_SATISFIED, _D1_OUT_FAILED})
@@ -1731,6 +1746,13 @@ def _d1_state_row_ok(key: bytes, value: bytes) -> Optional[str]:
         return "state_parked_family"
 
     # ---- state-dependent reason / park / discard ----
+    # NOTE (R28 r3): this D1 constructibility gate applies the shared reason sets
+    # to both families. The Mode27 EventFact state-dependent reason closure
+    # (EF AWAITING={0}; EF WAITING excludes CAPACITY_EXHAUSTED; EF DISPATCHING
+    # consumes ≥1 attempt) is a Mode27 *adoption* rule enforced in the oracle
+    # classifier (o1a_mode27_cross_row_ok) and production run_select_setup_mode27,
+    # not here — so EF-shaped rows stay D1-constructible and the adoption guard is
+    # independently regression-testable.
     if state in (_D1_TXN_READY, _D1_TXN_DISPATCHING):
         if reason != 0:
             return "state_reason_shape"
@@ -3744,6 +3766,61 @@ def mat27_ef_parked_live_ok():
         keep_man=True,
     )
 
+
+# R28 P1-1 (r3) permanent negatives: EventFact state-dependent reason closure. Each
+# row is family-consistent EF shape (ddl=NA, EF counters retry/es_rev≥1) with matching
+# avd/pvd/tx/rev/spool, so it passes the family gate AND the cross-row closed product
+# and is RED ONLY at the Mode27 EF reason closure (oracle classifier + production
+# adoption guard). The D1 constructibility gate keeps these rows constructible.
+def mat27_ef_awaiting_cancel():
+    """CORRUPT (reason gate only): EF STATE AWAITING + cancel reason 86.
+
+    EventFact has no cancel (docs/13 §486; docs/12 §1758 accepted-send AWAITING
+    resets reason NONE); EF AWAITING closed set = {NONE(0)}. Family/cross-row pass.
+    """
+    return _mat27_ef_mutate_state_spool(
+        state_kw=dict(
+            state=_D1_TXN_AWAITING, outcome=0, reason=_D1_R_CANCEL_PENDING_REMOTE,
+            park=0, ddl=_D1_DDL_NA, latest=0, retry=1, attempt=1, cumul=1,
+            es_rev=1, has_late=0, discarded=0,
+        ),
+        spool_kw=dict(spool_state=_D1_ES_ACTIVE, park_cause=0, rev=1, discard_flag=0),
+    )
+
+
+def mat27_ef_waiting_capacity():
+    """CORRUPT (reason gate only): EF STATE WAITING + CAPACITY_EXHAUSTED(11).
+
+    EventFact CAPACITY_EXHAUSTED/NO_EFFECT_PROVEN parks immediately (PARKED_RETRY +
+    CAPACITY_UNAVAILABLE), never a retry window (docs/13 §964/§999); EF WAITING
+    excludes 11. Family/cross-row pass.
+    """
+    return _mat27_ef_mutate_state_spool(
+        state_kw=dict(
+            state=_D1_TXN_WAITING, outcome=0, reason=11,
+            park=0, ddl=_D1_DDL_NA, latest=0, retry=1, attempt=1, cumul=1,
+            es_rev=1, has_late=0, discarded=0,
+        ),
+        spool_kw=dict(spool_state=_D1_ES_ACTIVE, park_cause=0, rev=1, discard_flag=0),
+    )
+
+
+def mat27_ef_dispatching_attempt_zero():
+    """CORRUPT (reason gate only): EF STATE DISPATCHING + attempt_in_cycle=0.
+
+    EventFact DISPATCHING ← ATTEMPT_PREPARED commit increments attempts_in_cycle
+    (docs/13 §995/§1143); reaching DISPATCHING consumes ≥1 attempt. Family/cross-row
+    pass (reason NONE is legal; only the attempt lower bound fails).
+    """
+    return _mat27_ef_mutate_state_spool(
+        state_kw=dict(
+            state=_D1_TXN_DISPATCHING, outcome=0, reason=0,
+            park=0, ddl=_D1_DDL_NA, latest=0, retry=1, attempt=0, cumul=0,
+            es_rev=1, has_late=0, discarded=0,
+        ),
+        spool_kw=dict(spool_state=_D1_ES_ACTIVE, park_cause=0, rev=1, discard_flag=0),
+    )
+
 def _man_stream_bytes(man_v: bytes) -> bytes:
     b = body_of(man_v)
     _, base, _ = man_body_offsets(b)
@@ -5612,6 +5689,29 @@ def o1a_dec_spool_fields(sp_v: bytes) -> Dict[str, Any]:
     }
 
 
+def _o1a_ef_state_reason_ok(stf: Dict[str, Any]) -> Optional[str]:
+    """R28 r3: Mode27 EventFact state-dependent reason closure (Mode27 adoption rule).
+
+    docs/13 §964/§1061/§1149 + §995/§1143, docs/12 §1758. EventFact has no deadline
+    and no cancel; operator-action Disposition parks. EF AWAITING={NONE(0)}; EF
+    WAITING excludes CAPACITY_EXHAUSTED(11) (parks); EF DISPATCHING ← ATTEMPT_PREPARED
+    consumes ≥1 attempt. This is the Mode27 adoption guard, independent of the D1
+    constructibility gate (which keeps EF rows constructible for regression test).
+    """
+    st = stf["state"]
+    reason = stf["reason"]
+    if st == _D1_TXN_AWAITING:
+        if reason not in _D1_REASON_AWAITING_EF:
+            return "m27_ef_awaiting_reason"
+    elif st == _D1_TXN_WAITING:
+        if reason not in _D1_REASON_WAITING_EF:
+            return "m27_ef_waiting_reason"
+    elif st == _D1_TXN_DISPATCHING:
+        if stf["attempt"] < 1:
+            return "m27_ef_dispatching_attempt"
+    return None
+
+
 def o1a_mode27_cross_row_ok(
     st_v: bytes,
     sp_v: Optional[bytes],
@@ -5707,6 +5807,11 @@ def o1a_mode27_cross_row_ok(
     else:
         # other terminal shapes are not EventFact-legal owners
         return "m27_ef_terminal_shape"
+    # (6) R28 r3: EventFact state-dependent reason closure (Mode27 adoption guard;
+    # family + cross-row above already passed, so RED here is the reason gate only).
+    ef_reason_err = _o1a_ef_state_reason_ok(stf)
+    if ef_reason_err is not None:
+        return ef_reason_err
     return None
 
 
@@ -12891,6 +12996,20 @@ def build_suffix() -> List[Dict[str, Any]]:
     V.append(vec(
         "D3S3_M27_EF_PARK_CAUSE_MISMATCH_CORRUPT", "mode27_ef_park_cause_mismatch_corrupt", 27, r, [11],
         "Mode27 PARKED park_cause STATE≠spool → CORRUPT"))
+    # R28 P1-1: EventFact state-dependent reason closure permanent negatives
+    # (D1-legal DS-shaped STATE + EF ANCHOR; Mode27 EF adoption rejects).
+    r = mat27_ef_awaiting_cancel()
+    V.append(vec(
+        "D3S3_M27_EF_AWAITING_CANCEL_CORRUPT", "mode27_ef_awaiting_cancel_corrupt", 27, r, [11],
+        "Mode27 EF ANCHOR + AWAITING cancel reason 86 (DS-only) → CORRUPT"))
+    r = mat27_ef_waiting_capacity()
+    V.append(vec(
+        "D3S3_M27_EF_WAITING_CAPACITY_CORRUPT", "mode27_ef_waiting_capacity_corrupt", 27, r, [11],
+        "Mode27 EF ANCHOR + WAITING CAPACITY_EXHAUSTED(11) (EF parks) → CORRUPT"))
+    r = mat27_ef_dispatching_attempt_zero()
+    V.append(vec(
+        "D3S3_M27_EF_DISPATCHING_ATTEMPT_ZERO_CORRUPT", "mode27_ef_dispatching_attempt_zero_corrupt", 27, r, [11],
+        "Mode27 EF ANCHOR + DISPATCHING attempt_in_cycle=0 (EF consumes ≥1) → CORRUPT"))
     r = mat29_app()
     V.append(port_fault(
         "D3S3_M29_SELECT_SETUP_RESULT_PORT_FAULT_STORAGE",
@@ -13387,6 +13506,18 @@ _KNOWN_JSON_INT_RANGES: Dict[str, Tuple[int, int]] = {
     "key_capacity": (0, UINT32_MAX),
     "value_length": (0, UINT32_MAX),
     "value_capacity": (0, UINT32_MAX),
+    # R28 P2-1: checkpoint.port numeric scalars previously outside the closed
+    # schema (event_start=false etc. slipped through). Handle-id fields are
+    # string/null (not integers) and intentionally excluded.
+    "event_start": (0, UINT32_MAX),
+    "event_end": (0, UINT32_MAX),
+    "get_count": (0, UINT32_MAX),
+    "begin_count": (0, UINT32_MAX),
+    "iter_next_count": (0, UINT32_MAX),
+    "iter_close_count": (0, UINT32_MAX),
+    "rollback_count": (0, UINT32_MAX),
+    "trace_count": (0, UINT32_MAX),
+    "trace_overflow": (0, UINT32_MAX),
 }
 
 
@@ -13428,6 +13559,131 @@ def _validate_known_json_ints(obj: Any, *, path: str = "$") -> Optional[str]:
     return None
 
 
+# R28 r3 P2-1: complete closed nested schema for the checkpoint subtree. Every key
+# present at any depth must be a known key of the expected type; bool/float/unknown
+# keys are rejected at any depth (bool is type 'bool', not 'int', so a bool in an
+# integer position fails). previous_key_length / last_carrier_key_len etc. are now
+# covered. Leaf type sets: int / str / nullable-str.
+_CP_INT = frozenset({"int"})
+_CP_STR = frozenset({"str"})
+_CP_NULL_STR = frozenset({"NoneType", "str"})
+
+_CHECKPOINT_RESULT_SCHEMA: Dict[str, Any] = {
+    "status": _CP_STR,
+    "adopted": _CP_INT,
+    "state_after": _CP_STR,
+    "reopen_required": _CP_INT,
+    "has_sticky_primary": _CP_INT,
+    "sticky_primary": _CP_STR,
+    "cleanup_status": _CP_NULL_STR,
+    "mutation_calls": _CP_INT,
+    "profile_exact_active": _CP_INT,
+    "profile_mismatch": _CP_INT,
+    "future_profile_candidate": _CP_INT,
+    "recognizable_future_seen": _CP_INT,
+    "family14_row_count": _CP_INT,
+    "family14_iter_seen_mask": _CP_INT,
+    "profile_get_present_mask": _CP_INT,
+    "ok_row_count": _CP_INT,
+    "current_domain_key_count": _CP_INT,
+    "d3_peer_get_count": _CP_INT,
+}
+
+_CHECKPOINT_SCHEMA: Dict[str, Any] = {
+    "returned_status": _CP_STR,
+    "session": {
+        "state": _CP_STR,
+        "txn_live": _CP_INT,
+        "iter_live": _CP_INT,
+        "sticky_primary": _CP_STR,
+        "has_sticky_primary": _CP_INT,
+        "cleanup_status": _CP_NULL_STR,
+        "reopen_required": _CP_INT,
+        "fence_pending": _CP_INT,
+        "profile_exact_active": _CP_INT,
+        "profile_mismatch": _CP_INT,
+        "future_profile_candidate": _CP_INT,
+        "recognizable_future_seen": _CP_INT,
+        "family14_row_count": _CP_INT,
+        "family14_iter_seen_mask": _CP_INT,
+        "profile_get_present_mask": _CP_INT,
+        "ok_row_count": _CP_INT,
+        "current_domain_key_count": _CP_INT,
+        "has_previous": _CP_INT,
+        "previous_key_hex": _CP_STR,
+        "previous_key_length": _CP_INT,
+    },
+    "d3s3": {
+        "phase": _CP_INT,
+        "pass_kind": _CP_INT,
+        "focus_mode": _CP_INT,
+        "focus_sub": _CP_INT,
+        "semantic_pass": _CP_INT,
+        "lifecycle_class": _CP_INT,
+        "expected_live": _CP_INT,
+        "observed_live": _CP_INT,
+        "reply_kind": _CP_INT,
+        "flags": _CP_INT,
+        "count_complete_mask": _CP_INT,
+        "binding_complete_mask": _CP_INT,
+        "last_carrier_key_hex": _CP_STR,
+        "last_carrier_key_len": _CP_INT,
+        "focus_id16_hex": _CP_STR,
+    },
+    "port": {
+        "event_start": _CP_INT,
+        "event_end": _CP_INT,
+        "get_count": _CP_INT,
+        "begin_count": _CP_INT,
+        "iter_open_count": _CP_INT,
+        "iter_next_count": _CP_INT,
+        "iter_close_count": _CP_INT,
+        "rollback_count": _CP_INT,
+        "close_count": _CP_INT,
+        "d3_peer_get_count": _CP_INT,
+        "reopen_attempt_count": _CP_INT,
+        "reopen_success_count": _CP_INT,
+        "mutation_calls": _CP_INT,
+        "trace_count": _CP_INT,
+        "trace_overflow": _CP_INT,
+        "storage_handle_id": _CP_NULL_STR,
+        "txn_handle_id": _CP_NULL_STR,
+        "iter_handle_id": _CP_NULL_STR,
+    },
+    # checkpoint.result is nullable; when an object it matches the result schema.
+    "result": None,
+}
+
+
+def _validate_closed_schema(obj: Any, schema: Dict[str, Any], path: str) -> Optional[str]:
+    """Closed nested schema: reject unknown keys + bool/float at any depth."""
+    if not isinstance(obj, dict):
+        return f"{path} must be object (got {type(obj).__name__})"
+    for k, v in obj.items():
+        if k not in schema:
+            return f"{path}.{k}: unknown key (closed checkpoint schema)"
+        spec = schema[k]
+        if isinstance(spec, dict):
+            if not isinstance(v, dict):
+                return f"{path}.{k} must be object (got {type(v).__name__})"
+            err = _validate_closed_schema(v, spec, f"{path}.{k}")
+            if err is not None:
+                return err
+        elif spec is None:
+            if v is None:
+                continue
+            if not isinstance(v, dict):
+                return f"{path}.{k} must be null or object (got {type(v).__name__})"
+            err = _validate_closed_schema(v, _CHECKPOINT_RESULT_SCHEMA, f"{path}.{k}")
+            if err is not None:
+                return err
+        else:
+            tname = type(v).__name__
+            if tname not in spec:
+                return f"{path}.{k} must be {'/'.join(sorted(spec))} (got {tname})"
+    return None
+
+
 def _validate_vector_row_shapes(vectors: Any, *, where: str) -> Optional[str]:
     """Validate vectors list element/row nested shapes (generate+check shared)."""
     if not isinstance(vectors, list):
@@ -13446,9 +13702,11 @@ def _validate_vector_row_shapes(vectors: Any, *, where: str) -> Optional[str]:
             for j, r in enumerate(rows):
                 if not isinstance(r, dict):
                     return f"{where}: vectors[{i}].rows[{j}] must be object"
-                if "key_hex" in r and not isinstance(r.get("key_hex"), str):
+                # R28 P2-1: key_hex/value_hex are required (row={} RED), not
+                # type-checked only when present.
+                if not isinstance(r.get("key_hex"), str):
                     return f"{where}: vectors[{i}].rows[{j}].key_hex must be string"
-                if "value_hex" in r and not isinstance(r.get("value_hex"), str):
+                if not isinstance(r.get("value_hex"), str):
                     return f"{where}: vectors[{i}].rows[{j}].value_hex must be string"
         if "mode" in v and v["mode"] is not None:
             e = _strict_json_int(
@@ -13464,6 +13722,17 @@ def _validate_vector_row_shapes(vectors: Any, *, where: str) -> Optional[str]:
             return f"{where}: vectors[{i}].faults must be array"
         if "calls" in v and v["calls"] is not None and not isinstance(v["calls"], list):
             return f"{where}: vectors[{i}].calls must be array"
+        # R28 r3 P2-1: closed checkpoint schema (reject bool/float/unknown any depth).
+        calls = v.get("calls")
+        if isinstance(calls, list):
+            for ci, c in enumerate(calls):
+                if isinstance(c, dict) and c.get("checkpoint") is not None:
+                    err = _validate_closed_schema(
+                        c["checkpoint"], _CHECKPOINT_SCHEMA,
+                        f"{where}.vectors[{i}].calls[{ci}].checkpoint",
+                    )
+                    if err is not None:
+                        return err
     return None
 
 
@@ -18968,6 +19237,82 @@ def _o1b_r24_cli_failure_matrix() -> int:
         if expect_exit2("gen_vector_count_bool", ["generate", str(p_vc)]) != 0:
             return 1
 
+        # R28 P2-1: suffix row={} (empty row object) → exit2; key_hex/value_hex
+        # are required fields, not type-checked only when present.
+        bad_row = copy.deepcopy(live2)
+        row_set = False
+        for v in bad_row["vectors"][D3S2_PREFIX:]:
+            if isinstance(v.get("rows"), list) and v["rows"]:
+                v["rows"][0] = {}
+                row_set = True
+                break
+        if not row_set:
+            print("R28 P2-1 no suffix row found for empty-row mutation", file=sys.stderr)
+            return 1
+        p_row = td_p / "gen_suffix_row_empty.json"
+        p_row.write_text(json.dumps(bad_row) + "\n", encoding="utf-8")
+        if expect_exit2("gen_suffix_row_empty", ["generate", str(p_row)]) != 0:
+            return 1
+        # row missing value_hex only → exit2
+        bad_rh = copy.deepcopy(live2)
+        rh_set = False
+        for v in bad_rh["vectors"][D3S2_PREFIX:]:
+            if isinstance(v.get("rows"), list) and v["rows"]:
+                v["rows"][0] = {"key_hex": v["rows"][0].get("key_hex", "00")}
+                rh_set = True
+                break
+        if not rh_set:
+            print("R28 P2-1 no suffix row found for missing-value_hex mutation", file=sys.stderr)
+            return 1
+        p_rh = td_p / "gen_suffix_row_no_value.json"
+        p_rh.write_text(json.dumps(bad_rh) + "\n", encoding="utf-8")
+        if expect_exit2("gen_suffix_row_no_value", ["generate", str(p_rh)]) != 0:
+            return 1
+        # R28 P2-1: checkpoint.port.event_start=false (bool in closed int schema)
+        # → exit2; nested integer fields are exhaustive, no bool coerce.
+        bad_es = copy.deepcopy(live2)
+        es_set = False
+        for v in bad_es["vectors"][D3S2_PREFIX:]:
+            for c in v.get("calls") or []:
+                port = (c.get("checkpoint") or {}).get("port")
+                if isinstance(port, dict):
+                    port["event_start"] = False
+                    es_set = True
+                    break
+            if es_set:
+                break
+        if not es_set:
+            print("R28 P2-1 no checkpoint.port found for event_start mutation", file=sys.stderr)
+            return 1
+        p_es = td_p / "gen_suffix_event_start_bool.json"
+        p_es.write_text(json.dumps(bad_es) + "\n", encoding="utf-8")
+        if expect_exit2("gen_suffix_event_start_bool", ["generate", str(p_es)]) != 0:
+            return 1
+        # R28 r3 P2-1 (Sol r2): checkpoint.session.previous_key_length=false and
+        # checkpoint.d3s3.last_carrier_key_len=false → exit2 (complete closed schema).
+        for mutation_label, sub, key in [
+            ("gen_suffix_prev_key_len_bool", "session", "previous_key_length"),
+            ("gen_suffix_last_carrier_len_bool", "d3s3", "last_carrier_key_len"),
+        ]:
+            bad_len = copy.deepcopy(live2)
+            len_set = False
+            for v in bad_len["vectors"][D3S2_PREFIX:]:
+                for c in v.get("calls") or []:
+                    node = (c.get("checkpoint") or {}).get(sub)
+                    if isinstance(node, dict) and key in node:
+                        node[key] = False
+                        len_set = True
+                        break
+                if len_set:
+                    break
+            if not len_set:
+                print(f"R28 r3 P2-1 no checkpoint.{sub}.{key} found for mutation", file=sys.stderr)
+                return 1
+            p_len = td_p / f"{mutation_label}.json"
+            p_len.write_text(json.dumps(bad_len) + "\n", encoding="utf-8")
+            if expect_exit2(mutation_label, ["generate", str(p_len)]) != 0:
+                return 1
+
         # valid check: exit 0
         r = run(["check", str(valid)])
         if r.returncode != 0:
@@ -19329,11 +19674,86 @@ def _o1b_r25_commit_unknown_fence_tests() -> int:
         print(f"R27-Sol parked live want LIVE got {lc}", file=sys.stderr)
         return 1
 
+    # R28 P1-1 (r3): EventFact state-dependent reason closure permanent RED.
+    # The EF reason closure lives in the oracle classifier (o1a_mode27_cross_row_ok)
+    # + production adoption guard, NOT the D1 constructibility gate. Each mutation is
+    # family-consistent EF shape (ddl=NA, EF counters, matching avd/pvd/tx/rev/spool)
+    # so it passes the family gate + cross-row closed product and is RED ONLY at the
+    # reason closure (proof: cross_row err is the reason-gate tag, not family/avd/...).
+    # EF AWAITING={0} (docs/13 §964/§1061/§1149, docs/12 §1758) ⇒ 86/68/128/129 RED;
+    # EF WAITING excludes CAPACITY_EXHAUSTED(11); EF DISPATCHING consumes ≥1 attempt.
+    ef_anc_v = _promote_anchor_to_eventfact(gval("DSB2_ANCHOR_TYPED"))
+    ef_st_tmpl = gval("DSB2_STATE_TYPED")
+    ef_es_tmpl = gval("DSB3_ES_ACTIVE_TYPED")
+    ef_mutations = [
+        ("awaiting_cancel_86", _D1_TXN_AWAITING, _D1_R_CANCEL_PENDING_REMOTE, 1, 1, "m27_ef_awaiting_reason"),
+        ("awaiting_68", _D1_TXN_AWAITING, 68, 1, 1, "m27_ef_awaiting_reason"),
+        ("awaiting_128", _D1_TXN_AWAITING, 128, 1, 1, "m27_ef_awaiting_reason"),
+        ("awaiting_129", _D1_TXN_AWAITING, 129, 1, 1, "m27_ef_awaiting_reason"),
+        ("waiting_capacity_11", _D1_TXN_WAITING, 11, 1, 1, "m27_ef_waiting_reason"),
+        ("dispatching_attempt_zero", _D1_TXN_DISPATCHING, 0, 0, 0, "m27_ef_dispatching_attempt"),
+    ]
+    for lab, mst, mreason, mattempt, mcumul, want_err in ef_mutations:
+        st_k, st_v = _rebuild_state_for_anchor(
+            ef_anc_v, ef_st_tmpl,
+            state=mst, outcome=0, reason=mreason, park=0,
+            ddl=_D1_DDL_NA, latest=0, retry=1, attempt=mattempt,
+            cumul=mcumul, es_rev=1, has_late=0, discarded=0,
+        )
+        es_k, es_v = _rebuild_spool_for_anchor(
+            ef_anc_v, ef_es_tmpl,
+            spool_state=_D1_ES_ACTIVE, park_cause=0, rev=1, retry=1, discard_flag=0,
+        )
+        # D1 constructibility gate must ACCEPT (closure is adoption, not constructibility)
+        gate = d1_rows_legality_gate([mkrow(st_k, st_v), mkrow(es_k, es_v)])
+        if gate is not None:
+            print(f"R28 r3 EF {lab} must be D1-constructible, gate={gate!r}", file=sys.stderr)
+            return 1
+        xerr = o1a_mode27_cross_row_ok(
+            st_v, es_v, is_ef=True,
+            want_avd=d3s1.value_digest(ef_anc_v), want_tx=body_of(ef_anc_v)[:16],
+        )
+        if xerr != want_err:
+            print(f"R28 r3 EF {lab}: cross_row err {xerr!r} want {want_err!r} (reason gate)", file=sys.stderr)
+            return 1
+    # The 3 permanent CORRUPT product vectors: D1-legal, family/cross-row pass, not adopted.
+    r28_mats = [
+        ("awaiting_cancel", mat27_ef_awaiting_cancel, "m27_ef_awaiting_reason"),
+        ("waiting_capacity", mat27_ef_waiting_capacity, "m27_ef_waiting_reason"),
+        ("dispatching_attempt_zero", mat27_ef_dispatching_attempt_zero, "m27_ef_dispatching_attempt"),
+    ]
+    for lab, builder, want_err in r28_mats:
+        rows = builder()
+        if d1_rows_legality_gate(rows) is not None:
+            print(f"R28 r3 {lab} product fixture D1-illegal", file=sys.stderr)
+            return 1
+        pairs = {d3s1.from_hex(r["key_hex"]): d3s1.from_hex(r["value_hex"]) for r in rows}
+        anc_v = st_v = sp_v = None
+        for k, v in pairs.items():
+            if len(k) >= 10 and k[9] == 0x20:
+                anc_v = v
+            elif len(k) >= 10 and k[9] == 0x22:
+                st_v = v
+            elif len(k) >= 10 and k[9] == 0x50:
+                sp_v = v
+        xerr = o1a_mode27_cross_row_ok(
+            st_v, sp_v, is_ef=True,
+            want_avd=d3s1.value_digest(anc_v), want_tx=body_of(anc_v)[:16],
+        )
+        if xerr != want_err:
+            print(f"R28 r3 {lab} product: cross_row err {xerr!r} want {want_err!r}", file=sys.stderr)
+            return 1
+        ph = RefSession(27, rows).run()
+        if ph.get("final_status") == OUT_OK and int(ph.get("adopted", 0)) == 1:
+            print(f"R28 r3 {lab} product must not adopt", file=sys.stderr)
+            return 1
+
     print(
         "R25/R26/R27 COMMIT_UNKNOWN fence + Mode27 lifecycle pins ok "
         f"(cu_paths={len(fault_specs)}; non_cu={len(other)}; "
         "lc_ds_live/hist+ef_live/hist_receipt/hist_discard+2corrupt; "
-        f"ef_state_class×spool={lc_matrix_n}; cross_row_corrupt={len(cross_mats)})"
+        f"ef_state_class×spool={lc_matrix_n}; cross_row_corrupt={len(cross_mats)}; "
+        f"r28_ef_reason_closure_red={len(ef_mutations)}+{len(r28_mats)}prod)"
     )
     return 0
 

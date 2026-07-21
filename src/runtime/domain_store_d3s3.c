@@ -636,6 +636,36 @@ static ninlil_status_t pin_mode27_from_carrier(
     return NINLIL_OK;
 }
 
+/*
+ * R28 P1-1 (r3): Mode27 EventFact state-dependent reason closure (Mode27 adoption
+ * guard; docs/13 §964/§1061/§1149 + §995/§1143, docs/12 §1758). EventFact has no
+ * deadline and no cancel; operator-action Disposition parks. EF AWAITING={NONE(0)};
+ * EF WAITING excludes CAPACITY_EXHAUSTED(11) (parks); EF DISPATCHING ← ATTEMPT_PREPARED
+ * consumes ≥1 attempt. Terminal reason closure is handled by the lifecycle
+ * classification. Returns 1 if EventFact-legal.
+ */
+static int mode27_ef_state_reason_ok(
+    uint32_t tx_state, uint32_t tx_reason, uint32_t attempt_in_cycle)
+{
+    switch (tx_state) {
+    case NINLIL_TXN_READY:
+        return tx_reason == NINLIL_REASON_NONE;
+    case NINLIL_TXN_DISPATCHING:
+        return tx_reason == NINLIL_REASON_NONE && attempt_in_cycle >= 1u;
+    case NINLIL_TXN_AWAITING_EVIDENCE:
+        return tx_reason == NINLIL_REASON_NONE;
+    case NINLIL_TXN_PARKED_RETRY:
+        return tx_reason == NINLIL_REASON_EVENT_RETRY_CYCLE_PARKED;
+    case NINLIL_TXN_WAITING_WINDOW:
+        return tx_reason == NINLIL_REASON_TRANSPORT_RETRY
+            || tx_reason == NINLIL_REASON_APPLICATION_FAILED
+            || tx_reason == NINLIL_REASON_RECEIVER_UNAVAILABLE
+            || tx_reason == NINLIL_REASON_RECONCILE_RETRY_LATER;
+    default:
+        return 1;
+    }
+}
+
 /* Mode27 SELECT_SETUP G: STATE [+ EVENT_SPOOL] exact_get; set lifecycle. */
 static ninlil_status_t run_select_setup_mode27(
     ninlil_domain_scan_session_t *session,
@@ -658,6 +688,7 @@ static ninlil_status_t run_select_setup_mode27(
     uint32_t tx_discarded;
     uint32_t deadline_verdict;
     uint32_t event_park_cause;
+    uint32_t attempt_in_cycle;
     uint64_t event_spool_revision;
     uint8_t st_avd[32];
     uint8_t st_pvd[32];
@@ -700,6 +731,7 @@ static ninlil_status_t run_select_setup_mode27(
     deadline_verdict = st_typed->transaction_state.deadline_verdict;
     event_park_cause = st_typed->transaction_state.event_park_cause;
     event_spool_revision = st_typed->transaction_state.event_spool_revision;
+    attempt_in_cycle = st_typed->transaction_state.attempt_in_cycle;
     (void)memcpy(st_avd, st_typed->transaction_state.anchor_value_digest, 32u);
     (void)memcpy(st_pvd, st_typed->envelope.header.primary_value_digest, 32u);
     (void)memcpy(st_tx, st_typed->transaction_state.transaction_id, 16u);
@@ -757,6 +789,15 @@ static ninlil_status_t run_select_setup_mode27(
     /* (1) family: EF anchor ⇔ STATE deadline_verdict NA (DS ⇔ not NA). */
     st_is_ef = (deadline_verdict == NINLIL_DEADLINE_NOT_APPLICABLE) ? 1 : 0;
     if (is_event_fact != st_is_ef) {
+        return note_finding(session);
+    }
+    /*
+     * R28 P1-1: EventFact state-dependent reason closure (defense-in-depth;
+     * mirrors the oracle D1 gate EF split). DesiredState records are gate-legal
+     * and stop at (5); only EventFact adoption applies the EF reason sets.
+     */
+    if (is_event_fact
+        && !mode27_ef_state_reason_ok(tx_state, tx_reason, attempt_in_cycle)) {
         return note_finding(session);
     }
     /* (2) STATE anchor_value_digest == complete ANCHOR value digest. */
