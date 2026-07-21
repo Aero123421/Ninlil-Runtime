@@ -544,6 +544,7 @@ static int test_duplicate_and_out_of_order(void)
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_result_t result;
     ninlil_storage_handle_t handle;
+    ninlil_storage_handle_t original;
     const ninlil_storage_ops_t *ops;
     uint8_t key[16];
     uint8_t empty = 0u;
@@ -552,6 +553,7 @@ static int test_duplicate_and_out_of_order(void)
     ninlil_spy_init(&spy);
     ops = ninlil_spy_ops(&spy);
     handle = ninlil_spy_open_handle(&spy);
+    original = handle;
     REQUIRE(make_family14_key(
         NINLIL_MODEL_RUNTIME_STORE_KEY_BINDING, key, &len));
     REQUIRE(ninlil_spy_add_row(&spy, key, len, &empty, 0u));
@@ -563,10 +565,24 @@ static int test_duplicate_and_out_of_order(void)
         == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(ninlil_domain_scan_finalize(&session, &result)
         == NINLIL_E_STORAGE_CORRUPT);
+    /* Nonzero-Port runtime duplicate defense (formal_precheck is separate zero-Port). */
+    REQUIRE(spy.trace_count > 0u);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(spy.iter_next_calls >= 2u);
+    REQUIRE(spy.mutation_calls == 0u);
+    REQUIRE(spy.trace_overflow == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(result.adopted == 0u);
+    REQUIRE(result.status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_DONE);
+    REQUIRE(spy.close_calls == 0u);
+    REQUIRE(handle == original);
+    REQUIRE(session.original_handle_authority == 0u);
 
     ninlil_spy_init(&spy);
     ops = ninlil_spy_ops(&spy);
     handle = ninlil_spy_open_handle(&spy);
+    original = handle;
     REQUIRE(make_family14_key(
         NINLIL_MODEL_RUNTIME_STORE_KEY_IDENTITY, key, &len));
     REQUIRE(ninlil_spy_add_row(&spy, key, len, &empty, 0u));
@@ -580,6 +596,18 @@ static int test_duplicate_and_out_of_order(void)
         == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(ninlil_domain_scan_finalize(&session, &result)
         == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(spy.trace_count > 0u);
+    REQUIRE(spy.begin_calls == 1u);
+    REQUIRE(spy.iter_next_calls >= 2u);
+    REQUIRE(spy.mutation_calls == 0u);
+    REQUIRE(spy.trace_overflow == 0u);
+    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(result.adopted == 0u);
+    REQUIRE(result.status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_DONE);
+    REQUIRE(spy.close_calls == 0u);
+    REQUIRE(handle == original);
+    REQUIRE(session.original_handle_authority == 0u);
     return 0;
 }
 
@@ -2051,8 +2079,10 @@ static int test_s2_one_iterator_and_call_order(void)
             gets_before_open += 1u;
             REQUIRE(expected_key_id <= 17u);
             s2_literal_catalog_key(expected_key_id, want, &want_len);
-            REQUIRE(spy.trace[i].key_bytes_length == want_len);
-            REQUIRE(memcmp(spy.trace[i].key_bytes, want, want_len) == 0);
+            /* GET request keys live in request_key_*; key_bytes is ITER_NEXT only. */
+            REQUIRE(spy.trace[i].request_key_bytes_length == want_len);
+            REQUIRE(memcmp(spy.trace[i].request_key_bytes, want, want_len)
+                == 0);
             expected_key_id += 1u;
         } else if (spy.trace[i].op == NINLIL_SPY_OP_ITER_OPEN) {
             REQUIRE(saw_get != 0);

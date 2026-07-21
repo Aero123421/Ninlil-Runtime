@@ -73,13 +73,12 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-# Exact 20 base private sources + exact 3 N6 + exact 2 R7 T0 portable crypto +
-# exact 1 R7 T1 wire codec + exact 1 R7 T1b context binding = 27 (single
-# authority expand). Host OpenSSL 3
-# adapter is top-level/tests only and must not appear in this add_subdirectory
-# consumer (NINLIL_R7_HOST_CRYPTO_ENABLED=FALSE).
-if(NOT _private_source_count EQUAL 27)
-    message(FATAL_ERROR "private source count is not 27: ${_private_sources}")
+# Exact base private sources + N6 + R7 T0 portable crypto + R7 T1 wire +
+# R7 T1b context binding + D3-S3 evaluator = 28 (single authority expand).
+# Host OpenSSL 3 adapter is top-level/tests only and must not appear in this
+# add_subdirectory consumer (NINLIL_R7_HOST_CRYPTO_ENABLED=FALSE).
+if(NOT _private_source_count EQUAL 28)
+    message(FATAL_ERROR "private source count is not 28: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -102,6 +101,7 @@ set(_expected_private_source_names
     domain_store_codec.c
     domain_store_d3s1.c
     domain_store_d3s2.c
+    domain_store_d3s3.c
     domain_store_scanner.c
     logical_session.c
     n6_context_store.c

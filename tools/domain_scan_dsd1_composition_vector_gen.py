@@ -77,11 +77,20 @@ D1_SHA256 = (
     "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4"
 )
 D1_COUNT = 1549
-CROSSROW_FORMAT = "ninlil-domain-scan-crossrow-v1-d3s2"
-CROSSROW_SHA256 = (
+CROSSROW_FORMAT_D3S2 = "ninlil-domain-scan-crossrow-v1-d3s2"
+CROSSROW_FORMAT_D3S3 = "ninlil-domain-scan-crossrow-v1-d3s3"
+# Frozen D3-S2 raw authority (full-file when format was d3s2 / 144 vectors).
+CROSSROW_D3S2_RAW_SHA256 = (
     "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec"
 )
-CROSSROW_COUNT = 144
+CROSSROW_D3S2_CONTENT_SHA256 = (
+    "a9fccb12d932f0082111c94da3a23cd6680dc4bedecb2108e739bdca55d80fed"
+)
+CROSSROW_D3S2_COUNT = 144
+# Backward-compat aliases (d3s2-only worktrees).
+CROSSROW_FORMAT = CROSSROW_FORMAT_D3S2
+CROSSROW_SHA256 = CROSSROW_D3S2_RAW_SHA256
+CROSSROW_COUNT = CROSSROW_D3S2_COUNT
 
 D1_CS_DLV_NONE_ID = "DSB3_CS_DLV_NONE_TYPED"
 D1_EV_DLV_SUM_EMPTY_ID = "DSB3_EV_DLV_SUM_EMPTY_TYPED"
@@ -132,23 +141,59 @@ def _sha256_file(path: Path) -> str:
 
 
 def _assert_authority_pins() -> None:
+    """Pin D1 + crossrow. D3-S3 append keeps frozen D3-S2 144-prefix authority.
+
+    Accept either:
+    - historical d3s2 full-file raw/format/count, or
+    - d3s3 file whose d3s2_prefix_authority matches the frozen d3s2 pins
+      (raw_sha256 / content_sha256 / count) without weakening that pin.
+    """
     _assert_d1_authority_pin()
     if not CROSSROW_VECTORS.is_file():
         raise SystemExit(f"missing crossrow authority {CROSSROW_VECTORS}")
     got = _sha256_file(CROSSROW_VECTORS)
-    if got != CROSSROW_SHA256:
-        raise SystemExit(
-            f"crossrow authority sha mismatch: {got} != {CROSSROW_SHA256}"
-        )
     doc = json.loads(CROSSROW_VECTORS.read_text(encoding="utf-8"))
-    if doc.get("format") != CROSSROW_FORMAT:
-        raise SystemExit(
-            f"crossrow format pin fail: {doc.get('format')!r}"
-        )
-    if int(doc.get("vector_count", -1)) != CROSSROW_COUNT:
-        raise SystemExit(
-            f"crossrow count pin fail: {doc.get('vector_count')}"
-        )
+    fmt = doc.get("format")
+    if fmt == CROSSROW_FORMAT_D3S2:
+        if got != CROSSROW_D3S2_RAW_SHA256:
+            raise SystemExit(
+                f"crossrow authority sha mismatch: {got} != {CROSSROW_D3S2_RAW_SHA256}"
+            )
+        if int(doc.get("vector_count", -1)) != CROSSROW_D3S2_COUNT:
+            raise SystemExit(
+                f"crossrow count pin fail: {doc.get('vector_count')}"
+            )
+        return
+    if fmt == CROSSROW_FORMAT_D3S3:
+        auth = doc.get("d3s2_prefix_authority") or {}
+        if int(doc.get("d3s2_prefix_count", -1)) != CROSSROW_D3S2_COUNT:
+            raise SystemExit(
+                f"d3s3 d3s2_prefix_count pin fail: {doc.get('d3s2_prefix_count')}"
+            )
+        if auth.get("format") != CROSSROW_FORMAT_D3S2:
+            raise SystemExit(
+                f"d3s3 prefix authority format pin fail: {auth.get('format')!r}"
+            )
+        if int(auth.get("vector_count", -1)) != CROSSROW_D3S2_COUNT:
+            raise SystemExit(
+                f"d3s3 prefix authority count pin fail: {auth.get('vector_count')}"
+            )
+        if auth.get("raw_sha256") != CROSSROW_D3S2_RAW_SHA256:
+            raise SystemExit(
+                "d3s3 prefix authority raw_sha256 pin fail "
+                f"{auth.get('raw_sha256')} != {CROSSROW_D3S2_RAW_SHA256}"
+            )
+        if auth.get("content_sha256") != CROSSROW_D3S2_CONTENT_SHA256:
+            raise SystemExit(
+                "d3s3 prefix authority content_sha256 pin fail "
+                f"{auth.get('content_sha256')} != {CROSSROW_D3S2_CONTENT_SHA256}"
+            )
+        if int(doc.get("vector_count", -1)) < CROSSROW_D3S2_COUNT:
+            raise SystemExit(
+                f"d3s3 vector_count pin fail: {doc.get('vector_count')}"
+            )
+        return
+    raise SystemExit(f"crossrow format pin fail: {fmt!r}")
 
 
 def _replace_ev_body_any(value: bytes, body: bytes) -> bytes:

@@ -339,7 +339,7 @@ Payload BLOB key digestはAPPLICATIONだけzero/non-zeroを許し、Evidence BLO
 - BLOB manifest: `blob_id_digest[32] + blob_owner_kind:u16 + blob_kind:u16 + owner_key_raw:RAW16(max 255) + owner_primary_key_digest[32] + total_length:u64 + chunk_count:u32 + content_digest[32]`。Common primary digestはowner primary valueです。
 - BLOB chunk: `blob_id_digest[32] + manifest_key_digest[32] + chunk_index:u32 + chunk_count:u32 + total_length:u64 + content_digest[32] + chunk_length:u32 + chunk_bytes[chunk_length]`。Common primary digestはmanifest complete value、`chunk_length<=3072`です。
 
-BLOBのsame-record wire contractは次をexactとします。Common flagsはmanifest=`1`、chunk=`2`のどちらか1つだけでbody variantと一致し、両variantともimmutable `record_revision=1`、head witness digest / primary value digestはnon-zeroです。`blob_owner_kind`はBLOB固有enumでTRANSACTION=1、INGRESS=2、DELIVERY=3とし、reservation/scheduler enumを流用しません。`owner_key_raw` contentsは順にtransaction ID exact 16 bytes、ordered sequence BE8 exact 8 bytes、`delivery_key_raw` contents exact 80 bytesです。Allowed `(owner, blob_kind)`はTRANSACTION/DELIVERY×COMMAND_PAYLOAD/EVENT_PAYLOAD、INGRESS×INGRESS_PAYLOAD/EVIDENCE、DELIVERY×REPLYだけで、他はcorruptです。
+BLOBのsame-record wire contractは次をexactとします。Common flagsはmanifest=`1`、chunk=`2`のどちらか1つだけでbody variantと一致し、両variantともimmutable `record_revision=1`、head witness digest / primary value digestはnon-zeroです。`blob_owner_kind`はBLOB固有enumでTRANSACTION=1、INGRESS=2、DELIVERY=3とし、reservation/scheduler enumを流用しません。`owner_key_raw`はlengthだけでなくcanonical identityまで閉じます: TRANSACTIONはtransaction ID exact **nonzero** 16 bytes、INGRESSはordered sequence BE8 exact 8 bytesかつ **u64 big-endian >0**、DELIVERYは`delivery_key_raw` contents exact 80 bytesかつ **5個の16-byte IDがすべてnonzero**です（length-onlyでall-zero rawを許すのはcorrupt）。Allowed `(owner, blob_kind)`はTRANSACTION/DELIVERY×COMMAND_PAYLOAD/EVENT_PAYLOAD、INGRESS×INGRESS_PAYLOAD/EVIDENCE、DELIVERY×REPLYだけで、他はcorruptです。
 
 Manifestはbodyのowner kind / raw、blob kind、content digest、total lengthから5.1節の`blob_id_digest`を再計算します。`owner_primary_key_digest`はTRANSACTION_ANCHOR ID128、ORDERED_INGRESS u64、DELIVERY compositeのcomplete keyをowner rawからexact導出したKEY_DIGESTです。Manifest key identityは`COMPOSITE(30, u8=1 || blob_id_digest)`、common primary IDは参照owner primary identity（transaction ID / ordered sequence left-zero-pad / DELIVERY composite identity先頭16）です。
 
@@ -3638,7 +3638,9 @@ Fixed candidate / merge: implementation SHA `39e4752ba09637d40d1b2c4c64fbc17ccc8
 
 ```text
 IDLE → BASELINE
-  → (SELECT_CARRIER → lifecycle classify → companion install
+  → (SELECT_CARRIER pure W（GET 0; pin first eligible）
+       → [Mode27 / Mode29 APPLICATION_FIRST] SELECT_SETUP G（companion exact_get; typed CURRENT）
+       → lifecycle classify from pins + setup results
        → [Mode28] pin view_a/view_b digests
        → FOCUS_MANIFEST_SCAN (install: expected_manifest_value_digest + expected_owner_pvd)
        → OWNER_PVD_PROOF (§18.14.7.2; Mode30 may defer to semantic DELIVERY get)
@@ -3938,24 +3940,214 @@ Mode30 CANCEL_RESULT: 1 RR + 1 DLV + 1 RESULT + 1 CANCEL_STATE = 4
 Finalize carrier re-get for expected semantic: 0 (pin required)
 ```
 
-**Other budgets:** FOCUS_CHUNKS = chunk_count; Mode28 semantic RESCAN ≤2 band walks + chunk re-gets; BIND as prior。
+**Other budgets:** FOCUS_CHUNKS = chunk_count; Mode28 semantic RESCAN ≤2 band walks + chunk re-gets; BIND Port packing and per-unit get budgets are **§18.14.9 / §18.14.19**（BIND-WG / Mode30 pure-W）。
 
 #### 18.14.9 BIND + untyped orphan chunk
 
-Unchanged in substance: Mode27–29 forward owner exact_get; Mode30 RR-band SCAN; untyped orphan via blob_id→manifest rebuild; shared REPLY ≥1 RR。
+**L1 obligations**（portable semantic correctness）and **REP1-L2 packing**（§18.14.19 micro-units **W / G / WG**）are joint. A pre-acceptance draft that required BIND formal walks with **Port GET count = 0** while still claiming full reverse-owner / untyped-orphan proof for **arbitrary** formal rows under fixed **754**-byte context / no full-ID set / one iterator+txn was **non-constructible**; that draft authority/oracle shape is **withdrawn**（§18.14.19）。The next formal authority regeneration must implement BIND-WG / Mode30 pure-W as below.
+
+##### 18.14.9.1 Micro-unit packing pointer
+
+| Mode / phase | Unit kind | Notes |
+| --- | :---: | --- |
+| Mode27–29 `BIND_MAN`（phase 11） | **WG** | walk + per eligible man owner `exact_get` |
+| Mode30 `BIND_MAN` outer select / empty outer | **W** | pure walk; no owner reverse get |
+| Mode30 RR-band（entry `semantic_pass=5`） | **W** | pure walk; boolean latch `observed_live` 0/1（§18.14.9.3） |
+| Mode27–30 `BIND_CHUNK`（phase 12） | **WG** | walk + per valid chunk man-presence `exact_get` |
+
+Exact Port event grammar, fault last-event, session state, and `d3_peer_get_count` rules: **§18.14.19.3 / .6 / .8 / .10**。
+
+##### 18.14.9.2 Mode-scoped BIND_MANIFEST（Modes 27–29 = WG）
+
+**Common eligibility base（all modes）:** typed CURRENT success **and** family = DOMAIN **and** subtype = BLOB **and** common flags = MANIFEST（`1`）。
+
+**Exact numeric pair eligibility（closed; else non-eligible → visit only, GET 0）:**
+
+| Mode | `blob_owner_kind` | `blob_kind` |
+| ---: | ---: | --- |
+| **27** | TRANSACTION（`1`） | COMMAND_PAYLOAD（`1`） or EVENT_PAYLOAD（`2`） |
+| **28** | INGRESS（`2`） | INGRESS_PAYLOAD（`3`） or EVIDENCE（`4`） |
+| **29** | DELIVERY（`3`） | COMMAND_PAYLOAD（`1`） or EVENT_PAYLOAD（`2`） |
+
+Mode30 BIND_MAN is **not** WG owner-reverse; see §18.14.9.3（outer eligibility uses DELIVERY/`3` + REPLY/`5`）。
+
+**Phase-local pin map（BIND_MAN WG; layout 754 unchanged）— exact fields only:**
+
+| Context field | Pin source / meaning |
+| --- | --- |
+| `last_carrier_key` / `last_carrier_key_len` | actual man **complete key** bytes / length |
+| `focus_key_digest` | `KEY_DIGEST(man complete key)` |
+| `focus_raw80` / `focus_raw_len` | man body `owner_key_raw` contents; length exact **16**（mode27）/ **8**（mode28）/ **80**（mode29） |
+| `owner_kind` | man body `blob_owner_kind` |
+| `blob_kind` | man body `blob_kind` |
+| `owner_primary_key_digest` | man body `owner_primary_key_digest` |
+| `expected_owner_pvd` | man common header **primary_value_digest** |
+| `peer_key` / `peer_key_len` | forward-rebuilt **owner request complete key** |
+
+Do **not** require BIND_MAN pins of man `blob_id_digest`, `total_length`, or `chunk_count`。After each eligible row’s proof finishes, these phase-local pins may be **overwritten** by the next eligible row。
+
+**Proof steps（after visit commit §18.14.9.5; pins above; before/around get）:**
+
+1. Forward-rebuild owner complete key from pinned `owner_kind` + `focus_raw80`/`focus_raw_len`（D1 pure; no digest→key reverse）。
+2. Write rebuilt key into `peer_key`/`peer_key_len`。Require **`KEY_DIGEST(rebuilt owner complete key) ==` pinned `owner_primary_key_digest`**。
+3. **`exact_get(peer_key)`**（D2-S4: value overwrite only; iterator position/key unchanged）。Require PRESENT。
+4. Returned row typed CURRENT; subtype exact: mode27 TRANSACTION_ANCHOR; mode28 ORDERED_INGRESS; mode29 DELIVERY。
+5. **Returned owner raw identity exact:**
+   - mode27: ANCHOR `transaction_id` exact 16 == pinned raw16;
+   - mode28: ORDERED_INGRESS `ordered_sequence` as u64be exact 8 == pinned raw8;
+   - mode29: DELIVERY body delivery logical raw / `delivery_key_raw` contents exact 80 == pinned raw80。
+6. **Referrer digest exact**（must equal pinned `focus_key_digest` = man key digest）:
+   - mode27: ANCHOR `payload_blob_key_digest`;
+   - mode28: if pinned `blob_kind`=INGRESS_PAYLOAD（`3`）then ORDERED_INGRESS `payload_blob_key_digest`; if pinned `blob_kind`=EVIDENCE（`4`）then `evidence_blob_key_digest`。**Forbidden:** accepting the other view’s digest as a match for the wrong `blob_kind`;
+   - mode29: DELIVERY `payload_blob_key_digest`。
+7. **`VALUE_DIGEST(returned owner complete value) ==` pinned `expected_owner_pvd`**。
+
+Failure → sticky semantic/Port mapping per §18.14.10 / §18.14.19.10; **no residual `iter_next` after a natural GET fault** in the same drive。Non-eligible rows: **GET 0**。
+
+##### 18.14.9.3 Mode30 BIND_MANIFEST（pure W only; frontier + boolean latch）
+
+**Outer eligible REPLY man:** typed CURRENT + family DOMAIN + subtype BLOB + flags MANIFEST（`1`）+ `blob_owner_kind`=DELIVERY（`3`）+ `blob_kind`=REPLY（`5`）。
+
+**Derived control state（Normative even though `peer_key` is not a checkpoint field）:**
+
+| Field | Role |
+| --- | --- |
+| `last_carrier_key` / `last_carrier_key_len` | **proven BLOB-manifest frontier only**（empty after BIND-entry init; advanced only after successful RR） |
+| `peer_key` / `peer_key_len` | **selected candidate** man complete key while outer→RR in flight |
+| `focus_key_digest` | `KEY_DIGEST(selected man complete key)` while selected |
+| `focus_raw80` / `focus_raw_len` | selected man owner raw **exact 80** while selected |
+| `owner_kind` / `blob_kind` | DELIVERY（`3`）/ REPLY（`5`）while selected |
+| `observed_live` | boolean latch **0/1 only**（never a count; never increments past 1） |
+
+**No** full-ID set; **no** multiset of bound mans。
+
+**BIND-entry initialization（Mode30 only; exactly once on SELECT → BIND transition）:**
+
+When SELECT true-exhausts with **no more carriers** and the OK exit enters Mode30 `phase=11` BIND_MAN（§18.14.19.8 empty-SELECT row）, **before the first Mode30 outer W** and **not** before each later outer W, apply **exactly** this initialization（byte-exact）:
+
+| Action | Exact |
+| --- | --- |
+| `last_carrier_key[0..44]` | all **45** bytes **0**; `last_carrier_key_len := 0`（empty **BLOB-manifest** frontier） |
+| `peer_key[0..44]` | all **45** bytes **0**; `peer_key_len := 0` |
+| `focus_key_digest[0..31]` | all **32** bytes **0** |
+| `focus_raw80[0..79]` | all **80** bytes **0**; `focus_raw_len := 0` |
+| `owner_kind` | `0` |
+| `blob_kind` | `0` |
+| `observed_live` | `0` |
+| `semantic_pass` | `0` |
+
+**Preserve unchanged** every context field **not** listed above, including **`focus_id16[16]`**, count/binding masks, flags bits other than those already set by the SELECT exit tuple, digests/SHA state, and all other §18.14.12 fields。
+
+**Rationale:** at SELECT exit, `last_carrier_key` still holds the prior SELECT **carrier** complete key（REVERSE_REPLY namespace for Mode30）。Without this BIND-entry reset, outer W would compare BLOB **manifest** keys against a RR key frontier and may skip all manifests。First outer W therefore always starts with an empty BLOB-manifest frontier; later outer walks use only frontiers **promoted from proven REPLY man keys** after successful RR。
+
+**Outer W（entry `phase=11`, `semantic_pass=0`）— exact algorithm:**
+
+1. Walk zero-prefix to true NOT_FOUND（or Port fault）。
+2. Selection: among eligible REPLY mans visited, choose **exactly the first** complete key that is **strictly greater than** the current proven BLOB-manifest frontier `last_carrier_key`（lex complete-key order）。If `last_carrier_key_len==0`, the first eligible REPLY man in walk order is selected。
+3. On selection（at most one per outer W）:
+   - `peer_key`/`peer_key_len` := selected complete key;
+   - pin `focus_key_digest`, `focus_raw80`/`focus_raw_len`, `owner_kind`, `blob_kind` from that man;
+   - `observed_live := 0`;
+   - **`last_carrier_key` remains the prior proven BLOB-manifest frontier**（does **not** advance at selection）。
+4. True exhaustion **with** a selected candidate → exit to RR W: keep `phase=11`, set `semantic_pass=5`, preserve `peer_key` and selected proof pins, `observed_live=0`, set `NEED_REOPEN` per exit tuple（`F_BIND_REOPEN`）。
+5. True exhaustion **with no** candidate → **only** this path enters BIND_CHUNK（`binding` man bit set per §18.14.19.8）。
+
+**RR-band W（entry `phase=11`, `semantic_pass=5`）— exact algorithm:**
+
+1. Pure zero-prefix walk; GET 0。Using only preserved selected pins, a row **qualifies** iff typed CURRENT REVERSE_REPLY **and** `body_blob_key_digest == focus_key_digest` **and** delivery raw80 exact-equal pinned `focus_raw80`/`focus_raw_len` **and** `send_state ∈ {1,2,3,4}`。
+2. For any qualifying RR: set **`observed_live := 1` idempotently**（if already 1, leave 1; **never** increment / multi-count）。
+3. True NOT_FOUND with **`observed_live == 0`** → CORRUPT sticky; **frontier does not advance**; selected pins may remain failure-point capture values。
+4. True NOT_FOUND with **`observed_live == 1`** → **atomic success promotion**（exact clear set after frontier copy）:
+   - copy `peer_key`/`peer_key_len` → `last_carrier_key`/`last_carrier_key_len`（new proven BLOB-manifest frontier; length and all selected key bytes）;
+   - then **exact clear**（all bytes of each array, then lengths/kinds）:
+     - `peer_key[0..44] := 0`; `peer_key_len := 0`;
+     - `focus_key_digest[0..31] := 0`;
+     - `focus_raw80[0..79] := 0`; `focus_raw_len := 0`;
+     - `owner_kind := 0`; `blob_kind := 0`; `observed_live := 0`。
+   - **`focus_id16` and every context field not listed in this clear set remain unchanged**。
+   - `semantic_pass := 0`; set `NEED_REOPEN`; remain `phase=11` for next outer W。
+5. Next outer W may select only keys **strictly greater than** the new frontier ⇒ **no same-man loop / nontermination** under finite fixtures。
+
+Harness that invents RR complete keys from digest alone **must fail**（AFP #8）。
+
+##### 18.14.9.4 BIND_CHUNK（Modes 27–30 = WG）
+
+**Eligible row predicate（closed）:** typed CURRENT success **and** family = DOMAIN **and** subtype = BLOB **and** common flags = CHUNK（`2`）。  
+Malformed / non-CURRENT domain rows fail under existing D1/structural authority **before** any BIND get。Non-eligible OK rows: visit only, **GET 0**。
+
+**Phase-local pin map（BIND_CHUNK WG; exact）:**
+
+| Context field | Pin source / meaning |
+| --- | --- |
+| `last_carrier_key` / `last_carrier_key_len` | actual chunk **complete key** |
+| `blob_id_digest` | chunk body `blob_id_digest` |
+| `focus_key_digest` | chunk body `manifest_key_digest`（pinned as-is） |
+| `next_chunk_index` | chunk body `chunk_index`（u32） |
+| `chunk_count` | chunk body `chunk_count`（u32） |
+| `total_length` | chunk body `total_length`（u64） |
+| `content_digest` | chunk body `content_digest` |
+| `expected_manifest_value_digest` | chunk common header **primary_value_digest** |
+| `peer_key` / `peer_key_len` | forward-rebuilt man complete key `COMPOSITE(BLOB, u8=1 ‖ blob_id_digest)` |
+
+Do **not** pin chunk payload bytes（D1 typed CURRENT validation of the chunk row is already authority for local chunk shape/length/single-chunk hash）。Pins may be overwritten by the next eligible chunk after the current proof completes。
+
+**Proof steps（after visit commit; pins above）:**
+
+1. Rebuild man complete key from pinned `blob_id_digest` into `peer_key`/`peer_key_len`。
+2. **`exact_get(peer_key)`** → must be **PRESENT**（ABSENT ⇒ untyped orphan CORRUPT）。
+3. Returned row: typed CURRENT + family DOMAIN + subtype BLOB + flags MANIFEST（`1`）。
+4. Returned man body fields **exact equal** to pins: `blob_id_digest`, `chunk_count`, `total_length`, `content_digest`。
+5. Pinned `next_chunk_index` is strictly less than returned man `chunk_count`。
+6. Pinned actual chunk complete key **exact equal** forward formula `COMPOSITE(BLOB, u8=2 ‖ blob_id_digest ‖ index:u32be)` with pinned index/blob_id。
+7. Digest equality on the **request / rebuild path only**（GET returns **value**; Port output key fields empty per §18.14.19.7）:  
+   pinned `focus_key_digest` **exact equal** `KEY_DIGEST(peer_key request)` **exact equal** `KEY_DIGEST(forward-rebuilt man complete key)`。  
+   Do **not** derive a complete-key identity from the get response（value-only）。
+8. Returned value is typed CURRENT domain BLOB MANIFEST（flags `1`）and body fields match pins as in steps 3–5。  
+   **`VALUE_DIGEST(returned man complete value) ==` pinned `expected_manifest_value_digest`**。  
+   Do **not** compare against the returned man’s own common header primary_value_digest field for this step（that man-header field is the owner-value digest role; the BIND_CHUNK pin is the chunk common PVD）。
+9. Fully consume get result **before** the next `iter_next`。
+
+##### 18.14.9.5 Visit commit / copy-before-get / reentrancy（PASS_INTERNAL freeze preserved）
+
+**Preserve §18.13.5 / S3 PASS_INTERNAL freeze:** under `pass_kind=INTERNAL`, every internal **W** and **WG** keeps public D2 counters frozen at their post-BASELINE values:
+
+- `ok_row_count`, `current_domain_key_count`,
+- `family14_row_count` / `family14_iter_seen_mask` / reconciliation masks,
+- profile / future diagnostics  
+
+**must not** re-increment, re-reconcile, or re-run baseline accounting。REP1-v1 does **not** introduce a separate public internal-visit counter; if one is needed later it is out of REP1-v1 scope。
+
+**Pass-local visit commit（exactly once, before any BIND get for that row）:**
+
+After successful structural current-row acceptance of an `iter_next` OK and **before** the S3 cross-row hook / BIND get, commit **only**:
+
+- `has_previous`, `previous_key` / `previous_key_length`（pass-local lex）。
+
+**No** public `ok_row_count` / `current_domain_key_count` increment on this path。Natural GET fault and semantic mismatch after get retain that **lex-only** commit; still **no** public counter increment。
+
+**Copy-before-get:** for every BIND WG get, install only the exact phase-local pin tables of §18.14.9.2 / .4 **before** get; after get, **forbid** use of pre-get typed/borrowed pointers into `workspace->value`。
+
+**Internal hook exception:** private H1/BIND path may call `exact_get` under WG; **public/user callback reentrancy into scanner APIs is forbidden**。
+
+**Implementation note:** production/scanner hook order that currently defers lex commit past get, or re-increments frozen public counters under INTERNAL, is a **follow-on implementation defect**. The current deterministic oracle candidate does not claim that production/scanner repair complete.
+
+**Port-only decision rule:** WG eligibility, pin fill, rebuild request key, and post-get compares are determined **only** from the current typed row + phase-local pins + get response。They **must not** consult fixture `idx` / offline full `rows[]` / full-ID sets。
 
 #### 18.14.10 Precedence / hooks
 
-Unchanged spirit: H1–H5; sticky first wins; finalize not first compare needing live txn without pins。
+Unchanged spirit: H1–H5; sticky first wins; finalize not first compare needing live txn without pins。BIND WG natural GET fault: sticky / FAILED / phase14 per §18.14.19.10; cleanup only in finalize。
 
 #### 18.14.11 Honest cost / ESP32 memory
 
 | Item | Freeze |
 | --- | --- |
-| Per-session | O(Fₘ·N_BLOB + chunks + semantic_rescans + OWNER_PVD gets + BIND [+ Mode30 N_REPLY·N_RR]) |
+| Per-session | O(Fₘ·N_BLOB + chunks + semantic_rescans + OWNER_PVD gets + BIND) |
+| Mode27–29 BIND_MAN **WG** | **O(N + M)** Port events class: one full walk over N rows + **one owner get per mode-scoped man M** |
+| Mode27–30 BIND_CHUNK **WG** | **O(N + C)** : one full walk + **one man-presence get per valid chunk C** |
+| Mode30 BIND | outer man select **W** + per-man **RR-band pure W**（each band is a full zero-prefix walk; honest multi-walk cost **Θ(N_REPLY · N)** class, not one-shot O(N)）+ BIND_CHUNK WG |
 | Mode28 semantic | 1 carrier re-get + ≤2 band SCANs + chunk re-gets |
 | Mode30 semantic | 3..4 prefix gets + chunk re-gets; owner PVD folded into DELIVERY get |
-| Memory | fixed context + single 4096; expected digests in context pins |
+| Memory | fixed context **754** + single 4096; expected digests in context pins; **no** full-ID set / heap / VLA / second txn / second iterator |
 
 #### 18.14.12 Fixed S3 context layout（sizeof **754** / align 1 / ceiling **768**）
 
@@ -4008,6 +4200,107 @@ Unchanged spirit: H1–H5; sticky first wins; finalize not first compare needing
 | **Σ** | **754** | |
 | ceiling | **768** | headroom **14** |
 
+**Python oracle product-path memory（R9–R24; constructibility evidence only — not a C sizeof proof; not production C / bridge GO）:** product call-spanning state is **1:1-mappable** onto §18.14.12 slots via an **executable** pin/man → `(offset,size)` map. `active_pins` / `active_man` are temporary projections; simultaneous live keys with unequal values **must not** claim overlapping byte ranges. Drive-end assert rejects unmapped keys, OOB ranges, pin≠context, and unequal collisions.
+
+**R12 owner_raw identity gate（FOCUS dig-match; immediate abort）:** when a selected carrier's dig-matching manifest body has `owner_raw` that does **not** equal the SELECT carrier identity (Mode27: ANCHOR.tx16; Mode29: DELIVERY raw80; Mode30: RR delivery raw80), the oracle must sticky **CORRUPT / phase14 / adopted=0** at the **exact mismatch row** — **before** installing the man into call-spanning `active_man` / context slots — and **abort the walk immediately** via the `_walk_abort` / SEMANTIC path (not a Port-fault reclassification). No residual `iter_next` / `NOT_FOUND` after the mismatch row. First sticky wins: a NATURAL fault scheduled on the next event must not overwrite CORRUPT. FAILED releases `active_pins`, `active_man`, and the single product SHA bank.
+
+**R13–R24 independent unit grammar / formal fault & type closure（Port mechanics; not circular expected-trace copy）:**
+
+1. **W / G schedule (R13+):** successful non-B5 **W** requires a terminal operational `iter_next NOT_FOUND`. **Every G window** re-derives GET **count / order / request keys** from fixture rows + entry checkpoint only (never by copying `port_trace`): (a) **success** → full planned exact schedule; (b) **natural Port fault** → exact planned prefix through the failing attempt (fixture must not have required an earlier stop; prior OK GETs are a **proper** prefix of the fixture-realized schedule so a natural GET after a semantic-stop row is forbidden); (c) **GET NOT_FOUND/ABSENT** → exact prefix through the first fixture-missing request; (d) **GET OK then early semantic failure** → exact prefix through the GET whose returned value first fails product semantic checks (inspect value; no arbitrary shortening; no residual GET after the stop). In **WG**, GET `NOT_FOUND` or any non-OK NATURAL GET is unconditionally the last operational event of that drive window.
+
+2. **G GET `storage_status` column (R15; Normative):** for every product G GET, the expected Storage status is derived **independently** from fixture rows' complete-key presence column — **present ⇒ `OK`**, **absent ⇒ `NOT_FOUND`**. This applies to **every** GET in success, ABSENT, and semantic-stop schedules. On a **natural Port fault** G window, only the **last** fault attempt may carry the configured NATURAL status; **all prior** GET statuses in that window must match the fixture presence column exactly. Expected keys **and** statuses must never be copied from `port_trace` itself.
+
+3. **Formal faults length 0|1 binding (R14+; Normative):** when `faults` has length **1**, the full `port_trace` contains **exactly one** natural Port event, and that event's `op` / `on_call` / `storage_status` equal `faults[0].op` / `on_call` / `status` exactly, with `faults_expected_used=1` and `shape="natural"`. When `faults` has length **0**, there is **no** natural Port event and `faults_expected_used=0`. Configured-but-unobserved faults and natural events without a configured fault are ill-formed. **Applies only to `rep1_l2` product vectors**（exact call/Port grammar is `rep1_l2` only; see R18 formal_precheck lane）。
+
+4. **zero-Port on formal_precheck (R18; Normative):** the single formal-precheck vector is **pre-generation validator-only**. It **must not** call any production API and **must not** synthesize runtime `status` / `session` / `checkpoint` / `result`. Its `port_trace=[]` is the consequence of the **bridge not invoking production**, not a runtime product walk. Configured faults, unobserved faults, natural Port events, and `faults_expected_used=1` remain **forbidden** on that shape (`faults=[]`, `faults_expected_used=0`). Runtime duplicate-complete-key defense is a **separate nonzero-Port** product test — not this formal_precheck lane.
+
+5. **JSON array type strictness (R16; Normative):** `expected.port_trace` and top-level `faults` **must** be JSON arrays. Falsy non-array values (e.g. `{}`, `""`) **must not** be coerced to empty arrays; they are type-invalid and reject.
+
+6. **Candidate lane split + bridge RED (R18; R26 Normative inventory):** D3-S3 suffix **129** = **`rep1_l2` 128** + **`formal_precheck` 1**. Exact call/Port grammar and REP1-L2 transcript equality bind **only** the 128 `rep1_l2` vectors. Formal ID of the precheck vector: **`D3S3_M27_DUPLICATE_DIGEST_MATCH_CORRUPT`** with `precheck_error` **`DUPLICATE_COMPLETE_KEY`**. Bridge is **two-lane**; unknown scope, count drift, and silent skip are **RED**.
+
+7. **Independent D1-legality gate (R19–R24; Normative constructibility):** every suffix fixture row（`rep1_l2` and `formal_precheck`）must be **locally D1-legal** under a generator-time pure gate that does **not** invoke production C（production C is **not** oracle authority; a production typed diagnostic may be used only as a **non-authoritative cross-check**）. The gate is **complete independent Normative D1** for every used family6 subtype/variant — **not** a partial subset:
+   - family1–4 profile rows: exact membership in the independent canonical catalog from `encode_all_profile_rows(default_binding)`（byte pair equality）
+   - family6 common key: value **record_type exact 6**（record_type 5 is **RED** on family6 keys）
+   - family6 BLOB man/chunk (**0x30**): full same-record（count/index/total/chunk length/key formula/digests/CRC; **common primary_id from owner** — TX=owner_raw16, INGRESS=left-pad u64, DELIVERY=composite identity first 16; chunk primary_id = man composite first 16; **immutable `record_revision=1`**）; **owner_key_raw full canonical identity** — TRANSACTION exact **nonzero** 16-byte ID; INGRESS exact BE8 ordered_sequence **>0**; DELIVERY exact 80-byte raw with **each of five 16-byte IDs nonzero**（length-only acceptance is **RED**）
+   - family6 **0x20 TRANSACTION_ANCHOR**: party/target/service validity; family∈{EventFact,DesiredState} with service.family match; EventFact deadline epoch **zero** / absolute deadline **`NINLIL_NO_DEADLINE` (`UINT64_MAX`)** / grace **0** / generation **0** / event_id non-zero; DesiredState opposite deadline shape; required_evidence known non-zero; scope = app_instance‖namespace‖service; scheduler sequences equal; complete derived digests seq/im/event_map/reservation; EventFact `event_map_key_digest=KEY_DIGEST(complete EVENT_ID_MAP key)`; **immutable `record_revision=1`**
+   - family6 **0x22 TRANSACTION_STATE**: **closed family×state×outcome×deadline×reason×evidence×dependent product** re-extracted from docs/12 public snapshot + **docs/13 Normative reducers** + Disposition matrix + clock-uncertainty recovery（**not** mere enum range-checks; **not** production C; docs/12/13 are Normative authority; this section must stay 矛盾0 with them）:
+     - nonterminal states READY/DISPATCHING/AWAITING/PARKED/WAITING require outcome **NONE**; TERMINAL requires exactly the five reachable non-zero Outcomes（SUPERSEDED_RESERVED never stored）
+     - READY/DISPATCHING reason NONE + park NONE; DS deadline PENDING only
+     - **AWAITING** reason ∈ {NONE(0), EFFECT_POSSIBLE_EVIDENCE_PENDING(68), CANCEL_AFTER_EFFECT(83), CANCEL_PENDING_REMOTE_FENCE(86), APPLICATION_FAILED(128), OUTCOME_UNKNOWN(129)} — effect-possible Disposition may remain AWAITING; **REQUIRED_EVIDENCE_MET(64) illegal here**
+     - PARKED (EventFact only) reason `EVENT_RETRY_CYCLE_PARKED` + park∈1..5 + EF retry/es_rev shapes
+     - **WAITING** reason ∈ {CAPACITY_EXHAUSTED(11), TRANSPORT_RETRY(85), APPLICATION_FAILED(128), RECEIVER_UNAVAILABLE(130), RECONCILE_RETRY_LATER(132)} **only**（retry-window creators from docs/13; terminal-only 82/83/69/129 and AWAITING-only 68/86 are **RED**）
+     - **TERMINAL outcome↔reason exclusive** (docs/13):
+       - SATISFIED = {REQUIRED_EVIDENCE_MET(64)} only; deadline MET; latest∈1..4
+       - EXPIRED = {REQUIRED_EVIDENCE_LATE(65), DEADLINE_ELAPSED_BEFORE_DISPATCH(66), CLOCK_UNCERTAIN(20)}; 65/66 ⇒ MISSED (+65 requires latest∈1..4); 20 ⇒ INDETERMINATE
+       - OUTCOME_UNKNOWN terminal = {EFFECT_POSSIBLE_EVIDENCE_MISSING(69), CLOCK_UNCERTAIN(20)} only — Disposition reason OUTCOME_UNKNOWN(129) is AWAITING-only (docs/13 reducer; terminalize via evidence close 69 / clock 20); deadline INDETERMINATE
+       - CANCELLED = {CANCEL_FENCED_BEFORE_DISPATCH(82)} only; **CANCEL_AFTER_EFFECT(83) is AWAITING-only, not terminal CANCELLED**
+       - FAILED = {TARGET_UNAUTHORIZED(22), RETRY_BUDGET_EXHAUSTED_NO_EFFECT(70), OPERATOR_DISCARDED(80), APPLICATION_FAILED(128)}; FAILED excludes 69/20
+       - CLOCK_UNCERTAIN(20) is legal for EXPIRED **and** UNKNOWN only (shared; not exclusive either way)
+     - EventFact forbids terminal EXPIRED/CANCELLED — terminal is **Receipt SATISFIED+64** or **audited discard FAILED+80** only; `explicitly_discarded=1` iff TERMINAL+FAILED+OPERATOR_DISCARDED
+     - DS counters retry/attempt/es_rev all 0; EF es_rev≥1 and retry≥1; cumulative_attempts≥attempt_in_cycle; has_late=1⇒latest≠NONE; target_* mirrors exact; mutable `record_revision≥1`
+     - Permanent RED + false-red guards; **28** legal positives (DS **23** + EF **5**)
+     - **Mode27 EventFact lifecycle** (state-class × spool): nonterminal+ACTIVE/PARKED → LIVE; receipt(SATISFIED+64)+RELEASED → HISTORICAL; discard(FAILED+80)+DISCARDED → HISTORICAL; **all other cross-pairs CORRUPT** (including receipt+DISCARDED, discard+RELEASED, nonterminal+DISCARDED/RELEASED). Permanent self-test enumerates **4×4=16** cells (nonterminal/parked/receipt/discard × spool); **7** permanent cross-row CORRUPT product vectors
+     - **D3-S1 prerequisite boundary (honest):** same-record D1 gate + Mode27 lifecycle classifier close constructibility for ANCHOR/STATE/SPOOL/BLOB under this product; live owner cardinality, SERVICE mask, retention/cleanup, and production bridge REP1-L2 field equality remain **D3 / production** and are **not** claimed closed by this oracle-candidate lane
+   - family6 **0x27 ORDERED_INGRESS**: **immutable `record_revision=1`**; owner_sequence≥1; binding-by-kind exact（APP/CANCEL_REQUEST→EXISTING_DLV|NEW_DLV; RECEIPT/DISPOSITION/CUSTODY/CANCEL_RESULT→EXISTING_TX）; IDs/enums/MBZ; family-deadline; service; evidence+controller clocks; **DISPOSITION closed disposition/effect/guidance/delay tuple** (docs/12 §7.2); **APPLICATION empty payload requires `content_digest=SHA-256(empty)`** even when MSD is recomputed; reservation dig / MSD / view-dig matrix; **DesiredState-only kinds are CANCEL_REQUEST (kind4) and CANCEL_RESULT (kind6) only** — **not** CUSTODY (kind5); EventFact CUSTODY is legal when binding/enums/MSD close
+   - family6 **0x32 EVIDENCE_CELL**: primary_key_digest recompute / target_digest non-zero / issuer; **TRANSACTION owner_raw exact nonzero 16-byte transaction ID** (all-zero raw **RED** even with length 16); SUMMARY material known stage **1..4** triple-equal + late bit + service/content/durable/epoch/trust known **{1,2} only** (unknown nonzero trust **RED**) + family-generation + counters; RAW MATERIALIZED exact material tuple (stage 1..4, late 0/1, service/content/durable/epoch/trust/issuer/digest; aggregate counters 0) with **mandatory baseline** before field mutations; ABSENT/empty SUMMARY/RAW UNUSED identity-only zero; mutable `record_revision≥1`
+   - family6 **0x33 CANCEL_STATE**: owner/key/primary_kd + closed state-kind-reason-effect bijection + send-gate/attempt-digest/timeout **seven-shape** matrix
+   - family6 **0x40 DELIVERY**: **immutable `record_revision=1`**; raw five components + bijection / reservation dig / family-deadline / service / payload/result digests
+   - family6 **0x41 RESULT_CACHE**: every field enum surface + full state/token/reply product; **exact E_DISP** disposition closed product + reason mapping; **exact E_REC** reason×default-guidance×token-state allocation for physical state **6/7** (docs/17 §8.5 tables 574–630); recovery ACTIVE / non-E_REC reason **RED**
+   - family6 **0x42 REVERSE_REPLY**: reply_key_raw = delivery RAW16‖kind / send-state/counter/availability/timer closed matrix
+   - family6 **0x50 EVENT_SPOOL**: state×cause; **common `record_revision` equals body `spool_revision`** (both ≥1); event / retry / blob dig / reservation / resume / discard closed tuples
+   - **exact body length / no trailing bytes** retained for every used subtype; **`d1_independent_row_legality` is total and fail-closed** for every bytes input and every used subtype/variant — validate min/exact body length **before** any `struct.unpack`/slice requiring a minimum（R24 closed EVIDENCE_CELL/CANCEL_STATE/DELIVERY empty-body `struct.error` holes）. Permanent **boundary sweep**: for each accepted baseline variant, body length every value from `0` through `exact_length-1` and `exact_length+1` with outer lengths/CRC/header recomputed; every case returns a deterministic D1 reason string and **never raises**. Pinned boundary totals: **4380** across variants `20:670,22:225,27:646,30c:118,30m:131,32:799,33:227,40:553,41:379,42:331,50:301` (each = exact+1). Malformed Python types / empty key/value return a reason, not an uncaught exception
+   - unknown family6 subtypes: **fail closed**（not framing-accepted）
+   - **R22–R24 anti-false-green secondary authority:** permanent self-test runs the independent row validator against shipped `spec/vectors/domain-store-v1.json` used-subtype rows（never production C as oracle）: **`typed_record` pos=74 accept / neg=60 reject**; **`body_decode` wrap into legal family6 common envelope+complete key — checked=306 / non_app=0 / neg_ok=306** (no silent skip; unknown ID/schema/count drift **RED**); **`body_roundtrip` pos=132 accept**; unknown expectation shapes fail closed
+   - **CLI closed failure contract (R24):** `check` validates top-level **object** and required field shapes **before** `.get` / authority pins. Malformed/input failures（`[]` / `null` / string / number / `{}` / malformed JSON / missing file / wrong vector field shapes）**exit 2**, one short stderr line starting with `error:`, **no traceback**, no success stdout. Authority RED remains exit 1. Explicit input-shape validation only — not a broad catch that hides programming errors
+   `formal_precheck` may duplicate complete keys, but each individual row remains local-D1. D1-invalid constructions are **forbidden**; intended D3 failures must use **D1-valid** rows with **cross-row** disagreement（including CANCEL_RESULT↔CANCEL_STATE bijection via two legal rows）. BIND_CHUNK step5 index-only is **non-constructible** given D1 + step4 equality. Production must **not** defer or weaken D1. **Sol high on R21 was NO-GO**. **Sol high on R22 was NO-GO**. **Sol high on R23 was NO-GO** (TRANSACTION_STATE enum-only false-green; empty-body `struct.error` on CELL/CANCEL/DELIVERY; CLI `[]` AttributeError). **R24 Proposed** repaired some R23 residuals (Sol high NO-GO); **R25 Proposed** repaired R24 residuals and was **Sol high NO-GO**; **R26 Proposed** repaired R25 residuals and Root QA found residual STATE matrix NO-GO holes; **R27 Proposed** re-extracts the full TRANSACTION_STATE reachable public snapshot matrix from docs/12+docs/13 reducers and closes those holes without weakening R16–R26. **R23–R26 did not complete D1.** **Accepted / GO forbidden.**
+
+##### Exhaustive pin → §18.14.12 slot map
+
+| Pin key | Slot | Offsets | Lifetime |
+| --- | --- | ---: | --- |
+| `carrier_key` | `last_carrier_key` (+len) | 0..45 | live carrier path; `== last_carrier_key` |
+| `focus_dig` | `focus_key_digest` | 143..174 | SELECT referrer; after FOCUS man match equals `man.key_digest` (27/29/30) |
+| `tx16` | `focus_id16` | 127..142 | Mode27 only |
+| `view_a` | `view_a_key_digest` | 492..523 | Mode28 |
+| `view_b` | `view_b_key_digest` | 524..555 | Mode28 |
+| `semantic_stored` / `semantic_digest` | `expected_semantic_digest` | 588..619 | Mode28 / Mode30 (same slot; mode-exclusive live) |
+| `owner_raw` | `focus_raw80` (+len) | 46..126 | Mode29 |
+| `focus_raw80` | `focus_raw80` (+len) | 46..126 | Mode30 |
+| `transaction_id` | `focus_id16` | 127..142 | Mode30 |
+| `reply_kind` | `reply_kind` | 491 | Mode30 |
+| `send_state` | `next_chunk_index` (u32 holds u8) | 315..318 | Mode30 SELECT→PREFIX only (non-checkpointed) |
+| `receipt_evidence_bytes` | `receipt_evidence_bytes` | 620..747 | Mode30 RECEIPT after PREFIX |
+| `receipt_evidence_len` | `receipt_evidence_len` | 748 | Mode30 RECEIPT |
+| `pinned_receipt_stage` | `pinned_receipt_stage` | 750..753 | Mode30 RECEIPT |
+
+**Not call-spanning (removed after use / never pinned):** `needs_setup` (install_kind only); `is_event_fact` / Mode29 `creation_kind` held briefly in `owner_kind` until SELECT_SETUP then overwritten by man; `state_discarded` / `spool_present` / `rc_delivery_state` drive-local in SELECT_SETUP G.
+
+##### Exhaustive man → §18.14.12 slot map
+
+| Man key | Slot | Offsets | Alias notes |
+| --- | --- | ---: | --- |
+| `key_digest` | `focus_key_digest` | 143..174 | M28: must equal selected `view_a`/`view_b` for active arm |
+| `blob_id` | `blob_id_digest` | 175..206 | |
+| `content_digest` | `content_digest` | 207..238 | |
+| `owner_primary_key_digest` | `owner_primary_key_digest` | 239..270 | |
+| `expected_manifest_value_digest` | `expected_manifest_value_digest` | 271..302 | |
+| `total_length` | `total_length` | 303..310 | |
+| `chunk_count` | `chunk_count` | 311..314 | |
+| `owner_kind` / `blob_kind` | same | 478 / 479 | |
+| `expected_owner_pvd` | `expected_owner_pvd` | 556..587 | |
+| `owner_raw` | M27→`focus_id16`; else→`focus_raw80` | 127..142 / 46..126 | equals carrier identity (tx / raw80 / INGRESS BE8) |
+
+##### Phase release
+
+| Surface | pins/man / SHA |
+| --- | --- |
+| SELECT sem=6 | pins live; man absent |
+| FOCUS…SEM_CHUNK | pins live; man live after dig-match |
+| SELECT sem=0 / BIND / COMPLETE | **both None** |
+| FAILED (sticky) | **both None before drive-end assert**; product SHA abandoned. Normative failure-point is flags/masks/`focus_id16`/`last_carrier_key`/checkpoint fields — not Python pin/man dicts. **No FAILED exemption** for live unequal slot claims. |
+
+**SELECT frontier:** no `carrier_queue`/`carriers_seen`; next carrier = Port row + `last_carrier_key` (empty=−∞). Offline `rows`/`idx` = Storage simulators only. Mode28 both-nonzero → SELECT CORRUPT/no-adopt. Concurrent SHA=1; abandon on every failure.
+
 **flags / masks:** count bit0/1/2; binding bit3/4（unchanged）。
 
 #### 18.14.13 Memory ceilings（**9920** path; recalculated after #16）
@@ -4041,6 +4334,8 @@ Packed: `8384+421+306+754=9865`；align8 **9872** ≤ **9920**。dual/triple-bou
 
 Same evolution rules as prior: retain d3s1+d3s2 prefix; format `…-d3s3`; mutation 0; one mode per session; independent generator; production bridge。
 
+**REP1（§18.14.19; Proposed）:** formal sibling oracle / portable Core **shipped reference** bridge that claim **exact Port transcript** equality must implement **Reference Execution Profile v1**（**REP1-L2**）including closed micro-units **W / G / WG**（BIND-WG; Mode30 RR pure W）。**REP1-L1** alone is **not** sufficient to claim REP1. See ADR-0015。A pre-acceptance draft authority that packed BIND with **GET=0** while claiming full §18.14.9 reverse/orphan proofs is **withdrawn**（non-constructible under 754 / no full-ID set）and must not be treated as SHA-pinned Accepted truth; regenerate authority after Normative WG text。
+
 **Anti-false-pass additions（minimum）:**
 
 1. KEY_DIGEST reverse / owner-body key rebuild harness **must fail**
@@ -4070,7 +4365,7 @@ Same evolution rules as prior: retain d3s1+d3s2 prefix; format `…-d3s3`; mutat
 | Capacity bytes | **S8** |
 | CLEANUP decreasing including BLOB | **S11** + **D4** |
 
-Constructible fixtures: D1-legal only; no speculative complete-key-from-digest vectors。
+Constructible fixtures: D1-legal only; no speculative complete-key-from-digest vectors。R19–R24 independent generator-time D1-legality gate enforces this on every suffix row（§18.14.19.12 item 7 / §18.14.16）。
 
 #### 18.14.17 Explicit exclusions
 
@@ -4106,6 +4401,778 @@ Constructible fixtures: D1-legal only; no speculative complete-key-from-digest v
 | Private APIs exist on branch | **no claim** |
 
 S3a を後から implementation complete へ書き換えてはならない。S0/S1a/S2a historical text は **preserve**。
+
+#### 18.14.19 D3-S3 Reference Execution Profile v1（REP1; Proposed oracle candidate）
+
+**Status:** **Proposed oracle candidate**（deterministic generator + candidate JSON self-check済み; production implementation / bridge / Accepted **not claimed**）。  
+**Decision companion:** [ADR-0015](adr/0015-d3s3-reference-execution-profile-v1.md)。  
+**Does not amend** §18.14.1–§18.14.18 semantic freezes except where this section and §18.14.9 jointly specify BIND **WG** Port packing; those remain portable **REP1-L1** meaning for findings. REP1-v1 is the deterministic **transcript** profile for the **shipped** portable Core reference implementation and formal sibling oracle/bridge（**REP1-L2**）。  
+Shipped reference Core **must** implement the phase/substate/mask numeric values of this section even if current production private S3 uses different internal integers（Proposed; implementation change is required for REP1-L2）。
+
+**Withdrawn pre-acceptance draft:** any uncommitted / non-Accepted authority JSON (including historical full SHA `0658cbe092313e19dbb4498dcd5a786517651cb984ddfc7f97f2a47b372cf36f` and related 228/84 drafts) that required **BIND GET=0** while claiming full reverse-owner / untyped-orphan L1 for arbitrary rows is **non-constructible** under fixed **754** / no full-ID set and is **withdrawn as a pre-acceptance draft**. Do **not** treat that SHA as Normative or Accepted. The generator candidate now regenerates the **same authority path** `spec/vectors/domain-scan-crossrow-v1.json` under this WG text; its current **R27-Sol Proposed** candidate is **280 = frozen D3-S2 prefix 144 (exact invariant) + D3-S3 suffix 136**, where suffix **136 = `rep1_l2` production 135 + `formal_precheck` 1**, content SHA `93edadc3b262fb1cb5717d0895769e686055c2ee7bef7fbda6e8ffe07c9e572c`, full-file raw SHA `1506f43229b27254e70cc8fc54faa039711007924d015c451a3fd23114d59fe2` (**vector body changed vs R26/R27-base**: +7 Mode27 EF cross-row CORRUPT — R27 is oracle/spec gate repair: TRANSACTION_STATE reachable public snapshot matrix re-extracted from docs/12+docs/13 reducers; Mode27 EventFact lifecycle permanent 3×4 spool enumeration; product fixture bytes unchanged). Historical R25 SHAs `bb56954f…` / `997f64e5…`, R24 SHAs `12d1729e…` / `1b210e29…`, and R23 SHAs `bdaed45d…` / `3aeb1b02…` remain **superseded** as incomplete authority. Formal precheck ID `D3S3_M27_DUPLICATE_DIGEST_MATCH_CORRUPT` / `precheck_error=DUPLICATE_COMPLETE_KEY` is validator-only（no production API; no synthesized runtime status/session/checkpoint/result; zero Port because bridge does not call production）. Exact call/Port grammar is **`rep1_l2` only**. Independent generator-time D1-legality on every suffix row is **no production C as oracle** and **no D1 deferral**. **Honest chronology:** R21 claimed complete independent Normative D1 and was **Sol high NO-GO**. R22 repaired several R21 holes with typed differential pos74/neg60 and was **Sol high NO-GO**. **R23** repaired R22 residuals and was **Sol high NO-GO** again — **R23 did not complete D1** (TRANSACTION_STATE enum-only false-green; CELL/CANCEL/DELIVERY empty-body `struct.error`; CLI `check []` AttributeError). **R24** partially repaired R23 and was **Sol high NO-GO P1=2 P2=1**. **R25** repaired R24 residuals and was **Sol high NO-GO**. **R26** repaired R25 residuals but Root QA found residual STATE matrix NO-GO holes (FAILED+22 false-red; EXPIRED/UNKNOWN+20 false-red; WAITING accepting terminal-only reasons; SATISFIED+65 wrong outcome; CANCEL_AFTER_EFFECT(83) terminal; AWAITING missing 128/129; Mode27 spool cross-pair incomplete enumeration). **R27** closes those holes without weakening R16–R26 by re-extracting the full family×state×outcome×reason×deadline×evidence×dependent product from docs/12+docs/13（SATISFIED={64}; EXPIRED={65,66,20}; UNKNOWN={69,20} (129 AWAITING-only); CANCELLED={82}; FAILED={22,70,80,128}; AWAITING={0,68,83,86,128,129}; WAITING={11,85,128,130,132}; STATE legal positives **28**; Mode27 lifecycle 3×4=12 permanent cells）. COMMIT_UNKNOWN five fence paths + boundary **4380** + secondary differential typed 74/60, body_decode 306/0/306, body_roundtrip 132 retained. Production typed diagnostic remains cross-check only. **R27-Sol:** Mode27 D3-S3 exact cross-row (family/avd/pvd/rev/state×park); generate full-document adopt (suffix rows={} / vector_count=true → exit2); check closed nested known-integer schema (faults_expected_used bool/u32 overflow → exit2). **Production / bridge are not yet following this R27-Sol oracle gate.** Production / bridge / Sol re-review remain incomplete; **Accepted / GO forbidden**. No historical giant JSON duplicate is required in-tree.
+
+##### 18.14.19.0 Conformance layers
+
+| Layer | Name | What it proves | Who must meet it |
+| --- | --- | --- | --- |
+| **REP1-L1** | Semantic conformance | §18.14.1–.14/.16–.17 finding correctness | Any portable Core that claims S3 semantics |
+| **REP1-L2** | REP1 transcript conformance | Same formal inputs + call schedule + NATURAL fault schedule → identical ordered Port events + per-call checkpoints | **Shipped** portable Core **reference** in the public tree + formal oracle/bridge claiming “REP1” / “exact Port equality” |
+
+Claiming **REP1** requires **REP1-L1 and REP1-L2**. **REP1-L2 acceptance** uses only the **shipped reference Core** artifact; a private rebuild is **not** a substitute.  
+A production-drive→many-micro-steps **mapping table** is **non-REP1 diagnostics only** and never substitutes for REP1-L2 equality.
+
+##### 18.14.19.1 Formal inputs / non-inputs
+
+**Inputs（closed）:**
+
+1. `mode ∈ {27,28,29,30}`
+2. Ordered fixture `rows[]` of complete-key/value pairs. Walk order is **D2 complete-key lexicographic ascending**. Duplicate complete keys are a **D2 lex / same-key residual failure** and make the vector **ill-formed for REP1-v1**（not multiset-stable ordering）。
+3. Formal call schedule（§18.14.19.2）with `row_budget` column。
+4. NATURAL fault schedule **`faults`**: JSON **array** of length **0 or 1**（§18.14.19.6; R14–R18 binding; **`rep1_l2` only**）。Length 1 ⇒ exactly one natural Port event in `port_trace` with exact `op`/`on_call`/`status` match and `faults_expected_used=1`。Length 0 ⇒ no natural Port event and `faults_expected_used=0`。Falsy non-array values are ill-formed（not empty）。
+5. Candidate binding object used by profiled begin（same closed binding as existing oracle）。
+6. `expected.port_trace`: JSON **array** only（R16+）。Empty array is legal for the closed **`formal_precheck`** vector（R18: pre-generation validator-only; bridge does not call production; `faults=[]` and `faults_expected_used=0`; no synthesized runtime status/session/checkpoint/result）。Falsy non-array (`{}` / `""`) is ill-formed。Exact call/Port grammar does **not** apply to `formal_precheck`。
+
+**Representability gate（ill-formed otherwise）:** let `N=|rows|`。`0 ≤ N ≤ UINT32_MAX-1` so every ordinary `row_budget=N+1` is an exact non-zero `u32`。The complete derived formal schedule must also satisfy: formal call count `≤UINT32_MAX`; total Port event count `≤UINT32_MAX`; every per-op `on_call` total, `event_start` / `event_end` / `trace_count`, reopen counter, and other `u32` checkpoint counter `≤UINT32_MAX`; every `u64` checkpoint total is representable without wrap。These are pre-generation validity checks, not runtime truncation rules。A vector requiring any overflow, modulo conversion, or `trace_overflow=1` is not a REP1-v1 input。
+
+**Profile-exact gate（after successful begin + successful true-exhaustion BASELINE W）:**
+
+- `profile_exact_active = 1`
+- `profile_mismatch = 0`
+- `future_profile_candidate = 0`
+- formal product vectors must be able to reach context phase `COMPLETE`（13）or `FAILED`（14）under this schedule
+- evaluator-off / mismatch / future-only hold shapes are **outside** REP1-v1 formal product
+
+**Non-inputs:**
+
+- Absolute Port handle pointer values
+- Wall-clock / host scheduling
+- Implementation-private workspace addresses / C padding
+- Provider-internal buffer sizes beyond caller-visible capacities recorded on Port events
+
+**Caller capacities（normative derived Port outputs; N/A = 0）:**
+
+| Op | Capacity fields allowed non-zero |
+| --- | --- |
+| `get` | `value_capacity` only（caller value descriptor capacity） |
+| `iter_next` | `key_capacity` and `value_capacity` only |
+| all other ops | every capacity field is exact **0** |
+
+Provider-internal sizes are non-input.
+
+**Logical handles:**
+
+| Label | Meaning |
+| --- | --- |
+| `H1` | caller-owned open storage handle at profiled begin; retained unless finalize fences it |
+| `T1` | sole `READ_ONLY` txn from successful `begin(H1, READ_ONLY)` |
+| `I1`…`Ik` | successive live iterators; successful `iter_open` allocates next `Ik`; `iter_close` retires current live `Ik` |
+
+Bridge maps spy pointer → label; JSON never stores raw pointers.
+
+**Successful begin Port sequence（fixed; guarantees begin success for formal product）:**
+
+```text
+begin(H1, READ_ONLY) → T1
+17× get(T1, profile_key_i)   # family-1..4 catalog order
+iter_open(T1, zero-prefix) → I1
+```
+
+Successful begin control tuple: §18.14.19.8 **B0**. BASELINE W consumes `I1`（no reopen before first BASELINE advance）。
+
+##### 18.14.19.2 Formal call column
+
+```text
+begin_profiled_d3s3(mode)  → Runtime returned_status
+d3s3_drive(row_budget)*    → until first phase ∈ {COMPLETE=13, FAILED=14}
+finalize()                 → Runtime returned_status; Port cleanup once
+```
+
+**Closed rules:**
+
+1. Exactly one `begin_profiled_d3s3`.
+2. After successful begin: one or more `d3s3_drive` until first terminal phase 13 or 14.
+3. Exactly one `finalize` after that terminal（no ordinary `abort`）。
+4. No drive after first terminal phase.
+5. No invented walk after a failing Port event in the same drive.
+6. Fault schedule length 0 or 1; if 1, that fault is used **exactly once** when the named `(op,on_call)` is reached（§18.14.19.6）。
+
+**`row_budget`:** let `N = |rows|`。
+
+| Vector class | Budgets |
+| --- | --- |
+| Ordinary | every **W** and every **WG** uses **`N+1`**（all OK rows + terminal `NOT_FOUND`）; **G** uses **`row_budget=0`** |
+| B5-only formal（explicit kind） | **BASELINE W only:** first drive `row_budget=N`（midwalk stop）; resume drive `row_budget=N+1` to true NOT_FOUND. **B5 is forbidden on every non-BASELINE W and on every WG/G.** |
+
+**Per-call event window:** `port.event_start` / `port.event_end` are **0-based half-open** `[start,end)` into `port_trace[]`。`event_end == event_start` ⇒ zero Port events on that call. After the call, `port.trace_count == event_end`。
+
+**`returned_status`（checkpoint top-level; Runtime status symbol string; closed enum）:**
+
+| Symbol | Meaning in REP1-v1 formal product |
+| --- | --- |
+| `NINLIL_OK` | successful begin / every successful drive（including the BIND_CHUNK drive entering `COMPLETE=13`）/ successful finalize with sticky=0 complete path |
+| `NINLIL_E_STORAGE_CORRUPT` | sticky semantic finding or mapped shape/port corrupt terminal |
+| `NINLIL_E_STORAGE` | sticky Port IO-class failure（maps from Storage `IO_ERROR` / natural fault IO） |
+| `NINLIL_E_STORAGE_COMMIT_UNKNOWN` | sticky/mapped from Storage `COMMIT_UNKNOWN` |
+| `NINLIL_E_CAPACITY_EXHAUSTED` | sticky/mapped from Storage `NO_SPACE` |
+| `NINLIL_E_WOULD_BLOCK` | sticky/mapped from Storage `BUSY` |
+| `NINLIL_E_UNSUPPORTED` | sticky/mapped from Storage `UNSUPPORTED_SCHEMA` |
+| `NINLIL_E_INVALID_STATE` | illegal call after terminal / incomplete machine misuse（not ordinary product success path） |
+| `NINLIL_E_INVALID_ARGUMENT` | begin/drive/finalize prevalidation failure（outside ordinary formal product success paths） |
+
+No other `returned_status` string is legal in REP1-v1 formal checkpoints. Storage Port `storage_status` uses the Storage names of §18.14.19.6 / §18.14.19.7, not Runtime names.
+
+##### 18.14.19.3 Micro-step discipline（one drive = one unit; closed **W / G / WG**）
+
+Unit kind is a **Normative schedule classification** used to derive the formal call column and Port windows. It is **not** a required string field in the closed checkpoint JSON schema of §18.14.19.9（do not add a checkpoint `unit` key）。
+
+| Kind | Code | Contents of one `d3s3_drive` |
+| --- | :---: | --- |
+| Walk | **W** | (1) **Reopen exact**（§ below）。(2) Zero-prefix walk via `iter_next` until true EXHAUSTED（terminal `NOT_FOUND`）or B5 midwalk stop on BASELINE only. (3) Stream H2 / on_exhausted only on true EXHAUSTED. (4) **No** `exact_get` in the same drive（OWNER/CHUNKS/SEMANTIC matrices are separate **G** units; Mode30 RR-band is pure **W**）。BASELINE uses begin `I1` with no reopen. |
+| Get | **G** | Closed `exact_get` burst for the **entry** phase only（**SELECT_SETUP** / OWNER / CHUNKS / SEM_*）。No `advance` / no `iter_next`。May set `NEED_REOPEN` for a **later** W/WG; does not reopen itself. `row_budget=0`。 |
+| BIND walk+get | **WG** | **BIND only**（Modes27–29 BIND_MAN; Modes27–30 BIND_CHUNK）。**Not** SELECT。Exact Port event grammar of one successful WG drive: |
+
+```text
+[ if NEED_REOPEN=1: iter_close(current Ik) exactly once; iter_open → next Ik exactly once ]
+( iter_next → storage_status=OK
+    , if row is unit-eligible: exact_get(request_key) → then fully consume result
+  )*
+iter_next → storage_status=NOT_FOUND
+```
+
+**Reopen / iterator liveness exact（every formal W/WG entry, including BASELINE）:**
+
+Before **any** Port event of a W/WG drive:
+
+| Entry flags | `iter_live` | Required Port prefix / outcome |
+| --- | ---: | --- |
+| `NEED_REOPEN=0` | **1** | emit **neither** `iter_close` nor `iter_open` |
+| `NEED_REOPEN=0` | **0** | **`INVALID_STATE` before any Port event** |
+| `NEED_REOPEN=1` | **1** | emit **exactly one** void `iter_close(current Ik)`, then **exactly one** `iter_open` → next `Ik`; then clear `NEED_REOPEN` before first `iter_next` |
+| `NEED_REOPEN=1` | **0** | **`INVALID_STATE` before any Port event**（do not partially close/open） |
+
+BASELINE uses begin `I1` with `NEED_REOPEN=0` and must enter with `iter_live=1`。Optional close-before-open grammar is **forbidden**（always both ops or neither per the table）。
+
+**G entries（REP1 exact）:** before any Port event require
+`session.state=EXHAUSTED && txn_live=1 && iter_live=1` and the sole iterator is
+the bound D2-S4 iterator under §15.11。Any other state/liveness combination ⇒
+**`INVALID_STATE` before any Port event**。A product G unit never enters from
+`OPEN`, never closes/reopens, and never treats `iter_live=0` as legal。
+
+Normative WG rules（detail tables in §18.14.9 — this subsection only packs Port units）:
+
+1. **Eligibility / GET request key / post-get compares:** exact predicates and phase-local pin maps in **§18.14.9.2**（BIND_MAN）and **§18.14.9.4**（BIND_CHUNK）。Non-eligible OK rows: visit/lex only; **GET 0**。
+2. **Port-only:** eligibility, pin fill, rebuild request key, and proof compares are decided from **current typed row + phase-local 754 pins + get response only**。**Forbidden:** fixture `idx`, offline full `rows[]`, or full-ID sets as proof inputs。
+3. **Copy-before-get / visit commit:** **§18.14.9.5** — under `PASS_INTERNAL`, public `ok_row_count` / `current_domain_key_count` / family14 / profile diagnostics stay **frozen**; visit-before-GET commits **only** pass-local `has_previous` + `previous_key`/`length`。After get, never read pre-get typed/borrowed value pointers。
+4. **Internal hook exception:** private H1/BIND path may call `exact_get` under WG; **public/user callback reentrancy into scanner APIs is forbidden**。
+5. **D2-S4 shape:** get overwrites **value** only; iterator position and current key descriptor remain; sole iterator stays live until true NOT_FOUND or fault。GET output key fields empty。
+6. **Natural GET fault:** the failing get is the **last operational Port event** of that drive; **no further `iter_next`**, no cleanup in-drive; cleanup only finalize（§18.14.19.11）。Lex visit commit of the preceding OK `iter_next` remains; public counters unchanged。
+7. **Mode30** BIND_MAN outer and RR-band are **not** WG（pure **W** only; frontier/latch **§18.14.9.3**）。
+8. **SELECT packing（design B; P0）:** phase **2** `semantic_pass=0` is **pure W** for all modes — zero-prefix walk to true `NOT_FOUND`, **GET count = 0** in that drive。On the first mode-eligible carrier, copy only the **phase-local pin fields** needed for later units（complete key / digests / raw / kind bits that fit in the 754-byte context）and **continue the walk** to true exhaustion。**Forbidden** in SELECT W: any `exact_get`; offline fixture `idx` / full `rows[]` / full-ID set as lifecycle authority。
+9. **SELECT_SETUP G（phase 2, `semantic_pass=6`）:** after a successful SELECT W that installed a carrier requiring companion proof, the **next** unit is pure **G** on the **same phase=2** with **`semantic_pass=6`**（named `SELECT_SETUP`）。Entry requires `EXHAUSTED && txn_live=1 && iter_live=1`; `row_budget=0`; no reopen in this G。
+   - **Mode27:** exact GET order **TRANSACTION_STATE** then, if and only if the pinned carrier is EventFact, **EVENT_SPOOL**。After each successful GET, validate **returned value** as typed CURRENT（envelope / version / family / subtype / flags）before decode; copy any fields needed for the next GET **into context pins before** the next GET overwrites the single 4096-byte workspace。
+   - **Mode29 APPLICATION_FIRST only:** exact GET **RESULT_CACHE** once; same returned-value typed CURRENT gate; then lifecycle from returned RC + pins。
+   - **No SELECT_SETUP unit**（Port 0 extra drive forbidden）when the SELECT W carrier is Mode29 **CANCEL_FIRST**, or Mode **28**, or Mode **30**, or when SELECT W empties with no carrier: lifecycle / next phase is decided at SELECT W true exhaustion from **typed carrier pins only**。
+10. **After successful SELECT_SETUP G:** set `NEED_REOPEN` exactly when the next product unit is a **W** or **WG**; clear `semantic_pass` to the destination substate（usually 0）and advance `phase` to the mode-legal next（FOCUS / complete-carrier paths per existing exits）。Natural GET fault or ABSENT/`NOT_FOUND` on SELECT_SETUP: the failing GET is the **last** operational Port event of that drive; failure-point checkpoint keeps **entry** `phase=2` / `semantic_pass=6` under FAILED/phase14 rules。
+11. **Returned-value typed CURRENT gate（all product GETs）:** for every product-path `exact_get` that is expected PRESENT（SELECT_SETUP companions, OWNER, CHUNKS, SEMANTIC companions, BIND_MAN owner reverse, BIND_CHUNK man presence）, after `storage_status=OK` and **before** body-field compares, require the **returned complete value**（not the request key alone）to be NLR1 domain **family=6**, **record_version=1**, outer payload length ≥96 with exact total framing, **domain_format=1**, fixed domain header **108** bytes before body, inner body_length exact, **CRC32C trailer valid**, subtype equal to the Normative expected subtype for that get, and **exact flags**（non-BLOB **0**; BLOB MANIFEST **1**; BLOB CHUNK **2** unless a more specific Normative value applies）。Then apply identity/raw → referrer → PVD/value-digest compares in the Normative order for that unit on **returned bytes only**。Request-key subtype checks alone are **not** sufficient。Offline `rows[]` / fixture omniscience must not adjudicate post-GET meaning。G entry preflight（EXHAUSTED+txn1+iter1）is **executable before any Port event** on every G unit including Mode30 PREFIX。
+
+**Session state rule:** after every successful true-exhaustion **W** or **WG**, `session.state = EXHAUSTED`. Every subsequent successful **G** leaves `session.state = EXHAUSTED`. The **only** successful formal midwalk with `session.state = OPEN` is B5 BASELINE stop（§18.14.19.8 B5）。
+
+**Port failure:** failing Port event is the last operational event of that drive. No cleanup inside the failing drive. Cleanup only in finalize（§18.14.19.11）。
+
+**Rejected packing（withdrawn）:** “BIND W with GET=0 + offline fixture omniscience” as REP1-L2 evidence。
+**Rejected packing（P0）:** “SELECT W with mid-walk setup `exact_get` in the same drive”（iter_next→GET→iter_next）— violates pure **W** and is **not** BIND **WG**。
+
+##### 18.14.19.4 Control vocabulary（numeric; closed）
+
+**`phase` enum（u8; exact）:**
+
+| Value | Name |
+| ---: | --- |
+| 0 | `IDLE` |
+| 1 | `BASELINE` |
+| 2 | `SELECT` |
+| 3 | `FOCUS_SCAN` |
+| 4 | `OWNER` |
+| 5 | `CHUNKS` |
+| 6 | `FOCUS_SCAN_B` |
+| 7 | `OWNER_B` |
+| 8 | `CHUNKS_B` |
+| 9 | `SEM_PREFIX` |
+| 10 | `SEM_CHUNK` |
+| 11 | `BIND_MAN` |
+| 12 | `BIND_CHUNK` |
+| 13 | `COMPLETE` |
+| 14 | `FAILED` |
+
+Values outside 0..14 are invalid for REP1-v1.
+
+**`pass_kind`（u8; exact）:** `BASELINE=0`, `INTERNAL=1`. Values ≥2 invalid.
+
+**`focus_sub`（u8; exact）:**
+
+| Mode | Rule |
+| ---: | --- |
+| 27, 29, 30 | always `0` |
+| 28 | `0` = view-A first-focus not yet completed; `1` = view-A first-focus completed（remains `1` through B first-focus, semantic, and later phases of that carrier） |
+
+**`semantic_pass`（u8; global closed）:**
+
+| Value | Name | Meaning |
+| ---: | --- | --- |
+| 0 | `NONE` | no pending semantic micro-step |
+| 1 | `M28_RESCAN_A_W_PENDING` | next unit is Mode28 RESCAN_A **W** |
+| 2 | `M28_VIEW_A_CHUNKS_G_PENDING` | next unit is Mode28 VIEW_A_CHUNKS **G** |
+| 3 | `M28_RESCAN_B_W_PENDING` | next unit is Mode28 RESCAN_B **W** |
+| 4 | `M28_VIEW_B_CHUNKS_G_PENDING` | next unit is Mode28 VIEW_B_CHUNKS **G** |
+| 5 | `M30_BIND_RR_W_PENDING` | next unit is Mode30 BIND RR-band **W** |
+| 6 | `SELECT_SETUP_G_PENDING` | next unit is SELECT_SETUP **G**（Modes27 / Mode29 APPLICATION_FIRST only） |
+| 7..255 | invalid | ill-formed checkpoint |
+
+**`focus_mode` legality after successful begin:** `focus_mode ∈ {27,28,29,30}` and equals the bound session mode。Any other value ⇒ **`INVALID_STATE` before any Port event**。
+
+**Non-terminal drive-entry `pass_kind` legality（exact）:**
+
+| `phase` | Required `pass_kind` | Notes |
+| ---: | ---: | --- |
+| 0 IDLE | — | pre-begin only; **no** product drive |
+| 1 BASELINE | **0** | BASELINE |
+| 2..12 | **1** | INTERNAL |
+| 13 COMPLETE | — | terminal checkpoint only; **no** product drive |
+| 14 FAILED | — | terminal failure checkpoint only; **no** product drive |
+
+For a non-terminal drive entry（phase 1..12）, wrong `pass_kind` ⇒
+**`INVALID_STATE` before any Port event**。Phase 13/14 reject every later drive
+before Port regardless of their captured terminal fields; this drive rejection
+does **not** make a reachable terminal checkpoint illegal。
+
+**Terminal checkpoint legality（exact; no next unit）:**
+
+| terminal phase | mode(s) | `pass_kind` | legal `semantic_pass` | source |
+| ---: | --- | ---: | --- | --- |
+| 13 COMPLETE | 27–30 | **1** | **0** | successful BIND_CHUNK WG exhaustion |
+| 14 FAILED | 27,29 | **0** | **0** | BASELINE failure capture |
+| 14 FAILED | 27,29 | **1** | **0,6** | INTERNAL failure capture（incl. SELECT_SETUP entry sem=6） |
+| 14 FAILED | 28 | **0** | **0** | BASELINE failure capture |
+| 14 FAILED | 28 | **1** | **0,1,2,3,4** | exact failing INTERNAL entry substate |
+| 14 FAILED | 30 | **0** | **0** | BASELINE failure capture |
+| 14 FAILED | 30 | **1** | **0,5** | exact failing INTERNAL entry substate |
+
+FAILED never normalizes `pass_kind` or `semantic_pass`: §18.14.19.10 captures
+the values immediately before the failure and changes only `phase→14` where
+specified。A phase-14 tuple absent from this terminal table is invalid as a
+checkpoint; there is still no legal drive from phase 14。
+
+**Closed allowed non-terminal next-unit matrix:** for phase **1..12**, the triple
+`(phase, focus_mode, semantic_pass)` maps to **exactly one** unit/subschedule via
+the closed matrix below（each matrix row is a unique triple; no overlapping mode
+sets on the same phase+sem）。Any non-terminal tuple **absent** from the matrix is
+**`INVALID_STATE` before any Port event** on that drive（session/context unchanged）。
+Phase 13/14 use the terminal checkpoint table above and have no next unit。
+Ambiguous “FOCUS path / W+ / as applicable / see rows” language is **forbidden**。
+
+Legend: unit codes **W** / **G** / **WG**; “—” = no next formal drive unit（terminal）。Unless listed otherwise, `semantic_pass` must be **0**。
+
+| `phase` | mode(s) | `semantic_pass` | unit | subschedule |
+| ---: | --- | ---: | :---: | --- |
+| 1 BASELINE | 27–30 | 0 | **W** | BASELINE（B5 only on this phase） |
+| 2 SELECT | 27–30 | 0 | **W** | pure SELECT walk（GET 0; pin first eligible; true exhaust） |
+| 2 SELECT | **27,29** | **6** | **G** | SELECT_SETUP companion exact_get burst（Mode29: APPLICATION_FIRST only） |
+| 3 FOCUS_SCAN | 27,29,30 | 0 | **W** | first-focus SCAN |
+| 3 FOCUS_SCAN | 28 | 0 | **W** | first-focus view-A SCAN |
+| 3 FOCUS_SCAN | 28 | 1 | **W** | semantic RESCAN_A |
+| 4 OWNER | **27,29** | 0 | **G** | owner PVD |
+| 4 OWNER | **28** | 0 | **G** | owner PVD view-A path |
+| 5 CHUNKS | 27–30 | 0 | **G** | known-index chunk stream |
+| 6 FOCUS_SCAN_B | 28 | 0 | **W** | first-focus view-B SCAN |
+| 6 FOCUS_SCAN_B | 28 | 3 | **W** | semantic RESCAN_B |
+| 7 OWNER_B | 28 | 0 | **G** | owner PVD view-B |
+| 8 CHUNKS_B | 28 | 0 | **G** | view-B chunks |
+| 9 SEM_PREFIX | 28,30 | 0 | **G** | semantic PREFIX companions |
+| 10 SEM_CHUNK | 30 | 0 | **G** | semantic chunk/receipt stream |
+| 10 SEM_CHUNK | 28 | 2 | **G** | VIEW_A_CHUNKS |
+| 10 SEM_CHUNK | 28 | 4 | **G** | VIEW_B_CHUNKS |
+| 11 BIND_MAN | 27–29 | 0 | **WG** | owner-reverse BIND_MAN |
+| 11 BIND_MAN | 30 | 0 | **W** | outer REPLY select（§18.14.9.3; after BIND-entry init once） |
+| 11 BIND_MAN | 30 | 5 | **W** | RR-band boolean latch（§18.14.9.3） |
+| 12 BIND_CHUNK | 27–30 | 0 | **WG** | untyped orphan / man presence |
+
+**Explicit INVALID examples（non-exhaustive; non-terminal matrix and terminal table are authoritative）:** mode30 × phase4/6/7/8; mode27/29 × phase6/7/8; mode27–30 × phase3 with `semantic_pass∈{1,3}` except mode28; mode28 × phase10 with `semantic_pass=0`; mode30 × phase11 with `semantic_pass∉{0,5}`; mode28/30 × phase2 with `semantic_pass=6`; mode27/29 × phase2 with `semantic_pass∉{0,6}`; any non-terminal phase with `semantic_pass` not listed for that phase/mode; COMPLETE with nonzero `semantic_pass`; FAILED tuple absent from the terminal table; non-terminal `pass_kind` mismatch; `focus_mode∉{27..30}` after begin。
+
+Mode28 ordinary first-focus uses phase3/6 with **sem=0**; semantic rescans use the **same phase numbers** with **sem=1/3** so the triple alone distinguishes unit without prose branches。
+
+**Flags bits（existing §18.14.12; exact）:**
+
+| Bit | Name | Value |
+| --- | --- | ---: |
+| 0 | `BASELINE_DONE` | `0x01` |
+| 1 | `FOCUS_LIVE` | `0x02` |
+| 2 | `BIND_ACTIVE` | `0x04` |
+| 3 | `COMPLETE_READY` | `0x08` |
+| 4 | `NEED_REOPEN` | `0x10` |
+| 5 | `CARRIER_INSTALLED` | `0x20` |
+| 6 | `MATCH_INSTALLED` | `0x40` |
+| 7 | `MATCH_DUPLICATE` | `0x80` |
+
+**Successful formal-call checkpoint flag normal forms（only these appear on OK exits）:**
+
+| Name | Value | Bits |
+| --- | ---: | --- |
+| `F0` | `0x00` | none |
+| `F_CARRIER_G` | `0x03` | `BASELINE_DONE\|FOCUS_LIVE` |
+| `F_COMPLETE` | `0x09` | `BASELINE_DONE\|COMPLETE_READY` |
+| `F_SELECT` | `0x11` | `BASELINE_DONE\|NEED_REOPEN` |
+| `F_FOCUS_W` | `0x13` | `BASELINE_DONE\|FOCUS_LIVE\|NEED_REOPEN` |
+| `F_BIND_REOPEN` | `0x15` | `BASELINE_DONE\|BIND_ACTIVE\|NEED_REOPEN`（docs label only; wire/value unchanged） |
+| `F_FOCUS_G` | `0x43` | `BASELINE_DONE\|FOCUS_LIVE\|MATCH_INSTALLED` |
+
+Transient `CARRIER_INSTALLED` / `MATCH_DUPLICATE` **must not** remain set on a successful formal-call checkpoint. On failure, flags/masks/substates equal the values **immediately before** the failing event（failure-point capture）。
+
+**Count mask bits:** man=`0x01`, chunks=`0x02`, semantic=`0x04`。
+
+| Situation | `count_complete_mask` |
+| --- | ---: |
+| New carrier install | reset to `0` |
+| Mode27/29 normal focus complete **or** NONE zero-dig completed | `0x03` |
+| Mode28 after **both** first-focus A and B completed | `0x03`（A complete with B still pending ⇒ `0`） |
+| Mode28 after semantic finalize | `0x07` |
+| Mode30 after focus+semantic finalize **or** HIST/NONE completed unit | `0x07` |
+| Zero carriers（vacuous） | `0` is legal through SELECT-empty → BIND |
+| BIND phases | do **not** alter count mask |
+
+**Binding mask bits:** man=`0x08`, chunk=`0x10`。
+
+| Situation | `binding_complete_mask` |
+| --- | ---: |
+| Before any BIND unit（W/WG）completes | `0` |
+| After successful BIND_MAN exhaustion **WG**（mode27–29）or Mode30 empty-outer **W** completion | `0x08` |
+| After successful BIND_CHUNK **WG** | `0x18` |
+
+##### 18.14.19.5 Mode28 view totals pin（754 layout unchanged）
+
+Context layout §18.14.12 **unchanged**（754/768）。When `focus_mode=28`, `focus_id16[16]` is **aux totals**（not Mode30 tx）:
+
+| Bytes | Field | Encoding |
+| ---: | --- | --- |
+| `[0..7]` | `view_a_total_length` | **u64 big-endian** |
+| `[8..15]` | `view_b_total_length` | **u64 big-endian** |
+
+Rules:
+
+1. Full **u64** range is stored **lossless** at the pin step; the pin itself has no truncation or conversion。This storage rule does not bypass the later semantic checked-u32 gate in rule 6。
+2. Zero view dig ⇒ pin that view’s total as **0** at SELECT install of the carrier（before SEM_PREFIX）。
+3. Non-zero view dig ⇒ pin the manifest `total_length` as **u64be** at successful first-focus match install for that view（FOCUS_SCAN / FOCUS_SCAN_B install）。
+4. PREFIX G and every SEMANTIC_VIEW_CHUNKS G stream using **only** these pins（never a later re-read of a man body total after workspace overwrite）。
+5. Modes 27/29/30: `focus_id16` retains §18.14.12 meaning（Mode30: RR.transaction_id; Mode27/29: 0 unless already specified）。
+6. The pins remain lossless `u64`, but the Mode28 semantic preimage fields `payload_length` / `evidence_length` are exact `u32`。At entry to the phase-9 PREFIX **G**, **before any Port event in that drive**, both pinned totals must be `≤UINT32_MAX`。If either is larger: emit no Port event, set the first sticky to `NINLIL_E_STORAGE_CORRUPT`, enter `FAILED/phase=14`, and apply the no-Port semantic-finding checkpoint rule。If both fit: checked-convert each pin exactly once and encode it as `u32be`; truncation, low-32-bit selection, saturation, or direct `u64be` feed is forbidden。
+
+##### 18.14.19.6 NATURAL fault schedule（REP1-v1）
+
+Formal vector field `faults` is an array of length **0 or 1**.
+
+If length 1, the sole object has **exactly** these keys:
+
+| Key | Type | Exact constraint |
+| --- | --- | --- |
+| `op` | string | closed: `get` \| `iter_open` \| `iter_next` \| `rollback` |
+| `on_call` | u32 | 1-based per-op counter; see floors below |
+| `status` | string | closed Storage status set below |
+| `shape` | string | exact `"natural"` |
+
+**`status` closed set（Storage names on Port `storage_status`）:**
+
+`NO_SPACE` | `IO_ERROR` | `CORRUPT` | `COMMIT_UNKNOWN` | `BUSY` | `UNSUPPORTED_SCHEMA`
+
+**Excluded from formal faults:** `OK`, `NOT_FOUND`, `BUFFER_TOO_SMALL`, and any unknown status string. Therefore every formal fault produces returned length fields exact **0**（no BTS required-length path）。
+
+**`on_call` floors（begin success is guaranteed; profile 17 gets + I1 open always succeed）:**
+
+| `op` | Required `on_call` |
+| --- | --- |
+| `get` | `≥ 18`（post-profile product gets） |
+| `iter_open` | `≥ 2`（post-I1 reopens） |
+| `iter_next` | `≥ 1` |
+| `rollback` | exact `1`（finalize cleanup） |
+
+The configured fault must be **reachable** on the vector’s schedule and is applied **exactly once**. Shape faults and faults on `begin` / `iter_close` / `close` are **outside** REP1-v1 formal product.
+
+**Failed event field rules:** see §18.14.19.7 per-op table（fault row）。
+
+
+**Formal authority Cartesian coverage（O1b-R2; Normative for suffix regen）:** the
+D3-S3 independent formal suffix **must** include at least one executable natural
+fault vector for **every** pair in the exact closed product
+
+`{get, iter_next, iter_open, rollback} × {NO_SPACE, IO_ERROR, CORRUPT, COMMIT_UNKNOWN, BUSY, UNSUPPORTED_SCHEMA}`
+
+= **24** unique `(op, status)` pairs. Coverage is **set equality** against this
+product（subset is insufficient; extra pairs outside the product are forbidden as
+formal NATURAL authority）。Each such vector: faults length 1, fault used exactly
+once, and the injected failing Port event is the last operational event of its
+drive window（finalize may void-`close` after a natural `rollback`）。Self-tests
+alone do not satisfy this authority requirement。BIND_MAN / BIND_CHUNK GET natural
+vectors remain required specific coverage in addition to the Cartesian floor。
+
+##### 18.14.19.7 Port event schema + per-op exact value table
+
+Every `port_trace[i]` object has **exactly** these keys（all present）:
+
+| Key | Type |
+| --- | --- |
+| `seq` | u32（0-based absolute） |
+| `api_call_index` | u32（0-based formal call index） |
+| `op` | string: `begin`\|`get`\|`iter_open`\|`iter_next`\|`iter_close`\|`rollback`\|`close` |
+| `on_call` | u32（1-based per-op） |
+| `storage_status` | string\|null |
+| `input_handle_id` | string\|null |
+| `output_handle_id` | string\|null |
+| `mode` | string\|null |
+| `prefix_hex` | string |
+| `prefix_length` | u32 |
+| `request_key_hex` | string |
+| `request_key_length` | u32 |
+| `key_hex` | string |
+| `key_capacity` | u32 |
+| `key_length` | u32 |
+| `value_capacity` | u32 |
+| `value_length` | u32 |
+
+**Per-op exact values（success / NOT_FOUND / natural fault）:**
+
+| `op` | handles | `mode` | request key | output key (`key_*`) | value | `storage_status` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `begin` | in=`H1`, out=`T1` on OK | `"READ_ONLY"` | `""` / 0 | `""` / 0 / 0 | cap=0,len=0 | Storage begin status string |
+| `get` | in=`T1`, out=`null` | `null` | **always** nonempty request: `request_key_hex` + `request_key_length=actual` | **always** `key_hex=""`, `key_capacity=0`, `key_length=0`（GET has no output key） | `value_capacity`=caller; `value_length`=returned on OK; **0** on `NOT_FOUND`; **0** on fault | Storage get status |
+| `iter_open` | in=`T1`; out=`Ik` on OK; out=`null` on fault | `null` | `""` / 0 | `""` / 0 / 0 | 0 / 0 | Storage open status |
+| `iter_next` | in=`Ik`, out=`null` | `null` | **always** `""` / 0 | OK: returned key + caller `key_capacity` + returned `key_length`; `NOT_FOUND`/fault: `key_hex=""`, lengths 0, capacities still caller | OK: caller `value_capacity` + returned len; `NOT_FOUND`/fault: len 0, cap caller | Storage next status |
+| `iter_close` | in=`Ik`, out=`null` | `null` | `""` / 0 | `""` / 0 / 0 | 0 / 0 | JSON **`null`**（void） |
+| `rollback` | in=`T1`, out=`null` | `null` | `""` / 0 | `""` / 0 / 0 | 0 / 0 | Storage rollback status |
+| `close` | in=`H1`, out=`null` | `null` | `""` / 0 | `""` / 0 / 0 | 0 / 0 | JSON **`null`**（void） |
+
+For every op, the formal profile uses `prefix_hex=""` and `prefix_length=0`（the only prefix-bearing op is zero-prefix `iter_open`）。For ops other than `get`, `request_key_hex=""` and `request_key_length=0`. For ops other than `iter_next`, output key capacities/lengths follow the table（N/A ⇒ 0）。
+
+##### 18.14.19.8 Control-tuple transition table（OK exits）
+
+**Tuple notation**（every successful formal-call checkpoint publishes exactly）:
+
+```text
+T = (session.state, phase, pass_kind, focus_sub, semantic_pass, flags, count_mask, binding_mask)
+```
+
+`session.state` ∈ {`OPEN`,`EXHAUSTED`,`FAILED`,`DONE`}（`IDLE` only pre-begin）。  
+Fault exits: §18.14.19.10. Terminal stop when `phase∈{13,14}`。
+
+###### B0 begin success（not a drive）
+
+| Entry | Port | OK exit `T` |
+| --- | --- | --- |
+| pre-begin | begin+17×get+iter_open→I1 | (`OPEN`, **1**, **0**, **0**, **0**, **0x00**, **0**, **0**) |
+
+###### B1 BASELINE true exhaustion
+
+| Entry | Port | OK exit `T` |
+| --- | --- | --- |
+| (`OPEN`,1,0,0,0,0x00,0,0) with I1 live | **W** `row_budget=N+1` to NOT_FOUND | (`EXHAUSTED`, **2**, **1**, **0**, **0**, **0x11**, **0**, **0**) |
+
+Also: `profile_exact_active=1`, mismatch=0, future=0 after this OK exit.
+
+###### B5 BASELINE midwalk only（B5-only vectors）
+
+| Step | Port | OK exit `T` |
+| --- | --- | --- |
+| first BASELINE stop | **W** `row_budget=N` after N OK rows | (`OPEN`, **1**, **0**, **0**, **0**, **0x00**, **0**, **0**); I1 still live; no on_exhausted |
+| resume | **W** `row_budget=N+1` to NOT_FOUND | same as **B1** |
+
+B5 on SELECT/FOCUS/BIND/SEMANTIC **W** or any **WG**/**G** is **ill-formed**.
+
+###### SELECT W（entry phase=2, pass=1; reopen first if `flags&0x10`）
+
+One SELECT **W** installs **at most one** carrier. Residual OK rows after that install are advanced for **pass-local lex only**（`has_previous` / `previous_key` under `PASS_INTERNAL` freeze; **no** public `ok_row_count` / `current_domain_key_count` re-increment）and **never** install a second carrier in the same W. W ends at true NOT_FOUND ⇒ `session.state=EXHAUSTED`。
+
+Let `Za=(view_a_key_digest==0)`, `Zb=(view_b_key_digest==0)` for Mode28. Let `Cprev` be count mask before this SELECT install（0 for first carrier or after prior carrier finalized back to SELECT）。
+
+| Case | OK exit `T` |
+| --- | --- |
+| no more carriers（empty SELECT） | (`EXHAUSTED`, **11**, 1, 0, 0, **0x15**, **Cvac**, 0) where `Cvac=0` if zero carriers ever completed, else last completed carrier’s final count mask. **Mode30 only:** apply §18.14.9.3 **BIND-entry initialization** exactly once on this transition（empty BLOB-manifest frontier; clear peer/selected pins/latch）**before** the first outer BIND W. Modes 27–29: no Mode30 BIND-entry init. |
+| Mode27/29 LIVE or HIST nonzero dig | (`EXHAUSTED`, **3**, 1, 0, 0, **0x13**, **0**, 0) |
+| Mode30 LIVE or HIST nonzero dig | (`EXHAUSTED`, **3**, 1, 0, 0, **0x13**, **0**, 0) |
+| Mode27/29 NONE zero dig | (`EXHAUSTED`, **2**, 1, 0, 0, **0x11**, **0x03**, 0) |
+| Mode30 NONE zero dig | (`EXHAUSTED`, **2**, 1, 0, 0, **0x11**, **0x07**, 0) |
+| Mode28 Za=1,Zb=1 | (`EXHAUSTED`, **9**, 1, **1**, 0, **0x03**, **0x03**, 0); pin both totals 0 |
+| Mode28 Za=0（A nonzero） | (`EXHAUSTED`, **3**, 1, **0**, 0, **0x13**, **0**, 0) |
+| Mode28 Za=1,Zb=0 | (`EXHAUSTED`, **6**, 1, **1**, 0, **0x13**, **0**, 0); pin view_a total 0 |
+
+###### FOCUS_SCAN / FOCUS_SCAN_B W（entry phase 3 or 6）
+
+| Case | OK exit `T` |
+| --- | --- |
+| LIVE match Mode27 entry phase3 → OWNER | (`EXHAUSTED`, **4**, 1, 0, 0, **0x43**, **0**, 0); pin man digests |
+| LIVE match Mode29 entry phase3 → OWNER | (`EXHAUSTED`, **4**, 1, 0, 0, **0x43**, **0**, 0); pin man digests |
+| LIVE match Mode28 entry phase3（A）→ OWNER | (`EXHAUSTED`, **4**, 1, **0**, 0, **0x43**, **0**, 0); pin man digests; pin view_a total u64be |
+| LIVE match Mode28 entry phase6（B）→ OWNER_B | (`EXHAUSTED`, **7**, 1, **1**, 0, **0x43**, **0**, 0); pin man digests; pin view_b total u64be |
+| LIVE match Mode30 entry phase3 → CHUNKS | (`EXHAUSTED`, **5**, 1, 0, 0, **0x43**, **0**, 0); pin man digests |
+| HISTORICAL_ABSENT match_count=0 Mode27/29 | (`EXHAUSTED`, **2**, 1, 0, 0, **0x11**, **0x03**, 0); semantic none |
+| HISTORICAL_ABSENT match_count=0 Mode30 | (`EXHAUSTED`, **2**, 1, 0, 0, **0x11**, **0x07**, 0); semantic none; semantic_pass stays 0 |
+
+###### OWNER / OWNER_B G
+
+| Entry phase | OK exit `T` |
+| ---: | --- |
+| 4 Mode27 | (`EXHAUSTED`, **5**, 1, **0**, 0, **0x43**, **0**, 0) |
+| 4 Mode29 | (`EXHAUSTED`, **5**, 1, **0**, 0, **0x43**, **0**, 0) |
+| 4 Mode28-A | (`EXHAUSTED`, **5**, 1, **0**, 0, **0x43**, **0**, 0) |
+| 7（Mode28-B） | (`EXHAUSTED`, **8**, 1, **1**, 0, **0x43**, **0**, 0) |
+
+Mode30 has **no** OWNER G row（skipped by schedule）。
+
+###### CHUNKS / CHUNKS_B G
+
+| Case | OK exit `T` |
+| --- | --- |
+| Mode27/29 CHUNKS done | (`EXHAUSTED`, **2**, 1, 0, 0, **0x11**, **0x03**, 0) |
+| Mode28 CHUNKS_A done, Zb=0（B pending） | (`EXHAUSTED`, **6**, 1, **1**, 0, **0x13**, **0**, 0) |
+| Mode28 CHUNKS_A done, Zb=1（B zero） | (`EXHAUSTED`, **9**, 1, **1**, 0, **0x03**, **0x03**, 0) |
+| Mode28 CHUNKS_B done（A was zero or already done） | (`EXHAUSTED`, **9**, 1, **1**, 0, **0x03**, **0x03**, 0) |
+| Mode30 CHUNKS done | (`EXHAUSTED`, **9**, 1, 0, 0, **0x03**, **0x03**, 0) |
+
+Empty chunk_count still runs the G unit（zero gets）and takes the same exit.
+
+###### Mode28 semantic units
+
+| Entry | Port | OK exit `T` |
+| --- | :---: | --- |
+| phase9, sem0, Za=1,Zb=1 | PREFIX **G**（first perform §18.14.19.5 checked-u32 gate; finalize SHA） | (`EXHAUSTED`, **2**, 1, 1, **0**, **0x11**, **0x07**, 0) |
+| phase9, sem0, Za=0 | PREFIX **G**（no SHA finalize） | (`EXHAUSTED`, **3**, 1, 1, **1**, **0x13**, **0x03**, 0) |
+| phase9, sem0, Za=1,Zb=0 | PREFIX **G**（no SHA finalize） | (`EXHAUSTED`, **6**, 1, 1, **3**, **0x13**, **0x03**, 0) |
+| phase3, sem1 | RESCAN_A **W** | (`EXHAUSTED`, **10**, 1, 1, **2**, **0x03**, **0x03**, 0) |
+| phase10, sem2, Zb=0 | VIEW_A_CHUNKS **G** | (`EXHAUSTED`, **6**, 1, 1, **3**, **0x13**, **0x03**, 0) |
+| phase10, sem2, Zb=1 | VIEW_A_CHUNKS **G**（finalize） | (`EXHAUSTED`, **2**, 1, 1, **0**, **0x11**, **0x07**, 0) |
+| phase6, sem3 | RESCAN_B **W** | (`EXHAUSTED`, **10**, 1, 1, **4**, **0x03**, **0x03**, 0) |
+| phase10, sem4 | VIEW_B_CHUNKS **G**（finalize） | (`EXHAUSTED`, **2**, 1, 1, **0**, **0x11**, **0x07**, 0) |
+
+Rules: order A then B; each nonzero view is exactly RESCAN W → VIEW_CHUNKS G; zero view has neither; semantic band rescans ≤2 W total; PREFIX always once per LIVE carrier after first-focus complete（or immediately if both zero）。
+The checked-u32 gate is part of every Mode28 phase-9 PREFIX G row, including the two non-zero-view rows above; an oversized pin takes the §18.14.19.10 semantic-finding exit before the carrier re-get。
+
+###### Mode30 semantic units
+
+| Entry | Port | OK exit `T` |
+| --- | :---: | --- |
+| phase9, sem0 | PREFIX **G**（RR→DELIVERY→RESULT→CELL/CANCEL as mode rules; no SHA finalize if chunks follow） | (`EXHAUSTED`, **10**, 1, 0, 0, **0x03**, **0x03**, 0) |
+| phase10, sem0 | SEM_CHUNK **G**（RECEIPT known-index gets or empty compute; SHA finalize） | (`EXHAUSTED`, **2**, 1, 0, 0, **0x11**, **0x07**, 0) |
+
+###### BIND units
+
+Mode27–30: BIND_MAN / BIND_CHUNK inventory is **exactly one formal unit per drive**（no multi-unit batching inside one drive）。Modes27–29 BIND_MAN and all BIND_CHUNK use **WG** Port grammar（§18.14.19.3）。Mode30 outer/RR remain pure **W** with BIND-entry empty BLOB-manifest frontier + boolean latch（§18.14.9.3）。
+
+For the **first** Mode30 outer W, the once-only BIND-entry initialization has
+already been applied by the SELECT-empty transition。If it selects a candidate,
+the candidate row is the exact transition; if it selects none, the no-candidate
+row is the exact transition。There is no third “first outer” transition。
+
+| Case | Unit | Port | OK exit `T` |
+| --- | :---: | :---: | --- |
+| Mode27–29 BIND_MAN true exhaustion | **WG** | exact reopen prefix（§18.14.19.3）+ (iter_next OK [, owner exact_get if eligible])* + NOT_FOUND | (`EXHAUSTED`, **12**, 1, 0, 0, **0x15**, **Cb**, **0x08**) |
+| Mode30 outer selects first REPLY man with key `>` BLOB-manifest frontier（including first outer after once-only init） | **W** | pure walk; GET 0; pin peer/selected pins; `observed_live=0`; frontier **not** advanced | (`EXHAUSTED`, **11**, 1, 0, **5**, **0x15**, **Cb**, **0**) |
+| Mode30 RR-band true NOT_FOUND with `observed_live=1` | **W** | pure walk; GET 0; latch idempotent; promote frontier from peer; **exact clear** peer+selected pins per §18.14.9.3; `sem=0` | (`EXHAUSTED`, **11**, 1, 0, **0**, **0x15**, **Cb**, **0**) |
+| Mode30 outer true exhaustion with **no** candidate（including first outer after once-only init） | **W** | pure walk; GET 0 | (`EXHAUSTED`, **12**, 1, 0, 0, **0x15**, **Cb**, **0x08**) |
+| Mode27–30 BIND_CHUNK true exhaustion | **WG** | exact reopen prefix + (iter_next OK [, man exact_get if eligible chunk])* + NOT_FOUND | (`EXHAUSTED`, **13**, 1, 0, 0, **0x09**, **Cb**, **0x18**) |
+
+Mode30 RR true NOT_FOUND with `observed_live=0` is a **fault exit**（CORRUPT; frontier not advanced）, not an OK row。Only outer empty exhaustion enters BIND_CHUNK。BIND-entry initialization is **not** repeated before each outer W。
+
+`Cb` is the count mask frozen at BIND entry and unchanged by BIND: `0` if zero carriers（vacuous）; else the last completed carrier’s final count（Mode27/29: `0x03`; Mode28/30: `0x07`）。Phase 13 stops drives（COMPLETE）。
+
+**BIND GET accounting:** every owner/man-presence get inside WG increments `port.get_count` and **`d3_peer_get_count`**（post-profile rule of §18.14.19.9）。NATURAL fault on a BIND get uses floors of §18.14.19.6（`get.on_call≥18`）and must be **reachable** on the WG schedule。
+
+**Failure-point tuples（BIND）:** on sticky semantic finding during WG, `phase→14` with flags/masks/substates equal to the pre-finding values **except** `phase=14`（§18.14.19.10）。On natural GET fault mid-WG, fields equal values **immediately before** the failing get（including visit commit of the preceding OK `iter_next`）。Mode30 outer/RR faults follow pure-W failure rules（no get）。
+
+###### Reopen counters（W / WG that consume NEED_REOPEN; exact §18.14.19.3）
+
+| Case | Port sequence | Counters |
+| --- | --- | --- |
+| `NEED_REOPEN=1` and `iter_live=1` success | **exactly one** void `iter_close(current Ik)` then **exactly one** `iter_open` OK → new `Ik`; then clear NEED_REOPEN | `reopen_attempt_count += 1`; `reopen_success_count += 1` |
+| `NEED_REOPEN=1` and `iter_live=0` | **no Port events**; `INVALID_STATE` | counters unchanged |
+| `NEED_REOPEN=0` and `iter_live=1` | emit **neither** close nor open | counters unchanged |
+| `NEED_REOPEN=0` and `iter_live=0` | **no Port events**; `INVALID_STATE` | counters unchanged |
+| `iter_open` natural fault after the mandatory close | close emitted; open fails; out=null; NEED_REOPEN cleared | attempt +=1; success unchanged; then §18.14.19.10 |
+| BASELINE | uses I1; `NEED_REOPEN=0` and `iter_live=1`; no reopen | neither counter increases for I1 |
+
+Definitions: `reopen_attempt_count` = number of `iter_open` calls **after** successful begin `I1`. `reopen_success_count` = those post-I1 opens that returned OK and produced a new `Ik`.
+
+##### 18.14.19.9 Checkpoint schema（closed objects）
+
+Top-level checkpoint keys **exactly**: `returned_status`, `session`, `d3s3`, `port`, `result`.
+
+**`session` keys（exactly; all present）:**
+
+| Key | Type |
+| --- | --- |
+| `state` | string enum `IDLE`\|`OPEN`\|`EXHAUSTED`\|`FAILED`\|`DONE` |
+| `txn_live` | u8 0/1 |
+| `iter_live` | u8 0/1 |
+| `has_sticky_primary` | u8 0/1 |
+| `sticky_primary` | exact `""` iff `has_sticky_primary=0`; otherwise one of the six mapped Runtime error symbols listed in §18.14.19.10 |
+| `cleanup_status` | JSON `null` before finalize and after rollback `OK`; otherwise one of the six Storage fault symbols from §18.14.19.6 |
+| `reopen_required` | u8 0/1（session fence flag; not D3 NEED_REOPEN） |
+| `fence_pending` | u8 0/1 |
+| `profile_exact_active` | u8 0/1 |
+| `profile_mismatch` | u8 0/1 |
+| `future_profile_candidate` | u8 0/1 |
+| `recognizable_future_seen` | u8 0/1 |
+| `family14_row_count` | u32 |
+| `family14_iter_seen_mask` | u32 |
+| `profile_get_present_mask` | u32 |
+| `ok_row_count` | u64 |
+| `current_domain_key_count` | u64 |
+| `has_previous` | u8 0/1 |
+| `previous_key_hex` | string |
+| `previous_key_length` | u32 |
+
+**`d3s3` keys（exactly; all present）:**
+
+| Key | Type |
+| --- | --- |
+| `phase` | u8（0..14） |
+| `pass_kind` | u8（0..1） |
+| `focus_mode` | u8 |
+| `focus_sub` | u8 |
+| `semantic_pass` | u8（0..6） |
+| `lifecycle_class` | u8 |
+| `expected_live` | u8 |
+| `observed_live` | u8 |
+| `reply_kind` | u8 |
+| `flags` | u8 |
+| `count_complete_mask` | u8 |
+| `binding_complete_mask` | u8 |
+| `last_carrier_key_hex` | string |
+| `last_carrier_key_len` | u8 |
+| `focus_id16_hex` | string length 32 hex（Mode28: two u64be totals; Mode30: tx16; else 0） |
+
+`peer_key` / `peer_key_len` are **not** REP1 checkpoint fields（not serialized in `d3s3` checkpoint JSON）。They **are** Normative **derived control state** for BIND-WG request keys and Mode30 selection/frontier promotion（§18.14.9.2–.4）：selection, preservation across outer→RR, and frontier promotion **must** follow those algorithms because they determine the Port transcript and subsequent unit eligibility。Every externally observable GET request key is frozen by `port_trace[].request_key_hex/request_key_length`。
+
+**`port` keys（exactly; all present）:**
+
+| Key | Type |
+| --- | --- |
+| `event_start` | u32 half-open start |
+| `event_end` | u32 half-open end |
+| `trace_count` | u32（= `event_end` after call） |
+| `begin_count` | u32 |
+| `get_count` | u32 |
+| `iter_open_count` | u32 |
+| `iter_next_count` | u32 |
+| `iter_close_count` | u32 |
+| `rollback_count` | u32 |
+| `close_count` | u32 |
+| `d3_peer_get_count` | u64; exact product GET-attempt count defined below |
+| `reopen_attempt_count` | u32 |
+| `reopen_success_count` | u32 |
+| `mutation_calls` | u32（0 on success paths） |
+| `trace_overflow` | u8（must be 0） |
+| `storage_handle_id` | string\|null（`H1` if authoritative） |
+| `txn_handle_id` | string\|null（`T1` if live） |
+| `iter_handle_id` | string\|null（current `Ik` if live） |
+
+**`d3_peer_get_count` exact rule:** after successful profiled begin it is `0`。For every subsequent product `get` Port invocation, increment exactly once **when the event is emitted, before its Storage status is interpreted**。Thus OK, `NOT_FOUND`, and a natural failed GET each count one; the 17 profile-catalog GETs never count。**BIND-WG owner/orphan gets are product gets and count**。At every checkpoint after successful begin, `d3_peer_get_count == port.get_count - 17`。No non-GET op changes it。
+
+**`result`:** JSON `null` before finalize. After finalize, object with **exactly**:
+
+| Key | Type |
+| --- | --- |
+| `status` | string（same Runtime closed enum as `returned_status`） |
+| `adopted` | u8 0/1 |
+| `state_after` | string exact `"DONE"` |
+| `has_sticky_primary` | u8 |
+| `sticky_primary` | same exact empty-or-six-Runtime-symbol rule as `session.sticky_primary` |
+| `reopen_required` | u8 |
+| `cleanup_status` | same exact null-or-six-Storage-symbol rule as `session.cleanup_status` |
+| `mutation_calls` | u32 |
+| `profile_exact_active` | u8 |
+| `profile_mismatch` | u8 |
+| `future_profile_candidate` | u8 |
+| `recognizable_future_seen` | u8 |
+| `family14_row_count` | u32 |
+| `family14_iter_seen_mask` | u32 |
+| `profile_get_present_mask` | u32 |
+| `ok_row_count` | u64 |
+| `current_domain_key_count` | u64 |
+| `d3_peer_get_count` | u64 |
+
+After finalize, `result.status == returned_status` and `result.adopted=1` **iff** the pre-finalize phase was `COMPLETE=13`, no sticky primary exists, rollback returned `OK`, `fence_pending` was 0 at finalize entry, final `reopen_required=0`, and final status is `NINLIL_OK`。Every other path（including any rollback fault or fence）has `adopted=0`。
+
+##### 18.14.19.10 Failure / fault exits（exact）
+
+Every faulted drive ends at the failing event. Cleanup is finalize-only.
+
+| Kind | `session.state` | `phase` | liveness | flags/masks/substates | notes |
+| --- | --- | ---: | --- | --- | --- |
+| Semantic finding（no Port fault） | `FAILED` | **14** | txn/iter unchanged | equal to values at finding point **except** `phase=14` | sticky first Runtime status; earlier Port events of the drive persist |
+| GET natural fault（**G** or mid-**WG**） | `FAILED` | **14** | `txn_live=1`; `iter_live` unchanged | equal to values **immediately before** failing get | earlier events in same drive persist; **WG:** prior OK `iter_next` **lex-only** visit commit（`has_previous`/previous_key）already applied; public `ok_row_count`/`current_domain_key_count` **unchanged** under INTERNAL freeze; failing get commits **no** further semantic install; lengths 0; **no residual iter_next** |
+| ITER_NEXT natural fault | `FAILED` | **14** | `txn_live=1`, `iter_live=1` | immediately before failing next | no on_row/on_exhausted for failing event; prior successful rows persist |
+| reopen `iter_open` natural fault | `FAILED` | **14** | `txn_live=1`, `iter_live=0` | NEED_REOPEN already cleared after `iter_close`; other fields pre-open | old Ik closed first; attempt+1; success unchanged |
+| rollback natural fault in finalize | `DONE` after cleanup | d3s3 keeps last drive phase value（not rewritten to 14 by finalize） | `txn_live=0`, `iter_live=0` | last drive tuple retained in d3s3 snapshot | order: iter_close if live → rollback(T1) fails → close(H1) → `reopen_required=1`; `cleanup_status`=the Storage fault; `adopted=0` |
+
+Sticky Runtime mapping from Storage fault status:
+
+| Storage `status` | mapped Runtime status family |
+| --- | --- |
+| `NO_SPACE` | `NINLIL_E_CAPACITY_EXHAUSTED` |
+| `IO_ERROR` | `NINLIL_E_STORAGE` |
+| `CORRUPT` | `NINLIL_E_STORAGE_CORRUPT` |
+| `COMMIT_UNKNOWN` | `NINLIL_E_STORAGE_COMMIT_UNKNOWN` |
+| `BUSY` | `NINLIL_E_WOULD_BLOCK` |
+| `UNSUPPORTED_SCHEMA` | `NINLIL_E_UNSUPPORTED` |
+
+**Drive-time `COMMIT_UNKNOWN` fence（exact; aligns §15.11.5）:** when a product-path natural `get` / `iter_open` / `iter_next` returns Storage `COMMIT_UNKNOWN`, the failing drive **maps** sticky to `NINLIL_E_STORAGE_COMMIT_UNKNOWN` **and sets `fence_pending=1` at the failing drive checkpoint**。There is **no cleanup inside the failing drive**（no `rollback` / `close` / residual `iter_next`）。H1 remains live until finalize。Finalize with rollback `OK` then **closes original H1 exactly once**, nulls the caller handle slot, sets `reopen_required=1`, clears `fence_pending` to **0** after the fence close, retains sticky `COMMIT_UNKNOWN`, keeps `cleanup_status=null`（rollback was OK）, and `adopted=0`。Other natural statuses（`NO_SPACE` / `IO_ERROR` / `CORRUPT` / `BUSY` / `UNSUPPORTED_SCHEMA`）map sticky only and **do not** set drive-time `fence_pending` unless a separately Normative fence condition applies（descriptor rewrite / unknown raw / handle drift — not ordinary natural product faults）。
+
+**Sticky / cleanup precedence（exact）:** a drive-time `get` / `iter_open` / `iter_next` natural fault sets the first sticky to the mapped Runtime status and returns it（`COMMIT_UNKNOWN` also sets `fence_pending` as above）。A rollback fault occurs only in finalize and **never creates, clears, or overwrites** `has_sticky_primary/sticky_primary`。It sets `cleanup_status` to its Storage symbol and fences H1。If a sticky already exists, finalize `returned_status` / `result.status` is that prior sticky; otherwise it is the rollback fault’s mapped Runtime status。With no rollback fault, `cleanup_status=null`; a prior sticky still wins, otherwise a valid COMPLETE finalize returns `NINLIL_OK`。
+
+##### 18.14.19.11 Finalize cleanup order
+
+```text
+finalize:
+  if iter_live && txn_live: iter_close(Ik)      # void; storage_status=null
+  else if iter_live && !txn_live: drop iter without Port close
+  if txn_live: rollback(T1) → record storage_status
+  if (rollback_status != OK) OR (fence_pending != 0):
+      close(original H1)                       # void; storage_status=null
+      session.reopen_required := 1
+  session.state := DONE
+  publish result（status / adopted use §18.14.19.9–.10 exact precedence）
+```
+
+Fence condition is exactly **`rollback_status != OK` OR existing `fence_pending`**. No cleanup inside sticky drive failure. Successful COMPLETE path with OK rollback and `fence_pending=0` does **not** close H1（caller retains H1）。The pseudocode's publish step uses the exact status/adoption precedence in §18.14.19.9–.10; in particular, rollback failure always forces `adopted=0` and never overwrites an earlier sticky。
+
+##### 18.14.19.12 Mode schedule summary（normative pointer）
+
+| Mode | Schedule |
+| ---: | --- |
+| **27** | SELECT setup STATE（+ES iff EventFact）; FOCUS_SCAN W → OWNER G → CHUNKS G → SELECT; no semantic; **BIND_MAN WG** → **BIND_CHUNK WG** → COMPLETE |
+| **28** | §18.14.19.8 Mode28 rows; focus_id16 = two u64be totals; ≤2 semantic band W; BIND_MAN **WG** → BIND_CHUNK **WG** |
+| **29** | APP_FIRST RESULT setup on SELECT W; CANCEL_FIRST setup 0; OWNER on DELIVERY; same CHUNKS/SELECT; BIND_MAN **WG** → BIND_CHUNK **WG** |
+| **30** | no OWNER G; FOCUS_SCAN W → CHUNKS G → SEM_PREFIX G → SEM_CHUNK G → SELECT; HISTORICAL_ABSENT → SELECT count 0x07, semantic none; BIND outer **W**（first REPLY man `>` frontier; latch0）→ RR **W**（sem=5; `observed_live` boolean latch; promote frontier only if latch1）→ … → empty outer → BIND_CHUNK **WG** → COMPLETE |
+
+##### 18.14.19.13 Explicit non-claims
+
+REP1-v1 **does not**:
+
+- redefine D1 wire or non-BIND §18.14 semantic findings beyond the BIND-WG packing clarification in §18.14.9
+- require non-REP1 implementations to match Port transcripts
+- accept private builds as REP1-L2 evidence
+- allow mapping tables as a substitute for micro-step equality
+- treat **withdrawn** pre-acceptance GET=0 BIND authority SHAs as Accepted or Normative
+- claim D3 complete / Stage 5 / public Runtime / ESP / hardware / security audit
+- claim production bridge green, implementation complete, or candidate JSON as Accepted authority（**Proposed oracle candidate**）
+- claim ADR Accepted
+
+##### 18.14.19.14 Follow-on work（non-normative）
+
+| Work item | Owner |
+| --- | --- |
+| Generator regenerates candidate authority with BIND-WG Port events + control-tuple checkpoints + R19–R27 D1-legality gate（same path; R27 content `ccf056de…` / raw `a88ffb4f…` object-identical to R26 vector body; suffix129=`rep1_l2`128+`formal_precheck`1; boundary **4380**; STATE positives **28**; Mode27 lifecycle 3×4） | O1b — candidate emitted/self-check済み; acceptance pending |
+| Shipped reference Core W/G/**WG** split + visit-commit-before-get + BIND hooks | production private S3 |
+| Spy structured events + H1/T1/Ik map + BIND gets | test spy |
+| Bridge two-lane field-for-field（`rep1_l2` exact Port; `formal_precheck` validator-only zero Port; unknown scope/count drift/silent skip RED） | O1c |
+| Sol independent re-review of R27 candidate (R21–R26 were Sol high / Root residual NO-GO); production/bridge evidence; ADR-0015 Accepted only after GO | governance（**not** claimed; Accepted/GO forbidden） |
+
 ### 18.15 Normative D3-S4a freeze（DSW1_ALL_OLD_NEW / witness member group）
 
 **Decision identifier: D3-S4a。** 本節は D3-S0 / S1a / S2a / **S3a（§18.14）** を **上書きせず**、§10 **`DSW1_ALL_OLD_NEW`** の **docs-only Normative freeze** を追加する。§18.14（S3: **754/768**, outer **9920**）は **origin/main と byte-equivalent に保持**。**docs only**（code/tests/CMake/JSON/ADR 0）。implementation / D3 / Stage5 / D4 / public Runtime / ESP / hardware **pending**。private symbol 存在 **未 claim**。
