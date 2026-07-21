@@ -474,7 +474,14 @@ static int comparator_mutation_test(void)
     ninlil_d3s3_port_event_t e=ninlil_d3s3_vectors[0].expected->port_trace[0]; ninlil_spy_trace_t t;
     ninlil_d3s3_checkpoint_t cp=*ninlil_d3s3_vectors[0].calls[0].checkpoint; uint8_t byte=1u;
     (void)memset(&t,0,sizeof(t)); t.op=NINLIL_SPY_OP_BEGIN; t.status=NINLIL_STORAGE_OK; t.status_present=1u; t.mode=NINLIL_STORAGE_READ_ONLY; t.mode_present=1u; t.input_handle_id=NINLIL_D3S3_HANDLE_H1; t.output_handle_id=NINLIL_D3S3_HANDLE_T1;
-    if(!compare_event(&e,&t,0u,0u,1u)) return 1; e.request_key.data=&byte; e.request_key.length=1u; if(compare_event(&e,&t,0u,0u,1u)) return 1; e=ninlil_d3s3_vectors[0].expected->port_trace[0]; e.storage_status.value=NINLIL_D3S3_SS_IO_ERROR; if(compare_event(&e,&t,0u,0u,1u)) return 1; e=ninlil_d3s3_vectors[0].expected->port_trace[0]; e.value_capacity=1u; if(compare_event(&e,&t,0u,0u,1u)) return 1;
+    if(!compare_event(&e,&t,0u,0u,1u)) return 1;
+    e.request_key.data=&byte; e.request_key.length=1u;
+    if(compare_event(&e,&t,0u,0u,1u)) return 1;
+    e=ninlil_d3s3_vectors[0].expected->port_trace[0];
+    e.storage_status.value=NINLIL_D3S3_SS_IO_ERROR;
+    if(compare_event(&e,&t,0u,0u,1u)) return 1;
+    e=ninlil_d3s3_vectors[0].expected->port_trace[0]; e.value_capacity=1u;
+    if(compare_event(&e,&t,0u,0u,1u)) return 1;
     if(!checkpoint_window_tuple_equal(&cp,cp.port.event_start,cp.port.event_end,cp.port.get_count,cp.d3s3.phase,cp.session.txn_live)) return 1;
     cp.port.event_end++; if(checkpoint_window_tuple_equal(&cp,ninlil_d3s3_vectors[0].calls[0].checkpoint->port.event_start,ninlil_d3s3_vectors[0].calls[0].checkpoint->port.event_end,ninlil_d3s3_vectors[0].calls[0].checkpoint->port.get_count,ninlil_d3s3_vectors[0].calls[0].checkpoint->d3s3.phase,ninlil_d3s3_vectors[0].calls[0].checkpoint->session.txn_live)) return 1;
     cp=*ninlil_d3s3_vectors[0].calls[0].checkpoint; cp.port.get_count++; if(checkpoint_window_tuple_equal(&cp,ninlil_d3s3_vectors[0].calls[0].checkpoint->port.event_start,ninlil_d3s3_vectors[0].calls[0].checkpoint->port.event_end,ninlil_d3s3_vectors[0].calls[0].checkpoint->port.get_count,ninlil_d3s3_vectors[0].calls[0].checkpoint->d3s3.phase,ninlil_d3s3_vectors[0].calls[0].checkpoint->session.txn_live)) return 1;
