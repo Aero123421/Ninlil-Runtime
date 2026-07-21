@@ -140,6 +140,7 @@ D3S1_GEN_PATH = REPO_ROOT / "tools" / "domain_scan_crossrow_vector_gen.py"
 DEFAULT_JSON = REPO_ROOT / "spec" / "vectors" / "domain-scan-crossrow-v1.json"
 
 FORMAT = "ninlil-domain-scan-crossrow-v1-d3s2"
+D3S3_SUCCESSOR_FORMAT = "ninlil-domain-scan-crossrow-v1-d3s3"
 VERSION = 1
 D3S1_PREFIX_COUNT = 94
 D3S2_SMOKE_COUNT = 6
@@ -10262,6 +10263,58 @@ def check_data(
 
     if not data.get("vectors"):
         return _fail_check("vectors empty")
+    # D3-S3 successor: validate the frozen d3s2 144-prefix only, then OK.
+    if data.get("format") == D3S3_SUCCESSOR_FORMAT:
+        vectors = data["vectors"]
+        if len(vectors) < EXPECTED_VECTOR_COUNT:
+            return _fail_check(
+                f"d3s3 successor too short for d3s2 prefix "
+                f"{len(vectors)} < {EXPECTED_VECTOR_COUNT}"
+            )
+        expected_prefix = expected_doc["vectors"][:EXPECTED_VECTOR_COUNT]
+        if vectors[:EXPECTED_VECTOR_COUNT] != expected_prefix:
+            for i in range(EXPECTED_VECTOR_COUNT):
+                if vectors[i] != expected_prefix[i]:
+                    return _fail_check(
+                        f"d3s3 successor d3s2-prefix mismatch at [{i}] "
+                        f"id={vectors[i].get('id')}"
+                    )
+            return _fail_check("d3s3 successor d3s2-prefix mismatch")
+        # Fail-closed authority pins (all required; optional/soft forbidden):
+        # full first-144 object equality + format + vector_count + content + raw.
+        auth = data.get("d3s2_prefix_authority") or {}
+        if not auth:
+            return _fail_check(
+                "d3s3 successor missing d3s2_prefix_authority (fail-closed)"
+            )
+        if auth.get("format") != FORMAT:
+            return _fail_check(
+                f"d3s3 successor d3s2_prefix_authority format pin mismatch "
+                f"(got {auth.get('format')!r} want {FORMAT!r})"
+            )
+        if int(auth.get("vector_count", -1)) != EXPECTED_VECTOR_COUNT:
+            return _fail_check(
+                "d3s3 successor d3s2_prefix_authority vector_count pin mismatch"
+            )
+        # Full frozen d3s2 144-vector content (not the 143 intermediate pin).
+        if auth.get("content_sha256") != expected_doc.get("content_sha256"):
+            return _fail_check(
+                "d3s3 successor d3s2_prefix_authority content_sha256 pin mismatch "
+                f"(want d3s2 rebuild {str(expected_doc.get('content_sha256'))[:16]}…)"
+            )
+        frozen_raw = (
+            "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec"
+        )
+        if auth.get("raw_sha256") != frozen_raw:
+            return _fail_check(
+                "d3s3 successor d3s2_prefix_authority raw_sha256 pin mismatch "
+                f"(required exact frozen d3s2 raw)"
+            )
+        print(
+            f"d3s2 check ok (d3s3 successor prefix {EXPECTED_VECTOR_COUNT} "
+            f"full-object equal; format/content/raw/count fail-closed)"
+        )
+        return 0
     if data.get("format") != FORMAT:
         return _fail_check(f"format mismatch {data.get('format')}")
     if data.get("version") != VERSION:
@@ -16855,6 +16908,14 @@ def emit_c_fixture(json_path: Path, header_path: Path) -> None:
     """Emit D3-S1 94-array (compat) + separate D3-S2 suffix array/type/count."""
     data = json.loads(json_path.read_text(encoding="utf-8"))
     vectors = data["vectors"]
+    # D3-S3 successor JSON: only the frozen d3s1+d3s2 144-prefix is D3-S2
+    # authority for this fixture (ignore d3s3 suffix objects).
+    if data.get("format") == D3S3_SUCCESSOR_FORMAT:
+        if len(vectors) < EXPECTED_VECTOR_COUNT:
+            raise SystemExit(
+                "emit-c-fixture: d3s3 successor too short for d3s2 144-prefix"
+            )
+        vectors = vectors[:EXPECTED_VECTOR_COUNT]
     if len(vectors) < D3S1_PREFIX_COUNT:
         raise SystemExit("emit-c-fixture: vector list too short for d3s1 prefix")
     d3s1_vectors = vectors[:D3S1_PREFIX_COUNT]

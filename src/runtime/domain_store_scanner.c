@@ -4,6 +4,7 @@
 #include "domain_store_codec.h"
 #include "domain_store_d3s1.h"
 #include "domain_store_d3s2.h"
+#include "domain_store_d3s3.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -272,6 +273,37 @@ static int begin_profiled_d3s2_alias_ok(
     const ninlil_domain_scan_workspace_t *workspace,
     const ninlil_model_runtime_store_binding_t *candidate,
     const ninlil_domain_scan_d3s2_context_t *context)
+{
+    const size_t context_bytes = sizeof(*context);
+
+    if (!begin_profiled_alias_ok(
+            session, storage, inout_handle, workspace, candidate)) {
+        return 0;
+    }
+    if (!ranges_are_disjoint(session, sizeof(*session), context, context_bytes)
+        || !ranges_are_disjoint(
+            workspace, sizeof(*workspace), context, context_bytes)
+        || !ranges_are_disjoint(storage, sizeof(*storage), context, context_bytes)
+        || !ranges_are_disjoint(
+            inout_handle, sizeof(*inout_handle), context, context_bytes)
+        || !ranges_are_disjoint(
+            candidate, sizeof(*candidate), context, context_bytes)) {
+        return 0;
+    }
+    return 1;
+}
+
+/*
+ * out_result must not overlap session, bound workspace, bound ops object, or
+ * bound handle slot. Validated before any cleanup/output mutation.
+ */
+static int begin_profiled_d3s3_alias_ok(
+    const ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_storage_handle_t *inout_handle,
+    const ninlil_domain_scan_workspace_t *workspace,
+    const ninlil_model_runtime_store_binding_t *candidate,
+    const ninlil_domain_scan_d3s3_context_t *context)
 {
     const size_t context_bytes = sizeof(*context);
 
@@ -892,17 +924,22 @@ static ninlil_status_t validate_current_domain_structural_s2_filter(
     return NINLIL_OK;
 }
 
-static int s2_pass_internal_active(const ninlil_domain_scan_session_t *session)
+static int d3_pass_internal_active(const ninlil_domain_scan_session_t *session)
 {
-    const ninlil_domain_scan_d3s2_context_t *ctx;
-
-    if (session == NULL
-        || session->bound_d3_kind != NINLIL_DOMAIN_SCAN_D3_KIND_S2
-        || session->bound_d3s2_context == NULL) {
+    if (session == NULL) {
         return 0;
     }
-    ctx = session->bound_d3s2_context;
-    return ctx->pass_kind == NINLIL_DOMAIN_SCAN_D3S2_PASS_INTERNAL;
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S2
+        && session->bound_d3s2_context != NULL) {
+        return session->bound_d3s2_context->pass_kind
+            == NINLIL_DOMAIN_SCAN_D3S2_PASS_INTERNAL;
+    }
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3
+        && session->bound_d3s3_context != NULL) {
+        return session->bound_d3s3_context->pass_kind
+            == NINLIL_DOMAIN_SCAN_D3S3_PASS_INTERNAL;
+    }
+    return 0;
 }
 
 static ninlil_status_t process_ok_row(
@@ -913,7 +950,7 @@ static ninlil_status_t process_ok_row(
 {
     ninlil_status_t class_status;
     uint8_t typed_current_ok = 0u;
-    int internal = s2_pass_internal_active(session);
+    int internal = d3_pass_internal_active(session);
 
     if (session->has_previous != 0u) {
         if (!key_strictly_increases(
@@ -927,8 +964,8 @@ static ninlil_status_t process_ok_row(
 
     /*
      * Preflight total ok_row headroom before any classification sub-counter
-     * or previous-key mutation. PASS_INTERNAL freezes ok_row_count — still
-     * require headroom only on baseline path.
+     * or previous-key mutation. PASS_INTERNAL freezes ok_row_count (S2 §18.13.5
+     * and S3 REP1 §18.14.9.5 / §18.14.19 — lex-only visit under INTERNAL).
      */
     if (internal == 0 && session->ok_row_count == UINT64_MAX) {
         return NINLIL_E_STORAGE_CORRUPT;
@@ -936,9 +973,10 @@ static ninlil_status_t process_ok_row(
 
     if (internal != 0) {
         /*
-         * PASS_INTERNAL (§18.13.5): freeze D2 counters / recon / profile /
+         * PASS_INTERNAL: freeze D2 public counters / recon / profile /
          * future flags. Re-decode for S2 filter only when profile exact.
          * Family1-4 catalog rows: visit OK for budget; no re-reconcile.
+         * S3 multipass W: has_previous + previous_key only (no ok_row++).
          */
         if (is_exact_family14_catalog_key(workspace->key, key_length)
             || is_family14_prefix_noncatalog(workspace->key, key_length)) {
@@ -962,7 +1000,7 @@ static ninlil_status_t process_ok_row(
             return class_status;
         }
 
-        /* D3-S1 evaluator off under S2. D3-S2 H1 when profile exact. */
+        /* D3-S1 evaluator off under S2/S3. D3-S2/S3 H1 when profile exact. */
         if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S2
             && session->bound_d3s2_context != NULL
             && session->profile_exact_active != 0u
@@ -976,8 +1014,43 @@ static ninlil_status_t process_ok_row(
                 return class_status;
             }
         }
+        if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3
+            && session->bound_d3s3_context != NULL
+            && session->profile_exact_active != 0u
+            && session->profile_mismatch == 0u
+            && session->future_profile_candidate == 0u
+            && !is_exact_family14_catalog_key(workspace->key, key_length)
+            && !is_family14_prefix_noncatalog(workspace->key, key_length)) {
+            /*
+             * §18.14.9.5 visit commit: under PASS_INTERNAL, every S3 internal
+             * W and WG — after successful current-row structural acceptance
+             * and before the S3 cross-row hook — commits only pass-local
+             * has_previous + previous_key/length exactly once. Applies to
+             * FOCUS/SELECT/SEMANTIC pure-W and BIND_MAN/BIND_CHUNK WG alike
+             * so a FOCUS semantic CORRUPT (e.g. dig-match owner_raw mismatch)
+             * retains the failing row's complete key. Natural GET fault or
+             * BIND semantic CORRUPT retains the same lex commit; public D2
+             * counters and profile/family diagnostics stay frozen. No commit
+             * on structural validation failure (above) or failed iter_next.
+             * S2 stays post-hook only (no pre-hook path). workspace->key is
+             * not invalidated by D2-S4 exact_get (value only).
+             */
+            (void)memcpy(workspace->previous_key, workspace->key, key_length);
+            session->previous_key_length = key_length;
+            session->has_previous = 1u;
+            class_status = ninlil_domain_scan_d3s3_on_row(
+                session, workspace, key_length, value_length, typed_current_ok);
+            if (class_status != NINLIL_OK) {
+                return class_status;
+            }
+        }
 
-        /* Pass-local previous_key only; frozen ok_row_count / family14. */
+        /*
+         * Pass-local previous_key only. S2 and S3 both freeze ok_row_count /
+         * current_domain_key_count / family14 under PASS_INTERNAL.
+         * S3 pre-hook may already have committed above; re-copy is
+         * idempotent (same key_length / bytes) on the success path.
+         */
         (void)memcpy(workspace->previous_key, workspace->key, key_length);
         session->previous_key_length = key_length;
         session->has_previous = 1u;
@@ -988,6 +1061,12 @@ static ninlil_status_t process_ok_row(
         if (session->profile_reconciliation != 0u) {
             class_status = reconcile_catalog_row(
                 session, workspace, key_length, value_length);
+        } else if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3) {
+            /*
+             * S3 REP1: family14 seeded complete at begin (B0). Catalog visits
+             * during BASELINE W are budget/lex only — no re-count / re-bit.
+             */
+            class_status = NINLIL_OK;
         } else {
             class_status = checked_inc_u64(&session->family14_row_count);
         }
@@ -1036,6 +1115,15 @@ static ninlil_status_t process_ok_row(
     session->previous_key_length = key_length;
     session->has_previous = 1u;
     session->ok_row_count += 1u;
+    /*
+     * S3 REP1 formal checkpoint: current_domain_key_count tracks successful
+     * OK visits (same as ok_row_count), including family1-4 catalog rows
+     * during BASELINE W. PASS_INTERNAL freezes both via the internal branch
+     * above (no ok_row increment). D2/S1/S2 keep class-based current count.
+     */
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3) {
+        session->current_domain_key_count = session->ok_row_count;
+    }
     return NINLIL_OK;
 }
 
@@ -1221,23 +1309,42 @@ static ninlil_status_t profile_gate_gets_and_model(
         }
         key_view.data = key.bytes;
         key_view.length = key.length;
+        /*
+         * REP1 Port GET: value_capacity is always the session value buffer
+         * capacity (4096). Profile catalog values are then copied into the
+         * fixed encoded_views slots (ENCODED_CAPS) for model compare.
+         */
         (void)memset(&value, 0, sizeof(value));
-        value.data = &workspace->encoded_values[ENCODED_OFFSETS[index]];
-        value.capacity = ENCODED_CAPS[index];
+        value.data = workspace->value;
+        value.capacity = NINLIL_DOMAIN_SCAN_VALUE_CAPACITY;
         value.length = 0u;
 
         storage_status = storage->get(
             storage->user, session->txn, key_view, &value);
         /*
          * inout_value.data/capacity are caller-owned descriptor fields for this
-         * get. A provider must not rewrite them. Redirected data with intact
-         * workspace-slot prior contents would otherwise risk stale-byte accept.
-         * Unsafe shape: terminal CORRUPT + fence after cleanup.
+         * get. A provider must not rewrite them. Unsafe shape: terminal CORRUPT
+         * + fence after cleanup.
          */
-        if (value.data != &workspace->encoded_values[ENCODED_OFFSETS[index]]
-            || value.capacity != ENCODED_CAPS[index]) {
+        if (value.data != workspace->value
+            || value.capacity != NINLIL_DOMAIN_SCAN_VALUE_CAPACITY) {
             session->fence_pending = 1u;
             return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (storage_status == NINLIL_STORAGE_OK
+            && value.length > ENCODED_CAPS[index]) {
+            /* Catalog value exceeds typed slot — structural corrupt. */
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (storage_status == NINLIL_STORAGE_OK && value.length > 0u) {
+            (void)memcpy(&workspace->encoded_values[ENCODED_OFFSETS[index]],
+                value.data, value.length);
+            /* process_profile_get_result reads inout_value for presence/mask. */
+            value.data = &workspace->encoded_values[ENCODED_OFFSETS[index]];
+            value.capacity = ENCODED_CAPS[index];
+        } else if (storage_status == NINLIL_STORAGE_OK) {
+            value.data = &workspace->encoded_values[ENCODED_OFFSETS[index]];
+            value.capacity = ENCODED_CAPS[index];
         }
         get_status = process_profile_get_result(
             session, workspace, key_id, storage_status, &value);
@@ -1317,14 +1424,26 @@ static ninlil_status_t begin_profiled_common(
     ninlil_domain_scan_d3s1_context_t *d3s1_context,
     uint8_t d3s1_mode,
     ninlil_domain_scan_d3s2_context_t *d3s2_context,
-    uint8_t d3s2_mode)
+    uint8_t d3s2_mode,
+    ninlil_domain_scan_d3s3_context_t *d3s3_context,
+    uint8_t d3s3_mode)
 {
     ninlil_status_t status;
+    int nbound = 0;
 
     /* Bind + candidate copy before any Port call; never retain caller ptr. */
     bind_session(session, storage, inout_handle, workspace);
-    if (d3s1_context != NULL && d3s2_context != NULL) {
-        /* Dual-bound is illegal; defensive (callers prevalidate exclusive). */
+    if (d3s1_context != NULL) {
+        nbound += 1;
+    }
+    if (d3s2_context != NULL) {
+        nbound += 1;
+    }
+    if (d3s3_context != NULL) {
+        nbound += 1;
+    }
+    if (nbound > 1) {
+        /* Dual/triple-bound is illegal; defensive. */
         return NINLIL_E_INVALID_ARGUMENT;
     }
     if (d3s1_context != NULL) {
@@ -1357,6 +1476,14 @@ static ninlil_status_t begin_profiled_common(
         d3s2_context->pass_kind = NINLIL_DOMAIN_SCAN_D3S2_PASS_BASELINE;
         d3s2_context->phase = NINLIL_DOMAIN_SCAN_D3S2_PHASE_BASELINE;
     }
+    if (d3s3_context != NULL) {
+        session->bound_d3s3_context = d3s3_context;
+        session->bound_d3_kind = NINLIL_DOMAIN_SCAN_D3_KIND_S3;
+        (void)memset(d3s3_context, 0, sizeof(*d3s3_context));
+        d3s3_context->focus_mode = d3s3_mode;
+        d3s3_context->pass_kind = NINLIL_DOMAIN_SCAN_D3S3_PASS_BASELINE;
+        d3s3_context->phase = NINLIL_DOMAIN_SCAN_D3S3_PHASE_BASELINE;
+    }
     (void)memcpy(&workspace->candidate, candidate, sizeof(workspace->candidate));
 
     status = begin_read_only_txn(session, storage, inout_handle);
@@ -1380,6 +1507,27 @@ static ninlil_status_t begin_profiled_common(
     if (status != NINLIL_OK) {
         session->bound_d3_context = NULL;
         session->bound_d3_kind = NINLIL_DOMAIN_SCAN_D3_KIND_NONE;
+        return status;
+    }
+
+    /*
+     * D3-S3 REP1-L2 B0 (docs/17 §18.14.19.8 / ADR-0015):
+     * Successful begin emits begin+17×get+iter_open and leaves the session
+     * OPEN/BASELINE with flags 0x00. profile_exact_active is deferred until
+     * true-exhaustion BASELINE W (B1). family14 counters are seeded as
+     * begin-complete (oracle/reference profile); BASELINE W must not
+     * re-reconcile or double-count catalog rows.
+     * D2 / D3-S1 / D3-S2 begin paths are unchanged.
+     */
+    if (d3s3_context != NULL) {
+        if (session->profile_get_present_mask
+            == NINLIL_DOMAIN_SCAN_PROFILE_ALL_MASK) {
+            session->family14_iter_seen_mask =
+                NINLIL_DOMAIN_SCAN_PROFILE_ALL_MASK;
+            session->family14_row_count = 17u;
+            session->profile_reconciliation = 0u;
+        }
+        session->profile_exact_active = 0u;
     }
     return status;
 }
@@ -1407,7 +1555,7 @@ ninlil_status_t ninlil_domain_scan_begin_profiled(
 
     return begin_profiled_common(
         session, storage, inout_handle, workspace, candidate, NULL, 0u, NULL,
-        0u);
+        0u, NULL, 0u);
 }
 
 ninlil_status_t ninlil_domain_scan_begin_profiled_d3s1(
@@ -1440,7 +1588,7 @@ ninlil_status_t ninlil_domain_scan_begin_profiled_d3s1(
 
     return begin_profiled_common(
         session, storage, inout_handle, workspace, candidate, context, mode,
-        NULL, 0u);
+        NULL, 0u, NULL, 0u);
 }
 
 ninlil_status_t ninlil_domain_scan_begin_profiled_d3s2(
@@ -1472,7 +1620,39 @@ ninlil_status_t ninlil_domain_scan_begin_profiled_d3s2(
 
     return begin_profiled_common(
         session, storage, inout_handle, workspace, candidate, NULL, 0u, context,
-        mode);
+        mode, NULL, 0u);
+}
+
+ninlil_status_t ninlil_domain_scan_begin_profiled_d3s3(
+    ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t *inout_handle,
+    ninlil_domain_scan_workspace_t *workspace,
+    const ninlil_model_runtime_store_binding_t *candidate,
+    uint8_t mode,
+    ninlil_domain_scan_d3s3_context_t *context)
+{
+    if (session == NULL || workspace == NULL || inout_handle == NULL
+        || candidate == NULL || context == NULL
+        || !storage_ops_required_nonnull(storage)
+        || *inout_handle == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (mode < NINLIL_DOMAIN_SCAN_D3S3_MODE_MIN
+        || mode > NINLIL_DOMAIN_SCAN_D3S3_MODE_MAX) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!begin_profiled_d3s3_alias_ok(
+            session, storage, inout_handle, workspace, candidate, context)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_IDLE) {
+        return NINLIL_E_INVALID_STATE;
+    }
+
+    return begin_profiled_common(
+        session, storage, inout_handle, workspace, candidate, NULL, 0u, NULL,
+        0u, context, mode);
 }
 
 ninlil_status_t ninlil_domain_scan_reopen_zero_prefix_iter(
@@ -1672,7 +1852,7 @@ ninlil_status_t ninlil_domain_scan_advance(
              * completed cleanly, but must not re-run reconciliation logic.
              */
             if (session->profile_reconciliation != 0u
-                && !s2_pass_internal_active(session)
+                && !d3_pass_internal_active(session)
                 && session->family14_iter_seen_mask
                     != session->profile_get_present_mask) {
                 set_sticky_primary(session, NINLIL_E_STORAGE_CORRUPT);
@@ -1684,9 +1864,14 @@ ninlil_status_t ninlil_domain_scan_advance(
              * H2: after state=EXHAUSTED, before return OK (§18.13.10).
              * FOCUS stream close only; known-slot uses B6k, not H2.
              */
-            if (s2_pass_internal_active(session)) {
-                ninlil_status_t h2 = ninlil_domain_scan_d3s2_on_exhausted(
-                    session);
+            if (d3_pass_internal_active(session)) {
+                ninlil_status_t h2 = NINLIL_OK;
+                if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S2) {
+                    h2 = ninlil_domain_scan_d3s2_on_exhausted(session);
+                } else if (session->bound_d3_kind
+                    == NINLIL_DOMAIN_SCAN_D3_KIND_S3) {
+                    h2 = ninlil_domain_scan_d3s3_on_exhausted(session);
+                }
                 if (h2 != NINLIL_OK) {
                     return h2;
                 }
@@ -2059,6 +2244,35 @@ ninlil_status_t ninlil_domain_scan_finalize(
             && s2->flags == NINLIL_DOMAIN_SCAN_D3S2_FLAG_BASELINE_DONE
             && s2->count_complete_mask == 0u
             && s2->binding_complete_mask == 0u);
+        if (!ordinary_complete && !evaluator_off_exempt) {
+            return NINLIL_E_INVALID_STATE;
+        }
+    }
+
+    /* D3-S3 incomplete machine: same COMPLETE gate spirit as S2. */
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3
+        && session->state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED) {
+        const ninlil_domain_scan_d3s3_context_t *s3 =
+            session->bound_d3s3_context;
+        int ordinary_complete;
+        int evaluator_off_exempt;
+
+        ordinary_complete = (s3 != NULL
+            && s3->phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_COMPLETE
+            && (s3->flags & NINLIL_DOMAIN_SCAN_D3S3_FLAG_COMPLETE_READY)
+                != 0u);
+        evaluator_off_exempt = (s3 != NULL
+            && session->has_sticky_primary == 0u
+            && session->profile_exact_active == 0u
+            && ((session->profile_mismatch == 1u
+                    && session->future_profile_candidate == 0u)
+                || (session->profile_mismatch == 0u
+                    && session->future_profile_candidate == 1u))
+            && s3->phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_BASELINE
+            && s3->pass_kind == NINLIL_DOMAIN_SCAN_D3S3_PASS_BASELINE
+            && s3->flags == NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
+            && s3->count_complete_mask == 0u
+            && s3->binding_complete_mask == 0u);
         if (!ordinary_complete && !evaluator_off_exempt) {
             return NINLIL_E_INVALID_STATE;
         }

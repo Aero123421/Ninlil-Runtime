@@ -209,10 +209,11 @@ static int assert_get_catalog_key_order(const ninlil_scripted_storage_spy_t *spy
             return 0;
         }
         dsp_literal_catalog_key(expected_id, want, &want_len);
-        if (spy->trace[i].key_bytes_length != want_len) {
+        /* GET keys are request_key_*; key_bytes is ITER_NEXT produced keys. */
+        if (spy->trace[i].request_key_bytes_length != want_len) {
             return 0;
         }
-        if (memcmp(spy->trace[i].key_bytes, want, want_len) != 0) {
+        if (memcmp(spy->trace[i].request_key_bytes, want, want_len) != 0) {
             return 0;
         }
         expected_id += 1u;

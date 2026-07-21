@@ -735,6 +735,7 @@ if(NINLIL_BUILD_TESTS)
            OR _source_name STREQUAL "domain_store_scanner.c"
            OR _source_name STREQUAL "domain_store_d3s1.c"
            OR _source_name STREQUAL "domain_store_d3s2.c"
+           OR _source_name STREQUAL "domain_store_d3s3.c"
            OR _source_name STREQUAL "runtime_store_orchestrator.c"
            OR _source_name STREQUAL "runtime_store_stage5_seam.c")
             message(FATAL_ERROR
@@ -1365,6 +1366,33 @@ if(NINLIL_BUILD_TESTS)
         NAME domain_store_d3s2
         COMMAND ninlil_domain_store_d3s2_test
     )
+
+    # D3-S3 core: context/begin/drive empty product + anti-false-pass layout pins.
+    # D3 complete / Stage5 D3 bind / D4 / public Runtime remain pending.
+    add_executable(ninlil_domain_store_d3s3_test
+        tests/runtime/domain_store_d3s3_test.c
+    )
+    target_include_directories(ninlil_domain_store_d3s3_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_domain_store_d3s3_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(ninlil_domain_store_d3s3_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_store_d3s3_test)
+    add_test(
+        NAME domain_store_d3s3
+        COMMAND ninlil_domain_store_d3s3_test
+    )
     add_test(
         NAME domain_scan_d3s2_wire_fixture_source
         COMMAND ${Python3_EXECUTABLE}
@@ -1865,6 +1893,73 @@ if(NINLIL_BUILD_TESTS)
     # Freshness compares against the build artifact; ensure it is generated.
     set_tests_properties(domain_scan_crossrow_fixture_freshness PROPERTIES
         DEPENDS "domain_store_scanner_crossrow_oracle_bridge;domain_store_scanner_crossrow_d3s2_oracle_bridge"
+    )
+
+    # D3-S3 append-only crossrow oracle + production bridge
+    add_test(
+        NAME domain_scan_crossrow_d3s3_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
+            check
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s3_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
+            self-test
+    )
+    set(_ninlil_d3s3_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_crossrow_d3s3_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_d3s3_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+            ${_ninlil_d3s3_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+        COMMENT "Generate domain-scan-crossrow D3-S3 production bridge fixture"
+        VERBATIM
+    )
+    add_executable(ninlil_domain_store_scanner_crossrow_d3s3_oracle_bridge_test
+        tests/runtime/domain_store_scanner_crossrow_d3s3_oracle_bridge_test.c
+        ${_ninlil_d3s3_fixture}
+    )
+    target_include_directories(
+        ninlil_domain_store_scanner_crossrow_d3s3_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(
+        ninlil_domain_store_scanner_crossrow_d3s3_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(
+        ninlil_domain_store_scanner_crossrow_d3s3_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_domain_store_scanner_crossrow_d3s3_oracle_bridge_test)
+    add_test(
+        NAME domain_store_scanner_crossrow_d3s3_oracle_bridge
+        COMMAND ninlil_domain_store_scanner_crossrow_d3s3_oracle_bridge_test
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s3_fixture_freshness
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s3_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s3_fixture}'); td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(a)]); subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(b)]); assert a.read_bytes()==b.read_bytes()==build.read_bytes(); print('d3s3 fixture freshness+determinism ok')"
+    )
+    set_tests_properties(domain_scan_crossrow_d3s3_fixture_freshness PROPERTIES
+        DEPENDS domain_store_scanner_crossrow_d3s3_oracle_bridge
     )
 
     # Supplemental D3-S2 close-semantics matrix. This is not the Normative

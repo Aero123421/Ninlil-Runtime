@@ -20,7 +20,7 @@ extern "C" {
 #define NINLIL_SPY_MAX_ROWS ((size_t)128u)
 #define NINLIL_SPY_MAX_KEY ((uint32_t)255u)
 #define NINLIL_SPY_MAX_VALUE ((uint32_t)4096u)
-#define NINLIL_SPY_MAX_TRACE ((size_t)256u)
+#define NINLIL_SPY_MAX_TRACE ((size_t)1024u)
 #define NINLIL_SPY_MAX_FAULTS ((size_t)32u)
 #define NINLIL_SPY_MAX_CLOSE_HANDLES ((size_t)8u)
 
@@ -87,17 +87,34 @@ typedef struct ninlil_spy_fault {
  */
 #define NINLIL_SPY_TRACE_KEY_BYTES ((uint32_t)255u)
 
+/* Stable, test-only identities: reopen generations are intentionally distinct. */
+typedef enum ninlil_spy_handle_id {
+    NINLIL_SPY_HANDLE_NONE = 0,
+    NINLIL_SPY_HANDLE_H1 = 1,
+    NINLIL_SPY_HANDLE_T1 = 2,
+    NINLIL_SPY_HANDLE_I1 = 3,
+    NINLIL_SPY_HANDLE_I10 = 12
+} ninlil_spy_handle_id_t;
+
 typedef struct ninlil_spy_trace {
     ninlil_spy_op_t op;
+    uint32_t api_call_index;
     ninlil_storage_status_t status;
+    uint8_t status_present;
     ninlil_storage_mode_t mode;
+    uint8_t mode_present;
+    uint32_t input_handle_id;
+    uint32_t output_handle_id;
     uint32_t prefix_length;
+    uint8_t prefix_bytes[NINLIL_SPY_TRACE_KEY_BYTES];
     uint32_t key_capacity;
     uint32_t value_capacity;
     uint32_t key_length;
     uint32_t value_length;
     uint32_t produced_handle; /* 1 if out handle/iter was non-NULL */
-    /* Populated for GET only: exact key bytes presented to the Port. */
+    /* Exact requested GET bytes and produced ITER_NEXT key bytes. */
+    uint8_t request_key_bytes[NINLIL_SPY_TRACE_KEY_BYTES];
+    uint32_t request_key_bytes_length;
     uint8_t key_bytes[NINLIL_SPY_TRACE_KEY_BYTES];
     uint32_t key_bytes_length;
 } ninlil_spy_trace_t;
@@ -111,15 +128,19 @@ typedef struct ninlil_scripted_storage_spy {
     size_t fault_count;
     ninlil_spy_trace_t trace[NINLIL_SPY_MAX_TRACE];
     size_t trace_count;
+    uint8_t trace_overflow;
+    uint32_t trace_api_call_index;
     uint64_t call_counts[NINLIL_SPY_OP_COUNT];
     uint64_t mutation_calls;
     uint64_t allocator_calls;
     int handle_live;
     int txn_live;
     int iter_live;
+    uint32_t iter_generation;
     int closed;
     uint32_t begin_calls;
     uint32_t iter_open_calls;
+    uint32_t iter_open_success_calls;
     uint32_t iter_next_calls;
     uint32_t iter_close_calls;
     uint32_t rollback_calls;
@@ -163,6 +184,10 @@ uint64_t ninlil_spy_call_count(
     ninlil_spy_op_t op);
 
 int ninlil_spy_assert_no_mutations(const ninlil_scripted_storage_spy_t *spy);
+
+/* Test-only public-call boundary for exact oracle api_call_index tracing. */
+void ninlil_spy_trace_set_api_call_index(
+    ninlil_scripted_storage_spy_t *spy, uint32_t api_call_index);
 
 /* Returns 1 if every rollback is preceded by matching iter_close when iter was live. */
 int ninlil_spy_iter_close_before_rollback(
