@@ -51,7 +51,7 @@ public Runtime、POSIX/ESP-IDF ports、PC間E2E、USB Controller/Cell Agent、SX
 
 - **Fable**: 監査、計画、分解、契約抽出、統合QA、進捗台帳、失敗時再委任、README/push、merge判断。
 - **Codex GPT-5.6 Sol high**: トランチ計画レビュー(P0/P1解消まで実装開始禁止)。
-- **OpenCode Qwen(alibaba-token-plan/qwen3.8-max-preview)**: 主実装。専用worktree/限定編集範囲。
+- **OpenCode Qwen(alibaba-token-plan/qwen3.8-max-preview)**: 主実装。専用worktree/限定編集範囲。**可用性障害時のフォールバック循環: Qwen→Cursor CLI Auto(cursor-agent)→Grok 4.5→Qwen**（規則詳細: `2026-07-21-worker-fallback-policy.md`。品質不足は切替理由にしない。実装者が誰でもSolレビュー必須。Grok実装期間はGrok自己レビューを独立と数えない）。
 - **Grok Build grok-4.5**: 全diffコードレビュー。
 - **Codex GPT-5.6 Sol xhigh**: 重大境界(oracle/production、security、wire/ABI/storage format、compliance)レビュー。
 

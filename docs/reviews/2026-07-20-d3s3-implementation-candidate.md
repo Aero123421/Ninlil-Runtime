@@ -2,31 +2,31 @@
 
 状態: **非規範 candidate memo**（Accepted ではない; GO ではない）  
 対象: D3-S3 private evaluator / crossrow d3s3 append / production bridge / REP1 packing  
-日付: 2026-07-20（BIND-WG + Sol high NO-GO docs/oracle repair chain through **R27**; this file is **R27-Sol Proposed** candidate pin）  
+日付: 2026-07-20（原本）/ 2026-07-21 R28更新（repair chain through **R28**; this file is **R28 Accepted** pin — Sol xhigh r3 P0=0/P1=0 2026-07-21）  
 base: `main` merge `39026aeb7415ada9654213332a087d388cab879e`
 
 ## Candidate status (current)
 
-### Oracle candidate pin（R27-Sol Proposed; not Accepted; GO forbidden）
+### Oracle pin（R28; **Accepted 2026-07-21** — Sol xhigh r3 P0=0/P1=0 + production/bridge evidence）
 
 | Metric | Value |
 | --- | --- |
 | Authority path | `spec/vectors/domain-scan-crossrow-v1.json` |
 | format | `ninlil-domain-scan-crossrow-v1-d3s3` |
-| `vector_count` | **280** = frozen D3-S2 prefix **144** (exact invariant) + D3-S3 suffix **136** |
-| suffix136 breakdown | **`rep1_l2` production 135** + **`formal_precheck` 1** |
+| `vector_count` | **283** = frozen D3-S2 prefix **144** (exact invariant) + D3-S3 suffix **139** |
+| suffix139 breakdown | **`rep1_l2` production 138** + **`formal_precheck` 1** |
 | formal_precheck ID | `D3S3_M27_DUPLICATE_DIGEST_MATCH_CORRUPT` |
 | `precheck_error` | `DUPLICATE_COMPLETE_KEY` |
-| Canonical `content_sha256` | `93edadc3b262fb1cb5717d0895769e686055c2ee7bef7fbda6e8ffe07c9e572c` |
-| Full file raw SHA-256 | `1506f43229b27254e70cc8fc54faa039711007924d015c451a3fd23114d59fe2` |
-| Vector body vs R26 | **changed** (+7 Mode27 EF cross-row CORRUPT; DS STATE avd sync on materials) |
+| Canonical `content_sha256` | `0155b6929c2bb64396623cd75be283947b76c68d9f5d9578825ae5966b375639` |
+| Full file raw SHA-256 | `8b17304f7edda04495aafa2e8f3a54bd7e57d5c147b8e62fca8a1b6b360740ed` |
+| Vector body vs R27-Sol | **changed** (+3 Mode27 EF reason-closure CORRUPT: AWAITING cancel/CAPACITY, WAITING CAPACITY, DISPATCHING attempt0; EF AWAITING closed to {0}) |
 | first144 vs `origin/main` | byte-for-byte object equality required (prefix144 exact invariant) — **verified exact** |
-| Generator self-test | permanent RED matrix **a–r** + **R19…R24 D1** + **R25 STATE/CU fence** + **R26/R27 STATE product/EventFact lifecycle/CLI strict** + **R27 STATE matrix 29 positives + Mode27 3×4 lifecycle** |
+| Generator self-test | permanent RED matrix **a–r** + **R19…R24 D1** + **R25 STATE/CU fence** + **R26/R27 STATE product/EventFact lifecycle/CLI strict** + **R27 STATE matrix 29 positives + Mode27 4×4 lifecycle** + **R28 EF reason-closure 6+3prod** |
 | Production typed diagnostic (cross-check only; not oracle authority) | family6 full accept when available (`ninlil_model_domain_validate_typed_record`) — not claimed as GO |
 | D1 secondary differential (not production C) | see exact accounting table below |
-| Production / bridge | **未追従**（this turn oracle/spec lane only; no production C / C tests / CMake / Git） |
+| Production / bridge | **追従済み**（R28 r3: production Mode27 EF reason-closure adoption guard + two-lane bridge 139 green） |
 
-**Not production bridge green. Not ADR Accepted. Not Stage 5 / D3 complete. Accepted/GO forbidden.**
+**Production bridge green (R28 r3, two-lane 139 vectors). Not ADR Accepted. Not Stage 5 / D3 complete. Accepted/GO forbidden pending Sol re-review.**
 
 ### D1 secondary-authority differential (exact R27 pins; same R23/R24 corpus counts)
 
@@ -55,7 +55,7 @@ Used family6 subtypes: **20 / 22 / 27 / 30 / 32 / 33 / 40 / 41 / 42 / 50**.
 | Boundary sweep total | **4380** = sum over baselines of `(exact_body_len + 1)` short/long forgeries |
 | Boundary by variant | `20:670`, `22:225`, `27:646`, `30c:118`, `30m:131`, `32:799`, `33:227`, `40:553`, `41:379`, `42:331`, `50:301` |
 | Type-contract cases | **6** (None/str/empty) → reason string, never raise |
-| STATE legal positives | **28** family-specific closed branches (DS **24** + EF **5**) from docs/12+docs/13 reducers |
+| STATE legal positives | **28** family-specific closed branches (DS **23** + EF **5**) from docs/12+docs/13 reducers |
 | Mode27 EF lifecycle matrix | **16** = 4 state-class × 4 spool; **7** permanent cross-row CORRUPT product vectors |
 | CLI check exit2 matrix | `[]`, `null`, string, number, `{}`, malformed JSON, missing file, wrong `vectors`/row shapes, **bool/float vector_count**, nested float, NaN/Infinity/overflow |
 | CLI generate exit2 matrix (R25/R26/R27) | existing path `[]`/`null`/string/number/malformed/object wrong shape/**short vectors**/float/**wrong first144** → exit **2**, one `error:` stderr line, no traceback, no success stdout; never adopt unvalidated first144 |
@@ -100,7 +100,8 @@ Used family6 subtypes: **20 / 22 / 27 / 30 / 32 / 33 / 40 / 41 / 42 / 50**.
 | R26 candidate pin | **Proposed** | R25 residual true STATE closed product + Mode27 EventFact full rebuild + generate/check strict fail-closed; content/raw SHAs above |
 | Root QA on R26 | **NO-GO residual** | See R26 Root QA residual findings below |
 | R27 candidate pin | **Proposed** | R26 residual: full STATE matrix re-extract from docs/12+docs/13 reducers + Mode27 3×4 lifecycle permanent; vector body object-identical; this memo |
-| Sol / production / bridge re-review | **Incomplete** | Required; **Accepted / GO forbidden** until complete; **production/bridge 未追従** |
+| R28 candidate pin | **Proposed** | R28 r3: EF state-dependent reason closure (EF AWAITING={0}; EF WAITING excludes CAPACITY_EXHAUSTED(11); EF DISPATCHING attempt≥1) in oracle classifier + production adoption guard; Mode27 **4×4=16** lifecycle; +3 EF reason-closure CORRUPT vectors; counts **283=144+139** (production 138 + formal 1); content `0155b692…` / raw `8b17304f…`; **production/bridge 追従済み (two-lane bridge 139 green)** |
+| Sol / production / bridge re-review | **Sol pending** | production/bridge **追従済み (R28 r3, bridge 139 green)**; Sol re-review required; **Accepted / GO forbidden** until complete |
 
 #### R24 Sol high NO-GO details (closed by R25)
 
@@ -163,6 +164,7 @@ Used family6 subtypes: **20 / 22 / 27 / 30 / 32 / 33 / 40 / 41 / 42 / 50**.
 | R26 | Independent oracle repair (no production C oracle; no R16–R25 weaken): true STATE product attempt + Mode27 EventFact full rebuild + CLI strict — **Root QA residual NO-GO** on STATE matrix holes. Vector body SHA **changed** then. Counts **273=144+129**. |
 | R27 | **Independent oracle/spec repair (no production C oracle; no R16–R26 weaken):** full TRANSACTION_STATE reachable public snapshot matrix re-extracted from docs/12+docs/13 reducers; STATE positives **28**; Mode27 lifecycle permanent **3×4=12**; CLI/COMMIT_UNKNOWN fence preserved. Vector body object-identical to R26 (content/raw SHAs unchanged). Counts **273=144+129**（当時; R27-Solでsuperseded）. |
 | R27-Sol | **Mode27 EF cross-row拡張（`o1a_mode27_cross_row_ok` を classify+SELECT_SETUPへ; family/avd/pvd/rev/state×park）:** +7 Mode27 EF cross-row CORRUPT product vectors; 4×4 lifecycle; generate/check full-document shape+int schema。**Vector body changed vs R26/R27**: counts **280=144+136**（production 135 + formal 1）; content `93edadc3…` / raw `1506f432…`（冒頭表pin）. **Production/bridge 追従は 2026-07-21 回収トランチ**（docs/work/2026-07-21-d3s3-r27-bridge-recovery-plan.md）. |
+| R28 | **ADR-0015受入レビュー(Sol xhigh NO-GO P0=0 P1=1 P2=2)回収 (r3確定):** (P1-1) EventFact状態依存reason集合の閉包 — EF AWAITING={NONE(0)}（deadline/cancelなし ⇒ 68/83/86/128/129拒否; docs/13 §964/§1061/§1149, docs/12 §1758）、EF WAITING は CAPACITY_EXHAUSTED(11) を拒否（PARKED専用）、EF DISPATCHING は attempt_in_cycle≥1 下限。閉包はoracle分類器（`o1a_mode27_cross_row_ok`）とproduction Mode27採用guard（`run_select_setup_mode27`）で実施；D1 constructibility gateはEF行をconstructibleのまま保持（採用guardを識別的回帰試験可能にするため）。+3 Mode27 EF reason closure CORRUPT product vectors（family/cross-row通過、reason gateのみでRED: AWAITING+CANCEL_PENDING_REMOTE_FENCE / WAITING+CAPACITY_EXHAUSTED / DISPATCHING+attempt_in_cycle=0）＋恒久self-test RED（68/128/129含む6変異）。(P2-1) generate fail-closed: suffix row={} / value_hex欠落 / checkpoint閉鎖整数スキーマ（previous_key_length / last_carrier_key_len / event_start 等、bool/float/未知キーを任意depthで拒否）を exit2 で拒否＋CLI self-test。(P2-2) docs件数/SHA正規化（ADR 3×4=12→4×4=16; docs/17 283件・新SHA・bridge green）。**Vector body changed vs R27-Sol**: counts **283=144+139**（production 138 + formal 1）; content `0155b692…` / raw `8b17304f…`. **Production/bridge 追従済み（two-lane bridge 139 green）.** |
 
 Permanent self-test: `R16 G schedule/status/fault/type exact RED ok (a-r)` + `R19…R24 independent D1-legality gate RED matrix ok` + `R25/R26/R27 COMMIT_UNKNOWN fence + Mode27 lifecycle pins ok` + `R24/R25/R26 CLI closed failure matrix ok` (generator).
 
@@ -188,8 +190,8 @@ Earlier on this branch, after terminal/G-entry/first-outer Normative repairs, So
 | `begin_profiled_d3s3` / `d3s3_drive` / H1 `on_row` / H2 `on_exhausted` | present; **not** claimed REP1-L2 field equality |
 | KEY_DIGEST digest-match SCAN single arm（reverse / rebuild exact_get 禁止） | production path present |
 | Mode30 companion matrix / BIND reverse / sequential BIND phases | present; must match §18.14.9.3 frontier/latch |
-| independent generator / emit-c / candidate JSON 273 | **R27-Sol Proposed** oracle candidate; **not** Accepted |
-| production exact bridge | **not green claimed** (2-lane re-review incomplete; **未追従**) |
+| independent generator / emit-c / candidate JSON 283 | **R28 Proposed** oracle candidate; **not** Accepted |
+| production exact bridge | **green** (R28 r3 two-lane bridge 139 vectors; production 138 + formal 1) |
 
 ## Measured product (honest)
 
@@ -197,12 +199,12 @@ Earlier on this branch, after terminal/G-entry/first-outer Normative repairs, So
 | ---: | --- |
 | Last pre-acceptance withdrawn draft vector_count | **228** total / d3s2 prefix **144** / d3s3 suffix **84** |
 | Withdrawn draft full SHA (do not pin GO) | `0658cbe092313e19dbb4498dcd5a786517651cb984ddfc7f97f2a47b372cf36f` |
-| Current R27-Sol oracle candidate | **280** / prefix **144** / suffix **136** = production **135** + formal **1** / content `93edadc3…` / raw `1506f432…`（冒頭表と一致; R27初版273=144+129 content `ccf056de…` / raw `a88ffb4f…` は superseded） |
+| Current R28 oracle candidate | **283** / prefix **144** / suffix **139** = production **138** + formal **1** / content `0155b692…` / raw `8b17304f…`（冒頭表と一致; R28 r1/r2 283 content `e2c057e8…` / raw `9d6bb6ae…`、R27-Sol 280=144+136 content `93edadc3…` / raw `1506f432…` は superseded） |
 | D1 secondary differential | typed **74/60**; body_decode **306 checked / 0 non_app**; body_roundtrip **132** |
 | R24/R27 boundary sweep | **4380** total; all subtypes/variants >0 |
 | STATE legal positives | **28** (DS 23 + EF 5) |
-| Mode27 EF lifecycle cells | **12** (3×4) |
-| Production bridge under REP1-WG | **not green claimed** / **未追従** |
+| Mode27 EF lifecycle cells | **16** (4×4) |
+| Production bridge under REP1-WG | **green** (R28 r3 two-lane bridge 139 vectors) |
 | Older memo “62 suffix / constructible closed scope” | **obsolete / incorrect** as completion evidence |
 | R26-era content/raw SHA pair | **same as R27 vector body** (R27 gate-only); do not treat R26 matrix as complete authority |
 | R25-era candidate SHAs `bb56954f…` / `997f64e5…` | **superseded** by R26 body |
@@ -253,15 +255,15 @@ Earlier on this branch, after terminal/G-entry/first-outer Normative repairs, So
 - Public API/ABI / wire / D1 codec / Port ABI **unchanged** by this oracle-candidate turn（generator/docs only; no production C edit in this R27 oracle lane）
 - Dual-bound S1+S2+S3 / one-baseline-all-four **forbidden** and not claimed
 - formal_precheck is **not** a REP1-L2 transcript vector and **not** production GO evidence
-- R19–R27 do **not** weaken D1 or production validation; production C is **not** the oracle authority (typed diagnostic is cross-check only)
-- **Production / bridge 未追従**
+- R19–R28 do **not** weaken D1 or production validation; production C is **not** the oracle authority (typed diagnostic is cross-check only)
+- **Production / bridge 追従済み**（R28 r3: Mode27 EF reason-closure adoption guard + two-lane bridge 139 green）
 
 ## Residual
 
 **Open (honest):**
 
-1. **Sol high re-review** of R27 oracle candidate + Normative R13–R27 grammar/fault/type/lane/D1-legality/CLI/fence/lifecycle/STATE matrix text.
-2. **Production / bridge follow-up** to R27 TRANSACTION_STATE closed product + Mode27 lifecycle matrix (this turn explicitly **未追従**).
+1. **Sol high re-review** of R28 oracle candidate + Normative R13–R28 grammar/fault/type/lane/D1-legality/CLI/fence/lifecycle/STATE matrix text.
+2. **Production / bridge follow-up** to R27/R28 TRANSACTION_STATE closed product + Mode27 lifecycle matrix + EF reason closure — **done in R28 r3** (two-lane bridge 139 green).
 3. **Production Core** W/G/WG + lex-only INTERNAL + reopen exact + field-for-field bridge.
 4. **Two-lane bridge** evidence (`rep1_l2` exact Port; formal_precheck validator-only; RED on unknown scope/count drift/silent skip).
 5. **ADR-0015 Accepted** only after independent review P0=0 **and** production/bridge evidence — not claimed here; **Accepted/GO forbidden**.
