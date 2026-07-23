@@ -5,6 +5,7 @@
 #include "domain_store_d3s1.h"
 #include "domain_store_d3s2.h"
 #include "domain_store_d3s3.h"
+#include "v1_durable_allowlist.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -942,6 +943,43 @@ static int d3_pass_internal_active(const ninlil_domain_scan_session_t *session)
     return 0;
 }
 
+static int row_is_v1_allowlisted_spine_marker(
+    const uint8_t *key,
+    uint32_t key_length,
+    const uint8_t *value,
+    uint32_t value_length)
+{
+    ninlil_v1_durable_record_kind_t kind;
+    ninlil_status_t status = ninlil_v1_durable_classify_row(
+        (ninlil_bytes_view_t){key, key_length},
+        (ninlil_bytes_view_t){value, value_length},
+        &kind);
+
+    if (status != NINLIL_OK) {
+        return 0;
+    }
+    return kind >= NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER
+        && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE;
+}
+
+static ninlil_status_t skip_allowlisted_spine_row(
+    ninlil_domain_scan_session_t *session,
+    ninlil_domain_scan_workspace_t *workspace,
+    uint32_t key_length,
+    int internal)
+{
+    if (internal == 0 && session->ok_row_count == UINT64_MAX) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    (void)memcpy(workspace->previous_key, workspace->key, key_length);
+    session->previous_key_length = key_length;
+    session->has_previous = 1u;
+    if (internal == 0) {
+        session->ok_row_count += 1u;
+    }
+    return NINLIL_OK;
+}
+
 static ninlil_status_t process_ok_row(
     ninlil_domain_scan_session_t *session,
     ninlil_domain_scan_workspace_t *workspace,
@@ -960,6 +998,15 @@ static ninlil_status_t process_ok_row(
                 key_length)) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
+    }
+
+    if (row_is_v1_allowlisted_spine_marker(
+            workspace->key,
+            key_length,
+            workspace->value,
+            value_length)) {
+        return skip_allowlisted_spine_row(
+            session, workspace, key_length, internal);
     }
 
     /*

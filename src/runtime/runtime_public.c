@@ -1,4 +1,6 @@
 #include "runtime_internal.h"
+#include "runtime_v1_delivery_durable.h"
+#include "runtime_v1_event_mgmt.h"
 #include "runtime_v1_spine_durable.h"
 
 #include "submission_admission.h"
@@ -813,6 +815,16 @@ ninlil_status_t ninlil_runtime_create(
     runtime->health = health.health;
     runtime->degraded_reason = health.degraded_reason;
     runtime->lifecycle = NINLIL_RT_LIFECYCLE_LIVE;
+
+    if (runtime->storage_recovery_complete != 0u) {
+        status = ninlil_rt_v1_delivery_restart_scan(runtime);
+        if (status != NINLIL_OK) {
+            rt_close_ports(runtime);
+            rt_free_runtime(platform, runtime);
+            return status;
+        }
+    }
+
     *out_runtime = runtime;
     return NINLIL_OK;
 }
@@ -1033,6 +1045,7 @@ ninlil_status_t ninlil_runtime_step(
     ninlil_status_t status;
     ninlil_time_sample_t sample;
     ninlil_port_status_t clock_status;
+    ninlil_rt_v1_step_delivery_result_t delivery_result;
     uint32_t ingress_budget;
     uint32_t callback_budget;
     uint32_t transition_budget;
@@ -1073,6 +1086,8 @@ ninlil_status_t ninlil_runtime_step(
     if (send_budget > runtime->config.limits.max_bearer_sends_per_step) {
         send_budget = runtime->config.limits.max_bearer_sends_per_step;
     }
+    (void)ingress_budget;
+    (void)send_budget;
 
     runtime->in_step = 1u;
     runtime->step_phase = NINLIL_RT_STEP_PHASE_CLOCK;
@@ -1093,36 +1108,27 @@ ninlil_status_t ninlil_runtime_step(
     }
 
     runtime->step_phase = NINLIL_RT_STEP_PHASE_WORK;
-    if (runtime->pending_work != 0u
-        && (ingress_budget > 0u || callback_budget > 0u || transition_budget > 0u
-            || send_budget > 0u)) {
-        uint32_t index;
-
-        for (index = 0u; index < runtime->transaction_capacity; ++index) {
-            ninlil_rt_transaction_slot_t *txn =
-                &runtime->transactions[index];
-
-            if (txn->in_use != 0u && txn->pending_dispatch != 0u
-                && txn->terminal == 0u) {
-                txn->pending_dispatch = 0u;
-                runtime->pending_work = 0u;
-                for (index = 0u; index < runtime->transaction_capacity; ++index) {
-                    if (runtime->transactions[index].in_use != 0u
-                        && runtime->transactions[index].pending_dispatch != 0u
-                        && runtime->transactions[index].terminal == 0u) {
-                        runtime->pending_work = 1u;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
+    (void)memset(&delivery_result, 0, sizeof(delivery_result));
+    status = ninlil_rt_v1_delivery_step(
+        runtime,
+        &sample,
+        callback_budget,
+        transition_budget,
+        &delivery_result);
+    if (status != NINLIL_OK) {
+        runtime->in_step = 0u;
+        runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
+        out_result->health = runtime->health;
+        out_result->degraded_reason = runtime->degraded_reason;
+        return status;
     }
 
     runtime->step_phase = NINLIL_RT_STEP_PHASE_PROJECT;
     out_result->health = runtime->health;
     out_result->degraded_reason = runtime->degraded_reason;
-    out_result->more_work = runtime->pending_work;
+    out_result->more_work = delivery_result.work_remaining != 0u
+        ? 1u
+        : runtime->pending_work;
     runtime->in_step = 0u;
     runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
     return NINLIL_OK;
@@ -1159,7 +1165,6 @@ ninlil_status_t ninlil_event_resume(
     const ninlil_event_resume_request_t *request,
     ninlil_event_resume_result_t *out_result)
 {
-    (void)request;
     if (out_result != NULL) {
         (void)memset(out_result, 0, sizeof(*out_result));
         set_header(
@@ -1169,7 +1174,12 @@ ninlil_status_t ninlil_event_resume(
         || out_result == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
-    return NINLIL_E_NOT_FOUND;
+    if (!validate_struct_header(request, sizeof(*request))
+        || !validate_struct_header(out_result, sizeof(*out_result))) {
+        return NINLIL_E_ABI_MISMATCH;
+    }
+    return ninlil_rt_v1_event_resume(
+        runtime, transaction_id, request, out_result);
 }
 
 ninlil_status_t ninlil_event_discard(
@@ -1178,7 +1188,6 @@ ninlil_status_t ninlil_event_discard(
     const ninlil_event_discard_request_t *request,
     ninlil_event_discard_result_t *out_result)
 {
-    (void)request;
     if (out_result != NULL) {
         (void)memset(out_result, 0, sizeof(*out_result));
         set_header(
@@ -1188,7 +1197,12 @@ ninlil_status_t ninlil_event_discard(
         || out_result == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
-    return NINLIL_E_NOT_FOUND;
+    if (!validate_struct_header(request, sizeof(*request))
+        || !validate_struct_header(out_result, sizeof(*out_result))) {
+        return NINLIL_E_ABI_MISMATCH;
+    }
+    return ninlil_rt_v1_event_discard(
+        runtime, transaction_id, request, out_result);
 }
 
 ninlil_status_t ninlil_transaction_query(

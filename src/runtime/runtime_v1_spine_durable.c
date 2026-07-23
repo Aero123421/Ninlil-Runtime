@@ -1,10 +1,17 @@
 #include "runtime_v1_spine_durable.h"
 
+#include "runtime_v1_delivery_durable.h"
 #include "submission_admission.h"
 #include "submission_canonical_v1.h"
 #include "submission_preflight.h"
 
 #include <string.h>
+
+static void set_header(uint16_t *abi_version, uint16_t *struct_size, size_t size)
+{
+    *abi_version = NINLIL_ABI_VERSION;
+    *struct_size = (uint16_t)size;
+}
 
 static void set_id(ninlil_id128_t *id, uint8_t value)
 {
@@ -106,6 +113,97 @@ static ninlil_model_descriptor_contract_extension_t descriptor_contract_from(
     return contract;
 }
 
+static void copy_grant_snapshot(
+    ninlil_model_origin_grant_snapshot_t *out_grant,
+    const ninlil_origin_authorization_decision_t *decision)
+{
+    out_grant->provider_id = decision->provider_id;
+    out_grant->provider_revision = decision->provider_revision;
+    out_grant->decision_digest = decision->decision_digest;
+    out_grant->grant_id = decision->grant_id;
+    out_grant->grant_revision = decision->grant_revision;
+    out_grant->clock_epoch_id = decision->clock_epoch_id;
+    out_grant->evaluated_at_ms = decision->evaluated_at_ms;
+    out_grant->valid_from_ms = decision->valid_from_ms;
+    out_grant->expires_at_ms = decision->expires_at_ms;
+    out_grant->retry_delay_ms = decision->retry_delay_ms;
+    out_grant->max_payload_bytes = decision->max_payload_bytes;
+    out_grant->max_active_spool_count = decision->max_active_spool_count;
+    out_grant->max_active_spool_bytes = decision->max_active_spool_bytes;
+    out_grant->rate_window_ms = decision->rate_window_ms;
+    out_grant->max_admissions_per_window = decision->max_admissions_per_window;
+    out_grant->max_attempts_per_retry_cycle =
+        decision->max_attempts_per_retry_cycle;
+}
+
+static ninlil_status_t fill_origin_authority(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_service_slot_t *slot,
+    const ninlil_submission_t *submission,
+    ninlil_model_submission_preflight_input_t *input)
+{
+    const ninlil_origin_authorization_ops_t *origin;
+    ninlil_origin_authorization_request_t request;
+    ninlil_origin_authorization_decision_t decision;
+    ninlil_origin_auth_status_t auth_status;
+
+    if (slot->model_service.family != NINLIL_FAMILY_EVENT_FACT) {
+        input->authority.fact = NINLIL_MODEL_ORIGIN_AUTH_NOT_APPLICABLE;
+        return NINLIL_OK;
+    }
+
+    origin = runtime->platform->origin_authorization;
+    if (origin == NULL || origin->evaluate == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+
+    (void)memset(&request, 0, sizeof(request));
+    set_header(&request.abi_version, &request.struct_size, sizeof(request));
+    request.environment = runtime->config.environment;
+    request.source = slot->model_service.source;
+    if (submission->target_count == 1u && submission->targets != NULL) {
+        request.target = submission->targets[0];
+    }
+    request.service = slot->model_service.identity;
+    request.event_id = submission->event_id;
+    request.content_digest = submission->content_digest;
+    request.required_evidence = submission->required_evidence;
+    request.payload_length = (uint32_t)submission->payload.length;
+    request.active_spool_count =
+        (uint32_t)input->event_grant_usage.active_spool_count;
+    request.admissions_in_current_window =
+        (uint32_t)input->quota.admissions_in_window;
+    request.active_spool_bytes = input->event_grant_usage.active_spool_bytes;
+    request.current_window_started_at_ms = input->clock.now_ms;
+    request.now = runtime->started_sample;
+
+    (void)memset(&decision, 0, sizeof(decision));
+    auth_status = origin->evaluate(origin->user, &request, &decision);
+    if (auth_status == NINLIL_ORIGIN_AUTH_TEMPORARY_FAILURE) {
+        input->authority.fact = NINLIL_MODEL_ORIGIN_AUTH_TEMPORARY_FAILURE;
+        return NINLIL_OK;
+    }
+    if (auth_status == NINLIL_ORIGIN_AUTH_PERMANENT_FAILURE) {
+        input->authority.fact = NINLIL_MODEL_ORIGIN_AUTH_PERMANENT_OR_INVALID;
+        return NINLIL_OK;
+    }
+    if (auth_status != NINLIL_ORIGIN_AUTH_OK) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (decision.allowed == 0u) {
+        input->authority.fact = NINLIL_MODEL_ORIGIN_AUTH_DENY;
+        input->authority.deny_reason = decision.reason;
+        input->authority.deny_guidance = decision.retry_guidance;
+        input->authority.deny_retry_delay_ms = decision.retry_delay_ms;
+        copy_grant_snapshot(&input->authority.grant, &decision);
+        return NINLIL_OK;
+    }
+
+    input->authority.fact = NINLIL_MODEL_ORIGIN_AUTH_ALLOW;
+    copy_grant_snapshot(&input->authority.grant, &decision);
+    return NINLIL_OK;
+}
+
 static ninlil_status_t fill_preflight_input(
     ninlil_model_submission_preflight_input_t *input,
     ninlil_runtime_t *runtime,
@@ -153,9 +251,10 @@ static ninlil_status_t fill_preflight_input(
     input->last_transaction_sequence = runtime->transaction_sequence;
     input->last_scheduler_owner_sequence =
         runtime->last_assigned_scheduler_owner_sequence;
-    input->authority.fact = slot->model_service.family == NINLIL_FAMILY_EVENT_FACT
-        ? NINLIL_MODEL_ORIGIN_AUTH_ALLOW
-        : NINLIL_MODEL_ORIGIN_AUTH_NOT_APPLICABLE;
+    status = fill_origin_authority(runtime, slot, submission, input);
+    if (status != NINLIL_OK) {
+        return status;
+    }
     input->quota.inflight_count = slot->quota_inflight;
     input->quota.admissions_in_window = slot->quota_admissions;
     input->quota.payload_bytes_in_window = slot->quota_payload_bytes;
@@ -183,7 +282,7 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     const ninlil_storage_ops_t *storage;
     ninlil_storage_txn_t txn = NULL;
     uint8_t marker_key[32];
-    uint8_t marker_value[32];
+    uint8_t marker_value[NINLIL_RT_V1_TX_ADMISSION_MARKER_VALUE_BYTES];
 
     status = fill_preflight_input(&preflight_in, runtime, slot, submission);
     if (status != NINLIL_OK) {
@@ -257,7 +356,12 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     marker_key[0] = 0x54u;
     marker_key[1] = 0x58u;
     (void)memcpy(&marker_key[2], alloc_out.write_set.transaction_id.bytes, 14u);
-    (void)memset(marker_value, 0xB2, sizeof(marker_value));
+    ninlil_rt_v1_encode_tx_admission_marker(
+        marker_value,
+        slot->model_service.family,
+        &slot->descriptor.local_application_instance_id,
+        submission->effect_deadline_ms,
+        submission->generation);
 
     status = ninlil_v1_durable_storage_put(
         NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT,
@@ -308,6 +412,14 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     txn_slot->cancel_kind = 0u;
     txn_slot->outcome = NINLIL_OUTCOME_NONE;
     txn_slot->reason = NINLIL_REASON_NONE;
+    txn_slot->service_app_id = slot->descriptor.local_application_instance_id;
+    txn_slot->event_id = submission->event_id;
+    txn_slot->content_digest = submission->content_digest;
+    txn_slot->effect_deadline_ms = submission->effect_deadline_ms;
+    txn_slot->generation = submission->generation;
+    txn_slot->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
+    txn_slot->retry_budget = 3u;
+    txn_slot->spool_revision = 1u;
     runtime->pending_work = 1u;
 
     *out_result = commit_out.public_result;

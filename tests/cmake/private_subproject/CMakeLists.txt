@@ -75,11 +75,11 @@ get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
 # Exact base private sources + N6 + R7 T0 portable crypto + R7 T1 wire +
 # R7 T1b context binding + D3-S3 evaluator + V1 allowlist + V1 restart +
-# B1 spine (runtime_public + submission model) = 37.
+# B1 spine + 2b delivery/event durable = 39.
 # Host OpenSSL 3 adapter is top-level/tests only and must not appear in this
 # add_subdirectory consumer (NINLIL_R7_HOST_CRYPTO_ENABLED=FALSE).
-if(NOT _private_source_count EQUAL 37)
-    message(FATAL_ERROR "private source count is not 37: ${_private_sources}")
+if(NOT _private_source_count EQUAL 39)
+    message(FATAL_ERROR "private source count is not 39: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -124,6 +124,8 @@ set(_expected_private_source_names
     runtime_store_codec.c
     runtime_store_orchestrator.c
     runtime_store_stage5_seam.c
+    runtime_v1_delivery_durable.c
+    runtime_v1_event_mgmt.c
     runtime_v1_spine_durable.c
     stage5_empty_metadata.c
     storage_canonical_plan.c
