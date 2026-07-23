@@ -406,7 +406,7 @@ endif()
 install(TARGETS ninlil EXPORT NinlilTargets)
 install(DIRECTORY include/ninlil
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES LICENSE
+install(FILES LICENSE NOTICE THIRD-PARTY-NOTICES.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/ninlil)
 if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
     install(TARGETS ninlil_posix_sqlite_storage
@@ -2818,6 +2818,8 @@ if(NINLIL_BUILD_TESTS)
     ninlil_c4_c5_lab_register_tests()
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_v1_integration_gate_ctest.cmake)
     ninlil_v1_integration_gate_register_tests()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_v1_lab_examples.cmake)
+    ninlil_v1_lab_examples_register()
     add_test(
         NAME c6_lab_enforcement_gate
         COMMAND ${Python3_EXECUTABLE}
