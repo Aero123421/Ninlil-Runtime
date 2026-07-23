@@ -358,6 +358,39 @@ if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
             "POSIX SQLite storage port: enabled (${_ninlil_sqlite_kind_msg}"
             " '${NINLIL_SQLITE_LIBRARY_PATH}'"
             " linkage=${NINLIL_SQLITE_LINKAGE})")
+
+        set(NINLIL_POSIX_LAB_PLATFORM_ENABLED TRUE)
+        add_library(ninlil_posix_lab_platform STATIC
+            ports/posix/lab_platform/ninlil_posix_lab_platform.c
+            tests/support/platform_basic_fixtures.c
+            tests/support/deterministic_entropy.c
+            tests/support/typed_simulated_bearer.c
+            tests/support/canonical_origin_authorization.c
+        )
+        add_library(Ninlil::ninlil_posix_lab_platform ALIAS
+            ninlil_posix_lab_platform)
+        target_include_directories(ninlil_posix_lab_platform
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include>
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_posix_lab_platform
+            PUBLIC
+                ninlil
+                ninlil_posix_sqlite_storage
+        )
+        set_target_properties(ninlil_posix_lab_platform PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            POSITION_INDEPENDENT_CODE ON
+            C_VISIBILITY_PRESET hidden
+        )
+        ninlil_apply_posix_sqlite_feature_macros(ninlil_posix_lab_platform)
+        ninlil_apply_strict_warnings(ninlil_posix_lab_platform)
     else()
         message(STATUS
             "POSIX SQLite storage port: disabled (SQLite3 not found)")
@@ -3336,6 +3369,57 @@ if(NINLIL_BUILD_TESTS)
         add_test(
             NAME v1_posix_sqlite_restart_e2e
             COMMAND ninlil_v1_posix_sqlite_restart_e2e_test
+        )
+
+        add_executable(ninlil_v1_posix_provider_conformance_test
+            tests/port/v1_posix_provider_conformance_test.c
+        )
+        target_include_directories(ninlil_v1_posix_provider_conformance_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_v1_posix_provider_conformance_test PRIVATE
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_v1_posix_provider_conformance_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_v1_posix_provider_conformance_test)
+        ninlil_apply_strict_warnings(ninlil_v1_posix_provider_conformance_test)
+        add_test(
+            NAME v1_posix_provider_conformance
+            COMMAND ninlil_v1_posix_provider_conformance_test
+        )
+
+        add_executable(ninlil_v1_posix_platform_restart_e2e_test
+            tests/runtime/v1_posix_platform_restart_e2e_test.c
+        )
+        target_include_directories(ninlil_v1_posix_platform_restart_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_v1_posix_platform_restart_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_v1_posix_platform_restart_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_v1_posix_platform_restart_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_v1_posix_platform_restart_e2e_test)
+        add_test(
+            NAME v1_posix_platform_restart_e2e
+            COMMAND ninlil_v1_posix_platform_restart_e2e_test
         )
 
         add_test(
