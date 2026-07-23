@@ -362,6 +362,9 @@ if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
         set(NINLIL_POSIX_LAB_PLATFORM_ENABLED TRUE)
         add_library(ninlil_posix_lab_platform STATIC
             ports/posix/lab_platform/ninlil_posix_lab_platform.c
+            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer.c
+            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.c
+            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_inject.c
             tests/support/platform_basic_fixtures.c
             tests/support/deterministic_entropy.c
             tests/support/typed_simulated_bearer.c
@@ -375,6 +378,7 @@ if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
             PRIVATE
                 ${CMAKE_CURRENT_SOURCE_DIR}/include
                 ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
         )
         target_link_libraries(ninlil_posix_lab_platform
@@ -3446,6 +3450,34 @@ if(NINLIL_BUILD_TESTS)
         add_test(
             NAME v1_posix_platform_restart_e2e
             COMMAND ninlil_v1_posix_platform_restart_e2e_test
+        )
+
+        add_executable(ninlil_v1_direct_1hop_e2e_test
+            tests/runtime/v1_direct_1hop_e2e_test.c
+        )
+        target_include_directories(ninlil_v1_direct_1hop_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_v1_direct_1hop_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_v1_direct_1hop_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(ninlil_v1_direct_1hop_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_v1_direct_1hop_e2e_test)
+        add_test(
+            NAME v1_direct_1hop_e2e
+            COMMAND ninlil_v1_direct_1hop_e2e_test
         )
 
         add_test(

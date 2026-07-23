@@ -23,6 +23,9 @@ extern "C" {
 #define NINLIL_POSIX_LAB_PLATFORM_LIFECYCLE_ACTIVE   ((uint32_t)1u)
 #define NINLIL_POSIX_LAB_PLATFORM_LIFECYCLE_SHUTDOWN ((uint32_t)2u)
 
+#define NINLIL_POSIX_LAB_PLATFORM_BEARER_SIMULATED 0u
+#define NINLIL_POSIX_LAB_PLATFORM_BEARER_LOOPBACK 1u
+
 typedef struct ninlil_posix_lab_platform ninlil_posix_lab_platform_t;
 
 typedef struct ninlil_posix_lab_platform_config {
@@ -45,6 +48,17 @@ typedef struct ninlil_posix_lab_platform_config {
     uint64_t bearer_max_entries_per_direction;
     uint64_t bearer_max_bytes_per_direction;
     uint32_t bearer_max_permits;
+    /*
+     * BEARER_LOOPBACK: use POSIX socket loopback bearer (2-process E2E).
+     * socket_path + loopback_role required. inject_seed/mode optional.
+     */
+    uint32_t bearer_kind;
+    const char *loopback_socket_path;
+    uint32_t loopback_role;
+    uint64_t inject_seed;
+    uint32_t inject_mode;
+    uint32_t inject_drop_budget;
+    uint32_t inject_duplicate_budget;
 } ninlil_posix_lab_platform_config_t;
 
 void ninlil_posix_lab_platform_config_defaults(

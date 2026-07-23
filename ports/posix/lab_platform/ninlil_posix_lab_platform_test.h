@@ -28,6 +28,15 @@ ninlil_test_bearer_t *ninlil_posix_lab_platform_test_bearer(
 ninlil_test_origin_auth_t *ninlil_posix_lab_platform_test_origin(
     ninlil_posix_lab_platform_t *platform);
 
+int ninlil_posix_lab_platform_test_loopback_connected(
+    ninlil_posix_lab_platform_t *platform);
+uint64_t ninlil_posix_lab_platform_test_inject_send_count(
+    ninlil_posix_lab_platform_t *platform);
+uint64_t ninlil_posix_lab_platform_test_inject_recv_count(
+    ninlil_posix_lab_platform_t *platform);
+uint64_t ninlil_posix_lab_platform_test_inject_drop_count(
+    ninlil_posix_lab_platform_t *platform);
+
 #ifdef __cplusplus
 }
 #endif

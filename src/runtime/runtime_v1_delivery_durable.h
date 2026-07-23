@@ -25,12 +25,20 @@ void ninlil_rt_v1_encode_tx_admission_marker(
 ninlil_status_t ninlil_rt_v1_delivery_step(
     ninlil_runtime_t *runtime,
     const ninlil_time_sample_t *clock_sample,
+    uint32_t ingress_budget,
     uint32_t callback_budget,
     uint32_t transition_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result);
 
 ninlil_status_t ninlil_rt_v1_delivery_restart_scan(
     ninlil_runtime_t *runtime);
+
+ninlil_status_t ninlil_rt_v1_commit_delivery_marker(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    uint16_t prefix,
+    ninlil_v1_durable_operation_t operation,
+    uint8_t phase);
 
 #ifdef __cplusplus
 }

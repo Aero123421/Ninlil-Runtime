@@ -1,4 +1,5 @@
 #include "runtime_v1_delivery_durable.h"
+#include "runtime_v1_bearer_wire.h"
 #include "runtime_v1_capability.h"
 
 #include "domain_store_codec.h"
@@ -265,7 +266,7 @@ static ninlil_status_t commit_retry_state(
     return storage_txn_commit_full(runtime, txn_storage);
 }
 
-static ninlil_status_t commit_delivery_marker(
+ninlil_status_t ninlil_rt_v1_commit_delivery_marker(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *txn,
     uint16_t prefix,
@@ -323,13 +324,30 @@ static ninlil_status_t park_event_fact(
 static ninlil_status_t dispatch_desired_state_sender(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *txn,
+    const ninlil_time_sample_t *clock_sample,
     ninlil_rt_v1_step_delivery_result_t *out_result)
 {
     ninlil_status_t status;
 
+    if (ninlil_rt_v1_bearer_path_available(runtime)) {
+        if (txn->delivery_phase == NINLIL_RT_DELIVERY_NONE
+            || txn->delivery_phase == NINLIL_RT_DELIVERY_QUEUED) {
+            return ninlil_rt_v1_bearer_send_desired_application(
+                runtime, txn, clock_sample, out_result);
+        }
+        if (txn->delivery_phase == NINLIL_RT_DELIVERY_STARTED
+            && txn->evidence_recorded == 0u) {
+            return NINLIL_OK;
+        }
+        if (txn->outcome_recorded != 0u) {
+            return NINLIL_OK;
+        }
+        return NINLIL_OK;
+    }
+
     if (txn->delivery_phase == NINLIL_RT_DELIVERY_NONE) {
         txn->delivery_count = 1u;
-        status = commit_delivery_marker(
+        status = ninlil_rt_v1_commit_delivery_marker(
             runtime,
             txn,
             NINLIL_RT_V1_MARKER_DS,
@@ -345,7 +363,7 @@ static ninlil_status_t dispatch_desired_state_sender(
     if (txn->evidence_recorded == 0u) {
         txn->outcome = NINLIL_OUTCOME_NONE;
         txn->reason = NINLIL_REASON_NONE;
-        status = commit_delivery_marker(
+        status = ninlil_rt_v1_commit_delivery_marker(
             runtime,
             txn,
             NINLIL_RT_V1_MARKER_EV,
@@ -362,7 +380,7 @@ static ninlil_status_t dispatch_desired_state_sender(
     if (txn->outcome_recorded == 0u) {
         txn->outcome = NINLIL_OUTCOME_SATISFIED;
         txn->reason = NINLIL_REASON_NONE;
-        status = commit_delivery_marker(
+        status = ninlil_rt_v1_commit_delivery_marker(
             runtime,
             txn,
             NINLIL_RT_V1_MARKER_OC,
@@ -397,7 +415,7 @@ static ninlil_status_t dispatch_event_fact_receiver(
     if (txn->evidence_recorded != 0u) {
         if (txn->outcome_recorded == 0u) {
             txn->outcome = NINLIL_OUTCOME_SATISFIED;
-            status = commit_delivery_marker(
+            status = ninlil_rt_v1_commit_delivery_marker(
                 runtime,
                 txn,
                 NINLIL_RT_V1_MARKER_OC,
@@ -418,7 +436,7 @@ static ninlil_status_t dispatch_event_fact_receiver(
 
     if (txn->delivery_phase < NINLIL_RT_DELIVERY_STARTED) {
         txn->delivery_count += 1u;
-        status = commit_delivery_marker(
+        status = ninlil_rt_v1_commit_delivery_marker(
             runtime,
             txn,
             NINLIL_RT_V1_MARKER_DS,
@@ -481,7 +499,7 @@ static ninlil_status_t dispatch_event_fact_receiver(
         return NINLIL_OK;
     }
 
-    status = commit_delivery_marker(
+    status = ninlil_rt_v1_commit_delivery_marker(
         runtime,
         txn,
         NINLIL_RT_V1_MARKER_EV,
@@ -495,7 +513,7 @@ static ninlil_status_t dispatch_event_fact_receiver(
     out_result->transitions_consumed += 1u;
 
     txn->outcome = NINLIL_OUTCOME_SATISFIED;
-    status = commit_delivery_marker(
+    status = ninlil_rt_v1_commit_delivery_marker(
         runtime,
         txn,
         NINLIL_RT_V1_MARKER_OC,
@@ -546,7 +564,7 @@ static ninlil_status_t commit_terminal_outcome(
     }
     txn->outcome = outcome;
     txn->reason = reason;
-    status = commit_delivery_marker(
+    status = ninlil_rt_v1_commit_delivery_marker(
         runtime,
         txn,
         NINLIL_RT_V1_MARKER_OC,
@@ -561,6 +579,46 @@ static ninlil_status_t commit_terminal_outcome(
     txn->pending_dispatch = 0u;
     runtime->nonterminal_transaction_count -= 1u;
     status = ninlil_rt_v1_release_transaction_reservation(runtime, txn);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    out_result->transitions_consumed += 1u;
+    return NINLIL_OK;
+}
+
+static ninlil_status_t handle_bearer_receipt_timeout(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    const ninlil_time_sample_t *clock_sample,
+    ninlil_rt_v1_step_delivery_result_t *out_result)
+{
+    ninlil_status_t status;
+    uint64_t receipt_deadline_ms;
+
+    if (!ninlil_rt_v1_bearer_path_available(runtime)
+        || runtime->config.role != NINLIL_ROLE_CONTROLLER
+        || txn->family != NINLIL_FAMILY_DESIRED_STATE
+        || txn->delivery_phase != NINLIL_RT_DELIVERY_STARTED
+        || txn->evidence_recorded != 0u
+        || txn->pending_dispatch != 0u) {
+        return NINLIL_OK;
+    }
+    receipt_deadline_ms = txn->admitted_at_ms + 1000u;
+    if (clock_sample->now_ms < receipt_deadline_ms) {
+        return NINLIL_OK;
+    }
+    if (txn->retry_budget == 0u) {
+        return commit_terminal_outcome(
+            runtime,
+            txn,
+            NINLIL_OUTCOME_EXPIRED,
+            NINLIL_REASON_RETRY_BUDGET_EXHAUSTED_NO_EFFECT,
+            out_result);
+    }
+    txn->retry_budget -= 1u;
+    txn->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
+    txn->pending_dispatch = 1u;
+    status = commit_retry_state(runtime, txn);
     if (status != NINLIL_OK) {
         return status;
     }
@@ -622,6 +680,7 @@ static ninlil_status_t handle_timeout_retry(
 ninlil_status_t ninlil_rt_v1_delivery_step(
     ninlil_runtime_t *runtime,
     const ninlil_time_sample_t *clock_sample,
+    uint32_t ingress_budget,
     uint32_t callback_budget,
     uint32_t transition_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result)
@@ -636,6 +695,16 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
         return NINLIL_E_INVALID_ARGUMENT;
     }
     (void)memset(out_result, 0, sizeof(*out_result));
+
+    status = ninlil_rt_v1_bearer_ingress_step(
+        runtime,
+        clock_sample,
+        &ingress_budget,
+        callback_budget,
+        out_result);
+    if (status != NINLIL_OK) {
+        return status;
+    }
 
     order_capacity = runtime->transaction_capacity;
     if (order_capacity == 0u) {
@@ -689,6 +758,11 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
             if (status != NINLIL_OK) {
                 return status;
             }
+            status = handle_bearer_receipt_timeout(
+                runtime, txn, clock_sample, out_result);
+            if (status != NINLIL_OK) {
+                return status;
+            }
             if (transition_budget != 0u
                 && out_result->transitions_consumed >= transition_budget) {
                 out_result->work_remaining = 1u;
@@ -715,7 +789,7 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
                 && receiver != NULL
                 && txn->pending_dispatch != 0u) {
                 status = dispatch_desired_state_sender(
-                    runtime, txn, out_result);
+                    runtime, txn, clock_sample, out_result);
                 if (status != NINLIL_OK) {
                     return status;
                 }
@@ -754,7 +828,11 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
             }
 
             if (txn->pending_dispatch != 0u) {
-                txn->pending_dispatch = 0u;
+                if (!(txn->family == NINLIL_FAMILY_DESIRED_STATE
+                        && runtime->config.role == NINLIL_ROLE_CONTROLLER
+                        && ninlil_rt_v1_bearer_path_available(runtime))) {
+                    txn->pending_dispatch = 0u;
+                }
             }
         }
     }

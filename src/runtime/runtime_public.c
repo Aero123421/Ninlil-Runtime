@@ -1086,7 +1086,6 @@ ninlil_status_t ninlil_runtime_step(
     if (send_budget > runtime->config.limits.max_bearer_sends_per_step) {
         send_budget = runtime->config.limits.max_bearer_sends_per_step;
     }
-    (void)ingress_budget;
     (void)send_budget;
 
     runtime->in_step = 1u;
@@ -1112,6 +1111,7 @@ ninlil_status_t ninlil_runtime_step(
     status = ninlil_rt_v1_delivery_step(
         runtime,
         &sample,
+        ingress_budget,
         callback_budget,
         transition_budget,
         &delivery_result);

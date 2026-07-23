@@ -2,6 +2,8 @@
 
 #include "canonical_origin_authorization.h"
 #include "deterministic_entropy.h"
+#include "ninlil_posix_loopback_bearer.h"
+#include "ninlil_posix_loopback_bearer_inject.h"
 #include "platform_basic_fixtures.h"
 #include "typed_simulated_bearer.h"
 
@@ -21,6 +23,8 @@ struct ninlil_posix_lab_platform {
     ninlil_test_entropy_t *entropy;
     ninlil_posix_sqlite_storage_t *storage;
     ninlil_test_bearer_t *bearer;
+    ninlil_posix_loopback_bearer_t *loopback_bearer;
+    ninlil_posix_loopback_bearer_inject_t *loopback_inject;
     ninlil_test_origin_auth_t *origin;
     ninlil_platform_ops_t platform;
 };
@@ -103,9 +107,17 @@ static void platform_wire_ops(ninlil_posix_lab_platform_t *platform)
     platform->platform.entropy = ninlil_test_entropy_ops(platform->entropy);
     platform->platform.storage =
         ninlil_posix_sqlite_storage_ops(platform->storage);
-    platform->platform.bearer = ninlil_test_bearer_ops(platform->bearer);
-    platform->platform.tx_gate =
-        ninlil_test_bearer_tx_gate_ops(platform->bearer);
+    if (platform->config.bearer_kind == NINLIL_POSIX_LAB_PLATFORM_BEARER_LOOPBACK
+        && platform->loopback_inject != NULL) {
+        platform->platform.bearer =
+            ninlil_posix_loopback_bearer_inject_bearer_ops(platform->loopback_inject);
+        platform->platform.tx_gate =
+            ninlil_posix_loopback_bearer_inject_tx_gate_ops(platform->loopback_inject);
+    } else if (platform->bearer != NULL) {
+        platform->platform.bearer = ninlil_test_bearer_ops(platform->bearer);
+        platform->platform.tx_gate =
+            ninlil_test_bearer_tx_gate_ops(platform->bearer);
+    }
     platform->platform.origin_authorization =
         ninlil_test_origin_auth_ops(platform->origin);
 }
@@ -114,6 +126,14 @@ static void providers_shutdown(ninlil_posix_lab_platform_t *platform)
 {
     if (platform == NULL) {
         return;
+    }
+    if (platform->loopback_inject != NULL) {
+        ninlil_posix_loopback_bearer_inject_destroy(platform->loopback_inject);
+        platform->loopback_inject = NULL;
+    }
+    if (platform->loopback_bearer != NULL) {
+        ninlil_posix_loopback_bearer_destroy(platform->loopback_bearer);
+        platform->loopback_bearer = NULL;
     }
     if (platform->bearer != NULL) {
         ninlil_test_bearer_destroy(platform->bearer);
@@ -150,6 +170,8 @@ static int providers_create(ninlil_posix_lab_platform_t *platform)
 {
     ninlil_posix_sqlite_storage_config_t storage_config;
     ninlil_test_bearer_config_t bearer_config;
+    ninlil_posix_loopback_bearer_config_t loopback_config;
+    ninlil_posix_loopback_bearer_inject_config_t inject_config;
 
     platform->allocator = ninlil_test_allocator_create();
     platform->execution = ninlil_test_execution_create(
@@ -162,22 +184,56 @@ static int providers_create(ninlil_posix_lab_platform_t *platform)
         return 0;
     }
     platform->storage = ninlil_posix_sqlite_storage_create(&storage_config);
-    (void)memset(&bearer_config, 0, sizeof(bearer_config));
-    bearer_config.max_entries_per_direction =
-        platform->config.bearer_max_entries_per_direction;
-    bearer_config.max_bytes_per_direction =
-        platform->config.bearer_max_bytes_per_direction;
-    bearer_config.max_permits = platform->config.bearer_max_permits;
-    bearer_config.permit_issuer_id.bytes[0] = 0x80u;
-    bearer_config.permit_issuer_id.bytes[15] = 0x01u;
-    bearer_config.initial_clock_epoch_id.bytes[0] = 0xa0u;
-    bearer_config.initial_clock_epoch_id.bytes[15] = 0x01u;
-    bearer_config.initial_time_ms = 1000u;
-    platform->bearer = ninlil_test_bearer_create(&bearer_config);
+    if (platform->config.bearer_kind == NINLIL_POSIX_LAB_PLATFORM_BEARER_LOOPBACK) {
+        ninlil_posix_loopback_bearer_config_defaults(&loopback_config);
+        loopback_config.socket_path = platform->config.loopback_socket_path;
+        loopback_config.role = platform->config.loopback_role;
+        loopback_config.max_entries_per_direction =
+            platform->config.bearer_max_entries_per_direction;
+        loopback_config.max_bytes_per_direction =
+            platform->config.bearer_max_bytes_per_direction;
+        loopback_config.max_permits = platform->config.bearer_max_permits;
+        platform->loopback_bearer =
+            ninlil_posix_loopback_bearer_create(&loopback_config);
+        if (platform->loopback_bearer == NULL) {
+            return 0;
+        }
+        (void)memset(&inject_config, 0, sizeof(inject_config));
+        inject_config.inner_bearer =
+            ninlil_posix_loopback_bearer_ops(platform->loopback_bearer);
+        inject_config.inner_tx_gate =
+            ninlil_posix_loopback_bearer_tx_gate_ops(platform->loopback_bearer);
+        inject_config.inner_user = platform->loopback_bearer;
+        inject_config.seed = platform->config.inject_seed;
+        inject_config.mode = platform->config.inject_mode;
+        inject_config.drop_budget = platform->config.inject_drop_budget;
+        inject_config.duplicate_budget = platform->config.inject_duplicate_budget;
+        platform->loopback_inject =
+            ninlil_posix_loopback_bearer_inject_create(&inject_config);
+        if (platform->loopback_inject == NULL) {
+            return 0;
+        }
+    } else {
+        (void)memset(&bearer_config, 0, sizeof(bearer_config));
+        bearer_config.max_entries_per_direction =
+            platform->config.bearer_max_entries_per_direction;
+        bearer_config.max_bytes_per_direction =
+            platform->config.bearer_max_bytes_per_direction;
+        bearer_config.max_permits = platform->config.bearer_max_permits;
+        bearer_config.permit_issuer_id.bytes[0] = 0x80u;
+        bearer_config.permit_issuer_id.bytes[15] = 0x01u;
+        bearer_config.initial_clock_epoch_id.bytes[0] = 0xa0u;
+        bearer_config.initial_clock_epoch_id.bytes[15] = 0x01u;
+        bearer_config.initial_time_ms = 1000u;
+        platform->bearer = ninlil_test_bearer_create(&bearer_config);
+    }
     if (platform->allocator == NULL || platform->execution == NULL
         || platform->clock == NULL || platform->entropy == NULL
         || platform->origin == NULL || platform->storage == NULL
-        || platform->bearer == NULL) {
+        || (platform->config.bearer_kind == NINLIL_POSIX_LAB_PLATFORM_BEARER_LOOPBACK
+            ? (platform->loopback_bearer == NULL
+                || platform->loopback_inject == NULL)
+            : platform->bearer == NULL)) {
         return 0;
     }
     platform_wire_ops(platform);
@@ -356,4 +412,40 @@ ninlil_test_origin_auth_t *ninlil_posix_lab_platform_test_origin(
     ninlil_posix_lab_platform_t *platform)
 {
     return platform == NULL ? NULL : platform->origin;
+}
+
+int ninlil_posix_lab_platform_test_loopback_connected(
+    ninlil_posix_lab_platform_t *platform)
+{
+    if (platform == NULL || platform->loopback_bearer == NULL) {
+        return 0;
+    }
+    return ninlil_posix_loopback_bearer_connected(platform->loopback_bearer);
+}
+
+uint64_t ninlil_posix_lab_platform_test_inject_send_count(
+    ninlil_posix_lab_platform_t *platform)
+{
+    if (platform == NULL || platform->loopback_inject == NULL) {
+        return 0u;
+    }
+    return ninlil_posix_loopback_bearer_inject_send_count(platform->loopback_inject);
+}
+
+uint64_t ninlil_posix_lab_platform_test_inject_recv_count(
+    ninlil_posix_lab_platform_t *platform)
+{
+    if (platform == NULL || platform->loopback_inject == NULL) {
+        return 0u;
+    }
+    return ninlil_posix_loopback_bearer_inject_recv_count(platform->loopback_inject);
+}
+
+uint64_t ninlil_posix_lab_platform_test_inject_drop_count(
+    ninlil_posix_lab_platform_t *platform)
+{
+    if (platform == NULL || platform->loopback_inject == NULL) {
+        return 0u;
+    }
+    return ninlil_posix_loopback_bearer_inject_drop_count(platform->loopback_inject);
 }
