@@ -106,14 +106,16 @@ ninlil_status_t ninlil_v1_durable_writer_gate_check(
 
 /*
  * Sole production durable put entry (writer gate enforced).
- * Returns mapped public status; storage put count 0 on gate reject.
+ * When inout_fence is non-NULL, sets *inout_fence on COMMIT_UNKNOWN or
+ * unknown raw storage status (sticky OR).
  */
 ninlil_status_t ninlil_v1_durable_storage_put(
     ninlil_v1_durable_operation_t operation,
     const ninlil_storage_ops_t *storage,
     ninlil_storage_txn_t txn,
     ninlil_bytes_view_t key,
-    ninlil_bytes_view_t value);
+    ninlil_bytes_view_t value,
+    uint32_t *inout_fence);
 
 /*
  * Recovery publication gate: scan rows before publish/recovery complete.
@@ -124,6 +126,16 @@ ninlil_status_t ninlil_v1_durable_recovery_publication_gate(
     const ninlil_bytes_view_t *row_keys,
     const ninlil_bytes_view_t *row_values,
     uint32_t row_count,
+    uint32_t commit_unknown_active,
+    ninlil_v1_durable_recovery_publication_result_t *out_result);
+
+/*
+ * Publication gate over committed storage rows (namespace iterator).
+ * Bounded: iterator fail-closed; no heap. Used by V1 restart recovery (unit 1b).
+ */
+ninlil_status_t ninlil_v1_durable_recovery_publication_gate_storage(
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t handle,
     uint32_t commit_unknown_active,
     ninlil_v1_durable_recovery_publication_result_t *out_result);
 

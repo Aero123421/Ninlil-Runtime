@@ -24,6 +24,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/runtime_store_stage5_seam.c
     src/runtime/stage5_empty_metadata.c
     src/runtime/v1_durable_allowlist.c
+    src/runtime/v1_durable_restart.c
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
     src/radio/airtime_calculator.c

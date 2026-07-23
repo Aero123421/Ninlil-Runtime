@@ -628,20 +628,15 @@ static ninlil_status_t put_encoded(
 {
     ninlil_bytes_view_t k;
     ninlil_bytes_view_t v;
-    ninlil_storage_status_t st;
     ninlil_status_t gate_status;
 
     k.data = key->bytes;
     k.length = key->length;
     v.data = value;
     v.length = value_length;
-    gate_status = ninlil_v1_durable_writer_gate_check(operation, k, v);
-    if (gate_status != NINLIL_OK) {
-        return gate_status;
-    }
-    st = storage->put(storage->user, txn, k, v);
-    fence_or(inout_fence, storage_status_requires_fence(st));
-    return map_storage_to_public(st);
+    gate_status = ninlil_v1_durable_storage_put(
+        operation, storage, txn, k, v, inout_fence);
+    return gate_status;
 }
 
 static ninlil_status_t validate_one_head_index(

@@ -3259,6 +3259,33 @@ if(NINLIL_BUILD_TESTS)
             NAME posix_sqlite_storage
             COMMAND ninlil_posix_sqlite_storage_test
         )
+
+        add_executable(ninlil_v1_posix_sqlite_restart_e2e_test
+            tests/runtime/v1_posix_sqlite_restart_e2e_test.c
+        )
+        target_include_directories(ninlil_v1_posix_sqlite_restart_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_v1_posix_sqlite_restart_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil_posix_sqlite_storage
+            ninlil
+        )
+        set_target_properties(ninlil_v1_posix_sqlite_restart_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_v1_posix_sqlite_restart_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_v1_posix_sqlite_restart_e2e_test)
+        add_test(
+            NAME v1_posix_sqlite_restart_e2e
+            COMMAND ninlil_v1_posix_sqlite_restart_e2e_test
+        )
+
         add_test(
             NAME posix_sqlite_storage_package_surface_negative
             COMMAND ${CMAKE_COMMAND}

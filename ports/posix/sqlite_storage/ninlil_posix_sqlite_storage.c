@@ -26,7 +26,7 @@
 #endif
 
 /*
- * POSIX SQLite durable storage port (production candidate for host PC).
+ * POSIX SQLite durable storage port (V1-LAB complete on host).
  *
  * Durability claim (docs/08, docs/14):
  *   PRAGMA journal_mode=WAL;

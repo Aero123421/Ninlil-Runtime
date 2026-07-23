@@ -278,12 +278,33 @@ static ninlil_status_t map_storage_status(ninlil_storage_status_t status)
     }
 }
 
+static int storage_put_status_requires_fence(ninlil_storage_status_t status)
+{
+    return status == NINLIL_STORAGE_COMMIT_UNKNOWN
+        || (status != NINLIL_STORAGE_OK
+            && status != NINLIL_STORAGE_NOT_FOUND
+            && status != NINLIL_STORAGE_BUSY
+            && status != NINLIL_STORAGE_NO_SPACE
+            && status != NINLIL_STORAGE_IO_ERROR
+            && status != NINLIL_STORAGE_CORRUPT
+            && status != NINLIL_STORAGE_BUFFER_TOO_SMALL
+            && status != NINLIL_STORAGE_UNSUPPORTED_SCHEMA);
+}
+
+static void storage_put_fence_or(uint32_t *inout_fence, ninlil_storage_status_t status)
+{
+    if (inout_fence != NULL && storage_put_status_requires_fence(status) != 0) {
+        *inout_fence = 1u;
+    }
+}
+
 ninlil_status_t ninlil_v1_durable_storage_put(
     ninlil_v1_durable_operation_t operation,
     const ninlil_storage_ops_t *storage,
     ninlil_storage_txn_t txn,
     ninlil_bytes_view_t key,
-    ninlil_bytes_view_t value)
+    ninlil_bytes_view_t value,
+    uint32_t *inout_fence)
 {
     ninlil_status_t gate_status;
     ninlil_storage_status_t put_status;
@@ -296,6 +317,7 @@ ninlil_status_t ninlil_v1_durable_storage_put(
         return gate_status;
     }
     put_status = storage->put(storage->user, txn, key, value);
+    storage_put_fence_or(inout_fence, put_status);
     return map_storage_status(put_status);
 }
 
@@ -306,6 +328,72 @@ static void publication_reject(
     out_result->adopted = 0u;
     out_result->success_evidence_count = 0u;
     out_result->reject_reason = reason;
+}
+
+static ninlil_status_t publication_gate_from_counts(
+    uint32_t ok_count,
+    uint32_t corrupt_count,
+    uint32_t unknown_count,
+    uint32_t external_count,
+    uint32_t success_evidence_rows,
+    ninlil_v1_durable_recovery_publication_result_t *out_result)
+{
+    if (ok_count > 0u
+        && (corrupt_count > 0u || unknown_count > 0u || external_count > 0u)) {
+        publication_reject(out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_MIXED);
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (corrupt_count != 0u) {
+        publication_reject(
+            out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_CORRUPT);
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (unknown_count != 0u) {
+        publication_reject(
+            out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_UNKNOWN);
+        return NINLIL_E_UNSUPPORTED;
+    }
+    if (external_count != 0u) {
+        publication_reject(out_result,
+            NINLIL_V1_DURABLE_RECOVERY_REJECT_ALLOWLIST_EXTERNAL);
+        return NINLIL_E_UNSUPPORTED;
+    }
+
+    out_result->adopted = 1u;
+    out_result->success_evidence_count = success_evidence_rows;
+    out_result->reject_reason = NINLIL_V1_DURABLE_RECOVERY_REJECT_NONE;
+    return NINLIL_OK;
+}
+
+static void publication_classify_row(
+    ninlil_bytes_view_t key,
+    ninlil_bytes_view_t value,
+    uint32_t *ok_count,
+    uint32_t *corrupt_count,
+    uint32_t *unknown_count,
+    uint32_t *external_count)
+{
+    ninlil_v1_durable_record_kind_t kind;
+    ninlil_status_t status = ninlil_v1_durable_classify_row(key, value, &kind);
+
+    if (status == NINLIL_E_STORAGE_CORRUPT) {
+        *corrupt_count += 1u;
+        return;
+    }
+    if (status == NINLIL_E_UNSUPPORTED) {
+        *unknown_count += 1u;
+        return;
+    }
+    if (status != NINLIL_OK) {
+        *corrupt_count += 1u;
+        return;
+    }
+    if (kind < NINLIL_V1_DURABLE_KIND_RS_BINDING
+        || kind > NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE) {
+        *external_count += 1u;
+        return;
+    }
+    *ok_count += 1u;
 }
 
 ninlil_status_t ninlil_v1_durable_recovery_publication_gate(
@@ -336,55 +424,124 @@ ninlil_status_t ninlil_v1_durable_recovery_publication_gate(
     }
 
     for (index = 0u; index < row_count; ++index) {
-        ninlil_v1_durable_record_kind_t kind;
-        ninlil_status_t status = ninlil_v1_durable_classify_row(
-            row_keys[index], row_values[index], &kind);
-
-        if (status == NINLIL_E_STORAGE_CORRUPT) {
-            corrupt_count += 1u;
-            continue;
-        }
-        if (status == NINLIL_E_UNSUPPORTED) {
-            unknown_count += 1u;
-            continue;
-        }
-        if (status != NINLIL_OK) {
-            corrupt_count += 1u;
-            continue;
-        }
-        if (kind < NINLIL_V1_DURABLE_KIND_RS_BINDING
-            || kind > NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE) {
-            external_count += 1u;
-            continue;
-        }
-        ok_count += 1u;
+        publication_classify_row(
+            row_keys[index],
+            row_values[index],
+            &ok_count,
+            &corrupt_count,
+            &unknown_count,
+            &external_count);
     }
 
-    if (ok_count > 0u
-        && (corrupt_count > 0u || unknown_count > 0u || external_count > 0u)) {
-        publication_reject(out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_MIXED);
-        return NINLIL_E_STORAGE_CORRUPT;
+    return publication_gate_from_counts(
+        ok_count,
+        corrupt_count,
+        unknown_count,
+        external_count,
+        row_count,
+        out_result);
+}
+
+ninlil_status_t ninlil_v1_durable_recovery_publication_gate_storage(
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t handle,
+    uint32_t commit_unknown_active,
+    ninlil_v1_durable_recovery_publication_result_t *out_result)
+{
+    ninlil_storage_txn_t txn = NULL;
+    ninlil_storage_iter_t iter = NULL;
+    ninlil_storage_status_t st;
+    uint32_t ok_count = 0u;
+    uint32_t corrupt_count = 0u;
+    uint32_t unknown_count = 0u;
+    uint32_t external_count = 0u;
+    uint32_t row_count = 0u;
+    uint8_t key_buf[255];
+    uint8_t value_buf[NINLIL_MODEL_DOMAIN_PRIVATE_RECORD_MAX_BYTES];
+    ninlil_mut_bytes_t key;
+    ninlil_mut_bytes_t value;
+    ninlil_bytes_view_t prefix;
+
+    if (out_result == NULL || storage == NULL || handle == NULL
+        || storage->begin == NULL || storage->iter_open == NULL
+        || storage->iter_next == NULL || storage->iter_close == NULL
+        || storage->rollback == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
     }
-    if (corrupt_count != 0u) {
+    (void)memset(out_result, 0, sizeof(*out_result));
+    if (commit_unknown_active != 0u) {
         publication_reject(
-            out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_CORRUPT);
-        return NINLIL_E_STORAGE_CORRUPT;
-    }
-    if (unknown_count != 0u) {
-        publication_reject(
-            out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_UNKNOWN);
-        return NINLIL_E_UNSUPPORTED;
-    }
-    if (external_count != 0u) {
-        publication_reject(out_result,
-            NINLIL_V1_DURABLE_RECOVERY_REJECT_ALLOWLIST_EXTERNAL);
-        return NINLIL_E_UNSUPPORTED;
+            out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_COMMIT_UNKNOWN);
+        return NINLIL_E_STORAGE_COMMIT_UNKNOWN;
     }
 
-    out_result->adopted = 1u;
-    out_result->success_evidence_count = row_count;
-    out_result->reject_reason = NINLIL_V1_DURABLE_RECOVERY_REJECT_NONE;
-    return NINLIL_OK;
+    st = storage->begin(
+        storage->user, handle, NINLIL_STORAGE_READ_ONLY, &txn);
+    if (st != NINLIL_STORAGE_OK) {
+        return map_storage_status(st);
+    }
+
+    prefix.data = NULL;
+    prefix.length = 0u;
+    st = storage->iter_open(storage->user, txn, prefix, &iter);
+    if (st != NINLIL_STORAGE_OK) {
+        (void)storage->rollback(storage->user, txn);
+        return map_storage_status(st);
+    }
+
+    for (;;) {
+        key.data = key_buf;
+        key.capacity = (uint32_t)sizeof(key_buf);
+        key.length = 0u;
+        value.data = value_buf;
+        value.capacity = (uint32_t)sizeof(value_buf);
+        value.length = 0u;
+        st = storage->iter_next(storage->user, iter, &key, &value);
+        if (st == NINLIL_STORAGE_NOT_FOUND) {
+            break;
+        }
+        if (st == NINLIL_STORAGE_BUFFER_TOO_SMALL) {
+            storage->iter_close(storage->user, iter);
+            (void)storage->rollback(storage->user, txn);
+            publication_reject(
+                out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_CORRUPT);
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        if (st != NINLIL_STORAGE_OK) {
+            storage->iter_close(storage->user, iter);
+            (void)storage->rollback(storage->user, txn);
+            return map_storage_status(st);
+        }
+        if (row_count == UINT32_MAX) {
+            storage->iter_close(storage->user, iter);
+            (void)storage->rollback(storage->user, txn);
+            publication_reject(
+                out_result, NINLIL_V1_DURABLE_RECOVERY_REJECT_CORRUPT);
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        row_count += 1u;
+        publication_classify_row(
+            (ninlil_bytes_view_t){key.data, key.length},
+            (ninlil_bytes_view_t){value.data, value.length},
+            &ok_count,
+            &corrupt_count,
+            &unknown_count,
+            &external_count);
+    }
+
+    storage->iter_close(storage->user, iter);
+    st = storage->rollback(storage->user, txn);
+    if (st != NINLIL_STORAGE_OK) {
+        return map_storage_status(st);
+    }
+
+    return publication_gate_from_counts(
+        ok_count,
+        corrupt_count,
+        unknown_count,
+        external_count,
+        row_count,
+        out_result);
 }
 
 ninlil_status_t ninlil_v1_durable_probe_disallowed_writer_kind(

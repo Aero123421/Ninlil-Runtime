@@ -110,5 +110,3 @@ Family 6 catalog（docs/17 §7）のうち V1-LAB allowlist **外**（writer 未
 ## 8. 非主張
 
 - D3-S4..S12 scanner 網羅、D4 全域 convergence、public ABI 変更、ESP success path
-- Stage 5 complete / `storage_recovery_complete=1`（unit 1b）
-- SQLite restart E2E（unit 1b）

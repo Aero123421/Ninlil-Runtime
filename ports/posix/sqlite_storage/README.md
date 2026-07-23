@@ -1,8 +1,8 @@
 # POSIX SQLite storage port
 
-Host (Linux / macOS) production-candidate implementation of `ninlil_storage_ops_t`.
+Host (Linux / macOS) **V1-LAB complete** implementation of `ninlil_storage_ops_t` for durable POSIX SQLite storage.
 
-This port is **not** public Runtime complete, **not** M1a field-ready, and does **not** claim Stage 5 / domain recovery completion. ESP-IDF / NVS / USB / radio / Join / security are out of scope.
+This port is **not** public Runtime complete and does **not** claim M1a field-ready or production SLO. V1-LAB unit 1b claims: factory/ownership/shutdown/restart, fault conformance, allowlist-gated durable puts, and restart E2E on host. ESP-IDF / NVS / USB / radio / Join / security are out of scope.
 
 ## Layout
 
@@ -12,6 +12,7 @@ This port is **not** public Runtime complete, **not** M1a field-ready, and does 
 | `ports/posix/sqlite_storage/ninlil_posix_sqlite_storage.c` | SQLite provider |
 | `ports/posix/examples/sqlite_storage_minimal.c` | Minimal host example |
 | `tests/port/posix_sqlite_storage_test.c` | Host conformance tests |
+| `tests/runtime/v1_posix_sqlite_restart_e2e_test.c` | V1-LAB restart E2E (unit 1b) |
 
 ## Factory configuration
 
