@@ -150,6 +150,7 @@ struct ninlil_test_bearer {
     uint64_t permit_fenced_count;
     uint64_t violation_count;
     uint32_t fail_next_copy_allocations;
+    int defer_peer_enqueue;
 };
 
 typedef struct sha256_context {
@@ -802,6 +803,38 @@ static int public_permit_equal(
         && left->expires_at_ms == right->expires_at_ms;
 }
 
+static int validate_permit_for_integration(
+    ninlil_test_bearer_t *bearer,
+    const ninlil_tx_permit_t *permit,
+    const ninlil_bearer_message_t *message,
+    permit_record_t **out_record)
+{
+    permit_record_t *record = find_permit_record(bearer, permit);
+
+    *out_record = NULL;
+    if (record == NULL || record->state != PERMIT_LIVE
+        || !public_permit_equal(&record->permit, permit)
+        || !id_equal(&record->transaction_id, &message->transaction_id)
+        || !id_equal(&record->permit.attempt_id, &message->attempt_id)
+        || record->message_kind != message->kind
+        || !digest_equal(&record->content_digest, &message->content_digest)
+        || !id_equal(&record->permit.clock_epoch_id,
+            &bearer->current_clock_epoch_id)
+        || bearer->current_time_ms >= record->permit.expires_at_ms) {
+        if (record != NULL && record->state == PERMIT_LIVE
+            && bearer->current_time_ms >= record->permit.expires_at_ms) {
+            record->state = PERMIT_EXPIRED;
+            if (bearer->permit_live_count > 0u) {
+                bearer->permit_live_count -= 1u;
+            }
+            bearer->permit_expired_count += 1u;
+        }
+        return 0;
+    }
+    *out_record = record;
+    return 1;
+}
+
 static int validate_permit_for_message(
     ninlil_test_bearer_t *bearer,
     const ninlil_tx_permit_t *permit,
@@ -1273,7 +1306,11 @@ static ninlil_bearer_status_t fixture_send(
         }
         return NINLIL_BEARER_WOULD_BLOCK;
     }
-    enqueue_copy(direction, copy);
+    if (!bearer->defer_peer_enqueue) {
+        enqueue_copy(direction, copy);
+    } else {
+        free_message_copy(copy);
+    }
     mark_permit_consumed(bearer, permit_record);
     out_result->kind = NINLIL_BEARER_SEND_ACCEPTED;
     record_trace(bearer, NINLIL_TEST_BEARER_OP_SEND,
@@ -1993,4 +2030,109 @@ const ninlil_test_bearer_trace_record_t *ninlil_test_bearer_trace_at(
         return NULL;
     }
     return &bearer->trace[index];
+}
+
+int ninlil_test_bearer_deliver_to_runtime(
+    ninlil_test_bearer_t *bearer,
+    const ninlil_id128_t *to_runtime_id,
+    const ninlil_bearer_message_t *message)
+{
+    bearer_message_copy_t *copy;
+    size_t incoming_direction;
+    int endpoint_index;
+    uint64_t logical_bytes;
+
+    if (bearer == NULL || to_runtime_id == NULL || message == NULL) {
+        return 0;
+    }
+    endpoint_index = find_endpoint(bearer, to_runtime_id);
+    if (endpoint_index < 0) {
+        return 0;
+    }
+    if (!ninlil_test_bearer_logical_bytes(message, &logical_bytes)) {
+        return 0;
+    }
+    incoming_direction = 1u - (size_t)endpoint_index;
+    if (bearer->directions[incoming_direction].queued_entries
+            >= bearer->config.max_entries_per_direction
+        || logical_bytes
+            > bearer->config.max_bytes_per_direction
+                - bearer->directions[incoming_direction].queued_bytes) {
+        return 0;
+    }
+    copy = clone_message(bearer, message, logical_bytes, 1);
+    if (copy == NULL) {
+        return 0;
+    }
+    enqueue_copy(&bearer->directions[incoming_direction], copy);
+    return 1;
+}
+
+void ninlil_test_bearer_set_defer_peer_enqueue(
+    ninlil_test_bearer_t *bearer,
+    int enabled)
+{
+    if (bearer != NULL) {
+        bearer->defer_peer_enqueue = enabled != 0 ? 1 : 0;
+    }
+}
+
+ninlil_bearer_status_t ninlil_test_bearer_try_send(
+    ninlil_test_bearer_t *bearer,
+    ninlil_bearer_handle_t handle,
+    const ninlil_tx_permit_t *permit,
+    const ninlil_bearer_message_t *message,
+    ninlil_bearer_send_result_t *out_result,
+    int enqueue_peer)
+{
+    int previous;
+    ninlil_bearer_status_t status;
+
+    if (bearer == NULL) {
+        return NINLIL_BEARER_CORRUPT;
+    }
+    previous = bearer->defer_peer_enqueue;
+    bearer->defer_peer_enqueue = enqueue_peer != 0 ? 0 : 1;
+    status = bearer->bearer_ops.send(
+        bearer, handle, permit, message, out_result);
+    bearer->defer_peer_enqueue = previous;
+    return status;
+}
+
+ninlil_bearer_status_t ninlil_test_bearer_integration_gate_send(
+    ninlil_test_bearer_t *bearer,
+    ninlil_bearer_handle_t opaque_handle,
+    const ninlil_tx_permit_t *permit,
+    const ninlil_bearer_message_t *message,
+    ninlil_bearer_send_result_t *out_result)
+{
+    bearer_handle_t *handle = (bearer_handle_t *)opaque_handle;
+    permit_record_t *permit_record = NULL;
+    size_t direction_index;
+    size_t peer_index;
+
+    if (bearer == NULL || !handle_is_live(bearer, handle)
+        || !send_result_pointer_is_valid(out_result) || message == NULL
+        || !message_shape_is_safe(message)) {
+        return NINLIL_BEARER_CORRUPT;
+    }
+    direction_index = direction_for_source(handle->endpoint_index);
+    peer_index = 1u - handle->endpoint_index;
+    initialize_send_result(
+        out_result, bearer->directions[direction_index].availability_epoch);
+    if (!validate_permit_for_integration(
+            bearer, permit, message, &permit_record)) {
+        return NINLIL_BEARER_DENIED;
+    }
+    if (!bearer->endpoints[peer_index].bound
+        || !id_equal(&bearer->endpoints[peer_index].runtime_id,
+            &message->target.target_runtime_id)) {
+        return NINLIL_BEARER_DENIED;
+    }
+    if (!path_available(bearer, direction_index)) {
+        return NINLIL_BEARER_UNAVAILABLE;
+    }
+    mark_permit_consumed(bearer, permit_record);
+    out_result->kind = NINLIL_BEARER_SEND_ACCEPTED;
+    return NINLIL_BEARER_OK;
 }

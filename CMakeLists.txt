@@ -2816,6 +2816,8 @@ if(NINLIL_BUILD_TESTS)
     ninlil_c3_lab_register_tests()
     ninlil_c6_lab_register_tests()
     ninlil_c4_c5_lab_register_tests()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_v1_integration_gate_ctest.cmake)
+    ninlil_v1_integration_gate_register_tests()
     add_test(
         NAME c6_lab_enforcement_gate
         COMMAND ${Python3_EXECUTABLE}

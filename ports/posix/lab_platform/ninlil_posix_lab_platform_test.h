@@ -37,6 +37,15 @@ uint64_t ninlil_posix_lab_platform_test_inject_recv_count(
 uint64_t ninlil_posix_lab_platform_test_inject_drop_count(
     ninlil_posix_lab_platform_t *platform);
 
+/*
+ * Replace platform bearer + tx_gate (integration gate shared C4/C5 bearer).
+ * Test-only; not installed.
+ */
+void ninlil_posix_lab_platform_test_override_bearer(
+    ninlil_posix_lab_platform_t *platform,
+    const ninlil_bearer_ops_t *bearer,
+    const ninlil_tx_gate_ops_t *tx_gate);
+
 #ifdef __cplusplus
 }
 #endif

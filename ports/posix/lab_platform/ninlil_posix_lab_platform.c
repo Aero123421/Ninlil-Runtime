@@ -449,3 +449,18 @@ uint64_t ninlil_posix_lab_platform_test_inject_drop_count(
     }
     return ninlil_posix_loopback_bearer_inject_drop_count(platform->loopback_inject);
 }
+
+void ninlil_posix_lab_platform_test_override_bearer(
+    ninlil_posix_lab_platform_t *platform,
+    const ninlil_bearer_ops_t *bearer,
+    const ninlil_tx_gate_ops_t *tx_gate)
+{
+    if (platform == NULL || bearer == NULL || tx_gate == NULL) {
+        return;
+    }
+    if (platform->lifecycle != NINLIL_POSIX_LAB_PLATFORM_LIFECYCLE_ACTIVE) {
+        return;
+    }
+    platform->platform.bearer = bearer;
+    platform->platform.tx_gate = tx_gate;
+}
