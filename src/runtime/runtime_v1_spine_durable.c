@@ -1,5 +1,6 @@
 #include "runtime_v1_spine_durable.h"
 
+#include "runtime_v1_capability.h"
 #include "runtime_v1_delivery_durable.h"
 #include "submission_admission.h"
 #include "submission_canonical_v1.h"
@@ -282,7 +283,7 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     const ninlil_storage_ops_t *storage;
     ninlil_storage_txn_t txn = NULL;
     uint8_t marker_key[32];
-    uint8_t marker_value[NINLIL_RT_V1_TX_ADMISSION_MARKER_VALUE_BYTES];
+    uint8_t marker_value[NINLIL_RT_V1_TX_ADMISSION_MARKER_V2_BYTES];
 
     status = fill_preflight_input(&preflight_in, runtime, slot, submission);
     if (status != NINLIL_OK) {
@@ -299,6 +300,17 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     if (preflight_out.action
         != NINLIL_MODEL_SUBMISSION_PREFLIGHT_READY_FOR_ID_ALLOCATION) {
         return NINLIL_E_INTERNAL;
+    }
+
+    status = ninlil_rt_v1_check_bearer_payload_admission(
+        ninlil_rt_v1_default_bearer_route(),
+        (uint32_t)submission->payload.length,
+        out_result);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (out_result->kind == NINLIL_SUBMISSION_REJECTED) {
+        return NINLIL_OK;
     }
 
     if (runtime->nonterminal_transaction_count
@@ -356,12 +368,15 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     marker_key[0] = 0x54u;
     marker_key[1] = 0x58u;
     (void)memcpy(&marker_key[2], alloc_out.write_set.transaction_id.bytes, 14u);
-    ninlil_rt_v1_encode_tx_admission_marker(
+    ninlil_rt_v1_encode_tx_admission_marker_v2(
         marker_value,
         slot->model_service.family,
         &slot->descriptor.local_application_instance_id,
         submission->effect_deadline_ms,
-        submission->generation);
+        submission->generation,
+        ninlil_rt_v1_semantic_priority_for_family(slot->model_service.family),
+        (uint32_t)submission->payload.length,
+        runtime->started_sample.now_ms);
 
     status = ninlil_v1_durable_storage_put(
         NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT,
@@ -394,6 +409,15 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
         return status;
     }
 
+    status = ninlil_rt_v1_commit_reservation_marker(
+        runtime,
+        &alloc_out.write_set.transaction_id,
+        (uint32_t)submission->payload.length,
+        ninlil_rt_v1_default_bearer_route());
+    if (status != NINLIL_OK) {
+        return status;
+    }
+
     runtime->transaction_sequence += 1u;
     runtime->nonterminal_transaction_count += 1u;
     runtime->resource_ledger =
@@ -417,6 +441,18 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     txn_slot->content_digest = submission->content_digest;
     txn_slot->effect_deadline_ms = submission->effect_deadline_ms;
     txn_slot->generation = submission->generation;
+    txn_slot->payload_length = (uint32_t)submission->payload.length;
+    txn_slot->semantic_priority =
+        ninlil_rt_v1_semantic_priority_for_family(slot->model_service.family);
+    txn_slot->bearer_route = (uint8_t)ninlil_rt_v1_default_bearer_route();
+    txn_slot->admitted_at_ms = runtime->started_sample.now_ms;
+    txn_slot->retry_backoff_ms = slot->descriptor.retry_backoff_ms;
+    if (txn_slot->retry_backoff_ms == 0u) {
+        txn_slot->retry_backoff_ms = 100u;
+    }
+    txn_slot->reservation_active = 1u;
+    txn_slot->reservation_evidence_units =
+        slot->model_service.max_evidence_per_target + 1u;
     txn_slot->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
     txn_slot->retry_budget = 3u;
     txn_slot->spool_revision = 1u;

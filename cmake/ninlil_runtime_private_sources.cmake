@@ -29,6 +29,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/runtime_store_stage5_seam.c
     src/runtime/runtime_v1_spine_durable.c
     src/runtime/runtime_v1_delivery_durable.c
+    src/runtime/runtime_v1_capability.c
     src/runtime/runtime_v1_event_mgmt.c
     src/runtime/submission_canonical_v1.c
     src/runtime/stage5_empty_metadata.c

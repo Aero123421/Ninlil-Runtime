@@ -91,6 +91,13 @@ typedef struct ninlil_rt_transaction_slot {
     ninlil_id128_t last_resume_operation_id;
     uint32_t evidence_recorded;
     uint32_t outcome_recorded;
+    uint32_t payload_length;
+    uint8_t semantic_priority;
+    uint8_t bearer_route;
+    uint32_t reservation_active;
+    uint32_t reservation_evidence_units;
+    uint64_t admitted_at_ms;
+    uint64_t retry_backoff_ms;
 } ninlil_rt_transaction_slot_t;
 
 struct ninlil_runtime {

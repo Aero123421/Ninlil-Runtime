@@ -166,8 +166,8 @@ static int test_recovery_reject_commit_unknown_restart(void)
 
 static int test_allowlist_table_closed(void)
 {
-    REQUIRE(NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT == 29u);
-    REQUIRE(NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT == 13u);
+    REQUIRE(NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT == 30u);
+    REQUIRE(NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT == 14u);
     REQUIRE(g_ninlil_v1_durable_allowlist_table[0].kind
         == NINLIL_V1_DURABLE_KIND_RS_BINDING);
     REQUIRE(g_ninlil_v1_durable_allowlist_table[28].kind

@@ -959,7 +959,7 @@ static int row_is_v1_allowlisted_spine_marker(
         return 0;
     }
     return kind >= NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER
-        && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE;
+        && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
 }
 
 static ninlil_status_t skip_allowlisted_spine_row(

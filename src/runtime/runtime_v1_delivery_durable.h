@@ -7,13 +7,13 @@
 extern "C" {
 #endif
 
-#define NINLIL_RT_V1_TX_ADMISSION_MARKER_VALUE_BYTES 33u
-
 typedef struct ninlil_rt_v1_step_delivery_result {
     uint32_t callbacks_invoked;
     uint32_t transitions_consumed;
     uint32_t work_remaining;
 } ninlil_rt_v1_step_delivery_result_t;
+
+#define NINLIL_RT_V1_TX_ADMISSION_MARKER_VALUE_BYTES 46u
 
 void ninlil_rt_v1_encode_tx_admission_marker(
     uint8_t *value,

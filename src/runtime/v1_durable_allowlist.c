@@ -67,7 +67,9 @@ const ninlil_v1_durable_allowlist_row_t g_ninlil_v1_durable_allowlist_table[
     {NINLIL_V1_DURABLE_KIND_SPINE_EVENT_DISCARD, NINLIL_V1_DURABLE_OWNER_S1,
         "SPINE_EVENT_DISCARD"},
     {NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE, NINLIL_V1_DURABLE_OWNER_S1,
-        "SPINE_RETRY_STATE"}
+        "SPINE_RETRY_STATE"},
+    {NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION, NINLIL_V1_DURABLE_OWNER_S1,
+        "SPINE_RESERVATION"}
 };
 
 static ninlil_v1_durable_record_kind_t key_id_to_kind(
@@ -218,6 +220,10 @@ static ninlil_status_t classify_spine_marker_row(
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE;
         return NINLIL_OK;
     }
+    if (key.data[0] == 0x52u && key.data[1] == 0x56u) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
+        return NINLIL_OK;
+    }
     return NINLIL_E_UNSUPPORTED;
 }
 
@@ -284,6 +290,8 @@ static int operation_allows_kind(
         return kind == NINLIL_V1_DURABLE_KIND_SPINE_EVENT_DISCARD;
     case NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT:
         return kind == NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE;
+    case NINLIL_V1_DURABLE_OP_RESERVATION_COMMIT:
+        return kind == NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
     default:
         return 0;
     }
@@ -339,7 +347,7 @@ ninlil_status_t ninlil_v1_durable_writer_gate_check(
     ninlil_status_t status;
 
     if (operation < NINLIL_V1_DURABLE_OP_BOOTSTRAP_COMMIT
-        || operation > NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT) {
+        || operation > NINLIL_V1_DURABLE_OP_RESERVATION_COMMIT) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     status = ninlil_v1_durable_classify_row(key, value, &kind);
@@ -492,7 +500,7 @@ static void publication_classify_row(
         return;
     }
     if (kind >= NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER
-        && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE) {
+        && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION) {
         *ok_count += 1u;
         return;
     }

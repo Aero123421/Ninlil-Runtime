@@ -10,7 +10,7 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 
 本書は unit 1a の正本です。SQLite 昇格/restart E2E（1b）、ESP gate（1c）は範囲外です。
 
-## 2. Record kind allowlist（29 kinds）
+## 2. Record kind allowlist（30 kinds）
 
 | # | Kind ID | 名前 | Family | 検証 owner |
 | ---: | --- | --- | --- | ---: |
@@ -43,20 +43,28 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 | 27 | SPINE_EVENT_RESUME | B1 event resume (`ER`) | marker | S1 |
 | 28 | SPINE_EVENT_DISCARD | B1 event discard (`ED`) | marker | S1 |
 | 29 | SPINE_RETRY_STATE | B1 retry state (`RT`) | marker | S1 |
+| 30 | SPINE_RESERVATION | B3 reservation (`RV`) | marker | S1 |
 
-コード正本: `src/runtime/v1_durable_allowlist.c` の `g_ninlil_v1_durable_allowlist_table[]`（`NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT = 29`）。
+コード正本: `src/runtime/v1_durable_allowlist.c` の `g_ninlil_v1_durable_allowlist_table[]`（`NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT = 30`）。
 
 ### 2a 追記（unit 2a / 項目 2 spine）
 
 - kinds 20–22 は domain codec row ではなく、spine admission の bounded marker key（`NRS` / `TX` / `CN` prefix）です。
 - writer 経路: `ninlil_v1_durable_storage_put()`（`runtime_v1_spine_durable.c`）。
-- recovery publication gate は RS/DOM + spine marker（kinds 20–29）を success evidence 対象とする（`publication_classify_row` / Stage5 scan spine skip）。
+- recovery publication gate は RS/DOM + spine marker（kinds 20–30）を success evidence 対象とする（`publication_classify_row` / Stage5 scan spine skip）。
 
 ### 2b 追記（unit 2b / 項目 2 delivery）
 
 - kinds 23–29 は delivery / event management / retry spine の bounded marker key（`DS` / `EV` / `OC` / `ES` / `ER` / `ED` / `RT` prefix）。
 - writer 経路: `runtime_v1_delivery_durable.c`、`runtime_v1_event_mgmt.c`（`ninlil_v1_durable_storage_put`）。
 - Stage5 domain scanner は allowlisted spine row を lex-order でスキップ（`domain_store_scanner.c`）；restart 時に bootstrap + spine marker 共存を受理。
+
+### 2c 追記（unit 4 / 項目 4 B3 capability）
+
+- kind 30 `SPINE_RESERVATION` は admission 後の容量予約 marker key（`RV` prefix）。
+- writer 経路: `runtime_v1_capability.c`（`ninlil_rt_v1_commit_reservation_marker`）、operation `RESERVATION_COMMIT`（14）。
+- TX admission marker v2（46B: priority / payload_length / admitted_at_ms）は kind 21 value 拡張（v1 33B 後方互換 decode）。
+- bearer payload 上限は表駆動（`runtime_v1_capability.c` `g_bearer_limit_table[]`；SIMULATED/U6=926B）。
 
 ### 2.1 D3-S1..S3 検証 owner 注記
 
@@ -76,7 +84,7 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 
 Runtime store family 3/4 rows は state field を持たず、bootstrap plan の zero counter / capacity limits のみ（S1）。
 
-## 4. Operation allowlist（13 operations）
+## 4. Operation allowlist（14 operations）
 
 | Operation | Writer 経路 | 許可 record kinds |
 | --- | --- | --- |
@@ -93,6 +101,7 @@ Runtime store family 3/4 rows は state field を持たず、bootstrap plan の 
 | `EVENT_RESUME_COMMIT` | `runtime_v1_event_mgmt.c` | SPINE_EVENT_RESUME |
 | `EVENT_DISCARD_COMMIT` | 同上 | SPINE_EVENT_DISCARD |
 | `RETRY_STATE_COMMIT` | `runtime_v1_delivery_durable.c` | SPINE_RETRY_STATE |
+| `RESERVATION_COMMIT` | `runtime_v1_capability.c` | SPINE_RESERVATION |
 
 ## 5. Writer 構造 gate
 

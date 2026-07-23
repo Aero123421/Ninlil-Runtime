@@ -1,4 +1,5 @@
 #include "runtime_v1_delivery_durable.h"
+#include "runtime_v1_capability.h"
 
 #include "domain_store_codec.h"
 
@@ -531,6 +532,42 @@ static int txn_needs_work(const ninlil_rt_transaction_slot_t *txn)
     return 0;
 }
 
+static ninlil_status_t commit_terminal_outcome(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    ninlil_outcome_t outcome,
+    ninlil_reason_t reason,
+    ninlil_rt_v1_step_delivery_result_t *out_result)
+{
+    ninlil_status_t status;
+
+    if (txn->outcome_recorded != 0u) {
+        return NINLIL_OK;
+    }
+    txn->outcome = outcome;
+    txn->reason = reason;
+    status = commit_delivery_marker(
+        runtime,
+        txn,
+        NINLIL_RT_V1_MARKER_OC,
+        NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT,
+        3u);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    txn->outcome_recorded = 1u;
+    txn->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
+    txn->terminal = 1u;
+    txn->pending_dispatch = 0u;
+    runtime->nonterminal_transaction_count -= 1u;
+    status = ninlil_rt_v1_release_transaction_reservation(runtime, txn);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    out_result->transitions_consumed += 1u;
+    return NINLIL_OK;
+}
+
 static ninlil_status_t handle_timeout_retry(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *txn,
@@ -548,21 +585,31 @@ static ninlil_status_t handle_timeout_retry(
         return NINLIL_OK;
     }
     if (txn->retry_budget == 0u) {
-        txn->delivery_phase = NINLIL_RT_DELIVERY_PARKED;
-        txn->pending_dispatch = 0u;
-        txn->outcome = NINLIL_OUTCOME_EXPIRED;
-        txn->reason = NINLIL_REASON_DEADLINE_ELAPSED_BEFORE_DISPATCH;
-        txn->terminal = 1u;
-        runtime->nonterminal_transaction_count -= 1u;
-        out_result->transitions_consumed += 1u;
-        return NINLIL_OK;
+        return commit_terminal_outcome(
+            runtime,
+            txn,
+            NINLIL_OUTCOME_EXPIRED,
+            NINLIL_REASON_DEADLINE_ELAPSED_BEFORE_DISPATCH,
+            out_result);
     }
     if (clock_sample->now_ms < txn->next_retry_ms) {
         return NINLIL_OK;
     }
 
     txn->retry_budget -= 1u;
-    txn->next_retry_ms = clock_sample->now_ms + 100u;
+    if (txn->retry_backoff_ms == 0u) {
+        txn->retry_backoff_ms = 100u;
+    }
+    txn->next_retry_ms = clock_sample->now_ms + txn->retry_backoff_ms;
+    if (txn->retry_budget == 0u) {
+        txn->pending_dispatch = 0u;
+        return commit_terminal_outcome(
+            runtime,
+            txn,
+            NINLIL_OUTCOME_EXPIRED,
+            NINLIL_REASON_RETRY_BUDGET_EXHAUSTED_NO_EFFECT,
+            out_result);
+    }
     txn->pending_dispatch = 1u;
     status = commit_retry_state(runtime, txn);
     if (status != NINLIL_OK) {
@@ -579,7 +626,10 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
     uint32_t transition_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result)
 {
+    uint32_t order_capacity;
+    uint32_t order_count = 0u;
     uint32_t index;
+    uint32_t pass;
     ninlil_status_t status = NINLIL_OK;
 
     if (runtime == NULL || clock_sample == NULL || out_result == NULL) {
@@ -587,71 +637,125 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
     }
     (void)memset(out_result, 0, sizeof(*out_result));
 
-    for (index = 0u; index < runtime->transaction_capacity; ++index) {
-        ninlil_rt_transaction_slot_t *txn = &runtime->transactions[index];
-        ninlil_rt_service_slot_t *receiver;
+    order_capacity = runtime->transaction_capacity;
+    if (order_capacity == 0u) {
+        return NINLIL_OK;
+    }
+    {
+        uint32_t stack_order[64];
+        uint32_t *order;
 
-        if (!txn_needs_work(txn)) {
-            continue;
+        if (order_capacity > (uint32_t)(sizeof(stack_order) / sizeof(stack_order[0]))) {
+            order_capacity = (uint32_t)(sizeof(stack_order) / sizeof(stack_order[0]));
+        }
+        order = stack_order;
+
+        for (index = 0u; index < runtime->transaction_capacity; ++index) {
+            if (!txn_needs_work(&runtime->transactions[index])) {
+                continue;
+            }
+            if (order_count >= order_capacity) {
+                break;
+            }
+            order[order_count] = index;
+            order_count += 1u;
         }
 
-        status = handle_timeout_retry(
-            runtime, txn, clock_sample, out_result);
-        if (status != NINLIL_OK) {
-            return status;
-        }
-        if (transition_budget != 0u
-            && out_result->transitions_consumed >= transition_budget) {
-            out_result->work_remaining = 1u;
-            return NINLIL_OK;
+        for (pass = 0u; pass < order_count; ++pass) {
+            uint32_t best = pass;
+            uint32_t candidate;
+
+            for (candidate = pass + 1u; candidate < order_count; ++candidate) {
+                if (ninlil_rt_v1_txn_queue_order_less(
+                        &runtime->transactions[order[candidate]],
+                        &runtime->transactions[order[best]])) {
+                    best = candidate;
+                }
+            }
+            if (best != pass) {
+                uint32_t tmp = order[pass];
+                order[pass] = order[best];
+                order[best] = tmp;
+            }
         }
 
-        if (txn->family == NINLIL_FAMILY_EVENT_FACT
-            && txn->delivery_phase == NINLIL_RT_DELIVERY_NONE
-            && txn->pending_dispatch != 0u
-            && runtime->config.role == NINLIL_ROLE_ENDPOINT) {
-            status = park_event_fact(
-                runtime,
-                txn,
-                NINLIL_EVENT_PARK_CAUSE_BEARER_UNAVAILABLE);
+        for (pass = 0u; pass < order_count; ++pass) {
+            ninlil_rt_transaction_slot_t *txn =
+                &runtime->transactions[order[pass]];
+            ninlil_rt_service_slot_t *receiver;
+
+            status = handle_timeout_retry(
+                runtime, txn, clock_sample, out_result);
             if (status != NINLIL_OK) {
                 return status;
             }
-            out_result->transitions_consumed += 1u;
-            continue;
-        }
-
-        receiver = find_receiver_for_txn(runtime, txn);
-        if (txn->family == NINLIL_FAMILY_DESIRED_STATE
-            && receiver != NULL
-            && txn->pending_dispatch != 0u) {
-            status = dispatch_desired_state_sender(
-                runtime, txn, out_result);
-            if (status != NINLIL_OK) {
-                return status;
-            }
-            continue;
-        }
-
-        if (txn->family == NINLIL_FAMILY_EVENT_FACT
-            && receiver != NULL
-            && txn->pending_dispatch != 0u
-            && txn->delivery_phase != NINLIL_RT_DELIVERY_PARKED) {
-            if (callback_budget != 0u
-                && out_result->callbacks_invoked >= callback_budget) {
+            if (transition_budget != 0u
+                && out_result->transitions_consumed >= transition_budget) {
                 out_result->work_remaining = 1u;
                 return NINLIL_OK;
             }
-            status = dispatch_event_fact_receiver(
-                runtime, txn, receiver, clock_sample, out_result);
-            if (status != NINLIL_OK) {
-                return status;
-            }
-            continue;
-        }
 
-        if (txn->pending_dispatch != 0u) {
-            txn->pending_dispatch = 0u;
+            if (txn->family == NINLIL_FAMILY_EVENT_FACT
+                && txn->delivery_phase == NINLIL_RT_DELIVERY_NONE
+                && txn->pending_dispatch != 0u
+                && runtime->config.role == NINLIL_ROLE_ENDPOINT) {
+                status = park_event_fact(
+                    runtime,
+                    txn,
+                    NINLIL_EVENT_PARK_CAUSE_BEARER_UNAVAILABLE);
+                if (status != NINLIL_OK) {
+                    return status;
+                }
+                out_result->transitions_consumed += 1u;
+                continue;
+            }
+
+            receiver = find_receiver_for_txn(runtime, txn);
+            if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+                && receiver != NULL
+                && txn->pending_dispatch != 0u) {
+                status = dispatch_desired_state_sender(
+                    runtime, txn, out_result);
+                if (status != NINLIL_OK) {
+                    return status;
+                }
+                if (txn->terminal != 0u) {
+                    status = ninlil_rt_v1_release_transaction_reservation(
+                        runtime, txn);
+                    if (status != NINLIL_OK) {
+                        return status;
+                    }
+                }
+                continue;
+            }
+
+            if (txn->family == NINLIL_FAMILY_EVENT_FACT
+                && receiver != NULL
+                && txn->pending_dispatch != 0u
+                && txn->delivery_phase != NINLIL_RT_DELIVERY_PARKED) {
+                if (callback_budget != 0u
+                    && out_result->callbacks_invoked >= callback_budget) {
+                    out_result->work_remaining = 1u;
+                    return NINLIL_OK;
+                }
+                status = dispatch_event_fact_receiver(
+                    runtime, txn, receiver, clock_sample, out_result);
+                if (status != NINLIL_OK) {
+                    return status;
+                }
+                if (txn->terminal != 0u) {
+                    status = ninlil_rt_v1_release_transaction_reservation(
+                        runtime, txn);
+                    if (status != NINLIL_OK) {
+                        return status;
+                    }
+                }
+                continue;
+            }
+
+            if (txn->pending_dispatch != 0u) {
+                txn->pending_dispatch = 0u;
+            }
         }
     }
 
@@ -667,25 +771,6 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
     return NINLIL_OK;
 }
 
-static void decode_tx_admission_marker(
-    ninlil_bytes_view_t value,
-    ninlil_family_t *out_family,
-    ninlil_id128_t *out_service_app_id,
-    uint64_t *out_effect_deadline_ms,
-    uint64_t *out_generation)
-{
-    if (value.length < NINLIL_RT_V1_TX_ADMISSION_MARKER_VALUE_BYTES
-        || value.data == NULL) {
-        return;
-    }
-    *out_family = (ninlil_family_t)value.data[0];
-    (void)memcpy(
-        out_service_app_id->bytes, &value.data[1], sizeof(out_service_app_id->bytes));
-    (void)memcpy(
-        out_effect_deadline_ms, &value.data[17], sizeof(*out_effect_deadline_ms));
-    (void)memcpy(out_generation, &value.data[25], sizeof(*out_generation));
-}
-
 void ninlil_rt_v1_encode_tx_admission_marker(
     uint8_t *value,
     ninlil_family_t family,
@@ -693,13 +778,15 @@ void ninlil_rt_v1_encode_tx_admission_marker(
     uint64_t effect_deadline_ms,
     uint64_t generation)
 {
-    (void)memset(value, 0, NINLIL_RT_V1_TX_ADMISSION_MARKER_VALUE_BYTES);
-    value[0] = (uint8_t)family;
-    if (service_app_id != NULL) {
-        (void)memcpy(&value[1], service_app_id->bytes, 16u);
-    }
-    (void)memcpy(&value[17], &effect_deadline_ms, sizeof(effect_deadline_ms));
-    (void)memcpy(&value[25], &generation, sizeof(generation));
+    ninlil_rt_v1_encode_tx_admission_marker_v2(
+        value,
+        family,
+        service_app_id,
+        effect_deadline_ms,
+        generation,
+        ninlil_rt_v1_semantic_priority_for_family(family),
+        0u,
+        0u);
 }
 
 static ninlil_status_t delivery_restart_scan_pass(
@@ -763,6 +850,9 @@ static ninlil_status_t delivery_restart_scan_pass(
             ninlil_id128_t service_app_id;
             uint64_t effect_deadline_ms = 0u;
             uint64_t generation = 0u;
+            uint8_t semantic_priority = 0u;
+            uint32_t payload_length = 0u;
+            uint64_t admitted_at_ms = 0u;
 
             slot = ninlil_rt_find_transaction(runtime, &txn_id);
             if (slot == NULL) {
@@ -773,12 +863,15 @@ static ninlil_status_t delivery_restart_scan_pass(
                 runtime->nonterminal_transaction_count += 1u;
             }
             (void)memset(&service_app_id, 0, sizeof(service_app_id));
-            decode_tx_admission_marker(
+            ninlil_rt_v1_decode_tx_admission_marker(
                 (ninlil_bytes_view_t){value.data, value.length},
                 &family,
                 &service_app_id,
                 &effect_deadline_ms,
-                &generation);
+                &generation,
+                &semantic_priority,
+                &payload_length,
+                &admitted_at_ms);
 
             slot->in_use = 1u;
             slot->transaction_id = txn_id;
@@ -786,9 +879,17 @@ static ninlil_status_t delivery_restart_scan_pass(
             slot->service_app_id = service_app_id;
             slot->effect_deadline_ms = effect_deadline_ms;
             slot->generation = generation;
+            slot->semantic_priority = semantic_priority;
+            if (semantic_priority == 0u) {
+                slot->semantic_priority =
+                    ninlil_rt_v1_semantic_priority_for_family(family);
+            }
+            slot->payload_length = payload_length;
+            slot->admitted_at_ms = admitted_at_ms;
             slot->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
             slot->pending_dispatch = 1u;
             slot->retry_budget = NINLIL_RT_V1_DEFAULT_RETRY_BUDGET;
+            slot->retry_backoff_ms = 100u;
             if (slot->spool_revision == 0u) {
                 slot->spool_revision = 1u;
             }
@@ -865,6 +966,16 @@ static ninlil_status_t delivery_restart_scan_pass(
             } else if (state == 1u) {
                 slot->pending_dispatch = 1u;
                 slot->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
+            }
+            continue;
+        }
+
+        if (key.data[0] == 0x52u && key.data[1] == 0x56u) {
+            if (value.length >= 4u && value.data != NULL) {
+                (void)memcpy(
+                    &slot->payload_length, &value.data[0], sizeof(slot->payload_length));
+                slot->bearer_route = value.data[4];
+                slot->reservation_active = 1u;
             }
             continue;
         }

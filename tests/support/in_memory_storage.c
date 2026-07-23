@@ -1525,3 +1525,33 @@ uint64_t ninlil_test_storage_live_iterators(
 {
     return storage == NULL ? 0u : storage->live_iterator_count;
 }
+
+uint32_t ninlil_test_storage_count_keys_with_prefix(
+    ninlil_test_storage_t *storage,
+    ninlil_bytes_view_t storage_namespace,
+    uint8_t prefix_byte0,
+    uint8_t prefix_byte1)
+{
+    storage_namespace_t *name_space;
+    uint32_t count = 0u;
+    size_t index;
+
+    if (storage == NULL || storage_namespace.length == 0u
+        || storage_namespace.data == NULL) {
+        return 0u;
+    }
+    name_space = find_namespace(storage, storage_namespace);
+    if (name_space == NULL) {
+        return 0u;
+    }
+    for (index = 0u; index < name_space->entry_count; ++index) {
+        const storage_entry_t *entry = &name_space->entries[index];
+
+        if (entry->key_length >= 2u && entry->key != NULL
+            && entry->key[0] == prefix_byte0
+            && entry->key[1] == prefix_byte1) {
+            count += 1u;
+        }
+    }
+    return count;
+}
