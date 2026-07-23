@@ -875,6 +875,82 @@ static int test_esp_unproven_never_full_ok(void)
     return 0;
 }
 
+static int test_esp_unproven_readback_match_no_success_promotion(void)
+{
+    const ninlil_storage_ops_t *ops = NULL;
+    ninlil_storage_handle_t h = NULL;
+    ninlil_storage_txn_t rw = NULL;
+    static const uint8_t ns[] = {0x44u};
+    static const uint8_t k[] = {0xabu};
+    static const uint8_t v[] = {0xcdu, 0xefu};
+    uint32_t full_ok_count = 0u;
+    ninlil_storage_status_t commit_status;
+
+    REQUIRE(setup_ops(&ops, NINLIL_PORT_ESP_STORAGE_PRIVATE_FULL_ESP_UNPROVEN) == 0);
+    REQUIRE(ops->open(
+                ops->user, bytes(ns, 1u), NINLIL_STORAGE_SCHEMA_M1A, &h)
+        == NINLIL_STORAGE_OK);
+    REQUIRE(ops->begin(ops->user, h, NINLIL_STORAGE_READ_WRITE, &rw)
+        == NINLIL_STORAGE_OK);
+    REQUIRE(ops->put(ops->user, rw, bytes(k, 1u), bytes(v, sizeof(v)))
+        == NINLIL_STORAGE_OK);
+    commit_status = ops->commit(ops->user, rw, NINLIL_DURABILITY_FULL);
+    if (commit_status == NINLIL_STORAGE_OK) {
+        full_ok_count += 1u;
+    }
+    REQUIRE(commit_status == NINLIL_STORAGE_COMMIT_UNKNOWN);
+    rw = NULL;
+
+    {
+        ninlil_port_esp_storage_config_t config;
+        uint8_t buf[4];
+        ninlil_mut_bytes_t out;
+
+        production_config(&config);
+        ops->close(ops->user, h);
+        h = NULL;
+        REQUIRE(ninlil_port_esp_storage_private_simulate_full_reinit(
+                    &g_storage,
+                    &config,
+                    ninlil_port_esp_storage_host_media_ops(),
+                    &g_media,
+                    NINLIL_PORT_ESP_STORAGE_PRIVATE_FULL_ESP_UNPROVEN)
+            == 0);
+        ops = ninlil_port_esp_storage_private_ops(&g_storage);
+        REQUIRE(ops->open(
+                    ops->user, bytes(ns, 1u), NINLIL_STORAGE_SCHEMA_M1A, &h)
+            == NINLIL_STORAGE_OK);
+        REQUIRE(ops->begin(ops->user, h, NINLIL_STORAGE_READ_ONLY, &rw)
+            == NINLIL_STORAGE_OK);
+        out = mut(buf, sizeof(buf));
+        REQUIRE(ops->get(ops->user, rw, bytes(k, 1u), &out)
+            == NINLIL_STORAGE_OK);
+        REQUIRE(out.length == sizeof(v));
+        REQUIRE(memcmp(buf, v, sizeof(v)) == 0);
+        REQUIRE(ops->rollback(ops->user, rw) == NINLIL_STORAGE_OK);
+        rw = NULL;
+
+        /* Readback matches but ESP_UNPROVEN must not promote to FULL OK. */
+        REQUIRE(ops->begin(ops->user, h, NINLIL_STORAGE_READ_WRITE, &rw)
+            == NINLIL_STORAGE_OK);
+        REQUIRE(ops->put(ops->user, rw, bytes(k, 1u), bytes(v, sizeof(v)))
+            == NINLIL_STORAGE_OK);
+        commit_status = ops->commit(ops->user, rw, NINLIL_DURABILITY_FULL);
+        if (commit_status == NINLIL_STORAGE_OK) {
+            full_ok_count += 1u;
+        }
+        REQUIRE(commit_status == NINLIL_STORAGE_COMMIT_UNKNOWN);
+        rw = NULL;
+        ops->close(ops->user, h);
+        h = NULL;
+    }
+
+    REQUIRE(full_ok_count == 0u);
+    ninlil_port_esp_storage_private_deinit(&g_storage);
+    ninlil_port_esp_storage_host_media_deinit(&g_media);
+    return 0;
+}
+
 static int test_flash_erase_ff_and_program_constraints(void)
 {
     ninlil_port_esp_storage_host_media_t media;
@@ -1232,5 +1308,6 @@ int main(void)
     REQUIRE(test_provider_neutral_final_view_contract() == 0);
     REQUIRE(test_staging_over_bound_and_erase_alias() == 0);
     REQUIRE(test_esp_unproven_never_full_ok() == 0);
+    REQUIRE(test_esp_unproven_readback_match_no_success_promotion() == 0);
     return 0;
 }

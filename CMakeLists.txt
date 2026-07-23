@@ -3444,6 +3444,19 @@ if(NINLIL_BUILD_TESTS)
     )
 
     add_test(
+        NAME v1_esp_durable_success_source_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_esp_durable_success_gate.py
+            check
+    )
+    add_test(
+        NAME v1_esp_durable_success_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_esp_durable_success_gate.py
+            self-test
+    )
+
+    add_test(
         NAME esp_storage_budget_gate
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_budget_gate.py
@@ -3590,6 +3603,27 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME esp_idf_port_logic
         COMMAND ninlil_esp_idf_port_logic_test
+    )
+
+    add_executable(ninlil_v1_esp_provider_availability_test
+        tests/port/v1_esp_provider_availability_test.c
+    )
+    target_include_directories(ninlil_v1_esp_provider_availability_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include
+    )
+    target_link_libraries(ninlil_v1_esp_provider_availability_test PRIVATE
+        ninlil_esp_idf_port_pure
+        ninlil
+    )
+    set_target_properties(ninlil_v1_esp_provider_availability_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_esp_provider_availability_test)
+    add_test(
+        NAME v1_esp_provider_availability
+        COMMAND ninlil_v1_esp_provider_availability_test
     )
 
     # U2 A2 pure state/ring/ownership tests (host only; not physical HIL).
