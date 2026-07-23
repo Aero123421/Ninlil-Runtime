@@ -1,6 +1,7 @@
 #include "stage5_empty_metadata.h"
 
 #include "runtime_store_bootstrap.h"
+#include "v1_durable_allowlist.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -619,6 +620,7 @@ static ninlil_status_t encode_clock_uninitialized(
 static ninlil_status_t put_encoded(
     const ninlil_storage_ops_t *storage,
     ninlil_storage_txn_t txn,
+    ninlil_v1_durable_operation_t operation,
     const ninlil_model_domain_key_t *key,
     const uint8_t *value,
     uint32_t value_length,
@@ -627,11 +629,16 @@ static ninlil_status_t put_encoded(
     ninlil_bytes_view_t k;
     ninlil_bytes_view_t v;
     ninlil_storage_status_t st;
+    ninlil_status_t gate_status;
 
     k.data = key->bytes;
     k.length = key->length;
     v.data = value;
     v.length = value_length;
+    gate_status = ninlil_v1_durable_writer_gate_check(operation, k, v);
+    if (gate_status != NINLIL_OK) {
+        return gate_status;
+    }
     st = storage->put(storage->user, txn, k, v);
     fence_or(inout_fence, storage_status_requires_fence(st));
     return map_storage_to_public(st);
@@ -1089,6 +1096,7 @@ static ninlil_status_t write_all_metadata(
         status = put_encoded(
             storage,
             txn,
+            NINLIL_V1_DURABLE_OP_METADATA_INIT_COMMIT,
             &workspace->domain_key,
             workspace->encoded_value,
             value_len,
@@ -1105,6 +1113,7 @@ static ninlil_status_t write_all_metadata(
     return put_encoded(
         storage,
         txn,
+        NINLIL_V1_DURABLE_OP_METADATA_INIT_COMMIT,
         &workspace->domain_key,
         workspace->encoded_value,
         value_len,
@@ -1596,6 +1605,7 @@ ninlil_status_t ninlil_stage5_clock_baseline_commit_trusted(
     status = put_encoded(
         storage,
         txn,
+        NINLIL_V1_DURABLE_OP_CLOCK_TRUSTED_COMMIT,
         &workspace->domain_key,
         workspace->encoded_value,
         enc_len,
