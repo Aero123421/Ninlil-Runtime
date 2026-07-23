@@ -455,6 +455,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c3_lab_ctest.cmake)
 # C6-LAB enforcement (V1 item 10a): LAB_ONLY sole-edge gate.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c6_lab_ctest.cmake)
 
+# C4/C5-LAB USB + radio software path (V1 item 9).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c4_c5_lab_ctest.cmake)
+
 # R4 SX1262 portable control-plane (D1). Not public ABI. Not RF TX complete.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
 
@@ -2812,6 +2815,7 @@ if(NINLIL_BUILD_TESTS)
     ninlil_m4_lab_register_tests()
     ninlil_c3_lab_register_tests()
     ninlil_c6_lab_register_tests()
+    ninlil_c4_c5_lab_register_tests()
     add_test(
         NAME c6_lab_enforcement_gate
         COMMAND ${Python3_EXECUTABLE}

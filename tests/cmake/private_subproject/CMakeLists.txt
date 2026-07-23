@@ -75,11 +75,12 @@ get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
 # Exact base private sources + N6 + R7 T0 portable crypto + R7 T1 wire +
 # R7 T1b context binding + D3-S3 evaluator + V1 allowlist + V1 restart +
-# B1 spine + 2b delivery/event durable + 4 capability = 40.
+# B1 spine + 2b delivery/event durable + 4 capability + M4/C3/C6/C4/C5 LAB =
+# 55.
 # Host OpenSSL 3 adapter is top-level/tests only and must not appear in this
 # add_subdirectory consumer (NINLIL_R7_HOST_CRYPTO_ENABLED=FALSE).
-if(NOT _private_source_count EQUAL 40)
-    message(FATAL_ERROR "private source count is not 40: ${_private_sources}")
+if(NOT _private_source_count EQUAL 55)
+    message(FATAL_ERROR "private source count is not 55: ${_private_sources}")
 endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
@@ -96,6 +97,13 @@ endforeach()
 list(SORT _private_source_names)
 set(_expected_private_source_names
     airtime_calculator.c
+    c3_lab_context_lifecycle.c
+    c3_lab_secure_wire.c
+    c4_c5_lab_wire.c
+    c4_lab_usb_path.c
+    c5_lab_radio_path.c
+    c6_lab_enforcement.c
+    c6_lab_spi_tx_sim.c
     control_frame_codec.c
     control_session.c
     domain_store_body_codec.c
@@ -105,15 +113,19 @@ set(_expected_private_source_names
     domain_store_d3s3.c
     domain_store_scanner.c
     logical_session.c
+    m4_lab_handshake.c
+    m4_lab_install_token.c
+    m4_lab_membership.c
+    m4_lab_primitive.c
     n6_context_store.c
     n6_crypto_host.c
     n6_record_codec.c
     ncl1_codec.c
     pcp_authority.c
     profile_loader.c
+    r7_context_binding.c
     r7_crypto_nonce.c
     r7_crypto_portable.c
-    r7_context_binding.c
     r7_wire_codec.c
     radio_hal.c
     resource_ledger.c
@@ -124,10 +136,13 @@ set(_expected_private_source_names
     runtime_store_codec.c
     runtime_store_orchestrator.c
     runtime_store_stage5_seam.c
+    runtime_v1_bearer_wire.c
     runtime_v1_capability.c
     runtime_v1_delivery_durable.c
     runtime_v1_event_mgmt.c
+    runtime_v1_family_capability.c
     runtime_v1_spine_durable.c
+    runtime_v1_target_resolver.c
     stage5_empty_metadata.c
     storage_canonical_plan.c
     submission_admission.c
@@ -135,6 +150,7 @@ set(_expected_private_source_names
     submission_preflight.c
     v1_durable_allowlist.c
     v1_durable_restart.c
+    v1_frame_manifest.c
 )
 list(SORT _expected_private_source_names)
 if(NOT _private_source_names STREQUAL _expected_private_source_names)
