@@ -23,6 +23,12 @@ ninlil_status_t ninlil_rt_v1_bearer_send_desired_application(
     const ninlil_time_sample_t *clock_sample,
     ninlil_rt_v1_step_delivery_result_t *out_result);
 
+ninlil_status_t ninlil_rt_v1_bearer_send_uplink_application(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    const ninlil_time_sample_t *clock_sample,
+    ninlil_rt_v1_step_delivery_result_t *out_result);
+
 #ifdef __cplusplus
 }
 #endif

@@ -226,7 +226,31 @@ static int encode_family_metadata(
 {
     uint32_t index;
 
-    if (family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (family == NINLIL_FAMILY_DESIRED_STATE
+        || family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || family == NINLIL_FAMILY_CONFIG_RESERVED) {
+        if (submission->generation == 0u) {
+            return 0;
+        }
+        for (index = 0u; index < 8u; ++index) {
+            out_bytes[index] =
+                (uint8_t)((submission->generation >> (56u - (index * 8u))) & 0xffu);
+        }
+        *out_length = 8u;
+        return 1;
+    }
+    if (family == NINLIL_FAMILY_LATEST_STATE_RESERVED) {
+        if (submission->generation == 0u) {
+            return 0;
+        }
+        for (index = 0u; index < 8u; ++index) {
+            out_bytes[index] =
+                (uint8_t)((submission->generation >> (56u - (index * 8u))) & 0xffu);
+        }
+        *out_length = 8u;
+        return 1;
+    }
+    if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         if (submission->generation == 0u) {
             return 0;
         }

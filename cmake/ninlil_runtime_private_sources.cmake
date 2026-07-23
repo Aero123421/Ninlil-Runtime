@@ -32,6 +32,8 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/runtime_v1_bearer_wire.c
     src/runtime/runtime_v1_capability.c
     src/runtime/runtime_v1_event_mgmt.c
+    src/runtime/runtime_v1_family_capability.c
+    src/runtime/runtime_v1_target_resolver.c
     src/runtime/submission_canonical_v1.c
     src/runtime/stage5_empty_metadata.c
     src/runtime/v1_durable_allowlist.c

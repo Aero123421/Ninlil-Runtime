@@ -148,7 +148,9 @@ static ninlil_status_t fill_origin_authority(
     ninlil_origin_authorization_decision_t decision;
     ninlil_origin_auth_status_t auth_status;
 
-    if (slot->model_service.family != NINLIL_FAMILY_EVENT_FACT) {
+    if (slot->model_service.family != NINLIL_FAMILY_EVENT_FACT
+        && slot->model_service.family != NINLIL_FAMILY_LATEST_STATE_RESERVED
+        && slot->model_service.family != NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         input->authority.fact = NINLIL_MODEL_ORIGIN_AUTH_NOT_APPLICABLE;
         return NINLIL_OK;
     }
@@ -175,7 +177,12 @@ static ninlil_status_t fill_origin_authority(
     request.admissions_in_current_window =
         (uint32_t)input->quota.admissions_in_window;
     request.active_spool_bytes = input->event_grant_usage.active_spool_bytes;
-    request.current_window_started_at_ms = input->clock.now_ms;
+    if (input->clock.now_ms >= 10000u) {
+        request.current_window_started_at_ms =
+            input->clock.now_ms - (input->clock.now_ms % 10000u);
+    } else {
+        request.current_window_started_at_ms = 0u;
+    }
     request.now = runtime->started_sample;
 
     (void)memset(&decision, 0, sizeof(decision));

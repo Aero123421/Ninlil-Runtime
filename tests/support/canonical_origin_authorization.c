@@ -133,6 +133,11 @@ static int id_valid(const ninlil_id128_t *id)
     return id != NULL && bytes_any_nonzero(id->bytes, sizeof(id->bytes));
 }
 
+static int id_is_zero(const ninlil_id128_t *id)
+{
+    return id != NULL && !bytes_any_nonzero(id->bytes, sizeof(id->bytes));
+}
+
 static int id_matches(const ninlil_id128_t *id, const uint8_t expected[16])
 {
     return id != NULL && memcmp(id->bytes, expected, 16u) == 0;
@@ -252,6 +257,16 @@ static int family_is_known(ninlil_family_t family)
         || family == NINLIL_FAMILY_NETWORK_CONTROL_RESERVED;
 }
 
+static int event_identity_valid(
+    const ninlil_origin_authorization_request_t *request)
+{
+    if (request->service.family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || request->service.family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
+        return id_is_zero(&request->event_id);
+    }
+    return id_valid(&request->event_id);
+}
+
 static int request_structurally_valid(
     const ninlil_origin_authorization_request_t *request)
 {
@@ -277,7 +292,7 @@ static int request_structurally_valid(
         || !text_shape_valid(&request->service.schema_id, 0)
         || !digest_valid(&request->service.descriptor_digest)
         || !family_is_known(request->service.family)
-        || !id_valid(&request->event_id)
+        || (!event_identity_valid(request))
         || !digest_valid(&request->content_digest)
         || request->required_evidence < NINLIL_EVIDENCE_RECEIVED
         || request->required_evidence > NINLIL_EVIDENCE_VERIFIED
@@ -292,6 +307,18 @@ static int request_structurally_valid(
     expected_window = request->now.now_ms
         - (request->now.now_ms % ORIGIN_AUTH_WINDOW_MS);
     return request->current_window_started_at_ms == expected_window;
+}
+
+static int latest_state_lab_allow(
+    const ninlil_origin_authorization_request_t *request)
+{
+    return request->service.family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        && text_matches(&request->service.service_id, "latest-state")
+        && text_matches(&request->service.schema_id, "latest-state")
+        && request->required_evidence == NINLIL_EVIDENCE_APPLIED
+        && id_is_zero(&request->event_id)
+        && id_valid(&request->target.target_runtime_id)
+        && id_valid(&request->target.target_application_instance_id);
 }
 
 static int source_and_service_match(
@@ -550,6 +577,10 @@ static ninlil_origin_auth_status_t fixture_evaluate(
         set_deny_decision(out_decision, request,
             NINLIL_REASON_CLOCK_UNCERTAIN,
             NINLIL_RETRY_OPERATOR_ACTION, 0u);
+        return finish_natural(provider, request, out_decision);
+    }
+    if (latest_state_lab_allow(request)) {
+        set_allow_decision(out_decision, request);
         return finish_natural(provider, request, out_decision);
     }
     if (!source_and_service_match(request)) {

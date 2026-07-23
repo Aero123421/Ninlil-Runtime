@@ -2,6 +2,7 @@
 #include "runtime_v1_delivery_durable.h"
 #include "runtime_v1_event_mgmt.h"
 #include "runtime_v1_spine_durable.h"
+#include "runtime_v1_family_capability.h"
 
 #include "submission_admission.h"
 #include "submission_preflight.h"
@@ -285,6 +286,13 @@ static int descriptor_matches_role_matrix(
         }
         return 0;
     }
+    {
+        int family_result = ninlil_rt_v1_family_descriptor_role_valid(
+            role, descriptor, callbacks, out_side);
+        if (family_result != 0) {
+            return family_result;
+        }
+    }
     return 0;
 }
 
@@ -292,8 +300,8 @@ static int descriptor_limits_within_runtime(
     const ninlil_model_runtime_resource_limits_projection_t *limits,
     const ninlil_service_descriptor_t *descriptor)
 {
-    if (descriptor->target_limit != 1u
-        || limits->max_targets_per_transaction != 1u) {
+    if (descriptor->target_limit == 0u
+        || descriptor->target_limit > limits->max_targets_per_transaction) {
         return 0;
     }
     if (descriptor->logical_payload_limit > limits->max_logical_payload_bytes
@@ -356,6 +364,9 @@ static int descriptor_semantics_valid(
             || descriptor->maximum_evidence_grace_ms != 0u) {
             return 0;
         }
+        return 1;
+    }
+    if (ninlil_rt_v1_family_descriptor_semantics_valid(descriptor)) {
         return 1;
     }
     return -1;

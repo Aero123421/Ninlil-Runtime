@@ -1,6 +1,7 @@
 #include "runtime_v1_delivery_durable.h"
 #include "runtime_v1_bearer_wire.h"
 #include "runtime_v1_capability.h"
+#include "runtime_v1_family_capability.h"
 
 #include "domain_store_codec.h"
 
@@ -97,7 +98,14 @@ static ninlil_rt_service_slot_t *find_receiver_for_txn(
             && slot->callbacks.on_delivery != NULL) {
             return slot;
         }
-        if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+        if ((txn->family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+                || txn->family == NINLIL_FAMILY_MEASUREMENT_RESERVED)
+            && slot->callbacks.on_delivery != NULL) {
+            return slot;
+        }
+        if ((txn->family == NINLIL_FAMILY_DESIRED_STATE
+                || txn->family == NINLIL_FAMILY_TRANSFER_RESERVED
+                || txn->family == NINLIL_FAMILY_CONFIG_RESERVED)
             && slot->model_service.local_side
                 == NINLIL_MODEL_LOCAL_SUBMISSION_SENDER) {
             return slot;
@@ -478,6 +486,33 @@ static ninlil_status_t dispatch_event_fact_receiver(
     (void)memset(&app_result, 0, sizeof(app_result));
     set_header(&app_result.abi_version, &app_result.struct_size, sizeof(app_result));
 
+    if (txn->family == NINLIL_FAMILY_LATEST_STATE_RESERVED) {
+        if (!ninlil_rt_v1_family_latest_state_apply(
+                ninlil_rt_v1_family_workspace(runtime),
+                &receiver->descriptor.local_application_instance_id,
+                txn->generation,
+                &app_result)) {
+            if (app_result.kind == NINLIL_APP_RESULT_DISPOSITION) {
+                txn->pending_dispatch = 0u;
+                return NINLIL_OK;
+            }
+            return NINLIL_E_INVALID_STATE;
+        }
+    } else if (txn->family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
+        if (!ninlil_rt_v1_family_measurement_batch_accept(
+                ninlil_rt_v1_family_workspace(runtime),
+                &receiver->descriptor.local_application_instance_id,
+                txn->generation,
+                txn->payload_length,
+                &app_result)) {
+            if (app_result.kind == NINLIL_APP_RESULT_DISPOSITION) {
+                txn->pending_dispatch = 0u;
+                return NINLIL_OK;
+            }
+            return NINLIL_E_INVALID_STATE;
+        }
+    }
+
     runtime->in_callback = 1u;
     action = receiver->callbacks.on_delivery(
         receiver->callbacks.user,
@@ -550,6 +585,23 @@ static int txn_needs_work(const ninlil_rt_transaction_slot_t *txn)
     return 0;
 }
 
+static int endpoint_has_pending_uplink_dispatch(const ninlil_runtime_t *runtime)
+{
+    uint32_t index;
+
+    if (runtime->config.role != NINLIL_ROLE_ENDPOINT) {
+        return 0;
+    }
+    for (index = 0u; index < runtime->transaction_capacity; ++index) {
+        const ninlil_rt_transaction_slot_t *txn = &runtime->transactions[index];
+        if (txn->in_use != 0u && txn->terminal == 0u && txn->pending_dispatch != 0u
+            && ninlil_rt_v1_family_is_uplink(txn->family)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static ninlil_status_t commit_terminal_outcome(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *txn,
@@ -597,7 +649,7 @@ static ninlil_status_t handle_bearer_receipt_timeout(
 
     if (!ninlil_rt_v1_bearer_path_available(runtime)
         || runtime->config.role != NINLIL_ROLE_CONTROLLER
-        || txn->family != NINLIL_FAMILY_DESIRED_STATE
+        || !ninlil_rt_v1_family_is_downlink(txn->family)
         || txn->delivery_phase != NINLIL_RT_DELIVERY_STARTED
         || txn->evidence_recorded != 0u
         || txn->pending_dispatch != 0u) {
@@ -634,7 +686,7 @@ static ninlil_status_t handle_timeout_retry(
 {
     ninlil_status_t status;
 
-    if (txn->family != NINLIL_FAMILY_DESIRED_STATE
+    if (!ninlil_rt_v1_family_is_downlink(txn->family)
         || txn->effect_deadline_ms == 0u
         || txn->effect_deadline_ms >= NINLIL_NO_DEADLINE) {
         return NINLIL_OK;
@@ -690,20 +742,24 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
     uint32_t index;
     uint32_t pass;
     ninlil_status_t status = NINLIL_OK;
+    int defer_ingress = 0;
 
     if (runtime == NULL || clock_sample == NULL || out_result == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     (void)memset(out_result, 0, sizeof(*out_result));
 
-    status = ninlil_rt_v1_bearer_ingress_step(
-        runtime,
-        clock_sample,
-        &ingress_budget,
-        callback_budget,
-        out_result);
-    if (status != NINLIL_OK) {
-        return status;
+    defer_ingress = endpoint_has_pending_uplink_dispatch(runtime);
+    if (!defer_ingress) {
+        status = ninlil_rt_v1_bearer_ingress_step(
+            runtime,
+            clock_sample,
+            &ingress_budget,
+            callback_budget,
+            out_result);
+        if (status != NINLIL_OK) {
+            return status;
+        }
     }
 
     order_capacity = runtime->transaction_capacity;
@@ -772,7 +828,8 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
             if (txn->family == NINLIL_FAMILY_EVENT_FACT
                 && txn->delivery_phase == NINLIL_RT_DELIVERY_NONE
                 && txn->pending_dispatch != 0u
-                && runtime->config.role == NINLIL_ROLE_ENDPOINT) {
+                && runtime->config.role == NINLIL_ROLE_ENDPOINT
+                && !ninlil_rt_v1_bearer_path_available(runtime)) {
                 status = park_event_fact(
                     runtime,
                     txn,
@@ -784,8 +841,20 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
                 continue;
             }
 
+            if (ninlil_rt_v1_family_is_uplink(txn->family)
+                && runtime->config.role == NINLIL_ROLE_ENDPOINT
+                && txn->pending_dispatch != 0u
+                && ninlil_rt_v1_bearer_path_available(runtime)) {
+                status = ninlil_rt_v1_bearer_send_uplink_application(
+                    runtime, txn, clock_sample, out_result);
+                if (status != NINLIL_OK) {
+                    return status;
+                }
+                continue;
+            }
+
             receiver = find_receiver_for_txn(runtime, txn);
-            if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+            if (ninlil_rt_v1_family_is_downlink(txn->family)
                 && receiver != NULL
                 && txn->pending_dispatch != 0u) {
                 status = dispatch_desired_state_sender(
@@ -803,7 +872,9 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
                 continue;
             }
 
-            if (txn->family == NINLIL_FAMILY_EVENT_FACT
+            if ((txn->family == NINLIL_FAMILY_EVENT_FACT
+                    || txn->family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+                    || txn->family == NINLIL_FAMILY_MEASUREMENT_RESERVED)
                 && receiver != NULL
                 && txn->pending_dispatch != 0u
                 && txn->delivery_phase != NINLIL_RT_DELIVERY_PARKED) {
@@ -828,7 +899,7 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
             }
 
             if (txn->pending_dispatch != 0u) {
-                if (!(txn->family == NINLIL_FAMILY_DESIRED_STATE
+                if (!(ninlil_rt_v1_family_is_downlink(txn->family)
                         && runtime->config.role == NINLIL_ROLE_CONTROLLER
                         && ninlil_rt_v1_bearer_path_available(runtime))) {
                     txn->pending_dispatch = 0u;
@@ -845,6 +916,17 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
     }
     if (out_result->work_remaining == 0u) {
         runtime->pending_work = 0u;
+    }
+    if (defer_ingress) {
+        status = ninlil_rt_v1_bearer_ingress_step(
+            runtime,
+            clock_sample,
+            &ingress_budget,
+            callback_budget,
+            out_result);
+        if (status != NINLIL_OK) {
+            return status;
+        }
     }
     return NINLIL_OK;
 }

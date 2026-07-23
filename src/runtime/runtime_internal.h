@@ -65,6 +65,61 @@ typedef enum ninlil_rt_delivery_phase {
     NINLIL_RT_DELIVERY_PARKED = 5
 } ninlil_rt_delivery_phase_t;
 
+#define NINLIL_RT_V1_MAX_TARGETS_PER_TXN 4u
+
+typedef struct ninlil_rt_target_slot {
+    uint8_t in_use;
+    uint8_t evidence_recorded;
+    uint8_t pending_dispatch;
+    uint8_t reserved_zero;
+    ninlil_concrete_target_t target;
+    ninlil_outcome_t outcome;
+    ninlil_reason_t reason;
+} ninlil_rt_target_slot_t;
+
+#define NINLIL_RT_V1_FAMILY_SCOPE_CAPACITY 8u
+
+typedef struct ninlil_rt_v1_latest_state_scope {
+    uint8_t in_use;
+    uint8_t reserved_zero[3];
+    ninlil_id128_t service_app_id;
+    uint64_t last_applied_generation;
+} ninlil_rt_v1_latest_state_scope_t;
+
+typedef struct ninlil_rt_v1_measurement_scope {
+    uint8_t in_use;
+    uint8_t reserved_zero[3];
+    ninlil_id128_t service_app_id;
+    uint64_t highest_batch_sequence;
+    uint64_t retained_through_sequence;
+} ninlil_rt_v1_measurement_scope_t;
+
+typedef struct ninlil_rt_v1_transfer_scope {
+    uint8_t in_use;
+    uint8_t state;
+    uint8_t apply_count;
+    uint8_t reserved_zero;
+    ninlil_id128_t transaction_id;
+    uint32_t bytes_received;
+    uint32_t expected_total_bytes;
+} ninlil_rt_v1_transfer_scope_t;
+
+typedef struct ninlil_rt_v1_config_scope {
+    uint8_t in_use;
+    uint8_t stage;
+    uint8_t reserved_zero[2];
+    ninlil_id128_t service_app_id;
+    uint64_t active_revision;
+    uint64_t last_known_good_revision;
+} ninlil_rt_v1_config_scope_t;
+
+typedef struct ninlil_rt_v1_family_workspace {
+    ninlil_rt_v1_latest_state_scope_t latest_state[NINLIL_RT_V1_FAMILY_SCOPE_CAPACITY];
+    ninlil_rt_v1_measurement_scope_t measurement[NINLIL_RT_V1_FAMILY_SCOPE_CAPACITY];
+    ninlil_rt_v1_transfer_scope_t transfer[NINLIL_RT_V1_FAMILY_SCOPE_CAPACITY];
+    ninlil_rt_v1_config_scope_t config[NINLIL_RT_V1_FAMILY_SCOPE_CAPACITY];
+} ninlil_rt_v1_family_workspace_t;
+
 typedef struct ninlil_rt_transaction_slot {
     uint32_t in_use;
     uint32_t terminal;
@@ -98,6 +153,8 @@ typedef struct ninlil_rt_transaction_slot {
     uint32_t reservation_evidence_units;
     uint64_t admitted_at_ms;
     uint64_t retry_backoff_ms;
+    uint32_t bound_target_count;
+    ninlil_rt_target_slot_t bound_targets[NINLIL_RT_V1_MAX_TARGETS_PER_TXN];
 } ninlil_rt_transaction_slot_t;
 
 struct ninlil_runtime {
@@ -135,6 +192,7 @@ struct ninlil_runtime {
     uint32_t pending_work;
     ninlil_runtime_store_stage5_workspace_t stage5_ws;
     ninlil_stage5_empty_metadata_workspace_t empty_ws;
+    ninlil_rt_v1_family_workspace_t family_workspace;
 };
 
 ninlil_status_t ninlil_rt_validate_live_runtime(

@@ -55,6 +55,16 @@ uint8_t ninlil_rt_v1_semantic_priority_for_family(ninlil_family_t family)
     if (family == NINLIL_FAMILY_DESIRED_STATE) {
         return 8u;
     }
+    if (family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || family == NINLIL_FAMILY_CONFIG_RESERVED) {
+        return 7u;
+    }
+    if (family == NINLIL_FAMILY_LATEST_STATE_RESERVED) {
+        return 5u;
+    }
+    if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
+        return 4u;
+    }
     if (family == NINLIL_FAMILY_EVENT_FACT) {
         return 3u;
     }

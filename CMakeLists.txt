@@ -1393,6 +1393,32 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_v1_runtime_capability_test
     )
 
+    add_executable(ninlil_v1_runtime_family_test
+        tests/runtime/v1_runtime_family_test.c
+    )
+    target_include_directories(ninlil_v1_runtime_family_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_runtime_family_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_platform_fixtures
+        ninlil_test_storage_fixture
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_v1_runtime_family_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_runtime_family_test)
+    add_test(
+        NAME v1_runtime_family
+        COMMAND ninlil_v1_runtime_family_test
+    )
+
     add_library(ninlil_test_scripted_storage_spy STATIC
         tests/support/scripted_storage_spy.c
     )
