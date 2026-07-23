@@ -10,7 +10,7 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 
 本書は unit 1a の正本です。SQLite 昇格/restart E2E（1b）、ESP gate（1c）は範囲外です。
 
-## 2. Record kind allowlist（19 kinds）
+## 2. Record kind allowlist（22 kinds）
 
 | # | Kind ID | 名前 | Family | 検証 owner |
 | ---: | --- | --- | --- | ---: |
@@ -33,8 +33,17 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 | 17 | RS_CAPACITY_DEFERRED_TOKEN | Capacity deferred token | 3 | S1 |
 | 18 | DOM_WITNESS_HEAD_INDEX | Witness head index (0x7d) | 6 | S1 |
 | 19 | DOM_CLOCK_BASELINE | Clock baseline (0x62) | 6 | S1 |
+| 20 | SPINE_SERVICE_MARKER | B1 spine service register marker | marker | S1 |
+| 21 | SPINE_TXN_ADMISSION | B1 spine submit admission marker | marker | S1 |
+| 22 | SPINE_CANCEL_ADMISSION | B1 spine cancel admission marker | marker | S1 |
 
-コード正本: `src/runtime/v1_durable_allowlist.c` の `g_ninlil_v1_durable_allowlist_table[]`（`NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT = 19`）。
+コード正本: `src/runtime/v1_durable_allowlist.c` の `g_ninlil_v1_durable_allowlist_table[]`（`NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT = 22`）。
+
+### 2a 追記（unit 2a / 項目 2 spine）
+
+- kinds 20–22 は domain codec row ではなく、spine admission の bounded marker key（`NRS` / `TX` / `CN` prefix）です。
+- writer 経路: `ninlil_v1_durable_storage_put()`（`runtime_v1_spine_durable.c`）。
+- recovery publication gate は従来どおり RS/DOM のみを success evidence 対象とし、spine marker は 2b 以前は scan 混合時に external 扱いとなり得ます（restart E2E は unit 1b/2b）。
 
 ### 2.1 D3-S1..S3 検証 owner 注記
 
@@ -54,13 +63,16 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 
 Runtime store family 3/4 rows は state field を持たず、bootstrap plan の zero counter / capacity limits のみ（S1）。
 
-## 4. Operation allowlist（3 operations）
+## 4. Operation allowlist（6 operations）
 
 | Operation | Writer 経路 | 許可 record kinds |
 | --- | --- | --- |
 | `BOOTSTRAP_COMMIT` | `runtime_store_orchestrator` → `storage_canonical_plan` | RS_BINDING .. RS_CAPACITY_DEFERRED_TOKEN（17 kinds） |
 | `METADATA_INIT_COMMIT` | `stage5_empty_metadata_commit` | DOM_WITNESS_HEAD_INDEX, DOM_CLOCK_BASELINE（UNINITIALIZED） |
 | `CLOCK_TRUSTED_COMMIT` | `stage5_clock_baseline_commit_trusted` | DOM_CLOCK_BASELINE（TRUSTED） |
+| `SERVICE_REGISTER_COMMIT` | `runtime_v1_spine_durable.c` | SPINE_SERVICE_MARKER |
+| `SUBMIT_ADMISSION_COMMIT` | 同上 | SPINE_TXN_ADMISSION |
+| `CANCEL_ADMISSION_COMMIT` | 同上 | SPINE_CANCEL_ADMISSION |
 
 ## 5. Writer 構造 gate
 

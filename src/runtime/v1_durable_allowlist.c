@@ -47,7 +47,13 @@ const ninlil_v1_durable_allowlist_row_t g_ninlil_v1_durable_allowlist_table[
     {NINLIL_V1_DURABLE_KIND_DOM_WITNESS_HEAD_INDEX, NINLIL_V1_DURABLE_OWNER_S1,
         "DOM_WITNESS_HEAD_INDEX"},
     {NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE, NINLIL_V1_DURABLE_OWNER_S1,
-        "DOM_CLOCK_BASELINE"}
+        "DOM_CLOCK_BASELINE"},
+    {NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER, NINLIL_V1_DURABLE_OWNER_S1,
+        "SPINE_SERVICE_MARKER"},
+    {NINLIL_V1_DURABLE_KIND_SPINE_TXN_ADMISSION, NINLIL_V1_DURABLE_OWNER_S1,
+        "SPINE_TXN_ADMISSION"},
+    {NINLIL_V1_DURABLE_KIND_SPINE_CANCEL_ADMISSION, NINLIL_V1_DURABLE_OWNER_S1,
+        "SPINE_CANCEL_ADMISSION"}
 };
 
 static ninlil_v1_durable_record_kind_t key_id_to_kind(
@@ -150,6 +156,29 @@ static ninlil_status_t classify_domain_row(
     return NINLIL_E_UNSUPPORTED;
 }
 
+static ninlil_status_t classify_spine_marker_row(
+    ninlil_bytes_view_t key,
+    ninlil_v1_durable_record_kind_t *out_kind)
+{
+    if (key.length < 2u || key.data == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (key.length >= 3u && key.data[0] == 0x4eu && key.data[1] == 0x52u
+        && key.data[2] == 0x53u) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER;
+        return NINLIL_OK;
+    }
+    if (key.data[0] == 0x54u && key.data[1] == 0x58u) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_TXN_ADMISSION;
+        return NINLIL_OK;
+    }
+    if (key.data[0] == 0x43u && key.data[1] == 0x4eu) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_CANCEL_ADMISSION;
+        return NINLIL_OK;
+    }
+    return NINLIL_E_UNSUPPORTED;
+}
+
 ninlil_status_t ninlil_v1_durable_classify_row(
     ninlil_bytes_view_t key,
     ninlil_bytes_view_t value,
@@ -170,6 +199,13 @@ ninlil_status_t ninlil_v1_durable_classify_row(
             || key.data[8] == 0x03u || key.data[8] == 0x04u)) {
         return classify_runtime_store_row(key, value, out_kind);
     }
+    {
+        ninlil_status_t spine_status =
+            classify_spine_marker_row(key, out_kind);
+        if (spine_status == NINLIL_OK) {
+            return NINLIL_OK;
+        }
+    }
     return classify_domain_row(key, value, out_kind);
 }
 
@@ -186,6 +222,12 @@ static int operation_allows_kind(
             || kind == NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE;
     case NINLIL_V1_DURABLE_OP_CLOCK_TRUSTED_COMMIT:
         return kind == NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE;
+    case NINLIL_V1_DURABLE_OP_SERVICE_REGISTER_COMMIT:
+        return kind == NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER;
+    case NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT:
+        return kind == NINLIL_V1_DURABLE_KIND_SPINE_TXN_ADMISSION;
+    case NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT:
+        return kind == NINLIL_V1_DURABLE_KIND_SPINE_CANCEL_ADMISSION;
     default:
         return 0;
     }
@@ -241,7 +283,7 @@ ninlil_status_t ninlil_v1_durable_writer_gate_check(
     ninlil_status_t status;
 
     if (operation < NINLIL_V1_DURABLE_OP_BOOTSTRAP_COMMIT
-        || operation > NINLIL_V1_DURABLE_OP_CLOCK_TRUSTED_COMMIT) {
+        || operation > NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     status = ninlil_v1_durable_classify_row(key, value, &kind);
