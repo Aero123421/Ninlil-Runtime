@@ -22,8 +22,8 @@
 extern "C" {
 #endif
 
-#define NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT ((uint32_t)30u)
-#define NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT ((uint32_t)14u)
+#define NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT ((uint32_t)31u)
+#define NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT ((uint32_t)15u)
 
 typedef enum ninlil_v1_durable_record_kind {
     NINLIL_V1_DURABLE_KIND_RS_BINDING = 1,
@@ -55,13 +55,15 @@ typedef enum ninlil_v1_durable_record_kind {
     NINLIL_V1_DURABLE_KIND_SPINE_EVENT_RESUME = 27,
     NINLIL_V1_DURABLE_KIND_SPINE_EVENT_DISCARD = 28,
     NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE = 29,
-    NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION = 30
+    NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION = 30,
+    NINLIL_V1_DURABLE_KIND_M4_INSTALL_TOKEN = 31
 } ninlil_v1_durable_record_kind_t;
 
 typedef enum ninlil_v1_durable_verification_owner {
     NINLIL_V1_DURABLE_OWNER_S1 = 1,
     NINLIL_V1_DURABLE_OWNER_S2 = 2,
-    NINLIL_V1_DURABLE_OWNER_S3 = 3
+    NINLIL_V1_DURABLE_OWNER_S3 = 3,
+    NINLIL_V1_DURABLE_OWNER_M4 = 4
 } ninlil_v1_durable_verification_owner_t;
 
 typedef enum ninlil_v1_durable_operation {
@@ -78,7 +80,8 @@ typedef enum ninlil_v1_durable_operation {
     NINLIL_V1_DURABLE_OP_EVENT_RESUME_COMMIT = 11,
     NINLIL_V1_DURABLE_OP_EVENT_DISCARD_COMMIT = 12,
     NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT = 13,
-    NINLIL_V1_DURABLE_OP_RESERVATION_COMMIT = 14
+    NINLIL_V1_DURABLE_OP_RESERVATION_COMMIT = 14,
+    NINLIL_V1_DURABLE_OP_M4_INSTALL_TOKEN_COMMIT = 15
 } ninlil_v1_durable_operation_t;
 
 typedef enum ninlil_v1_durable_recovery_reject_reason {

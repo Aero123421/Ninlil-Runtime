@@ -446,6 +446,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_runtime_private_sources.cmake)
 # call under NINLIL_BUILD_TESTS (does not recompile production sources).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_nrw1_t1b_ctest.cmake)
 
+# M4 LAB Join/Attachment (V1 item 7): append portable sources before private lib.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_m4_lab_ctest.cmake)
+
 # R4 SX1262 portable control-plane (D1). Not public ABI. Not RF TX complete.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
 
@@ -2800,6 +2803,7 @@ if(NINLIL_BUILD_TESTS)
     # above private-target creation; register nrw1_t1b_* CTests exactly once.
     # Prefix is disjoint from T0 r7_* (16/15) and T1 nrw1_t1_* (12/11).
     ninlil_nrw1_t1b_register_tests()
+    ninlil_m4_lab_register_tests()
     add_test(
         NAME profile_r5_golden_oracle
         COMMAND ${Python3_EXECUTABLE}
