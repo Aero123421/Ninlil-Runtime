@@ -71,7 +71,9 @@ const ninlil_v1_durable_allowlist_row_t g_ninlil_v1_durable_allowlist_table[
     {NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION, NINLIL_V1_DURABLE_OWNER_S1,
         "SPINE_RESERVATION"},
     {NINLIL_V1_DURABLE_KIND_M4_INSTALL_TOKEN, NINLIL_V1_DURABLE_OWNER_M4,
-        "M4_INSTALL_TOKEN"}
+        "M4_INSTALL_TOKEN"},
+    {NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION, NINLIL_V1_DURABLE_OWNER_C3,
+        "C3_REPLAY_ADMISSION"}
 };
 
 static ninlil_v1_durable_record_kind_t key_id_to_kind(
@@ -210,6 +212,39 @@ static ninlil_status_t classify_m4_row(
     return NINLIL_OK;
 }
 
+static ninlil_status_t classify_c3_row(
+    ninlil_bytes_view_t key,
+    ninlil_bytes_view_t value,
+    ninlil_v1_durable_record_kind_t *out_kind)
+{
+    uint32_t crc_wire;
+    uint32_t crc_calc;
+
+    (void)value;
+    if (key.length != 16u || key.data == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (key.data[0] != 0x43u || key.data[1] != 0x33u || key.data[2] != 0x52u) {
+        return NINLIL_E_UNSUPPORTED;
+    }
+    if (value.length != 48u || value.data == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (value.data[0] != 1u || value.data[1] != 1u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    crc_wire = ((uint32_t)value.data[44] << 24)
+        | ((uint32_t)value.data[45] << 16)
+        | ((uint32_t)value.data[46] << 8)
+        | (uint32_t)value.data[47];
+    crc_calc = ninlil_model_domain_crc32c(value.data, 44u);
+    if (crc_wire != crc_calc) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_kind = NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION;
+    return NINLIL_OK;
+}
+
 static ninlil_status_t classify_spine_marker_row(
     ninlil_bytes_view_t key,
     ninlil_v1_durable_record_kind_t *out_kind)
@@ -297,6 +332,11 @@ ninlil_status_t ninlil_v1_durable_classify_row(
         && key.data[2] == 0x54u) {
         return classify_m4_row(key, value, out_kind);
     }
+    if (key.length >= 3u && key.data != NULL
+        && key.data[0] == 0x43u && key.data[1] == 0x33u
+        && key.data[2] == 0x52u) {
+        return classify_c3_row(key, value, out_kind);
+    }
     return classify_domain_row(key, value, out_kind);
 }
 
@@ -337,6 +377,8 @@ static int operation_allows_kind(
         return kind == NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
     case NINLIL_V1_DURABLE_OP_M4_INSTALL_TOKEN_COMMIT:
         return kind == NINLIL_V1_DURABLE_KIND_M4_INSTALL_TOKEN;
+    case NINLIL_V1_DURABLE_OP_C3_REPLAY_ADMISSION_COMMIT:
+        return kind == NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION;
     default:
         return 0;
     }
@@ -392,7 +434,7 @@ ninlil_status_t ninlil_v1_durable_writer_gate_check(
     ninlil_status_t status;
 
     if (operation < NINLIL_V1_DURABLE_OP_BOOTSTRAP_COMMIT
-        || operation > NINLIL_V1_DURABLE_OP_M4_INSTALL_TOKEN_COMMIT) {
+        || operation > NINLIL_V1_DURABLE_OP_C3_REPLAY_ADMISSION_COMMIT) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     status = ninlil_v1_durable_classify_row(key, value, &kind);
@@ -550,6 +592,10 @@ static void publication_classify_row(
         return;
     }
     if (kind == NINLIL_V1_DURABLE_KIND_M4_INSTALL_TOKEN) {
+        *ok_count += 1u;
+        return;
+    }
+    if (kind == NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION) {
         *ok_count += 1u;
         return;
     }

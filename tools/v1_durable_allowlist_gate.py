@@ -176,7 +176,7 @@ def self_test() -> None:
     try:
         ALLOWLIST_H.write_text(
             orig_h.replace(
-                "NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT ((uint32_t)31u)",
+                "NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT ((uint32_t)32u)",
                 "NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT ((uint32_t)99u)",
             ),
             encoding="utf-8",
