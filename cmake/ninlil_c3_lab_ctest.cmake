@@ -52,32 +52,39 @@ function(ninlil_c3_lab_register_tests)
         COMMAND ninlil_c3_lab_secure_wire_test
     )
 
-    add_executable(ninlil_c3_lab_secure_1hop_e2e_test
-        tests/runtime/c3_lab_secure_1hop_e2e_test.c
-        tests/support/m4_lab_credential_fixture.c
-    )
-    target_include_directories(ninlil_c3_lab_secure_1hop_e2e_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
-        ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
-        ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
-    )
-    target_link_libraries(ninlil_c3_lab_secure_1hop_e2e_test PRIVATE
-        ninlil_runtime_private
-        ninlil_posix_lab_platform
-        ninlil
-        OpenSSL::Crypto
-    )
-    set_target_properties(ninlil_c3_lab_secure_1hop_e2e_test PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON
-        C_EXTENSIONS OFF
-    )
-    ninlil_apply_strict_warnings(ninlil_c3_lab_secure_1hop_e2e_test)
-    add_test(
-        NAME c3_lab_secure_1hop_e2e
-        COMMAND ninlil_c3_lab_secure_1hop_e2e_test
-    )
+    if(NINLIL_POSIX_LAB_PLATFORM_ENABLED)
+        add_executable(ninlil_c3_lab_secure_1hop_e2e_test
+            tests/runtime/c3_lab_secure_1hop_e2e_test.c
+            tests/support/m4_lab_credential_fixture.c
+        )
+        target_include_directories(ninlil_c3_lab_secure_1hop_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+        )
+        target_link_libraries(ninlil_c3_lab_secure_1hop_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil_posix_lab_platform
+            ninlil
+            OpenSSL::Crypto
+        )
+        set_target_properties(ninlil_c3_lab_secure_1hop_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_host_feature_macros(
+            ninlil_c3_lab_secure_1hop_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_c3_lab_secure_1hop_e2e_test)
+        add_test(
+            NAME c3_lab_secure_1hop_e2e
+            COMMAND ninlil_c3_lab_secure_1hop_e2e_test
+        )
+    else()
+        message(STATUS
+            "C3 LAB 1-hop E2E: skipped (POSIX lab platform disabled)")
+    endif()
 endfunction()

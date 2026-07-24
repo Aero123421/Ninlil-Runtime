@@ -459,7 +459,7 @@ static int run_endpoint_process(
         }
         {
             char workdir[512];
-            char ready_path[512];
+            char ready_path[1024];
             int ready_fd;
             if (getcwd(workdir, sizeof(workdir)) == NULL
                 || snprintf(ready_path, sizeof(ready_path),
@@ -669,7 +669,7 @@ static int run_controller_process(
         (void)write_byte(sync_fd, 'R');
     }
     if (scenario == SCENARIO_LATEST_STATE) {
-        char ready_path[512];
+        char ready_path[1024];
         char workdir[512];
         uint32_t wait;
         if (getcwd(workdir, sizeof(workdir)) == NULL
@@ -930,9 +930,9 @@ static int spawn_peer(
 
 static int run_scenario_once(uint32_t scenario, uint64_t seed)
 {
-    char socket_path[512];
-    char ctrl_db[512];
-    char end_db[512];
+    char socket_path[1024];
+    char ctrl_db[1024];
+    char end_db[1024];
     char workdir[512];
     int ctrl_go[2];
     int ctrl_res[2];
@@ -1031,7 +1031,7 @@ static int run_scenario_once(uint32_t scenario, uint64_t seed)
     (void)unlink(ctrl_db);
     (void)unlink(end_db);
     {
-        char ready_path[512];
+        char ready_path[1024];
         if (snprintf(ready_path, sizeof(ready_path),
                 "%s/direct-1hop-%u-ready", workdir, scenario)
             > 0) {
@@ -1061,7 +1061,7 @@ static int test_all_scenarios(void)
 
     if (getcwd(workdir, sizeof(workdir)) != NULL) {
         for (index = 1u; index <= 7u; ++index) {
-            char path[512];
+            char path[1024];
             (void)snprintf(path, sizeof(path), "%s/direct-1hop-%u.sock", workdir, index);
             (void)unlink(path);
             (void)snprintf(path, sizeof(path), "%s/direct-1hop-ctrl-%u.db", workdir, index);

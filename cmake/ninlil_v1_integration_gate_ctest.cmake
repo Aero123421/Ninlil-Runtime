@@ -11,47 +11,55 @@ function(ninlil_v1_integration_gate_register_tests)
             "(OpenSSL 3 Host adapter required for integration gate)")
     endif()
 
-    add_executable(ninlil_v1_integration_gate_e2e_test
-        tests/runtime/v1_integration_gate_e2e_test.c
-        tests/support/v1_lab_integration_topology.c
-        tests/support/m4_lab_credential_fixture.c
-        tests/support/fake_byte_stream.c
-        tests/support/in_memory_storage.c
-        tests/support/platform_basic_fixtures.c
-        tests/support/deterministic_entropy.c
-        tests/support/canonical_origin_authorization.c
-    )
-    target_include_directories(ninlil_v1_integration_gate_e2e_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio
-        ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
-        ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
-    )
-    target_compile_definitions(ninlil_v1_integration_gate_e2e_test PRIVATE
-        NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1
-    )
-    target_link_libraries(ninlil_v1_integration_gate_e2e_test PRIVATE
-        ninlil_runtime_private
-        ninlil
-        ninlil_posix_lab_platform
-        OpenSSL::Crypto
-    )
-    set_target_properties(ninlil_v1_integration_gate_e2e_test PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON
-        C_EXTENSIONS OFF
-        NINLIL_TEST_ONLY_ARTIFACT TRUE
-    )
-    ninlil_apply_strict_warnings(ninlil_v1_integration_gate_e2e_test)
-    add_test(
-        NAME v1_integration_gate_e2e
-        COMMAND ninlil_v1_integration_gate_e2e_test
-    )
+    if(NINLIL_POSIX_LAB_PLATFORM_ENABLED)
+        add_executable(ninlil_v1_integration_gate_e2e_test
+            tests/runtime/v1_integration_gate_e2e_test.c
+            tests/support/v1_lab_integration_topology.c
+            tests/support/m4_lab_credential_fixture.c
+            tests/support/fake_byte_stream.c
+            tests/support/in_memory_storage.c
+            tests/support/platform_basic_fixtures.c
+            tests/support/deterministic_entropy.c
+            tests/support/canonical_origin_authorization.c
+        )
+        target_include_directories(ninlil_v1_integration_gate_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+        )
+        target_compile_definitions(ninlil_v1_integration_gate_e2e_test PRIVATE
+            NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1
+        )
+        target_link_libraries(ninlil_v1_integration_gate_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil
+            ninlil_posix_lab_platform
+            OpenSSL::Crypto
+        )
+        set_target_properties(ninlil_v1_integration_gate_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            NINLIL_TEST_ONLY_ARTIFACT TRUE
+        )
+        ninlil_apply_posix_host_feature_macros(
+            ninlil_v1_integration_gate_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_v1_integration_gate_e2e_test)
+        add_test(
+            NAME v1_integration_gate_e2e
+            COMMAND ninlil_v1_integration_gate_e2e_test
+        )
+    else()
+        message(STATUS
+            "V1 integration E2E: skipped (POSIX lab platform disabled)")
+    endif()
+
     add_test(
         NAME v1_integration_gate_structural
         COMMAND ${Python3_EXECUTABLE}

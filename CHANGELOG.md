@@ -13,6 +13,8 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - Leak example の SQLite Storage 初期化順を修正し、初回実行・再実行とも正常終了するようにした。
 - docs-freeze gate の追跡対象を現行文書構成へ合わせ、削除済み作業記録への参照による誤検知を解消した。
 - V1 LAB examples が Linux の厳格 C11 build でも POSIX API を正しく宣言するよう修正した。
+- SQLite3 を無効化した portable build では、SQLite-backed POSIX LAB platform を必要とする E2E だけを明示的に skip するよう修正した。
+- GCC 13 の `-Wformat-truncation` で検出された direct 1-hop test の cleanup path buffer を修正した。
 
 ### Changed
 
