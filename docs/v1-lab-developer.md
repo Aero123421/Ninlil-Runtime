@@ -1,6 +1,6 @@
 # Ninlil V1 LAB — Developer guide
 
-状態: V1 LAB RC1 開発者向け（タグ `v1.0-lab-rc1`）
+状態: V1 LAB RC2 開発者向け（タグ `v1.0-lab-rc2`）
 
 ## Repository レイアウト
 

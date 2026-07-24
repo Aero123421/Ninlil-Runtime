@@ -6,6 +6,29 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 （変更なし）
 
+## [v1.0-lab-rc2] - 2026-07-24
+
+### Fixed
+
+- Leak example の SQLite Storage 初期化順を修正し、初回実行・再実行とも正常終了するようにした。
+- docs-freeze gate の追跡対象を現行文書構成へ合わせ、削除済み作業記録への参照による誤検知を解消した。
+
+### Changed
+
+- README、quickstart、developer guide、security policy、distribution manifest を、現行の V1 LAB 実装と検証境界に合わせて更新した。
+- `main` の Accepted 仕様・レビュー記録を RC2 候補へ統合した。
+
+### Verification
+
+- macOS host で sanitizer 有効の全 CTest **254/254**、統合 E2E、4 examples、installable consumer smoke が成功。
+- GitHub Actions の required checks 成功後にのみタグと prerelease を公開する。
+
+### Known limitations（V1 LAB RC2）
+
+- **LAB_ONLY** — 国内実運用・production 法規認定・field SLO は主張しない。
+- ESP flash / USB 実機、SX1262 physical RF、power-cut、Display / Leak 実機 E2E は HIL pending。
+- relay、multi-parent、完全 fragmentation、SBOM / signing、production hardening は V2。
+
 ## [v1.0-lab-rc1] - 2026-07-24
 
 ### Added

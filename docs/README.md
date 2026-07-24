@@ -1,8 +1,8 @@
 # Ninlil Documentation
 
-## V1 LAB RC1（利用者入口）
+## V1 LAB RC2（利用者入口）
 
-**タグ `v1.0-lab-rc1`** — 隔離 LAB 向け host simulation **機能完成**。10 項目縦切り + 統合 E2E gate green。LAB_ONLY（国内実運用・production 法規認定は非主張）。物理 HIL は [RC 残件](work/2026-07-23-v1-rc-residuals.md)。
+**タグ `v1.0-lab-rc2`** — 隔離 LAB 向け host simulation **機能完成**。10 項目縦切り + 統合 E2E gate green。LAB_ONLY（国内実運用・production 法規認定は非主張）。物理 HIL は [RC 残件](work/2026-07-23-v1-rc-residuals.md)。
 
 | 文書 | 対象 |
 | --- | --- |

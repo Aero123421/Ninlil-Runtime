@@ -1,6 +1,6 @@
 # Ninlil V1 LAB distribution manifest
 
-状態: V1 LAB RC1 packaging 正本（タグ `v1.0-lab-rc1`）
+状態: V1 LAB RC2 packaging 正本（タグ `v1.0-lab-rc2`）
 
 本 manifest は **Ninlil V1 LAB** の配布物一覧です。production 認定・SBOM・release
 signing は含みません（V2）。
