@@ -37,7 +37,7 @@
 - `spec/vectors/domain-scan-crossrow-v1.json`（append-only; 280 object authority不変）
 - CMake: `cmake/ninlil_runtime_private_sources.cmake`（通常/VLA両list :11-33,58-64）、`tests/cmake/private_subproject/CMakeLists.txt`（source count/allowlist :74-129）、`CMakeLists.txt`（duplicate denylist :738、unit :1370-1395系、oracle check/self-test/fixture/bridge/freshness :1898-1962系）。ESP-IDF componentはshared list取込みのため直接編集不要
 - current status更新（実装完了時のみ; §18.15本文不変）: `docs/17` global non-claim(:2296)、§18.2 S3/S4 rows(:2353-2355)、README、review ledger、docs/work台帳
-禁止: §18.15本文変更、既存d3s1/s2/s3経路の弱化、public ABI変更、KGuard語彙、S4 context 949/960超、GCC非互換密集1行スタイル（A1 CI教訓）。
+禁止: §18.15本文変更、既存d3s1/s2/s3経路の弱化、public ABI変更、application-specific語彙、S4 context 949/960超、GCC非互換密集1行スタイル（A1 CI教訓）。
 
 ## 4. 役割
 

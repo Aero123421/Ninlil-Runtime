@@ -14,7 +14,7 @@
 - 実機 power-cut HIL の実行済み（harness と partition table は実装済みでも **HIL PASS ではない**）
 - ESP flash 上の FULL commit success を HIL なしで production 保証すること
 - NVS 単独での契約成立
-- FreeRTOS / USB / radio / Site Membership・Attachment（Network Join umbrella） / KGuard
+- FreeRTOS / USB / radio / Site Membership・Attachment（Network Join umbrella） / application integration
 - compile success = HIL PASS
 
 public ABI / wire は変更しない。

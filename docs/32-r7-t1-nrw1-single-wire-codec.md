@@ -38,7 +38,7 @@ ESP-IDF private componentからのみ使う。`include/ninlil/`、install includ
 
 - `n6_*`、R2 permit、R5 profile、radio HAL、SX1262、USB/TCP、OS clock/storage
 - Host OpenSSL header、ESP mbedTLS header、platform factory header
-- KGuard固有型、application schema、logical transaction型
+- application-specific型、application schema、logical transaction型
 
 crypto primitive、nonce XOR、認証前publish policyを再実装せず、必ず31章の
 `ninlil_r7_crypto_*` wrapperを使う。R6 N6 production sourceとR7 T0 provider contractは

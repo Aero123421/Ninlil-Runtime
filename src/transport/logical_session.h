@@ -36,7 +36,7 @@
  *   the composition; oversized opaque constants are not used to hide bloat.
  *
  * Nonclaims: not USB series complete / HIL / assignment / security / public ABI.
- * Constraints: fixed RAM, C11, no heap/VLA, no KGuard/platform types here.
+ * Constraints: fixed RAM, C11, no heap/VLA, no product-specific/platform types here.
  */
 
 #include <stddef.h>

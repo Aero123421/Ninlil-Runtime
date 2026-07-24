@@ -5,16 +5,16 @@
 
 ## M0: Specification Baseline
 
-状態: Complete (2026-07-10, D-042)
+状態: Complete (2026-07-10)
 
 内容:
 
-- Ninlil Runtimeへの改名
+- 公開名称とproject boundaryをADR-0001で固定
 - `ninlil/`を次期仕様正本へ変更
 - Legacy LinkOS Lab v1の凍結
 - 00〜14の仕様
 - Fableの思想・使いやすさ・OSS観点レビュー
-- decision log更新
+- Accepted ADR baselineの整備
 
 Exit gate:
 
@@ -41,7 +41,7 @@ Exit gate:
 
 - Foundation acceptanceを全て満たす。
 - controller/endpoint crash matrixでfalse success、ownership loss、contract外duplicate effectが0。
-- KGuard importが0。
+- portable Coreからapplication-specific importが0。
 
 ## M1b: Foundation Composition
 
@@ -59,7 +59,7 @@ Exit gate:
 - 失敗targetだけの再実行が新transactionとして追跡される。
 - 2 process loopback exampleがloss/restart込みでgeneric command/eventを完了する。
 
-## Experimental KGuard validation lanes
+## Experimental reference-application validation lanes
 
 Hardwareの成熟度をM1aに偽装しないため、2段階に分けます。
 
@@ -68,14 +68,14 @@ Hardwareの成熟度をM1aに偽装しないため、2段階に分けます。
 M1a exit gate完了後、M1bおよびM2〜M5と並走して開始できます。
 
 - PC Controller + simulated bearerまたはoptional POSIX loopback Endpointを使う。
-- KGuard Display/Leak schema adapterをNinlil public APIだけで駆動し、single-target `APPLIED`、Event `DURABLY_RECORDED`、再起動、local admission failureを検証する。
+- sample command/event schema adapterをNinlil public APIだけで駆動し、single-target `APPLIED`、Event `DURABLY_RECORDED`、再起動、local admission failureを検証する。
 - Environmentは`TEST`で、USB実機、SX1262、radio TX、実credentialを使わない。
 
 ### Lane B: physical LAB validation
 
 M3のESP-IDF/Cell Agent最小sliceと、M5のLAB environment、credential、Tx Gate、SX1262 bearerの必須subsetがそれぞれ自身のgateを満たした後だけ開始します。
 
-- PC + USB Cell Agent + Display + Leak nodeを使い、Legacy SX1262/Pico/contact adapterは`experimental`に隔離する。
+- PC + USB Cell Agent + command/event Endpointを使い、Legacy SX1262/Pico/contact adapterは`experimental`に隔離する。
 - `LAB`として明示し、production radio、法規適合、security完了、RF SLO合格の代わりにしない。
 - spikeで得た都合のためにM1a public contractを暗黙変更しない。変更はADR/RFCとgeneric conformance testへ戻す。
 
@@ -113,7 +113,7 @@ Exit gate:
 - pinned ESP-IDFでall target build。
 - POSIXとESP-IDFで同じportable conformance subsetが通る。
 - power-cut HILでstorage contractを満たす。
-- Cell AgentにKGuard business ruleが0。
+- Cell Agentにapplication-specific business ruleが0。
 
 ### M3-prep（部分作業; M3 incomplete）
 
@@ -136,7 +136,7 @@ Exit gate:
 
 **状態:** implementation merged（PR #80）。**power-cut HIL 未実行**、ESP FULL production 未証明。M3 exit の代替ではない。
 
-含まない: 実機 power-cut HIL PASS、field-ready 宣言、M3 exit gate 全体、USB/radio/Site Membership・Attachment（Network Join umbrella）/KGuard。
+含まない: 実機 power-cut HIL PASS、field-ready 宣言、M3 exit gate 全体、USB/radio/Site Membership・Attachment（Network Join umbrella）/application integration。
 
 ### M3-slice: control byte-stream framing（部分作業; M3 incomplete）
 
@@ -158,7 +158,7 @@ USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agno
 - port-owned factory headers（`ports/esp-idf/include/ninlil_esp_idf/`）。`include/ninlil` public ABI は変更しない
 - host pure-logic tests + packaging gate + esp32s3 smoke link
 
-含まない: storage FULL attestation、USB/LAN driver、Wi-Fi、SX1262、Join、KGuard、HIL、M3 exit。
+含まない: storage FULL attestation、USB/LAN driver、Wi-Fi、SX1262、Join、application integration、HIL、M3 exit。
 
 ### M3-slice: owner-task / Cell Agent skeleton / loopback TxPermit（部分作業; M3 incomplete）
 
@@ -166,7 +166,7 @@ USB CDC / TCP 等の reliable byte stream 上で共通に使う **transport-agno
 
 - dedicated owner task の exclusive confinement と bounded mailbox（overflow = backpressure、silent drop 禁止）
 - start / stop / restart、stale generation rejection、generation wrap fail-closed
-- 同一 firmware へ Controller から cell/channel/role assignment（KGuard / ParentA/B variant なし）
+- 同一 firmware へ Controller から cell/channel/role assignment（product別 / ParentA/B別のfirmware variantなし）
 - NCG1 framing との境界（decode OK ≠ assignment apply）
 - TxPermit deny-by-default、`TEST` + explicit loopback のみ許可、将来 M5 provider へ交換可能な `ninlil_tx_gate_ops_t`
 - host pure tests + packaging gate + esp32s3 smoke compile/link
@@ -312,22 +312,22 @@ Exit gate:
 
 実装は [23章 §10.2](23-usb-radio-boundary.md) の **R1–R10** に分割する。R2 は [24章](24-r2-physical-compliance-permit-authority.md) に従う。**R6 Normative freeze Accepted（docs/30）が `wire_profile_id=0x11` を post-attachment data として割当済み**（major/minor なし; independent re-GO 2026-07-19 P0=P1=P2=0）。R7 以前に別経路で production radio wire bytes を再固定してはならない。**M4 Attachment handshake / join bootstrap 実装は未完了**（別 profile; 0x11 は pre-context-install で app TX/RX=0）であり、R6 docs freeze は security-session **input contract** のみ固定する（R7 full AEAD / M5 complete / 実機 HIL を偽装しない）。
 
-## M6: KGuard Reference Vertical
+## M6: Reference Application Vertical
 
 内容:
 
-- KGuard application adapter
-- Display DesiredStateCommand/APPLIED
-- Leak EventFact/DURABLY_RECORDED
+- reference application adapter
+- sample actuator DesiredStateCommand/APPLIED
+- sample sensor EventFact/DURABLY_RECORDED
 - USB-connected Controller + Cell Agent + 2 Endpoints
 - legacy/new evidence比較tool
 
 Exit gate:
 
-- Display command 1,000件、EventFact 1,000件。
+- DesiredStateCommand 1,000件、EventFact 1,000件。
 - Controller/Endpoint再起動込み。
 - false success、silent event loss、contract外duplicate effect 0。
-- KGuard schema/policyがNinlil Coreに混入しない。
+- reference applicationのschema/policyがNinlil Coreに混入しない。
 
 ## M7: Scheduler, Sleep and Wi-Fi/USB bearer
 
@@ -395,7 +395,7 @@ Exit gate:
 - field support bundle
 - operator runbook、rollback、field support期限
 - compatibility/deprecation方針とpilot中のupgrade window
-- KGuard pilot traffic profile
+- reference application pilot traffic profile
 - RF/load/battery/soak測定
 
 Exit gate:
@@ -420,7 +420,7 @@ Exit gate:
 
 Exit gate:
 
-- 外部developerがKGuardなしでbuild、example、test、portを実行できる。
+- 外部developerが専用applicationや非公開repositoryなしでbuild、example、test、portを実行できる。
 - release checklist、compatibility matrix、migration policyが運用されている。
 - 1.0 public API/wire/profileのsupport期間を宣言できる。
 - NOTICEと依存licenseの必要表示が監査され、SBOMおよび配布artifactと一致する。

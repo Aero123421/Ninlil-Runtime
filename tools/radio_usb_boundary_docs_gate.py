@@ -17,7 +17,7 @@ from typing import Callable
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-COMPONENT_ID = re.compile(r"\b(C[0-4]|A[12]|L1|P1|W1|H1|D1|K1)\b")
+COMPONENT_ID = re.compile(r"\b(C[0-4]|A[12]|L1|P1|W1|H1|D1|I1)\b")
 WIRE_ROW = re.compile(r"^(\d+)\s+(\d+)\s+(\S+)")
 NEGATION_TOKENS = (
     "ない",
@@ -169,7 +169,7 @@ def parse_compile_dependency_edges(section: str) -> tuple[set[tuple[str, str]], 
     current: str | None = None
     # Component header line e.g. "C3 (NCL1 codec/session)  [portable private]"
     header_re = re.compile(
-        r"^(C[0-4]|A[12]|L1|P1|W1|H1|D1|K1)\s*\(",
+        r"^(C[0-4]|A[12]|L1|P1|W1|H1|D1|I1)\s*\(",
     )
     pos_re = re.compile(r"^\s*-->\s*(.+)$")
     neg_re = re.compile(r"^\s*-X->\s*(.+)$")
@@ -252,7 +252,7 @@ def check_adr(paths: Paths) -> None:
         "Secure compact radio wire",
         "ninlil_radio_hal",
         "SX1262",
-        "KGuard",
+        "Reference application integration",
         "esp_tinyusb",
         "termios",
         "MUST NOT",

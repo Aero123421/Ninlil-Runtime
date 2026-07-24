@@ -5,7 +5,7 @@
  * R2 Physical Compliance Permit authority — production-private complete C11 API.
  *
  * Normative companion: docs/24-r2-physical-compliance-permit-authority.md
- * Not public include/ninlil ABI. Not KGuard. Not R3/R5/legal/HIL complete.
+ * Not public include/ninlil ABI. Not product-specific. Not R3/R5/legal/HIL complete.
  *
  * Completeness policy (same family as radio_hal.h):
  *   - The object type IS the complete struct (no opaque byte buffer pun).

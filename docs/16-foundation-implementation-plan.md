@@ -14,7 +14,7 @@
 - M0 decisionとFable review dispositionが記録済み。
 - 12章のC ABI、13章のreducer、14章のport/vectorに重大な矛盾がない。
 - M1aは`TEST` environment、`CONTROLLER` / `ENDPOINT`、single targetだけ。
-- KGuard、Legacy LinkOS、radio、ESP-IDFをportable Coreへimportしない。
+- application-specific package、Legacy LinkOS、radio、ESP-IDFをportable Coreへimportしない。
 - `ADMITTED_SCHEDULED`、counter-offer、selector、group、supersedeを実装済みと表示しない。
 
 ## PRの順序
@@ -165,13 +165,13 @@ Gate:
 
 PRを分割・統合する場合もcontract area owner、test ID、durable boundaryを先に更新し、後続PRへ暗黙移送しません。
 
-## Experimental KGuard validationへの入口
+## Experimental reference-application validationへの入口
 
 PR 1〜7とM1a exit gate完了後に開始できるのは、software-only `TEST` laneです。
 
 - PC上のControllerとsimulated bearerまたはoptional POSIX loopback Endpoint
-- KGuard Display adapterのsingle-target DesiredStateCommand / APPLIED
-- KGuard Leak adapterのEventFact / DURABLY_RECORDED
+- reference Display adapterのsingle-target DesiredStateCommand / APPLIED
+- reference Leak adapterのEventFact / DURABLY_RECORDED
 - Ninlil public APIのみを利用し、USB実機・SX1262・radio TXを使わない
 
 PC + USB Cell Agent + Display + Leakのphysical `LAB` laneはFoundationの実装順ではなく、09章どおりM3のESP-IDF/Cell Agent最小sliceとM5のLAB Tx Gate/radio subset完了後に開始します。Legacy codeをCoreへ移植して短絡せず、実機で見つかったcontract変更は仕様とgeneric conformance testへ戻します。

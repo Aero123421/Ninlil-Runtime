@@ -4,7 +4,10 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ## Unreleased
 
-（変更なし）
+### Changed
+
+- 公開文書・ソースコメント・品質ゲートを製品非依存の表現へ統一し、reference application integration を汎用プロファイルとして再整理した。
+- U5/U6の製品非依存editorial deltaをfreeze v2として再固定した。Normative meaning、wire、storage、API、実装状態の変更はない。
 
 ## [v1.0-lab-rc2] - 2026-07-24
 

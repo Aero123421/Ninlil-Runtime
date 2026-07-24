@@ -22,8 +22,8 @@ DOC23 = "docs/23-usb-radio-boundary.md"
 DOC29 = "docs/29-r5-lab-only-profile-loader.md"
 ADR9 = "docs/adr/0009-r5-lab-only-profile-loader.md"
 ORACLE = REPO_ROOT / "tools" / "airtime_r3_oracle.py"
-DOC25_BYTES = 50395
-DOC25_SHA256 = "08bfdec87112c31bf2e019da7cd2e5ce3c36e7ac67b372122dafae6e896aa224"
+DOC25_BYTES = 50405
+DOC25_SHA256 = "ba62b2c7f4319c92c5b692b9c24747c27ee6e6d9809a5f1c2ebdad134a41e71a"
 
 # docs/25 excluded from R6 edits; may be read-only verified if present.
 CROSS = (

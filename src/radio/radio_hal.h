@@ -39,7 +39,7 @@
  *   - Not NIN-CMP-003 compliance proof / not R2 time authority
  *   - Not R1 series complete (host candidate only)
  *   - Not public include/ninlil ABI / not installed
- *   - Not KGuard vocabulary
+ *   - Not product-specific vocabulary
  *
  * Concurrency / sole owner / reentrancy:
  *   - Single owner after successful init for the object lifetime until shutdown.

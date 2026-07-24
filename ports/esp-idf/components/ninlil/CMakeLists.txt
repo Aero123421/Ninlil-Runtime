@@ -19,7 +19,7 @@
 # (profile_loader.c via portable private authority; host/ESP packaging only),
 # R7 T0 mbedTLS adapter, T1 wire codec, and T1b context binding (private).
 # Does not implement Wi-Fi, SX1262 physical RF TX/RX path, SetTx path, radio
-# MAC, Join, or KGuard adapters. Does not claim storage FULL attestation,
+# MAC, Join, or product-specific adapters. Does not claim storage FULL attestation,
 # physical power-cut HIL, U2 HIL, R1/R2/R3/R4/R5/R7 complete, FIELD, PRODUCTION,
 # Japan legal, RF HIL, production radio, or field-ready.
 # Never define NINLIL_R7_BINDING_TEST_BUILD here (test seams stay host-only).

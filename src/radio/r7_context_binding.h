@@ -14,7 +14,7 @@
  * SEMANTIC: R7_T1B_PUBLIC_ABI_UNCHANGED
  *
  * Production-private under src/radio/. Not public ABI. Not installed.
- * No OS / heap / VLA / OpenSSL / mbedTLS / N6 / R2 / R5 / W1 / radio / KGuard.
+ * No OS / heap / VLA / OpenSSL / mbedTLS / N6 / R2 / R5 / W1 / radio / product-specific.
  * Crypto only via ninlil_r7_crypto_* portable wrapper (docs/31 / T0).
  */
 

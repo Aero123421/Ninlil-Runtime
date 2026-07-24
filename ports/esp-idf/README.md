@@ -11,7 +11,7 @@
 - TinyUSB complete TX/RX FIFO purge or recall of endpoint/hardware-in-flight / already-transmitted bytes（U2 は Ninlil ring generation isolation + software FIFO soft-clear のみ）
 - **SX1262 physical RF TX/RX、SetTx path、radio MAC、production radio / legal / HIL**（R4 は control-plane candidate のみ; compile ≠ RF complete）
 - **R5 complete / FIELD / PRODUCTION / Japan legal / RF / HIL**（LAB_ONLY host/ESP packaging candidate のみ）
-- Wi-Fi、Join、KGuard adapter
+- Wi-Fi、Join、product-specific adapter
 - public Runtime の production 実行経路
 - **compile/link を HIL PASS / dual-core race PASS とみなすこと**
 - PSRAM workspace の caller 所有や二重bind許可

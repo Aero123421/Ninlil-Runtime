@@ -34,7 +34,7 @@
 - 永続 LKG assignment により session 失効後も RF 継続
 - control protocol v1 peer への silent v2 type 送信
 - NCL1 `logical_version=1` closed catalog への silent type 追加
-- KGuard 固有 schema / policy が portable Core / private control 必須語彙であること
+- application-specific schema / policy が portable Core / private control の必須語彙であること
 
 ## 2. Version domain と control protocol v2
 

@@ -42,7 +42,8 @@ BANNED_INCLUDES = (
     "tusb.h",
     "freertos/",
     "esp_",
-    "kguard",
+    "vendor_specific",
+    "product_specific",
 )
 
 REQUIRED_HEADER = (

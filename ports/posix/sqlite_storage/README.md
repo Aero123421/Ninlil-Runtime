@@ -251,7 +251,7 @@ install.
 - M1a complete / field-ready / production SLO
 - Domain Store D3/D4 recovery writer composition
 - NFS / remote-filesystem flock semantics (local POSIX volumes only)
-- KGuard vocabulary (absent by design)
+- product-specific vocabulary (absent by design)
 
 ### Supported host diagnostics
 

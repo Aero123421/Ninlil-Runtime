@@ -101,4 +101,4 @@ Group transactionには、aggregate表示とtarget別表示の両方が必要で
 - escalation条件
 - 現場撤去・交換・再設置時の例外手順
 
-KGuard固有の写像は[10-kguard-integration.md](10-kguard-integration.md)を正本とします。
+application-specificな写像は[10-reference-application-integration.md](10-reference-application-integration.md)を正本とします。

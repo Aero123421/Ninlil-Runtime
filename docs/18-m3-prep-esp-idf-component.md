@@ -13,7 +13,7 @@
 - M3 milestone の完了
 - 実機 hardware 検証の完了
 - V1 release の完了
-- NVS / FreeRTOS owner task / USB / Wi-Fi / SX1262 / radio MAC / Join / KGuard adapter 実装済み
+- NVS / FreeRTOS owner task / USB / Wi-Fi / SX1262 / radio MAC / Join / application adapter 実装済み
 
 M3 全体の exit gate（POSIX と同一 portable conformance subset、power-cut HIL、Cell Agent skeleton 等）は未達です。本章は **M3-prep** に限定します。
 

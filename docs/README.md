@@ -38,11 +38,10 @@ Ninlilの次期設計は、このディレクトリを正本とします。
 1. [Ninlil ADR](adr/)で`Accepted`となった決定
 2. 本ディレクトリで`Normative`と記載された要件
 3. Foundation Releaseのconformance fixtureとacceptance test
-4. KGuard integrationに限り`productv1/docs/99-decision-log.md`の採用・移行決定
-5. legacy `linkos/`のcodeとtest
-6. 説明用example
+4. legacy `linkos/`のcodeとtest
+5. 説明用example
 
-KGuard側のdecision logは、Ninlilのgeneric public contractを単独で上書きできません。generic contractを変える場合はNinlil ADR/RFCを先に更新します。
+個別integrationの仕様やdecision logは、Ninlilのgeneric public contractを単独で上書きできません。generic contractを変える場合はNinlil ADR/RFCを先に更新します。
 
 Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しません。
 
@@ -69,7 +68,7 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 07 | [Testing and Quality](07-testing-and-quality.md) | simulator、fuzz、HIL、release gate |
 | 08 | [Foundation Release](08-foundation-release.md) | 最初に実装する範囲とacceptance criteria |
 | 09 | [Roadmap](09-roadmap.md) | relay、multi-parent、Wi-Fi、production MACへの段階 |
-| 10 | [KGuard Integration](10-kguard-integration.md) | KGuardとの境界とlegacy移行 |
+| 10 | [Reference Application Integration](10-reference-application-integration.md) | generic public APIとapplication-specific adapterの境界、legacy移行 |
 | 11 | [Operator Model](11-operator-model.md) | 内部状態を原因・次操作・担当へ写像する規則 |
 | 12 | [Foundation C ABI](12-foundation-abi.md) | M1aの完全なpublic type、callback、port ABI |
 | 13 | [Foundation State Machine](13-foundation-state-machine.md) | M1aの決定的reducer、deadline、cancel、recovery |

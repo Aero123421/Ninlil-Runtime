@@ -13,7 +13,7 @@ U0–U4 は USB control の NCG1 framing、NCL1 envelope v1、HELLO/PING/PONG/RE
 2. `RuntimeRole`（CONTROLLER/CELL_AGENT/ENDPOINT）、USB **logical link role**（HELLO initiator/responder）、**mutable CellOperatingAssignment** を同一 enum に混ぜる。
 3. USB Control HELLO 成功だけで **FIELD RF 認可**が成立したとみなし、Physical Compliance Permit / SiteAssignment を迂回する。
 4. assignment を flash 永続 LKG として RF 許可に使い、session fence 後も stale assignment で TX する。
-5. public `include/ninlil` や KGuard 語彙へ control catalog を早期昇格する。
+5. public `include/ninlil` や application-specific語彙へ control catalog を早期昇格する。
 
 ## Decision
 
@@ -68,7 +68,7 @@ Byte layout、message catalog、precedence、ACK linearization、authority proof
 
 - U5 API / codec / state は production-private（U3/U4 と同様）。public ABI 昇格は別 ADR。
 - handoff は **typed bounded copy-in / copy-out**。step/pump sole drive。`WOULD_BLOCK`。call を跨ぐ pointer 借用禁止。
-- KGuard schema / policy / product message 名を必須語彙にしない。
+- application-specific schema / policy / product message 名を必須語彙にしない。
 
 ## Rationale
 

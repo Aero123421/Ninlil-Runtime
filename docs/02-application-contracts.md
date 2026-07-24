@@ -242,7 +242,7 @@ Application は次の selector を利用できます。
 - named group
 - capability query（policyで許可された場合）
 
-Generic resolverはSite Controllerの責務です。KGuard等のproductはlogical installationやgroupのmapping dataを提供しますが、解決結果を固定し、binding epochを検査する機構はNinlil側に置きます。M1aはselectorを受理せず、concrete target 1件だけを受理します。
+Generic resolverはSite Controllerの責務です。各product/applicationはlogical installationやgroupのmapping dataを提供しますが、解決結果を固定し、binding epochを検査する機構はNinlil側に置きます。M1aはselectorを受理せず、concrete target 1件だけを受理します。
 
 Admission 時に selector を concrete target roster へ固定します。
 
@@ -422,7 +422,7 @@ generation: 1082
 payload: occupancy bitmap
 ```
 
-これらの example は KGuard を知らなくても動かせる conformance fixture にします。
+これらの example は、特定のapplicationを知らなくても動かせる conformance fixture にします。
 
 ## Public API 原則
 

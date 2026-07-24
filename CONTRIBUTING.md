@@ -18,7 +18,7 @@ Foundation M1aの正本は次のNormative文書です。
 - 仕様変更、public ABI変更、実装、test、generated artifactを必要に応じて同じPRへ含めてください。
 - 無関係なformat変更やrenameを混ぜないでください。
 - 未実装機能に成功を返すstubを追加しないでください。未対応は規定されたerrorでfail closedにします。
-- KGuardや特定hardwareの業務語彙をportable Coreへ持ち込まないでください。
+- application-specificな業務語彙や特定hardwareの型をportable Coreへ持ち込まないでください。
 
 ## Languageとbuild requirements
 
