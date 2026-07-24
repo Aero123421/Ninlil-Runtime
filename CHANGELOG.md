@@ -4,6 +4,29 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ## Unreleased
 
+（変更なし）
+
+## [v1.0-lab-rc1] - 2026-07-24
+
+### Added
+
+- **V1 LAB RC1** — 隔離 LAB 向け host simulation 縦切り 10 項目の機能完成（public Runtime body、POSIX SQLite storage、capability、Join/Attachment、secure wire、USB/radio software path、統合 E2E gate、examples 4 本、packaging/docs）。
+- 利用者向け [quickstart](docs/v1-lab-quickstart.md)、[developer guide](docs/v1-lab-developer.md)、[distribution manifest](docs/v1-lab-distribution-manifest.md)。
+- Host simulation examples: `examples/v1_lab/`（Controller / Cell / Display / Leak）。
+- Consumer install smoke: `tools/v1_lab_consumer_smoke.sh`。
+
+### Changed
+
+- [README](README.md) を V1 LAB RC1 利用者入口へ全面改稿（Pre-V1 実装履歴は [docs/release-history.md](docs/release-history.md) へ退避）。
+
+### Known limitations（V1 LAB RC1）
+
+- **LAB_ONLY** — 国内実運用・production 法規認定・SBOM / release signing は V2。
+- **HIL pending** — ESP flash/USB 実機、SX1262 physical RF、power-cut/FULL durable attestation、Display/Leak 実機 E2E（[RC 残件](docs/work/2026-07-23-v1-rc-residuals.md)）。
+- V2: D3-S4..S12 網羅、relay、multi-parent、完全 wire fragmentation、形式証明。
+
+## Pre-V1 development history
+
 ### Added
 
 - **R7 T1b context binding / verified HKDF schedule implementation candidate Accepted（independent POST-CI GO 2026-07-19 P0=P1=P2=0）**（[docs/33](docs/33-r7-t1b-context-binding-hkdf.md)、[ADR-0013](docs/adr/0013-r7-t1b-context-binding-hkdf.md)、[review](docs/reviews/2026-07-19-r7-t1b-context-binding-hkdf-accepted.md)）: Hop/E2E canonical encode/digestとexpected-digest必須のtyped key bundle導出をprivate portable C11で実装。exact 24-vector oracle、Host OpenSSL、ESP-IDF mbedTLS final-ELF link、failure/alias/zeroization/package/stack/CTest mutation gateを追加し、push/PR CIとpush/PR ESP-IDF CIは全成功。**AcceptedはT1b private stateless候補のみ。expected digest/traffic secret provenance、context install、counter/nonce/AEAD/replay/durable state、T1 composite、W1/L1/N6/M4/M5、Attachment/Join、LINK/FRAG/CELL/HA、実機KAT、RF/USB HIL、Japan legal、production radio、R7 fullは未完。public ABI変更なし。compile/link ≠ HIL。**

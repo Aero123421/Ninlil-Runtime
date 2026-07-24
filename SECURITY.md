@@ -2,7 +2,7 @@
 
 ## Project status
 
-Ninlil Runtimeはpre-alphaです。現在のcodeとTEST fixtureは、production利用、credential保護、session security、radio security、法令適合、regulatory compliance、field SLOを保証しません。実装済みtestをsecurity certificationや運用承認の代わりに使用しないでください。
+**V1 LAB RC1（タグ `v1.0-lab-rc1`）** は隔離 LAB 向け host simulation の機能完成リリースです。**LAB_ONLY** — 国内実運用、production 法規認定、credential 保護の最終保証、physical RF/USB HIL、regulatory compliance、field SLO は **主張しません**。統合 E2E gate と CTest 成功は、security certification や現場運用承認の代わりに使用しないでください。物理実機系の残件は [RC 残件](docs/work/2026-07-23-v1-rc-residuals.md) を参照してください。
 
 ## Reporting a vulnerability
 

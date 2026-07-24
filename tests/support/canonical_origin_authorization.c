@@ -321,6 +321,18 @@ static int latest_state_lab_allow(
         && id_valid(&request->target.target_application_instance_id);
 }
 
+static int measurement_batch_lab_allow(
+    const ninlil_origin_authorization_request_t *request)
+{
+    return request->service.family == NINLIL_FAMILY_MEASUREMENT_RESERVED
+        && text_matches(&request->service.service_id, "leak-measurement")
+        && text_matches(&request->service.schema_id, "leak-measurement")
+        && request->required_evidence == NINLIL_EVIDENCE_APPLIED
+        && id_is_zero(&request->event_id)
+        && id_valid(&request->target.target_runtime_id)
+        && id_valid(&request->target.target_application_instance_id);
+}
+
 static int source_and_service_match(
     const ninlil_origin_authorization_request_t *request)
 {
@@ -580,6 +592,10 @@ static ninlil_origin_auth_status_t fixture_evaluate(
         return finish_natural(provider, request, out_decision);
     }
     if (latest_state_lab_allow(request)) {
+        set_allow_decision(out_decision, request);
+        return finish_natural(provider, request, out_decision);
+    }
+    if (measurement_batch_lab_allow(request)) {
         set_allow_decision(out_decision, request);
         return finish_natural(provider, request, out_decision);
     }

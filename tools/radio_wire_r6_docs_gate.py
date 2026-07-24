@@ -39,7 +39,7 @@ CROSS = (
     ADR9,
     "docs/adr/README.md",
     "docs/reviews/README.md",
-    "README.md",
+    "docs/release-history.md",
     "CHANGELOG.md",
 )
 
@@ -2228,7 +2228,7 @@ def check_cross(root: pathlib.Path) -> None:
     require_absent(readme, "R6 NRW1 secure radio wire docs draft（Accepted 仮", "docs/README")
 
     for rel in (
-        "README.md",
+        "docs/release-history.md",
         "CHANGELOG.md",
         "docs/README.md",
         "docs/adr/README.md",
@@ -2239,7 +2239,10 @@ def check_cross(root: pathlib.Path) -> None:
 
     # Index honesty: current status Accepted (not provisional) + incompletes separated
     for rel, needles in (
-        ("README.md", ("docs freeze Accepted", "re-GO 2026-07-19", "R7 full AEAD", "compile ≠ HIL")),
+        (
+            "docs/release-history.md",
+            ("docs freeze Accepted", "re-GO 2026-07-19", "R7 full AEAD", "compile ≠ HIL"),
+        ),
         ("CHANGELOG.md", ("docs freeze Accepted", "P0=0 / P1=0 / P2=0", "status-only", "R7 full AEAD")),
         ("docs/adr/README.md", ("**Accepted**", "re-GO 2026-07-19 P0=P1=P2=0", "R7 full AEAD")),
         ("docs/09-roadmap.md", ("Normative freeze Accepted", "re-GO 2026-07-19 P0=P1=P2=0", "R7 full AEAD")),

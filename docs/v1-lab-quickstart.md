@@ -1,6 +1,6 @@
 # Ninlil V1 LAB — Quickstart
 
-状態: V1 LAB RC 利用者向け（項目 10b）
+状態: V1 LAB RC1 利用者向け（タグ `v1.0-lab-rc1`）
 
 Ninlil V1 LAB は **隔離された LAB 環境** で動作する host simulation 完成版です。
 国内実運用可能・production 法規認定は **主張しません**（V2）。

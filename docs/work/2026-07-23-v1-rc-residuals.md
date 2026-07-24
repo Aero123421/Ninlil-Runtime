@@ -28,7 +28,7 @@ green（`v1_integration_gate_e2e`, structural check）。stub/TODO 0（各 evide
 | P3 | **power-cut / FULL durable attestation（ESP）** | 項目 1 / ESP matrix: FULL success 禁止、`COMMIT_UNKNOWN`（`v1-esp-provider-matrix.md`, `v1-a1c-evidence.md`） |
 | P4 | **Display node 実機 E2E** | master plan §0: physical `LAB` lane は M3/M5 subset 後; V1 examples は host loopback のみ（`examples/v1_lab/display_latest_state.c`） |
 | P5 | **Leak node 実機 E2E** | 同上（`examples/v1_lab/leak_measurement.c`） |
-| P6 | **U1–U3 Required HIL（USB CDC 実経路）** | README / docs/23: Required HIL pending |
+| P6 | **U1–U3 Required HIL（USB CDC 実経路）** | [docs/23](../23-usb-radio-boundary.md): Required HIL pending |
 | P7 | **production 法規認定（C6 本経路）** | 計画 §2 V2; 10a evidence 非主張 |
 
 ### 明示的に V1 RC に含めないもの（V2）
