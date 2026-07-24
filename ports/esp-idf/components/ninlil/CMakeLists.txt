@@ -33,6 +33,7 @@ include("${NINLIL_REPO_ROOT}/cmake/ninlil_runtime_private_sources.cmake")
 # list under an include guard so r7_context_binding.c is packaged exact once.
 # Do not call ninlil_nrw1_t1b_register_tests() on ESP (host CTest only).
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_nrw1_t1b_ctest.cmake")
+include("${NINLIL_REPO_ROOT}/cmake/ninlil_m4_lab_ctest.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_idf_port_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_storage_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_sx1262_sources.cmake")

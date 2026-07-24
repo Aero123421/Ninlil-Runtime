@@ -1,5 +1,7 @@
 #include "runtime_store_orchestrator.h"
 
+#include "v1_durable_allowlist.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -414,6 +416,15 @@ static ninlil_status_t commit_new_bootstrap(
     begin_view.row_count = 0u;
     final_view.rows = workspace->phase.bootstrap.rows;
     final_view.row_count = NINLIL_MODEL_RUNTIME_STORE_BOOTSTRAP_RECORD_COUNT;
+    for (index = 0u; index < final_view.row_count; ++index) {
+        ninlil_status_t gate_status = ninlil_v1_durable_writer_gate_check(
+            NINLIL_V1_DURABLE_OP_BOOTSTRAP_COMMIT,
+            final_view.rows[index].key,
+            final_view.rows[index].value);
+        if (gate_status != NINLIL_OK) {
+            return gate_status;
+        }
+    }
     storage_status = ninlil_storage_canonical_apply(storage, *inout_handle,
         begin_view, final_view, dispatch_before_bootstrap_commit,
         (void *)hooks, &apply_result);

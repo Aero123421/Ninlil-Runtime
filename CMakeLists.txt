@@ -185,10 +185,10 @@ function(ninlil_apply_strict_warnings target)
     endif()
 endfunction()
 
-# Single source of feature macros for POSIX SQLite library/example/tests.
+# Single source of feature macros for POSIX host targets.
 # glibc + -std=c11 (no extensions): realpath needs XSI; flock/MAP_ANONYMOUS
 # need _DEFAULT_SOURCE. macOS keeps _DARWIN_C_SOURCE only.
-function(ninlil_apply_posix_sqlite_feature_macros target)
+function(ninlil_apply_posix_host_feature_macros target)
     if(APPLE)
         target_compile_definitions(${target} PRIVATE
             _DARWIN_C_SOURCE
@@ -201,19 +201,14 @@ function(ninlil_apply_posix_sqlite_feature_macros target)
     endif()
 endfunction()
 
+function(ninlil_apply_posix_sqlite_feature_macros target)
+    ninlil_apply_posix_host_feature_macros(${target})
+endfunction()
+
 # Feature macros for A1 POSIX USB serial (termios/poll/TIOCEXCL) under
 # C_EXTENSIONS OFF. Host-only; not installed; not part of public package.
 function(ninlil_apply_posix_usb_serial_feature_macros target)
-    if(APPLE)
-        target_compile_definitions(${target} PRIVATE
-            _DARWIN_C_SOURCE
-        )
-    else()
-        target_compile_definitions(${target} PRIVATE
-            _XOPEN_SOURCE=700
-            _DEFAULT_SOURCE
-        )
-    endif()
+    ninlil_apply_posix_host_feature_macros(${target})
 endfunction()
 
 # Host-only durable storage port. Missing SQLite must not break portable core.
@@ -358,6 +353,43 @@ if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
             "POSIX SQLite storage port: enabled (${_ninlil_sqlite_kind_msg}"
             " '${NINLIL_SQLITE_LIBRARY_PATH}'"
             " linkage=${NINLIL_SQLITE_LINKAGE})")
+
+        set(NINLIL_POSIX_LAB_PLATFORM_ENABLED TRUE)
+        add_library(ninlil_posix_lab_platform STATIC
+            ports/posix/lab_platform/ninlil_posix_lab_platform.c
+            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer.c
+            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.c
+            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_inject.c
+            tests/support/platform_basic_fixtures.c
+            tests/support/deterministic_entropy.c
+            tests/support/typed_simulated_bearer.c
+            tests/support/canonical_origin_authorization.c
+        )
+        add_library(Ninlil::ninlil_posix_lab_platform ALIAS
+            ninlil_posix_lab_platform)
+        target_include_directories(ninlil_posix_lab_platform
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include>
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_posix_lab_platform
+            PUBLIC
+                ninlil
+                ninlil_posix_sqlite_storage
+        )
+        set_target_properties(ninlil_posix_lab_platform PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            POSITION_INDEPENDENT_CODE ON
+            C_VISIBILITY_PRESET hidden
+        )
+        ninlil_apply_posix_sqlite_feature_macros(ninlil_posix_lab_platform)
+        ninlil_apply_strict_warnings(ninlil_posix_lab_platform)
     else()
         message(STATUS
             "POSIX SQLite storage port: disabled (SQLite3 not found)")
@@ -369,7 +401,7 @@ endif()
 install(TARGETS ninlil EXPORT NinlilTargets)
 install(DIRECTORY include/ninlil
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES LICENSE
+install(FILES LICENSE NOTICE THIRD-PARTY-NOTICES.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/ninlil)
 if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
     install(TARGETS ninlil_posix_sqlite_storage
@@ -408,6 +440,18 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_runtime_private_sources.cmake)
 # ninlil_runtime_private is created. Test registration is a separate function
 # call under NINLIL_BUILD_TESTS (does not recompile production sources).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_nrw1_t1b_ctest.cmake)
+
+# M4 LAB Join/Attachment (V1 item 7): append portable sources before private lib.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_m4_lab_ctest.cmake)
+
+# C3-LAB secure wire + context lifecycle (V1 item 8).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c3_lab_ctest.cmake)
+
+# C6-LAB enforcement (V1 item 10a): LAB_ONLY sole-edge gate.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c6_lab_ctest.cmake)
+
+# C4/C5-LAB USB + radio software path (V1 item 9).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c4_c5_lab_ctest.cmake)
 
 # R4 SX1262 portable control-plane (D1). Not public ABI. Not RF TX complete.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
@@ -1254,6 +1298,132 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME stage5_empty_metadata
         COMMAND ninlil_stage5_empty_metadata_test
+    )
+
+    add_executable(ninlil_v1_durable_allowlist_test
+        tests/runtime/v1_durable_allowlist_test.c
+    )
+    target_include_directories(ninlil_v1_durable_allowlist_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_v1_durable_allowlist_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_v1_durable_allowlist_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_durable_allowlist_test)
+    add_test(
+        NAME v1_durable_allowlist
+        COMMAND ninlil_v1_durable_allowlist_test
+    )
+
+    add_executable(ninlil_v1_runtime_spine_test
+        tests/runtime/v1_runtime_spine_test.c
+    )
+    target_include_directories(ninlil_v1_runtime_spine_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_runtime_spine_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_platform_fixtures
+        ninlil_test_storage_fixture
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_v1_runtime_spine_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_runtime_spine_test)
+    add_test(
+        NAME v1_runtime_spine
+        COMMAND ninlil_v1_runtime_spine_test
+    )
+
+    add_executable(ninlil_v1_runtime_delivery_test
+        tests/runtime/v1_runtime_delivery_test.c
+    )
+    target_include_directories(ninlil_v1_runtime_delivery_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_runtime_delivery_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_platform_fixtures
+        ninlil_test_storage_fixture
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_v1_runtime_delivery_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_runtime_delivery_test)
+    add_test(
+        NAME v1_runtime_delivery
+        COMMAND ninlil_v1_runtime_delivery_test
+    )
+
+    add_executable(ninlil_v1_runtime_capability_test
+        tests/runtime/v1_runtime_capability_test.c
+    )
+    target_include_directories(ninlil_v1_runtime_capability_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_runtime_capability_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_platform_fixtures
+        ninlil_test_storage_fixture
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_v1_runtime_capability_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_runtime_capability_test)
+    add_test(
+        NAME v1_runtime_capability
+        COMMAND ninlil_v1_runtime_capability_test
+    )
+
+    add_executable(ninlil_v1_runtime_family_test
+        tests/runtime/v1_runtime_family_test.c
+    )
+    target_include_directories(ninlil_v1_runtime_family_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_runtime_family_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_platform_fixtures
+        ninlil_test_storage_fixture
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_v1_runtime_family_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_runtime_family_test)
+    add_test(
+        NAME v1_runtime_family
+        COMMAND ninlil_v1_runtime_family_test
     )
 
     add_library(ninlil_test_scripted_storage_spy STATIC
@@ -2110,6 +2280,18 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_store_stage5_gate.py
             self-test
     )
+    add_test(
+        NAME v1_durable_allowlist_source_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_durable_allowlist_gate.py
+            check
+    )
+    add_test(
+        NAME v1_durable_allowlist_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_durable_allowlist_gate.py
+            self-test
+    )
 
     # M3 packaging gates: host private source authority, ESP-IDF port
     # authority, component CMake include, ESP_IDF_VERSION pin consistency
@@ -2625,6 +2807,20 @@ if(NINLIL_BUILD_TESTS)
     # above private-target creation; register nrw1_t1b_* CTests exactly once.
     # Prefix is disjoint from T0 r7_* (16/15) and T1 nrw1_t1_* (12/11).
     ninlil_nrw1_t1b_register_tests()
+    ninlil_m4_lab_register_tests()
+    ninlil_c3_lab_register_tests()
+    ninlil_c6_lab_register_tests()
+    ninlil_c4_c5_lab_register_tests()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_v1_integration_gate_ctest.cmake)
+    ninlil_v1_integration_gate_register_tests()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_v1_lab_examples.cmake)
+    ninlil_v1_lab_examples_register()
+    add_test(
+        NAME c6_lab_enforcement_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/c6_lab_enforcement_gate.py
+            check
+    )
     add_test(
         NAME profile_r5_golden_oracle
         COMMAND ${Python3_EXECUTABLE}
@@ -3225,6 +3421,137 @@ if(NINLIL_BUILD_TESTS)
             NAME posix_sqlite_storage
             COMMAND ninlil_posix_sqlite_storage_test
         )
+
+        add_executable(ninlil_v1_posix_sqlite_restart_e2e_test
+            tests/runtime/v1_posix_sqlite_restart_e2e_test.c
+        )
+        target_include_directories(ninlil_v1_posix_sqlite_restart_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_v1_posix_sqlite_restart_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil_posix_sqlite_storage
+            ninlil
+        )
+        set_target_properties(ninlil_v1_posix_sqlite_restart_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_v1_posix_sqlite_restart_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_v1_posix_sqlite_restart_e2e_test)
+        add_test(
+            NAME v1_posix_sqlite_restart_e2e
+            COMMAND ninlil_v1_posix_sqlite_restart_e2e_test
+        )
+
+        add_executable(ninlil_v1_posix_provider_conformance_test
+            tests/port/v1_posix_provider_conformance_test.c
+        )
+        target_include_directories(ninlil_v1_posix_provider_conformance_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_v1_posix_provider_conformance_test PRIVATE
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_v1_posix_provider_conformance_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_v1_posix_provider_conformance_test)
+        ninlil_apply_strict_warnings(ninlil_v1_posix_provider_conformance_test)
+        add_test(
+            NAME v1_posix_provider_conformance
+            COMMAND ninlil_v1_posix_provider_conformance_test
+        )
+
+        add_executable(ninlil_posix_loopback_partial_read_test
+            tests/port/posix_loopback_bearer_partial_read_test.c
+        )
+        target_include_directories(ninlil_posix_loopback_partial_read_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+        )
+        target_link_libraries(ninlil_posix_loopback_partial_read_test PRIVATE
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_posix_loopback_partial_read_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_host_feature_macros(
+            ninlil_posix_loopback_partial_read_test)
+        ninlil_apply_strict_warnings(ninlil_posix_loopback_partial_read_test)
+        add_test(
+            NAME posix_loopback_partial_read
+            COMMAND ninlil_posix_loopback_partial_read_test
+        )
+        set_tests_properties(posix_loopback_partial_read PROPERTIES TIMEOUT 10)
+
+        add_executable(ninlil_v1_posix_platform_restart_e2e_test
+            tests/runtime/v1_posix_platform_restart_e2e_test.c
+        )
+        target_include_directories(ninlil_v1_posix_platform_restart_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_v1_posix_platform_restart_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_v1_posix_platform_restart_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(
+            ninlil_v1_posix_platform_restart_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_v1_posix_platform_restart_e2e_test)
+        add_test(
+            NAME v1_posix_platform_restart_e2e
+            COMMAND ninlil_v1_posix_platform_restart_e2e_test
+        )
+
+        add_executable(ninlil_v1_direct_1hop_e2e_test
+            tests/runtime/v1_direct_1hop_e2e_test.c
+        )
+        target_include_directories(ninlil_v1_direct_1hop_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_v1_direct_1hop_e2e_test PRIVATE
+            ninlil_runtime_private
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_v1_direct_1hop_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_sqlite_feature_macros(ninlil_v1_direct_1hop_e2e_test)
+        ninlil_apply_strict_warnings(ninlil_v1_direct_1hop_e2e_test)
+        add_test(
+            NAME v1_direct_1hop_e2e
+            COMMAND ninlil_v1_direct_1hop_e2e_test
+        )
+
         add_test(
             NAME posix_sqlite_storage_package_surface_negative
             COMMAND ${CMAKE_COMMAND}
@@ -3383,6 +3710,19 @@ if(NINLIL_BUILD_TESTS)
     )
 
     add_test(
+        NAME v1_esp_durable_success_source_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_esp_durable_success_gate.py
+            check
+    )
+    add_test(
+        NAME v1_esp_durable_success_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_esp_durable_success_gate.py
+            self-test
+    )
+
+    add_test(
         NAME esp_storage_budget_gate
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_budget_gate.py
@@ -3529,6 +3869,27 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME esp_idf_port_logic
         COMMAND ninlil_esp_idf_port_logic_test
+    )
+
+    add_executable(ninlil_v1_esp_provider_availability_test
+        tests/port/v1_esp_provider_availability_test.c
+    )
+    target_include_directories(ninlil_v1_esp_provider_availability_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include
+    )
+    target_link_libraries(ninlil_v1_esp_provider_availability_test PRIVATE
+        ninlil_esp_idf_port_pure
+        ninlil
+    )
+    set_target_properties(ninlil_v1_esp_provider_availability_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_esp_provider_availability_test)
+    add_test(
+        NAME v1_esp_provider_availability
+        COMMAND ninlil_v1_esp_provider_availability_test
     )
 
     # U2 A2 pure state/ring/ownership tests (host only; not physical HIL).

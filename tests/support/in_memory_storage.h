@@ -111,6 +111,12 @@ uint64_t ninlil_test_storage_live_transactions(
 uint64_t ninlil_test_storage_live_iterators(
     const ninlil_test_storage_t *storage);
 
+uint32_t ninlil_test_storage_count_keys_with_prefix(
+    ninlil_test_storage_t *storage,
+    ninlil_bytes_view_t storage_namespace,
+    uint8_t prefix_byte0,
+    uint8_t prefix_byte1);
+
 #ifdef __cplusplus
 }
 #endif

@@ -13,16 +13,31 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/model/domain_store_body_codec.c
     src/model/domain_store_codec.c
     src/model/ncl1_codec.c
+    src/model/resource_ledger.c
+    src/model/resource_ledger_batch.c
     src/model/runtime_lifecycle_model.c
     src/model/runtime_store_bootstrap.c
     src/model/runtime_store_codec.c
+    src/model/submission_admission.c
+    src/model/submission_preflight.c
     src/runtime/domain_store_d3s1.c
     src/runtime/domain_store_d3s2.c
     src/runtime/domain_store_d3s3.c
     src/runtime/domain_store_scanner.c
+    src/runtime/runtime_public.c
     src/runtime/runtime_store_orchestrator.c
     src/runtime/runtime_store_stage5_seam.c
+    src/runtime/runtime_v1_spine_durable.c
+    src/runtime/runtime_v1_delivery_durable.c
+    src/runtime/runtime_v1_bearer_wire.c
+    src/runtime/runtime_v1_capability.c
+    src/runtime/runtime_v1_event_mgmt.c
+    src/runtime/runtime_v1_family_capability.c
+    src/runtime/runtime_v1_target_resolver.c
+    src/runtime/submission_canonical_v1.c
     src/runtime/stage5_empty_metadata.c
+    src/runtime/v1_durable_allowlist.c
+    src/runtime/v1_durable_restart.c
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
     src/radio/airtime_calculator.c

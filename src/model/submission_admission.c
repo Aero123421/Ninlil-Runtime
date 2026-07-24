@@ -1,4 +1,5 @@
 #include "submission_admission.h"
+#include "family_capability_model.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -314,8 +315,7 @@ static int service_identity_is_valid(const ninlil_service_identity_t *service)
         && text_id_is_valid(&service->schema_id, 0)
         && service->descriptor_revision != 0u
         && digest_is_valid(&service->descriptor_digest)
-        && (service->family == NINLIL_FAMILY_DESIRED_STATE
-            || service->family == NINLIL_FAMILY_EVENT_FACT);
+        && ninlil_model_family_is_admit_supported(service->family);
 }
 
 static int registered_service_is_valid(
@@ -352,7 +352,9 @@ static int registered_service_is_valid(
     if (!common) {
         return 0;
     }
-    if (service->family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (service->family == NINLIL_FAMILY_DESIRED_STATE
+        || service->family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || service->family == NINLIL_FAMILY_CONFIG_RESERVED) {
         return service->minimum_deadline_ms >= 1u
             && service->minimum_deadline_ms <= service->maximum_deadline_ms
             && service->maximum_deadline_ms < NINLIL_NO_DEADLINE;
@@ -369,7 +371,9 @@ static int plan_grant_shape_is_valid(const ninlil_model_admission_plan_t *plan)
 {
     const ninlil_model_origin_grant_snapshot_t *grant = &plan->grant;
 
-    if (plan->family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (plan->family == NINLIL_FAMILY_DESIRED_STATE
+        || plan->family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || plan->family == NINLIL_FAMILY_CONFIG_RESERVED) {
         return grant_decision_is_zero(grant);
     }
     return !id_is_zero(&grant->provider_id)
@@ -633,12 +637,15 @@ static int quota_shape_is_valid(const ninlil_model_admission_plan_t *plan)
             <= plan->grant.max_active_spool_bytes;
 }
 
+static int plan_uplink_identity_is_valid(const ninlil_model_admission_plan_t *plan);
+
 static int plan_is_valid(const ninlil_model_admission_plan_t *plan)
 {
     ninlil_model_capacity_snapshot_view_t snapshot;
 
     if ((plan->family != NINLIL_FAMILY_DESIRED_STATE
-            && plan->family != NINLIL_FAMILY_EVENT_FACT)
+            && plan->family != NINLIL_FAMILY_EVENT_FACT
+            && !ninlil_model_family_is_b5_lab(plan->family))
         || plan->registered_service.family != plan->family
         || plan->registered_service.local_side
             != NINLIL_MODEL_LOCAL_SUBMISSION_SENDER
@@ -670,13 +677,28 @@ static int plan_is_valid(const ninlil_model_admission_plan_t *plan)
             != NINLIL_OK) {
         return 0;
     }
-    if (plan->family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (plan->family == NINLIL_FAMILY_DESIRED_STATE
+        || plan->family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || plan->family == NINLIL_FAMILY_CONFIG_RESERVED) {
         return id_is_zero(&plan->event_id)
             && plan->generation != 0u
             && id_equal(
                 &plan->deadline_clock_epoch_id,
                 &plan->admission_clock_epoch_id)
             && desired_deadlines_are_valid(plan);
+    }
+    return plan_uplink_identity_is_valid(plan);
+}
+
+static int plan_uplink_identity_is_valid(const ninlil_model_admission_plan_t *plan)
+{
+    if (plan->family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || plan->family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
+        return id_is_zero(&plan->event_id)
+            && plan->generation != 0u
+            && id_is_zero(&plan->deadline_clock_epoch_id)
+            && plan->absolute_effect_deadline_ms == NINLIL_NO_DEADLINE
+            && plan->absolute_evidence_close_ms == NINLIL_NO_DEADLINE;
     }
     return !id_is_zero(&plan->event_id)
         && plan->generation == 0u
@@ -729,7 +751,9 @@ static int descriptor_contract_is_valid(
         || contract->required_dedup_window_ms == 0u) {
         return 0;
     }
-    if (family == NINLIL_FAMILY_EVENT_FACT) {
+    if (family == NINLIL_FAMILY_EVENT_FACT
+        || family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         return contract->max_attempts_per_target_per_cycle
                 == NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
             && contract->direction == NINLIL_DIRECTION_UPLINK
@@ -761,7 +785,11 @@ static void make_assurance(
     assurance->local_capacity_reserved = 1u;
     assurance->idempotency_mapping_committed = 1u;
     assurance->origin_grant_snapshot_committed =
-        family == NINLIL_FAMILY_EVENT_FACT ? 1u : 0u;
+        (family == NINLIL_FAMILY_EVENT_FACT
+            || family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+            || family == NINLIL_FAMILY_MEASUREMENT_RESERVED)
+            ? 1u
+            : 0u;
 }
 
 static ninlil_model_mapping_scope_t make_mapping_scope(
@@ -828,7 +856,9 @@ static void build_write_set(
         input->preflight_plan.resources.committed_ledger;
     make_assurance(input->preflight_plan.family, &write_set->assurance);
 
-    if (input->preflight_plan.family == NINLIL_FAMILY_EVENT_FACT) {
+    if (input->preflight_plan.family == NINLIL_FAMILY_EVENT_FACT
+        || input->preflight_plan.family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || input->preflight_plan.family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         write_set->record_mask |=
             NINLIL_MODEL_ADMISSION_WRITE_EVENT_MAPPING
             | NINLIL_MODEL_ADMISSION_WRITE_GRANT
@@ -869,7 +899,9 @@ static void build_write_set(
         write_set->reservation_manifest.event_discard_slot_bytes = 512u;
         write_set->reservation_manifest.event_management_total_bytes =
             NINLIL_M1A_EVENT_MANAGEMENT_RESERVATION_BYTES;
-    } else {
+    } else if (input->preflight_plan.family == NINLIL_FAMILY_DESIRED_STATE
+        || input->preflight_plan.family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || input->preflight_plan.family == NINLIL_FAMILY_CONFIG_RESERVED) {
         write_set->record_mask |=
             NINLIL_MODEL_ADMISSION_WRITE_COMMAND_CANCEL;
         write_set->initial_queue_kind = NINLIL_MODEL_INITIAL_COMMAND_OUTBOX;
@@ -1017,7 +1049,9 @@ static uint32_t expected_record_mask(ninlil_family_t family)
 {
     uint32_t mask = common_record_mask();
 
-    if (family == NINLIL_FAMILY_EVENT_FACT) {
+    if (family == NINLIL_FAMILY_EVENT_FACT
+        || family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         return mask | NINLIL_MODEL_ADMISSION_WRITE_EVENT_MAPPING
             | NINLIL_MODEL_ADMISSION_WRITE_GRANT
             | NINLIL_MODEL_ADMISSION_WRITE_EVENT_MANAGEMENT;
@@ -1051,7 +1085,11 @@ static int assurance_is_valid(
         && assurance->local_capacity_reserved == 1u
         && assurance->idempotency_mapping_committed == 1u
         && assurance->origin_grant_snapshot_committed
-            == (family == NINLIL_FAMILY_EVENT_FACT ? 1u : 0u)
+            == ((family == NINLIL_FAMILY_EVENT_FACT
+                    || family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+                    || family == NINLIL_FAMILY_MEASUREMENT_RESERVED)
+                ? 1u
+                : 0u)
         && assurance->remote_capacity_reserved == 0u
         && assurance->route_feasibility_verified == 0u
         && assurance->receive_window_reserved == 0u
@@ -1215,7 +1253,9 @@ static int resource_plan_matches_admission(
         return 0;
     }
 
-    if (plan->family == NINLIL_FAMILY_EVENT_FACT) {
+    if (plan->family == NINLIL_FAMILY_EVENT_FACT
+        || plan->family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || plan->family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         return resources->reserve_request_count == 5u
             && resources->commit_request_count
                 == (plan->payload_length == 0u ? 4u : 5u)
@@ -1268,7 +1308,9 @@ static int initial_snapshot_and_manifest_are_valid(
             != write_set->plan.registered_service.max_evidence_per_target) {
         return 0;
     }
-    if (write_set->plan.family == NINLIL_FAMILY_EVENT_FACT) {
+    if (write_set->plan.family == NINLIL_FAMILY_EVENT_FACT
+        || write_set->plan.family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || write_set->plan.family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         return snapshot->family_state == NINLIL_MODEL_INITIAL_EVENT_HELD_READY
             && snapshot->deadline_verdict
                 == NINLIL_DEADLINE_NOT_APPLICABLE
@@ -1334,7 +1376,15 @@ static int write_set_is_valid(
         || !assurance_is_valid(&write_set->assurance, plan->family)) {
         return 0;
     }
-    if (plan->family == NINLIL_FAMILY_EVENT_FACT) {
+    if (plan->family == NINLIL_FAMILY_EVENT_FACT
+        || plan->family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || plan->family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
+        int event_id_ok = id_equal(
+            &write_set->event_mapping.event_id, &plan->event_id);
+        if (plan->family != NINLIL_FAMILY_EVENT_FACT) {
+            event_id_ok = id_is_zero(&write_set->event_mapping.event_id)
+                && id_is_zero(&plan->event_id);
+        }
         return write_set->event_mapping_present == 1u
             && write_set->grant_snapshot_present == 1u
             && write_set->initial_queue_kind
@@ -1344,8 +1394,7 @@ static int write_set_is_valid(
             && write_set->event_management_reservation_present == 1u
             && mapping_scope_matches_plan(
                 &write_set->event_mapping.scope, plan)
-            && id_equal(
-                &write_set->event_mapping.event_id, &plan->event_id)
+            && event_id_ok
             && id_equal(
                 &write_set->event_mapping.transaction_id,
                 &write_set->transaction_id)
@@ -1361,8 +1410,11 @@ static int write_set_is_valid(
             && service_identity_equal(
                 &write_set->grant_snapshot.service, &plan->service)
             && target_equal(&write_set->grant_snapshot.target, &plan->target)
-            && id_equal(
-                &write_set->grant_snapshot.event_id, &plan->event_id)
+            && (plan->family == NINLIL_FAMILY_EVENT_FACT
+                ? id_equal(
+                    &write_set->grant_snapshot.event_id, &plan->event_id)
+                : id_is_zero(&write_set->grant_snapshot.event_id)
+                    && id_is_zero(&plan->event_id))
             && digest_equal(
                 &write_set->grant_snapshot.content_digest,
                 &plan->content_digest)

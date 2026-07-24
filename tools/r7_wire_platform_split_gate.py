@@ -614,7 +614,7 @@ def run_self_test() -> int:
         ),
         (
             HOST_CMAKE,
-            "install(FILES LICENSE\n"
+            "install(FILES LICENSE NOTICE THIRD-PARTY-NOTICES.md\n"
             "    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/ninlil)",
             "install(FILES\n"
             "    src/radio/r7_wire_codec.h\n"

@@ -4,6 +4,64 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ## Unreleased
 
+（変更なし）
+
+## [v1.0-lab-rc2] - 2026-07-24
+
+### Fixed
+
+- Leak example の SQLite Storage 初期化順を修正し、初回実行・再実行とも正常終了するようにした。
+- docs-freeze gate の追跡対象を現行文書構成へ合わせ、削除済み作業記録への参照による誤検知を解消した。
+- V1 LAB examples が Linux の厳格 C11 build でも POSIX API を正しく宣言するよう修正した。
+- SQLite3 を無効化した portable build では、SQLite-backed POSIX LAB platform を必要とする E2E だけを明示的に skip するよう修正した。
+- GCC 13 の `-Wformat-truncation` で検出された direct 1-hop test の cleanup path buffer を修正した。
+- service exact-reattach test の callback 構造体をゼロ初期化し、未初期化 stack 値に依存する非決定的失敗を解消した。
+- POSIX provider restart test から allocator のアドレス再利用に依存する比較を除き、provider 状態の再生成を意味的に検証するよう修正した。
+- POSIX loopback bearer が nonblocking stream の途中読みを EAGAIN 越しに保持するよう修正し、header/body 分割を強制する回帰テストを追加した。
+- POSIX loopback bearer の切断競合時に Linux の SIGPIPE でプロセスが終了しないよう、socket send を fail-closed にした。
+- 2-process LAB E2E が片側の tight loop で先に終了しないよう peer へ実行機会を与え、delivery 後の receipt 送信まで待つよう修正した。
+- C4 LAB USB の caller-owned object に実装型が要求する alignment を付与し、Clang の stack layout に依存する初期化失敗を解消した。
+- C5 radio / C4-C5 E2E test fixture の所有資源を明示解放し、Linux LeakSanitizer gate を満たすよう修正した。
+
+### Changed
+
+- README、quickstart、developer guide、security policy、distribution manifest を、現行の V1 LAB 実装と検証境界に合わせて更新した。
+- `main` の Accepted 仕様・レビュー記録を RC2 候補へ統合した。
+
+### Verification
+
+- macOS host で sanitizer 有効の全 CTest **255/255**、統合 E2E、4 examples、installable consumer smoke が成功。
+- macOS の Display / provider restart / direct 1-hop を各50回、fragmented loopback receive を100回連続実行して成功。
+- SQLite3-disabled portable build の全 CTest **243/243** が成功。
+- GitHub Actions の required checks 成功後にのみタグと prerelease を公開する。
+
+### Known limitations（V1 LAB RC2）
+
+- **LAB_ONLY** — 国内実運用・production 法規認定・field SLO は主張しない。
+- ESP flash / USB 実機、SX1262 physical RF、power-cut、Display / Leak 実機 E2E は HIL pending。
+- relay、multi-parent、完全 fragmentation、SBOM / signing、production hardening は V2。
+
+## [v1.0-lab-rc1] - 2026-07-24
+
+### Added
+
+- **V1 LAB RC1** — 隔離 LAB 向け host simulation 縦切り 10 項目の機能完成（public Runtime body、POSIX SQLite storage、capability、Join/Attachment、secure wire、USB/radio software path、統合 E2E gate、examples 4 本、packaging/docs）。
+- 利用者向け [quickstart](docs/v1-lab-quickstart.md)、[developer guide](docs/v1-lab-developer.md)、[distribution manifest](docs/v1-lab-distribution-manifest.md)。
+- Host simulation examples: `examples/v1_lab/`（Controller / Cell / Display / Leak）。
+- Consumer install smoke: `tools/v1_lab_consumer_smoke.sh`。
+
+### Changed
+
+- [README](README.md) を V1 LAB RC1 利用者入口へ全面改稿（Pre-V1 実装履歴は [docs/release-history.md](docs/release-history.md) へ退避）。
+
+### Known limitations（V1 LAB RC1）
+
+- **LAB_ONLY** — 国内実運用・production 法規認定・SBOM / release signing は V2。
+- **HIL pending** — ESP flash/USB 実機、SX1262 physical RF、power-cut/FULL durable attestation、Display/Leak 実機 E2E（[RC 残件](docs/work/2026-07-23-v1-rc-residuals.md)）。
+- V2: D3-S4..S12 網羅、relay、multi-parent、完全 wire fragmentation、形式証明。
+
+## Pre-V1 development history
+
 ### Added
 
 - **R7 T1b context binding / verified HKDF schedule implementation candidate Accepted（independent POST-CI GO 2026-07-19 P0=P1=P2=0）**（[docs/33](docs/33-r7-t1b-context-binding-hkdf.md)、[ADR-0013](docs/adr/0013-r7-t1b-context-binding-hkdf.md)、[review](docs/reviews/2026-07-19-r7-t1b-context-binding-hkdf-accepted.md)）: Hop/E2E canonical encode/digestとexpected-digest必須のtyped key bundle導出をprivate portable C11で実装。exact 24-vector oracle、Host OpenSSL、ESP-IDF mbedTLS final-ELF link、failure/alias/zeroization/package/stack/CTest mutation gateを追加し、push/PR CIとpush/PR ESP-IDF CIは全成功。**AcceptedはT1b private stateless候補のみ。expected digest/traffic secret provenance、context install、counter/nonce/AEAD/replay/durable state、T1 composite、W1/L1/N6/M4/M5、Attachment/Join、LINK/FRAG/CELL/HA、実機KAT、RF/USB HIL、Japan legal、production radio、R7 fullは未完。public ABI変更なし。compile/link ≠ HIL。**

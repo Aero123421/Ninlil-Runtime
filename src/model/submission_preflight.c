@@ -1,4 +1,5 @@
 #include "submission_preflight.h"
+#include "family_capability_model.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -148,6 +149,20 @@ static int concrete_target_is_valid(const ninlil_concrete_target_t *target)
             target->membership_epoch);
 }
 
+static int family_uses_outbox(ninlil_family_t family)
+{
+    return family == NINLIL_FAMILY_DESIRED_STATE
+        || family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || family == NINLIL_FAMILY_CONFIG_RESERVED;
+}
+
+static int family_uses_event_spool(ninlil_family_t family)
+{
+    return family == NINLIL_FAMILY_EVENT_FACT
+        || family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || family == NINLIL_FAMILY_MEASUREMENT_RESERVED;
+}
+
 static int assurance_is_valid(
     const ninlil_admission_assurance_t *assurance,
     ninlil_family_t family)
@@ -165,7 +180,7 @@ static int assurance_is_valid(
         && assurance->local_capacity_reserved == 1u
         && assurance->idempotency_mapping_committed == 1u
         && assurance->origin_grant_snapshot_committed
-            == (family == NINLIL_FAMILY_EVENT_FACT ? 1u : 0u)
+            == (family_uses_event_spool(family) ? 1u : 0u)
         && assurance->remote_capacity_reserved == 0u
         && assurance->route_feasibility_verified == 0u
         && assurance->receive_window_reserved == 0u
@@ -306,7 +321,9 @@ static int service_shape_is_valid(
         return 0;
     }
 
-    if (service->family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (service->family == NINLIL_FAMILY_DESIRED_STATE
+        || service->family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || service->family == NINLIL_FAMILY_CONFIG_RESERVED) {
         return service->minimum_deadline_ms > 0u
             && service->minimum_deadline_ms <= service->maximum_deadline_ms
             && service->maximum_deadline_ms < NINLIL_NO_DEADLINE;
@@ -326,7 +343,11 @@ static int submission_identity_shape_is_valid(
         || !digest_is_valid(&submission->canonical_submission_digest)) {
         return 0;
     }
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE
+        || input->service.family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || input->service.family == NINLIL_FAMILY_CONFIG_RESERVED
+        || input->service.family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || input->service.family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         return id_is_zero(&submission->event_id)
             && submission->generation != 0u;
     }
@@ -438,7 +459,9 @@ static ninlil_status_t reduce_idempotency(
         return NINLIL_OK;
     }
 
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE
+        || input->service.family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || input->service.family == NINLIL_FAMILY_CONFIG_RESERVED) {
         if (event->state != NINLIL_MODEL_MAPPING_ABSENT) {
             return NINLIL_E_INVALID_ARGUMENT;
         }
@@ -600,13 +623,22 @@ static ninlil_status_t reduce_authority(
     int *out_allowed)
 {
     *out_allowed = 0;
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE
+        || input->service.family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || input->service.family == NINLIL_FAMILY_CONFIG_RESERVED) {
         if (input->authority.fact
             != NINLIL_MODEL_ORIGIN_AUTH_NOT_APPLICABLE) {
             return NINLIL_E_INVALID_ARGUMENT;
         }
         *out_allowed = 1;
         return NINLIL_OK;
+    }
+
+    if (input->service.family == NINLIL_FAMILY_LATEST_STATE_RESERVED
+        || input->service.family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
+        /* Uplink B5 families follow EventFact origin authority path. */
+    } else if (input->service.family != NINLIL_FAMILY_EVENT_FACT) {
+        return NINLIL_E_INVALID_ARGUMENT;
     }
 
     switch (input->authority.fact) {
@@ -706,7 +738,7 @@ static int build_resource_requests(
             1u)) {
         return 0;
     }
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (family_uses_outbox(input->service.family)) {
         if (!add_request(
                 plan->reserve_requests,
                 &plan->reserve_request_count,
@@ -714,7 +746,7 @@ static int build_resource_requests(
                 input->submission.payload_length)) {
             return 0;
         }
-    } else {
+    } else if (family_uses_event_spool(input->service.family)) {
         if (!add_request(
                 plan->reserve_requests,
                 &plan->reserve_request_count,
@@ -749,7 +781,7 @@ static int build_resource_requests(
             1u)) {
         return 0;
     }
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (family_uses_outbox(input->service.family)) {
         if (!add_request(
                 plan->commit_requests,
                 &plan->commit_request_count,
@@ -757,7 +789,7 @@ static int build_resource_requests(
                 input->submission.payload_length)) {
             return 0;
         }
-    } else {
+    } else if (family_uses_event_spool(input->service.family)) {
         if (!add_request(
                 plan->commit_requests,
                 &plan->commit_request_count,
@@ -897,7 +929,7 @@ static ninlil_status_t evaluate_quota_and_grant(
     }
     plan->next_payload_bytes_in_window = prospective;
 
-    if (input->service.family == NINLIL_FAMILY_EVENT_FACT) {
+    if (family_uses_event_spool(input->service.family)) {
         uint64_t spool_bytes;
         const ninlil_model_origin_grant_snapshot_t *grant =
             &input->authority.grant;
@@ -974,14 +1006,14 @@ static void fill_admission_plan(
     plan->scheduler_owner_sequence = owner_sequence;
     plan->admission_clock_epoch_id = input->clock.clock_epoch_id;
     plan->admitted_at_ms = input->clock.now_ms;
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (family_uses_outbox(input->service.family)) {
         plan->deadline_clock_epoch_id = input->clock.clock_epoch_id;
     }
     plan->absolute_effect_deadline_ms = absolute_effect_deadline;
     plan->absolute_evidence_close_ms = absolute_evidence_close;
     plan->quota = *quota;
     plan->resources = *resources;
-    if (input->service.family == NINLIL_FAMILY_EVENT_FACT) {
+    if (family_uses_event_spool(input->service.family)) {
         plan->grant = input->authority.grant;
     }
 }
@@ -1007,8 +1039,7 @@ ninlil_status_t ninlil_model_submission_preflight(
     }
     (void)memset(out_result, 0, sizeof(*out_result));
     if (input == NULL
-        || (input->service.family != NINLIL_FAMILY_DESIRED_STATE
-            && input->service.family != NINLIL_FAMILY_EVENT_FACT)
+        || !ninlil_model_family_is_admit_supported(input->service.family)
         || (input->service.local_side
                 != NINLIL_MODEL_LOCAL_SUBMISSION_SENDER
             && input->service.local_side
@@ -1056,7 +1087,9 @@ ninlil_status_t ninlil_model_submission_preflight(
     if (!submission_identity_shape_is_valid(input)) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE) {
+    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE
+        || input->service.family == NINLIL_FAMILY_TRANSFER_RESERVED
+        || input->service.family == NINLIL_FAMILY_CONFIG_RESERVED) {
         if (input->submission.effect_deadline_ms == NINLIL_NO_DEADLINE
             || input->submission.effect_deadline_ms
                 < input->service.minimum_deadline_ms
@@ -1111,7 +1144,7 @@ ninlil_status_t ninlil_model_submission_preflight(
     default:
         return NINLIL_E_INVALID_ARGUMENT;
     }
-    if (input->service.family == NINLIL_FAMILY_DESIRED_STATE
+    if (family_uses_outbox(input->service.family)
         && (!checked_add(
                 input->clock.now_ms,
                 input->submission.effect_deadline_ms,

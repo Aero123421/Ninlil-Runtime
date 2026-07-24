@@ -9,6 +9,7 @@ set(NINLIL_ESP_IDF_PORT_PURE_RELATIVE_SOURCES
     ports/esp-idf/src/entropy_publish_logic.c
     ports/esp-idf/src/execution_logic.c
     ports/esp-idf/src/execution_init_logic.c
+    ports/esp-idf/src/platform_availability_logic.c
     ports/esp-idf/src/owner_mailbox_logic.c
     ports/esp-idf/src/owner_lifecycle_logic.c
     ports/esp-idf/src/owner_publish_logic.c

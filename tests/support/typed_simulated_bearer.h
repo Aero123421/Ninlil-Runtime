@@ -146,6 +146,42 @@ const ninlil_test_bearer_trace_record_t *ninlil_test_bearer_trace_at(
     const ninlil_test_bearer_t *bearer,
     size_t index);
 
+/*
+ * Test-only: enqueue a bearer message on the incoming queue for runtime_id
+ * (integration topology C4/C5 transport delivery).
+ */
+int ninlil_test_bearer_deliver_to_runtime(
+    ninlil_test_bearer_t *bearer,
+    const ninlil_id128_t *to_runtime_id,
+    const ninlil_bearer_message_t *message);
+
+/*
+ * Like bearer send but optional peer enqueue (integration C4/C5 transport).
+ * enqueue_peer=0 validates/consumes permit without queueing to peer.
+ */
+ninlil_bearer_status_t ninlil_test_bearer_try_send(
+    ninlil_test_bearer_t *bearer,
+    ninlil_bearer_handle_t handle,
+    const ninlil_tx_permit_t *permit,
+    const ninlil_bearer_message_t *message,
+    ninlil_bearer_send_result_t *out_result,
+    int enqueue_peer);
+
+void ninlil_test_bearer_set_defer_peer_enqueue(
+    ninlil_test_bearer_t *bearer,
+    int enabled);
+
+/*
+ * Integration gate (item 10b): consume permit without typed-bearer logical-byte
+ * equality against runtime tx_request (external C4/C5 transport delivers).
+ */
+ninlil_bearer_status_t ninlil_test_bearer_integration_gate_send(
+    ninlil_test_bearer_t *bearer,
+    ninlil_bearer_handle_t handle,
+    const ninlil_tx_permit_t *permit,
+    const ninlil_bearer_message_t *message,
+    ninlil_bearer_send_result_t *out_result);
+
 #ifdef __cplusplus
 }
 #endif

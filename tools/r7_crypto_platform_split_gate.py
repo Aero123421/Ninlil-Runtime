@@ -301,7 +301,7 @@ def run_self_test() -> int:
         # private path is NOT on the line containing "install".
         (
             HOST_CMAKE,
-            "install(FILES LICENSE\n"
+            "install(FILES LICENSE NOTICE THIRD-PARTY-NOTICES.md\n"
             "    DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/ninlil)",
             "install(FILES\n"
             "    src/radio/r7_crypto_provider.h\n"
