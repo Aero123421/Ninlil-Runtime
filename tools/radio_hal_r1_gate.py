@@ -195,7 +195,7 @@ REQUIRED_SPY_TOKENS = (
     "reenter_transmit_on_validate",
 )
 
-KGUARD_BANNED = ("KGuard", "kguard", "KGUARD")
+PRODUCT_VOCABULARY_BANNED = ("vendor_specific_", "product_specific_")
 
 
 class GateFailure(Exception):
@@ -286,9 +286,9 @@ def check_public_abi_clean() -> None:
         text = read_text(p)
         if "radio_hal" in text or "ninlil_radio_hal" in text:
             fail(f"public header must not mention radio_hal: {p}")
-        for k in KGUARD_BANNED:
-            if k in text and "radio" in text.lower():
-                pass  # public may not mention radio at all for R1
+        for token in PRODUCT_VOCABULARY_BANNED:
+            if token in text:
+                fail(f"public header contains product-specific vocabulary: {p}")
 
 
 def check_authority() -> None:
@@ -317,9 +317,10 @@ def check_header() -> None:
     for alt in ALT_TX_SYMBOLS:
         if alt in text:
             fail(f"radio_hal.h must not declare alternate TX API: {alt}")
-    # Nonclaim may mention "Not KGuard vocabulary"; product symbols are banned.
-    if re.search(r"\bkguard_[a-z_]+", text, re.IGNORECASE):
-        fail("radio_hal.h must not define/use kguard_* symbols")
+    if re.search(
+        r"\b(?:vendor|product)_specific_[a-z_]+", text, re.IGNORECASE
+    ):
+        fail("radio_hal.h must not define/use product-specific symbols")
     # Digest algorithm comment must not be duplicated.
     if text.count("Digest algorithm id:") != 1:
         fail("frame_digest_algorithm comment must appear exactly once")
@@ -438,8 +439,10 @@ def check_source() -> None:
             fail("missing seal immutability working-plan comment")
     if "Last authority callback" not in text:
         fail("missing last authority consume comment")
-    if re.search(r"\bkguard_[a-z_]+", text, re.IGNORECASE):
-        fail("radio_hal.c must not define/use kguard_* symbols")
+    if re.search(
+        r"\b(?:vendor|product)_specific_[a-z_]+", text, re.IGNORECASE
+    ):
+        fail("radio_hal.c must not define/use product-specific symbols")
     check_includes(HAL_C)
     check_no_heap_vla(HAL_C)
 
@@ -771,11 +774,11 @@ def self_test() -> None:
             encoding="utf-8",
         )
 
-    def mut_kguard(root: pathlib.Path) -> None:
+    def mut_product_vocabulary(root: pathlib.Path) -> None:
         p = root / "src" / "radio" / "radio_hal.h"
         text = p.read_text(encoding="utf-8")
         p.write_text(
-            text + "\nint kguard_policy_apply(void);\n",
+            text + "\nint vendor_specific_policy_apply(void);\n",
             encoding="utf-8",
         )
 
@@ -828,7 +831,7 @@ def self_test() -> None:
         ("drop plan_matches_seal integrity", mut_drop_seal, False),
         ("weaken monotonic to equality-only", mut_drop_monotonic, False),
         ("drop success exactly-once test", mut_drop_test_case, False),
-        ("inject KGuard vocabulary", mut_kguard, False),
+        ("inject product-specific vocabulary", mut_product_vocabulary, False),
         ("drop cmake gate name", mut_drop_cmake_gate, False),
         ("inject sx1262 in production", mut_sx1262_in_hal, False),
         ("leak alternate TX nm symbols", mut_alt_nm_symbol, True),

@@ -7,7 +7,8 @@ registration function). Expected ESP component contract: include the same
 authority after the shared private list so the binding TU expands once.
 
 Production binding sources must not include/call OS/heap/VLA/platform crypto,
-KGuard, N6, R2/R5/W1/radio HAL, or use calloc/realloc/free/malloc/alloca.
+product-specific adapters, N6, R2/R5/W1/radio HAL, or use
+calloc/realloc/free/malloc/alloca.
 Crypto only via T0 ``ninlil_r7_crypto_*`` wrappers. Exact six production APIs.
 Test seams excluded from production (guarded by NINLIL_R7_BINDING_TEST_BUILD).
 
@@ -94,7 +95,10 @@ BANNED_INCLUDE_RES: tuple[re.Pattern[str], ...] = (
     re.compile(r'#\s*include\s*[<"]\s*signal\.h\s*[>"]'),
     re.compile(r'#\s*include\s*[<"]\s*time\.h\s*[>"]'),
     re.compile(r'#\s*include\s*[<"]\s*sx1262'),
-    re.compile(r'#\s*include\s*[<"]\s*kguard', re.IGNORECASE),
+    re.compile(
+        r'#\s*include\s*[<"]\s*(?:vendor|product)_specific',
+        re.IGNORECASE,
+    ),
 )
 
 BANNED_TOKEN_RES: tuple[tuple[str, re.Pattern[str]], ...] = (

@@ -56,7 +56,7 @@
  *   UNSUPPORTED_SCHEMA - meta schema_version mismatch (no auto-migration)
  *
  * Namespace identity is exact BLOB bytes (1..255), never a path string.
- * KGuard vocabulary is absent from this translation unit.
+ * product-specific vocabulary is absent from this translation unit.
  */
 
 typedef struct storage_entry {

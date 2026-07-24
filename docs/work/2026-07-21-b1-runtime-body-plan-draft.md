@@ -8,7 +8,7 @@
 
 ## 0. 完成条件（master plan §0再掲）
 
-stub / TODO / 未接続candidate / compile-only を完成扱いしない。14 APIすべてがdocs/12正本semanticどおりに動作し、durable pathがcrash/restartで収束することを証拠付きで示す。KGuard固有語彙をportable Coreへ入れない。
+stub / TODO / 未接続candidate / compile-only を完成扱いしない。14 APIすべてがdocs/12正本semanticどおりに動作し、durable pathがcrash/restartで収束することを証拠付きで示す。application-specific語彙をportable Coreへ入れない。
 
 **CI gate（master plan §0準拠）**: 各段階のmerge前提は以下すべて:
 - Configure + build (Linux/macOS, strict warnings)
@@ -596,7 +596,7 @@ B1-a (create/destroy + library実体化)
 2. docs/17 (foundation-domain-store) 変更禁止
 3. git操作禁止（本計画は素案。commit/PRはorchestrator指示待ち）
 4. stub / TODO / compile-only / 未接続candidateの完成扱い禁止
-5. KGuard固有語彙のportable Core流入禁止
+5. application-specific語彙のportable Core流入禁止
 6. 推測でsemanticを補完しない。不明箇所はdocs先行freezeまたはSolレビュー確定を待つ
 7. CI赤（Linux/macOS + ASan/UBSan + ESP-IDF build + consumer link）でのmerge禁止（P1-8反映）
 8. 各段階のNormative根拠に列挙したfile:line以外のdocsを変更しない

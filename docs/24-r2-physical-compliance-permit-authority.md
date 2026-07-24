@@ -3,7 +3,7 @@
 状態: **Normative + private host implementation candidate**（legal / Japan production profile / physical RF / HIL / production complete は未）<br>
 対象: Physical Compliance Permit **authority object**（ADR-0003 **P1**）<br>
 依存: [05](05-security-and-compliance.md)、[23](23-usb-radio-boundary.md)、[ADR-0003](adr/0003-radio-usb-dependency-direction.md)、[ADR-0004](adr/0004-r2-durable-permit-authority.md)、R1 `src/radio/radio_hal.h`、[platform.h](../include/ninlil/platform.h)、[version.h](../include/ninlil/version.h)、[20](20-m3-basic-esp-idf-platform-adapters.md)<br>
-非対象: R3/R5/R4/R9/R6/R7/R10、Japan 数値、legal、public ABI、KGuard、M5 complete、HIL PASS、re-review PASS
+非対象: R3/R5/R4/R9/R6/R7/R10、Japan 数値、legal、public ABI、application integration、M5 complete、HIL PASS、re-review PASS
 
 ## 0. 読み順
 
@@ -47,7 +47,7 @@
 
 ### 1.2 Forbidden claims
 
-legal / Japan / R3–R10 complete / RF·HIL PASS / ledger complete / M5 / `compile==HIL` / logical TxPermit が physical 認可 / KGuard Core 必須 / **independent re-review GO**
+legal / Japan / R3–R10 complete / RF·HIL PASS / ledger complete / M5 / `compile==HIL` / logical TxPermit が physical 認可 / application-specific schema・policy の Core 必須化 / **independent re-review GO**
 
 ### 1.3 用語
 

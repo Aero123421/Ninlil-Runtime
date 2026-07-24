@@ -6,7 +6,7 @@
  *
  * Implements C1 (src/transport/byte_stream.h) under ports/esp-idf.
  * Uses pinned esp_tinyusb managed component. No public include/ninlil ABI.
- * No KGuard vocabulary. No TinyUSB types in the C1 header.
+ * No product-specific vocabulary. No TinyUSB types in the C1 header.
  *
  * Lifecycle (docs/23 §3.1 / §3.4 / C1):
  *   open(endpoint_token) → LINK_LISTENING (stack installed; generation sticky)

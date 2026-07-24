@@ -2,7 +2,7 @@
 
 状態: Reflected<br>
 Reviewer: Claude Code / Fable 5 (high effort)<br>
-対象: `ninlil/README.md`、`ninlil/docs/00`〜`10`、KGuard integration、D-040/D-041
+対象: `ninlil/README.md`、`ninlil/docs/00`〜`10`、reference application integration
 
 ## Review boundary
 
@@ -44,7 +44,7 @@ Fableはread-onlyでレビューし、sourceや仕様書を編集していませ
 
 採用した主な改善は、operator action matrix、Ninlil自身のADR、command lifecycle図、Outcome/deadline reducer、reason code registry、descriptor preset/default、Foundationと後続milestoneのgate分離、Legacy名称の用語固定です。
 
-Fable初回reviewはKGuardの価値確認を早めるexperimental laneを提案しました。最終整合監査でenvironment境界を厳密化し、M1a後はsoftware-only `TEST` lane、PC + USB Cell Agent + Display + Leak + SX1262のphysical `LAB` laneはM3 ESP-IDF/Cell AgentとM5 LAB Tx Gate/radio subsetの完了後と分離しました。どちらもNinlil conformance、production radio、field SLOの代わりにはしません。
+Fable初回reviewはreference applicationによる価値確認を早めるexperimental laneを提案しました。最終整合監査でenvironment境界を厳密化し、M1a後はsoftware-only `TEST` lane、PC + USB Cell Agent + command/event Endpoints + SX1262のphysical `LAB` laneはM3 ESP-IDF/Cell AgentとM5 LAB Tx Gate/radio subsetの完了後と分離しました。どちらもNinlil conformance、production radio、field SLOの代わりにはしません。
 
 ## Final implementation-readiness pass
 

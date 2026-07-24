@@ -43,7 +43,7 @@ build/test registration authorityは`cmake/ninlil_nrw1_t1b_ctest.cmake`の1 file
 
 これらはprivate archiveとESP-IDF private componentからだけ使用し、`include/ninlil/`、install
 include、public libraryへ公開しない。portable sourceはOS、heap、VLA、OpenSSL、mbedTLS、N6、
-R2、R5、W1、radio HAL、SX1262、USB、KGuard型をinclude/callしてはならない。
+R2、R5、W1、radio HAL、SX1262、USB、application-specific型をinclude/callしてはならない。
 R6/T0/T1のAccepted source/API/semanticを変更しない。
 
 ## 2. Closed scope and non-claims

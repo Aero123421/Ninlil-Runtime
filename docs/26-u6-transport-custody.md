@@ -30,7 +30,7 @@
 - compile success = power-cut HIL PASS
 - fragmentation / resume 対応済み
 - control protocol v1 catalog への silent type 追加
-- KGuard 業務 payload 解釈が Core / custody 必須であること
+- application payload の業務解釈が Core / custody に必須であること
 
 ## 2. 概念分離
 

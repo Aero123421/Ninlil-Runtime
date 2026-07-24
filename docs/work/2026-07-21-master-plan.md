@@ -5,7 +5,7 @@
 
 ## 0. 完成条件(root指示の再掲・凍結)
 
-public Runtime、POSIX/ESP-IDF ports、PC間E2E、USB Controller/Cell Agent、SX1262 radio software path、Join/Attachment、relay、multi-parent、fragmentation、priority/deadline/retry、複数Capability Service、汎用ApplicationData、security、Japan compliance enforcement、CI、Apache-2.0 packaging、examples、利用者/開発者文書、release candidate までを**コード + 非実機検証で接続済み**にし、残作業が「物理実機の flash / USB / RF / power-cut / Display node / Leak node E2E」だけであることを証拠付きで限定する。stub / TODO / 未接続candidate / compile-only を完成扱いしない。KGuard固有語彙をportable Coreへ入れない。
+public Runtime、POSIX/ESP-IDF ports、PC間E2E、USB Controller/Cell Agent、SX1262 radio software path、Join/Attachment、relay、multi-parent、fragmentation、priority/deadline/retry、複数Capability Service、汎用ApplicationData、security、Japan compliance enforcement、CI、Apache-2.0 packaging、examples、利用者/開発者文書、release candidate までを**コード + 非実機検証で接続済み**にし、残作業が「物理実機の flash / USB / RF / power-cut / Display node / Leak node E2E」だけであることを証拠付きで限定する。stub / TODO / 未接続candidate / compile-only を完成扱いしない。application-specific語彙をportable Coreへ入れない。
 
 **CI前提(Sol high P1-10)**: Linux/macOS + ESP-IDF target build + ASan/UBSan の最小matrixは**各トランチのmerge前提条件**であり、後段トランチではなく常時適用する。CI/レビュー赤のmerge禁止。commit/PRは日本語。
 
@@ -59,7 +59,7 @@ public Runtime、POSIX/ESP-IDF ports、PC間E2E、USB Controller/Cell Agent、SX
 
 - 各トランチ: `docs/work/<date>-<tranche>.md` に計画→レビュー→受入証拠→残課題。
 - 意味ある区切りごとにREADME更新 + push。
-- 禁止事項の常時遵守: dirty D3-S3資産破棄禁止 / `ninlil-r7-t1c-impl` worktree不可侵 / secrets非表示・非commit / KGuard語彙のCore流入禁止 / 赤CIでのmerge禁止。
+- 禁止事項の常時遵守: dirty D3-S3資産破棄禁止 / `ninlil-r7-t1c-impl` worktree不可侵 / secrets非表示・非commit / application-specific語彙のCore流入禁止 / 赤CIでのmerge禁止。
 
 ## 5. レビュー履歴
 

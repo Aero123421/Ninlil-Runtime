@@ -28,7 +28,7 @@ Ninlilは複数の独立したversion domainを持ちます。単一の`protocol
 現行`linkos/`の19-byte wireは **Legacy LinkOS Lab Wire 1** と呼びます。
 
 - Ninlil Wire v1ではありません。
-- KGuard固有enum、16-bit node ID、legacy SQLite/NVS、CLI/envを互換契約にしません。
+- application-specific enum、16-bit node ID、legacy SQLite/NVS、CLI/envを互換契約にしません。
 - Legacy labはbench再現とone-way fixtureにだけ使用します。
 - 新storageへin-place migrationしません。必要なevidenceはread-only export/importで扱います。
 

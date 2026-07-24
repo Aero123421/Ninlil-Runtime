@@ -5,7 +5,7 @@
 
 ## Release goal
 
-Foundation Releaseは、KGuardやradioを一切importせず、次の2種類をrestart-safeに処理するGeneric Transaction Kernelです。
+Foundation Releaseは、application-specific packageやradioを一切importせず、次の2種類をrestart-safeに処理するGeneric Transaction Kernelです。
 
 1. single targetの`DesiredStateCommand`をtarget applicationへ届け、`APPLIED`まで追跡する。
 2. `EventFact`をoriginで保持し、controllerの`DURABLY_RECORDED`まで追跡する。
@@ -47,7 +47,7 @@ Foundation Releaseは、KGuardやradioを一切importせず、次の2種類をre
 - multi-parent / multi-controller HA
 - Wi-Fi / USB production bearer
 - OTA
-- KGuard integration
+- application integration
 - Japan deployment profile
 
 Out-of-scope featureのenumやstubを「対応済み」と表示しません。Public APIが予約済みでも、呼出しは`NINLIL_E_UNSUPPORTED`を返します。
@@ -100,7 +100,7 @@ ninlil/
   requirements-traceability.yaml
 ```
 
-CoreからSQLite、pthread、KGuard、legacy LinkOS、RadioLibを直接includeしてはいけません。
+CoreからSQLite、pthread、application-specific package、legacy LinkOS、RadioLibを直接includeしてはいけません。
 
 ## Foundation public API
 
@@ -306,7 +306,7 @@ Fault hookはtest buildだけで有効ですが、production control flowをbypa
 ### Build/API
 
 - C11 consumerとC++17 consumerがpublic headerだけでcompile/linkできる。
-- CoreがKGuard/legacy/radio/platform private headerをincludeしない。
+- Coreがapplication-specific/legacy/radio/platform private headerをincludeしない。
 - exceptions/RTTI disabled buildが通る。
 - allocator failureを全public allocation pointでtestできる。
 

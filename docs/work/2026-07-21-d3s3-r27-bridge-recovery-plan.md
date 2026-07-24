@@ -79,7 +79,7 @@ DesiredState:
 | `docs/reviews/2026-07-20-d3s3-implementation-candidate.md` | 273/129/128残骸行を280/136/135へ整合、R28（production/bridge追従）を追記 |
 | `docs/work/…` | 台帳・受入証拠 |
 
-制約: public ABI / wire / vector JSON / generator 不変。context拡張禁止（sizeof 754 / align 1 / ceiling 768）。KGuard語彙のCore流入禁止。R16–R27の検査を弱めない。
+制約: public ABI / wire / vector JSON / generator 不変。context拡張禁止（sizeof 754 / align 1 / ceiling 768）。application-specific語彙のCore流入禁止。R16–R27の検査を弱めない。
 
 ## 4. 手順と役割
 

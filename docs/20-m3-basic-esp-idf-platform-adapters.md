@@ -13,7 +13,7 @@
 - ESP-IDF port 全体の完了
 - NVS storage port
 - FreeRTOS **owner-task body**（scheduler 上の exclusive Runtime owner task）の完成
-- USB / LAN gateway、Wi-Fi、SX1262 / radio MAC、Join、KGuard adapter
+- USB / LAN gateway、Wi-Fi、SX1262 / radio MAC、Join、application adapter
 - public Runtime body / `runtime_create` / `runtime_step` の完成
 - 実機 hardware / power-cut HIL 検証の完了
 - V1 release の完了
@@ -45,7 +45,7 @@ Port-owned header は `ninlil/platform.h` だけに依存し、`esp_*.h` / `free
 - 返却 ops は **immutable**。function pointer / `user` は初回 publish 後、state object の lifetime 終了まで不変。shutdown は active flag だけを retire し ops table を消去しない。
 - Runtime が ops を借用する場合は、全 adapter call の完了を待ち `ninlil_runtime_destroy()` を完了してから shutdown、最後に state object の lifetime を終了する。同じ address の新 object は新しい lifetime であり、旧 pointer の使用は契約外。
 - Clock / execution は同一 live object の re-init を拒否する one-shot lifecycle。Entropy は同一 boot/process で init 成功または enable 後 cancel の後に再 arm しない boot-global one-shot lifecycle。
-- KGuard 語彙 0。fail-closed。task context only（ISR fail-closed）。
+- application-specific vocabulary 0。fail-closed。task context only（ISR fail-closed）。
 - 実機/HIL 未実証を完了 claim に使わない。CI は esp32s3 **compile/link** 必須。
 
 ## 4. Clock adapter（`esp_timer`）

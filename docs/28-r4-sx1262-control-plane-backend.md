@@ -3,7 +3,7 @@
 状態: **Normative for R4 host control-plane implementation candidate**（physical RF TX/RX **未実装**; **R4 complete / production radio / RF / legal / HIL / Japan profile ではない**）<br>
 対象: D1 SX1262 backend の **reset / init / SPI control-plane** と fail-closed TX deny<br>
 依存: [05](05-security-and-compliance.md)、[07](07-testing-and-quality.md)、[09](09-roadmap.md)、[18](18-m3-prep-esp-idf-component.md)、[20](20-m3-basic-esp-idf-platform-adapters.md)、[23](23-usb-radio-boundary.md) §9 / §10.2、[ADR-0003](adr/0003-radio-usb-dependency-direction.md)、[ADR-0008](adr/0008-r4-sx1262-control-plane-backend.md)、R1 `src/radio/radio_hal.h`<br>
-非対象: R2 authority body、R3 airtime、R5 profile loader、R6/R7 wire、R9 SPI TX sole-edge 完成、R10 HIL、Japan 数値、legal certification、public ABI、KGuard、RadioLib、physical RF emission<br>
+非対象: R2 authority body、R3 airtime、R5 profile loader、R6/R7 wire、R9 SPI TX sole-edge 完成、R10 HIL、Japan 数値、legal certification、public ABI、application integration、RadioLib、physical RF emission<br>
 番号: **docs/28 + ADR-0008**（docs/25–26 / ADR-0005–0006 は U5/U6 予約、docs/27 / ADR-0007 は R3 予約 — 衝突禁止）
 
 ## 0. 読み順
@@ -67,7 +67,7 @@
 
 | 層 | 場所 | 依存してよい | 依存禁止 |
 | --- | --- | --- | --- |
-| Portable D1 | `drivers/sx126x/*` | C11、自身の header | ESP-IDF、FreeRTOS、`spi_*.h`、termios、TinyUSB、RadioLib、KGuard、`include/ninlil` への型露出 |
+| Portable D1 | `drivers/sx126x/*` | C11、自身の header | ESP-IDF、FreeRTOS、`spi_*.h`、termios、TinyUSB、RadioLib、application-specific型、`include/ninlil` への型露出 |
 | Host bus spy | `tests/support/*` | D1 header | production archive への登録 |
 | ESP bus adapter | `ports/esp-idf/**` | ESP-IDF pin 済み API、D1 bus ops | portable Core への ESP 型逆流、R4 での RF TX |
 | Source authority | `cmake/ninlil_sx1262_sources.cmake` | explicit path list | `file(GLOB)` |

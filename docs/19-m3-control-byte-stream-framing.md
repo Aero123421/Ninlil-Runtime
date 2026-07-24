@@ -20,7 +20,7 @@
 
 - M3 milestone 完了 / Cell Agent firmware 完成
 - USB CDC driver / CDC task / Wi-Fi / TCP socket / NVS / FreeRTOS owner task 実装済み
-- SX1262 / radio MAC / Join / KGuard / security session 完了
+- SX1262 / radio MAC / Join / application integration / security session 完了
 - control/gateway **application message** の意味論完了
 - framing success = delivery / custody / Application Receipt success
 - public C ABI の変更または public wire の固定完了

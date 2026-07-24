@@ -12,7 +12,7 @@ ESP-IDF pin: **v5.5.3**（`ports/esp-idf/ESP_IDF_VERSION`）
 | target compile/link | compile evidence only。HIL PASS ではない |
 | device flash+monitor | HIL。未実施なら未実施 |
 
-**禁止:** M3 complete、production-candidate、compile=HIL、KGuard、USB/NVS/radio。
+**禁止:** M3 complete、production-candidate、compile=HIL、application integration、USB/NVS/radio。
 
 ## 2. Lifecycle authority（単一 mux）
 

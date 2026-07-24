@@ -5,7 +5,7 @@ This is NOT a natural-language semantic / NLP classifier and is NOT a substitute
 for human review. Safety claims about prose synonyms are out of scope.
 
 Authority:
-  1) versioned freeze manifest (spec/frozen/u5-u6-normative-freeze-v1.json)
+  1) versioned freeze manifest (spec/frozen/u5-u6-normative-freeze-v2.json)
   2) SHA-256 of that manifest pinned in this file (PINNED_FREEZE_SHA256)
   3) exact byte pins of docs/25, docs/26, ADR-0005, ADR-0006
   4) exact L6 algorithm fence body + machine-readable constraints from the freeze
@@ -33,11 +33,11 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 # ---------------------------------------------------------------------------
 # Hard pins (must change only with deliberate freeze re-acceptance)
 # ---------------------------------------------------------------------------
-PINNED_FREEZE_RELPATH = "spec/frozen/u5-u6-normative-freeze-v1.json"
+PINNED_FREEZE_RELPATH = "spec/frozen/u5-u6-normative-freeze-v2.json"
 PINNED_FREEZE_ID = "u5-u6-normative-freeze"
-PINNED_FREEZE_VERSION = "1"
+PINNED_FREEZE_VERSION = "2"
 PINNED_FREEZE_SHA256 = (
-    "71750e9a7ce2f9298a9bd77012d1f1601864323c5ce959de071b9ee6f6ad5cbc"
+    "deff647c3ed9da31c9a521cea398aa49440ccd9884b8031d468cab37fea7e783"
 )
 PINNED_HASH_ALGORITHM = "SHA-256"
 # Self-test only: when set, load_freeze accepts this digest instead of PINNED_FREEZE_SHA256

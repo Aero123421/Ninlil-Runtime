@@ -1,7 +1,7 @@
 /*
  * R7 T1b portable context binding + verified HKDF schedule (docs/33).
  *
- * Private C11. No heap, VLA, OS, platform crypto, N6/R2/R5/W1/radio/KGuard.
+ * Private C11. No heap, VLA, OS, platform crypto, N6/R2/R5/W1/radio/product-specific.
  * SHA/HKDF only via ninlil_r7_crypto_* T0 portable wrappers.
  *
  * Validation priority (docs/33 §6): shape → opaque shape → structural →
