@@ -2,6 +2,12 @@
  * V1-LAB example: Display node uplink LatestState submit→delivery (loopback).
  */
 
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE
+#else
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "v1_lab_loopback_uplink.h"
 
 #include <limits.h>

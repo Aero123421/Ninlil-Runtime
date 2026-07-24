@@ -2,6 +2,12 @@
  * V1-LAB example: Site Controller downlink submit→delivery (host simulation).
  */
 
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE
+#else
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "v1_lab_host_sim.h"
 
 #include <stdio.h>
