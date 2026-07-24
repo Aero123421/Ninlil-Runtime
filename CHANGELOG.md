@@ -20,6 +20,8 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - POSIX loopback bearer が nonblocking stream の途中読みを EAGAIN 越しに保持するよう修正し、header/body 分割を強制する回帰テストを追加した。
 - POSIX loopback bearer の切断競合時に Linux の SIGPIPE でプロセスが終了しないよう、socket send を fail-closed にした。
 - 2-process LAB E2E が片側の tight loop で先に終了しないよう peer へ実行機会を与え、delivery 後の receipt 送信まで待つよう修正した。
+- C4 LAB USB の caller-owned object に実装型が要求する alignment を付与し、Clang の stack layout に依存する初期化失敗を解消した。
+- C5 radio / C4-C5 E2E test fixture の所有資源を明示解放し、Linux LeakSanitizer gate を満たすよう修正した。
 
 ### Changed
 

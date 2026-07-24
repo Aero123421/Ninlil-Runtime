@@ -35,6 +35,9 @@ struct ninlil_c4_lab_usb {
 _Static_assert(
     sizeof(ninlil_c4_lab_usb_t) <= NINLIL_C4_LAB_USB_OBJECT_BYTES,
     "c4_lab_usb object exceeds OBJECT_BYTES ceiling");
+_Static_assert(
+    _Alignof(ninlil_c4_lab_usb_object_t) >= _Alignof(ninlil_c4_lab_usb_t),
+    "c4_lab_usb caller object must satisfy implementation alignment");
 
 static uint32_t crc32_fold(const uint8_t *data, uint32_t len)
 {

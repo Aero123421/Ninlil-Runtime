@@ -73,13 +73,22 @@ typedef struct ninlil_c4_lab_usb_config {
     uint32_t owner_token;
 } ninlil_c4_lab_usb_config_t;
 
+#if defined(__cplusplus)
+#define NINLIL_C4_LAB_USB_ALIGNAS(value) alignas(value)
+#else
+#define NINLIL_C4_LAB_USB_ALIGNAS(value) _Alignas(value)
+#endif
+
 typedef struct ninlil_c4_lab_usb_object {
+    NINLIL_C4_LAB_USB_ALIGNAS(NINLIL_LOGICAL_SESSION_OBJECT_ALIGN)
     uint8_t storage[NINLIL_C4_LAB_USB_OBJECT_BYTES];
 } ninlil_c4_lab_usb_object_t;
 
 typedef struct ninlil_c4_lab_usb ninlil_c4_lab_usb_t;
 
 #define NINLIL_C4_LAB_USB_OBJECT_INIT {{0}}
+
+#undef NINLIL_C4_LAB_USB_ALIGNAS
 
 size_t ninlil_c4_lab_usb_object_size(void);
 

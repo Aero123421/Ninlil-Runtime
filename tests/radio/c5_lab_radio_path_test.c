@@ -248,6 +248,19 @@ static int env_setup(radio_env_t *e)
     return 0;
 }
 
+static void env_cleanup(radio_env_t *e)
+{
+    if (e == NULL) {
+        return;
+    }
+    ninlil_test_storage_destroy(e->storage);
+    ninlil_test_clock_destroy(e->clock);
+    ninlil_test_entropy_destroy(e->entropy);
+    e->storage = NULL;
+    e->clock = NULL;
+    e->entropy = NULL;
+}
+
 static int test_happy_tx_rx(void)
 {
     radio_env_t e;
@@ -271,6 +284,7 @@ static int test_happy_tx_rx(void)
     ninlil_c5_lab_radio_stats_snapshot(e.radio_tx, &stats);
     REQUIRE(stats.spi_tx_count >= 1u);
     REQUIRE(stats.tx_ok >= 1u);
+    env_cleanup(&e);
     (void)fprintf(stderr, "PASS happy_tx_rx\n");
     return 0;
 }
@@ -295,6 +309,7 @@ static int test_replay_reject(void)
         ninlil_c5_lab_radio_irq_rx_admit(
             e.radio_rx, recv, sizeof(recv), &recv_len)
         == NINLIL_C5_LAB_RADIO_FIFO_EMPTY);
+    env_cleanup(&e);
     (void)fprintf(stderr, "PASS replay_reject\n");
     return 0;
 }
@@ -325,6 +340,7 @@ static int test_auth_fail(void)
         ninlil_c5_lab_radio_irq_rx_admit(
             e.radio_rx, recv, sizeof(recv), &recv_len)
         == NINLIL_C5_LAB_RADIO_AUTH_FAILED);
+    env_cleanup(&e);
     (void)fprintf(stderr, "PASS auth_fail\n");
     return 0;
 }
@@ -343,6 +359,7 @@ static int test_permit_fail(void)
         == NINLIL_C5_LAB_RADIO_PERMIT_DENIED);
     ninlil_c6_lab_stats(e.c6, &c6_stats);
     REQUIRE(c6_stats.spi_tx_count == 0u);
+    env_cleanup(&e);
     (void)fprintf(stderr, "PASS permit_fail\n");
     return 0;
 }

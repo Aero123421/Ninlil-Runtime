@@ -397,6 +397,9 @@ int main(void)
     REQUIRE(radio_recv_len == sizeof(radio_payload) - 1u);
     REQUIRE(memcmp(recv, radio_payload, radio_recv_len) == 0);
 
+    ninlil_test_storage_destroy(storage);
+    ninlil_test_clock_destroy(clock);
+    ninlil_test_entropy_destroy(entropy);
     (void)fprintf(stderr, "c4_c5_lab_path_e2e_test ok\n");
     return 0;
 }
