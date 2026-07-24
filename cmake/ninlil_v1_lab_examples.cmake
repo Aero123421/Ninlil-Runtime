@@ -55,6 +55,7 @@ function(ninlil_v1_lab_examples_register)
             C_EXTENSIONS OFF
             NINLIL_TEST_ONLY_ARTIFACT TRUE
         )
+        ninlil_apply_posix_host_feature_macros(${target})
         ninlil_apply_strict_warnings(${target})
     endfunction()
 
@@ -99,6 +100,7 @@ function(ninlil_v1_lab_examples_register)
             C_EXTENSIONS OFF
             NINLIL_TEST_ONLY_ARTIFACT TRUE
         )
+        ninlil_apply_posix_host_feature_macros(${_uplink_target})
         ninlil_apply_strict_warnings(${_uplink_target})
     endforeach()
 

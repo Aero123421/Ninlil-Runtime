@@ -2,12 +2,6 @@
  * V1-LAB example: Cell Agent USB custody + radio TX (host simulation).
  */
 
-#if defined(__APPLE__)
-#define _DARWIN_C_SOURCE
-#else
-#define _XOPEN_SOURCE 700
-#endif
-
 #include "v1_lab_host_sim.h"
 
 #include <stdio.h>

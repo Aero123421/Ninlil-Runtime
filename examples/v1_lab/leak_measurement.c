@@ -2,12 +2,6 @@
  * V1-LAB example: Leak node uplink MeasurementBatch submit→delivery (loopback).
  */
 
-#if defined(__APPLE__)
-#define _DARWIN_C_SOURCE
-#else
-#define _XOPEN_SOURCE 700
-#endif
-
 #include "v1_lab_loopback_uplink.h"
 
 #include <limits.h>

@@ -185,10 +185,10 @@ function(ninlil_apply_strict_warnings target)
     endif()
 endfunction()
 
-# Single source of feature macros for POSIX SQLite library/example/tests.
+# Single source of feature macros for POSIX host targets.
 # glibc + -std=c11 (no extensions): realpath needs XSI; flock/MAP_ANONYMOUS
 # need _DEFAULT_SOURCE. macOS keeps _DARWIN_C_SOURCE only.
-function(ninlil_apply_posix_sqlite_feature_macros target)
+function(ninlil_apply_posix_host_feature_macros target)
     if(APPLE)
         target_compile_definitions(${target} PRIVATE
             _DARWIN_C_SOURCE
@@ -201,19 +201,14 @@ function(ninlil_apply_posix_sqlite_feature_macros target)
     endif()
 endfunction()
 
+function(ninlil_apply_posix_sqlite_feature_macros target)
+    ninlil_apply_posix_host_feature_macros(${target})
+endfunction()
+
 # Feature macros for A1 POSIX USB serial (termios/poll/TIOCEXCL) under
 # C_EXTENSIONS OFF. Host-only; not installed; not part of public package.
 function(ninlil_apply_posix_usb_serial_feature_macros target)
-    if(APPLE)
-        target_compile_definitions(${target} PRIVATE
-            _DARWIN_C_SOURCE
-        )
-    else()
-        target_compile_definitions(${target} PRIVATE
-            _XOPEN_SOURCE=700
-            _DEFAULT_SOURCE
-        )
-    endif()
+    ninlil_apply_posix_host_feature_macros(${target})
 endfunction()
 
 # Host-only durable storage port. Missing SQLite must not break portable core.
