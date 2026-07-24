@@ -62,6 +62,11 @@ struct ninlil_posix_loopback_bearer {
     uint64_t next_permit_sequence;
     uint64_t queued_entries;
     uint64_t queued_bytes;
+    uint8_t receive_header[12];
+    size_t receive_header_offset;
+    uint8_t *receive_body;
+    uint32_t receive_body_length;
+    size_t receive_body_offset;
 };
 
 static int id_is_zero(const ninlil_id128_t *id)
@@ -85,7 +90,11 @@ static int write_all(int fd, const void *buf, size_t len)
     const uint8_t *p = (const uint8_t *)buf;
     size_t off = 0u;
     while (off < len) {
-        ssize_t n = write(fd, p + off, len - off);
+        int flags = 0;
+#ifdef MSG_NOSIGNAL
+        flags = MSG_NOSIGNAL;
+#endif
+        ssize_t n = send(fd, p + off, len - off, flags);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
@@ -116,30 +125,32 @@ static uint32_t read_u32_be(const uint8_t *p)
         | (uint32_t)p[3];
 }
 
-static int read_all(int fd, void *buf, size_t len, int *out_would_block)
+static int read_progress(
+    int fd,
+    void *buf,
+    size_t len,
+    size_t *inout_offset)
 {
     uint8_t *p = (uint8_t *)buf;
-    size_t off = 0u;
 
-    if (out_would_block != NULL) {
-        *out_would_block = 0;
+    if (inout_offset == NULL || *inout_offset > len) {
+        return -1;
     }
-    while (off < len) {
-        ssize_t n = read(fd, p + off, len - off);
+    while (*inout_offset < len) {
+        ssize_t n = read(fd, p + *inout_offset, len - *inout_offset);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            if (out_would_block != NULL
-                && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                *out_would_block = 1;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return 0;
             }
-            return 0;
+            return -1;
         }
         if (n == 0) {
-            return 0;
+            return -1;
         }
-        off += (size_t)n;
+        *inout_offset += (size_t)n;
     }
     return 1;
 }
@@ -226,6 +237,29 @@ static loopback_loan_t *loan_from_wire(
     return loan;
 }
 
+static void receive_frame_reset(ninlil_posix_loopback_bearer_t *bearer)
+{
+    if (bearer == NULL) {
+        return;
+    }
+    free(bearer->receive_body);
+    bearer->receive_body = NULL;
+    bearer->receive_body_length = 0u;
+    bearer->receive_body_offset = 0u;
+    bearer->receive_header_offset = 0u;
+    (void)memset(bearer->receive_header, 0, sizeof(bearer->receive_header));
+}
+
+static void mark_disconnected(ninlil_posix_loopback_bearer_t *bearer)
+{
+    if (bearer == NULL) {
+        return;
+    }
+    receive_frame_reset(bearer);
+    bearer->connected = 0;
+    bearer->availability_epoch += 1u;
+}
+
 static int socket_send_frame(
     ninlil_posix_loopback_bearer_t *bearer,
     const ninlil_bearer_message_t *message)
@@ -246,64 +280,73 @@ static int socket_send_frame(
         && write_all(bearer->peer_fd, body, body_len);
     free(body);
     if (!ok) {
-        bearer->connected = 0;
-        bearer->availability_epoch += 1u;
+        mark_disconnected(bearer);
     }
     return ok;
 }
 
 static int socket_poll_receive(ninlil_posix_loopback_bearer_t *bearer)
 {
-    uint8_t header[12];
     uint32_t magic;
     uint32_t body_len;
-    uint8_t *body;
     ninlil_posix_loopback_wire_message_t wire;
     loopback_loan_t *loan;
-    int would_block = 0;
+    int progress;
 
     if (!bearer->connected || bearer->peer_fd < 0) {
         return 0;
     }
-    if (!read_all(bearer->peer_fd, header, sizeof(header), &would_block)) {
-        if (would_block != 0) {
+    progress = read_progress(
+        bearer->peer_fd,
+        bearer->receive_header,
+        sizeof(bearer->receive_header),
+        &bearer->receive_header_offset);
+    if (progress <= 0) {
+        if (progress == 0) {
             return 0;
         }
-        bearer->connected = 0;
-        bearer->availability_epoch += 1u;
+        mark_disconnected(bearer);
         return 0;
     }
-    magic = read_u32_be(header);
+    magic = read_u32_be(bearer->receive_header);
     if (magic != NINLIL_POSIX_LOOPBACK_WIRE_MAGIC
-        || header[4] != (uint8_t)NINLIL_POSIX_LOOPBACK_WIRE_VERSION) {
-        bearer->connected = 0;
-        bearer->availability_epoch += 1u;
+        || bearer->receive_header[4]
+            != (uint8_t)NINLIL_POSIX_LOOPBACK_WIRE_VERSION) {
+        mark_disconnected(bearer);
         return 0;
     }
-    body_len = read_u32_be(&header[8]);
+    body_len = read_u32_be(&bearer->receive_header[8]);
     if (body_len == 0u || body_len > 1048576u) {
+        mark_disconnected(bearer);
         return 0;
     }
-    body = (uint8_t *)malloc(body_len);
-    if (body == NULL) {
-        return 0;
-    }
-    if (!read_all(bearer->peer_fd, body, body_len, &would_block)) {
-        free(body);
-        if (would_block != 0) {
+    if (bearer->receive_body == NULL) {
+        bearer->receive_body = (uint8_t *)malloc(body_len);
+        if (bearer->receive_body == NULL) {
             return 0;
         }
-        bearer->connected = 0;
-        bearer->availability_epoch += 1u;
+        bearer->receive_body_length = body_len;
+    }
+    progress = read_progress(
+        bearer->peer_fd,
+        bearer->receive_body,
+        bearer->receive_body_length,
+        &bearer->receive_body_offset);
+    if (progress <= 0) {
+        if (progress == 0) {
+            return 0;
+        }
+        mark_disconnected(bearer);
         return 0;
     }
     ninlil_posix_loopback_wire_message_init(&wire);
-    if (!ninlil_posix_loopback_wire_decode(body, body_len, &wire)) {
-        free(body);
+    if (!ninlil_posix_loopback_wire_decode(
+            bearer->receive_body, bearer->receive_body_length, &wire)) {
+        receive_frame_reset(bearer);
         ninlil_posix_loopback_wire_message_clear(&wire);
         return 0;
     }
-    free(body);
+    receive_frame_reset(bearer);
     loan = loan_from_wire(&wire);
     ninlil_posix_loopback_wire_message_clear(&wire);
     if (loan == NULL) {
@@ -328,6 +371,7 @@ static int server_accept_peer(ninlil_posix_loopback_bearer_t *bearer)
         return 0;
     }
     if (bearer->peer_fd >= 0) {
+        receive_frame_reset(bearer);
         (void)close(bearer->peer_fd);
         bearer->peer_fd = -1;
     }
@@ -756,6 +800,7 @@ void ninlil_posix_loopback_bearer_destroy(ninlil_posix_loopback_bearer_t *bearer
         && bearer->config.role == NINLIL_POSIX_LOOPBACK_BEARER_ROLE_SERVER) {
         (void)unlink(bearer->owned_socket_path);
     }
+    receive_frame_reset(bearer);
     free(bearer->permits);
     free(bearer);
 }

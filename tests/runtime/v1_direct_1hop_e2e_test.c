@@ -35,6 +35,7 @@
 #define SCENARIO_RESTART 5u
 #define SCENARIO_DUPLICATE 6u
 #define SCENARIO_LATEST_STATE 7u
+#define PEER_PROGRESS_STEPS 2000u
 
 static const uint8_t CTRL_NS[] = "v1-direct-1hop-ctrl";
 static const uint8_t END_NS[] = "v1-direct-1hop-end";
@@ -481,7 +482,7 @@ static int run_endpoint_process(
             }
         }
     }
-    for (step = 0u; step < 512u; ++step) {
+    for (step = 0u; step < PEER_PROGRESS_STEPS; ++step) {
         char cmd = 0;
         if (scenario == SCENARIO_RESTART && step == 8u && restarted == 0) {
             if (read_byte(restart_fd, &cmd) && cmd == 'R') {
@@ -503,16 +504,22 @@ static int run_endpoint_process(
         if (scenario == SCENARIO_TIMEOUT && step > 16u) {
             break;
         }
-        if (scenario == SCENARIO_HAPPY && g_delivery_calls >= 1u) {
+        if (scenario == SCENARIO_HAPPY && g_delivery_calls >= 1u
+            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
             break;
         }
-        if (scenario == SCENARIO_DATA_LOSS && g_delivery_calls >= 1u) {
+        if (scenario == SCENARIO_DATA_LOSS && g_delivery_calls >= 1u
+            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
             break;
         }
-        if (scenario == SCENARIO_RESTART && restarted != 0 && g_delivery_calls >= 1u) {
+        if (scenario == SCENARIO_RESTART && restarted != 0
+            && g_delivery_calls >= 1u
+            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
             break;
         }
-        if (scenario == SCENARIO_DUPLICATE && g_delivery_calls >= 1u && step > 12u) {
+        if (scenario == SCENARIO_DUPLICATE && g_delivery_calls >= 1u
+            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u
+            && step > 12u) {
             break;
         }
         if (scenario == SCENARIO_LATEST_STATE
@@ -520,6 +527,7 @@ static int run_endpoint_process(
             && ninlil_posix_lab_platform_test_inject_recv_count(platform) >= 1u) {
             break;
         }
+        (void)usleep(1000);
     }
     if (scenario == SCENARIO_DUPLICATE && g_delivery_calls != 1u) {
         (void)write_byte(result_fd, 'F');
@@ -695,7 +703,7 @@ static int run_controller_process(
         }
         (void)unlink(ready_path);
     }
-    for (step = 0u; step < 512u; ++step) {
+    for (step = 0u; step < PEER_PROGRESS_STEPS; ++step) {
         if (scenario == SCENARIO_RESTART && step == 4u && restarted == 0) {
             (void)write_byte(restart_fd, 'R');
             (void)ninlil_runtime_destroy(runtime);
@@ -775,10 +783,12 @@ static int run_controller_process(
             g_outcome_satisfied = 1u;
             break;
         }
-        if (scenario == SCENARIO_LATEST_STATE && g_delivery_calls >= 1u) {
+        if (scenario == SCENARIO_LATEST_STATE && g_delivery_calls >= 1u
+            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
             g_outcome_satisfied = 1u;
             break;
         }
+        (void)usleep(1000);
     }
     if (scenario == SCENARIO_TIMEOUT) {
         if (g_outcome_satisfied != 0u) {
@@ -933,6 +943,7 @@ static int run_scenario_once(uint32_t scenario, uint64_t seed)
     char socket_path[1024];
     char ctrl_db[1024];
     char end_db[1024];
+    char ready_path[1024];
     char workdir[512];
     int ctrl_go[2];
     int ctrl_res[2];
@@ -957,9 +968,13 @@ static int run_scenario_once(uint32_t scenario, uint64_t seed)
     REQUIRE(snprintf(end_db, sizeof(end_db),
         "%s/direct-1hop-end-%u.db", workdir, scenario)
         > 0);
+    REQUIRE(snprintf(ready_path, sizeof(ready_path),
+        "%s/direct-1hop-%u-ready", workdir, scenario)
+        > 0);
     (void)unlink(socket_path);
     (void)unlink(ctrl_db);
     (void)unlink(end_db);
+    (void)unlink(ready_path);
 
     REQUIRE(pipe(ctrl_go) == 0);
     REQUIRE(pipe(ctrl_res) == 0);
@@ -1030,14 +1045,7 @@ static int run_scenario_once(uint32_t scenario, uint64_t seed)
     (void)unlink(socket_path);
     (void)unlink(ctrl_db);
     (void)unlink(end_db);
-    {
-        char ready_path[1024];
-        if (snprintf(ready_path, sizeof(ready_path),
-                "%s/direct-1hop-%u-ready", workdir, scenario)
-            > 0) {
-            (void)unlink(ready_path);
-        }
-    }
+    (void)unlink(ready_path);
     return 0;
 }
 

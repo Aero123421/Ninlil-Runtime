@@ -3473,6 +3473,31 @@ if(NINLIL_BUILD_TESTS)
             COMMAND ninlil_v1_posix_provider_conformance_test
         )
 
+        add_executable(ninlil_posix_loopback_partial_read_test
+            tests/port/posix_loopback_bearer_partial_read_test.c
+        )
+        target_include_directories(ninlil_posix_loopback_partial_read_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+        )
+        target_link_libraries(ninlil_posix_loopback_partial_read_test PRIVATE
+            ninlil_posix_lab_platform
+            ninlil
+        )
+        set_target_properties(ninlil_posix_loopback_partial_read_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_host_feature_macros(
+            ninlil_posix_loopback_partial_read_test)
+        ninlil_apply_strict_warnings(ninlil_posix_loopback_partial_read_test)
+        add_test(
+            NAME posix_loopback_partial_read
+            COMMAND ninlil_posix_loopback_partial_read_test
+        )
+        set_tests_properties(posix_loopback_partial_read PROPERTIES TIMEOUT 10)
+
         add_executable(ninlil_v1_posix_platform_restart_e2e_test
             tests/runtime/v1_posix_platform_restart_e2e_test.c
         )

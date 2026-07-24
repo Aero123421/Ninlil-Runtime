@@ -16,6 +16,10 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - SQLite3 を無効化した portable build では、SQLite-backed POSIX LAB platform を必要とする E2E だけを明示的に skip するよう修正した。
 - GCC 13 の `-Wformat-truncation` で検出された direct 1-hop test の cleanup path buffer を修正した。
 - service exact-reattach test の callback 構造体をゼロ初期化し、未初期化 stack 値に依存する非決定的失敗を解消した。
+- POSIX provider restart test から allocator のアドレス再利用に依存する比較を除き、provider 状態の再生成を意味的に検証するよう修正した。
+- POSIX loopback bearer が nonblocking stream の途中読みを EAGAIN 越しに保持するよう修正し、header/body 分割を強制する回帰テストを追加した。
+- POSIX loopback bearer の切断競合時に Linux の SIGPIPE でプロセスが終了しないよう、socket send を fail-closed にした。
+- 2-process LAB E2E が片側の tight loop で先に終了しないよう peer へ実行機会を与え、delivery 後の receipt 送信まで待つよう修正した。
 
 ### Changed
 
@@ -24,7 +28,9 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ### Verification
 
-- macOS host で sanitizer 有効の全 CTest **254/254**、統合 E2E、4 examples、installable consumer smoke が成功。
+- macOS host で sanitizer 有効の全 CTest **255/255**、統合 E2E、4 examples、installable consumer smoke が成功。
+- macOS の Display / provider restart / direct 1-hop を各50回、fragmented loopback receive を100回連続実行して成功。
+- SQLite3-disabled portable build の全 CTest **243/243** が成功。
 - GitHub Actions の required checks 成功後にのみタグと prerelease を公開する。
 
 ### Known limitations（V1 LAB RC2）

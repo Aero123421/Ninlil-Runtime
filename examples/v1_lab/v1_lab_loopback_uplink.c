@@ -28,6 +28,7 @@
 
 #define UPLINK_SCENARIO_LATEST 1u
 #define UPLINK_SCENARIO_MEASUREMENT 2u
+#define UPLINK_PEER_PROGRESS_STEPS 2000u
 
 static const uint8_t CTRL_NS[] = "v1-lab-uplink-ctrl";
 static const uint8_t END_NS[] = "v1-lab-uplink-end";
@@ -359,7 +360,7 @@ static int run_endpoint_child(
             return 12;
         }
     }
-    for (step = 0u; step < 512u; ++step) {
+    for (step = 0u; step < UPLINK_PEER_PROGRESS_STEPS; ++step) {
         fill_step_budget(&budget);
         (void)memset(&step_result, 0, sizeof(step_result));
         (void)ninlil_runtime_step(runtime, &budget, &step_result);
@@ -378,6 +379,7 @@ static int run_endpoint_child(
                 (void)ninlil_test_clock_advance(clock, 400u);
             }
         }
+        (void)usleep(1000);
     }
     if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
         if (ninlil_posix_lab_platform_test_inject_send_count(platform) < 1u) {
@@ -520,11 +522,12 @@ static int run_controller_child(
         }
         (void)unlink(ready_path);
     }
-    for (step = 0u; step < 512u; ++step) {
+    for (step = 0u; step < UPLINK_PEER_PROGRESS_STEPS; ++step) {
         fill_step_budget(&budget);
         (void)memset(&step_result, 0, sizeof(step_result));
         (void)ninlil_runtime_step(runtime, &budget, &step_result);
-        if (g_delivery_calls >= 1u) {
+        if (g_delivery_calls >= 1u
+            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
             break;
         }
         if (step > 8u) {
@@ -534,6 +537,7 @@ static int run_controller_child(
                 (void)ninlil_test_clock_advance(clock, 400u);
             }
         }
+        (void)usleep(1000);
     }
     if (g_delivery_calls < 1u) {
         (void)write_byte(result_fd, 'F');
@@ -726,6 +730,7 @@ static int run_once(ninlil_family_t family, uint64_t seed)
     char socket_path[512];
     char ctrl_db[512];
     char end_db[512];
+    char ready_path[512];
     char workdir[512];
     uint32_t scenario = family_to_scenario(family);
     int ctrl_go[2];
@@ -753,12 +758,16 @@ static int run_once(ninlil_family_t family, uint64_t seed)
             <= 0
         || snprintf(end_db, sizeof(end_db),
                "%s/v1-lab-uplink-end-%u.db", workdir, scenario)
+            <= 0
+        || snprintf(ready_path, sizeof(ready_path),
+               "%s/v1-lab-uplink-%u-ready", workdir, scenario)
             <= 0) {
         return 0;
     }
     (void)unlink(socket_path);
     (void)unlink(ctrl_db);
     (void)unlink(end_db);
+    (void)unlink(ready_path);
 
     if (pipe(ctrl_go) != 0 || pipe(ctrl_res) != 0 || pipe(end_go) != 0
         || pipe(end_res) != 0 || pipe(sync_pipe) != 0) {
@@ -801,6 +810,7 @@ static int run_once(ninlil_family_t family, uint64_t seed)
     (void)unlink(socket_path);
     (void)unlink(ctrl_db);
     (void)unlink(end_db);
+    (void)unlink(ready_path);
     return 1;
 }
 

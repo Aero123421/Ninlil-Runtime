@@ -56,23 +56,27 @@ static int test_restart_cycle(void)
     const ninlil_platform_ops_t *ops_after;
     const char *path_before;
     const char *path_after;
-    const ninlil_storage_ops_t *storage_before;
-    const ninlil_storage_ops_t *storage_after;
+    ninlil_test_clock_t *clock_before;
+    ninlil_time_sample_t sample;
 
     ninlil_posix_lab_platform_config_defaults(&config);
     platform = ninlil_posix_lab_platform_create(&config);
     REQUIRE(platform != NULL);
     path_before = ninlil_posix_lab_platform_database_path(platform);
     ops_before = ninlil_posix_lab_platform_ops(platform);
-    storage_before = ops_before == NULL ? NULL : ops_before->storage;
-    REQUIRE(path_before != NULL && ops_before != NULL && storage_before != NULL);
+    clock_before = ninlil_posix_lab_platform_test_clock(platform);
+    REQUIRE(path_before != NULL && ops_before != NULL
+        && ops_before->storage != NULL && clock_before != NULL);
+    REQUIRE(ninlil_test_clock_script(
+                clock_before, NINLIL_PORT_TEMPORARY_FAILURE, NULL, 1u)
+        == 1);
     REQUIRE(ninlil_posix_lab_platform_restart(platform) == 1);
     ops_after = ninlil_posix_lab_platform_ops(platform);
-    storage_after = ops_after == NULL ? NULL : ops_after->storage;
     path_after = ninlil_posix_lab_platform_database_path(platform);
-    REQUIRE(ops_after != NULL && path_after != NULL && storage_after != NULL);
+    REQUIRE(ops_after != NULL && path_after != NULL && ops_after->storage != NULL);
     REQUIRE(strcmp(path_before, path_after) == 0);
-    REQUIRE(storage_before != storage_after);
+    REQUIRE(ops_after->clock->now(ops_after->clock->user, &sample)
+        == NINLIL_PORT_OK);
     ninlil_posix_lab_platform_destroy(platform);
     return 0;
 }
