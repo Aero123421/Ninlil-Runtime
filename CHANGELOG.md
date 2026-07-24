@@ -15,6 +15,7 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - V1 LAB examples が Linux の厳格 C11 build でも POSIX API を正しく宣言するよう修正した。
 - SQLite3 を無効化した portable build では、SQLite-backed POSIX LAB platform を必要とする E2E だけを明示的に skip するよう修正した。
 - GCC 13 の `-Wformat-truncation` で検出された direct 1-hop test の cleanup path buffer を修正した。
+- service exact-reattach test の callback 構造体をゼロ初期化し、未初期化 stack 値に依存する非決定的失敗を解消した。
 
 ### Changed
 

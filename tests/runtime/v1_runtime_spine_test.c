@@ -447,6 +447,7 @@ static int test_register_exact_reattach(void)
     REQUIRE(env_create_runtime(&env, 4u));
     REQUIRE(env_register_service(&env, 0x71u));
     descriptor = desired_descriptor(0x71u);
+    (void)memset(&callbacks, 0, sizeof(callbacks));
     set_header(&callbacks.abi_version, &callbacks.struct_size, sizeof(callbacks));
     REQUIRE(ninlil_service_register(
                 env.runtime, &descriptor, &callbacks, &second)
