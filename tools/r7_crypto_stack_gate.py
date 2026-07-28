@@ -221,6 +221,20 @@ def source_basename(entry: dict) -> str:
     return pathlib.Path(str(file_path)).name
 
 
+def compile_owner(tokens: list[str]) -> str | None:
+    """Return the exact CMake target that owns the output object."""
+    output: str | None = None
+    for index, token in enumerate(tokens):
+        if token == "-o" and index + 1 < len(tokens):
+            output = tokens[index + 1]
+        elif token.startswith("-o") and len(token) > 2:
+            output = token[2:]
+    if output is None:
+        return None
+    match = re.search(r"(?:^|/)CMakeFiles/([^/]+)\.dir(?:/|$)", output)
+    return match.group(1) if match is not None else None
+
+
 def compile_commands_errors(
     compile_commands: pathlib.Path,
     *,
@@ -240,7 +254,9 @@ def compile_commands_errors(
     if not isinstance(data, list):
         return ["compile_commands is not a JSON list"]
 
-    by_src: dict[str, list[list[str]]] = {name: [] for name in R7_COMPILE_SOURCES}
+    by_src: dict[str, list[tuple[str | None, list[str]]]] = {
+        name: [] for name in R7_COMPILE_SOURCES
+    }
     for entry in data:
         if not isinstance(entry, dict):
             continue
@@ -251,7 +267,7 @@ def compile_commands_errors(
         if not tokens:
             errors.append(f"{base}: empty compile command")
             continue
-        by_src[base].append(tokens)
+        by_src[base].append((compile_owner(tokens), tokens))
 
     for name in R7_COMPILE_SOURCES:
         lines = by_src[name]
@@ -262,14 +278,22 @@ def compile_commands_errors(
                 "CMAKE_EXPORT_COMPILE_COMMANDS=ON)"
             )
             continue
-        # Exactly one production compile line is the intended Host shape; more
-        # than one is ambiguous evidence (e.g. test recompiles of same basename).
-        if len(lines) != 1:
+        owners = [owner for owner, _tokens in lines]
+        allowed_owner_sets = (
+            ["ninlil_runtime_private"],
+            ["ninlil_runtime", "ninlil_runtime_private"],
+        )
+        if sorted(owners, key=lambda value: "" if value is None else value) \
+                not in allowed_owner_sets:
             errors.append(
-                f"{name}: expected exactly one compile_commands entry, "
-                f"got {len(lines)}"
+                f"{name}: compile owners must be exact private-only or "
+                f"private+installed-runtime, got {owners!r}"
             )
-        for tokens in lines:
+        for owner, tokens in lines:
+            if owner is None:
+                errors.append(
+                    f"{name}: output object does not identify a CMake target"
+                )
             joined = tokens  # list for membership
             if "-fstack-usage" not in joined:
                 errors.append(f"{name}: missing -fstack-usage in compile command")
@@ -689,7 +713,8 @@ def run_self_test() -> int:
 
     good_cmd = (
         "cc -O2 -DNDEBUG -fstack-usage -Wframe-larger-than=2560 "
-        "-c /tmp/src/radio/{src} -o /tmp/{src}.o"
+        "-c /tmp/src/radio/{src} "
+        "-o /tmp/build/CMakeFiles/ninlil_runtime_private.dir/src/radio/{src}.o"
     )
     good_cc = [
         _entry("r7_crypto_portable.c", good_cmd.format(src="r7_crypto_portable.c")),
@@ -792,7 +817,8 @@ def run_self_test() -> int:
                 "-c",
                 "/tmp/src/radio/r7_crypto_portable.c",
                 "-o",
-                "x.o",
+                "/tmp/build/CMakeFiles/ninlil_runtime_private.dir/"
+                "src/radio/r7_crypto_portable.c.o",
             ],
             "file": "/tmp/src/radio/r7_crypto_portable.c",
         },
@@ -806,13 +832,36 @@ def run_self_test() -> int:
                 "-c",
                 "/tmp/src/radio/r7_crypto_nonce.c",
                 "-o",
-                "y.o",
+                "/tmp/build/CMakeFiles/ninlil_runtime_private.dir/"
+                "src/radio/r7_crypto_nonce.c.o",
             ],
             "file": "/tmp/src/radio/r7_crypto_nonce.c",
         },
     ]
     if _cc_errs(args_form):
         failures.append(f"arguments form baseline red: {_cc_errs(args_form)}")
+
+    installed_runtime_cc = list(good_cc)
+    installed_runtime_cc.extend(
+        [
+            _entry(
+                source,
+                good_cmd.format(src=source).replace(
+                    "CMakeFiles/ninlil_runtime_private.dir",
+                    "CMakeFiles/ninlil_runtime.dir",
+                ),
+            )
+            for source in R7_COMPILE_SOURCES
+        ]
+    )
+    if _cc_errs(installed_runtime_cc):
+        failures.append(
+            "private+installed-runtime compile ownership baseline red: "
+            f"{_cc_errs(installed_runtime_cc)}"
+        )
+    same_owner_duplicate = list(good_cc) + [dict(good_cc[0])]
+    if not _cc_errs(same_owner_duplicate):
+        failures.append("same-owner duplicate compile command did not go red")
 
     # --- optional maccumulate compile_commands evidence ---
     def _cc_errs_macc(entries: list[dict]) -> list[str]:
@@ -826,7 +875,8 @@ def run_self_test() -> int:
     good_macc_cmd = (
         "cc -O2 -DNDEBUG -fstack-usage -Wframe-larger-than=2560 "
         f"{MACCUMULATE_FLAG} "
-        "-c /tmp/src/radio/{src} -o /tmp/{src}.o"
+        "-c /tmp/src/radio/{src} "
+        "-o /tmp/build/CMakeFiles/ninlil_runtime_private.dir/src/radio/{src}.o"
     )
     good_macc_cc = [
         _entry("r7_crypto_portable.c", good_macc_cmd.format(src="r7_crypto_portable.c")),

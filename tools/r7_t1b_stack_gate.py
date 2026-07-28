@@ -2,11 +2,12 @@
 """R7 T1b binding static-frame gate (docs/33 §8, §10).
 
 .su: exact six production binding functions, static kind, frame <= 2560.
-When --compile-commands is provided: r7_context_binding.c exact once, with
--fstack-usage exact once. An NDEBUG/Release command must have effective final
+When --compile-commands is provided: r7_context_binding.c is compiled by the
+exact private target, and optionally once more by the installable Runtime
+target, with -fstack-usage exact once per owner. An NDEBUG/Release command must have effective final
 optimization -O2; an earlier CMake default (for example -O3) is allowed only
 when the later source-local -O2 overrides it. Missing / ineffective non-O2 /
-duplicate / dynamic / unknown / over-limit are fail-closed.
+unknown-owner / same-owner duplicate / dynamic / unknown / over-limit are fail-closed.
 
 PASS ≠ ESP task stack / adapter chain / T1b Accepted / R7 complete.
 """
@@ -147,6 +148,19 @@ def tokenize_entry(entry: dict) -> list[str]:
     return []
 
 
+def compile_owner(tokens: list[str]) -> str | None:
+    output: str | None = None
+    for index, token in enumerate(tokens):
+        if token == "-o" and index + 1 < len(tokens):
+            output = tokens[index + 1]
+        elif token.startswith("-o") and len(token) > 2:
+            output = token[2:]
+    if output is None:
+        return None
+    match = re.search(r"(?:^|/)CMakeFiles/([^/]+)\.dir(?:/|$)", output)
+    return match.group(1) if match is not None else None
+
+
 def check_compile_commands(path: pathlib.Path) -> list[str]:
     errors: list[str] = []
     try:
@@ -164,25 +178,35 @@ def check_compile_commands(path: pathlib.Path) -> list[str]:
             continue
         if pathlib.Path(file_path).name in COMPILE_SOURCES:
             matches.append(entry)
-    if len(matches) != 1:
+    token_rows = [(compile_owner(tokenize_entry(entry)), tokenize_entry(entry))
+                  for entry in matches]
+    owners = [owner for owner, _tokens in token_rows]
+    if sorted(owners, key=lambda value: "" if value is None else value) not in (
+        ["ninlil_runtime_private"],
+        ["ninlil_runtime", "ninlil_runtime_private"],
+    ):
         errors.append(
-            f"expected exactly one binding compile command, got {len(matches)}"
+            "binding compile owners must be exact private-only or "
+            f"private+installed-runtime, got {owners!r}"
         )
-        return errors
-    tokens = tokenize_entry(matches[0])
-    if tokens.count("-fstack-usage") != 1:
-        errors.append(
-            f"binding TU -fstack-usage count={tokens.count('-fstack-usage')} want 1"
+    for owner, tokens in token_rows:
+        if owner is None:
+            errors.append(
+                "binding TU output object does not identify a CMake target"
+            )
+        if tokens.count("-fstack-usage") != 1:
+            errors.append(
+                f"binding TU -fstack-usage count={tokens.count('-fstack-usage')} want 1"
+            )
+        o_flags = optimization_flags(tokens)
+        is_ndebug = "-DNDEBUG" in tokens or any(
+            tok.startswith("-DNDEBUG=") for tok in tokens
         )
-    o_flags = optimization_flags(tokens)
-    is_ndebug = "-DNDEBUG" in tokens or any(
-        tok.startswith("-DNDEBUG=") for tok in tokens
-    )
-    if is_ndebug and (not o_flags or o_flags[-1] != "-O2"):
-        errors.append(
-            "binding TU NDEBUG build must have effective final -O2, "
-            f"got {o_flags}"
-        )
+        if is_ndebug and (not o_flags or o_flags[-1] != "-O2"):
+            errors.append(
+                "binding TU NDEBUG build must have effective final -O2, "
+                f"got {o_flags}"
+            )
     return errors
 
 
@@ -328,6 +352,9 @@ def run_self_test() -> int:
                 "-fstack-usage",
                 "-c",
                 "r7_context_binding.c",
+                "-o",
+                str(td_path / "CMakeFiles/ninlil_runtime_private.dir/"
+                    "src/radio/r7_context_binding.c.o"),
             ],
         }
         good_path = td_path / "good.json"
@@ -377,12 +404,29 @@ def run_self_test() -> int:
             "-fstack-usage",
             "-c",
             "r7_context_binding.c",
+            "-o",
+            str(td_path / "CMakeFiles/ninlil_runtime_private.dir/"
+                "src/radio/r7_context_binding.c.o"),
         ]
         debug_path = td_path / "debug.json"
         _write_cc(debug_path, [debug_no_o])
         if check_compile_commands(debug_path):
             failures.append(
                 f"Debug no-optimization command red: {check_compile_commands(debug_path)}"
+            )
+
+        runtime_good = dict(good)
+        runtime_good["arguments"] = list(good["arguments"])
+        runtime_good["arguments"][-1] = str(
+            td_path / "CMakeFiles/ninlil_runtime.dir/"
+            "src/radio/r7_context_binding.c.o"
+        )
+        dual_path = td_path / "dual.json"
+        _write_cc(dual_path, [good, runtime_good])
+        if check_compile_commands(dual_path):
+            failures.append(
+                f"private+installed-runtime compile ownership red: "
+                f"{check_compile_commands(dual_path)}"
             )
 
         dup_path = td_path / "dup.json"
