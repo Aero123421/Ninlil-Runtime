@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -36,6 +37,44 @@ static const char NS_TEXT[] = "org.ninlil.examples";
 static const char *g_program_path;
 
 static uint32_t g_delivery_calls;
+
+static void cleanup_sqlite_database(const char *path)
+{
+    struct stat st;
+    char sidecar[768];
+    char lock_path[768];
+    const char *slash;
+    int have_lock_path = 0;
+
+    if (path == NULL) {
+        return;
+    }
+    if (lstat(path, &st) == 0 && S_ISREG(st.st_mode)) {
+        slash = strrchr(path, '/');
+        if (slash != NULL
+            && snprintf(
+                   lock_path,
+                   sizeof(lock_path),
+                   "%.*s/.ninlil-sqlite-%llx-%llx.lock",
+                   (int)(slash - path),
+                   path,
+                   (unsigned long long)st.st_dev,
+                   (unsigned long long)st.st_ino)
+                > 0) {
+            have_lock_path = 1;
+        }
+    }
+    if (snprintf(sidecar, sizeof(sidecar), "%s-wal", path) > 0) {
+        (void)unlink(sidecar);
+    }
+    if (snprintf(sidecar, sizeof(sidecar), "%s-shm", path) > 0) {
+        (void)unlink(sidecar);
+    }
+    (void)unlink(path);
+    if (have_lock_path != 0) {
+        (void)unlink(lock_path);
+    }
+}
 
 static void set_id(ninlil_id128_t *id, uint8_t first)
 {
@@ -267,6 +306,7 @@ static int run_endpoint_child(
     char gate = 0;
     uint32_t step;
 
+    (void)scenario;
     g_delivery_calls = 0u;
     if (!read_byte(go_fd, &gate) || gate != 'G') {
         (void)write_byte(result_fd, 'F');
@@ -328,6 +368,11 @@ static int run_endpoint_child(
     submission.payload.data = payload;
     submission.payload.length = sizeof(payload);
     set_digest(&submission.content_digest, 0x39u);
+    (void)memset(&submit_result, 0, sizeof(submit_result));
+    set_header(
+        &submit_result.abi_version,
+        &submit_result.struct_size,
+        sizeof(submit_result));
     {
         ninlil_status_t submit_status =
             ninlil_submit(service, &submission, &submit_result);
@@ -340,12 +385,10 @@ static int run_endpoint_child(
         }
     }
     {
-        char workdir[512];
         char ready_path[512];
         int ready_fd;
-        if (getcwd(workdir, sizeof(workdir)) == NULL
-            || snprintf(ready_path, sizeof(ready_path),
-                   "%s/v1-lab-uplink-%u-ready", workdir, scenario)
+        if (snprintf(
+                ready_path, sizeof(ready_path), "%s.ready", socket_path)
                 <= 0) {
             (void)ninlil_runtime_destroy(runtime);
             ninlil_posix_lab_platform_destroy(platform);
@@ -363,10 +406,16 @@ static int run_endpoint_child(
     for (step = 0u; step < UPLINK_PEER_PROGRESS_STEPS; ++step) {
         fill_step_budget(&budget);
         (void)memset(&step_result, 0, sizeof(step_result));
-        (void)ninlil_runtime_step(runtime, &budget, &step_result);
-        if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED
-            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
-            break;
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        if (ninlil_runtime_step(runtime, &budget, &step_result)
+            != NINLIL_OK) {
+            (void)write_byte(result_fd, 'F');
+            (void)ninlil_runtime_destroy(runtime);
+            ninlil_posix_lab_platform_destroy(platform);
+            return 13;
         }
         if (ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u
             && ninlil_posix_lab_platform_test_inject_recv_count(platform) >= 1u) {
@@ -380,18 +429,6 @@ static int run_endpoint_child(
             }
         }
         (void)usleep(1000);
-    }
-    if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
-        if (ninlil_posix_lab_platform_test_inject_send_count(platform) < 1u) {
-            (void)write_byte(result_fd, 'F');
-            (void)ninlil_runtime_destroy(runtime);
-            ninlil_posix_lab_platform_destroy(platform);
-            return 7;
-        }
-        (void)write_byte(result_fd, 'O');
-        (void)ninlil_runtime_destroy(runtime);
-        ninlil_posix_lab_platform_destroy(platform);
-        return 0;
     }
     if (ninlil_posix_lab_platform_test_inject_send_count(platform) < 1u
         || ninlil_posix_lab_platform_test_inject_recv_count(platform) < 1u) {
@@ -429,6 +466,7 @@ static int run_controller_child(
     char gate = 0;
     uint32_t step;
 
+    (void)scenario;
     g_delivery_calls = 0u;
     if (!read_byte(go_fd, &gate) || gate != 'G') {
         (void)write_byte(result_fd, 'F');
@@ -470,38 +508,11 @@ static int run_controller_child(
     if (sync_fd >= 0) {
         (void)write_byte(sync_fd, 'R');
     }
-    if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
-        char workdir[512];
-        char ready_path[512];
-        uint32_t wait;
-        if (getcwd(workdir, sizeof(workdir)) == NULL
-            || snprintf(ready_path, sizeof(ready_path),
-                   "%s/v1-lab-uplink-%u-ready", workdir, scenario)
-                <= 0) {
-            (void)write_byte(result_fd, 'F');
-            (void)ninlil_runtime_destroy(runtime);
-            ninlil_posix_lab_platform_destroy(platform);
-            return 8;
-        }
-        for (wait = 0u; wait < 2000u; ++wait) {
-            if (access(ready_path, F_OK) == 0) {
-                break;
-            }
-            (void)usleep(1000);
-        }
-        (void)unlink(ready_path);
-        (void)write_byte(result_fd, 'O');
-        (void)ninlil_runtime_destroy(runtime);
-        ninlil_posix_lab_platform_destroy(platform);
-        return 0;
-    }
     {
-        char workdir[512];
         char ready_path[512];
         uint32_t wait;
-        if (getcwd(workdir, sizeof(workdir)) == NULL
-            || snprintf(ready_path, sizeof(ready_path),
-                   "%s/v1-lab-uplink-%u-ready", workdir, scenario)
+        if (snprintf(
+                ready_path, sizeof(ready_path), "%s.ready", socket_path)
                 <= 0) {
             (void)write_byte(result_fd, 'F');
             (void)ninlil_runtime_destroy(runtime);
@@ -525,7 +536,17 @@ static int run_controller_child(
     for (step = 0u; step < UPLINK_PEER_PROGRESS_STEPS; ++step) {
         fill_step_budget(&budget);
         (void)memset(&step_result, 0, sizeof(step_result));
-        (void)ninlil_runtime_step(runtime, &budget, &step_result);
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        if (ninlil_runtime_step(runtime, &budget, &step_result)
+            != NINLIL_OK) {
+            (void)write_byte(result_fd, 'F');
+            (void)ninlil_runtime_destroy(runtime);
+            ninlil_posix_lab_platform_destroy(platform);
+            return 13;
+        }
         if (g_delivery_calls >= 1u
             && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
             break;
@@ -733,6 +754,7 @@ static int run_once(ninlil_family_t family, uint64_t seed)
     char ready_path[512];
     char workdir[512];
     uint32_t scenario = family_to_scenario(family);
+    unsigned long long process_tag = (unsigned long long)getpid();
     int ctrl_go[2];
     int ctrl_res[2];
     int end_go[2];
@@ -740,7 +762,8 @@ static int run_once(ninlil_family_t family, uint64_t seed)
     int sync_pipe[2];
     pid_t ctrl_pid;
     pid_t end_pid;
-    int status = 0;
+    int end_status = 0;
+    int ctrl_status = 0;
     char go = 'G';
     char end_ack = 0;
     char ctrl_ack = 0;
@@ -751,22 +774,31 @@ static int run_once(ninlil_family_t family, uint64_t seed)
         return 0;
     }
     if (snprintf(socket_path, sizeof(socket_path),
-            "%s/v1-lab-uplink-%u.sock", workdir, scenario)
+            "%s/v1-lab-uplink-%llu-%u.sock",
+            workdir,
+            process_tag,
+            scenario)
             <= 0
         || snprintf(ctrl_db, sizeof(ctrl_db),
-               "%s/v1-lab-uplink-ctrl-%u.db", workdir, scenario)
+               "%s/v1-lab-uplink-ctrl-%llu-%u.db",
+               workdir,
+               process_tag,
+               scenario)
             <= 0
         || snprintf(end_db, sizeof(end_db),
-               "%s/v1-lab-uplink-end-%u.db", workdir, scenario)
+               "%s/v1-lab-uplink-end-%llu-%u.db",
+               workdir,
+               process_tag,
+               scenario)
             <= 0
         || snprintf(ready_path, sizeof(ready_path),
-               "%s/v1-lab-uplink-%u-ready", workdir, scenario)
+               "%s.ready", socket_path)
             <= 0) {
         return 0;
     }
     (void)unlink(socket_path);
-    (void)unlink(ctrl_db);
-    (void)unlink(end_db);
+    cleanup_sqlite_database(ctrl_db);
+    cleanup_sqlite_database(end_db);
     (void)unlink(ready_path);
 
     if (pipe(ctrl_go) != 0 || pipe(ctrl_res) != 0 || pipe(end_go) != 0
@@ -796,20 +828,39 @@ static int run_once(ninlil_family_t family, uint64_t seed)
     (void)close(end_res[0]);
     read_ctrl = read_byte(ctrl_res[0], &ctrl_ack);
     (void)close(ctrl_res[0]);
-    if (waitpid(end_pid, &status, 0) != end_pid || !WIFEXITED(status)
-        || WEXITSTATUS(status) != 0) {
+    if (waitpid(end_pid, &end_status, 0) != end_pid
+        || !WIFEXITED(end_status) || WEXITSTATUS(end_status) != 0) {
+        (void)fprintf(
+            stderr,
+            "uplink endpoint failed family=%u status=%d\n",
+            (unsigned int)family,
+            WIFEXITED(end_status) ? WEXITSTATUS(end_status) : -1);
         return 0;
     }
-    if (waitpid(ctrl_pid, &status, 0) != ctrl_pid || !WIFEXITED(status)
-        || WEXITSTATUS(status) != 0) {
+    if (waitpid(ctrl_pid, &ctrl_status, 0) != ctrl_pid
+        || !WIFEXITED(ctrl_status) || WEXITSTATUS(ctrl_status) != 0) {
+        (void)fprintf(
+            stderr,
+            "uplink controller failed family=%u status=%d\n",
+            (unsigned int)family,
+            WIFEXITED(ctrl_status) ? WEXITSTATUS(ctrl_status) : -1);
         return 0;
     }
     if (!read_end || !read_ctrl || end_ack != 'O' || ctrl_ack != 'O') {
+        (void)fprintf(
+            stderr,
+            "uplink acknowledgement failed family=%u endpoint=%d/%c "
+            "controller=%d/%c\n",
+            (unsigned int)family,
+            read_end,
+            end_ack,
+            read_ctrl,
+            ctrl_ack);
         return 0;
     }
     (void)unlink(socket_path);
-    (void)unlink(ctrl_db);
-    (void)unlink(end_db);
+    cleanup_sqlite_database(ctrl_db);
+    cleanup_sqlite_database(end_db);
     (void)unlink(ready_path);
     return 1;
 }

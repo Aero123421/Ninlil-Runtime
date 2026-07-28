@@ -23,5 +23,6 @@ Accepted ADRは、Ninlil自体の長期的な設計判断を記録します。�
 - [ADR-0019: Route Authority and Relay Lifecycle](0019-route-relay.md)（**Proposed docs-only**; NRW1を変更しないroute lease/drain/storage lifecycle候補）
 - [ADR-0020: Multi-parent Ownership, Diversity and Failover](0020-multi-parent.md)（**Proposed docs-only**; uplink diversityとsingle downlink owner fencing）
 - [ADR-0021: Multi-frame Durable Transfer and Custody](0021-multi-frame-durable-custody.md)（**Proposed docs-only**; U6 v2不変、private control v3候補）
+- [ADR-0022: Domain Store schema 1 Runtime binding and LAB separation](0022-domain-store-schema1-runtime-binding.md)（**Proposed docs-only**; fresh READ_WRITE transactionのmutation前0-row full scan→同transaction 17 bootstrapをinitial adoption authorityとし、別READ_ONLY upgradeを禁止。Domain-only binding format 2でLAB/downgradeをfence。16 UNINITIALIZED metadata→TRUSTED clock、LAB 34-kind row/namespace fixture分離、自動移行なし、public gateはD3-S4..S12/D4/identity/clock/health/witness解消までred）
 
 個別integrationの採用・移行判断は、各integration側の設計記録へ分離します。Ninlilのgeneric public contractを変更する判断は、本directoryのADRへ記録します。

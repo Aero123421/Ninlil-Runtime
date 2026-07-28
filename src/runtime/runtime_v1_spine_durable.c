@@ -8,16 +8,61 @@
 
 #include <string.h>
 
+#define NINLIL_RT_V1_MARKER_CN 0x434eu
+
 static void set_header(uint16_t *abi_version, uint16_t *struct_size, size_t size)
 {
     *abi_version = NINLIL_ABI_VERSION;
     *struct_size = (uint16_t)size;
 }
 
-static void set_id(ninlil_id128_t *id, uint8_t value)
+static void saturating_increment_u64(uint64_t *value)
 {
-    (void)memset(id, 0, sizeof(*id));
-    id->bytes[sizeof(id->bytes) - 1u] = value;
+    if (*value != UINT64_MAX) {
+        *value += 1u;
+    }
+}
+
+static ninlil_status_t map_storage_mutation_status(
+    ninlil_runtime_t *runtime,
+    ninlil_storage_status_t status)
+{
+    if (status == NINLIL_STORAGE_OK) {
+        return NINLIL_OK;
+    }
+    saturating_increment_u64(&runtime->metrics.storage_failures);
+    switch (status) {
+    case NINLIL_STORAGE_BUSY:
+        return NINLIL_E_WOULD_BLOCK;
+    case NINLIL_STORAGE_NO_SPACE:
+        return NINLIL_E_CAPACITY_EXHAUSTED;
+    case NINLIL_STORAGE_IO_ERROR:
+        return NINLIL_E_STORAGE;
+    case NINLIL_STORAGE_UNSUPPORTED_SCHEMA:
+        return NINLIL_E_UNSUPPORTED;
+    case NINLIL_STORAGE_COMMIT_UNKNOWN:
+        runtime->commit_unknown_fence = 1u;
+        return NINLIL_E_STORAGE_COMMIT_UNKNOWN;
+    case NINLIL_STORAGE_CORRUPT:
+    case NINLIL_STORAGE_NOT_FOUND:
+    case NINLIL_STORAGE_BUFFER_TOO_SMALL:
+        return NINLIL_E_STORAGE_CORRUPT;
+    default:
+        runtime->commit_unknown_fence = 1u;
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+}
+
+static int id_is_zero(const ninlil_id128_t *id)
+{
+    uint32_t index;
+
+    for (index = 0u; index < (uint32_t)sizeof(id->bytes); ++index) {
+        if (id->bytes[index] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static ninlil_status_t storage_txn_commit_full(
@@ -25,26 +70,10 @@ static ninlil_status_t storage_txn_commit_full(
     ninlil_storage_txn_t txn)
 {
     const ninlil_storage_ops_t *storage = runtime->platform->storage;
-    ninlil_storage_status_t status = storage->commit(
-        storage->user, txn, NINLIL_DURABILITY_FULL);
 
-    if (status == NINLIL_STORAGE_OK) {
-        return NINLIL_OK;
-    }
-    if (status == NINLIL_STORAGE_COMMIT_UNKNOWN) {
-        runtime->commit_unknown_fence = 1u;
-        return NINLIL_E_STORAGE_COMMIT_UNKNOWN;
-    }
-    if (status == NINLIL_STORAGE_BUSY) {
-        return NINLIL_E_WOULD_BLOCK;
-    }
-    if (status == NINLIL_STORAGE_NO_SPACE) {
-        return NINLIL_E_CAPACITY_EXHAUSTED;
-    }
-    if (status == NINLIL_STORAGE_IO_ERROR) {
-        return NINLIL_E_STORAGE;
-    }
-    return NINLIL_E_STORAGE_CORRUPT;
+    return map_storage_mutation_status(
+        runtime,
+        storage->commit(storage->user, txn, NINLIL_DURABILITY_FULL));
 }
 
 ninlil_status_t ninlil_rt_v1_spine_service_register_commit(
@@ -66,7 +95,7 @@ ninlil_status_t ninlil_rt_v1_spine_service_register_commit(
     begin_status = storage->begin(
         storage->user, runtime->storage, NINLIL_STORAGE_READ_WRITE, &txn);
     if (begin_status != NINLIL_STORAGE_OK) {
-        return NINLIL_E_STORAGE;
+        return map_storage_mutation_status(runtime, begin_status);
     }
 
     marker_key[0] = 0x4eu;
@@ -86,6 +115,7 @@ ninlil_status_t ninlil_rt_v1_spine_service_register_commit(
         value,
         &runtime->commit_unknown_fence);
     if (status != NINLIL_OK) {
+        saturating_increment_u64(&runtime->metrics.storage_failures);
         (void)storage->rollback(storage->user, txn);
         return status;
     }
@@ -141,7 +171,8 @@ static ninlil_status_t fill_origin_authority(
     ninlil_runtime_t *runtime,
     ninlil_rt_service_slot_t *slot,
     const ninlil_submission_t *submission,
-    ninlil_model_submission_preflight_input_t *input)
+    ninlil_model_submission_preflight_input_t *input,
+    const ninlil_time_sample_t *admission_sample)
 {
     const ninlil_origin_authorization_ops_t *origin;
     ninlil_origin_authorization_request_t request;
@@ -183,7 +214,7 @@ static ninlil_status_t fill_origin_authority(
     } else {
         request.current_window_started_at_ms = 0u;
     }
-    request.now = runtime->started_sample;
+    request.now = *admission_sample;
 
     (void)memset(&decision, 0, sizeof(decision));
     auth_status = origin->evaluate(origin->user, &request, &decision);
@@ -216,7 +247,8 @@ static ninlil_status_t fill_preflight_input(
     ninlil_model_submission_preflight_input_t *input,
     ninlil_runtime_t *runtime,
     ninlil_rt_service_slot_t *slot,
-    const ninlil_submission_t *submission)
+    const ninlil_submission_t *submission,
+    const ninlil_time_sample_t *admission_sample)
 {
     ninlil_status_t status;
 
@@ -254,12 +286,13 @@ static ninlil_status_t fill_preflight_input(
         return status;
     }
     input->clock.state = NINLIL_MODEL_ADMISSION_CLOCK_TRUSTED;
-    input->clock.clock_epoch_id = runtime->started_sample.clock_epoch_id;
-    input->clock.now_ms = runtime->started_sample.now_ms;
+    input->clock.clock_epoch_id = admission_sample->clock_epoch_id;
+    input->clock.now_ms = admission_sample->now_ms;
     input->last_transaction_sequence = runtime->transaction_sequence;
     input->last_scheduler_owner_sequence =
         runtime->last_assigned_scheduler_owner_sequence;
-    status = fill_origin_authority(runtime, slot, submission, input);
+    status = fill_origin_authority(
+        runtime, slot, submission, input, admission_sample);
     if (status != NINLIL_OK) {
         return status;
     }
@@ -271,6 +304,150 @@ static ninlil_status_t fill_preflight_input(
     input->caller_key_mapping.state = NINLIL_MODEL_MAPPING_ABSENT;
     input->event_id_mapping.state = NINLIL_MODEL_MAPPING_ABSENT;
     return NINLIL_OK;
+}
+
+static ninlil_status_t read_admission_clock(
+    ninlil_runtime_t *runtime,
+    ninlil_time_sample_t *out_sample)
+{
+    ninlil_port_status_t status;
+
+    (void)memset(out_sample, 0, sizeof(*out_sample));
+    status = runtime->platform->clock->now(
+        runtime->platform->clock->user, out_sample);
+    if (status == NINLIL_PORT_TEMPORARY_FAILURE) {
+        return NINLIL_E_CLOCK_UNCERTAIN;
+    }
+    if (status != NINLIL_PORT_OK
+        || out_sample->abi_version != NINLIL_ABI_VERSION
+        || out_sample->struct_size != sizeof(*out_sample)
+        || out_sample->trust != NINLIL_CLOCK_TRUSTED
+        || id_is_zero(&out_sample->clock_epoch_id)
+        || out_sample->reserved_zero != 0u) {
+        return NINLIL_E_DEGRADED;
+    }
+    return NINLIL_OK;
+}
+
+static ninlil_status_t fill_transaction_id_draws(
+    ninlil_runtime_t *runtime,
+    ninlil_model_id_allocation_input_t *input)
+{
+    uint32_t index;
+
+    for (index = 0u;
+         index < NINLIL_MODEL_TRANSACTION_ID_MAX_DRAWS;
+         ++index) {
+        ninlil_model_transaction_id_draw_t *draw = &input->draws[index];
+        ninlil_port_status_t status;
+
+        draw->ordinal = index + 1u;
+        status = runtime->platform->entropy->fill(
+            runtime->platform->entropy->user,
+            draw->candidate.bytes,
+            (uint32_t)sizeof(draw->candidate.bytes));
+        input->draw_count = index + 1u;
+        if (status == NINLIL_PORT_TEMPORARY_FAILURE) {
+            draw->entropy_state =
+                NINLIL_MODEL_ENTROPY_DRAW_TEMPORARY_FAILURE;
+            draw->collision_state =
+                NINLIL_MODEL_TRANSACTION_COLLISION_NOT_CHECKED;
+            continue;
+        }
+        if (status != NINLIL_PORT_OK) {
+            draw->entropy_state =
+                NINLIL_MODEL_ENTROPY_DRAW_PERMANENT_FAILURE;
+            draw->collision_state =
+                NINLIL_MODEL_TRANSACTION_COLLISION_NOT_CHECKED;
+            continue;
+        }
+        draw->entropy_state = NINLIL_MODEL_ENTROPY_DRAW_FULL;
+        if (id_is_zero(&draw->candidate)) {
+            draw->collision_state =
+                NINLIL_MODEL_TRANSACTION_COLLISION_NOT_CHECKED;
+            continue;
+        }
+        draw->collision_state =
+            ninlil_rt_find_transaction(runtime, &draw->candidate) == NULL
+            ? NINLIL_MODEL_TRANSACTION_ID_UNIQUE
+            : NINLIL_MODEL_TRANSACTION_ID_COLLISION;
+        if (draw->collision_state == NINLIL_MODEL_TRANSACTION_ID_UNIQUE) {
+            return NINLIL_OK;
+        }
+    }
+    return NINLIL_OK;
+}
+
+static void fill_admitted_transaction(
+    ninlil_rt_transaction_slot_t *transaction,
+    const ninlil_rt_service_slot_t *slot,
+    const ninlil_submission_t *submission,
+    const ninlil_model_admission_write_set_t *write_set,
+    const ninlil_time_sample_t *admission_sample)
+{
+    (void)memset(transaction, 0, sizeof(*transaction));
+    transaction->in_use = 1u;
+    transaction->origin_admission = 1u;
+    transaction->transaction_id = write_set->transaction_id;
+    transaction->service_app_id =
+        slot->descriptor.local_application_instance_id;
+    transaction->event_id = submission->event_id;
+    transaction->source = write_set->plan.source;
+    transaction->service = write_set->plan.service;
+    transaction->content_digest = submission->content_digest;
+    transaction->family = slot->model_service.family;
+    transaction->required_evidence = submission->required_evidence;
+    transaction->latest_evidence =
+        write_set->initial_family_snapshot.latest_evidence;
+    transaction->deadline_verdict =
+        write_set->initial_family_snapshot.deadline_verdict;
+    transaction->transaction_sequence =
+        write_set->plan.transaction_sequence;
+    transaction->record_revision =
+        write_set->transaction_record_revision;
+    transaction->pending_dispatch = 1u;
+    transaction->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
+    transaction->effect_deadline_ms =
+        write_set->plan.absolute_effect_deadline_ms;
+    transaction->evidence_grace_ms = submission->evidence_grace_ms;
+    transaction->admission_clock_epoch_id =
+        write_set->plan.admission_clock_epoch_id;
+    transaction->deadline_clock_epoch_id =
+        write_set->plan.deadline_clock_epoch_id;
+    transaction->generation = submission->generation;
+    transaction->payload_length = (uint32_t)submission->payload.length;
+    if (submission->payload.length != 0u) {
+        (void)memcpy(
+            transaction->owned_payload,
+            submission->payload.data,
+            submission->payload.length);
+    }
+    transaction->semantic_priority =
+        ninlil_rt_v1_semantic_priority_for_family(slot->model_service.family);
+    transaction->bearer_route =
+        (uint8_t)ninlil_rt_v1_default_bearer_route();
+    transaction->reservation_active = 1u;
+    transaction->reservation_evidence_units =
+        slot->model_service.max_evidence_per_target + 1u;
+    transaction->admitted_at_ms = admission_sample->now_ms;
+    transaction->attempt_receipt_timeout_ms =
+        slot->descriptor.attempt_receipt_timeout_ms;
+    transaction->retry_backoff_ms = slot->descriptor.retry_backoff_ms;
+    transaction->retry_budget = NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE;
+    transaction->retry_cycle_id =
+        transaction->family == NINLIL_FAMILY_EVENT_FACT ? 1u : 0u;
+    transaction->attempt_in_cycle = 0u;
+    transaction->cumulative_attempts = 0u;
+    transaction->spool_revision =
+        transaction->family == NINLIL_FAMILY_EVENT_FACT
+        ? (write_set->event_spool_revision != 0u
+                ? write_set->event_spool_revision : 1u)
+        : 0u;
+    transaction->assurance = write_set->assurance;
+    transaction->bound_target_count = 1u;
+    transaction->bound_targets[0].in_use = 1u;
+    transaction->bound_targets[0].pending_dispatch = 1u;
+    transaction->bound_targets[0].target = write_set->plan.target;
 }
 
 ninlil_status_t ninlil_rt_v1_spine_submit_admission(
@@ -286,13 +463,20 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     ninlil_model_admission_commit_input_t commit_in;
     ninlil_model_admission_commit_result_t commit_out;
     ninlil_rt_transaction_slot_t *txn_slot;
+    ninlil_rt_transaction_slot_t *admitted_transaction;
+    ninlil_time_sample_t admission_sample;
     ninlil_status_t status;
     const ninlil_storage_ops_t *storage;
     ninlil_storage_txn_t txn = NULL;
     uint8_t marker_key[32];
-    uint8_t marker_value[NINLIL_RT_V1_TX_ADMISSION_MARKER_V2_BYTES];
+    uint32_t marker_value_length = 0u;
 
-    status = fill_preflight_input(&preflight_in, runtime, slot, submission);
+    status = read_admission_clock(runtime, &admission_sample);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = fill_preflight_input(
+        &preflight_in, runtime, slot, submission, &admission_sample);
     if (status != NINLIL_OK) {
         return status;
     }
@@ -303,6 +487,39 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     if (preflight_out.action == NINLIL_MODEL_SUBMISSION_PREFLIGHT_TERMINAL) {
         *out_result = preflight_out.public_result;
         return preflight_out.api_status;
+    }
+    if (preflight_out.action
+        == NINLIL_MODEL_SUBMISSION_PREFLIGHT_CAPACITY_BLOCK_COMMIT_REQUIRED) {
+        storage = runtime->platform->storage;
+        status = map_storage_mutation_status(
+            runtime,
+            storage->begin(
+                storage->user,
+                runtime->storage,
+                NINLIL_STORAGE_READ_WRITE,
+                &txn));
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        status = ninlil_rt_v1_stage_resource_ledger(
+            runtime,
+            txn,
+            NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT,
+            &preflight_out.capacity_block.next_ledger);
+        if (status != NINLIL_OK) {
+            (void)storage->rollback(storage->user, txn);
+            return status;
+        }
+        status = storage_txn_commit_full(runtime, txn);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        runtime->resource_ledger =
+            preflight_out.capacity_block.next_ledger;
+        out_result->kind = NINLIL_SUBMISSION_REJECTED;
+        out_result->reason = NINLIL_REASON_CAPACITY_EXHAUSTED;
+        out_result->retry_guidance = NINLIL_RETRY_SAME_AFTER;
+        return NINLIL_OK;
     }
     if (preflight_out.action
         != NINLIL_MODEL_SUBMISSION_PREFLIGHT_READY_FOR_ID_ALLOCATION) {
@@ -341,11 +558,10 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
             submission->payload.data,
             submission->payload.length);
     }
-    set_id(&alloc_in.draws[0].candidate, 0x42u);
-    alloc_in.draws[0].ordinal = 1u;
-    alloc_in.draws[0].entropy_state = NINLIL_MODEL_ENTROPY_DRAW_FULL;
-    alloc_in.draws[0].collision_state = NINLIL_MODEL_TRANSACTION_ID_UNIQUE;
-    alloc_in.draw_count = 1u;
+    status = fill_transaction_id_draws(runtime, &alloc_in);
+    if (status != NINLIL_OK) {
+        return status;
+    }
 
     status = ninlil_model_reduce_transaction_id_allocation(
         &alloc_in, &alloc_out);
@@ -365,33 +581,71 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
         return NINLIL_OK;
     }
 
+    admitted_transaction = &runtime->transaction_scratch;
+    fill_admitted_transaction(
+        admitted_transaction,
+        slot,
+        submission,
+        &alloc_out.write_set,
+        &admission_sample);
+    status = ninlil_rt_v1_transaction_record_encode(
+        admitted_transaction,
+        runtime->transaction_codec_bytes,
+        NINLIL_RT_V1_TRANSACTION_RECORD_MAX_BYTES,
+        &marker_value_length);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+
     storage = runtime->platform->storage;
-    if (storage->begin(
-            storage->user, runtime->storage, NINLIL_STORAGE_READ_WRITE, &txn)
-        != NINLIL_STORAGE_OK) {
-        return NINLIL_E_STORAGE;
+    status = map_storage_mutation_status(
+        runtime,
+        storage->begin(
+            storage->user,
+            runtime->storage,
+            NINLIL_STORAGE_READ_WRITE,
+            &txn));
+    if (status != NINLIL_OK) {
+        return status;
     }
 
     marker_key[0] = 0x54u;
     marker_key[1] = 0x58u;
-    (void)memcpy(&marker_key[2], alloc_out.write_set.transaction_id.bytes, 14u);
-    ninlil_rt_v1_encode_tx_admission_marker_v2(
-        marker_value,
-        slot->model_service.family,
-        &slot->descriptor.local_application_instance_id,
-        submission->effect_deadline_ms,
-        submission->generation,
-        ninlil_rt_v1_semantic_priority_for_family(slot->model_service.family),
-        (uint32_t)submission->payload.length,
-        runtime->started_sample.now_ms);
+    (void)memcpy(
+        &marker_key[2],
+        alloc_out.write_set.transaction_id.bytes,
+        sizeof(alloc_out.write_set.transaction_id.bytes));
 
     status = ninlil_v1_durable_storage_put(
         NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT,
         storage,
         txn,
-        (ninlil_bytes_view_t){marker_key, 16u},
-        (ninlil_bytes_view_t){marker_value, sizeof(marker_value)},
+        (ninlil_bytes_view_t){marker_key, 18u},
+        (ninlil_bytes_view_t){
+            runtime->transaction_codec_bytes, marker_value_length},
         &runtime->commit_unknown_fence);
+    if (status != NINLIL_OK) {
+        saturating_increment_u64(&runtime->metrics.storage_failures);
+        (void)storage->rollback(storage->user, txn);
+        return status;
+    }
+
+    status = ninlil_rt_v1_stage_reservation_marker(
+        runtime,
+        txn,
+        NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT,
+        &alloc_out.write_set.transaction_id,
+        (uint32_t)submission->payload.length,
+        ninlil_rt_v1_default_bearer_route());
+    if (status != NINLIL_OK) {
+        (void)storage->rollback(storage->user, txn);
+        return status;
+    }
+    status = ninlil_rt_v1_stage_resource_ledger(
+        runtime,
+        txn,
+        NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT,
+        &preflight_out.admission.resources.committed_ledger);
     if (status != NINLIL_OK) {
         (void)storage->rollback(storage->user, txn);
         return status;
@@ -416,16 +670,9 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
         return status;
     }
 
-    status = ninlil_rt_v1_commit_reservation_marker(
-        runtime,
-        &alloc_out.write_set.transaction_id,
-        (uint32_t)submission->payload.length,
-        ninlil_rt_v1_default_bearer_route());
-    if (status != NINLIL_OK) {
-        return status;
-    }
-
-    runtime->transaction_sequence += 1u;
+    runtime->transaction_sequence =
+        admitted_transaction->transaction_sequence;
+    runtime->transaction_count += 1u;
     runtime->nonterminal_transaction_count += 1u;
     runtime->resource_ledger =
         preflight_out.admission.resources.committed_ledger;
@@ -433,36 +680,7 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     slot->quota_admissions += 1u;
     slot->quota_payload_bytes += submission->payload.length;
 
-    txn_slot->in_use = 1u;
-    txn_slot->terminal = 0u;
-    txn_slot->transaction_id = alloc_out.write_set.transaction_id;
-    txn_slot->service_app_id = slot->descriptor.local_application_instance_id;
-    txn_slot->family = slot->model_service.family;
-    txn_slot->transaction_sequence = runtime->transaction_sequence;
-    txn_slot->pending_dispatch = 1u;
-    txn_slot->cancel_kind = 0u;
-    txn_slot->outcome = NINLIL_OUTCOME_NONE;
-    txn_slot->reason = NINLIL_REASON_NONE;
-    txn_slot->service_app_id = slot->descriptor.local_application_instance_id;
-    txn_slot->event_id = submission->event_id;
-    txn_slot->content_digest = submission->content_digest;
-    txn_slot->effect_deadline_ms = submission->effect_deadline_ms;
-    txn_slot->generation = submission->generation;
-    txn_slot->payload_length = (uint32_t)submission->payload.length;
-    txn_slot->semantic_priority =
-        ninlil_rt_v1_semantic_priority_for_family(slot->model_service.family);
-    txn_slot->bearer_route = (uint8_t)ninlil_rt_v1_default_bearer_route();
-    txn_slot->admitted_at_ms = runtime->started_sample.now_ms;
-    txn_slot->retry_backoff_ms = slot->descriptor.retry_backoff_ms;
-    if (txn_slot->retry_backoff_ms == 0u) {
-        txn_slot->retry_backoff_ms = 100u;
-    }
-    txn_slot->reservation_active = 1u;
-    txn_slot->reservation_evidence_units =
-        slot->model_service.max_evidence_per_target + 1u;
-    txn_slot->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
-    txn_slot->retry_budget = 3u;
-    txn_slot->spool_revision = 1u;
+    *txn_slot = *admitted_transaction;
     runtime->pending_work = 1u;
 
     *out_result = commit_out.public_result;
@@ -475,12 +693,13 @@ ninlil_status_t ninlil_rt_v1_spine_cancel_admission(
     ninlil_cancel_result_t *out_result)
 {
     ninlil_rt_transaction_slot_t *txn;
-    const ninlil_storage_ops_t *storage;
-    ninlil_storage_txn_t txn_storage = NULL;
-    uint8_t marker_key[32];
-    uint8_t marker_value[16];
+    ninlil_rt_transaction_slot_t *candidate;
+    int terminalized;
     ninlil_status_t status;
 
+    if (runtime == NULL || transaction_id == NULL || out_result == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
     txn = ninlil_rt_find_transaction(runtime, transaction_id);
     if (txn == NULL) {
         return NINLIL_E_NOT_FOUND;
@@ -501,48 +720,33 @@ ninlil_status_t ninlil_rt_v1_spine_cancel_admission(
         return NINLIL_OK;
     }
 
-    storage = runtime->platform->storage;
-    if (storage->begin(
-            storage->user,
-            runtime->storage,
-            NINLIL_STORAGE_READ_WRITE,
-            &txn_storage)
-        != NINLIL_STORAGE_OK) {
-        return NINLIL_E_STORAGE;
-    }
-
-    marker_key[0] = 0x43u;
-    marker_key[1] = 0x4eu;
-    (void)memcpy(&marker_key[2], transaction_id->bytes, 14u);
-    (void)memset(marker_value, 0xC3, sizeof(marker_value));
-
-    status = ninlil_v1_durable_storage_put(
-        NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT,
-        storage,
-        txn_storage,
-        (ninlil_bytes_view_t){marker_key, 16u},
-        (ninlil_bytes_view_t){marker_value, sizeof(marker_value)},
-        &runtime->commit_unknown_fence);
-    if (status != NINLIL_OK) {
-        (void)storage->rollback(storage->user, txn_storage);
-        return status;
-    }
-    status = storage_txn_commit_full(runtime, txn_storage);
-    if (status != NINLIL_OK) {
-        return status;
-    }
-
-    if (txn->pending_dispatch != 0u) {
-        txn->cancel_kind = NINLIL_CANCEL_FENCED_BEFORE_DISPATCH;
-        txn->reason = NINLIL_REASON_CANCEL_FENCED_BEFORE_DISPATCH;
-        txn->outcome = NINLIL_OUTCOME_CANCELLED_BEFORE_EFFECT;
-        txn->terminal = 1u;
-        txn->pending_dispatch = 0u;
-        runtime->nonterminal_transaction_count -= 1u;
+    candidate = &runtime->transaction_scratch;
+    *candidate = *txn;
+    terminalized = candidate->pending_dispatch != 0u;
+    if (terminalized != 0) {
+        candidate->cancel_kind = NINLIL_CANCEL_FENCED_BEFORE_DISPATCH;
+        candidate->reason = NINLIL_REASON_CANCEL_FENCED_BEFORE_DISPATCH;
+        candidate->outcome = NINLIL_OUTCOME_CANCELLED_BEFORE_EFFECT;
+        candidate->terminal = 1u;
+        candidate->pending_dispatch = 0u;
+        candidate->outcome_recorded = 1u;
     } else {
-        txn->cancel_kind = NINLIL_CANCEL_PENDING_REMOTE_FENCE;
-        txn->reason = NINLIL_REASON_CANCEL_PENDING_REMOTE_FENCE;
-        txn->outcome = NINLIL_OUTCOME_NONE;
+        candidate->cancel_kind = NINLIL_CANCEL_PENDING_REMOTE_FENCE;
+        candidate->reason = NINLIL_REASON_CANCEL_PENDING_REMOTE_FENCE;
+        candidate->outcome = NINLIL_OUTCOME_NONE;
+    }
+
+    status = ninlil_rt_v1_commit_transaction_snapshot(
+        runtime,
+        txn,
+        candidate,
+        NINLIL_RT_V1_MARKER_CN,
+        NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (terminalized != 0) {
+        runtime->nonterminal_transaction_count -= 1u;
     }
 
     out_result->kind = txn->cancel_kind;

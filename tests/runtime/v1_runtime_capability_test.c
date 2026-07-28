@@ -8,6 +8,8 @@
 #include "platform_basic_fixtures.h"
 #include "runtime_v1_capability.h"
 #include "runtime_v1_delivery_durable.h"
+#include "runtime_v1_transaction_codec.h"
+#include "runtime_store_codec.h"
 #include "typed_simulated_bearer.h"
 
 #include <ninlil/runtime.h>
@@ -341,6 +343,11 @@ static int submit_with_payload(
     submission.payload.data = env->payload;
     submission.payload.length = payload_length;
     set_digest(&submission.content_digest, digest_tag);
+    (void)memset(out_result, 0, sizeof(*out_result));
+    set_header(
+        &out_result->abi_version,
+        &out_result->struct_size,
+        sizeof(*out_result));
     return ninlil_submit(env->service, &submission, out_result) == NINLIL_OK;
 }
 
@@ -351,6 +358,70 @@ static uint32_t count_storage_tx_markers(ninlil_test_storage_t *storage_fixture)
         (ninlil_bytes_view_t){TEST_NAMESPACE, sizeof(TEST_NAMESPACE) - 1u},
         0x54u,
         0x58u);
+}
+
+static int raw_storage_mutate(
+    ninlil_test_storage_t *storage_fixture,
+    ninlil_bytes_view_t storage_namespace,
+    ninlil_bytes_view_t key,
+    const ninlil_bytes_view_t *value)
+{
+    const ninlil_storage_ops_t *storage =
+        ninlil_test_storage_ops(storage_fixture);
+    ninlil_storage_handle_t handle = NULL;
+    ninlil_storage_txn_t txn = NULL;
+    ninlil_storage_status_t status;
+
+    if (storage->open(
+            storage->user,
+            storage_namespace,
+            NINLIL_STORAGE_SCHEMA_M1A,
+            &handle)
+        != NINLIL_STORAGE_OK) {
+        return 0;
+    }
+    if (storage->begin(
+            storage->user,
+            handle,
+            NINLIL_STORAGE_READ_WRITE,
+            &txn)
+        != NINLIL_STORAGE_OK) {
+        (void)storage->close(storage->user, handle);
+        return 0;
+    }
+    status = value == NULL
+        ? storage->erase(storage->user, txn, key)
+        : storage->put(storage->user, txn, key, *value);
+    if (status != NINLIL_STORAGE_OK
+        || storage->commit(
+                storage->user, txn, NINLIL_DURABILITY_FULL)
+            != NINLIL_STORAGE_OK) {
+        if (status == NINLIL_STORAGE_OK) {
+            (void)storage->rollback(storage->user, txn);
+        }
+        (void)storage->close(storage->user, handle);
+        return 0;
+    }
+    (void)storage->close(storage->user, handle);
+    return 1;
+}
+
+static int raw_erase_marker(
+    cap_env_t *env,
+    uint16_t prefix,
+    const ninlil_id128_t *transaction_id)
+{
+    uint8_t key[18];
+
+    key[0] = (uint8_t)(prefix >> 8);
+    key[1] = (uint8_t)prefix;
+    (void)memcpy(
+        &key[2], transaction_id->bytes, sizeof(transaction_id->bytes));
+    return raw_storage_mutate(
+        env->storage_fixture,
+        env->config.storage_namespace,
+        (ninlil_bytes_view_t){key, sizeof(key)},
+        NULL);
 }
 
 static int test_bearer_limit_table(void)
@@ -454,6 +525,10 @@ static int test_deadline_timeout_outcome(void)
     set_header(&budget.abi_version, &budget.struct_size, sizeof(budget));
     budget.max_state_transitions = 8u;
     (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
     REQUIRE(ninlil_runtime_step(env.runtime, &budget, &step_result) == NINLIL_OK);
     platform_teardown(&env);
     return 0;
@@ -485,6 +560,10 @@ static int test_priority_dispatch_order(void)
     set_header(&budget.abi_version, &budget.struct_size, sizeof(budget));
     budget.max_state_transitions = 1u;
     (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
     REQUIRE(ninlil_runtime_step(env.runtime, &budget, &step_result) == NINLIL_OK);
     REQUIRE(step_result.more_work != 0u);
     platform_teardown(&env);
@@ -567,7 +646,311 @@ static int test_retry_budget_exhaustion(void)
     set_header(&budget.abi_version, &budget.struct_size, sizeof(budget));
     budget.max_state_transitions = 32u;
     (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
     REQUIRE(ninlil_runtime_step(env.runtime, &budget, &step_result) == NINLIL_OK);
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_payload_is_owned_across_caller_mutation_and_restart(void)
+{
+    cap_env_t env;
+    ninlil_submission_result_t result;
+    ninlil_rt_transaction_slot_t *transaction;
+    static const uint8_t idem[] = "owned-payload";
+    uint32_t index;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create(&env));
+    REQUIRE(env_register(&env, 0x77u));
+    REQUIRE(submit_with_payload(
+        &env,
+        32u,
+        5000u,
+        0x29u,
+        idem,
+        sizeof(idem) - 1u,
+        &result));
+    REQUIRE(result.kind == NINLIL_SUBMISSION_ADMITTED_READY);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &result.transaction_id);
+    REQUIRE(transaction != NULL);
+    for (index = 0u; index < 32u; ++index) {
+        REQUIRE(transaction->owned_payload[index] == 0xa5u);
+    }
+    (void)memset(env.payload, 0x3cu, 32u);
+    for (index = 0u; index < 32u; ++index) {
+        REQUIRE(transaction->owned_payload[index] == 0xa5u);
+    }
+
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &result.transaction_id);
+    REQUIRE(transaction != NULL);
+    REQUIRE(transaction->payload_length == 32u);
+    for (index = 0u; index < 32u; ++index) {
+        REQUIRE(transaction->owned_payload[index] == 0xa5u);
+    }
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_outbox_capacity_reject_restart_release_readmit(void)
+{
+    cap_env_t env;
+    ninlil_submission_result_t first;
+    ninlil_submission_result_t blocked;
+    ninlil_submission_result_t readmitted;
+    ninlil_cancel_result_t cancel_result;
+    static const uint8_t idem_first[] = "capacity-first";
+    static const uint8_t idem_blocked[] = "capacity-blocked";
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    env.config = config_controller(4u);
+    env.config.limits.max_durable_outbox_payload_bytes = 1024u;
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    REQUIRE(env_register(&env, 0x78u));
+    REQUIRE(submit_with_payload(
+        &env,
+        926u,
+        5000u,
+        0x2au,
+        idem_first,
+        sizeof(idem_first) - 1u,
+        &first));
+    REQUIRE(first.kind == NINLIL_SUBMISSION_ADMITTED_READY);
+
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    REQUIRE(env_register(&env, 0x78u));
+    REQUIRE(submit_with_payload(
+        &env,
+        100u,
+        5000u,
+        0x2bu,
+        idem_blocked,
+        sizeof(idem_blocked) - 1u,
+        &blocked));
+    REQUIRE(blocked.kind == NINLIL_SUBMISSION_REJECTED);
+    REQUIRE(blocked.reason == NINLIL_REASON_CAPACITY_EXHAUSTED);
+    REQUIRE(blocked.retry_guidance == NINLIL_RETRY_SAME_AFTER);
+
+    (void)memset(&cancel_result, 0, sizeof(cancel_result));
+    set_header(
+        &cancel_result.abi_version,
+        &cancel_result.struct_size,
+        sizeof(cancel_result));
+    REQUIRE(ninlil_cancel_request(
+                env.runtime, &first.transaction_id, &cancel_result)
+        == NINLIL_OK);
+    REQUIRE(cancel_result.kind == NINLIL_CANCEL_FENCED_BEFORE_DISPATCH);
+
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    REQUIRE(env_register(&env, 0x78u));
+    REQUIRE(submit_with_payload(
+        &env,
+        100u,
+        5000u,
+        0x2bu,
+        idem_blocked,
+        sizeof(idem_blocked) - 1u,
+        &readmitted));
+    REQUIRE(readmitted.kind == NINLIL_SUBMISSION_ADMITTED_READY);
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_restart_rejects_missing_capacity_row(void)
+{
+    cap_env_t env;
+    ninlil_model_runtime_store_key_t key;
+    ninlil_status_t status;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create(&env));
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    REQUIRE(ninlil_model_runtime_store_build_key(
+                NINLIL_MODEL_RUNTIME_STORE_KEY_CAPACITY_SERVICE,
+                &key)
+        == NINLIL_OK);
+    REQUIRE(raw_storage_mutate(
+        env.storage_fixture,
+        env.config.storage_namespace,
+        (ninlil_bytes_view_t){key.bytes, key.length},
+        NULL));
+    status = ninlil_runtime_create(
+        &env.config, &env.platform, &env.runtime);
+    REQUIRE(status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(env.runtime == NULL);
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_restart_rejects_capacity_ledger_mismatch(void)
+{
+    cap_env_t env;
+    ninlil_model_runtime_store_key_t key;
+    ninlil_model_runtime_store_capacity_t capacity;
+    uint8_t value_bytes[NINLIL_MODEL_RUNTIME_STORE_CAPACITY_VALUE_BYTES];
+    uint32_t value_length = 0u;
+    ninlil_bytes_view_t value;
+    ninlil_status_t status;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create(&env));
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    REQUIRE(ninlil_model_runtime_store_build_key(
+                NINLIL_MODEL_RUNTIME_STORE_KEY_CAPACITY_OUTBOX_BYTES,
+                &key)
+        == NINLIL_OK);
+    (void)memset(&capacity, 0, sizeof(capacity));
+    capacity.kind = NINLIL_RESOURCE_OUTBOX_BYTES;
+    capacity.limit =
+        env.config.limits.max_durable_outbox_payload_bytes;
+    capacity.used = 1u;
+    capacity.high_water = 1u;
+    capacity.capacity_epoch = 1u;
+    REQUIRE(ninlil_model_runtime_store_encode_capacity(
+                NINLIL_MODEL_RUNTIME_STORE_KEY_CAPACITY_OUTBOX_BYTES,
+                &capacity,
+                value_bytes,
+                (uint32_t)sizeof(value_bytes),
+                &value_length)
+        == NINLIL_OK);
+    value.data = value_bytes;
+    value.length = value_length;
+    REQUIRE(raw_storage_mutate(
+        env.storage_fixture,
+        env.config.storage_namespace,
+        (ninlil_bytes_view_t){key.bytes, key.length},
+        &value));
+    status = ninlil_runtime_create(
+        &env.config, &env.platform, &env.runtime);
+    REQUIRE(status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(env.runtime == NULL);
+    platform_teardown(&env);
+    return 0;
+}
+
+static int run_restart_reservation_pair_corruption(int erase_tx)
+{
+    cap_env_t env;
+    ninlil_submission_result_t result;
+    ninlil_status_t status;
+    static const uint8_t idem[] = "reservation-pair";
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create(&env));
+    REQUIRE(env_register(&env, 0x79u));
+    REQUIRE(submit_with_payload(
+        &env,
+        16u,
+        5000u,
+        0x2cu,
+        idem,
+        sizeof(idem) - 1u,
+        &result));
+    REQUIRE(result.kind == NINLIL_SUBMISSION_ADMITTED_READY);
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    REQUIRE(raw_erase_marker(
+        &env,
+        erase_tx != 0 ? 0x5458u : NINLIL_RT_V1_MARKER_RV,
+        &result.transaction_id));
+    status = ninlil_runtime_create(
+        &env.config, &env.platform, &env.runtime);
+    REQUIRE(status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(env.runtime == NULL);
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_restart_rejects_missing_or_orphan_reservation(void)
+{
+    REQUIRE(run_restart_reservation_pair_corruption(0) == 0);
+    REQUIRE(run_restart_reservation_pair_corruption(1) == 0);
+    return 0;
+}
+
+static int test_restart_rejects_same_revision_conflict(void)
+{
+    cap_env_t env;
+    ninlil_submission_result_t result;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_rt_transaction_slot_t conflict;
+    uint8_t key[18];
+    uint8_t value_bytes[NINLIL_RT_V1_TRANSACTION_RECORD_MAX_BYTES];
+    uint32_t value_length = 0u;
+    ninlil_bytes_view_t value;
+    ninlil_status_t status;
+    static const uint8_t idem[] = "revision-conflict";
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create(&env));
+    REQUIRE(env_register(&env, 0x7au));
+    REQUIRE(submit_with_payload(
+        &env,
+        16u,
+        5000u,
+        0x2du,
+        idem,
+        sizeof(idem) - 1u,
+        &result));
+    REQUIRE(result.kind == NINLIL_SUBMISSION_ADMITTED_READY);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &result.transaction_id);
+    REQUIRE(transaction != NULL);
+    conflict = *transaction;
+    conflict.retry_budget = transaction->retry_budget - 1u;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &conflict,
+                value_bytes,
+                (uint32_t)sizeof(value_bytes),
+                &value_length)
+        == NINLIL_OK);
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    key[0] = 0x45u;
+    key[1] = 0x56u;
+    (void)memcpy(
+        &key[2],
+        result.transaction_id.bytes,
+        sizeof(result.transaction_id.bytes));
+    value.data = value_bytes;
+    value.length = value_length;
+    REQUIRE(raw_storage_mutate(
+        env.storage_fixture,
+        env.config.storage_namespace,
+        (ninlil_bytes_view_t){key, sizeof(key)},
+        &value));
+    status = ninlil_runtime_create(
+        &env.config, &env.platform, &env.runtime);
+    REQUIRE(status == NINLIL_E_STORAGE_CORRUPT);
+    REQUIRE(env.runtime == NULL);
     platform_teardown(&env);
     return 0;
 }
@@ -604,6 +987,24 @@ int main(void)
         rc = 1;
     }
     if (test_retry_budget_exhaustion() != 0) {
+        rc = 1;
+    }
+    if (test_payload_is_owned_across_caller_mutation_and_restart() != 0) {
+        rc = 1;
+    }
+    if (test_outbox_capacity_reject_restart_release_readmit() != 0) {
+        rc = 1;
+    }
+    if (test_restart_rejects_missing_capacity_row() != 0) {
+        rc = 1;
+    }
+    if (test_restart_rejects_capacity_ledger_mismatch() != 0) {
+        rc = 1;
+    }
+    if (test_restart_rejects_missing_or_orphan_reservation() != 0) {
+        rc = 1;
+    }
+    if (test_restart_rejects_same_revision_conflict() != 0) {
         rc = 1;
     }
 

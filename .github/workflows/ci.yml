@@ -2,12 +2,104 @@ name: CI
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
+  workflow_call:
+    inputs:
+      source-ref:
+        description: Exact source commit to verify
+        required: false
+        type: string
+      workflow-definition-ref:
+        description: Exact commit containing this reusable workflow definition
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  workflow-syntax:
+    name: GitHub Actions syntax and shell semantics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install checksum-pinned actionlint 1.7.12
+        env:
+          ACTIONLINT_ARCHIVE: actionlint_1.7.12_linux_amd64.tar.gz
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "${RUNNER_TEMP}/${ACTIONLINT_ARCHIVE}" \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/${ACTIONLINT_ARCHIVE}"
+          printf '%s  %s\n' \
+            "${ACTIONLINT_SHA256}" "${RUNNER_TEMP}/${ACTIONLINT_ARCHIVE}" \
+            | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/actionlint"
+          tar --extract --gzip \
+            --file "${RUNNER_TEMP}/${ACTIONLINT_ARCHIVE}" \
+            --directory "${RUNNER_TEMP}/actionlint"
+          test -x "${RUNNER_TEMP}/actionlint/actionlint"
+      - name: Install checksum-pinned ShellCheck 0.11.0
+        env:
+          SHELLCHECK_ARCHIVE: shellcheck-v0.11.0.linux.x86_64.tar.xz
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "${RUNNER_TEMP}/${SHELLCHECK_ARCHIVE}" \
+            "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/${SHELLCHECK_ARCHIVE}"
+          printf '%s  %s\n' \
+            "${SHELLCHECK_SHA256}" "${RUNNER_TEMP}/${SHELLCHECK_ARCHIVE}" \
+            | sha256sum --check --strict
+          tar --extract --xz \
+            --file "${RUNNER_TEMP}/${SHELLCHECK_ARCHIVE}" \
+            --directory "${RUNNER_TEMP}"
+          test -x "${RUNNER_TEMP}/shellcheck-v0.11.0/shellcheck"
+      - name: Lint every workflow
+        run: >-
+          "${RUNNER_TEMP}/actionlint/actionlint"
+          -shellcheck "${RUNNER_TEMP}/shellcheck-v0.11.0/shellcheck"
+          .github/workflows/*.yml
+      - name: Verify reusable workflow definition identity
+        env:
+          EXPECTED_WORKFLOW_COMMIT: ${{ inputs.workflow-definition-ref || github.workflow_sha }}
+          ACTUAL_WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          test "${ACTUAL_WORKFLOW_COMMIT}" = "${EXPECTED_WORKFLOW_COMMIT}"
+          test "${ACTUAL_WORKFLOW_COMMIT}" != ""
+
+  compatibility-matrix:
+    name: Compatibility matrix authority
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Verify version, platform, evidence, and HIL claims
+        run: |
+          python3 tools/compatibility_matrix_gate.py check
+          python3 tools/compatibility_matrix_gate.py self-test
+          python3 tools/third_party_notice_gate.py check
+          python3 tools/third_party_notice_gate.py self-test
+          python3 tools/release_workflow_identity_gate.py check
+          python3 tools/release_workflow_identity_gate.py self-test
+          python3 tools/spdx_release_sbom.py self-test
+
   cmake-floor-package:
     name: CMake 3.20 package floor
     runs-on: ubuntu-24.04
@@ -19,6 +111,7 @@ jobs:
       # actions/checkout v7.0.0
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install package build dependencies
         run: >-
@@ -115,6 +208,7 @@ jobs:
       # actions/checkout v7.0.0
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       # OpenSSL 3 is required for R7 Host private crypto (tests-ON and tests-OFF top-level).
       - name: Install OpenSSL 3 headers and SQLite3
@@ -151,6 +245,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install SQLite3, OpenSSL 3, and ninja
         run: >-
@@ -247,6 +342,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install gcc-13 g++-13 ninja OpenSSL 3 SQLite shared headers
         run: >-
@@ -520,6 +616,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
@@ -561,6 +658,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install SQLite3 (static archive), OpenSSL 3, zlib, ninja
         run: >-
@@ -652,6 +750,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install SQLite3, OpenSSL 3, zlib, ninja
         run: >-
@@ -687,12 +786,12 @@ jobs:
           if [ -z "$inc" ]; then inc=/usr/include; fi
           cmake -S tests/cmake/installed_posix_sqlite_consumer \
             -B build/ci-ubuntu-static-off/consumer -G Ninja \
-            -DCMAKE_PREFIX_PATH=$PWD/build/ci-ubuntu-static-off/prefix \
+            "-DCMAKE_PREFIX_PATH=$PWD/build/ci-ubuntu-static-off/prefix" \
             -DCMAKE_BUILD_TYPE=Debug \
             -DNINLIL_CONSUMER_EXPECT_STATIC_SQLITE=ON \
             -DNINLIL_CONSUMER_SQLITE3_LIBRARY=${{ steps.sqlite.outputs.lib }} \
             -DSQLite3_LIBRARY=${{ steps.sqlite.outputs.lib }} \
-            -DSQLite3_INCLUDE_DIR=$inc
+            "-DSQLite3_INCLUDE_DIR=$inc"
           cmake --build build/ci-ubuntu-static-off/consumer --parallel 2 --verbose \
             | tee build/ci-ubuntu-static-off/consumer-link.txt
           grep -F 'libsqlite3.a' build/ci-ubuntu-static-off/consumer-link.txt
@@ -763,6 +862,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
@@ -819,6 +919,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install SQLite3, OpenSSL 3, ninja, binutils
         run: >-
@@ -898,7 +999,7 @@ jobs:
 
   macos-dynamic:
     name: macOS dynamic SQLite full
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 25
     defaults:
       run:
@@ -906,7 +1007,10 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      - name: Assert supported macOS arm64 runner
+        run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
         run: |
           set -euo pipefail
@@ -980,7 +1084,7 @@ jobs:
 
   macos-dynamic-asan:
     name: macOS dynamic SQLite ASan
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 25
     defaults:
       run:
@@ -988,7 +1092,10 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      - name: Assert supported macOS arm64 runner
+        run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
         run: |
           set -euo pipefail
@@ -1054,6 +1161,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-

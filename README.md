@@ -20,6 +20,30 @@ relay、multi-parent、完全fragmentationには未完了項目があります�
 **LAB_ONLY** — 国内実運用可能・production 法規認定は **主張しません**。物理
 USB / RF / flash / power-cut HILも未完了です。
 
+### 完成までの進捗台帳
+
+`RELEASE_SUPPORTED`だけを100%完成と呼びます。`SPEC_ACCEPTED`は実装開始可能な
+仕様が固まった状態、`HOST_CANDIDATE`と`TARGET_CANDIDATE`はそれぞれHostとESP targetの
+実装候補であり、実機確認の代わりにはなりません。
+
+| 機能 | 現在の状態 | 次の必須gate |
+| --- | --- | --- |
+| Portable Core / Host Runtime | **HOST_CANDIDATE修正中** | durable lifecycleの独立レビューP0/P1=0、通常・sanitizer・package CI |
+| Canonical Domain Store | **PROPOSED** | ADR-0022の独立受入後、bootstrap / recovery / migrationの実装とcrash matrix |
+| Identity / Attachment / session install | **PROPOSED** | M4/M5のexact pre-attachment carrier、FULL durable Attachment、Hop/E2E key installとrestart/HIL |
+| Fabric Bearer / NFL1 / path registry | **PROPOSED** | ADR-0017のexact API・storage・vectorを`SPEC_ACCEPTED`へ |
+| POSIX TCP/TLS Wi-Fi reference | **UNALLOCATED（実装0）** | ADR-0017後にADR-0018を受入し、codec→Fabric→TCP→TLSの順でHost実装 |
+| ESP32-S3 Wi-Fi STA/TCP/TLS | **UNALLOCATED（実装0）** | Host候補後、pinned ESP-IDF target build・target test・実AP HIL |
+| NRW1 LINK / FRAG / reassembly | **SPEC_ACCEPTED相当のR6設計、実装未完** | R7 state/wire materialization、loss/reorder/restart試験、RF HIL |
+| Relay | **PROPOSED** | FabricとLINK/FRAG後にADR-0019受入、2〜3 hop実装・3台以上RF HIL |
+| Multi-parent / multi-Controller | **PROPOSED** | Relay後にADR-0020受入、single-owner fence・handoff・split-brain試験 |
+| Multi-frame durable transfer | **PROPOSED** | ADR-0021受入、chunk custody・再構成・power-cut matrix |
+| OSS package / docs / release CI | **HOST_CANDIDATE** | 全featureのsupport matrix、互換性、SBOM・attestation付きrelease、独立review |
+
+物理USB、SX1262 RF、flash power-cut、実AP、24時間soakは、対応機材を接続して得た
+再現可能なartifactが揃うまで`HIL_VERIFIED`へ進めません。現在の詳細な依存順と
+完成条件は[34章](docs/34-v2-runtime-fabric-completion.md)を正本とします。
+
 ## 検証区分（host verified / HIL pending / V2）
 
 | 区分 | 内容 |
@@ -112,7 +136,7 @@ ctest --test-dir tmp-v1 --output-on-failure
 
 | Platform | 状態 |
 | --- | --- |
-| **POSIX host（Linux / macOS）** | **verified** — LAB quickstart・examples・統合 E2E・consumer install smoke |
+| **POSIX host（Linux x86_64 / macOS arm64）** | **HOST_CANDIDATE** — LAB quickstart・examples・統合 E2E・consumer install smokeはHost検証済み。Release supportの主張ではない |
 | **ESP-IDF v5.5.3（ESP32-S3 target build）** | compile / link smoke（`.github/workflows/esp-idf.yml`）。**HIL 未** — flash / USB 実機 / RF / power-cut は RC 残件 |
 
 ## 制限・security・法規
@@ -128,6 +152,8 @@ ctest --test-dir tmp-v1 --output-on-failure
 | [Documentation index](docs/README.md) | 仕様の読み順・正本ルール |
 | [Host Runtime SDK](docs/host-runtime-sdk.md) | 現行CMake packageのbuild・install・利用 |
 | [SDK distribution manifest](docs/sdk-distribution-manifest.md) | 現行install tree・export境界・release artifacts |
+| [Compatibility matrix](compatibility-matrix.json) | version・platform・feature状態・HIL境界のmachine-readable正本 |
+| [Dependency inventory](dependency-inventory.json) | Host / ESP-IDF dependency、version、license、lock hash、container digestのmachine-readable正本 |
 | [V1 LAB quickstart](docs/v1-lab-quickstart.md) | `v1.0-lab-rc2`履歴スナップショット |
 | [V1 LAB developer](docs/v1-lab-developer.md) | `v1.0-lab-rc2`開発者向け履歴 |
 | [V1 LAB distribution](docs/v1-lab-distribution-manifest.md) | `v1.0-lab-rc2`配布履歴 |

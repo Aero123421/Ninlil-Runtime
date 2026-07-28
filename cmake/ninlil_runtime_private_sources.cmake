@@ -29,8 +29,10 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/runtime_store_stage5_seam.c
     src/runtime/runtime_v1_spine_durable.c
     src/runtime/runtime_v1_delivery_durable.c
+    src/runtime/runtime_v1_transaction_codec.c
     src/runtime/runtime_v1_bearer_wire.c
     src/runtime/runtime_v1_capability.c
+    src/runtime/runtime_v1_event_ledger_codec.c
     src/runtime/runtime_v1_event_mgmt.c
     src/runtime/runtime_v1_family_capability.c
     src/runtime/runtime_v1_target_resolver.c

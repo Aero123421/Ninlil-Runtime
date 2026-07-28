@@ -107,14 +107,15 @@ storeを自動migration/open、またはsupport済みと広告してはならな
 | --- | --- | --- | --- |
 | Runtime release | `0.x` / V1 LAB | `1.0.0` | C1〜C10とM11を満たしたreleaseだけ |
 | Runtime Platform C ABI | `NINLIL_ABI_VERSION=0x0001`、単一Bearer | 不変 | `platform.h`をBearer配列へ変更しない。Fabric Bearerを1 logical bearerとして渡す |
-| Public Fabric API | 未割当 | Fabric API version 1候補 | 新opaque Fabric/packet-link/path-policy API。Runtime ABIと独立version |
+| Public Fabric API | 未割当 | 未割当のまま | ADR-0017受入だけでinstalled/public ABIを採番しない |
+| Private Fabric source API | 未割当 | private version `0x0001`候補 | default-OFF、非install、Runtime ABIと独立。public化は別ADR/互換性review |
 | Public data wire | 未割当 | 未割当のまま | bearer framingやNRW1をpublic application wireと誤認しない |
 | Secure radio wire | `wire_profile_id=0x11` | 不変 | [30章](30-r6-secure-radio-wire.md) exact profile。変更時は新profile ID |
 | NCL1 envelope | `logical_version=1` | 不変 | control catalog versionと番号空間を共有しない |
 | Private control | v2 | v2不変 + multi-frameはv3 | v2 catalogへmessage typeをsilent追加しない |
 | Wi-Fi bearer framing | 未割当 | `NWB1 framing version 1`候補 | exact byte spec/KATの`SPEC_ACCEPTED`でreserved、`RELEASE_SUPPORTED`でsupport掲載 |
 | Wi-Fi security management | 未割当 | `NRV1` / `NCM1` + `NINLIL-WIFI-CREDENTIAL-STORE-V1`（NWS1/NWA1/NWC1/NWP1/NWM1）version 1候補 | ADR-0018 `SPEC_ACCEPTED`でlocal reserved。NCM1からcredential record schemaを推測せず、exact dedicated namespace/key/boundを使う |
-| Foundation storage | schema 1 | schema 1不変 | 既存recordを再解釈しない |
+| Foundation storage | schema 1、V1 LAB binding format 1 | schema 1不変、canonical Domain binding format 2候補 | [ADR-0022](adr/0022-domain-store-schema1-runtime-binding.md)のDomain-only profile ID/revision/min-writer/rollback epoch。Format 1 LABを再解釈せず、format 2から旧LAB binaryへのdowngrade mutationを拒否 |
 | ESP physical store | format 4 | format 4不変 | 新namespaceを既存header意味変更に使わない |
 | Bearer registry store | 未割当 | schema 1候補 | bearer identity、policy revision、availability epoch |
 | Route store | NRW1 route record semantics | schema 1候補 | 別物理Fabric storage partitionの`ninlil.route.v1`。8-slot × 16 pageで128 route、Controller management record、materialized docs/30 exact route record、R2 clock sidecar、drain stateを区別 |
@@ -124,23 +125,48 @@ storeを自動migration/open、またはsupport済みと広告してはならな
 各schemaはmagic、schema、record length、canonical encoding、CRC/MAC要否、generation、
 maximum countを持つ。未知schema、途中migration、旧binaryによる不可逆schema openは明示拒否する。
 in-place field reinterpretationとbest-effort downgradeは禁止する。
+Foundation canonical buildはV1 LAB 34-kind publication gateをpublication authorityとして
+link/callせず、read-only quarantine/export classifierへ隔離する。最後にsupportしたLAB binaryを
+format 2 fixtureへ向けた互換試験で、public handle 0かつREAD_WRITE Storage call 0を証明する。
+Canonical Domain initial adoptionだけはfresh READ_WRITE transactionのmutation前full scanで
+0-rowを証明し、同じtransactionへ17 bootstrap CREATEをstageしてFULL commitする。別
+READ_ONLY snapshotからのupgrade/rebegin、またはscanとbootstrapを別snapshotへ分けることを
+禁止する。Existing/retry/COMMIT_UNKNOWN分類はfresh READ_ONLY snapshotを使い、OLDからの
+再試行もfresh READ_WRITE transaction内で0-rowを再証明する。
+Canonical startup orderはstorage recovery/T0–T4 → trusted clock/T5 → health/T6 →
+Bearer open → metrics entropy → public publishであり、T5/T6完了前のBearer、callback、
+handle、publishは0である。ADR-0022のmachine authorityはbinding format/profile/revision/
+writer/rollback/schema/LAB downgrade、T1a 17-row・T1b 16-row・T5 clockの
+OLD/NEW/partial/extra/third-value full-snapshot byte KAT、startup staged-fault transcriptを
+固定する。34 LAB kindのrow/namespace判定、136 mutation、cross-row/mixed/provider
+corruptionはproduction-independent classifierで期待statusを再計算する。Kind-1 service
+registrationはraw-byte group oracleとsemantic-only 7 mutationでPVD、quota window/counters、
+reservation vector、capacity `+1`、HEAD_INDEXを検証する。これらのgenerator
+`--check`と`--self-test`がgreenになるまではADR-0022をAcceptedまたはpublication-readyと
+扱わない。
 
 ## 5. Fabric Bearer registryとpath selection
 
 正本候補は[ADR-0017](adr/0017-bearer-registry-path-selection.md)とする。
 
 - Runtimeの`platform.h`単一Bearer contractは維持する。既存fieldを配列化しない。
-- 公開・portableなFabric Bearerが0個以上のpacket-link instanceをregistryとして束ね、
+- private/default-OFF候補のportable Fabric Bearerが0個以上のpacket-link instanceをregistryとして束ね、
   Runtimeには1つのlogical bearerとして渡る。
 - packet-link identityとlink kindを分離する。同一kindを複数登録できる。
 - descriptorはmaximum frame/transfer、direction、latency class、cost、sleep compatibility、
   local unicast/broadcast、reservation、regulatory binding、availability epochに加え、
   immutable `security_profile_id`、authenticated peer/Attachment binding digestとauthority、
   integrity、confidentiality、replay protection、session freshness、custody、evidence capabilityを
-  公開する。
+  公開する。peer NFL1 versionはexact 1、peer capabilityは`NFL1_V1` bit必須である。
 - registry、path list、metrics、configurationはRuntime Platform ABIではなくFabric APIで公開する。
-- path policyはservice/traffic classのimmutable revisionとしてadmission時にsnapshotし、
+- path policyはcanonical service identity digestとmessage kindから導出したdirection/traffic classの
+  immutable revisionとしてadmission時にsnapshotし、
   policy identity/revision/digestと選択結果をlogical envelopeへ固定する。
+- authority/assignment registryはABSENTまたはfull owner tupleへ一意に解決できるBOUND recordを
+  canonical保存し、曖昧・期限切れ・digest conflictを送受信前にfail closedする。
+  policyのclosed selectorはSOURCE_RUNTIME/TARGET_RUNTIMEだけで、FBC1 endpointをそれぞれ
+  Foundation source/target runtimeへexact一致させる。FBA1はfull tuple本体でなくowner scopeと
+  tuple digestをpinし、retry時にexact FBC1からfull tupleを再検証する。
 - availability snapshotはdescriptor digest、security attestation state/digest/epoch、
   authenticated peer runtime、Attachment authority/bindingを含む。未知、期限切れ、未attest、
   admission要求を満たさないsecurity/custody/evidence capabilityのlinkはineligibleとする。
@@ -150,6 +176,13 @@ in-place field reinterpretationとbest-effort downgradeは禁止する。
   新transactionとして扱わない。
 - bearer消失は成功へ変換せず、代替pathがpolicyとdeadlineを満たす場合だけ再選択する。
 - compliance permitをBearer abstractionで迂回しない。物理RF送信は既存sole authorityを通す。
+- outer sendはFBA1 PREPARED FULL後、同じcallでpacket-link `start_send`をexact 1回呼ぶ。
+  provider WOULD_BLOCKはownership 0でouter WOULD_BLOCK、provider RETAINED +
+  FBA1 LINK_RETAINED FULL OKだけがSEND_ACCEPTEDである。
+- first admitから最大30秒のretry lifetimeはFBA1へclock epoch/exclusive expiryをdurable保存する。
+  restart時のPREPARED/LINK_RETAINEDはFENCED_UNKNOWN、RETRYABLE_NO_ACCEPTは期限前だけ保持し、
+  期限到達でCLOSEDにする。Python generatorとは実装を共有しないPython/Node gateでactual
+  old/new record、COMMIT_UNKNOWN分類、selection join/filterを再計算する。
 
 ### 5.1 Fabric Logical Envelope v1
 
@@ -168,10 +201,13 @@ freezeするまで、LoRa adapterはNFL1のsend/receiveを禁止する。full NF
 defaultにせず、NRW1 `0x11`のbyte/profileも変更しない。
 
 全整数はunsigned big-endian。IDとdigestは記載順のopaque byte列とする。固定headerは
-**584 bytes**、codec buffer ceilingは**2048 bytes**、到達可能な最大valid encoded lengthは
-**1925 bytes**、v1 payloadはRuntime public logical maximumと同じ
-**1024 bytes以下**、evidenceは**128 bytes以下**、各text IDは**63 bytes以下**である。
-最大構成は`584 + 63*3 + 1024 + 128 = 1925 bytes`で上限内に収まる。
+**584 bytes**、codec buffer ceilingは**2048 bytes**、3個のtext IDを各1..63 bytesとするため
+codecの構造受理範囲は**587..1925 bytes**である。v1 payloadはRuntime public logical maximumと
+同じ**1024 bytes以下**、evidenceは**128 bytes以下**である。
+`584 + 63*3 + 1024 + 128 = 1925`はcodec構造上のceilingだが、§5.2の6-kind matrixでは
+payloadとevidenceを同時にnon-emptyにできない。意味論を満たす最大positiveは
+APPLICATIONの`584 + 63*3 + 1024 = 1797 bytes`であり、1925-byte packetはCRC/lengthが正しくても
+kind matrixでrejectする。
 
 | Offset | Bytes | Field |
 | ---: | ---: | --- |
@@ -314,7 +350,8 @@ path_selection_epoch + route_flags`を固定する。受信側はpolicy digest�
 
 - Wi-Fiはmanagement bulk専用という固定roleではなく、policyで許可されたdata/controlの
   transportになれる。
-- credential、association、IP reachability、peer session、Ninlil attachmentを別状態として扱う。
+- credential、association、IP reachability、TLS authenticated channel、pre-attachment peer
+  session、Attachment negotiation、post-attachment NWB1 sessionを別状態として扱う。
 - socket connectをcustody、Application Receipt、peer identityの証拠にしない。
 - framing、peer authentication、replay/session binding、partial I/O、reconnect、backpressure、
   MTU、keepalive、sleep動作をexact specで閉じる。
@@ -335,8 +372,13 @@ path_selection_epoch + route_flags`を固定する。受信側はpolicy digest�
   record/certificate/allocator boundは
   ADR-0018 §14をexact authorityとする。
 - `CHANNEL_AUTHENTICATED`はfull non-resumed TLS 1.3 mTLS、exact suite/group/signature、
-  peer binding、authority snapshot、exporterの全検査後だけpublishする。TCP/TLS handshake成功を
-  単独でavailability、Attachment、NFL1 deliveryへ昇格しない。
+  peer credential binding、authority snapshotの全検査後だけpublishする。first exporterの
+  `peer_session_id`成功で`PEER_SESSION`、別M4 carrierのFULL durable Attachment成功とsecond
+  exporterで初めて`ATTACHED`とNWB1 `session_id`を得る。TCP/TLS handshakeやpre-attachment
+  peer sessionを単独でavailability、Attachment、NFL1 deliveryへ昇格しない。
+- NWB1はNFL1-onlyでNCG1/NCL1/U6を運ばない。本Wi-Fi profileはcustody capabilityを広告せず、
+  custody-required policyをineligibleにする。Wi-Fi custodyは別versioned carrier/mappingの
+  Accepted ADR、dual-FULL実装、crash/restart KAT後だけ別profile revisionで有効化できる。
 - credentialはADR-0018 §14.3.2の専用`ninlil.wifi.security.v1` storeへ置く。NWC1は最大4544、
   current/candidate各64 recordを2 bank/8 pageで保持し、25 keys / 606003 committed logical bytes、
   provider staging 50 / 1212006を保守的なhard reservation ceilingとする
@@ -353,6 +395,13 @@ path_selection_epoch + route_flags`を固定する。受信側はpolicy digest�
   ESP実経路の`RELEASE_SUPPORTED`にはpinned sdkconfig、pool/count/byte ceiling、watermark、
   OOM/reconnect/sleep-wake traceを別resource profileとしてC7/C8で閉じる。未固定値をTLS budgetへ
   推測加算しない。
+- private Wi-Fi packet-link/STA adapterはsource-only/default-OFFとし、sole Wi-Fi driver owner、
+  owner-step進捗、event queue 8、GOT_IP前socket 0、disconnect/lost-IP/ip-changeの全session fence、
+  phase deadline、deterministic bounded reconnect、WIFI_STORAGE_RAMを要求する。STA SSID/passwordは
+  opaque providerだけが所有し、Core/Fabric/TLS credential store/diagnosticへ保存しない。
+  network profileはnon-zero opaque credential binding IDとrevision/digestでbindし、rotationは
+  old adapter drain/destroy後のnew configだけで行う。exact status/API/resource/negative gateは
+  ADR-0018のprivate adapter節を正本候補とする。
 
 ## 7. Relay
 
@@ -439,7 +488,7 @@ process-wide allocator accountingとwatermarkでhard gateする。上限また�
 | --- | --- | --- |
 | Bearer instances | 登録数、instanceごとのqueue | 新規登録/予約を拒否 |
 | Path candidates | serviceごとの候補数、再選択回数 | policy mismatchまたはdeadline failure |
-| Wi-Fi Core/NWB1 | 1 RX + 1 TX record/session、各2088 bytes fixed、1 record read-ahead | backpressure。buffer拡張禁止 |
+| Wi-Fi Core/NWB1 | 1 RX + 1 TX record/session、各1965 bytes fixed（40 + NFL1 structural ceiling 1925）、1 record read-ahead | backpressure。buffer拡張禁止。6-kind positive最大は1837 bytes（40 + 1797） |
 | Wi-Fi ESP TLS | total 2、handshake 1、peer 2、98304 bytes/session、session pool 196608、crypto global 65536、total 262144、in plaintext 16384、application emit 4096、out content buffer 4114、wire record 16645、pre-Finished flight 32768/direction、cert count/each DER/sum 2/2048/4096、Certificate body/handshake 4110/4114 | admission拒否または未認証session close。delivery/custody 0 |
 | Wi-Fi Host TLS | total 64、handshake 8、peer 2、262144 bytes/session、session pool 16777216、crypto global 4194304、total 20971520、in plaintext 16384、application emit 4096、Certificate handshake 4114許容、wire record 16645、pre-Finished flight 32768/direction、cert count/each DER/sum 2/2048/4096、Certificate body 4110 | admission拒否または未認証session close。delivery/custody 0 |
 | Wi-Fi security snapshot | immutable identity 226 + mutable freshness 48 = 274 bytes/session fixed。NRV1-owned 84 bytesとcredential-owned 44 bytesはこの内数 | reserve不能ならadmission reject。sessionごとの可変record保持禁止 |
@@ -467,6 +516,7 @@ re-`SPEC_ACCEPTED`する。runtime fallbackやsilent relaxationを行わない�
 | --- | --- | --- | --- |
 | Core/API/storage | 全public API contract、independent model、全write-point crash、restart | ABI old/new、schema migration、corrupt/unknown schema | target conformance、power-cut |
 | Bearer registry | 2種3 instance、policy/security snapshot、fairness、deadline | loss、availability/security attestation epoch race、hot unregister、old ABI | Wi-Fi実経路。LoRa同時稼働は別compact mapping `SPEC_ACCEPTED`後 |
+| Identity / Attachment / session install | exact bootstrap carrier、identity/membership/Attachment state、Hop/E2E install KAT | replay、term/lease/clock rollback、COMMIT_UNKNOWN、restart、key-provider failure | Host↔ESP join/reattach、power-cut、credential revoke/rotation |
 | Wi-Fi | pinned Host 2 tuple client/server、OWF1、exact TLS/NWB/X.509/NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1/exporter KAT、partial read/write、backpressure、10,000 message | 全suite/group/sig/mTLS/binding/clock/revocation/credential activation/key-proof/2-bank/migration/resumption/0-RTT/KeyUpdate/allocator/config/provider negative、Certificate body 4110/4111・handshake 4114、全credential stage/selector crash、disconnect/reconnect、peer restart、mixed framing | direct mbedTLS client/server + Accepted R7 raw adapter、probe/production ELF closure report、forbidden HW crypto/port/allocation reachable path 0、dedicated credential store/power-cut、Wi-Fi driver/LwIP exact resource profile、Host↔ESP両方向、実AP、強制切断、sleep/wake、allocator/heap/pool/stack/watchdog、24h soak |
 | NRW1 FRAG | exact KAT、2〜13 fragment、loss/reorder/duplicate/conflict、fuzz | resource exhaustion、timer edge、tombstone、restart規則 | 2実機RF、loss injection |
 | U6 single-frame | dual FULL、全write-point crash | COMMIT_UNKNOWN、duplicate OFFER/ACCEPT、reconnect | USB/TCP実経路、power-cut |
@@ -481,7 +531,8 @@ failure injection pointを含める。手動要約だけを証拠にしない。
 ## 12. 依存順
 
 ```text
-ADR-0017 + Fabric API/storage allocation
+Canonical Domain Store + M4/M5 identity/Attachment/session install
+  -> ADR-0017 + Fabric API/storage allocation
   -> bounded Fabric Bearer / Scheduler
      -> ADR-0018 Wi-Fi bearer -----------+
      -> NRW1 LINK/FRAG implementation ---+--> ADR-0019 Relay
@@ -492,6 +543,8 @@ ADR-0017 + Fabric API/storage allocation
 ```
 
 - M1a restart-safe transaction kernelとM3 durable storage gateを迂回しない。
+- Wi-Fi NWB1とNRW1 post-attachment dataは、M4/M5のAccepted carrier、FULL durable
+  Attachment、Hop/E2E context installを迂回してavailabilityへ昇格しない。
 - RelayはNRW1 LINK/FRAG、route storage、schedulerの後に実装する。
 - Multi-parentはRelayとsingle-owner fencingの後に実装する。
 - Wi-FiとNRW1 LINK/FRAGは共通Bearer Registryの`SPEC_ACCEPTED`後、private/feature-gatedで並行実装できる。
@@ -525,7 +578,8 @@ C1〜C10に加え、次をrequired CIまたはrelease checklistで証明する�
 
 本Proposed文書とADR-0017〜0021を追加しただけでは、次を主張しない。
 
-- Fabric API version 1、NFL1、NWB1、NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1、control v3、
+- private Fabric source API version `0x0001`、NFL1、NWB1、
+  NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1、control v3、
   各storage schemaのreserved採番またはsupport
 - Wi-Fi driver、TCP/UDP session、physical RF、Relay、Multi-parent、FRAGの実装
 - U6 dual FULL conformance、multi-frame resume、ESP power-cut成功

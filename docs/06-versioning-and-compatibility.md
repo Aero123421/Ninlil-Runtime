@@ -122,7 +122,8 @@ Update中もdownlink owner、membership epoch、transaction identityを維持し
 
 ## Machine-readable compatibility matrix
 
-各releaseは`compatibility-matrix.json`を含みます。最低限:
+各releaseはrepository rootの
+[`compatibility-matrix.json`](../compatibility-matrix.json)を含みます。最低限:
 
 ```text
 runtime release
@@ -138,6 +139,18 @@ deprecation/removal release
 ```
 
 Matrixと実test targetをCIで一致させます。文書だけに存在するsupported combinationを作りません。
+[`tools/compatibility_matrix_gate.py`](../tools/compatibility_matrix_gate.py)はCMake release、
+public ABI、Foundation storage schema、ESP-IDF component/pin、CI runner、evidence path、
+HIL必須機能の状態をfail-closedで照合します。`HIL_VERIFIED`または
+`RELEASE_SUPPORTED`へ進める変更は、対応する再現可能なevidenceと同じchangeでmatrixを
+更新しなければなりません。
+
+`features[].evidence`は仕様・実装・通常CIの追跡先、`hil_evidence`は実機手順と
+取得artifactの最低2ファイル、`release_evidence`はrelease gate・互換性・独立reviewを含む
+最低3ファイルです。`required_hil=true`の行は`hil_verified=true`と実在する
+`hil_evidence`なしに`HIL_VERIFIED`以上へ進めません。`RELEASE_SUPPORTED`はさらに
+`release_evidence`が無ければgateが拒否します。単にbooleanだけを書き換えて完成表示することは
+できません。
 
 ### M3-prep / M3-basic ESP-IDF pin（support 宣言ではない）
 
@@ -200,6 +213,40 @@ Release tag前に、次がすべて必要です。
 - Ninlil **private control protocol v2**（U5 assignment + U6 custody; [25章](25-u5-cell-operating-assignment.md) / [26章](26-u6-transport-custody.md); ADR-0005/0006）: private Normative（`selected_control_version=2`）。NCL1 envelope v1 は維持。v1 closed catalog へ type を silent 追加しない。public 採番・ABI 昇格とは別
 
 Wireを実装していないFoundationで`wire v1`を先取り採番しません。private U4 catalog の存在を public control protocol v1 割当とみなしません。private U5/U6 catalog も public 割当とみなしません。
+
+### ADR-0017 Fabric candidateのversion分離（Proposed）
+
+[ADR-0017](adr/0017-bearer-registry-path-selection.md)の`SPEC_ACCEPTED`候補は、既存domainを
+次のように維持する。ADR状態はProposedのままであり、下表はsupport/public allocation claimではない。
+
+| Domain | Exact candidate / rule |
+| --- | --- |
+| Runtime Platform C ABI | `NINLIL_ABI_VERSION=0x0001`不変、単一`ninlil_bearer_ops_t`。array/tail field追加0 |
+| Installed/public Fabric ABI | 未割当。public header、export symbol、install target、SemVer compatibility claim 0 |
+| Private Fabric source API | candidate `0x0001`。`NINLIL_ENABLE_PRIVATE_FABRIC_V1=OFF` default、exact-size struct、unknown version拒否 |
+| NFL1 logical envelope | candidate version 1。public application wireでもNRW1でもない |
+| NFL1 length domains | header 584、codec構造受理587..1925、codec buffer ceiling 2048。6-kind意味論positive最大は1797 |
+| Fabric storage | dedicated `ninlil.fabric.v1` schema 1 candidate。`FBM1/FBR1/FBP1/FBC1/FBA1/FBT1`、273 records / 134,612 CU bytes、FULL staging 546 / 269,224。Foundation schema 1、ESP format 4、radio-security store不変 |
+| Compact radio mapping | 未割当。NFL1↔NRW1を推測せず、別Accepted ADR/KATまでRF packet admission/TX 0 |
+
+mixed versionはdescriptorのlocal/peer versionがともにNFL1 exact 1で、peer capabilityの
+`NFL1_V1` bitもある場合だけを許す。peer 0、2、unknown、capability不一致では
+UNSUPPORTED/attach拒否とし、raw `ninlil_bearer_message_t`、field drop、zero補完へfallbackしない。
+rollback binaryが`ninlil.fabric.v1` unknown schema/migration markerを見た場合はREAD_WRITE call 0で
+拒否する。schema 1にはpredecessor migrationがなく、空namespaceへのfresh adoptionだけを許す。
+将来migrationはsource/target/migration generation/rollback floorと全write-point
+COMMIT_UNKNOWN KATを持つ新schema ADRなしに開始しない。
+Accepted 30章が示す現ESP port `max_namespaces=2`では、3個目の
+`ninlil.fabric.v1`を有効化しない。既存Foundation/radio-security namespaceへ混在させず、
+target storage profileの別review/evidenceまでESP FabricはUNSUPPORTEDである。
+
+compatibility matrixへFabricを載せるのは少なくとも次を満たしたreleaseだけである。
+
+- public Platform ABI manifestがbit/offset exact不変で、old non-Fabric consumerがcompile/linkする
+- private feature OFF buildがFabric symbol/object/storage namespaceを参照しない
+- feature ONのsame-version KATとold/new/unknown拒否matrixが通る
+- `tools/fabric_bearer_spec_vector_gen.py --check`がbyte-identicalである
+- compact RF mapping未実装buildがNRW1をemitせず、Accepted 30章のTxPermit sole authorityを迂回しない
 
 ### R5 RegulatoryProfile schema 2 (R6)
 

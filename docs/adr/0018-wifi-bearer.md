@@ -27,11 +27,18 @@ Fabric Bearerへpacket-linkとして接続する必要がある。
 
    ```text
    DISABLED -> RADIO_READY -> ASSOCIATED -> IP_READY
-            -> CHANNEL_AUTHENTICATED -> PEER_SESSION -> ATTACHED
+            -> CHANNEL_AUTHENTICATED -> PEER_SESSION
+            -> ATTACHMENT_NEGOTIATING -> ATTACHED
    ```
 
    後段失敗を前段成功へ丸めず、Wi-Fi associationやTCP connectをpeer identity、Attachment、
-   custody、Application Receiptの証拠にしない。
+   custody、Application Receiptの証拠にしない。`CHANNEL_AUTHENTICATED`はTLS profileと
+   certificate identityの成功、`PEER_SESSION`は後述のnon-zero `peer_session_id`導出成功だけを
+   表す。どちらもAttachment成功ではない。`ATTACHMENT_NEGOTIATING`では別途Acceptedになった
+   M4 Attachment protocolを、同protocolが固定するpre-attachment carrierで実行する。
+   NFL1-onlyのNWB1をAttachment carrierへ流用してはならない。M4 carrierが未Acceptedまたは
+   未実装なら`PEER_SESSION`から先へ進まず、NWB1送受信、Fabric availability、Application publishは
+   すべて0である。
 4. peer endpointはControllerが署名/認証したconfigurationで指定する。mDNS、broadcast discovery、
    last-known addressは補助候補にできるがauthorityにならない。未知peerへ自動attachしない。
 5. production候補security profileは本ADRの
@@ -51,42 +58,69 @@ Fabric Bearerへpacket-linkとして接続する必要がある。
    | 32 | 4 | per-direction sequence |
    | 36 | 4 | CRC32C |
 
-   payloadはexact 1個のNFL1 packetとし、`payload_length`は584..2048、
-   `total_length = 40 + payload_length`で最大2088 bytesとする。CRC32Cはreflected Castagnoli
-   polynomial `0x82F63B78`、initial `0xffffffff`、final XOR `0xffffffff`を用い、
-   offset 36..39を0としてrecord全体を計算する。
-7. `session_id`はTLS exporterからexactに導出する。
+   payloadはexact 1個のNFL1 packetとする。NWB1構造codecの`payload_length`受理範囲は
+   **587..1925**、`total_length = 40 + payload_length`の受理範囲は**627..1965**である。
+   1925 bytesはNFL1の構造ceilingであり、6-kind意味論positiveの最大は1797 bytes、
+   したがってdelivery可能なNWB1 record最大は1837 bytesである。1925-byte NFL1のように
+   構造は正しいが6-kind matrixに違反するpayloadは、NWB1 framing成功後のNFL1 decodeで
+   delivery 0 + connection closeとする。CRC32Cはreflected Castagnoli polynomial
+   `0x82F63B78`、initial `0xffffffff`、final XOR `0xffffffff`を用い、offset 36..39を0として
+   record全体を計算する。
+7. TLS exporter identityを**pre-attachment peer session**と**post-attachment NWB1 session**へ
+   分離する。
 
    ```text
-   context =
+   peer_context =
      authority_id[16] || authority_term_u64_be || assignment_epoch_u32_be ||
      tls_client_role_u8(0x01) || tls_client_runtime_id[16] ||
-     tls_server_role_u8(0x02) || tls_server_runtime_id[16] ||
-     attachment_binding_digest[32]
+     tls_server_role_u8(0x02) || tls_server_runtime_id[16]
+   peer_session_id =
+     TLS-Exporter("EXPORTER-Ninlil-PeerSession-v1", peer_context, 16)
+
+   attached_context =
+     peer_session_id[16] ||
+     attachment_authority_id[16] ||
+     active_attachment_binding_digest[32]
    session_id =
-     TLS-Exporter("EXPORTER-Ninlil-NWB1-v1", context, 16)
+     TLS-Exporter("EXPORTER-Ninlil-NWB1-Attached-v1", attached_context, 16)
    ```
 
    `tls_client_runtime_id`と`tls_server_runtime_id`はauthenticated TLS handshake roleで固定し、
    client/server双方が同じ順序・同じrole byteでcontextを組み立てる。local/peer順への置換や
-   runtime IDのlexicographic sortは禁止する。authority bindingはNFL1と同じclosed groupで、
+   runtime IDのlexicographic sortは禁止する。`peer_context`はexact 62 bytes、
+   `attached_context`はexact 64 bytesである。authority bindingはNFL1と同じclosed groupで、
    Wi-Fi profileがBOUNDを要求するflowでは3 fieldすべてnon-zero、controllerless profileを
    別途明示許可する場合だけ3 fieldすべてzeroとする。mixed groupはsession不成立とする。
-   exporter失敗またはall-zero resultはsession不成立、NFL1 delivery 0とする。送受信方向は同じ
-   session_idを使うが、sequence stateは方向ごとに独立する。
+   `peer_session_id`の成功だけではNWB1を送受信しない。M4がFULL durableに確立した
+   `attachment_authority_id`と`active_attachment_binding_digest`が、TLS credential内の
+   authorized Attachment candidateおよびFabric descriptorとbit-exact一致した後だけ、
+   second exporterを呼び`ATTACHED`へ遷移する。どちらかのexporter失敗またはall-zero resultは
+   session不成立、NFL1 delivery 0とする。送受信方向は同じpost-attachment `session_id`を使うが、
+   sequence stateは方向ごとに独立する。
 8. 各方向の最初のsequenceはexact 0、以後exact `previous + 1`とする。gap、duplicate、
    out-of-order、unknown version、header/total/payload不一致、CRC不一致、wrong session、
    invalid NFL1はrecord delivery 0でconnectionを閉じる。byte単位のmagic再走査で同じsessionを
    継続しない。`UINT32_MAX`は決して送信せず、`UINT32_MAX-1`送信後はclean closeしてfresh full
    handshake/session_id/sequence 0へ切り替える。wrapは禁止する。
-9. incremental parserは40-byte header + 2048-byte payloadの固定buffer内でpartial read/writeを
+9. incremental parserは40-byte header + 1925-byte payloadの固定buffer内でpartial read/writeを
    処理する。最大1 recordを超えて無制限にread-aheadせず、backpressureを上流予約へ伝える。
    NWB1 codec、queue、RX/TX record bufferはcaller-ownedで、heap growth、VLA、raw C struct、
    pointer/paddingの送信を禁止する。stock TLS backendのallocator contractは§14で別に固定し、
-   TLS内部allocationをportable Coreのheap-free claimへ含めない。
+   TLS内部allocationをportable Coreのheap-free claimへ含めない。Fabric packet-link
+   `start_send`のNFL1 viewはcall中だけborrowedである。providerはsocket/TLSへ1 byteでも渡す前に、
+   full NFL1 bytes、NWB1 header/sequence reservation、retry offsetをbounded TX slotへcopy-ownする。
+   slotを全部reserveできない場合だけ`WOULD_BLOCK + token NULL`を返し、保持byte、sequence消費、
+   socket writeを0にする。`RETAINED + non-NULL token`後のpartial TCP/TLS write、
+   `WANT_READ/WANT_WRITE`、backpressureはprovider内部の`poll_send`進捗であり、outer
+   `WOULD_BLOCK`へ戻さない。terminal後もFabricの`release_send` exact 1回までslot/tokenを保持する。
 10. NWB1 recordのsocket write完了、peer kernel ACK、TLS record成功はcustodyではない。
-   U6 custodyは[26章](../26-u6-transport-custody.md)のdual FULL後だけ成立する。
-   multi-frameはADR-0021の新versionを要する。
+    **NWB1はNFL1-onlyであり、NCG1/NCL1 control-v2のU6 wireを運ばない。** 本reference
+    Wi-Fi packet-linkは`NINLIL_FABRIC_CAP_CUSTODY`を広告してはならず、NFL1
+    `CUSTODY_ACCEPTED`を受信してもU6 Transport Custodyへ昇格しない。Wi-Fi上でcustodyを
+    提供する場合は、U6のdual-FULL semanticsを保ったversioned carrier/mappingを別ADRで
+    Acceptedにし、両端実装とcrash/restart KATが揃った後だけ別security profile revisionで
+    capabilityを有効化する。現profileでcustody-required policyはineligibleである。
+    multi-frameはADR-0021の新versionを要する。
 11. path selectionはADR-0017のdescriptor/security/availability/admission snapshotに従う。
     unknown/unattested profile、peer/Attachment binding不一致はineligibleである。Wi-Fi断時、
     LoRa/local pathがsecurity、payload/fragment、
@@ -96,7 +130,233 @@ Fabric Bearerへpacket-linkとして接続する必要がある。
     starveしてはならない。per-peer frame/byte/inflight、reconnect rate、backoff、keepalive、
     session数は§14のexact boundを超えてはならない。
 13. ESP sleep中のWi-Fi unavailableはavailability epochを進める。起床予定をavailableとして
-    偽装せず、sleepy receive windowとdeadlineの交差をadmission時に検査する。
+   偽装せず、sleepy receive windowとdeadlineの交差をadmission時に検査する。
+
+## Private packet-link / ESP STA adapter candidate
+
+本節はprivate source-only、default-OFFの設計候補である。public Runtime ABI、installed header、
+stable symbolを割り当てない。ADR-0017のprivate Fabric APIが`SPEC_ACCEPTED`になるまで本APIも
+`SPEC_ACCEPTED`へ進めず、値やlayoutを実装都合で先取り公開しない。
+
+### Adapter ownershipとlifecycle
+
+private version候補は`NINLIL_WIFI_PRIVATE_API_VERSION=0x0001`である。caller-owned workspaceから
+exact 1個のadapterを作り、adapterがADR-0017のpacket-link opsとdescriptorを返す。
+OS/ESP handle、socket、`SSL*`、`mbedtls_*`、`esp_netif_t*`、event handler instanceをFabric、
+Portable Core、installed APIへ公開しない。
+
+```text
+ZERO -> CREATED -> OPEN -> DRAINING -> CLOSED -> DESTROYED
+```
+
+- create failureはout handle NULL、workspace ownership移転0である。
+- `open`は同時exact 1個。二つ目は`WOULD_BLOCK`である。
+- event callback、socket/TLS callback、credential provider callbackからadapter/Fabric/Runtimeへ
+  再入しない。callbackはbounded event recordをowner queueへcopyするだけで、owner task/loopの
+  `step`だけがESP Wi-Fi API、socket、TLS、Fabric packet-link stateを進める。
+- `drain_begin`後はnew connect、new Attachment、new send retentionを0にし、retained tokenを
+  terminal/cancelへ進め、receive loan 0、session close、event handler unregister、netif/driver
+  teardownの順に閉じる。`destroy`はCLOSEDでだけworkspaceをzeroize/consumeする。
+- ESP Wi-Fi driverを他componentと共有するco-tenant profileはv1対象外である。adapterが
+  `esp_wifi_init/start/stop/deinit`とdefault STA netifのsole ownerでない構成は
+  `UNSUPPORTED`とする。Host POSIX adapterにはこの制約を適用しない。
+
+operational stateは次のclosed setである。
+
+```text
+DISABLED
+  -> RADIO_READY
+  -> ASSOCIATING
+  -> ASSOCIATED
+  -> IP_READY
+  -> TCP_READY
+  -> CHANNEL_AUTHENTICATED
+  -> PEER_SESSION
+  -> ATTACHMENT_NEGOTIATING
+  -> ATTACHED
+  -> BACKOFF | FENCED | DRAINING
+```
+
+ESP event callbackは`event_generation_u64`をchecked +1し、
+`{generation, event_kind, disconnect_reason_or_zero, ip_change_or_zero}`の固定recordをqueueへ入れる。
+queue上限8、overflowまたはgeneration wrapは`FENCED`、availability 0、全socket closeである。
+ownerはgeneration昇順だけを処理し、old/duplicate eventをstate成功へ使わない。
+`WIFI_EVENT_STA_CONNECTED`はASSOCIATEDまで、`IP_EVENT_STA_GOT_IP`はIP_READYまでである。
+GOT_IP前にsocket create/connect/listenを行わない。
+`WIFI_EVENT_STA_DISCONNECTED`、`IP_EVENT_STA_LOST_IP`、またはGOT_IPの`ip_change=true`は、
+eventをownerがconsumeした同transitionで全TCP/TLS/peer/Attachment sessionをFENCED、
+NWB1 publish 0、Fabric availability epoch exact +1、socket closeとする。同じphysical eventを
+複数ESP eventで観測してもsession fence generationごとにavailabilityを1回だけ進める。
+切断後に旧socketが同じIPで再び使えると推測しない。
+
+### Exact private configuration candidate
+
+全input structは先頭に`api_version u16, struct_size u16`を持ち、version 1のexact sizeと
+reserved zeroだけを受理する。instance/config/local/expected-peer ID、config digest/revision、
+endpoint portはnon-zero、IPv4 unused tail 12 bytesはzeroである。network profile tupleと
+endpoint addressのzero規則は下記adapter-kind/role別規則を優先する。
+
+```text
+wifi_adapter_config_v1:
+  adapter_kind_u32             POSIX_TCP=1 / ESP32S3_STA_TCP=2
+  tls_role_u32                 CLIENT=1 / SERVER=2
+  instance_id[16]
+  configuration_revision_u64
+  configuration_digest[32]
+  local_runtime_id[16]
+  expected_peer_runtime_id[16]
+  endpoint_address_kind_u32    IPV4=1 / IPV6=2 / LOCAL_ANY=3
+  endpoint_address[16]
+  endpoint_port_u16
+  reserved_u16=0
+  network_profile_id[16]
+  network_profile_revision_u64
+  network_profile_digest[32]
+  reconnect_profile_id_u32     exact 1
+  reserved_u32=0
+  Storage / Clock / Execution ops
+  network_credential_provider ops
+  M4 Attachment carrier ops
+```
+
+`configuration_digest`は
+`SHA-256(ASCII("NINLIL-WIFI-ADAPTER-CONFIG-V1") || exact scalar/byte fields above with
+configuration_digest zero)`である。function/user pointer、workspace addressをhashしない。
+POSIX adapterではnetwork profileのID/revision/digestをall-zero必須、credential provider NULLとする。
+ESP adapterでは三つをnon-zero必須、provider必須である。clientはIPV4/IPV6のconfigured
+non-zero remote endpointへだけconnectする。serverはIPV4/IPV6のconfigured local address、
+またはLOCAL_ANY + all-zero addressへだけbindする。clientのLOCAL_ANY、serverのIPV4 unused
+tail non-zeroをrejectする。DNS、mDNS、DHCP option、
+last-known address、redirectからauthority endpointを変更しない。別候補を許す場合は
+configuration revisionを上げた別exact configをinstallする。
+
+network profileはadapter lifetime中immutableである。変更はold adapter drain/destroy後のnew create
+だけで、in-place SSID/password/endpoint rotationをしない。configuration/network revisionの
+rollback、同一revision digest conflict、providerが返すprofile tuple不一致はFENCEDである。
+
+private status候補は次のclosed catalogである。
+
+```text
+OK=0, INVALID_ARGUMENT=1, WRONG_THREAD=2, REENTRANT=3,
+UNSUPPORTED=4, WOULD_BLOCK=5, UNAVAILABLE=6, DENIED=7,
+CAPACITY=8, CORRUPT=9, CLOSED=10, STORAGE=11,
+STORAGE_COMMIT_UNKNOWN=12
+```
+
+unknown status、status/output shape矛盾、non-OK poison outputはCORRUPTである。source-only関数候補は
+次だけで、全outはentry時zero、OK時だけvalidである。
+
+```c
+wifi_workspace_required_v1(adapter_kind, out_bytes, out_alignment)
+wifi_create_v1(config, workspace, workspace_bytes, out_adapter)
+wifi_packet_link_descriptor_v1(adapter, out_descriptor)
+wifi_packet_link_ops_v1(adapter, out_ops)
+wifi_step_v1(adapter, max_work_1_to_64, out_work_done)
+wifi_state_v1(adapter, out_operational_state, out_reason, out_epoch)
+wifi_drain_begin_v1(adapter)
+wifi_drain_poll_v1(adapter, out_done)
+wifi_destroy_v1(adapter)
+```
+
+descriptor/opsはadapter-owned immutable viewでdestroyまで有効、Fabric registrationはそれらを
+ADR-0017規則でcopyする。`step`だけがprogressし、`state`/`drain_poll`はprogressしない。
+owner threadはsuccessful createのthreadで固定し、別threadはWRONG_THREAD、callback/vtable内再入は
+REENTRANTでside effect 0である。`drain_begin`はOPENでOK、DRAININGでidempotent OK、
+CLOSEDでCLOSED。`drain_poll done=1`だけがCLOSEDをpublishし、destroy前にFabric側の
+unregister/retained-token drainが完了していなければdone=0である。
+
+### ESP station network credential provider
+
+Wi-Fi association secretをTLS credential storeやFabric storeへ混在させない。Portable Coreは
+SSID/passwordを受け取らない。private providerはowner stepから同期的にだけ呼び、exact profileを
+caller-owned bufferへcopyする。
+
+```text
+get(profile_id, revision, digest, out_metadata, secret_buffer[64])
+release(profile_id, secret_buffer[64])
+```
+
+statusは`OK / NOT_FOUND / TEMPORARY / PERMANENT / CORRUPT / CAPACITY`のclosed setである。
+non-OKではmetadata/secret length 0、poison出力はCORRUPTである。OK時metadataは次である。
+
+```text
+profile_id[16] | revision_u64 | digest[32] |
+credential_binding_id[16] |
+ssid_length_u8(1..32) | ssid[32] |
+auth_mode_u8 | password_length_u8 | pmf_required_u8(=1) |
+optional_bssid_present_u8 | bssid[6] | channel_u8 | reserved[7]=0
+```
+
+auth mode候補は`WPA2_PSK=1 / WPA3_SAE=2 / WPA2_WPA3_TRANSITION=3`だけで、OPEN、WEP、
+WPA1、enterprise、OWE、DPPはv1では`UNSUPPORTED`である。passwordは8..63 byte、または
+64-byte lowercase/uppercase ASCII hex PSKだけを許す。embedded NULを許さず、SSIDはopaque
+1..32 byteでNUL終端を意味しない。BSSID absentなら6 bytes zero、presentならunicast non-zero。
+`credential_binding_id`はproviderがCSPRNGで割り当てるnon-zero opaque 128-bit値で、
+passwordをhash/truncateして作らない。profile digestは
+`SHA-256(ASCII("NINLIL-WIFI-NETWORK-PROFILE-V1") || exact metadata with digest zero)`とし、
+password byteを直接またはunsalted hashとして入力/公開しない。passwordを変えるprovider updateは
+new credential binding ID、revision exact +1、new digestを必須とする。同じtupleで異なるsecretを
+返したことをadapter単独で検出できるとは主張せず、provider conformance testが同じimmutable
+binding IDのsecret安定性とrotation規則を検証する。
+channel 0はprofile-authorized auto selection、1..14は固定候補であり、実際のcountry/channel
+legalityはapplication-provided Hardware/Regulatory profileとESP country configurationの別gateを
+通す。Wi-Fi associationをSX1262 TxPermitや920 MHz regulatory proofへ流用しない。
+
+provider `release`はget OKごとexact 1回で、adapterは`esp_wifi_set_config` return直後にcaller
+secret bufferをzeroizeしてreleaseする。ESPは`WIFI_STORAGE_RAM`を設定し、driver-owned flash/NVSを
+credential authorityにしない。driverが保持するRAM credentialはdisconnect/stop/deinit完了まで
+残り得るため、その期間をcredential provider releaseやzeroization完了と表示しない。
+`esp_wifi_set_config`後に`esp_wifi_get_config`でsecretを読み戻して比較・logしてはならない。
+diagnosticはprofile ID/revision/digest、auth mode、reason catalogだけを持ち、
+SSID/password/BSSID、certificate、IP packetを保存しない。
+
+### Timers、reconnect、status mapping
+
+timerはClockのtrusted same-epoch sampleだけで比較し、all-zero epoch、regression、overflowは
+FENCEDである。profile 1のexact ceilingは次とする。
+
+| Phase | Exclusive deadline |
+| --- | ---: |
+| Wi-Fi start + association | 15,000 ms |
+| DHCP / first GOT_IP | 15,000 ms |
+| TCP connect / accept | 10,000 ms |
+| TLS full handshake | 15,000 ms |
+| peer exporter + M4 Attachment + second exporter | 15,000 ms |
+
+各phase開始時に`deadline = checked(now + ceiling)`をcopy-ownする。deadline到達
+（`now >= deadline`）で次stateへ成功遷移せずsocket/sessionを閉じる。reconnect backoffは
+failure generation 1から`1000, 2000, 4000, 8000, 16000, 32000 ms`、以後32000 msである。
+thundering herd回避値は
+`jitter_ms = first_u16_be(SHA-256(instance_id || failure_generation_u64_be)) mod 1000`、
+`not_before = checked(now + backoff + jitter)`とする。entropy、OS random、wall clockを
+使わない。successful ATTACHEDが連続60,000 ms維持された後だけ次failure generationを1へ戻す。
+failure generation wrap/checked-add overflowはautomatic reconnect 0/FENCEDである。
+owner step 1回でconnect/start/close/TLS/Fabric transition各最大1、同tick spin 0とする。
+
+packet-link status mappingは次だけである。
+
+| Condition at `start_send` | Exact link status / ownership |
+| --- | --- |
+| malformed config/NFL1/session mismatch、unknown event/state | CORRUPT、retain 0、TX 0 |
+| policy/security/peer/active Attachment mismatchまたはfence | DENIED、retain 0、TX 0 |
+| stateがATTACHEDでない、socket/session closed | UNAVAILABLE、retain 0、TX 0 |
+| bounded TX slot不足 | WOULD_BLOCK、retain 0、TX 0 |
+| full NFL1 + retry state copy-own完了 | RETAINED + token。以後partial I/Oはpoll内部 |
+
+disconnect/errorがRETAINED前ならside effect 0を証明できるstatusだけを返す。
+RETAINED後のwrite/close/timeoutは`PENDING -> DEFINITE_FAILURE`またはdelivery可能性が排除できなければ
+`LOST_UNKNOWN`であり、outer ACCEPTEDを遡及変更しない。errno/`esp_err_t`をpublic statusへ
+数値castせず、closed mapping外はCORRUPTである。
+
+### Adapter resource profile 1
+
+ESPはadapter 1、active STA profile 1、TCP/TLS session 2、connect attempt 1、event queue 8、
+TX retained token 8、RX complete record 8、各peer receive loan 1とする。Hostはadapter 64、
+session 64、connect attempt 8、per-session TX 8/RX 8とする。各TX/RX recordは1965 bytes固定で、
+count/byte reservationをsession admission前に行う。ESPのdriver/LwIP/netif/DHCP/PBUF exact
+pool/heap値は§14.5 RELEASE gateでtarget measurementにより固定するまで
+`TARGET_CANDIDATE`へ進めない。workspace不足、event/token/record/session満杯でheap fallback、
+既存reservation横取り、unbounded queueを行わない。
 
 ## NINLIL-WIFI-TLS13-P256-V1 exact profile
 
@@ -115,9 +375,16 @@ client_init / server_init
 handshake_step -> COMPLETE | WANT_READ | WANT_WRITE | CLOSED | FATAL
 read_step / write_step -> byte_count + WANT_READ/WANT_WRITE/CLOSED/FATAL
 authenticated_peer_binding
-export_session_id
+export_peer_session_id
+export_attached_session_id
 close
 ```
+
+`export_peer_session_id`はTLS full-handshake postcondition通過後だけexact 62-byte
+`peer_context`を受理する。`export_attached_session_id`は同じchannel上でM4 Attachmentの
+FULL durable success後だけexact 64-byte `attached_context`を受理する。adapterは両contextを
+組み立て、channelはcontext length/labelを固定してbackend exporterを呼ぶ。二つを同じlabel、
+同じstate、同じoutput cacheへ丸めない。
 
 `WANT_READ/WANT_WRITE`後は同じ未完了operationを再開する。positive partial write後だけoffsetを
 進め、0-byte writeを送信に使わない。`FATAL`後のhandle再利用は禁止する。deadline、socket readiness、
@@ -610,7 +877,7 @@ GeneralNamesが続く。indefinite length、非最短length、別tag、別orderi
 | 0 | 1 | binding version = `0x01` |
 | 1 | 1 | credential role: TLS client=`0x01`、TLS server=`0x02` |
 | 2 | 16 | non-zero `runtime_id` |
-| 18 | 32 | non-zero allowed Attachment binding digest |
+| 18 | 32 | non-zero authorized Attachment candidate binding digest |
 | 50 | 16 | non-zero `authority_id` |
 | 66 | 8 | non-zero `authority_term` |
 | 74 | 4 | non-zero `credential_generation` |
@@ -619,6 +886,10 @@ GeneralNamesが続く。indefinite length、非最短length、別tag、別orderi
 SAN GeneralNameの追加、binding OID重複、別version/role、zero required field、unknown field、
 DNS/IP/CNだけのidentityはrejectする。SNI、DNS、IP、subject CNはrouting hintにも使わず、
 authenticated peer identityはこのbindingとFULL provisioning recordの一致だけから得る。
+offset 18のdigestは、そのcredentialでM4 negotiationを試みてよい候補をauthorityが事前認証する
+値であり、current Attachment、lease有効性、`ATTACHED` stateの証拠ではない。M4は同じ候補に対して
+fresh authority/lease/policyを検査し、成功時にactive Attachment bindingを別のFULL durable
+recordへ確立する。candidate digestの一致だけで`ATTACHED`へ遷移したりNWB1をpublishしてはならない。
 pinしたmbedTLSではcustom OIDの`otherName`を
 `mbedtls_x509_parse_subject_alt_name()`へ渡すと
 `MBEDTLS_ERR_X509_FEATURE_UNAVAILABLE`になり得る一方、
@@ -667,7 +938,7 @@ lifetime中immutable、48-byte
 ```text
 security_identity_snapshot:
 authority_id[16] | authority_term_u64 | clock_epoch_id[16] |
-peer_runtime_id[16] | peer_role_u8 | attachment_binding_digest[32] |
+peer_runtime_id[16] | peer_role_u8 | authorized_attachment_binding_digest[32] |
 peer_leaf_der_sha256[32] | peer_provisioning_record_digest[32] |
 clock_now_ms_u64 | clock_trust_u8 | credential_generation_u32 |
 revocation_generation_u32 | revoked_set_digest[32] |
@@ -978,7 +1249,7 @@ bit-exact一致する
 | 60 | 4 | non-zero `credential_generation` |
 | 64 | 4 | non-zero `revocation_generation` |
 | 68 | 8 | non-zero `credential_manifest_generation` |
-| 76 | 32 | non-zero Attachment binding digest |
+| 76 | 32 | non-zero authorized Attachment candidate binding digest |
 | 108 | 32 | `revoked_set_digest` |
 | 140 | 32 | SHA-256(leaf DER) |
 | 172 | 32 | SHA-256(exact 91-byte leaf SPKI DER) |
@@ -1348,7 +1619,7 @@ handshake中と各NWB1 publish直前のcurrent NRV1 checkは次の順で行う�
    length/order/all digest/reference/timeをすべて再検証する。
 2. authority/term/clock epoch/revocation generation/set digestに加え、当該entryの
    manifest generation、credential generation/provisioning record digestと
-   record内runtime/role/Attachment bindingを
+   record内runtime/role/authorized Attachment candidate bindingを
    immutable identityへ比較し、提示leaf DER SHA-256もsnapshot値と照合する。
    1 byteでも違えばfreshness viewを変更せずfenceする。
 3. current `record_digest`がsession freshness viewと同じならgenerated/valid-untilもbit-exact一致を
@@ -1416,7 +1687,7 @@ verification error/flagをclearしてはならず、profile-owned DER/identity/r
 errorを追加する方向にだけ働く。両backend callbackは同じimmutable snapshotとchain depthを使う。
 
 leaf bindingのauthority、term、credential/revocation generation、leaf DER SHA-256、
-runtime/Attachment bindingはFULL provisioning recordとbit-exact一致を必須とする。snapshotの
+runtime/authorized Attachment candidate bindingはFULL provisioning recordとbit-exact一致を必須とする。snapshotの
 revocation generation/`revoked_set_digest`はcurrent valid NRV1と一致し、peer leaf fingerprintがNRV1に
 存在しないことを必須とする。unknown/stale/corrupt NRV1、digest不一致、clock epoch変更はrejectする。
 intermediate/rootは§14.3.1のauthority-term rotationだけで失効させる。
@@ -1424,17 +1695,23 @@ intermediate/rootは§14.3.1のauthority-term rotationだけで失効させる�
 handshake中またはsession中にcurrent authority term、clock epoch、revocation generation/
 `revoked_set_digest`、credential manifest generation、credential generation、
 peer provisioning record digest、
-Attachment bindingのどれかがsnapshotと変わった時点でsessionを
+authorized Attachment candidate bindingのどれかがsnapshotと変わった時点でsessionを
 `FENCED`にし、以後のNWB1 deliveryを0、availability epochをexact +1、connectionをcloseする。
+別途、M4が所有するcurrent active Attachment recordのauthority、binding digest、lease、
+membership/route/grant stateのいずれかがpost-attachment snapshotから変化、失効、missing、
+corruptになった場合も同じfenceを適用する。credential candidateが不変でもactive Attachmentを
+再推測せず、fresh M4 successなしにsecond exporterやNWB1を再開しない。
 各NWB1 recordをPortable Coreへpublishする直前にもfresh immutable authority viewを再取得する。
 そのview自身のageを`<=300000 ms`、`clock_now < valid_until`とし、session snapshotと同じ
-authority term/clock epoch/revocation/credential/Attachment値、前回session clock以上の
+authority term/clock epoch/revocation/credential/authorized Attachment candidate値、
+current active Attachment snapshot、前回session clock以上の
 `clock_now`、`clock_now < min(leaf, intermediate if present, root notAfter)`を必須とする。
 current NRV1のage/validity/record digestも再検査する。取得不能、stale/corrupt NRV1、
 clock rollback、chain expiryへ達した場合も同じfenceを適用し、そのrecordをpublishしない。
 immutable identity snapshot自体をin-place更新せず、上記48-byte freshness viewとsession last
 clockだけを進める。
-rotationはnew credential FULL → new full handshake/peer binding/exporter → old session FENCED/close
+rotationはnew credential FULL → new full handshake/peer binding → fresh `peer_session_id`
+→ M4 Attachment FULL → fresh post-attachment `session_id` → old session FENCED/close
 → old credential retireの順とする。ESP per-peer 2-session上限はこの重複期間だけを許す。
 
 ### 14.4 Resumption、0-RTT、KeyUpdate
@@ -1460,8 +1737,8 @@ pinしたmbedTLS SHAにはKeyUpdate処理branchがなく、handshake後のKeyUpd
 application delivery 0のままcloseする。target injection testでこのerror pathが変わった版、
 またはKeyUpdateをsilent処理して上記hook/errorで観測できないbackend/versionはprofile不適合とする。
 session lifetimeは最大3,600,000 msで、sequence上限、credential/authority fence、deadlineの
-早い方でcloseし、rekeyはfresh TCP + fresh full handshake + fresh non-zero exporter
-`session_id`だけで行う。
+早い方でcloseし、rekeyはfresh TCP + fresh full handshake + fresh non-zero
+`peer_session_id` + fresh M4 Attachment + fresh non-zero post-attachment `session_id`だけで行う。
 
 ### 14.5 TLS record、certificate flight、allocator bounds
 
@@ -1472,8 +1749,8 @@ NWB1/Core資源とstock TLS資源を次の別accounting domainにする。
 | total TLS sessions | 2 | 64 |
 | concurrent handshakes | 1 | 8 |
 | sessions per peer | 2（rotation中のみ。通常1） | 2 |
-| NWB1 RX buffer / session | 2088 bytes fixed | 2088 bytes fixed |
-| NWB1 TX buffer / session | 2088 bytes fixed | 2088 bytes fixed |
+| NWB1 RX buffer / session | 1965 bytes fixed | 1965 bytes fixed |
+| NWB1 TX buffer / session | 1965 bytes fixed | 1965 bytes fixed |
 | TLS inbound plaintext record | 16384 bytes max | 16384 bytes max |
 | TLS emitted application-data plaintext fragment | 4096 bytes max | 4096 bytes max |
 | TLS outbound content buffer | 4114 bytes fixed（4110-byte Certificate body + 4-byte Handshake header） | backend-owned、4114-byte Certificate handshakeを許容 |
@@ -1509,11 +1786,13 @@ R7 crypto利用より前に1回だけinstallする。Hostの`CRYPTO_set_mem_func
 他componentのOpenSSL API、自動初期化より前に呼ぶ。各setterの成功をstartup gateとし、
 既にlibrary allocation/initializationが発生してhookをinstallできないprocessはprofileを開始しない。
 
-owner classは`TLS_SESSION(session_id)`、`CRYPTO_GLOBAL`（provider、config、property cache、
+owner classはadmission時に割り当てたnon-wire opaque `TLS_SESSION(channel_instance_id)`、
+`CRYPTO_GLOBAL`（provider、config、property cache、
 DRBGを含む）、`OTHER_REGISTERED(component_id)`とする。per-session budgetは
 `TLS_SESSION` allocationだけを数え、session-pool budgetは全`TLS_SESSION`のcurrent bytes合計、
 global/provider budgetは`CRYPTO_GLOBAL`、total budgetは3 owner classすべてのcurrent bytes合計を
-数える。global/provider allocationをsessionへ誤帰属せず、初期化後baselineとpeakを
+数える。`channel_instance_id`は`peer_session_id`/NWB1 `session_id`から導出せず、closeまで
+immutableである。global/provider allocationをsessionへ誤帰属せず、初期化後baselineとpeakを
 `CRYPTO_GLOBAL`へchargeする。いずれかの列上限を超えてはならない。同一processの他library利用者は
 owner budgetを登録し、unowned allocation、TLS libraryのbackground threadをproductionで許可しない。
 allocator owner切替とTLS/crypto backend callは直列化し、callbackを含むcall終了までownerを
@@ -1554,11 +1833,15 @@ exhaustion動作、構造gate、算術/KATを設計として固定するが、ta
   backend/build/allocator closure設計が`SPEC_ACCEPTED`になるまで候補である。実fingerprint allowlist、
   target-executed handshake、HILは`RELEASE_SUPPORTED` gateであり、設計受入を循環依存させない。
 - NFL1 version 1を内包するが、NWB1とNFL1のversion domainを共有しない。
-- NCG1/NCL1 control framing、U5/U6 control v2、NRW1 `0x11`を変更しない。
+- NCG1/NCL1 control framing、U5/U6 control v2、NRW1 `0x11`を変更しない。NWB1へ
+  NCG1/NCL1/U6を埋め込まず、本profileのWi-Fi descriptorはcustody capabilityを0にする。
 - NWB1非対応peerへraw POSIX loopback wire、NCG1、plain length-prefixでsilent fallbackしない。
 - old Runtimeは従来Bearerを継続利用できる。Wi-Fi設定がないdeviceはregistryへinstanceを登録しない。
 - credential、peer endpoint、link policyはrevision/digest付きnamespaceへ保存し、socket/fd、
   DHCP lease、pointerはdurable化しない。
+- private Wi-Fi source API candidateは`0x0001`、build default OFF、installed header/symbol 0である。
+  ESP station network profileのsecretはprovider-ownedで、TLS credential namespaceやFabric
+  namespaceへcopyしない。future provider schemaをv1 adapterが推測decodeしない。
 
 ## SPEC_ACCEPTED gate
 
@@ -1567,9 +1850,12 @@ HIL、production supportを意味しない。次をすべて閉じた時だけPr
 
 1. scope、dependency direction、opaque Core境界、failure domain、custody/Attachment非混同、
    TEST/LAB_ONLY downgrade、old Runtimeとのcompatibility/nonclaimをexactに固定する。
-2. NWB1 40-byte header、584..2048 payload、2088-byte record、CRC32C、sequence、exporter
-   label/context、partial I/O、error/close規則を独立model/KATで再計算する。version 1はこの時点で
-   **reserved**となるがstable public/production supportではない。
+2. NWB1 40-byte header、構造payload 587..1925、構造record 627..1965、
+   6-kind positive最大1797/1837、CRC32C、sequence、2段階exporter label/context、
+   pre-attachment carrier分離、partial I/O、RETAINED ownership、error/close規則を
+   独立model/KATで再計算する。version 1はこの時点で**reserved**となるがstable
+   public/production supportではない。M4 carrierが未Acceptedならpost-attachment NWB1を
+   production reachableとしない。
 3. TLS exact suite/group/signature/mTLS、ESP-IDF/mbedTLS source pinとsdkconfig、
    `CLOSURE_ROOTS_V1` source/link/final-ELF gate、Host OpenSSL source pin、2 target tuple、
    ordered hermetic build recipe、OWF1 schema、static/provider/libctx/bootstrap条件を固定する。
@@ -1590,6 +1876,11 @@ HIL、production supportを意味しない。次をすべて閉じた時だけPr
    version/migration文書、decision log、独立security reviewを同期し、未解決P0/P1を0にする。
 7. `SPEC_ACCEPTED`後のimplementationはprivate/feature-gated、default OFFから開始し、
    `RELEASE_SUPPORTED`前のproduction on-air enable、stable public install、support claimを禁止する。
+8. private packet-link/STA APIのstatus、workspace/lifecycle、owner/reentrancy、config digest、
+   endpoint role/address、credential provider/opaque binding、event generation、GOT_IP gate、
+   disconnect/IP-change fence、phase deadline、reconnect jitter、resource boundをexact vectorへ固定する。
+   ESP driver sole-owner前提、`WIFI_STORAGE_RAM`、unsupported auth mode、M4 carrier dependency、
+   Fabric hot-unregister順を明示し、provider secretをCore/Fabric/storage/diagnosticへ混入しない。
 
 ## RELEASE_SUPPORTED gate
 
@@ -1627,8 +1918,10 @@ C1〜C10をすべて閉じた時だけ`RELEASE_SUPPORTED`へ遷移できる。
    critical bindingによるserver identity成功も直接assertする。
 5. TLS negative matrixはTLS 1.2、AES-256-GCM、ChaCha20-Poly1305、X25519、P-384、
    RSA-PSS、wrong/missing clientまたはserver certificate、wrong trust anchor、KU/EKU/role/
-   runtime/Attachment/authority mismatchを1条件ずつ注入し、`CHANNEL_AUTHENTICATED=0`、
-   NFL1 delivery 0を証明する。
+   runtime/authorized Attachment candidate/authority mismatchを1条件ずつ注入し、
+   `CHANNEL_AUTHENTICATED=0`、NFL1 delivery 0を証明する。TLS成功後のactive Attachment
+   mismatch/expiry/missingは`PEER_SESSION`まで許し、M4/second exporter/NWB1 deliveryを0にする
+   別negative familyで検証する。
 6. NRV1 KATは§14.3.1表のcount `0/1/64`、total/set digest/record digest/record SHA-256を
    bit-exact照合し、sorted lookup hit/miss最大7比較、independent SHA-256 oracleを含む。
    count 65、total/header/
@@ -1662,23 +1955,31 @@ C1〜C10をすべて閉じた時だけ`RELEASE_SUPPORTED`へ遷移できる。
    key binding 64/65・8192/8193 canonical bytes、65番目でV1 epoch rollover 0、2-bank ambiguity、
    全stage/key-provider/publish/migration write crash、PREPARED rollback条件も検証する。
    handshake中と確立後の各fenceでdelivery 0、availability epoch exact +1、closeを証明する。
-7. exporter KATはlabel `EXPORTER-Ninlil-NWB1-v1`、94-byte context、16-byte outputを
+7. exporter KATはpre-attachment label `EXPORTER-Ninlil-PeerSession-v1` +
+   exact 62-byte `peer_context`と、post-attachment label
+   `EXPORTER-Ninlil-NWB1-Attached-v1` + exact 64-byte `attached_context`を別KATとして
    OpenSSL/mbedTLS独立oracleで一致させる。両endpoint同一non-zero、client/server order、
-   local/peer swap、各role byte/runtime/authority/Attachment byte mutation、all-zero/failure、
-   fresh handshakeで別`session_id`を検証する。
+   local/peer swap、各role byte/runtime/authority/active Attachment byte mutation、
+   wrong label/context length、all-zero/failure、M4 success前のsecond exporter call 0、
+   fresh handshakeで別`peer_session_id`/`session_id`を検証する。
 8. resumption/0-RTT testはticket発行0、cache 0、`SSL_session_reused()==0`、ESP PSK mode 0を
    artifact化する。ticket/PSK offerがfresh full handshakeへ落ちる場合だけ通常dataを許可し、
    early byteはdelivery 0とする。OpenSSL message callbackのinbound/outbound flagと、pinned
    mbedTLSの`MBEDTLS_ERR_SSL_UNEXPECTED_MESSAGE`を直接assertし、local KeyUpdate emit 0、
    peer KeyUpdateと同じbackend callで返るplaintextを含むapplication delivery 0、closeを
    Host/ESP両roleで検証する。
-9. NWB1 minimum-valid/maximum KAT、独立CRC32C oracle、1-byte partial read/write、
+9. NWB1 minimum-valid 587/627、最大positive 1797/1837、最大structural 1925/1965 KAT、
+   1925-byte inner kind-matrix reject、独立CRC32C oracle、1-byte partial read/write、
    concatenated record、truncation、trailing、全length/CRC/session mutationを行う。
    per-direction sequence 0、exact +1、gap/duplicate/out-of-order close、
    `UINT32_MAX` emit 0、fresh-session sequence 0を検証する。
 10. TLS/NWB I/Oはfake nonblocking BIO/socketで全handshake stateとrecord byte境界の
     `WANT_READ/WANT_WRITE`、positive partial、same-argument retry、backpressure、peer closeを
     target-executed testする。disconnect at every NWB1 header/payload byteでもfalse custody 0とする。
+    private adapter modelは全operational transition、event generation duplicate/gap/wrap/queue 8/9、
+    GOT_IP前socket 0、disconnect/lost-IP/ip-change fence、phase deadline exact境界、
+    reconnect sequence/jitter/overflow/reset、owner thread/reentrancy、drain/hot-unregisterを
+    independent state modelと照合する。
 11. resource testは§14.5の全boundaryと`+1`、allocation fail at every allocation site、
     concurrent handshake/session/peer上限、oversized TLS record/handshake flight/certificate、
     4110/4111 Certificate body、ESP out content 4114 exact、NRV1 2192/2193、
@@ -1706,7 +2007,10 @@ C1〜C10をすべて閉じた時だけ`RELEASE_SUPPORTED`へ遷移できる。
 13. ESP32-S3 HILは実AP/DHCP/TCPでESP client↔Host serverとHost client↔ESP serverを行い、
     強制AP断、IP変更、peer restart、sleep/wake、credential rotation、allocator OOM、
     Wi-Fi/LwIP pool exhaustion、watchdog、power/association/reconnectをraw timestamp、
-    driver/LwIP heap・pool high-watermark付きで保存する。
+    driver/LwIP heap・pool high-watermark付きで保存する。WPA2、WPA3-SAE、
+    WPA2/WPA3 transitionを各1回、PMF required、SSID length 1/32、password 8/63/64-hex、
+    credential binding rotation、wrong provider tuple、unsupported OPEN/WEP/WPA1/enterprise、
+    `WIFI_STORAGE_RAM`とdriver stop/deinit後のcredential lifecycleをtargetで検証する。
 14. Wi-Fi断時はeligible fallback継続と不適格fallback拒否を分ける。LoRa fallback HILは
     別compact-radio mapping `SPEC_ACCEPTED`後だけであり、本profileの代替evidenceにしない。
 15. clean Linux/macOS example、ESP porting guide、credential/NRV1 generatorと独立DER/SHA oracle、
@@ -1742,3 +2046,9 @@ production supportを主張しない。
 - [V2 Runtime Fabric Completion Contract](../34-v2-runtime-fabric-completion.md)
 - [U6 Transport Custody](../26-u6-transport-custody.md)
 - [R6 Secure compact radio wire](../30-r6-secure-radio-wire.md)
+- [TLS 1.3 — RFC 8446](https://www.rfc-editor.org/rfc/rfc8446)
+- [TLS Exporters — RFC 5705](https://www.rfc-editor.org/rfc/rfc5705)
+- [X.509 PKIX profile — RFC 5280](https://www.rfc-editor.org/rfc/rfc5280)
+- [ESP-IDF v5.5.3 Wi-Fi station scenarios](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32s3/api-guides/wifi-driver/station-scenarios.html)
+- [ESP-IDF v5.5.3 Wi-Fi API](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32s3/api-reference/network/esp_wifi.html)
+- [OpenSSL `openssl-3.5.7` tag](https://github.com/openssl/openssl/releases/tag/openssl-3.5.7)

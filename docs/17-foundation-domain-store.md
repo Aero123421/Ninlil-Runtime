@@ -3,7 +3,7 @@
 状態: **Normative / pre-alpha storage format**
 対象: Foundation M1a private Runtime Store family 5 / 6
 
-本章は[12章](12-foundation-abi.md)のPrivate Runtime Store v1を拡張し、Runtime create Stage 5がdomain recovery、counter/capacity相互検査、durable health再構成を完了するための正本を定めます。Public C ABI、radio wire、Bearer message encodingではありません。
+本章は[12章](12-foundation-abi.md)のPrivate Runtime Store v1を拡張し、Runtime create Stage 5がdomain recoveryとcounter/capacity相互検査を完了し、Stage 7 T6がfresh scanからdurable healthを再構成するための正本を定めます。Public C ABI、radio wire、Bearer message encodingではありません。
 
 ## 1. Scopeとpublish gate
 
@@ -16,11 +16,32 @@ Runtimeは次の全条件を証明するまでpublic handleをpublishしては�
 3. 15 WITNESS_HEAD_INDEX baseline/witnessed exact + CLOCK_BASELINE present、primary/index/backlink、witness、4 counter、11 capacity検査完了
 4. unresolved old/new group 0
 5. identity exactまたはforward rotation commit OK
-6. CLOCK_BASELINE TRUSTEDかつcurrent Stage 7 sample commit OK
-7. Storage priority 1/2 reference 0
+6. CLOCK_BASELINE TRUSTEDかつcurrent Stage 6 T5 sample commit OK
+7. Stage 7 T6 fresh full scan完了、Storage priority 1/2 reference 0
 8. transaction/iterator 0、exclusive Storage handle 1
+9. Stage 8 Bearer open成功
+10. Stage 9 metrics entropy取得成功
 
-Bootstrap直後のphysical empty domainはfamily 5/6 row 0で、metadata初期化前のrecovery transientとしてだけvalidです。Public publish可能なsemantic empty domainはexact 15 BASELINE WITNESS_HEAD_INDEX + 1 TRUSTED CLOCK_BASELINEとbusiness/health/witness row 0です。Stage 5直後のUNINITIALIZED clockはStage 7前だけvalidです。0-rowをpublish可能emptyと推測せず、full scan→16-record metadata初期化→fresh scanを必須とします。
+したがってcanonical create順序は、Stage 5 storage recovery/T0–T4 → Stage 6 trusted
+clock/T5 → Stage 7 health/T6 → Stage 8 Bearer open → Stage 9 metrics entropy →
+Stage 10 public publishの一意な順序である。T5/T6の両方が完了する前はBearer、callback、
+send、public handle、publishを0に保つ。
+
+Initial adoption authorityは[12章6.2](12-foundation-abi.md)と
+[ADR-0022](adr/0022-domain-store-schema1-runtime-binding.md)のfresh READ_WRITE
+transactionにおけるmutation前namespace全体0 rowだけです。同じtransactionでfull
+scan/iterator close後にT1aの17 CREATEをstageしてFULL commitし、別READ_ONLY
+transactionからのupgrade/rebeginは禁止します。「過去に存在しなかった」はStorage ABIから
+証明できないため要件にしません。T1aのformat-2 family 1〜4 exact 17-record bootstrap直後は
+family 5/6 row 0で、metadata初期化前のrecovery transientとしてだけvalidです。T1bは15
+BASELINE WITNESS_HEAD_INDEX + 1 **UNINITIALIZED** CLOCK_BASELINEを別のFULL groupで作り、
+fresh scanを要求します。T5はcurrent Stage 6 trusted sampleを固定したsingle-record old/new
+FULL replacementでCLOCK_BASELINEをTRUSTEDへ進めます。Public publish可能なsemantic empty
+domainはexact 15 BASELINE index + 1 TRUSTED clockとbusiness/health/witness row 0です。
+17 bootstrap、16 metadata、clock transitionの各`COMMIT_UNKNOWN`はADR-0022のOLD/NEW表だけを
+authoritative truthとし、partial/third valueをfenceします。COMMIT_UNKNOWN後のfresh
+READ_ONLY classificationがOLDを示してもそのtransactionをmutationへupgradeせず、fresh
+READ_WRITE transaction内で0-rowを再証明します。
 
 ## 2. Bounded format constants
 
@@ -796,9 +817,9 @@ ELIGIBLEはeligibility判定sampleがsame epochかつnow>=delete-atとなるFULL
 
 **D1-B3n境界**: B3nはRETENTION_BASIS (`0x61`) pure body encode/decodeと本same-record閉包だけの **implementation complete** です（vector format `ninlil-domain-store-v1-d1b3n`）。**D2-S3 scan path wiring implemented**。current-now/profile window/plan generation/live primary PVDはD3です。
 
-- `CLOCK_BASELINE`: `baseline_state:u32 + reserved:u32=0 + trusted_clock_epoch[16] + last_trusted_now_ms:u64 + publish_generation:u64`。Metadata初期化はUNINITIALIZED/common revision 1、epoch/time/generation zeroを必ず作り、以後absentはcorruptです。最初のaccepted Stage 7 sampleはTRUSTED/common revision 2/generation 1へreplaceし、以後の各accepted sampleはsame/new epochともcommon revisionとgenerationをchecked +1してStage 8前にreplaceします。同epochでは`now >= last`、new epochでは任意のtrusted `now`を受理します。後続Bearer open等が失敗してpublic handleをpublishしなくてもbaselineを巻き戻さないため、`publish_generation`はpublish済みhandle数ではなくpublish-attempt用trusted sampleのdurable generationです。GenerationまたはrevisionがMAXならwrapせず`NINLIL_E_DEGRADED`、publish 0、Storage mutation 0です。COMMIT_UNKNOWNはold/new complete value digestで収束し、authoritative newを確認できるまでpublishしません。
+- `CLOCK_BASELINE`: `baseline_state:u32 + reserved:u32=0 + trusted_clock_epoch[16] + last_trusted_now_ms:u64 + publish_generation:u64`。Metadata初期化はUNINITIALIZED/common revision 1、epoch/time/generation zeroを必ず作り、以後absentはcorruptです。最初のaccepted Stage 6 T5 sampleはTRUSTED/common revision 2/generation 1へreplaceし、以後の各accepted sampleはsame/new epochともcommon revisionとgenerationをchecked +1してStage 7 T6前にreplaceします。同epochでは`now >= last`、new epochでは任意のtrusted `now`を受理します。後続Bearer open等が失敗してpublic handleをpublishしなくてもbaselineを巻き戻さないため、`publish_generation`はpublish済みhandle数ではなくpublish-attempt用trusted sampleのdurable generationです。GenerationまたはrevisionがMAXならwrapせず`NINLIL_E_DEGRADED`、publish 0、Storage mutation 0です。COMMIT_UNKNOWNはold/new complete value digestで収束し、authoritative newを確認できるまでpublishしません。
 
-Stage 7がstrictly new clock epochをcommitした場合、Stage 9前にfresh domain scanを行います。ATTEMPT receipt timeout、CANCEL timeout、TRANSACTION retry/deadline timer、RESULT token/reconcile timer、REVERSE_REPLY retry timer、RETENTION_BASISのnon-zero old epochをcomplete record keyごとのpriority 6 `CLOCK_UNCERTAIN` sourceとして導出します。Matching CLEANUP_PLANが存在しbasis state=CLEANUP_COMMITTEDのRETENTION_BASISだけはeligibilityが既にdurable確定しているためsource/rebase対象外で、plan phaseをepoch非依存に継続します。それ以外のmismatch subjectはtimer比較、callback completion、send、cleanupをfail closedし、old numeric timeをnew epochへ比較/換算しません。Active token/send effectを誤って再開しないためRESULT/CANCEL/ATTEMPTと必要なowner STATE/SPOOL/SCHEDULER companionはoperation kind 21のwitnessでRECOVERY_REQUIRED/parkへ進めます。RESULT が ACTIVE token を回収する post は **token_state=EXPIRED**、**E_REC reason=`OUTCOME_UNKNOWN`** です（**`CLOCK_UNCERTAIN` を RESULT business reason へ書かない**）。old-epoch RESULT token/reconcile timer 由来の health は complete key + timer_kind + stored epoch の **CLOCK_FENCE** source として別軸で add し、当該 recovery commit で clear します。RETENTION_BASISはnew trusted sampleからfull durationをrebaseします。Createはpriority 6を含むDEGRADED Runtimeをpublishでき、`runtime_step`はこれらrecovery itemを通常effectより先に1件ずつ処理します。各valid recovery commitでそのrecord-key sourceだけclearし、全件解消後にCLOCK_UNCERTAINをclearします。
+Stage 6 T5がstrictly new clock epochをcommitした場合、Stage 7 T6でfresh domain scanを行い、完了するまでStage 8 Bearerをopenしません。ATTEMPT receipt timeout、CANCEL timeout、TRANSACTION retry/deadline timer、RESULT token/reconcile timer、REVERSE_REPLY retry timer、RETENTION_BASISのnon-zero old epochをcomplete record keyごとのpriority 6 `CLOCK_UNCERTAIN` sourceとして導出します。Matching CLEANUP_PLANが存在しbasis state=CLEANUP_COMMITTEDのRETENTION_BASISだけはeligibilityが既にdurable確定しているためsource/rebase対象外で、plan phaseをepoch非依存に継続します。それ以外のmismatch subjectはtimer比較、callback completion、send、cleanupをfail closedし、old numeric timeをnew epochへ比較/換算しません。Active token/send effectを誤って再開しないためRESULT/CANCEL/ATTEMPTと必要なowner STATE/SPOOL/SCHEDULER companionはoperation kind 21のwitnessでRECOVERY_REQUIRED/parkへ進めます。RESULT が ACTIVE token を回収する post は **token_state=EXPIRED**、**E_REC reason=`OUTCOME_UNKNOWN`** です（**`CLOCK_UNCERTAIN` を RESULT business reason へ書かない**）。old-epoch RESULT token/reconcile timer 由来の health は complete key + timer_kind + stored epoch の **CLOCK_FENCE** source として別軸で add し、当該 recovery commit で clear します。RETENTION_BASISはnew trusted sampleからfull durationをrebaseします。Createはpriority 6を含むDEGRADED Runtimeをpublishでき、`runtime_step`はこれらrecovery itemを通常effectより先に1件ずつ処理します。各valid recovery commitでそのrecord-key sourceだけclearし、全件解消後にCLOCK_UNCERTAINをclearします。
 - `CLEANUP_PLAN`（**D1-B3o**）: `subject_kind:u16 + cleanup_phase:u16 + subject_key_raw:RAW16(max 255) + subject_primary_key_digest[32] + subject_primary_value_digest[32] + cleanup_generation:u64 + batch_generation:u64 + initial_attempt_count:u64 + remaining_attempt_count:u64 + initial_attempt_index_count:u64 + remaining_attempt_index_count:u64 + attempt_reuse_fenced:u32 + reserved:u32=0`。
 
 CLEANUP_PLANのsame-record wire / identity / phase contractは次をexactとします。
@@ -1002,6 +1023,75 @@ Kind 6 counter headroomはproactiveに閉じます。どちらかのpost counter
 
 Optional roleは12/13章のpost-state predicateがtrueの場合だけ存在し、builder裁量ではありません。D1 vector generatorはkind/phaseごとにbase semantic member、family 3/4 HEAD companion、distinct ACTIVE predecessorを別々に数え、上表超過を仕様失敗としてCIで検出します。
 
+#### 10.0.1 First SERVICE_REGISTER exact M=5
+
+Semantic-empty Domainへ行う最初のunique service registrationだけは、kind 1 builderの
+write-setをexact M=5へ狭めます。Manifest entryはcomplete keyのunsigned-byte
+lexicographic順で、次の順序以外を許しません。
+
+| Ordinal | Action | Member |
+| ---: | --- | --- |
+| 1 | REPLACE | family 4 capacity kind 1 SERVICE |
+| 2 | CREATE | family 6 subtype `10` SERVICE |
+| 3 | CREATE | family 6 subtype `11` SERVICE_QUOTA |
+| 4 | CREATE | family 6 subtype `23` SERVICE-owner RESERVATION |
+| 5 | REPLACE | capacity kind 1に対応するsubtype `7d` HEAD_INDEX |
+
+SERVICE/QUOTA/RESERVATIONのcommon revisionは1、flags 0、headは新しいkind-1
+`witness_digest=W`です。SERVICEはprimaryなのでPVD zero、QUOTA/RESERVATIONのPVDは
+complete SERVICE post-valueのSHA-256です。SERVICE bodyはaccepted descriptorのcanonical
+snapshotと、complete QUOTA/RESERVATION keyから再計算したdigestを保存します。
+
+QUOTA初期bucketはregistrationで固定したcurrent trusted sampleを使い、
+`window_clock_epoch=sample.clock_epoch_id`、
+`window_start_ms=floor(sample.now_ms/admission_window_ms)*admission_window_ms`です。
+admissions/payload/active transaction/active spool count/bytesは全zeroです。Clockを再取得して
+COMMIT_UNKNOWN retry値を変えてはなりません。
+
+SERVICE-owner RESERVATIONはowner rawをSERVICE rawとexact一致させ、11-kind vectorの
+kind 1だけ`used=1,reserved=0`、kind 2..11は両方zero、`service_inflight=0`、
+grant count/bytes=0、released mask=0です。Capacity kind 1はlimit不変、
+`used=checked(old.used+1)`、reserved不変、
+`high_water=max(old.high_water,used+reserved)`、epochをchecked +1し、
+blocked/exhaustedは0です。Semantic-emptyのoldはused/reserved/high-water=0、epoch=1、
+flags 0なのでpostはused=1、reserved=0、high-water=1、epoch=2です。
+
+HEAD_INDEXはold BASELINE revision 1からWITNESSED revision 2へ進め、member key/key digestを
+capacity kind 1、member value digestをcapacity post-value SHA-256、body/common headを`W`、
+PVDをzeroにします。
+
+```text
+W = COMPOSITE(
+  subtype=7f,
+  operation_kind:u16=1 ||
+  RAW16(contents=service_complete_key_digest[32]))
+```
+
+ACTIVE headerはoperation identityがその32 bytes、subject IDが
+`service_complete_key_digest[0..15]`、M=5、chunk count 1、retention 0/digest zero、
+successor zeroです。Chunkはindex 0/count 1/entry count 5で上表順です。Header/chunkの
+common revisionは1、primary ID=`W[0..15]`、head/PVDはzeroです。Header/chunk自身はmember
+count外、predecessor headerは0です。
+
+Kind-1 `COMMIT_UNKNOWN`のALL_OLDは3 CREATE target/header/chunk absentかつcapacity/index
+exact old、ALL_NEWは5 post member/header/chunkのbyte/digest/cross-row exactだけです。
+その他はfenceします。ALL_NEWはdurable adoptionだけでhandle/callbackをpublishしません。
+後続callerが同じsemantic descriptorと新しいcallback setを明示registerしたexact reattachだけが、
+durable write 0でhandleを作れます。
+
+Exact descriptor/trusted sample/old values、全7 key/value hex、5 entry digest、W、
+manifest/canonical digest、aggregate SHA-256は
+`spec/vectors/domain-store-schema1-runtime-binding-v1.json`をmachine-readable authorityとし、
+独立generatorはproduction C codecをoracleとして呼びません。
+このauthorityのkind-1 group oracleはfixtureの期待booleanを信用せず、raw key/value bytes
+からSERVICE↔QUOTA/RESERVATION PVD、QUOTA zero counters/window、11-kind reservation
+vector、capacity old→post `+1`、HEAD_INDEX member key/value digest/headを再計算する。
+PVD mismatch、QUOTA counter nonzero、QUOTA window mismatch、RESERVATION PVD mismatch、
+reservation vector mismatch、capacity post increment mismatch、HEAD_INDEX member value
+digest mismatchのexact 7 mutationは、各memberのD1 framing/CRC、manifest entry digest、
+manifest digest、canonical digestをmutation後bytesへ再生成して全てvalidに保ったまま、
+group semantic oracleだけが`CORRUPT`へ拒否しなければならない。
+
 Witness header metadataもbuilder裁量ではありません。
 
 | Kind | `subject_id` source | `retention_kind` / subject key digest |
@@ -1194,9 +1284,9 @@ HEALTH_SOURCE_ID = SHA-256(
   priority:u8 || source_kind:u16 || source_identity:RAW16)
 ```
 
-同じsource IDの反復観測は1件、別sourceは同じreasonでも別件です。Current health reasonは存在する最小priorityだけで決まり、scan順やhash iteration順を使いません。Durable sourceだけをStage 5で再構成し、instance-only entropy/Bearer/provider/method causeはrestartへcopyしません。
+同じsource IDの反復観測は1件、別sourceは同じreasonでも別件です。Current health reasonは存在する最小priorityだけで決まり、scan順やhash iteration順を使いません。Stage 5 D3はdurable source predicateのcross-row truthを検証し、Stage 6 T5後のStage 7 T6 fresh scanがpublish用source setを最終再構成します。Instance-only entropy/Bearer/provider/method causeはrestartへcopyしません。
 
-Private registryはclosedです。`source_kind`: 1 CREATE_STORAGE_FAILURE、2 COMMIT_UNKNOWN、3 DELIVERY_CALLBACK_CONTRACT、4 DELIVERY_APPLICATION_FATAL、5 CLOCK_FENCE、6 FAMILY3_COUNTER、7 FAMILY4_CAPACITY、8 EVENT_COUNTER、9 RETENTION_OVERFLOW、10 DELIVERY_COUNTER、11 INTERNAL_INVARIANT、12 SEND_COUNTER。`timer_kind`: 1 ATTEMPT_RECEIPT、2 CANCEL_TIMEOUT、3 TRANSACTION_DEADLINE、4 TRANSACTION_RETRY、5 RESULT_TOKEN、6 RESULT_RECONCILE、7 REVERSE_REPLY_RETRY、8 RETENTION_BASIS。`event_counter_kind`: 1 RETRY_CYCLE、2 CUMULATIVE_ATTEMPTS、3 SPOOL_REVISION、4 COMPLETED_CYCLES、5 MANAGEMENT_OPERATIONS。Create `stage`: 1 OPEN、2 BOOTSTRAP、3 DOMAIN_SCAN、4 RECOVERY_MUTATION、5 IDENTITY、6 CLOCK_BASELINE、7 BEARER_OPEN、8 PUBLISH_CLEANUP。Storage `method`: 1 OPEN、2 BEGIN、3 GET、4 ITER_OPEN、5 ITER_NEXT、6 PUT、7 ERASE、8 COMMIT、9 ROLLBACK、10 ITER_CLOSE、11 CLOSE。Unknown numeric valueはcorruptです。
+Private registryはclosedです。`source_kind`: 1 CREATE_STORAGE_FAILURE、2 COMMIT_UNKNOWN、3 DELIVERY_CALLBACK_CONTRACT、4 DELIVERY_APPLICATION_FATAL、5 CLOCK_FENCE、6 FAMILY3_COUNTER、7 FAMILY4_CAPACITY、8 EVENT_COUNTER、9 RETENTION_OVERFLOW、10 DELIVERY_COUNTER、11 INTERNAL_INVARIANT、12 SEND_COUNTER。`timer_kind`: 1 ATTEMPT_RECEIPT、2 CANCEL_TIMEOUT、3 TRANSACTION_DEADLINE、4 TRANSACTION_RETRY、5 RESULT_TOKEN、6 RESULT_RECONCILE、7 REVERSE_REPLY_RETRY、8 RETENTION_BASIS。`event_counter_kind`: 1 RETRY_CYCLE、2 CUMULATIVE_ATTEMPTS、3 SPOOL_REVISION、4 COMPLETED_CYCLES、5 MANAGEMENT_OPERATIONS。Create `stage`: 1 OPEN、2 BOOTSTRAP、3 DOMAIN_SCAN、4 RECOVERY_MUTATION、5 IDENTITY、6 CLOCK_BASELINE、7 BEARER_OPEN、8 PUBLISH_CLEANUP。これはStorage failure source identity用の8値local registryであり、12/14章の10-stage lifecycle番号ではない。Storage `method`: 1 OPEN、2 BEGIN、3 GET、4 ITER_OPEN、5 ITER_NEXT、6 PUT、7 ERASE、8 COMMIT、9 ROLLBACK、10 ITER_CLOSE、11 CLOSE。Unknown numeric valueはcorruptです。
 
 COMMIT_UNKNOWN single/group identityは次で32 bytesへ閉じます。
 
@@ -2296,7 +2386,7 @@ Scanner UNSUPPORTED / CORRUPT / Port / fence status は **exactly propagate**。
 1. **D3** finding correctness（cardinality / orphan / backlink / PVD / health reconstruction）。architecture freeze は §18（D3-S0）+ closed mode/context freeze は §18.12（D3-S1a docs only）+ declared multi-count freeze は §18.13（D3-S2a docs only）+ BLOB lifecycle freeze は §18.14（D3-S3a docs only）+ DSW1 freeze は §18.15（D3-S4a docs only）+ DSW2 freeze は §18.16（D3-S5a docs only）。**D3-S1 exact-1 / `DSI1_BACKLINK` core implementation complete**; **D3-S2 declared multi-count implementation complete**; D3-S3 implementation / D3-S4 implementation / D3-S5 implementation / D3-S6..S12 / D3 overall / Stage 5 D3 bind still pending
 2. **D4** recovery / metadata mutation / FULL writer beyond L2b1 bootstrap
 3. **identity** comparison / rotation
-4. **health** reconstruction / Stage 9 publish
+4. **health** reconstruction / Stage 10 publish
 5. **public `runtime_create`** / Runtime publish / Bearer open
 6. **clock / entropy** interfaces
 7. **Stage 5 complete** / `storage_recovery_complete == 1`
@@ -2325,7 +2415,7 @@ exact existing 17 clean → `EXISTING_SCAN_ADOPTED_D3_PENDING`; new empty → `N
 | --- | --- | --- |
 | **D1** | Port call 0 の pure key/record/**witness** codec と same-record validation / golden。authority は **grammar（key/body/witness layout と same-record 閉包）** と既存 pure helpers（`ninlil_model_domain_build_key` / `key_digest` および関連 pure digest helpers）。body が保持する raw identity は peer key の **forward 材料** として存在するが、typed peer rebuild helpers の production 接続は **D3 work items**（§18.10）であり D1 complete の言い換えではない | live exact_get、cross-row cardinality、mutation、typed peer rebuild production helpers の complete 主張 |
 | **D2** | mutation 0 bounded traversal、Port/shape/transport、lex、framing、family1-4 + profile gate、same-record structural（S3）、same-snapshot exact `get` **mechanism**（S4）、`note_terminal_corrupt` **injection/aggregation seam only**（S5）、S6 private fail-closed integration | D3 finding correctness、D4 writes、Stage 5 complete、public Runtime |
-| **D3** | Stage 5 closed order **steps 5–10** の **cross-row finding correctness**: step 5 の witness member old/new・partial group・successor/supersede chain；step 6 primary/index/backlink/BLOB 参照；step 7 4-counter；**step 8 の ownership は §18.2 に map**（ingress-owner と attempt/delivery/result/event ledger → **S1/S2**；**SERVICE_QUOTA → S9**）；step 9 11-capacity recompute；step 10 durable health reconstruction。finding を §16 precedence へ sticky CORRUPT として投入 | D4 recovery mutation / FULL writer / convergence；identity rotation；Stage 7 clock；public Runtime publish；ESP-IDF/hardware |
+| **D3** | Stage 5 closed order **steps 5–10** の **cross-row finding correctness**: step 5 の witness member old/new・partial group・successor/supersede chain；step 6 primary/index/backlink/BLOB 参照；step 7 4-counter；**step 8 の ownership は §18.2 に map**（ingress-owner と attempt/delivery/result/event ledger → **S1/S2**；**SERVICE_QUOTA → S9**）；step 9 11-capacity recompute；step 10 durable health source predicate検証。finding を §16 precedence へ sticky CORRUPT として投入 | D4 recovery mutation / FULL writer / convergence；identity rotation；Stage 6 T5 clock；Stage 7 T6 final reconstruction；public Runtime publish；ESP-IDF/hardware |
 | **D4** | snapshot 終了後の recovery mutation / operation 別 convergence / FULL writer と fresh re-scan 接続 | D3 finding の正しさ自体 |
 
 **Stage 5 steps 1–4 / 11** は D2（+ L2b1）が scanner 到達可能な部分を供給する。**steps 5–10 の cross-row 事実**は D3 が証明するまで Stage 5 は incomplete のまま（§15 / §1）。
@@ -2358,9 +2448,9 @@ exact existing 17 clean → `EXISTING_SCAN_ADOPTED_D3_PENDING`; new empty → `N
 | **D3-S7** | **`DSC1_COUNTERS`**: 4 family-3 counter upper-bound / unique / orphan / visited gap 規則（§12） | capacity 11-kind（S8）、health source set（S10） |
 | **D3-S8** | **`DSC2_CAPACITY`**: 11-kind used/reserved recompute vs family-4 + owner formula cross-check（§13）。reservation vector が唯一加算元 | SERVICE_QUOTA multi-pass focus（S9）、health |
 | **D3-S9** | **SERVICE_QUOTA focus multi-pass**: service-key で group した inflight/spool/grant contribution を QUOTA record と exact cross-check（§13）。fresh scanner sessions / multi-pass。cost は **O(S·N)**（S は selected profile の SERVICE / service-quota capacity で bound；§18.5） | undocumented/unbounded all-pairs default、full-ID set、false O(N) one-pass claim |
-| **D3-S10** | **`DSH1_HEALTH`**: durable health source set reconstruction（§14）。priority 1..8 source IDs、dedup、publish-gate inputs の再構成だけ | Stage 9 publish、instance-local cause copy、public health API |
+| **D3-S10** | **`DSH1_HEALTH`**: durable health source predicate validation（§14）。priority 1..8 source IDs、dedup、Stage 7 T6 publish-gate inputsの再構成規則まで | Stage 7 T6 lifecycle接続、Stage 10 publish、instance-local cause copy、public health API |
 | **D3-S11** | CLEANUP_PLAN overlay: plan present 時の phase-specific decreasing cardinality / fence aggregate / remaining counts vs live ATTEMPT·INDEX（§9 / §11） | D4 phase batch erase writer |
-| **D3-S12** | Stage 5 integration: D3 slices S1–S11 green を private seam へ接続し、private outcome を **`EXISTING_SCAN_ADOPTED_D3_PENDING` から private `D4_PENDING` へ transition** する（**implementation name は S12 で freeze**）。**`storage_recovery_complete` は 0 のまま** | public Runtime、identity rotation、Bearer/clock/entropy open、Stage 9、ESP-IDF/hardware、D4 mutation complete、Stage 5 complete |
+| **D3-S12** | Stage 5 integration: D3 slices S1–S11 green を private seam へ接続し、private outcome を **`EXISTING_SCAN_ADOPTED_D3_PENDING` から private `D4_PENDING` へ transition** する（**implementation name は S12 で freeze**）。**`storage_recovery_complete` は 0 のまま** | public Runtime、identity rotation、Stage 6 T5/Stage 7 T6/Bearer/entropy/Stage 10 publish、ESP-IDF/hardware、D4 mutation complete、Stage 5 complete |
 
 **「S12 proves D3」:** S1–S11 本体と依存 oracle/helpers がすべて green のときだけ D3 finding correctness complete。S0 単独・部分 slice・D2-S6 adopt 成功を D3 complete や Stage 5 complete に置換してはならない。S12 は private `EXISTING_SCAN_ADOPTED_D3_PENDING` → private `D4_PENDING` の outcome transition だけを閉じ、`storage_recovery_complete` を 1 にしない。
 
@@ -2453,7 +2543,7 @@ D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 �
 | **`DSW3_RETIRE_CLEANUP`** | retire eligibility / partial chunk rules | **S6** | physical erase commits: **D4** |
 | **`DSC1_COUNTERS`** | 4-counter validation（§12） | **S7** | family-3 codec: D1；scan reach: D2 |
 | **`DSC2_CAPACITY`** | 11-kind recompute + owner formula（§13） | **S8** | family-4 codec: D1 |
-| **`DSH1_HEALTH`** | durable source set reconstruction（§14） | **S10** | Stage 9 project/publish: **not D3 complete** |
+| **`DSH1_HEALTH`** | durable source set reconstruction（§14） | **S10** | Stage 7 T6 reconstruction / Stage 10 project-publish: **not D3 complete** |
 | **`DSC3_CLEANUP_PHASES`** | phase remaining/fence/live count の **finding** 部分 | **S11**（overlay） | phase batch erase / COMMIT_UNKNOWN convergence: **D4** 共有 |
 | **`DSD1_LOGICAL_DELIVERY`** | APPLICATION_FIRST / CANCEL_FIRST / later APPLICATION / binding conflict の **cross-row finding** | S2 + delivery graph | public ABSENT projection / writer E2E: **D4** 共有 |
 | **`DSH2_HEALTH_GOLDEN`** | numeric registry / exact source ID golden の **finding 側** | S10 companion | full registry mirror / Stage9: 後続 |
@@ -2550,7 +2640,7 @@ D3 は次の **hybrid** だけを合法とする（§9 最終段落 / §15.11 �
 2. public Runtime / `runtime_create` publish
 3. D4 mutation / convergence complete
 4. Bearer / clock / entropy open
-5. Stage 9 health publish
+5. Stage 10 health publish
 6. ESP-IDF compile / hardware
 7. public C ABI / public status / new ADR（本 freeze は ADR を新設しない）
 

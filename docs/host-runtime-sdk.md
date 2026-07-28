@@ -66,6 +66,15 @@ cmake --install build-sdk-sqlite --prefix /path/to/ninlil-prefix
 しません。必要なtargetだけを明示的にONにしてください。SQLite optionは両方で
 ONですが、SQLite3が見つからなければprovider targetは生成されません。
 
+Install treeには`${CMAKE_INSTALL_DATADIR}/ninlil/compatibility-matrix.json`も含まれます。
+Release/commitの対応platform、feature状態、HIL境界はこのmachine-readable matrixを参照し、
+READMEの概算やbinaryの存在からsupportを推測しないでください。Source treeでは次で
+CMake/ABI/storage/ESP-IDF/CI/evidenceとの一致を検証できます。
+
+```bash
+python3 tools/compatibility_matrix_gate.py check
+```
+
 ## 3. Installed consumer
 
 最小のconsumer CMake:

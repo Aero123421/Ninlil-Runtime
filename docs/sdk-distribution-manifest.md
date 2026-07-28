@@ -25,6 +25,8 @@ CMake 3.20です。Host support対象はLinux / macOSです。
 | Apache-2.0 license | `${CMAKE_INSTALL_DATADIR}/licenses/ninlil/LICENSE` | 常時 |
 | Project notice | `${CMAKE_INSTALL_DATADIR}/licenses/ninlil/NOTICE` | 常時 |
 | Third-party notices | `${CMAKE_INSTALL_DATADIR}/licenses/ninlil/THIRD-PARTY-NOTICES.md` | 常時 |
+| Compatibility matrix | `${CMAKE_INSTALL_DATADIR}/ninlil/compatibility-matrix.json` | 常時 |
+| Dependency inventory | `${CMAKE_INSTALL_DATADIR}/ninlil/dependency-inventory.json` | 常時 |
 
 実際のstatic archive prefix / suffixはtarget platformが決定します。上表の変数を
 `lib/*.a`へ固定して解釈しません。
@@ -68,13 +70,17 @@ unitが含まれることは、それらを独立したpublic C4/C5/C6 moduleと
 | Package consumers | `tests/cmake/` |
 | Package gates | `cmake/installed_*_smoke.cmake` |
 | License documents | `LICENSE`, `NOTICE`, `THIRD-PARTY-NOTICES.md` |
+| Compatibility authority | `compatibility-matrix.json`, `tools/compatibility_matrix_gate.py` |
+| Dependency authority | `dependency-inventory.json`, `tools/third_party_notice_gate.py`, `tools/spdx_release_sbom.py` |
 
 ## 6. Release artifacts
 
 Tag release workflowは次を生成・検証します。
 
 - source `tar.gz` / `zip`
+- source archive内のmachine-readable compatibility matrix
 - SPDX JSON SBOM
+- source / workflow-definition commit build metadata
 - checksum
 - source archive / SBOMをsubjectとするSLSA provenance
 - archiveをsubjectとするSBOM attestation
@@ -91,6 +97,8 @@ Tag release workflowは次を生成・検証します。
 | Host Runtime SQLite ON | tests-OFF install、optional SQLite target、external memory/SQLite consumer lifecycle |
 | POSIX installed consumer | NOCONFIG / Debug / Release / strict-map / Multi-Config、surface・symbol・path hygiene |
 | Private subproject | public/private target、include、flags、source authority境界 |
+| OSS authority | compatibility matrix、direct/transitive dependency notice、pinned SPDX SBOM経路 |
+| Workflow / release identity | actionlint + ShellCheck、入力refのsingle immutable commit解決、Host / ESP32-S3 / packageの同一commit再検証 |
 
 Package gateがgreenでも、物理HIL、field SLO、無線法規、Wi-Fi、relay、
 multi-parent、完全fragmentationの完成は主張しません。

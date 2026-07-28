@@ -7,6 +7,7 @@
 #include "ninlil_posix_loopback_bearer.h"
 #include "ninlil_posix_loopback_bearer_inject.h"
 #include "platform_basic_fixtures.h"
+#include "runtime_internal.h"
 #include "runtime_lifecycle_model.h"
 
 #include <ninlil/runtime.h>
@@ -16,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -43,6 +45,97 @@ static const char NS_TEXT[] = "org.ninlil.examples";
 static const char *g_program_path;
 static char g_program_path_storage[PATH_MAX];
 
+static void cleanup_sqlite_database(const char *path)
+{
+    struct stat st;
+    char *canonical;
+    char *slash;
+    char sidecar[PATH_MAX];
+    size_t parent_length;
+    int written;
+
+    if (path == NULL) {
+        return;
+    }
+    if (stat(path, &st) == 0) {
+        canonical = realpath(path, NULL);
+        if (canonical != NULL) {
+            slash = strrchr(canonical, '/');
+            if (slash != NULL) {
+                parent_length =
+                    slash == canonical ? 1u : (size_t)(slash - canonical);
+                written = snprintf(
+                    sidecar,
+                    sizeof(sidecar),
+                    "%.*s/.ninlil-sqlite-%llx-%llx.lock",
+                    (int)parent_length,
+                    canonical,
+                    (unsigned long long)st.st_dev,
+                    (unsigned long long)st.st_ino);
+                if (written > 0 && (size_t)written < sizeof(sidecar)) {
+                    (void)unlink(sidecar);
+                }
+            }
+            free(canonical);
+        }
+    }
+    written = snprintf(sidecar, sizeof(sidecar), "%s-wal", path);
+    if (written > 0 && (size_t)written < sizeof(sidecar)) {
+        (void)unlink(sidecar);
+    }
+    written = snprintf(sidecar, sizeof(sidecar), "%s-shm", path);
+    if (written > 0 && (size_t)written < sizeof(sidecar)) {
+        (void)unlink(sidecar);
+    }
+    (void)unlink(path);
+}
+
+static void cleanup_scenario_files(uint32_t scenario)
+{
+    char workdir[512];
+    char path[PATH_MAX];
+
+    if (getcwd(workdir, sizeof(workdir)) == NULL) {
+        return;
+    }
+    if (snprintf(
+            path,
+            sizeof(path),
+            "%s/direct-1hop-%u.sock",
+            workdir,
+            scenario)
+        > 0) {
+        (void)unlink(path);
+    }
+    if (snprintf(
+            path,
+            sizeof(path),
+            "%s/direct-1hop-%u-ready",
+            workdir,
+            scenario)
+        > 0) {
+        (void)unlink(path);
+    }
+    if (snprintf(
+            path,
+            sizeof(path),
+            "%s/direct-1hop-ctrl-%u.db",
+            workdir,
+            scenario)
+        > 0) {
+        cleanup_sqlite_database(path);
+    }
+    if (snprintf(
+            path,
+            sizeof(path),
+            "%s/direct-1hop-end-%u.db",
+            workdir,
+            scenario)
+        > 0) {
+        cleanup_sqlite_database(path);
+    }
+}
+
 static void close_all_fds_except(int keep[], int keep_count)
 {
     int fd;
@@ -69,7 +162,9 @@ static void close_all_fds_except(int keep[], int keep_count)
 }
 
 static uint32_t g_delivery_calls;
-static uint32_t g_outcome_satisfied;
+static const uint8_t VERIFIED_EVIDENCE[] = {
+    0x56u, 0x45u, 0x52u, 0x49u, 0x46u, 0x49u, 0x45u, 0x44u
+};
 
 static void set_id(ninlil_id128_t *id, uint8_t first)
 {
@@ -114,7 +209,26 @@ static ninlil_callback_action_t endpoint_delivery_cb(
     (void)delivery;
     g_delivery_calls += 1u;
     out_sync_result->kind = NINLIL_APP_RESULT_POSITIVE_EVIDENCE;
+    out_sync_result->evidence_stage = NINLIL_EVIDENCE_VERIFIED;
+    out_sync_result->evidence.data = VERIFIED_EVIDENCE;
+    out_sync_result->evidence.length = sizeof(VERIFIED_EVIDENCE);
+    return NINLIL_CALLBACK_COMPLETE;
+}
+
+static ninlil_callback_action_t latest_state_delivery_cb(
+    void *user,
+    const ninlil_delivery_token_t *token,
+    const ninlil_delivery_view_t *delivery,
+    ninlil_application_result_t *out_sync_result)
+{
+    (void)user;
+    (void)token;
+    (void)delivery;
+    g_delivery_calls += 1u;
+    out_sync_result->kind = NINLIL_APP_RESULT_POSITIVE_EVIDENCE;
     out_sync_result->evidence_stage = NINLIL_EVIDENCE_APPLIED;
+    out_sync_result->evidence.data = VERIFIED_EVIDENCE;
+    out_sync_result->evidence.length = sizeof(VERIFIED_EVIDENCE);
     return NINLIL_CALLBACK_COMPLETE;
 }
 
@@ -141,7 +255,8 @@ static ninlil_service_descriptor_t desired_descriptor(uint8_t app_tag, ninlil_ro
     descriptor.supported_evidence_mask =
         NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_RECEIVED)
         | NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_DURABLY_RECORDED)
-        | NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_APPLIED);
+        | NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_APPLIED)
+        | NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_VERIFIED);
     descriptor.logical_payload_limit = 1000u;
     descriptor.target_limit = 1u;
     descriptor.inflight_limit = 8u;
@@ -269,6 +384,71 @@ static void fill_step_budget(ninlil_step_budget_t *budget)
     budget->max_bearer_sends = 8u;
 }
 
+static ninlil_status_t query_transaction(
+    ninlil_runtime_t *runtime,
+    const ninlil_id128_t *transaction_id,
+    ninlil_transaction_snapshot_t *out_snapshot,
+    ninlil_target_snapshot_t *out_target)
+{
+    (void)memset(out_target, 0, sizeof(*out_target));
+    set_header(
+        &out_target->abi_version,
+        &out_target->struct_size,
+        sizeof(*out_target));
+    (void)memset(out_snapshot, 0, sizeof(*out_snapshot));
+    set_header(
+        &out_snapshot->abi_version,
+        &out_snapshot->struct_size,
+        sizeof(*out_snapshot));
+    out_snapshot->targets = out_target;
+    out_snapshot->target_capacity = 1u;
+    return ninlil_transaction_query(
+        runtime, transaction_id, out_snapshot);
+}
+
+static int snapshot_is_success(
+    const ninlil_transaction_snapshot_t *snapshot,
+    const ninlil_target_snapshot_t *target,
+    ninlil_evidence_stage_t expected_evidence)
+{
+    return snapshot->state == NINLIL_TXN_TERMINAL
+        && snapshot->outcome == NINLIL_OUTCOME_SATISFIED
+        && snapshot->reason == NINLIL_REASON_REQUIRED_EVIDENCE_MET
+        && snapshot->required_evidence == expected_evidence
+        && snapshot->latest_evidence == expected_evidence
+        && snapshot->target_count == 1u
+        && target->state == NINLIL_TXN_TERMINAL
+        && target->outcome == NINLIL_OUTCOME_SATISFIED
+        && target->reason == NINLIL_REASON_REQUIRED_EVIDENCE_MET
+        && target->latest_evidence == expected_evidence;
+}
+
+static int internal_evidence_is_success(
+    ninlil_runtime_t *runtime,
+    const ninlil_id128_t *transaction_id,
+    ninlil_evidence_stage_t expected_evidence)
+{
+    const ninlil_rt_transaction_slot_t *transaction =
+        ninlil_rt_find_transaction(runtime, transaction_id);
+
+    return transaction != NULL
+        && transaction->origin_admission != 0u
+        && transaction->terminal != 0u
+        && transaction->outcome == NINLIL_OUTCOME_SATISFIED
+        && transaction->reason == NINLIL_REASON_REQUIRED_EVIDENCE_MET
+        && transaction->required_evidence == expected_evidence
+        && transaction->latest_evidence == expected_evidence
+        && transaction->application_result_kind
+            == NINLIL_APP_RESULT_POSITIVE_EVIDENCE
+        && transaction->application_evidence_length
+            == sizeof(VERIFIED_EVIDENCE)
+        && memcmp(
+                transaction->application_evidence,
+                VERIFIED_EVIDENCE,
+                sizeof(VERIFIED_EVIDENCE))
+            == 0;
+}
+
 static int parse_u32(const char *text, uint32_t *out)
 {
     char *end = NULL;
@@ -339,6 +519,9 @@ static int platform_config_for_role(
     } else if (scenario == SCENARIO_DATA_LOSS) {
         config->inject_mode = NINLIL_POSIX_LOOPBACK_INJECT_MODE_DROP_DATA;
         config->inject_drop_budget = 1u;
+    } else if (scenario == SCENARIO_TIMEOUT) {
+        config->inject_mode = NINLIL_POSIX_LOOPBACK_INJECT_MODE_DROP_DATA;
+        config->inject_drop_budget = PEER_PROGRESS_STEPS;
     } else if (scenario == SCENARIO_DUPLICATE) {
         config->inject_mode = NINLIL_POSIX_LOOPBACK_INJECT_MODE_DUPLICATE;
         config->inject_duplicate_budget = 1u;
@@ -369,11 +552,14 @@ static int run_endpoint_process(
     ninlil_concrete_target_t target;
     ninlil_step_budget_t budget;
     ninlil_step_result_t step_result;
+    ninlil_transaction_snapshot_t snapshot;
+    ninlil_target_snapshot_t target_snapshot;
     static const uint8_t latest_idem_key[] = "latest-state-uplink";
     uint8_t latest_payload[8];
     char gate = 0;
     uint32_t step;
     int restarted = 0;
+    int verified_success = 0;
 
     g_delivery_calls = 0u;
     if (!read_byte(go_fd, &gate) || gate != 'G') {
@@ -405,6 +591,10 @@ static int run_endpoint_process(
     descriptor = scenario == SCENARIO_LATEST_STATE
         ? latest_state_descriptor(0x81u, NINLIL_ROLE_ENDPOINT)
         : desired_descriptor(0x81u, NINLIL_ROLE_ENDPOINT);
+    if (scenario == SCENARIO_RESTART) {
+        descriptor.minimum_deadline_ms = 60000u;
+        descriptor.maximum_deadline_ms = 60000u;
+    }
     (void)memset(&callbacks, 0, sizeof(callbacks));
     set_header(&callbacks.abi_version, &callbacks.struct_size, sizeof(callbacks));
     if (scenario != SCENARIO_LATEST_STATE) {
@@ -447,16 +637,40 @@ static int run_endpoint_process(
         submission.payload.data = latest_payload;
         submission.payload.length = sizeof(latest_payload);
         set_digest(&submission.content_digest, 0x39u);
+        (void)memset(&submit_result, 0, sizeof(submit_result));
+        set_header(
+            &submit_result.abi_version,
+            &submit_result.struct_size,
+            sizeof(submit_result));
         {
             ninlil_status_t submit_status =
                 ninlil_submit(service, &submission, &submit_result);
             if (submit_status != NINLIL_OK
                 || submit_result.kind != NINLIL_SUBMISSION_ADMITTED_READY) {
+                (void)fprintf(
+                    stderr,
+                    "scenario %u endpoint submit status=%u kind=%u "
+                    "reason=%u\n",
+                    scenario,
+                    (unsigned)submit_status,
+                    (unsigned)submit_result.kind,
+                    (unsigned)submit_result.reason);
                 (void)ninlil_runtime_destroy(runtime);
                 ninlil_posix_lab_platform_destroy(platform);
                 (void)write_byte(result_fd, 'F');
                 return 6;
             }
+        }
+        if (query_transaction(
+                runtime,
+                &submit_result.transaction_id,
+                &snapshot,
+                &target_snapshot)
+            != NINLIL_E_NOT_FOUND) {
+            (void)ninlil_runtime_destroy(runtime);
+            ninlil_posix_lab_platform_destroy(platform);
+            (void)write_byte(result_fd, 'F');
+            return 14;
         }
         {
             char workdir[512];
@@ -490,7 +704,9 @@ static int run_endpoint_process(
                 runtime = NULL;
                 REQUIRE(ninlil_posix_lab_platform_restart(platform) == 1);
                 REQUIRE(ninlil_runtime_create(
-                            &config, ninlil_posix_lab_platform_ops(platform), &runtime)
+                        &config,
+                        ninlil_posix_lab_platform_ops(platform),
+                        &runtime)
                     == NINLIL_OK);
                 REQUIRE(ninlil_service_register(
                             runtime, &descriptor, &callbacks, &service)
@@ -500,40 +716,85 @@ static int run_endpoint_process(
         }
         fill_step_budget(&budget);
         (void)memset(&step_result, 0, sizeof(step_result));
-        (void)ninlil_runtime_step(runtime, &budget, &step_result);
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        {
+            ninlil_status_t step_status =
+                ninlil_runtime_step(runtime, &budget, &step_result);
+            if (step_status != NINLIL_OK
+                && !(scenario == SCENARIO_RESTART
+                    && restarted == 0
+                    && step < 8u
+                    && step_status == NINLIL_E_DEGRADED)) {
+                (void)fprintf(
+                    stderr,
+                    "scenario %u endpoint step %u status=%u\n",
+                    scenario,
+                    step,
+                    (unsigned)step_status);
+                (void)write_byte(result_fd, 'F');
+                (void)ninlil_runtime_destroy(runtime);
+                ninlil_posix_lab_platform_destroy(platform);
+                return 13;
+            }
+        }
         if (scenario == SCENARIO_TIMEOUT && step > 16u) {
             break;
         }
-        if (scenario == SCENARIO_HAPPY && g_delivery_calls >= 1u
-            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
-            break;
-        }
-        if (scenario == SCENARIO_DATA_LOSS && g_delivery_calls >= 1u
-            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
-            break;
-        }
-        if (scenario == SCENARIO_RESTART && restarted != 0
-            && g_delivery_calls >= 1u
-            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
-            break;
-        }
-        if (scenario == SCENARIO_DUPLICATE && g_delivery_calls >= 1u
-            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u
-            && step > 12u) {
-            break;
-        }
-        if (scenario == SCENARIO_LATEST_STATE
-            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u
-            && ninlil_posix_lab_platform_test_inject_recv_count(platform) >= 1u) {
+        if (scenario == SCENARIO_LATEST_STATE) {
+            if (internal_evidence_is_success(
+                    runtime,
+                    &submit_result.transaction_id,
+                    NINLIL_EVIDENCE_APPLIED)) {
+                verified_success = 1;
+                break;
+            }
+            {
+                const ninlil_rt_transaction_slot_t *transaction =
+                    ninlil_rt_find_transaction(
+                        runtime, &submit_result.transaction_id);
+                if (transaction != NULL && transaction->terminal != 0u) {
+                    break;
+                }
+            }
+            if (query_transaction(
+                    runtime,
+                    &submit_result.transaction_id,
+                    &snapshot,
+                    &target_snapshot)
+                != NINLIL_E_NOT_FOUND) {
+                (void)write_byte(result_fd, 'F');
+                (void)ninlil_runtime_destroy(runtime);
+                ninlil_posix_lab_platform_destroy(platform);
+                return 14;
+            }
+            if (verified_success != 0) {
+                break;
+            }
+        } else if (scenario == SCENARIO_ACK_LOSS) {
+            if (g_delivery_calls == 1u
+                && ninlil_posix_lab_platform_test_inject_send_count(platform)
+                    >= 2u
+                && ninlil_posix_lab_platform_test_inject_recv_count(platform)
+                    >= 2u) {
+                break;
+            }
+        } else if (scenario == SCENARIO_RESTART) {
+            if (restarted != 0 && g_delivery_calls == 1u
+                && ninlil_posix_lab_platform_test_inject_send_count(platform)
+                    >= 1u
+                && step > 40u) {
+                break;
+            }
+        } else if (g_delivery_calls == 1u
+            && ninlil_posix_lab_platform_test_inject_send_count(platform)
+                >= 1u
+            && (scenario != SCENARIO_DUPLICATE || step > 12u)) {
             break;
         }
         (void)usleep(1000);
-    }
-    if (scenario == SCENARIO_DUPLICATE && g_delivery_calls != 1u) {
-        (void)write_byte(result_fd, 'F');
-        (void)ninlil_runtime_destroy(runtime);
-        ninlil_posix_lab_platform_destroy(platform);
-        return 6;
     }
     if (scenario == SCENARIO_TIMEOUT) {
         (void)write_byte(result_fd, 'O');
@@ -542,8 +803,11 @@ static int run_endpoint_process(
         return 0;
     }
     if (scenario == SCENARIO_LATEST_STATE) {
-        if (ninlil_posix_lab_platform_test_inject_send_count(platform) < 1u
-            || ninlil_posix_lab_platform_test_inject_recv_count(platform) < 1u) {
+        if (verified_success == 0
+            || !internal_evidence_is_success(
+                runtime,
+                &submit_result.transaction_id,
+                NINLIL_EVIDENCE_APPLIED)) {
             (void)write_byte(result_fd, 'F');
             (void)ninlil_runtime_destroy(runtime);
             ninlil_posix_lab_platform_destroy(platform);
@@ -554,11 +818,33 @@ static int run_endpoint_process(
         ninlil_posix_lab_platform_destroy(platform);
         return 0;
     }
-    if (g_delivery_calls < 1u) {
+    if (g_delivery_calls != 1u
+        || (scenario == SCENARIO_ACK_LOSS
+            && (ninlil_posix_lab_platform_test_inject_send_count(platform)
+                    < 2u
+                || ninlil_posix_lab_platform_test_inject_recv_count(platform)
+                    < 2u))) {
+        (void)fprintf(
+            stderr,
+            "scenario %u endpoint completion calls=%u send=%llu recv=%llu\n",
+            scenario,
+            g_delivery_calls,
+            (unsigned long long)
+                ninlil_posix_lab_platform_test_inject_send_count(platform),
+            (unsigned long long)
+                ninlil_posix_lab_platform_test_inject_recv_count(platform));
         (void)write_byte(result_fd, 'F');
         (void)ninlil_runtime_destroy(runtime);
         ninlil_posix_lab_platform_destroy(platform);
         return 7;
+    }
+    if (scenario == SCENARIO_RESTART) {
+        if (restarted == 0) {
+            (void)write_byte(result_fd, 'F');
+            (void)ninlil_runtime_destroy(runtime);
+            ninlil_posix_lab_platform_destroy(platform);
+            return 7;
+        }
     }
     (void)write_byte(result_fd, 'O');
     (void)ninlil_runtime_destroy(runtime);
@@ -589,14 +875,15 @@ static int run_controller_process(
     ninlil_concrete_target_t target;
     ninlil_step_budget_t budget;
     ninlil_step_result_t step_result;
+    ninlil_transaction_snapshot_t snapshot;
+    ninlil_target_snapshot_t target_snapshot;
     static const uint8_t idem_key[] = "direct-1hop-idem";
     uint8_t payload[16];
     char gate = 0;
     uint32_t step;
     int restarted = 0;
-    uint32_t idle_steps = 0u;
+    int verified_success = 0;
 
-    g_outcome_satisfied = 0u;
     g_delivery_calls = 0u;
     if (!read_byte(go_fd, &gate) || gate != 'G') {
         (void)write_byte(result_fd, 'F');
@@ -626,10 +913,14 @@ static int run_controller_process(
     descriptor = scenario == SCENARIO_LATEST_STATE
         ? latest_state_descriptor(0x70u, NINLIL_ROLE_CONTROLLER)
         : desired_descriptor(0x70u, NINLIL_ROLE_CONTROLLER);
+    if (scenario == SCENARIO_RESTART) {
+        descriptor.minimum_deadline_ms = 60000u;
+        descriptor.maximum_deadline_ms = 60000u;
+    }
     (void)memset(&callbacks, 0, sizeof(callbacks));
     set_header(&callbacks.abi_version, &callbacks.struct_size, sizeof(callbacks));
     if (scenario == SCENARIO_LATEST_STATE) {
-        callbacks.on_delivery = endpoint_delivery_cb;
+        callbacks.on_delivery = latest_state_delivery_cb;
         callbacks.on_reconcile = endpoint_reconcile_cb;
     }
     if (ninlil_service_register(runtime, &descriptor, &callbacks, &service)
@@ -653,8 +944,9 @@ static int run_controller_process(
         set_id(&target.target_application_instance_id, 0x81u);
         submission.targets = &target;
         submission.target_count = 1u;
-        submission.required_evidence = NINLIL_EVIDENCE_APPLIED;
-        submission.effect_deadline_ms = 5000u;
+        submission.required_evidence = NINLIL_EVIDENCE_VERIFIED;
+        submission.effect_deadline_ms =
+            scenario == SCENARIO_RESTART ? 60000u : 5000u;
         submission.evidence_grace_ms = 1000u;
         submission.generation = 1u;
         submission.idempotency_key.data = idem_key;
@@ -662,6 +954,11 @@ static int run_controller_process(
         submission.payload.data = payload;
         submission.payload.length = sizeof(payload);
         set_digest(&submission.content_digest, 0x55u);
+        (void)memset(&submit_result, 0, sizeof(submit_result));
+        set_header(
+            &submit_result.abi_version,
+            &submit_result.struct_size,
+            sizeof(submit_result));
         if (ninlil_submit(service, &submission, &submit_result) != NINLIL_OK
             || submit_result.kind != NINLIL_SUBMISSION_ADMITTED_READY) {
             (void)ninlil_runtime_destroy(runtime);
@@ -706,33 +1003,28 @@ static int run_controller_process(
     for (step = 0u; step < PEER_PROGRESS_STEPS; ++step) {
         if (scenario == SCENARIO_RESTART && step == 4u && restarted == 0) {
             (void)write_byte(restart_fd, 'R');
-            (void)ninlil_runtime_destroy(runtime);
-            runtime = NULL;
-            if (ninlil_posix_lab_platform_restart(platform) != 1
-                || ninlil_runtime_create(
-                       &config, ninlil_posix_lab_platform_ops(platform), &runtime)
-                    != NINLIL_OK
-                || ninlil_service_register(
-                       runtime, &descriptor, &callbacks, &service)
-                    != NINLIL_OK) {
-                (void)write_byte(result_fd, 'F');
-                ninlil_posix_lab_platform_destroy(platform);
-                return 8;
-            }
             restarted = 1;
         }
         fill_step_budget(&budget);
         if (scenario == SCENARIO_ACK_LOSS) {
             ninlil_test_clock_t *clock =
                 ninlil_posix_lab_platform_test_clock(platform);
-            if (clock != NULL && step == 6u) {
-                (void)ninlil_test_clock_advance(clock, 1200u);
+            if (clock != NULL && step >= 6u) {
+                (void)ninlil_test_clock_advance(
+                    clock, step == 6u ? 1200u : 200u);
             }
         } else if (scenario == SCENARIO_DATA_LOSS) {
             ninlil_test_clock_t *clock =
                 ninlil_posix_lab_platform_test_clock(platform);
             if (clock != NULL && step > 1u) {
                 (void)ninlil_test_clock_advance(clock, 800u);
+            }
+        } else if (scenario == SCENARIO_RESTART && restarted != 0) {
+            ninlil_test_clock_t *clock =
+                ninlil_posix_lab_platform_test_clock(platform);
+            if (clock != NULL && step >= 5u && step < 100u) {
+                (void)ninlil_test_clock_advance(
+                    clock, step == 5u ? 1200u : 200u);
             }
         }
         if (scenario == SCENARIO_TIMEOUT && step > 4u) {
@@ -743,55 +1035,63 @@ static int run_controller_process(
             }
         }
         (void)memset(&step_result, 0, sizeof(step_result));
-        (void)ninlil_runtime_step(runtime, &budget, &step_result);
-        if (step_result.more_work == 0u) {
-            idle_steps += 1u;
-        } else {
-            idle_steps = 0u;
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        {
+            ninlil_status_t step_status =
+                ninlil_runtime_step(runtime, &budget, &step_result);
+            if (step_status != NINLIL_OK) {
+                (void)fprintf(
+                    stderr,
+                    "scenario %u controller step %u status=%u\n",
+                    scenario,
+                    step,
+                    (unsigned)step_status);
+                (void)write_byte(result_fd, 'F');
+                (void)ninlil_runtime_destroy(runtime);
+                ninlil_posix_lab_platform_destroy(platform);
+                return 13;
+            }
         }
-        if (scenario == SCENARIO_TIMEOUT) {
-            if (step > 20u) {
+        if (scenario != SCENARIO_LATEST_STATE) {
+            if (query_transaction(
+                    runtime,
+                    &submit_result.transaction_id,
+                    &snapshot,
+                    &target_snapshot)
+                    != NINLIL_OK) {
+                (void)write_byte(result_fd, 'F');
+                (void)ninlil_runtime_destroy(runtime);
+                ninlil_posix_lab_platform_destroy(platform);
+                return 14;
+            }
+            if (snapshot_is_success(
+                    &snapshot,
+                    &target_snapshot,
+                    NINLIL_EVIDENCE_VERIFIED)) {
+                verified_success = 1;
+                if (scenario != SCENARIO_TIMEOUT) {
+                    break;
+                }
+            }
+            if (snapshot.state == NINLIL_TXN_TERMINAL) {
                 break;
             }
-            continue;
-        }
-        if (scenario == SCENARIO_HAPPY
-            && ninlil_posix_lab_platform_test_inject_recv_count(platform) >= 1u) {
-            g_outcome_satisfied = 1u;
-            break;
-        }
-        if (scenario == SCENARIO_DATA_LOSS
-            && ninlil_posix_lab_platform_test_inject_drop_count(platform) >= 1u
+        } else if (g_delivery_calls == 1u
             && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
-            g_outcome_satisfied = 1u;
-            break;
-        }
-        if (scenario == SCENARIO_ACK_LOSS
-            && ninlil_posix_lab_platform_test_inject_drop_count(platform) >= 1u
-            && ninlil_posix_lab_platform_test_inject_recv_count(platform) >= 1u) {
-            g_outcome_satisfied = 1u;
-            break;
-        }
-        if (scenario == SCENARIO_RESTART
-            && restarted != 0
-            && step > 40u) {
-            g_outcome_satisfied = 1u;
-            break;
-        }
-        if (scenario == SCENARIO_DUPLICATE && idle_steps >= 3u
-            && ninlil_posix_lab_platform_test_inject_recv_count(platform) >= 1u) {
-            g_outcome_satisfied = 1u;
-            break;
-        }
-        if (scenario == SCENARIO_LATEST_STATE && g_delivery_calls >= 1u
-            && ninlil_posix_lab_platform_test_inject_send_count(platform) >= 1u) {
-            g_outcome_satisfied = 1u;
             break;
         }
         (void)usleep(1000);
     }
     if (scenario == SCENARIO_TIMEOUT) {
-        if (g_outcome_satisfied != 0u) {
+        if (verified_success != 0
+            || snapshot.state != NINLIL_TXN_TERMINAL
+            || snapshot.outcome == NINLIL_OUTCOME_SATISFIED
+            || snapshot.latest_evidence == NINLIL_EVIDENCE_VERIFIED
+            || (snapshot.outcome != NINLIL_OUTCOME_EXPIRED
+                && snapshot.outcome != NINLIL_OUTCOME_UNKNOWN)) {
             (void)write_byte(result_fd, 'F');
             (void)ninlil_runtime_destroy(runtime);
             ninlil_posix_lab_platform_destroy(platform);
@@ -802,7 +1102,46 @@ static int run_controller_process(
         ninlil_posix_lab_platform_destroy(platform);
         return 0;
     }
-    if (g_outcome_satisfied == 0u) {
+    if (scenario == SCENARIO_LATEST_STATE) {
+        if (g_delivery_calls != 1u) {
+            (void)write_byte(result_fd, 'F');
+            (void)ninlil_runtime_destroy(runtime);
+            ninlil_posix_lab_platform_destroy(platform);
+            return 10;
+        }
+    } else if (verified_success == 0
+        || !snapshot_is_success(
+            &snapshot,
+            &target_snapshot,
+            NINLIL_EVIDENCE_VERIFIED)
+        || !internal_evidence_is_success(
+            runtime,
+            &submit_result.transaction_id,
+            NINLIL_EVIDENCE_VERIFIED)
+        || (scenario == SCENARIO_ACK_LOSS
+            && ninlil_posix_lab_platform_test_inject_drop_count(platform)
+                < 1u)
+        || (scenario == SCENARIO_DATA_LOSS
+            && ninlil_posix_lab_platform_test_inject_drop_count(platform)
+                < 1u)) {
+        (void)fprintf(
+            stderr,
+            "scenario %u controller completion verified=%d state=%u "
+            "outcome=%u reason=%u required=%u latest=%u send=%llu "
+            "recv=%llu drop=%llu\n",
+            scenario,
+            verified_success,
+            (unsigned)snapshot.state,
+            (unsigned)snapshot.outcome,
+            (unsigned)snapshot.reason,
+            (unsigned)snapshot.required_evidence,
+            (unsigned)snapshot.latest_evidence,
+            (unsigned long long)
+                ninlil_posix_lab_platform_test_inject_send_count(platform),
+            (unsigned long long)
+                ninlil_posix_lab_platform_test_inject_recv_count(platform),
+            (unsigned long long)
+                ninlil_posix_lab_platform_test_inject_drop_count(platform));
         (void)write_byte(result_fd, 'F');
         (void)ninlil_runtime_destroy(runtime);
         ninlil_posix_lab_platform_destroy(platform);
@@ -972,8 +1311,8 @@ static int run_scenario_once(uint32_t scenario, uint64_t seed)
         "%s/direct-1hop-%u-ready", workdir, scenario)
         > 0);
     (void)unlink(socket_path);
-    (void)unlink(ctrl_db);
-    (void)unlink(end_db);
+    cleanup_sqlite_database(ctrl_db);
+    cleanup_sqlite_database(end_db);
     (void)unlink(ready_path);
 
     REQUIRE(pipe(ctrl_go) == 0);
@@ -1043,8 +1382,8 @@ static int run_scenario_once(uint32_t scenario, uint64_t seed)
     }
 
     (void)unlink(socket_path);
-    (void)unlink(ctrl_db);
-    (void)unlink(end_db);
+    cleanup_sqlite_database(ctrl_db);
+    cleanup_sqlite_database(end_db);
     (void)unlink(ready_path);
     return 0;
 }
@@ -1052,9 +1391,12 @@ static int run_scenario_once(uint32_t scenario, uint64_t seed)
 static int run_scenario(uint32_t scenario, uint64_t seed)
 {
     uint32_t attempt;
+    int result;
 
     for (attempt = 0u; attempt < 3u; ++attempt) {
-        if (run_scenario_once(scenario, seed) == 0) {
+        result = run_scenario_once(scenario, seed);
+        cleanup_scenario_files(scenario);
+        if (result == 0) {
             return 0;
         }
         (void)usleep(100000);
@@ -1073,9 +1415,9 @@ static int test_all_scenarios(void)
             (void)snprintf(path, sizeof(path), "%s/direct-1hop-%u.sock", workdir, index);
             (void)unlink(path);
             (void)snprintf(path, sizeof(path), "%s/direct-1hop-ctrl-%u.db", workdir, index);
-            (void)unlink(path);
+            cleanup_sqlite_database(path);
             (void)snprintf(path, sizeof(path), "%s/direct-1hop-end-%u.db", workdir, index);
-            (void)unlink(path);
+            cleanup_sqlite_database(path);
         }
     }
     if (run_scenario(SCENARIO_HAPPY, 0xB4E2E001ull) != 0) {

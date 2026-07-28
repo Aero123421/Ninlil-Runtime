@@ -28,7 +28,9 @@ Foundation M1aの正本は次のNormative文書です。
 - Public headerはC11とC++17の両方からincludeできなければなりません。
 - Compiler extensionへ依存せず、strict warningをerrorとして通してください。
 - Pointer値、struct padding、host時刻、container iteration順へ決定結果を依存させないでください。
-- **Building and running the test suite** requires a **Python 3** interpreter on `PATH` (used only by the independent Domain Store D1-A / D1-B1 vector oracle: `tools/domain_store_vector_gen.py generate|check`). Production libraries do not link or invoke Python.
+- **Building and running the test suite** requires a **Python 3** interpreter on
+  `PATH`（independent vector oracle、compatibility/dependency authority、
+  package/source gateに使用）。Production libraryはPythonをlink・invokeしません。
 
 通常buildとtest:
 

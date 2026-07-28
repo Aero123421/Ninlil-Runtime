@@ -10,7 +10,7 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 
 本書は unit 1a の正本です。SQLite 昇格/restart E2E（1b）、ESP gate（1c）は範囲外です。
 
-## 2. Record kind allowlist（30 kinds）
+## 2. Record kind allowlist（34 kinds）
 
 | # | Kind ID | 名前 | Family | 検証 owner |
 | ---: | --- | --- | --- | ---: |
@@ -44,8 +44,12 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 | 28 | SPINE_EVENT_DISCARD | B1 event discard (`ED`) | marker | S1 |
 | 29 | SPINE_RETRY_STATE | B1 retry state (`RT`) | marker | S1 |
 | 30 | SPINE_RESERVATION | B3 reservation (`RV`) | marker | S1 |
+| 31 | M4_INSTALL_TOKEN | M4 install-token journal | M4 | M4 |
+| 32 | C3_REPLAY_ADMISSION | C3 replay-admission journal | C3 | C3 |
+| 33 | SPINE_BEARER_STATE | B1 bearer-state observation (`BS`) | marker | S1 |
+| 34 | SPINE_ATTEMPT_PREPARE | B1 application-attempt prepare (`AP`) | marker | S1 |
 
-コード正本: `src/runtime/v1_durable_allowlist.c` の `g_ninlil_v1_durable_allowlist_table[]`（`NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT = 30`）。
+コード正本: `src/runtime/v1_durable_allowlist.c` の `g_ninlil_v1_durable_allowlist_table[]`（`NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT = 34`）。
 
 ### 2a 追記（unit 2a / 項目 2 spine）
 
@@ -66,13 +70,23 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 - TX admission marker v2（46B: priority / payload_length / admitted_at_ms）は kind 21 value 拡張（v1 33B 後方互換 decode）。
 - bearer payload 上限は表駆動（`runtime_v1_capability.c` `g_bearer_limit_table[]`；SIMULATED/U6=926B）。
 
+### 2d 追記（M4 / C3 / bearer-state / attempt prepare）
+
+- kind 31 `M4_INSTALL_TOKEN` は M4 install-token のCRC付き bounded journal、operation `M4_INSTALL_TOKEN_COMMIT`（15）。
+- kind 32 `C3_REPLAY_ADMISSION` は C3 replay-admission のCRC付き bounded journal、operation `C3_REPLAY_ADMISSION_COMMIT`（16）。
+- kind 33 `SPINE_BEARER_STATE` は bearer availability epoch の durable observation marker（`BS`）、operation `BEARER_STATE_COMMIT`（17）。
+- kind 34 `SPINE_ATTEMPT_PREPARE` は送信前 attempt identity / retry budget の durable prepare snapshot（`AP`）、operation `APPLICATION_ATTEMPT_PREPARE_COMMIT`（18）。
+- operation 19 `DESTROY_RECOVERY_COMMIT` は ACTIVE callback token 群を同一 FULL transaction で recovery-required に閉じる。対象 row は `SPINE_DELIVERY_EVIDENCE` と Runtime Store capacity 11 kinds。
+
 ### 2.1 D3-S1..S3 検証 owner 注記
 
 | Owner | 範囲（V1 unit 1a） |
 | --- | --- |
 | **S1** | Bootstrap-17（family 3/4）、metadata-init 16 domain rows（HEAD_INDEX×15 + CLOCK_BASELINE）、exact-1 backlink / PVD（D3-S1）で検証可能な初期 profile |
-| **S2** | 本 unit では writer 未生成（declared multi-count graph は項目 2–9 以降） |
-| **S3** | 本 unit では writer 未生成（BLOB lifecycle rows は項目 2–9 以降） |
+| **S2** | 本 profile では writer 未生成（declared multi-count graph は V2） |
+| **S3** | 本 profile では writer 未生成（BLOB lifecycle rows は V2） |
+| **M4** | M4 install-token bounded journal（kind 31） |
+| **C3** | C3 replay-admission bounded journal（kind 32） |
 
 ## 3. State allowlist（domain metadata のみ）
 
@@ -84,30 +98,37 @@ V1-LAB durable profile は **record kind・state・operation の closed allowlis
 
 Runtime store family 3/4 rows は state field を持たず、bootstrap plan の zero counter / capacity limits のみ（S1）。
 
-## 4. Operation allowlist（14 operations）
+## 4. Operation allowlist（19 operations）
 
 | Operation | Writer 経路 | 許可 record kinds |
 | --- | --- | --- |
-| `BOOTSTRAP_COMMIT` | `runtime_store_orchestrator` → `storage_canonical_plan` | RS_BINDING .. RS_CAPACITY_DEFERRED_TOKEN（17 kinds） |
-| `METADATA_INIT_COMMIT` | `stage5_empty_metadata_commit` | DOM_WITNESS_HEAD_INDEX, DOM_CLOCK_BASELINE（UNINITIALIZED） |
-| `CLOCK_TRUSTED_COMMIT` | `stage5_clock_baseline_commit_trusted` | DOM_CLOCK_BASELINE（TRUSTED） |
-| `SERVICE_REGISTER_COMMIT` | `runtime_v1_spine_durable.c` | SPINE_SERVICE_MARKER |
-| `SUBMIT_ADMISSION_COMMIT` | 同上 | SPINE_TXN_ADMISSION |
-| `CANCEL_ADMISSION_COMMIT` | 同上 | SPINE_CANCEL_ADMISSION |
-| `DELIVERY_STARTED_COMMIT` | `runtime_v1_delivery_durable.c` | SPINE_DELIVERY_STARTED |
-| `DELIVERY_EVIDENCE_COMMIT` | 同上 | SPINE_DELIVERY_EVIDENCE |
-| `DELIVERY_OUTCOME_COMMIT` | 同上 | SPINE_DELIVERY_OUTCOME |
-| `EVENT_SPOOL_COMMIT` | 同上 / `runtime_v1_event_mgmt.c` | SPINE_EVENT_SPOOL |
-| `EVENT_RESUME_COMMIT` | `runtime_v1_event_mgmt.c` | SPINE_EVENT_RESUME |
-| `EVENT_DISCARD_COMMIT` | 同上 | SPINE_EVENT_DISCARD |
-| `RETRY_STATE_COMMIT` | `runtime_v1_delivery_durable.c` | SPINE_RETRY_STATE |
-| `RESERVATION_COMMIT` | `runtime_v1_capability.c` | SPINE_RESERVATION |
+| `BOOTSTRAP_COMMIT` | `runtime_store_orchestrator` → `storage_canonical_plan` | `RS_BINDING`, `RS_IDENTITY`, `RS_COUNTER_TRANSACTION`, `RS_COUNTER_ORDERED_INPUT`, `RS_COUNTER_ASSIGNED_OWNER`, `RS_COUNTER_VISITED_OWNER`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `METADATA_INIT_COMMIT` | `stage5_empty_metadata_commit` | `DOM_WITNESS_HEAD_INDEX`, `DOM_CLOCK_BASELINE` |
+| `CLOCK_TRUSTED_COMMIT` | `stage5_clock_baseline_commit_trusted` | `DOM_CLOCK_BASELINE` |
+| `SERVICE_REGISTER_COMMIT` | `runtime_v1_spine_durable.c` | `SPINE_SERVICE_MARKER` |
+| `SUBMIT_ADMISSION_COMMIT` | 同上 | `SPINE_TXN_ADMISSION`, `SPINE_RESERVATION`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `CANCEL_ADMISSION_COMMIT` | 同上 | `SPINE_CANCEL_ADMISSION`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `DELIVERY_STARTED_COMMIT` | `runtime_v1_delivery_durable.c` | `SPINE_DELIVERY_STARTED`, `RS_COUNTER_ORDERED_INPUT`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `DELIVERY_EVIDENCE_COMMIT` | 同上 | `SPINE_DELIVERY_EVIDENCE`, `RS_COUNTER_ORDERED_INPUT`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `DELIVERY_OUTCOME_COMMIT` | 同上 | `SPINE_DELIVERY_OUTCOME`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `EVENT_SPOOL_COMMIT` | 同上 / `runtime_v1_event_mgmt.c` | `SPINE_EVENT_SPOOL` |
+| `EVENT_RESUME_COMMIT` | `runtime_v1_event_mgmt.c` | `SPINE_EVENT_RESUME`, `RS_COUNTER_ORDERED_INPUT`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `EVENT_DISCARD_COMMIT` | 同上 | `SPINE_EVENT_DISCARD`, `RS_COUNTER_ORDERED_INPUT`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+| `RETRY_STATE_COMMIT` | `runtime_v1_delivery_durable.c` | `SPINE_RETRY_STATE` |
+| `RESERVATION_COMMIT` | `runtime_v1_capability.c` | `SPINE_RESERVATION` |
+| `M4_INSTALL_TOKEN_COMMIT` | M4 install-token writer | `M4_INSTALL_TOKEN` |
+| `C3_REPLAY_ADMISSION_COMMIT` | C3 replay-admission writer | `C3_REPLAY_ADMISSION` |
+| `BEARER_STATE_COMMIT` | `runtime_v1_bearer_wire.c` | `SPINE_BEARER_STATE` |
+| `APPLICATION_ATTEMPT_PREPARE_COMMIT` | `runtime_v1_delivery_durable.c` | `SPINE_ATTEMPT_PREPARE` |
+| `DESTROY_RECOVERY_COMMIT` | `runtime_v1_delivery_durable.c` | `SPINE_DELIVERY_EVIDENCE`, `RS_CAPACITY_SERVICE`, `RS_CAPACITY_TRANSACTION`, `RS_CAPACITY_TARGET`, `RS_CAPACITY_OUTBOX_BYTES`, `RS_CAPACITY_DELIVERY`, `RS_CAPACITY_EVENT_SPOOL_COUNT`, `RS_CAPACITY_EVENT_SPOOL_BYTES`, `RS_CAPACITY_RESULT_CACHE`, `RS_CAPACITY_EVIDENCE`, `RS_CAPACITY_INGRESS`, `RS_CAPACITY_DEFERRED_TOKEN` |
+
+`METADATA_INIT_COMMIT` の `DOM_CLOCK_BASELINE` は UNINITIALIZED、`CLOCK_TRUSTED_COMMIT` は TRUSTED のみ許可する（state 制約は §3）。上表は companion row を省略しない exact matrix であり、C authority の 19 operations × 34 kinds と `tools/v1_durable_allowlist_gate.py` で完全一致を検査する。
 
 ## 5. Writer 構造 gate
 
 - 検査: `ninlil_v1_durable_writer_gate_check()` — allowlist 外は `NINLIL_E_UNSUPPORTED`、put 0
 - 経路: `runtime_store_orchestrator.c`（bootstrap）、`stage5_empty_metadata.c` `put_encoded`（domain metadata）
-- 構造 gate: `tools/v1_durable_allowlist_gate.py` — gate check 必須、`put_encoded` 内の単一 `storage->put` のみ許可
+- 構造 gate: `tools/v1_durable_allowlist_gate.py` — gate check 必須、`put_encoded` 内の単一 `storage->put` のみ許可。record-kind enum/table、operation enum、C の 19×34 bit matrix、§4 の文書表を exact 検査し、operation omission / extra / operation-kind pair 改変を mutation self-test で RED 化する。
 
 ## 6. Recovery publication gate
 
@@ -137,7 +158,7 @@ Runtime store family 3/4 rows は state field を持たず、bootstrap plan の 
 | 経路 | 状態 |
 | --- | --- |
 | 直接 `storage->put`（gate 前） | **0**（gate 導入後） |
-| business domain rows（TRANSACTION, DELIVERY, BLOB, …） | **未接続**（項目 2–9 で追加時は allowlist 表拡張必須） |
+| canonical business domain rows（TRANSACTION, DELIVERY, BLOB, …） | **V2 deferred**（追加時は allowlist 表拡張必須） |
 | D3-S4..S12 witness old/new | **未生成**（V2） |
 
 ### 7.3 差分表（catalog 全体に対する V1-LAB 除外）
@@ -146,7 +167,7 @@ Family 6 catalog（docs/17 §7）のうち V1-LAB allowlist **外**（writer 未
 
 `10 SERVICE`, `11 SERVICE_QUOTA`, `20–27 TRANSACTION/INGRESS 系`, `30 BLOB`, `31–34 ATTEMPT/EVIDENCE/CANCEL`, `40–42 DELIVERY/RESULT/REPLY`, `50–52 EVENT/RETRY/MANAGEMENT`, `60 BEARER_STATE`, `61 RETENTION_BASIS`, `63 CLEANUP_PLAN`, `64 ATTEMPT_REUSE_FENCE`, `7e WITNESS_MANIFEST_CHUNK`, `7f WITNESS_HEADER`, family `5 INTERNAL_INVARIANT`
 
-これらは D3-S1..S3 の現行 writer 経路からは到達不能（writer gate RED）。項目 2–9 で追加する際は本表への行追加 + gate self-test が必須です。
+これらは現行 V1-LAB writer 経路からは到達不能（writer gate RED）。V2 で追加する際は本表への行追加 + gate self-test が必須です。D3 relation kind 19（canonical family-6 witness）を含む完全な witness graph も V2 deferred です（本 allowlist の record-kind ID 19 `DOM_CLOCK_BASELINE` とは別の番号空間）。
 
 ## 8. 非主張
 

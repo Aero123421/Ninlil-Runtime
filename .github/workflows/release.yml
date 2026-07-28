@@ -19,8 +19,63 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve-source:
+    name: Resolve one immutable source commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      workflow-commit: ${{ steps.source.outputs.workflow-commit }}
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - name: Resolve requested release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Publish immutable source commit
+        id: source
+        env:
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          test -n "${commit}"
+          test "${WORKFLOW_COMMIT}" != ""
+          {
+            echo "commit=${commit}"
+            echo "workflow-commit=${WORKFLOW_COMMIT}"
+          } >> "${GITHUB_OUTPUT}"
+
+  full-host-ci:
+    name: Reuse the full Linux and macOS CI matrix
+    needs: resolve-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      source-ref: ${{ needs.resolve-source.outputs.commit }}
+      workflow-definition-ref: ${{ needs.resolve-source.outputs.workflow-commit }}
+
+  esp32s3-target-ci:
+    name: Reuse the pinned ESP32-S3 target matrix
+    needs: resolve-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/esp-idf.yml
+    with:
+      source-ref: ${{ needs.resolve-source.outputs.commit }}
+      workflow-definition-ref: ${{ needs.resolve-source.outputs.workflow-commit }}
+
   verify:
     name: Full host verification
+    needs: resolve-source
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -37,16 +92,34 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+          ref: ${{ needs.resolve-source.outputs.commit }}
 
       - name: Pin verified source commit
         id: source
-        run: echo "commit=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+        env:
+          RESOLVED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          RESOLVED_WORKFLOW_COMMIT: ${{ needs.resolve-source.outputs.workflow-commit }}
+          ACTUAL_WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          test "${commit}" = "${RESOLVED_COMMIT}"
+          test "${ACTUAL_WORKFLOW_COMMIT}" = "${RESOLVED_WORKFLOW_COMMIT}"
+          echo "commit=${commit}" >> "${GITHUB_OUTPUT}"
 
       - name: Install host verification dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
           gcc-13 g++-13 ninja-build libssl-dev libsqlite3-dev
+
+      - name: Verify release compatibility authority
+        run: |
+          python3 tools/compatibility_matrix_gate.py check
+          python3 tools/compatibility_matrix_gate.py self-test
+          python3 tools/third_party_notice_gate.py check
+          python3 tools/third_party_notice_gate.py self-test
+          python3 tools/release_workflow_identity_gate.py check
+          python3 tools/release_workflow_identity_gate.py self-test
+          python3 tools/spdx_release_sbom.py self-test
 
       - name: Configure strict Release build
         run: >-
@@ -77,7 +150,11 @@ jobs:
 
   package:
     name: Source, SBOM, and checksums
-    needs: verify
+    needs:
+      - resolve-source
+      - full-host-ci
+      - esp32s3-target-ci
+      - verify
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -86,6 +163,8 @@ jobs:
       artifact-name: ${{ steps.metadata.outputs.artifact-name }}
       base: ${{ steps.metadata.outputs.base }}
       tag: ${{ steps.metadata.outputs.tag }}
+      source-commit: ${{ steps.metadata.outputs.commit }}
+      workflow-commit: ${{ steps.metadata.outputs.workflow-commit }}
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -107,10 +186,13 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           RUN_ID: ${{ github.run_id }}
           VERIFIED_COMMIT: ${{ needs.verify.outputs.verified-commit }}
+          WORKFLOW_COMMIT: ${{ needs.resolve-source.outputs.workflow-commit }}
+          ACTUAL_WORKFLOW_COMMIT: ${{ github.workflow_sha }}
         run: |
           commit="$(git rev-parse HEAD)"
           test -n "${commit}"
           test "${commit}" = "${VERIFIED_COMMIT}"
+          test "${ACTUAL_WORKFLOW_COMMIT}" = "${WORKFLOW_COMMIT}"
 
           if [[ "${EVENT_NAME}" == "push" ]]; then
             test "${REF_TYPE}" = "tag"
@@ -137,6 +219,7 @@ jobs:
             echo "artifact-name=${artifact_name}"
             echo "base=${base}"
             echo "commit=${commit}"
+            echo "workflow-commit=${WORKFLOW_COMMIT}"
             echo "tag=${tag}"
           } >> "${GITHUB_OUTPUT}"
 
@@ -149,6 +232,7 @@ jobs:
 
       - name: Generate SPDX JSON SBOM
         env:
+          RAW_SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.syft.raw.spdx.json
           SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.spdx.json
           SOURCE_VERSION: ${{ steps.metadata.outputs.tag || steps.metadata.outputs.commit }}
           SYFT_CMD: ${{ steps.syft.outputs.cmd }}
@@ -157,23 +241,77 @@ jobs:
           "${SYFT_CMD}" scan dir:. \
             --source-name ninlil-runtime \
             --source-version "${SOURCE_VERSION}" \
-            --output "spdx-json=${SBOM}"
+            --output "spdx-json=${RAW_SBOM}"
+          test -s "${RAW_SBOM}"
+          python3 tools/spdx_release_sbom.py enrich "${RAW_SBOM}" "${SBOM}"
+          python3 tools/spdx_release_sbom.py check "${SBOM}"
+          python3 tools/spdx_release_sbom.py self-test
           test -s "${SBOM}"
 
       - name: Create deterministic source archives and checksums
         env:
           BASE: ${{ steps.metadata.outputs.base }}
           SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.spdx.json
+          SOURCE_COMMIT: ${{ steps.metadata.outputs.commit }}
+          WORKFLOW_COMMIT: ${{ steps.metadata.outputs.workflow-commit }}
+          EVENT_NAME: ${{ github.event_name }}
+          TAG: ${{ steps.metadata.outputs.tag }}
         run: |
           rm -rf dist
           mkdir -p dist
           test -s "${SBOM}"
           mv "${SBOM}" "dist/${BASE}.spdx.json"
 
+          python3 - "${BASE}" "${SOURCE_COMMIT}" "${WORKFLOW_COMMIT}" \
+            "${EVENT_NAME}" "${TAG}" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          base, source_commit, workflow_commit, event_name, tag = sys.argv[1:]
+          if len(source_commit) != 40 or len(workflow_commit) != 40:
+              raise SystemExit("source/workflow commit must be a full SHA")
+          payload = {
+              "schema": "ninlil-release-build-metadata-v1",
+              "source_commit": source_commit,
+              "workflow_definition_commit": workflow_commit,
+              "event_name": event_name,
+              "tag": tag or None,
+          }
+          pathlib.Path(f"dist/{base}.build-metadata.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
           git archive --format=tar --prefix="${BASE}/" HEAD \
             | gzip -n -9 > "dist/${BASE}.tar.gz"
           git archive --format=zip --prefix="${BASE}/" \
             --output="dist/${BASE}.zip" HEAD
+          tar -tzf "dist/${BASE}.tar.gz" \
+            | grep -Fx "${BASE}/compatibility-matrix.json"
+          tar -tzf "dist/${BASE}.tar.gz" \
+            | grep -Fx "${BASE}/dependency-inventory.json"
+          python3 - "${BASE}" <<'PY'
+          import sys
+          import zipfile
+
+          base = sys.argv[1]
+          expected = f"{base}/compatibility-matrix.json"
+          dependency_inventory = f"{base}/dependency-inventory.json"
+          with zipfile.ZipFile(f"dist/{base}.zip", "r") as archive:
+              names = archive.namelist()
+          if names.count(expected) != 1:
+              raise SystemExit(
+                  f"{expected}: expected exactly once in source zip, "
+                  f"got {names.count(expected)}"
+              )
+          if names.count(dependency_inventory) != 1:
+              raise SystemExit(
+                  f"{dependency_inventory}: expected exactly once in source zip, "
+                  f"got {names.count(dependency_inventory)}"
+              )
+          PY
 
           (
             cd dist
@@ -181,11 +319,12 @@ jobs:
               "${BASE}.tar.gz" \
               "${BASE}.zip" \
               "${BASE}.spdx.json" \
+              "${BASE}.build-metadata.json" \
               > "${BASE}.SHA256SUMS"
             sha256sum --check "${BASE}.SHA256SUMS"
           )
 
-          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "4"
+          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "5"
 
       # actions/upload-artifact v4.6.2
       - name: Upload dry-run or release files
@@ -226,7 +365,15 @@ jobs:
           test -s "dist/${BASE}.tar.gz"
           test -s "dist/${BASE}.zip"
           test -s "dist/${BASE}.spdx.json"
+          test -s "dist/${BASE}.build-metadata.json"
           test -s "dist/${BASE}.SHA256SUMS"
+          jq -e \
+            --arg source "${{ needs.package.outputs.source-commit }}" \
+            --arg workflow "${{ needs.package.outputs.workflow-commit }}" \
+            '.schema == "ninlil-release-build-metadata-v1"
+             and .source_commit == $source
+             and .workflow_definition_commit == $workflow' \
+            "dist/${BASE}.build-metadata.json" >/dev/null
           (
             cd dist
             sha256sum --check "${BASE}.SHA256SUMS"
@@ -241,6 +388,7 @@ jobs:
             dist/${{ needs.package.outputs.base }}.tar.gz
             dist/${{ needs.package.outputs.base }}.zip
             dist/${{ needs.package.outputs.base }}.spdx.json
+            dist/${{ needs.package.outputs.base }}.build-metadata.json
             dist/${{ needs.package.outputs.base }}.SHA256SUMS
           show-summary: true
 
@@ -267,7 +415,7 @@ jobs:
             "dist/${BASE}.provenance.sigstore.json"
           cp "${SBOM_BUNDLE}" \
             "dist/${BASE}.sbom-attestation.sigstore.json"
-          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "6"
+          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "7"
 
       # actions/upload-artifact v4.6.2
       - name: Upload attested release files
@@ -308,6 +456,7 @@ jobs:
           test -s "dist/${BASE}.tar.gz"
           test -s "dist/${BASE}.zip"
           test -s "dist/${BASE}.spdx.json"
+          test -s "dist/${BASE}.build-metadata.json"
           test -s "dist/${BASE}.SHA256SUMS"
           test -s "dist/${BASE}.provenance.sigstore.json"
           test -s "dist/${BASE}.sbom-attestation.sigstore.json"
@@ -317,7 +466,14 @@ jobs:
           )
           jq -e . "dist/${BASE}.provenance.sigstore.json" >/dev/null
           jq -e . "dist/${BASE}.sbom-attestation.sigstore.json" >/dev/null
-          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "6"
+          jq -e \
+            --arg source "${{ needs.package.outputs.source-commit }}" \
+            --arg workflow "${{ needs.package.outputs.workflow-commit }}" \
+            '.schema == "ninlil-release-build-metadata-v1"
+             and .source_commit == $source
+             and .workflow_definition_commit == $workflow' \
+            "dist/${BASE}.build-metadata.json" >/dev/null
+          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "7"
 
       - name: Create complete draft release, then publish
         env:

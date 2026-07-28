@@ -9,10 +9,28 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - OSS community運用文書、Issue / Pull Request template、およびfull host test後に
   source archive・SPDX SBOM・checksum・SLSA/SBOM attestationをtagから公開する
   SHA-pinned release workflowを追加した。
+- version、platform、feature状態、HIL境界を記録するmachine-readable
+  `compatibility-matrix.json`と、CMake/ABI/storage/ESP-IDF/CI/evidenceを照合する
+  fail-closed gateを追加した。M4/M5を含むfeature依存グラフも固定し、依存機能が未完成の
+  `RELEASE_SUPPORTED`を拒否する。matrixはinstall treeとsource releaseの両方へ含める。
+- closed dependency inventory、既知package/version/license/hashを補完するSPDX 2.3
+  enrichment gate、およびsource commitとworkflow-definition commitを分離記録する
+  release build metadataを追加した。
 
 ### Changed
 
 - 公開文書・ソースコメント・品質ゲートを製品非依存の表現へ統一し、reference application integration を汎用プロファイルとして再整理した。
+- Third-party noticeを現行Host/ESP dependency graphへ更新し、direct/transitive lock、
+  license token、pinned SPDX SBOM生成経路の不一致を拒否するCI gateを追加した。
+- tag releaseが通常branchの過去CI結果へ依存せず、同じtag commitでfull Linux/macOS CIと
+  pinned ESP32-S3 target CIをreusable workflowとして再実行してからpackage/attestationへ
+  進むようrelease gateを強化した。
+- Manual dry runのbranch/tag/refを最初にimmutable commitへ解決し、Host、ESP32-S3、
+  strict Release test、packageの全jobが同じcommitだけを検証するよう固定した。
+  全workflowにchecksum-pinned actionlintとchecksum-pinned ShellCheckの
+  syntax/semantic gateも追加した。
+- ESP-IDF CI imageをofficial linux/amd64 manifest digestへ固定し、macOS authorityを
+  supportedな`macos-15` arm64 runnerへ更新した。
 - U5/U6の製品非依存editorial deltaをfreeze v2として再固定した。Normative meaning、wire、storage、API、実装状態の変更はない。
 
 ## [v1.0-lab-rc2] - 2026-07-24

@@ -42,6 +42,14 @@ Release stewardは次を確認します。
 6. `LICENSE`、`NOTICE`、`THIRD-PARTY-NOTICES.md`、security/support文書を確認した。
 7. Security Advisoryに公開を妨げる未解決事項がないことを確認した。
 8. Release commitからdry run artifactを作り、内容をreviewした。
+9. `python3 tools/compatibility_matrix_gate.py check`と`self-test`が成功し、
+   `compatibility-matrix.json`のfeature状態・platform・HIL evidenceがrelease noteと一致した。
+10. `python3 tools/third_party_notice_gate.py check`と`self-test`が成功し、
+    direct/transitive lock、third-party notice、pinned SPDX SBOM生成経路が一致した。
+11. `python3 tools/release_workflow_identity_gate.py check`と`self-test`が成功し、
+    Host / ESP32-S3 / strict Release / packageがsingle immutable commitを共有した。
+12. `python3 tools/spdx_release_sbom.py self-test`が成功し、実際に生成したSBOMを
+    `check`して既知package/version/license/hashの欠落と`NOASSERTION`を拒否した。
 
 ## Dry run
 
@@ -49,20 +57,26 @@ GitHub Actionsの **Release** workflowを `workflow_dispatch` で実行します
 branch、tag、または完全なcommit SHAを `ref` に指定できます。空欄なら選択した
 branchのcommitを使用します。
 
-Workflowは最初にGCC 13のstrict Release buildと、configureされた全CTestを実行します。
-Testが0件、build失敗、または1件でもtest失敗ならpackageを作りません。成功後、dry
-runは次を生成し、workflow artifactとして14日間保存します。
+Workflowは指定refを最初にexact source commitへ1回だけ解決し、workflow definitionの
+commitも別のfull SHAとして固定・記録します。その同じsource commitを通常PRと同じ
+full Linux/macOS CI reusable workflow、pinned ESP-IDF ESP32-S3 target reusable workflow、
+GCC 13のstrict Release buildとconfigureされた全CTestへ渡します。branchがworkflow実行中に
+進んでも、検証対象とpackage対象は変わりません。いずれかのcalled workflow失敗、Testが
+0件、build失敗、または1件でもtest失敗ならpackageを作りません。成功後、dry runは次を
+生成し、workflow artifactとして14日間保存します。
 
 - deterministic source `tar.gz`
 - source `zip`
 - SPDX JSON SBOM
+- source commitとworkflow-definition commitを記録したbuild metadata JSON
 - `SHA256SUMS`
 
 Dry runはGitHub Releaseを作成せず、tagを変更せず、OIDC provenance attestationを
 発行しません。Attestationを含む完全なpublish経路はtag pushでのみ実行されます。
 
 Dry run artifactを展開し、秘密情報、build tree、不要なgenerated fileがないこと、
-SBOMのproject名・version・license情報、checksum検証を確認します。
+SBOMのproject名・version・license情報、dependency inventoryとの一致、build metadataの
+2つのcommit、checksum検証を確認します。
 
 ```sh
 sha256sum -c ninlil-runtime-*.SHA256SUMS
@@ -76,8 +90,13 @@ macOSでは `shasum -a 256 -c ninlil-runtime-*.SHA256SUMS` を使用できます
 SemVerとして再検査し、checkout commitがtag targetと一致しない場合はfail closedに
 します。
 
-Verify / Package jobはread-only権限でfull host test、source archive、SPDX SBOM、
-checksumを作ります。後続の権限は責務ごとに分離します。
+Release workflowはtag commit上でfull Linux/macOS CIとpinned ESP32-S3 target CIを
+再利用し、通常branch CIが以前成功したという外部状態だけに依存しません。
+Verify / Package jobはread-only権限でstrict Release test、source archive、
+dependency inventoryでenrichしたSPDX SBOM、source/workflow identity metadata、
+checksumを作ります。ESP-IDF target CIはofficial imageのlinux/amd64 OCI manifest
+digestを固定し、container内のESP-IDF versionも検査します。後続の権限は責務ごとに
+分離します。
 
 - Attest job: `contents: read`、Sigstore署名用 `id-token: write`、
   GitHub artifact用 `attestations: write`
@@ -90,7 +109,7 @@ Attest jobはchecksumを再検証し、次の2種類を独立して発行しま�
 
 それぞれのSigstore bundleを `.provenance.sigstore.json` と
 `.sbom-attestation.sigstore.json` という区別可能なrelease assetへ含めます。
-Publish jobは完成した6 filesを再検証し、draft Releaseへ全assetを追加してから
+Publish jobは完成した7 filesを再検証し、draft Releaseへ全assetを追加してから
 最後に公開します。Pre-release suffixを持つtagはGitHub上でもpre-releaseに設定します。
 
 ## 公開後の検証

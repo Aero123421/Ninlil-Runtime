@@ -958,8 +958,10 @@ static int row_is_v1_allowlisted_spine_marker(
     if (status != NINLIL_OK) {
         return 0;
     }
-    return kind >= NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER
-        && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
+    return (kind >= NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER
+               && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION)
+        || kind == NINLIL_V1_DURABLE_KIND_SPINE_BEARER_STATE
+        || kind == NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE;
 }
 
 static ninlil_status_t skip_allowlisted_spine_row(

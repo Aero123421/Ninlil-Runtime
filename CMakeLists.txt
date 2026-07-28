@@ -406,6 +406,10 @@ install(DIRECTORY include/ninlil
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES LICENSE NOTICE THIRD-PARTY-NOTICES.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/ninlil)
+install(FILES compatibility-matrix.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/ninlil)
+install(FILES dependency-inventory.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/ninlil)
 if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
     install(TARGETS ninlil_posix_sqlite_storage
         EXPORT NinlilTargets
@@ -1105,6 +1109,48 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
     add_test(
+        NAME compatibility_matrix_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/compatibility_matrix_gate.py
+            check
+    )
+    add_test(
+        NAME compatibility_matrix_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/compatibility_matrix_gate.py
+            self-test
+    )
+    add_test(
+        NAME third_party_notice_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/third_party_notice_gate.py
+            check
+    )
+    add_test(
+        NAME third_party_notice_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/third_party_notice_gate.py
+            self-test
+    )
+    add_test(
+        NAME release_workflow_identity_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_workflow_identity_gate.py
+            check
+    )
+    add_test(
+        NAME release_workflow_identity_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_workflow_identity_gate.py
+            self-test
+    )
+    add_test(
+        NAME release_spdx_sbom_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spdx_release_sbom.py
+            self-test
+    )
+    add_test(
         NAME control_frame_vector_oracle
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/control_frame_vector_gen.py
@@ -1254,6 +1300,74 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_vector_gen.py
             check
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-store-v1.json
+    )
+    add_test(
+        NAME domain_store_schema1_binding_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME domain_store_schema1_binding_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_vector_gen.py
+            --self-test
+    )
+    add_test(
+        NAME domain_store_schema1_binding_independent_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.py
+            --check
+    )
+    add_test(
+        NAME domain_store_schema1_binding_independent_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.py
+            --self-test
+    )
+    find_program(NINLIL_NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+    add_test(
+        NAME domain_store_schema1_binding_node_gate
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.mjs
+            --check
+    )
+    add_test(
+        NAME domain_store_schema1_binding_node_gate_self_test
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.mjs
+            --self-test
+    )
+    set_tests_properties(
+        domain_store_schema1_binding_vector_oracle_self_test
+        domain_store_schema1_binding_independent_gate
+        domain_store_schema1_binding_independent_gate_self_test
+        domain_store_schema1_binding_node_gate
+        domain_store_schema1_binding_node_gate_self_test
+        PROPERTIES DEPENDS domain_store_schema1_binding_vector_oracle
+    )
+    add_test(
+        NAME fabric_bearer_spec_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_bearer_spec_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME fabric_bearer_spec_cross_language_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_bearer_spec_gate.py
+            --check
+    )
+    add_test(
+        NAME fabric_bearer_spec_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_bearer_spec_gate.py
+            --self-test
+    )
+    set_tests_properties(
+        fabric_bearer_spec_cross_language_gate
+        fabric_bearer_spec_gate_self_test
+        PROPERTIES DEPENDS fabric_bearer_spec_vector_oracle
     )
 
     add_executable(ninlil_domain_vector_parse_test
@@ -1412,6 +1526,76 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME v1_durable_allowlist
         COMMAND ninlil_v1_durable_allowlist_test
+    )
+
+    add_executable(ninlil_v1_transaction_codec_test
+        tests/runtime/v1_transaction_codec_test.c
+    )
+    target_include_directories(ninlil_v1_transaction_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_v1_transaction_codec_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_v1_transaction_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_transaction_codec_test)
+    add_test(
+        NAME v1_transaction_codec
+        COMMAND ninlil_v1_transaction_codec_test
+    )
+
+    add_executable(ninlil_v1_event_ledger_codec_test
+        tests/runtime/v1_event_ledger_codec_test.c
+    )
+    target_include_directories(ninlil_v1_event_ledger_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_v1_event_ledger_codec_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_v1_event_ledger_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_event_ledger_codec_test)
+    add_test(
+        NAME v1_event_ledger_codec
+        COMMAND ninlil_v1_event_ledger_codec_test
+    )
+
+    add_executable(ninlil_v1_event_mgmt_ledger_test
+        tests/runtime/v1_event_mgmt_ledger_test.c
+    )
+    target_include_directories(ninlil_v1_event_mgmt_ledger_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_event_mgmt_ledger_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_platform_fixtures
+        ninlil_test_storage_fixture
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_v1_event_mgmt_ledger_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_event_mgmt_ledger_test)
+    add_test(
+        NAME v1_event_mgmt_ledger
+        COMMAND ninlil_v1_event_mgmt_ledger_test
     )
 
     add_executable(ninlil_v1_runtime_spine_test
@@ -2382,6 +2566,18 @@ if(NINLIL_BUILD_TESTS)
         NAME v1_durable_allowlist_gate_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_durable_allowlist_gate.py
+            self-test
+    )
+    add_test(
+        NAME runtime_v1_durable_codec_source_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_v1_durable_codec_gate.py
+            check
+    )
+    add_test(
+        NAME runtime_v1_durable_codec_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_v1_durable_codec_gate.py
             self-test
     )
 
@@ -4305,7 +4501,7 @@ if(NINLIL_BUILD_TESTS)
     )
     set_tests_properties(vector_inventory_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector inventory ok: total=302 table=258 explicit=26 bullet=16 canonical=2"
+            "vector inventory ok: total=303 table=259 explicit=26 bullet=16 canonical=2"
     )
     add_test(
         NAME vector_inventory_negative
@@ -4342,7 +4538,7 @@ if(NINLIL_BUILD_TESTS)
     )
     set_tests_properties(vector_reference_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector references ok: definitions=302 mandatory_unique=280 pr_unique=295 union=302 mandatory_occurrences=284 pr_occurrences=295 mandatory_rows=40 pr_bullets=11 excluded=1"
+            "vector references ok: definitions=303 mandatory_unique=281 pr_unique=296 union=303 mandatory_occurrences=285 pr_occurrences=296 mandatory_rows=40 pr_bullets=11 excluded=1"
     )
     add_test(
         NAME vector_reference_negative

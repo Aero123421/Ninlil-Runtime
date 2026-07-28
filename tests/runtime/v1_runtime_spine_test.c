@@ -347,6 +347,23 @@ static int env_make_submission(spine_env_t *env, ninlil_submission_t *submission
     return 1;
 }
 
+static void env_initialize_target(spine_env_t *env)
+{
+    (void)memset(&env->target, 0, sizeof(env->target));
+    set_header(
+        &env->target.abi_version,
+        &env->target.struct_size,
+        sizeof(env->target));
+    set_id(&env->target.target_runtime_id, 0x80u);
+    set_id(&env->target.target_application_instance_id, 0x81u);
+    set_id(&env->target.device_id, 0x82u);
+    set_id(&env->target.site_domain_id, 0x83u);
+    env->target.binding_epoch = 1u;
+    env->target.membership_epoch = 1u;
+    env->target.flags =
+        NINLIL_TARGET_HAS_DEVICE | NINLIL_TARGET_HAS_SITE;
+}
+
 static int test_create_destroy_happy(void)
 {
     spine_env_t env;
@@ -411,6 +428,10 @@ static int test_register_submit_cancel_step_happy(void)
 
     REQUIRE(env_make_submission(&env, &submission));
     (void)memset(&submit_result, 0, sizeof(submit_result));
+    set_header(
+        &submit_result.abi_version,
+        &submit_result.struct_size,
+        sizeof(submit_result));
     REQUIRE(ninlil_submit(env.service, &submission, &submit_result) == NINLIL_OK);
     REQUIRE(submit_result.kind == NINLIL_SUBMISSION_ADMITTED_READY);
     REQUIRE(submit_result.reason == NINLIL_REASON_NONE);
@@ -421,6 +442,19 @@ static int test_register_submit_cancel_step_happy(void)
         == NINLIL_OK);
     REQUIRE(cancel_result.kind == NINLIL_CANCEL_FENCED_BEFORE_DISPATCH);
 
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    env.service = NULL;
+    REQUIRE(env_create_runtime(&env, 4u));
+    (void)memset(&cancel_result, 0, sizeof(cancel_result));
+    REQUIRE(ninlil_cancel_request(
+                env.runtime, &submit_result.transaction_id, &cancel_result)
+        == NINLIL_OK);
+    REQUIRE(cancel_result.kind == NINLIL_CANCEL_FENCED_BEFORE_DISPATCH);
+    REQUIRE(
+        cancel_result.current_outcome
+        == NINLIL_OUTCOME_CANCELLED_BEFORE_EFFECT);
+
     (void)memset(&budget, 0, sizeof(budget));
     set_header(&budget.abi_version, &budget.struct_size, sizeof(budget));
     budget.max_ingress_messages = 1u;
@@ -428,6 +462,10 @@ static int test_register_submit_cancel_step_happy(void)
     budget.max_state_transitions = 1u;
     budget.max_bearer_sends = 1u;
     (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
     REQUIRE(ninlil_runtime_step(env.runtime, &budget, &step_result) == NINLIL_OK);
     REQUIRE(step_result.health == NINLIL_HEALTH_OK);
 
@@ -566,6 +604,10 @@ static int test_wrong_thread(void)
     (void)memset(&budget, 0, sizeof(budget));
     set_header(&budget.abi_version, &budget.struct_size, sizeof(budget));
     (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
     REQUIRE(ninlil_runtime_step(env.runtime, &budget, &step_result)
         == NINLIL_E_WRONG_THREAD);
     platform_teardown(&env);
@@ -602,6 +644,356 @@ static int test_offer_accept_unsupported(void)
     (void)memset(&result, 0, sizeof(result));
     REQUIRE(ninlil_offer_accept(env.runtime, &offer_id, &result)
         == NINLIL_E_UNSUPPORTED);
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_capacity_snapshot_contract(void)
+{
+    spine_env_t env;
+    ninlil_capacity_entry_t entries[12];
+    ninlil_capacity_entry_t before[12];
+    ninlil_capacity_snapshot_t snapshot;
+    uint32_t index;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create_runtime(&env, 4u));
+    (void)memset(entries, 0x5a, sizeof(entries));
+    for (index = 0u; index < 12u; ++index) {
+        set_header(
+            &entries[index].abi_version,
+            &entries[index].struct_size,
+            sizeof(entries[index]));
+    }
+    (void)memset(&snapshot, 0, sizeof(snapshot));
+    set_header(
+        &snapshot.abi_version, &snapshot.struct_size, sizeof(snapshot));
+    snapshot.entries = entries;
+    snapshot.entry_capacity = 12u;
+
+    REQUIRE(ninlil_capacity_snapshot(env.runtime, &snapshot) == NINLIL_OK);
+    REQUIRE(snapshot.entries == entries);
+    REQUIRE(snapshot.entry_capacity == 12u);
+    REQUIRE(snapshot.entry_count == 11u);
+    for (index = 0u; index < 11u; ++index) {
+        REQUIRE(entries[index].kind == (ninlil_resource_kind_t)(index + 1u));
+        REQUIRE(entries[index].used + entries[index].reserved
+            <= entries[index].limit);
+        REQUIRE(entries[index].high_water
+            >= entries[index].used + entries[index].reserved);
+        REQUIRE(entries[index].capacity_epoch == 1u);
+    }
+    REQUIRE(entries[0].limit == 4u);
+    REQUIRE(entries[1].limit == 57u);
+    REQUIRE(entries[11].kind == (ninlil_resource_kind_t)0x5a5a5a5au);
+
+    (void)memcpy(before, entries, sizeof(entries));
+    snapshot.entry_capacity = 10u;
+    snapshot.entry_count = 99u;
+    REQUIRE(ninlil_capacity_snapshot(env.runtime, &snapshot)
+        == NINLIL_E_BUFFER_TOO_SMALL);
+    REQUIRE(snapshot.entries == entries);
+    REQUIRE(snapshot.entry_capacity == 10u);
+    REQUIRE(snapshot.entry_count == 11u);
+    REQUIRE(memcmp(entries, before, sizeof(entries)) == 0);
+
+    snapshot.entry_capacity = 11u;
+    snapshot.entry_count = 99u;
+    entries[7].struct_size = 1u;
+    (void)memcpy(before, entries, sizeof(entries));
+    REQUIRE(ninlil_capacity_snapshot(env.runtime, &snapshot)
+        == NINLIL_E_ABI_MISMATCH);
+    REQUIRE(snapshot.entries == entries);
+    REQUIRE(snapshot.entry_capacity == 11u);
+    REQUIRE(snapshot.entry_count == 0u);
+    REQUIRE(memcmp(entries, before, sizeof(entries)) == 0);
+
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_metrics_snapshot_extensible_output(void)
+{
+    typedef struct future_metrics {
+        ninlil_metrics_snapshot_t known;
+        uint8_t future_tail[16];
+    } future_metrics_t;
+    spine_env_t env;
+    future_metrics_t output;
+    uint32_t index;
+    int metrics_epoch_nonzero = 0;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create_runtime(&env, 4u));
+    (void)memset(&output, 0xa5, sizeof(output));
+    set_header(
+        &output.known.abi_version,
+        &output.known.struct_size,
+        sizeof(output));
+
+    REQUIRE(ninlil_metrics_snapshot(env.runtime, &output.known) == NINLIL_OK);
+    REQUIRE(output.known.struct_size == (uint16_t)sizeof(output));
+    for (index = 0u;
+         index < (uint32_t)sizeof(output.known.metrics_epoch_id.bytes);
+         ++index) {
+        if (output.known.metrics_epoch_id.bytes[index] != 0u) {
+            metrics_epoch_nonzero = 1;
+        }
+    }
+    REQUIRE(metrics_epoch_nonzero);
+    REQUIRE(output.known.started_clock_epoch_id.bytes[0] == 0xa0u);
+    REQUIRE(output.known.started_clock_epoch_id.bytes[15] == 0x01u);
+    REQUIRE(output.known.started_at_ms == 0u);
+    REQUIRE(output.known.submission_calls == 0u);
+    for (index = 0u; index < sizeof(output.future_tail); ++index) {
+        REQUIRE(output.future_tail[index] == 0xa5u);
+    }
+
+    output.known.abi_version = (uint16_t)(NINLIL_ABI_VERSION + 1u);
+    output.known.started_at_ms = 0x5a5a5a5a5a5a5a5aull;
+    REQUIRE(ninlil_metrics_snapshot(env.runtime, &output.known)
+        == NINLIL_E_ABI_MISMATCH);
+    REQUIRE(output.known.started_at_ms == 0x5a5a5a5a5a5a5a5aull);
+
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_runtime_step_budget_and_extensible_result(void)
+{
+    typedef struct future_step_budget {
+        ninlil_step_budget_t known;
+        uint8_t future_tail[8];
+    } future_step_budget_t;
+    typedef struct future_step_result {
+        ninlil_step_result_t known;
+        uint8_t future_tail[8];
+    } future_step_result_t;
+    spine_env_t env;
+    future_step_budget_t budget;
+    future_step_result_t result;
+    uint32_t index;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create_runtime(&env, 4u));
+
+    (void)memset(&budget, 0, sizeof(budget));
+    (void)memset(&result, 0xa5, sizeof(result));
+    set_header(
+        &budget.known.abi_version,
+        &budget.known.struct_size,
+        sizeof(budget));
+    set_header(
+        &result.known.abi_version,
+        &result.known.struct_size,
+        sizeof(result));
+    budget.known.max_ingress_messages =
+        env.config.limits.max_ingress_per_step + 1u;
+    REQUIRE(ninlil_runtime_step(
+                env.runtime, &budget.known, &result.known)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(result.known.ingress_processed == 0u);
+    REQUIRE(result.known.callbacks_invoked == 0u);
+    REQUIRE(result.known.state_transitions == 0u);
+    REQUIRE(result.known.bearer_sends == 0u);
+    REQUIRE(result.known.health == NINLIL_HEALTH_OK);
+    for (index = 0u; index < sizeof(result.future_tail); ++index) {
+        REQUIRE(result.future_tail[index] == 0xa5u);
+    }
+
+    budget.known.max_ingress_messages = 0u;
+    REQUIRE(ninlil_runtime_step(
+                env.runtime, &budget.known, &result.known)
+        == NINLIL_OK);
+    REQUIRE(result.known.ingress_processed == 0u);
+    REQUIRE(result.known.callbacks_invoked == 0u);
+    REQUIRE(result.known.state_transitions == 0u);
+    REQUIRE(result.known.bearer_sends == 0u);
+    for (index = 0u; index < sizeof(result.future_tail); ++index) {
+        REQUIRE(result.future_tail[index] == 0xa5u);
+    }
+
+    platform_teardown(&env);
+    return 0;
+}
+
+static int test_transaction_query_and_list_contract(void)
+{
+    typedef struct future_query {
+        ninlil_query_t known;
+        uint8_t future_tail[8];
+    } future_query_t;
+    typedef struct future_page {
+        ninlil_transaction_page_t known;
+        uint8_t future_tail[8];
+    } future_page_t;
+    static const uint8_t second_key[] = "key-2";
+    spine_env_t env;
+    ninlil_submission_t submission;
+    ninlil_submission_result_t first;
+    ninlil_submission_result_t second;
+    ninlil_target_snapshot_t targets[2];
+    ninlil_transaction_snapshot_t snapshot;
+    ninlil_transaction_summary_t items[2];
+    future_query_t query;
+    future_page_t page;
+    ninlil_id128_t missing;
+    uint8_t untouched_target[sizeof(targets[1])];
+    uint32_t index;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_create_runtime(&env, 4u));
+    REQUIRE(env_register_service(&env, 0x70u));
+    env_initialize_target(&env);
+    REQUIRE(env_make_submission(&env, &submission));
+    (void)memset(&first, 0, sizeof(first));
+    set_header(&first.abi_version, &first.struct_size, sizeof(first));
+    REQUIRE(ninlil_submit(env.service, &submission, &first) == NINLIL_OK);
+    REQUIRE(first.kind == NINLIL_SUBMISSION_ADMITTED_READY);
+
+    submission.idempotency_key.data = second_key;
+    submission.idempotency_key.length = sizeof(second_key) - 1u;
+    submission.generation = 2u;
+    (void)memset(&second, 0, sizeof(second));
+    set_header(&second.abi_version, &second.struct_size, sizeof(second));
+    REQUIRE(ninlil_submit(env.service, &submission, &second) == NINLIL_OK);
+    REQUIRE(second.kind == NINLIL_SUBMISSION_ADMITTED_READY);
+
+    (void)memset(targets, 0x5a, sizeof(targets));
+    for (index = 0u; index < 2u; ++index) {
+        set_header(
+            &targets[index].abi_version,
+            &targets[index].struct_size,
+            sizeof(targets[index]));
+    }
+    (void)memcpy(untouched_target, &targets[1], sizeof(targets[1]));
+    (void)memset(&snapshot, 0, sizeof(snapshot));
+    set_header(
+        &snapshot.abi_version, &snapshot.struct_size, sizeof(snapshot));
+    snapshot.targets = targets;
+    snapshot.target_capacity = 2u;
+    REQUIRE(ninlil_transaction_query(
+                env.runtime, &first.transaction_id, &snapshot)
+        == NINLIL_OK);
+    REQUIRE(snapshot.targets == targets);
+    REQUIRE(snapshot.target_capacity == 2u);
+    REQUIRE(snapshot.target_count == 1u);
+    REQUIRE(snapshot.family == NINLIL_FAMILY_DESIRED_STATE);
+    REQUIRE(snapshot.state == NINLIL_TXN_READY);
+    REQUIRE(snapshot.outcome == NINLIL_OUTCOME_NONE);
+    REQUIRE(snapshot.required_evidence == NINLIL_EVIDENCE_APPLIED);
+    REQUIRE(snapshot.latest_evidence == NINLIL_EVIDENCE_NONE);
+    REQUIRE(snapshot.transaction_sequence == 1u);
+    REQUIRE(snapshot.record_revision == 1u);
+    REQUIRE(snapshot.absolute_effect_deadline_ms == 5000u);
+    REQUIRE(snapshot.assurance.assurance_profile
+        == NINLIL_ASSURANCE_FOUNDATION_M1A_LOCAL);
+    REQUIRE(memcmp(
+                &targets[0].target,
+                &env.target,
+                sizeof(env.target))
+        == 0);
+    REQUIRE(memcmp(
+                &targets[1],
+                untouched_target,
+                sizeof(targets[1]))
+        == 0);
+
+    snapshot.targets = NULL;
+    snapshot.target_capacity = 0u;
+    REQUIRE(ninlil_transaction_query(
+                env.runtime, &first.transaction_id, &snapshot)
+        == NINLIL_E_BUFFER_TOO_SMALL);
+    REQUIRE(snapshot.targets == NULL);
+    REQUIRE(snapshot.target_capacity == 0u);
+    REQUIRE(snapshot.target_count == 1u);
+
+    set_id(&missing, 0xe0u);
+    snapshot.targets = targets;
+    snapshot.target_capacity = 2u;
+    REQUIRE(ninlil_transaction_query(env.runtime, &missing, &snapshot)
+        == NINLIL_E_NOT_FOUND);
+    REQUIRE(snapshot.targets == targets);
+    REQUIRE(snapshot.target_capacity == 2u);
+    REQUIRE(snapshot.target_count == 0u);
+
+    (void)memset(&query, 0, sizeof(query));
+    set_header(
+        &query.known.abi_version,
+        &query.known.struct_size,
+        sizeof(query));
+    query.known.include_terminal = 1u;
+    query.known.include_nonterminal = 1u;
+    (void)memset(&page, 0xa5, sizeof(page));
+    set_header(
+        &page.known.abi_version,
+        &page.known.struct_size,
+        sizeof(page));
+    (void)memset(items, 0x5a, sizeof(items));
+    for (index = 0u; index < 2u; ++index) {
+        set_header(
+            &items[index].abi_version,
+            &items[index].struct_size,
+            sizeof(items[index]));
+    }
+    page.known.items = items;
+    page.known.item_capacity = 1u;
+    REQUIRE(ninlil_transaction_list(
+                env.runtime, &query.known, &page.known)
+        == NINLIL_OK);
+    REQUIRE(page.known.struct_size == (uint16_t)sizeof(page));
+    REQUIRE(page.known.items == items);
+    REQUIRE(page.known.item_capacity == 1u);
+    REQUIRE(page.known.item_count == 1u);
+    REQUIRE(page.known.next_after_transaction_sequence == 1u);
+    REQUIRE(page.known.has_more == 1u);
+    REQUIRE(items[0].transaction_sequence == 1u);
+    REQUIRE(items[0].state == NINLIL_TXN_READY);
+    for (index = 0u; index < sizeof(page.future_tail); ++index) {
+        REQUIRE(page.future_tail[index] == 0xa5u);
+    }
+
+    query.known.after_transaction_sequence =
+        page.known.next_after_transaction_sequence;
+    REQUIRE(ninlil_transaction_list(
+                env.runtime, &query.known, &page.known)
+        == NINLIL_OK);
+    REQUIRE(page.known.item_count == 1u);
+    REQUIRE(page.known.next_after_transaction_sequence == 2u);
+    REQUIRE(page.known.has_more == 0u);
+    REQUIRE(items[0].transaction_sequence == 2u);
+
+    query.known.after_transaction_sequence = 0u;
+    page.known.items = NULL;
+    page.known.item_capacity = 0u;
+    REQUIRE(ninlil_transaction_list(
+                env.runtime, &query.known, &page.known)
+        == NINLIL_OK);
+    REQUIRE(page.known.item_count == 0u);
+    REQUIRE(page.known.next_after_transaction_sequence == 0u);
+    REQUIRE(page.known.has_more == 1u);
+
+    query.known.family_mask = NINLIL_FAMILY_MASK_EVENT_FACT;
+    REQUIRE(ninlil_transaction_list(
+                env.runtime, &query.known, &page.known)
+        == NINLIL_OK);
+    REQUIRE(page.known.item_count == 0u);
+    REQUIRE(page.known.has_more == 0u);
+
+    query.known.family_mask = 0u;
+    query.known.include_terminal = 0u;
+    query.known.include_nonterminal = 0u;
+    REQUIRE(ninlil_transaction_list(
+                env.runtime, &query.known, &page.known)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(page.known.items == NULL);
+    REQUIRE(page.known.item_capacity == 0u);
+    REQUIRE(page.known.item_count == 0u);
+
     platform_teardown(&env);
     return 0;
 }
@@ -647,6 +1039,18 @@ int main(void)
         rc = 1;
     }
     if (test_offer_accept_unsupported() != 0) {
+        rc = 1;
+    }
+    if (test_capacity_snapshot_contract() != 0) {
+        rc = 1;
+    }
+    if (test_metrics_snapshot_extensible_output() != 0) {
+        rc = 1;
+    }
+    if (test_runtime_step_budget_and_extensible_result() != 0) {
+        rc = 1;
+    }
+    if (test_transaction_query_and_list_contract() != 0) {
         rc = 1;
     }
 

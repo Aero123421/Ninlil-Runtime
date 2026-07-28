@@ -35,6 +35,14 @@ Ninlil Runtime は、立場、経験、所属、年齢、障害、外見、人�
 超えて報告者の身元や資料を共有しません。ただし、緊急の安全確保や法的義務の
 ために共有が必要な場合があります。現時点では応答時間のSLAを保証していません。
 
+報告が全maintainerを対象とする、または独立して対応できるmaintainerがいない場合、
+projectのSecurity Advisoryを独立経路とは扱いません。その場合は
+[GitHubのReport Abuse窓口](https://support.github.com/contact/report-abuse)または
+対象contentの`Report content`機能を使用してください。GitHubの判断後にproject側の
+措置が必要な場合は、報告者の安全と機密性を損なわない範囲で、GitHubが指定した経路か、
+新たに利益相反のないmaintainerが就任した後に引き継ぎます。独立した受領者がいない
+状態で、報告者へpublic Issueでの再報告を求めません。
+
 ## 執行
 
 Maintainerは、文脈、影響、反復性を確認し、次の措置を単独または組み合わせて

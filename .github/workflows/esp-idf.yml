@@ -1,8 +1,8 @@
 # ESP-IDF target build (M3-prep + M3-basic + experimental owner/cell/loopback
 # + durable-storage + U2 A2 CDC adapter + R7 T0 crypto / T1 wire / T1b binding
 # target gates). Separated from host GCC/Clang CI in ci.yml.
-# Pins ESP-IDF via the official Docker image tag that matches
-# ports/esp-idf/ESP_IDF_VERSION (currently v5.5.3).
+# Pins the official ESP-IDF linux/amd64 image by immutable OCI manifest digest;
+# its v5.5.3 tag/version authority is recorded in dependency-inventory.json.
 # Smoke links clock/entropy/execution + owner-task/cell/loopback + storage + U2 CDC
 # + the R7 private mbedTLS provider, T1b context binding, and T1 wire codec into
 # the final ESP32-S3 ELF.
@@ -15,7 +15,19 @@ name: ESP-IDF
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
+  workflow_call:
+    inputs:
+      source-ref:
+        description: Exact source commit to verify
+        required: false
+        type: string
+      workflow-definition-ref:
+        description: Exact commit containing this reusable workflow definition
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -32,7 +44,16 @@ jobs:
       # actions/checkout v7.0.0 (same pin as host ci.yml)
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
+          ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+
+      - name: Verify workflow and runner identity
+        env:
+          EXPECTED_WORKFLOW_COMMIT: ${{ inputs.workflow-definition-ref || github.workflow_sha }}
+          ACTUAL_WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          test "${ACTUAL_WORKFLOW_COMMIT}" = "${EXPECTED_WORKFLOW_COMMIT}"
+          test "$(uname -m)" = "x86_64"
 
       - name: Read pinned ESP-IDF version
         id: pin
@@ -65,21 +86,22 @@ jobs:
           test ! -f ports/esp-idf/hil_app/sdkconfig.old
 
       - name: Build combined smoke and storage HIL app for esp32s3
-        # Official Espressif setup: published Docker image tag vX.Y.Z
-        # (espressif/idf). Image tag must match ports/esp-idf/ESP_IDF_VERSION.
+        # Official Espressif image: immutable linux/amd64 OCI digest for v5.5.3.
         # No third-party Action required beyond checkout (SHA-pinned above).
         # Post-link gates run inside the same image so xtensa-esp32s3-elf-objdump
         # / nm / readelf are always present — tools missing ⇒ fail, never false-green.
         run: |
           pin="${{ steps.pin.outputs.version }}"
+          test "${pin}" = "v5.5.3"
           docker run --rm --interactive \
             --user 0:0 \
             -v "$PWD:/project" \
             -w /project \
-            "espressif/idf:${pin}" \
+            "docker.io/espressif/idf@sha256:3e77b709e0ba7f0e9a711039231103be822736b4105790b8e33339a3bf4e47fb" \
             bash -s <<'NINLIL_ESP_CI'
           set -euo pipefail
           . "${IDF_PATH}/export.sh"
+          idf.py --version | grep -F "ESP-IDF v5.5.3"
           # R2: mandatory Xtensa ESP32-S3 ABI compile of time_sample offsetof static_assert.
           # Missing toolchain or compile failure ⇒ job fail (not optional / not host-only).
           command -v xtensa-esp32s3-elf-gcc
