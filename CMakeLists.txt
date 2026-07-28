@@ -1091,6 +1091,20 @@ if(NINLIL_BUILD_TESTS)
 
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     add_test(
+        NAME markdown_link_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/markdown_link_gate.py
+            check
+            --root
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME markdown_link_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/markdown_link_gate.py
+            self-test
+    )
+    add_test(
         NAME control_frame_vector_oracle
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/control_frame_vector_gen.py
