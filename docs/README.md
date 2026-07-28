@@ -10,7 +10,22 @@
 | [V1 LAB quickstart](v1-lab-quickstart.md) | clone → build → ctest → examples |
 | [V1 LAB developer](v1-lab-developer.md) | layout・テスト・provider 拡張 |
 | [Distribution manifest](v1-lab-distribution-manifest.md) | 配布物一覧 |
+| [Release Guide](releasing.md) | dry run、tag、SBOM、checksum、provenance、公開後検証 |
 | [Pre-V1 実装履歴](release-history.md) | M0–R7 candidate スライス（旧 README 履歴） |
+
+---
+
+## V2 Runtime Fabric completion tranche
+
+[34. V2 Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md)と
+[ADR-0017〜0021](adr/README.md)は、Portable/Host、Fabric Bearer、Wi-Fi、Relay、
+Multi-parent、fragmentation/reassembly、durable custody、OSS 1.0を完成と判定する共通gateを
+定義する。状態はすべて**Proposed docs-only**であり、ABI/wire/storage採番、実装、HIL、
+legal、production supportを主張しない。
+
+Runtimeの既存単一Bearer ABIは維持し、複数packet linkは1個のportable Fabric Bearer内部で
+registry化する。Portable canonical logical envelope候補はNFL1であり、V1 POSIX loopbackの
+raw C struct wireをportable wireとして昇格しない。
 
 ---
 
@@ -93,6 +108,7 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 32 | [R7 T1 NRW1 SINGLE wire codec](32-r7-t1-nrw1-single-wire-codec.md) | DATA/SINGLE private pure codec（[ADR-0012](adr/0012-r7-t1-nrw1-single-wire-codec.md) Accepted; **state/W1/HIL/legal未完**） |
 | 33 | [R7 T1b context binding and HKDF](33-r7-t1b-context-binding-hkdf.md) | byte-exact private stateless binding + verified typed key schedule（[ADR-0013](adr/0013-r7-t1b-context-binding-hkdf.md) Accepted; [review](reviews/2026-07-19-r7-t1b-context-binding-hkdf-accepted.md); **AcceptedはT1b候補のみ。state/W1/HIL/legal/R7 full未完**） |
 | 34 | [R7 T1c authenticated Hop fresh-install owner](34-r7-t1c-authenticated-hop-fresh-install-owner.md) | M4 Hop token one-shot → T1b verified → N6 Hop fresh 4-key FULL の stateful private owner（[ADR-0014](adr/0014-r7-t1c-authenticated-hop-fresh-install-owner.md) **Proposed docs-only**; **implementation / vectors / ESP target crypto KAT / Accepted 未。E2E/resume/M5/W1/RF・USB・LoRa HIL/legal/R7 full 非claim**） |
+| V2 | [Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md) | 10段階完成条件、version/bounds、NFL1、Wi-Fi、Relay、Multi-parent、multi-frame custody、OSS 1.0 gate（[ADR-0017〜0021](adr/README.md) **Proposed docs-only**） |
 
 ## 実装開始条件
 

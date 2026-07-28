@@ -329,12 +329,46 @@ Exit gate:
 - false success、silent event loss、contract外duplicate effect 0。
 - reference applicationのschema/policyがNinlil Coreに混入しない。
 
+## V2 Runtime Fabric specification-first tranche
+
+状態: **Proposed docs-only**
+
+正本:
+
+- [34. V2 Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md)
+- [ADR-0017: Fabric Bearer Registry and Path Selection](adr/0017-bearer-registry-path-selection.md)
+- [ADR-0018: Wi-Fi Packet Link](adr/0018-wifi-bearer.md)
+- [ADR-0019: Route Authority and Relay Lifecycle](adr/0019-route-relay.md)
+- [ADR-0020: Multi-parent Ownership and Failover](adr/0020-multi-parent.md)
+- [ADR-0021: Multi-frame Durable Custody](adr/0021-multi-frame-durable-custody.md)
+
+このtrancheはM7〜M11の「100%完成」を10段階gateへ置き換える。Proposed文書の追加だけでは
+実装、Accepted、HIL、legal、production supportを意味しない。
+
+依存順:
+
+```text
+ADR-0017 / NFL1
+  -> Fabric Bearer / Scheduler
+     -> Wi-Fi と NRW1 LINK/FRAG
+        -> U6 single-frame conformance / multi-frame v3
+        -> Relay
+           -> Multi-parent
+              -> Field Pilot
+                 -> OSS 1.0
+```
+
+Runtimeの既存単一Bearer ABIは配列化せず、Fabric Bearerが複数packet linkをregistryとして
+束ねる。V1 POSIX raw C struct wireはportable wireとして昇格しない。
+
 ## M7: Scheduler, Sleep and Wi-Fi/USB bearer
 
 内容:
 
 - traffic class/quota/fairness
 - sleepy receive window admission
+- ADR-0017 Fabric Bearer、NFL1 canonical logical envelope
+- ADR-0018 Wi-Fi packet-linkとUSB packet-link
 - Wi-Fi/USB offload
 - origin/cell custody policy
 - management bulk separation
@@ -346,6 +380,10 @@ Exit gate:
 - 重要trafficがbulk/noisy neighborでstarveしない。
 - battery scan/wake budgetをreport。
 - Wi-Fi断でもLoRa/local safety pathが継続。
+- Runtime Platform ABI golden manifestが不変で、Fabric API/registryが2種3 instanceを扱う。
+- NFL1/NWB1 exact KAT、partial I/O、disconnect/reconnect、bounded backpressureがgreen。
+- ESP32-S3 Wi-Fi実経路HILがある。LoRa同時稼働evidenceは別compact-radio logical
+  envelope + NFL1↔NRW1 mapping/KATがAcceptedになった後だけ要求・主張する。
 - simulator結果をRF実証と表現しない。
 
 ## M8: Relay Tree / Forest
@@ -353,6 +391,7 @@ Exit gate:
 内容:
 
 - controller-managed route tree/forest
+- ADR-0019 route authority、lease、storage、drain lifecycle
 - primary/backup parent
 - hop-by-hop mutable metadata protection
 - relay load/airtime/power scoring
@@ -366,12 +405,14 @@ Exit gate:
 - planned drain、sudden relay failure、sleepy descendant。
 - alternate routeなしをsuccess表示しない。
 - 100-node topology simulation/soak。
+- 3台以上のESP32-S3/SX1262でroute lease、各hop permit、drain、突然死をHIL検証。
 
 ## M9: Multi-cell / Multi-parent
 
 内容:
 
 - identical Cell Agentへcell/channel/role assignment
+- ADR-0020 receive diversity / single downlink owner fencing
 - uplink receive diversity/dedup
 - downlink single-owner fencing
 - capacity cell split
@@ -384,6 +425,7 @@ Exit gate:
 - transaction identityを維持したfailover。
 - capacity目的とredundancy目的を別profileで測定。
 - N+1 capacityなしに同一SLOを保証しない。
+- 2 parent + 1 Endpoint実機でsplit brain時downlink seal 0とnew E2E context failoverを検証。
 
 ## M10: Field Pilot
 
@@ -417,6 +459,7 @@ Exit gate:
 - API/reference/porting/tutorial/how-to
 - 1.0 compatibility/deprecation/LTS policyの確定（pilot前方針を正式supportへ昇格）
 - third-party implementation conformance
+- [34章](34-v2-runtime-fabric-completion.md)の対象機能がC1〜C10を満たすmachine-readable evidence
 
 Exit gate:
 
@@ -424,9 +467,13 @@ Exit gate:
 - release checklist、compatibility matrix、migration policyが運用されている。
 - 1.0 public API/wire/profileのsupport期間を宣言できる。
 - NOTICEと依存licenseの必要表示が監査され、SBOMおよび配布artifactと一致する。
+- requirements traceabilityの`partial`が0で、ABI/wire/storage migrationとHIL artifactが
+  release manifestから追跡できる。
 
 ## Dependency rule
 
 Milestoneを飛ばして後続機能をproduction対応と呼びません。Prototypeは可能ですが、前段exit gateを満たさない実装は`experimental`に隔離します。
 
 特に、M1aのrestart-safe transaction kernelを完成させる前に、relay、TDMA、multi-parentへ本実装を広げません。経路が増えるほど、identityとcrash recoveryの欠陥が増幅するためです。
+RelayはNRW1 LINK/FRAG、M7 scheduler、route storageの後、Multi-parentはRelayとsingle-owner
+fencingの後に進めます。
