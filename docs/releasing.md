@@ -1,0 +1,130 @@
+# Release Guide
+
+この文書は、Ninlil Runtimeのsource releaseを再現可能かつ監査可能に作成するための
+maintainer向け手順です。特定のapplication、製品、CMake target名には依存しません。
+
+## Releaseの原則
+
+- Releaseは、review済みcommitを不変のGit tagで指します。
+- Tagを付けたcommitと、source archive、SBOM、checksum、provenanceのsubjectは
+  同一でなければなりません。
+- Workflowは任意のbinary targetを推測しません。現在の自動release対象は
+  repositoryのsource archiveです。
+- CI、host simulation、target compile、HIL、法令適合性を区別し、実施していない
+  検証をrelease noteで成功として扱いません。
+- 公開済みtagとartifactは置き換えません。修正は新しいversionでreleaseします。
+
+## Versionとtag
+
+新しいrelease tagはSemVer形式の `vMAJOR.MINOR.PATCH` を使用します。Pre-releaseは
+例として `v1.1.0-rc.1` のようにSemVerのpre-release suffixを使います。
+過去のlegacy tagは履歴として保持しますが、新しいreleaseで再利用しません。
+
+Release tagはannotated tagとし、署名可能なmaintainerは署名付きtagを使用します。
+
+```sh
+git tag -s v1.1.0 -m "Ninlil Runtime v1.1.0"
+git push origin v1.1.0
+```
+
+署名環境を利用できない場合は `git tag -a` を使用し、その理由をrelease tracking
+Issueへ記録します。
+
+## Release前checklist
+
+Release stewardは次を確認します。
+
+1. Release scope、version、steward、対象commitをtracking Issueに記録した。
+2. `CHANGELOG.md` の `Unreleased` を整理し、利用者影響と既知の制限を記載した。
+3. Public API / ABI、wire、storage format、support範囲の互換性を評価した。
+4. Release scopeに必要な通常CI、sanitizer、target build、HILが完了した。
+5. HIL未実施、LAB_ONLY、experimental、unsupportedをrelease noteに明示した。
+6. `LICENSE`、`NOTICE`、`THIRD-PARTY-NOTICES.md`、security/support文書を確認した。
+7. Security Advisoryに公開を妨げる未解決事項がないことを確認した。
+8. Release commitからdry run artifactを作り、内容をreviewした。
+
+## Dry run
+
+GitHub Actionsの **Release** workflowを `workflow_dispatch` で実行します。任意の
+branch、tag、または完全なcommit SHAを `ref` に指定できます。空欄なら選択した
+branchのcommitを使用します。
+
+Workflowは最初にGCC 13のstrict Release buildと、configureされた全CTestを実行します。
+Testが0件、build失敗、または1件でもtest失敗ならpackageを作りません。成功後、dry
+runは次を生成し、workflow artifactとして14日間保存します。
+
+- deterministic source `tar.gz`
+- source `zip`
+- SPDX JSON SBOM
+- `SHA256SUMS`
+
+Dry runはGitHub Releaseを作成せず、tagを変更せず、OIDC provenance attestationを
+発行しません。Attestationを含む完全なpublish経路はtag pushでのみ実行されます。
+
+Dry run artifactを展開し、秘密情報、build tree、不要なgenerated fileがないこと、
+SBOMのproject名・version・license情報、checksum検証を確認します。
+
+```sh
+sha256sum -c ninlil-runtime-*.SHA256SUMS
+```
+
+macOSでは `shasum -a 256 -c ninlil-runtime-*.SHA256SUMS` を使用できます。
+
+## Publish
+
+`v*` tagのpushで `.github/workflows/release.yml` が起動します。Workflowはtag名を
+SemVerとして再検査し、checkout commitがtag targetと一致しない場合はfail closedに
+します。
+
+Verify / Package jobはread-only権限でfull host test、source archive、SPDX SBOM、
+checksumを作ります。後続の権限は責務ごとに分離します。
+
+- Attest job: `contents: read`、Sigstore署名用 `id-token: write`、
+  GitHub artifact用 `attestations: write`
+- Publish job: draft GitHub Releaseとassetに必要な `contents: write` のみ
+
+Attest jobはchecksumを再検証し、次の2種類を独立して発行します。
+
+1. Source archive、SBOM、checksumをsubjectとするSLSA build provenance
+2. `tar.gz`と`zip`をsubjectとし、SPDX JSONをpredicateとするSBOM attestation
+
+それぞれのSigstore bundleを `.provenance.sigstore.json` と
+`.sbom-attestation.sigstore.json` という区別可能なrelease assetへ含めます。
+Publish jobは完成した6 filesを再検証し、draft Releaseへ全assetを追加してから
+最後に公開します。Pre-release suffixを持つtagはGitHub上でもpre-releaseに設定します。
+
+## 公開後の検証
+
+1. Release tagとtarget commitがtracking Issueの記録と一致する。
+2. 全assetがあり、`SHA256SUMS`が成功する。
+3. GitHub CLIでattestationを検証できる。
+4. Source archive内のversion、license、notice、release文書が正しい。
+5. Release noteのsupport範囲と既知の制限が実際の検証証跡と一致する。
+
+```sh
+gh attestation verify \
+  ninlil-runtime-v1.1.0.tar.gz \
+  --repo Aero123421/Ninlil-Runtime
+
+gh attestation verify \
+  ninlil-runtime-v1.1.0.tar.gz \
+  --repo Aero123421/Ninlil-Runtime \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+## 失敗時の扱い
+
+- Packageまたはattestation失敗時はtagを移動せず、原因を修正して新しいversionを
+  作ります。
+- Asset upload後に失敗した場合、workflowは公開前のdraftで停止します。内容を確認し、
+  不完全なdraftを削除してから同じ不変tagでworkflowを再実行できます。
+- 一度公開したReleaseやtagに異なるbytesを上書きしません。
+- Credential漏えいまたはsecurity事故は、通常Issueではなく
+  [SECURITY.md](../SECURITY.md)の非公開手順で扱います。
+
+## Action pinの更新
+
+Workflow内のthird-party Actionはすべて完全なcommit SHAへpinします。更新Pull Request
+では、upstream release note、Action sourceの差分、必要権限、Node runtime、取得する
+外部binaryのversionをreviewし、dry runを成功させます。Major tagやmutable tagだけを
+`uses:`へ指定してはいけません。

@@ -1,0 +1,41 @@
+name: Question
+description: 利用方法、porting、設計上の質問
+title: "[Question] "
+labels: []
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: 達成したいことと、Ninlil Runtimeに期待する責務
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Release / commit
+      placeholder: v1.1.0 or complete commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: OS、port、hardware、制約、試したこと
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: README、SUPPORT.md、quickstart、関連する仕様を確認しました
+          required: true
+        - label: 秘密情報、個人情報、未修正の脆弱性を含めていません
+          required: true

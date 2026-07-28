@@ -4,6 +4,12 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ## Unreleased
 
+### Added
+
+- OSS community運用文書、Issue / Pull Request template、およびfull host test後に
+  source archive・SPDX SBOM・checksum・SLSA/SBOM attestationをtagから公開する
+  SHA-pinned release workflowを追加した。
+
 ### Changed
 
 - 公開文書・ソースコメント・品質ゲートを製品非依存の表現へ統一し、reference application integration を汎用プロファイルとして再整理した。

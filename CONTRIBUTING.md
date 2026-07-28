@@ -69,3 +69,13 @@ PRを提出する前に、変更範囲に応じたtargeted testに加えて、�
 ## Reporting security issues
 
 機密性のある脆弱性情報はpublic issueへ投稿せず、[Security Policy](SECURITY.md)のprivate reporting手順を使用してください。
+
+## Communityとmaintainer運用
+
+- 参加時の行動基準: [Community Code of Conduct](CODE_OF_CONDUCT.md)
+- 意思決定とmaintainerの役割: [Governance](GOVERNANCE.md)
+- 問い合わせ範囲と必要情報: [Support](SUPPORT.md)
+- Release作成・検証手順: [Release Guide](docs/releasing.md)
+
+IssueとPull Requestにはrepositoryのtemplateを使用してください。未修正の脆弱性や
+行動規範違反の証拠はpublic Issueへ投稿しないでください。
