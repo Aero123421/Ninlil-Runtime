@@ -22,6 +22,8 @@ Foundation M1aの正本は次のNormative文書です。
 
 ## Languageとbuild requirements
 
+- Repository の configure・build・CTest gate と install 済み CMake package を
+  使う独立 consumer は、どちらも CMake 3.20 以上を要求します。
 - Portable Core、fixture、toolのC codeはC11です。
 - Public headerはC11とC++17の両方からincludeできなければなりません。
 - Compiler extensionへ依存せず、strict warningをerrorとして通してください。

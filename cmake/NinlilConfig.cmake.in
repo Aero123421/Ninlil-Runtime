@@ -2,6 +2,64 @@
 
 include(CMakeFindDependencyMacro)
 
+if(@NINLIL_CONFIG_HAS_HOST_RUNTIME@)
+    find_dependency(OpenSSL 3 COMPONENTS Crypto)
+    if(NOT DEFINED OPENSSL_VERSION OR OPENSSL_VERSION STREQUAL ""
+       OR OPENSSL_VERSION VERSION_LESS "3"
+       OR NOT OPENSSL_VERSION VERSION_LESS "4")
+        set(Ninlil_FOUND FALSE)
+        set(Ninlil_NOT_FOUND_MESSAGE
+            "Ninlil::runtime requires OpenSSL major version exactly 3 "
+            "(found '${OPENSSL_VERSION}')")
+        return()
+    endif()
+    # FindOpenSSL can expose only a config-less IMPORTED_LOCATION. A strict
+    # identity CMAKE_MAP_IMPORTED_CONFIG_<CFG>=<CFG> then asks for a missing
+    # location even though the same Crypto binary is valid for every config.
+    # Add locations only; never rewrite OpenSSL link/interface properties.
+    if(TARGET OpenSSL::Crypto)
+        get_target_property(_ninlil_crypto_aliased
+            OpenSSL::Crypto ALIASED_TARGET)
+        get_target_property(_ninlil_crypto_type
+            OpenSSL::Crypto TYPE)
+        get_target_property(_ninlil_crypto_plain
+            OpenSSL::Crypto IMPORTED_LOCATION)
+        if((NOT _ninlil_crypto_aliased
+                OR _ninlil_crypto_aliased STREQUAL "NOTFOUND")
+           AND NOT _ninlil_crypto_type STREQUAL "INTERFACE_LIBRARY"
+           AND _ninlil_crypto_plain
+           AND NOT _ninlil_crypto_plain STREQUAL "NOTFOUND")
+            foreach(_ninlil_crypto_cfg
+                    DEBUG RELEASE RELWITHDEBINFO MINSIZEREL NOCONFIG)
+                get_target_property(_ninlil_crypto_cfg_loc
+                    OpenSSL::Crypto
+                    IMPORTED_LOCATION_${_ninlil_crypto_cfg})
+                if(_ninlil_crypto_cfg_loc
+                   AND NOT _ninlil_crypto_cfg_loc STREQUAL "NOTFOUND")
+                    continue()
+                endif()
+                get_target_property(_ninlil_crypto_cfgs
+                    OpenSSL::Crypto IMPORTED_CONFIGURATIONS)
+                if(NOT _ninlil_crypto_cfgs
+                   OR _ninlil_crypto_cfgs STREQUAL "NOTFOUND"
+                   OR NOT _ninlil_crypto_cfg IN_LIST _ninlil_crypto_cfgs)
+                    set_property(TARGET OpenSSL::Crypto APPEND PROPERTY
+                        IMPORTED_CONFIGURATIONS ${_ninlil_crypto_cfg})
+                endif()
+                set_target_properties(OpenSSL::Crypto PROPERTIES
+                    IMPORTED_LOCATION_${_ninlil_crypto_cfg}
+                    "${_ninlil_crypto_plain}")
+            endforeach()
+        endif()
+        unset(_ninlil_crypto_aliased)
+        unset(_ninlil_crypto_type)
+        unset(_ninlil_crypto_plain)
+        unset(_ninlil_crypto_cfg)
+        unset(_ninlil_crypto_cfg_loc)
+        unset(_ninlil_crypto_cfgs)
+    endif()
+endif()
+
 if(@NINLIL_CONFIG_HAS_POSIX_SQLITE@)
     find_dependency(SQLite3)
     if(NOT TARGET SQLite3::SQLite3 AND TARGET SQLite::SQLite3)
@@ -82,11 +140,15 @@ include("${CMAKE_CURRENT_LIST_DIR}/NinlilTargets.cmake")
 # CMAKE_MAP_IMPORTED_CONFIG_<CFG> identity maps then fail with:
 #   IMPORTED_LOCATION not set for imported target "Ninlil::..." configuration "..."
 # Map missing consumer configs onto a shipped imported configuration and expose
-# a config-agnostic IMPORTED_LOCATION. Touch only Ninlil imported targets —
-# never rewrite third-party targets such as SQLite3::SQLite3.
-if(TARGET Ninlil::ninlil_posix_sqlite_storage)
+# a config-agnostic IMPORTED_LOCATION. Touch only Ninlil imported archive
+# targets — never rewrite third-party targets such as OpenSSL::Crypto or
+# SQLite3::SQLite3.
+foreach(_ninlil_imported_target
+        Ninlil::runtime
+        Ninlil::ninlil_posix_sqlite_storage)
+if(TARGET ${_ninlil_imported_target})
     get_target_property(_ninlil_imported_configs
-        Ninlil::ninlil_posix_sqlite_storage IMPORTED_CONFIGURATIONS)
+        ${_ninlil_imported_target} IMPORTED_CONFIGURATIONS)
     if(_ninlil_imported_configs AND NOT _ninlil_imported_configs STREQUAL "NOTFOUND")
         set(_ninlil_fallback_config "")
         foreach(_ninlil_cand RELEASE RELWITHDEBINFO MINSIZEREL DEBUG NOCONFIG)
@@ -100,17 +162,17 @@ if(TARGET Ninlil::ninlil_posix_sqlite_storage)
         endif()
 
         get_target_property(_ninlil_fallback_location
-            Ninlil::ninlil_posix_sqlite_storage
+            ${_ninlil_imported_target}
             IMPORTED_LOCATION_${_ninlil_fallback_config})
         if(_ninlil_fallback_location
            AND NOT _ninlil_fallback_location STREQUAL "NOTFOUND"
            AND NOT _ninlil_fallback_location STREQUAL "")
             get_target_property(_ninlil_plain_location
-                Ninlil::ninlil_posix_sqlite_storage IMPORTED_LOCATION)
+                ${_ninlil_imported_target} IMPORTED_LOCATION)
             if(NOT _ninlil_plain_location
                OR _ninlil_plain_location STREQUAL "NOTFOUND"
                OR _ninlil_plain_location STREQUAL "")
-                set_target_properties(Ninlil::ninlil_posix_sqlite_storage
+                set_target_properties(${_ninlil_imported_target}
                     PROPERTIES IMPORTED_LOCATION "${_ninlil_fallback_location}")
             endif()
         endif()
@@ -125,7 +187,7 @@ if(TARGET Ninlil::ninlil_posix_sqlite_storage)
             # must be rewritten onto the fallback (otherwise generate fails with
             # "IMPORTED_LOCATION not set ... configuration <CFG>").
             get_target_property(_ninlil_existing_map
-                Ninlil::ninlil_posix_sqlite_storage
+                ${_ninlil_imported_target}
                 MAP_IMPORTED_CONFIG_${_ninlil_consumer_cfg})
             set(_ninlil_map_resolves FALSE)
             if(_ninlil_existing_map AND NOT _ninlil_existing_map STREQUAL "NOTFOUND")
@@ -138,7 +200,7 @@ if(TARGET Ninlil::ninlil_posix_sqlite_storage)
                 endforeach()
             endif()
             if(NOT _ninlil_map_resolves)
-                set_property(TARGET Ninlil::ninlil_posix_sqlite_storage
+                set_property(TARGET ${_ninlil_imported_target}
                     PROPERTY MAP_IMPORTED_CONFIG_${_ninlil_consumer_cfg}
                     "${_ninlil_fallback_config}")
             endif()
@@ -156,5 +218,7 @@ if(TARGET Ninlil::ninlil_posix_sqlite_storage)
     endif()
     unset(_ninlil_imported_configs)
 endif()
+endforeach()
+unset(_ninlil_imported_target)
 
 check_required_components(Ninlil)

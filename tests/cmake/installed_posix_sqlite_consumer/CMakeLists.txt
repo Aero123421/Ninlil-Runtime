@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(ninlil_installed_posix_sqlite_consumer LANGUAGES C)
 
 option(NINLIL_CONSUMER_ENABLE_SANITIZERS

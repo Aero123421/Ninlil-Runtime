@@ -8,11 +8,24 @@ endif()
 
 file(REMOVE_RECURSE "${NINLIL_SMOKE_BINARY_DIR}")
 
+set(_build_config_args)
+set(_ctest_config_args)
+set(_configure_config_args)
+if(DEFINED NINLIL_BUILD_CONFIG AND NOT NINLIL_BUILD_CONFIG STREQUAL "")
+    list(APPEND _build_config_args --config "${NINLIL_BUILD_CONFIG}")
+    list(APPEND _ctest_config_args -C "${NINLIL_BUILD_CONFIG}")
+    if(NOT NINLIL_GENERATOR MATCHES "Multi-Config|Visual Studio|Xcode")
+        list(APPEND _configure_config_args
+            "-DCMAKE_BUILD_TYPE=${NINLIL_BUILD_CONFIG}")
+    endif()
+endif()
+
 execute_process(
     COMMAND "${CMAKE_COMMAND}"
         -S "${NINLIL_SMOKE_SOURCE_DIR}"
         -B "${NINLIL_SMOKE_BINARY_DIR}"
         -G "${NINLIL_GENERATOR}"
+        ${_configure_config_args}
         -DNINLIL_SOURCE_DIR=${NINLIL_SOURCE_DIR}
         -DBUILD_SHARED_LIBS=ON
     RESULT_VARIABLE _configure_result
@@ -26,6 +39,7 @@ endif()
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}" --build "${NINLIL_SMOKE_BINARY_DIR}"
+        ${_build_config_args}
         --target ninlil_subproject_public_consumer
     RESULT_VARIABLE _build_result
     OUTPUT_VARIABLE _build_output
@@ -35,7 +49,7 @@ if(NOT _build_result EQUAL 0)
     message(FATAL_ERROR
         "subproject build failed\n${_build_output}\n${_build_error}")
 endif()
-include("${NINLIL_SMOKE_BINARY_DIR}/ninlil-smoke-paths.cmake")
+include("${NINLIL_SMOKE_BINARY_DIR}/ninlil-smoke-paths-${NINLIL_BUILD_CONFIG}.cmake")
 if(EXISTS "${NINLIL_PRIVATE_ARCHIVE}")
     message(FATAL_ERROR "default public build unexpectedly built private archive")
 endif()
@@ -49,6 +63,7 @@ endif()
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}" --build "${NINLIL_SMOKE_BINARY_DIR}"
+        ${_build_config_args}
         --target ninlil_runtime_private ninlil_subproject_private_consumer
     RESULT_VARIABLE _private_build_result
     OUTPUT_VARIABLE _private_build_output
@@ -67,7 +82,8 @@ if(NOT _private_run_result EQUAL 0)
 endif()
 
 execute_process(
-    COMMAND "${NINLIL_CTEST_COMMAND}" --test-dir "${NINLIL_SMOKE_BINARY_DIR}" -N
+    COMMAND "${NINLIL_CTEST_COMMAND}" --test-dir "${NINLIL_SMOKE_BINARY_DIR}"
+        ${_ctest_config_args} -N
     RESULT_VARIABLE _ctest_result
     OUTPUT_VARIABLE _ctest_output
     ERROR_VARIABLE _ctest_error
@@ -85,6 +101,7 @@ if(NINLIL_SANITIZER_SUPPORTED)
             -S "${NINLIL_SMOKE_SOURCE_DIR}"
             -B "${_san_binary}"
             -G "${NINLIL_GENERATOR}"
+            ${_configure_config_args}
             -DNINLIL_SOURCE_DIR=${NINLIL_SOURCE_DIR}
             -DNINLIL_ENABLE_SANITIZERS=ON
             -DBUILD_SHARED_LIBS=ON
@@ -98,6 +115,7 @@ if(NINLIL_SANITIZER_SUPPORTED)
     endif()
     execute_process(
         COMMAND "${CMAKE_COMMAND}" --build "${_san_binary}"
+            ${_build_config_args}
             --target ninlil_subproject_private_consumer
         RESULT_VARIABLE _san_build_result
         OUTPUT_VARIABLE _san_build_output
@@ -107,7 +125,7 @@ if(NINLIL_SANITIZER_SUPPORTED)
         message(FATAL_ERROR
             "sanitizer private final link failed\n${_san_build_output}\n${_san_build_error}")
     endif()
-    include("${_san_binary}/ninlil-smoke-paths.cmake")
+    include("${_san_binary}/ninlil-smoke-paths-${NINLIL_BUILD_CONFIG}.cmake")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env
             ASAN_OPTIONS=detect_leaks=0:halt_on_error=1

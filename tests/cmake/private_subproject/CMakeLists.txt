@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 
 project(ninlil_private_subproject_smoke LANGUAGES C CXX)
 
@@ -282,6 +282,8 @@ target_link_libraries(ninlil_subproject_private_consumer PRIVATE
     ninlil
 )
 
-file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/ninlil-smoke-paths.cmake" CONTENT
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/ninlil-smoke-paths-$<CONFIG>.cmake"
+    CONTENT
     "set(NINLIL_PUBLIC_CONSUMER \"$<TARGET_FILE:ninlil_subproject_public_consumer>\")\nset(NINLIL_PRIVATE_CONSUMER \"$<TARGET_FILE:ninlil_subproject_private_consumer>\")\nset(NINLIL_PRIVATE_ARCHIVE \"$<TARGET_FILE:ninlil_runtime_private>\")\n"
 )

@@ -8,6 +8,102 @@ permissions:
   contents: read
 
 jobs:
+  cmake-floor-package:
+    name: CMake 3.20 package floor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install package build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libssl-dev libsqlite3-dev ninja-build
+      - name: Install checksum-pinned CMake 3.20.6
+        env:
+          CMAKE_ARCHIVE: cmake-3.20.6-linux-x86_64.tar.gz
+          CMAKE_SHA256: 458777097903b0f35a0452266b923f0a2f5b62fe331e636e2dcc4b636b768e36
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/$CMAKE_ARCHIVE" \
+            "https://cmake.org/files/v3.20/$CMAKE_ARCHIVE"
+          printf '%s  %s\n' \
+            "$CMAKE_SHA256" "$RUNNER_TEMP/$CMAKE_ARCHIVE" \
+            | sha256sum --check --strict
+          tar --extract --gzip \
+            --file "$RUNNER_TEMP/$CMAKE_ARCHIVE" \
+            --directory "$RUNNER_TEMP"
+          printf '%s\n' \
+            "$RUNNER_TEMP/cmake-3.20.6-linux-x86_64/bin" \
+            >> "$GITHUB_PATH"
+      - name: Verify the declared CMake floor
+        run: |
+          test "$(cmake --version | head -n 1)" = "cmake version 3.20.6"
+          test "$(ctest --version | head -n 1)" = "ctest version 3.20.6"
+      - name: Validate NOCONFIG SQLite ON package consumers
+        run: |
+          cmake -S . -B build/ci-cmake-floor-on -G Ninja \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_BUILD_HOST_RUNTIME=ON \
+            -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=ON
+          cmake --build build/ci-cmake-floor-on --parallel 2 \
+            --target ninlil_runtime ninlil_posix_sqlite_storage
+          test "$(ctest --test-dir build/ci-cmake-floor-on -N \
+            -R '^(host_runtime_tests_off_installed_consumer(_sqlite)?|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$' \
+            | tail -n 1)" = "Total Tests: 4"
+          ctest --test-dir build/ci-cmake-floor-on \
+            --output-on-failure --parallel 1 --no-tests=error \
+            -R '^(host_runtime_tests_off_installed_consumer(_sqlite)?|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
+          cmake --install build/ci-cmake-floor-on \
+            --prefix "$PWD/build/ci-cmake-floor-prefix-on"
+          cmake \
+            -S tests/cmake/installed_host_runtime_consumer \
+            -B build/ci-cmake-floor-consumer-on -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH="$PWD/build/ci-cmake-floor-prefix-on" \
+            -DCMAKE_MAP_IMPORTED_CONFIG_DEBUG=DEBUG \
+            -DNINLIL_CONSUMER_EXPECT_SQLITE=ON
+          cmake --build build/ci-cmake-floor-consumer-on --parallel 2
+          test "$(ctest --test-dir build/ci-cmake-floor-consumer-on -N \
+            | tail -n 1)" = "Total Tests: 2"
+          ctest --test-dir build/ci-cmake-floor-consumer-on \
+            --output-on-failure --no-tests=error
+      - name: Validate NOCONFIG SQLite OFF package consumers
+        run: |
+          cmake -S . -B build/ci-cmake-floor-off -G Ninja \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_BUILD_HOST_RUNTIME=ON \
+            -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=OFF \
+            -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
+          cmake --build build/ci-cmake-floor-off --parallel 2 \
+            --target ninlil_runtime
+          test "$(ctest --test-dir build/ci-cmake-floor-off -N \
+            -R '^(host_runtime_tests_off_installed_consumer|runtime_private_subproject_smoke)$' \
+            | tail -n 1)" = "Total Tests: 2"
+          ctest --test-dir build/ci-cmake-floor-off \
+            --output-on-failure --parallel 1 --no-tests=error \
+            -R '^(host_runtime_tests_off_installed_consumer|runtime_private_subproject_smoke)$'
+          cmake --install build/ci-cmake-floor-off \
+            --prefix "$PWD/build/ci-cmake-floor-prefix-off"
+          cmake \
+            -S tests/cmake/installed_host_runtime_consumer \
+            -B build/ci-cmake-floor-consumer-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH="$PWD/build/ci-cmake-floor-prefix-off" \
+            -DCMAKE_MAP_IMPORTED_CONFIG_DEBUG=DEBUG \
+            -DNINLIL_CONSUMER_EXPECT_SQLITE=OFF \
+            -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
+          cmake --build build/ci-cmake-floor-consumer-off --parallel 2
+          test "$(ctest --test-dir build/ci-cmake-floor-consumer-off -N \
+            | tail -n 1)" = "Total Tests: 1"
+          ctest --test-dir build/ci-cmake-floor-consumer-off \
+            --output-on-failure --no-tests=error
+
   optional-composition:
     name: SQLite optional and tests OFF
     runs-on: ubuntu-24.04

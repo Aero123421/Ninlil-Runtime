@@ -4,19 +4,29 @@ Ninlil Runtime は、LoRa・Wi-Fi・USB など不安定で帯域の狭い現場�
 
 Ninlil Core は、特定のアプリケーション固有の業務語彙に依存しません。Bearer・期限・宛先・必要な証拠・電力・容量・経路・法規上の制約に基づいて通信を管理します。
 
-## V1 LAB RC2 の状態
+## 現在の状態
 
-**タグ [`v1.0-lab-rc2`](https://github.com/Aero123421/Ninlil-Runtime/releases/tag/v1.0-lab-rc2)** の **V1 LAB RC2** は、隔離 LAB 向け host simulation の **機能完成** リリースです。縦切り 10 項目（コード・テスト・文書・統合 E2E）が揃い、stub / TODO / 未接続は 0 です。統合 E2E gate（単一 topology 全経路 + 9 故障注入）で false success 0・bounded termination・範囲外 fail-closed を実証しています。
+**V1 LAB RC2 は host simulation の検証用候補であり、完成したRuntime SDKではありません。**
+タグ [`v1.0-lab-rc2`](https://github.com/Aero123421/Ninlil-Runtime/releases/tag/v1.0-lab-rc2)
+には統合E2Eと多数の故障試験があります。現在の `main` の install package は
+公開header、`Ninlil::runtime`、および任意の POSIX SQLite port を export します。
+また、公開API、完全なdurable admission/restart、payload実配送、実Wi-Fi/RF、
+relay、multi-parent、完全fragmentationには未完了項目があります。
 
-**LAB_ONLY** — 国内実運用可能・production 法規認定は **主張しません**。物理 USB / RF / flash / power-cut HIL は **未完了**（[RC 残件](docs/work/2026-07-23-v1-rc-residuals.md)）。V2 以降の巨大 oracle 網羅・relay・multi-parent・完全 wire fragmentation・形式証明・SBOM / signing は本リリースのスコープ外です。
+現在は、[V2 Runtime Fabric Completion Contract](docs/34-v2-runtime-fabric-completion.md)
+に基づき、機能ごとに仕様、実装、Host/ESP試験、HIL、互換性、release evidenceを
+閉じる作業を進めています。概算パーセントやテスト件数だけでは完成扱いにしません。
+
+**LAB_ONLY** — 国内実運用可能・production 法規認定は **主張しません**。物理
+USB / RF / flash / power-cut HILも未完了です。
 
 ## 検証区分（host verified / HIL pending / V2）
 
 | 区分 | 内容 |
 | --- | --- |
-| **host verified** | POSIX SQLite durable storage、public Runtime body、capability、Join / Attachment、secure wire（NRW1）、USB / radio **software path**（host simulation）、2-process E2E、examples 4 本 build+run、full CTest（通常 + ASan/UBSan） |
+| **host verified** | POSIX SQLite storage port、Foundation model、NRW1 SINGLE codec、USB / radio **software path**（host simulation）、2-process LAB E2E、examples 4 本 build+run、full CTest（通常 + ASan/UBSan） |
 | **HIL pending** | ESP flash / USB 実機、SX1262 physical RF TX/RX、power-cut / FULL durable attestation（ESP）、USB CDC HIL、Display / Leak **実機** node E2E（[RC 残件](docs/work/2026-07-23-v1-rc-residuals.md)） |
-| **V2** | D3-S4..S12 網羅、relay、multi-parent、完全 wire fragmentation、production 法規認定、形式証明、SBOM / release signing |
+| **completion work** | 全public API、canonical durable admission/restart、payload配送、Wi-Fi、relay、multi-parent、完全wire fragmentation |
 
 ## 構成（V1 LAB host simulation）
 
@@ -50,7 +60,9 @@ Ninlil Core は、特定のアプリケーション固有の業務語彙に依�
 
 ## 5 分 quickstart
 
-前提: Linux または macOS、CMake ≥ 3.16、C11 コンパイラ、**OpenSSL 3.x**（tests 時）、**SQLite3**（POSIX storage port）。
+前提: Linux または macOS、CMake ≥ 3.20、C11 コンパイラ、**OpenSSL 3.x**（Host Runtime / host tests）。**SQLite3** は任意の POSIX storage port 用です。
+Repository の build / CTest と install 済み CMake package の独立 consumer は、
+どちらも CMake ≥ 3.20 を要求します。
 
 ```bash
 git clone https://github.com/Aero123421/Ninlil-Runtime.git
@@ -62,7 +74,7 @@ cmake --build tmp-v1 -j
 ctest --test-dir tmp-v1 --output-on-failure
 ```
 
-詳細: [docs/v1-lab-quickstart.md](docs/v1-lab-quickstart.md)
+現行SDKの詳細: [Host Runtime SDK](docs/host-runtime-sdk.md)
 
 ## Examples（host simulation）
 
@@ -114,9 +126,11 @@ ctest --test-dir tmp-v1 --output-on-failure
 | 文書 | 内容 |
 | --- | --- |
 | [Documentation index](docs/README.md) | 仕様の読み順・正本ルール |
-| [V1 LAB quickstart](docs/v1-lab-quickstart.md) | 利用者向けビルド・examples |
-| [V1 LAB developer](docs/v1-lab-developer.md) | 開発者向け layout・テスト・provider |
-| [Distribution manifest](docs/v1-lab-distribution-manifest.md) | 配布物一覧 |
+| [Host Runtime SDK](docs/host-runtime-sdk.md) | 現行CMake packageのbuild・install・利用 |
+| [SDK distribution manifest](docs/sdk-distribution-manifest.md) | 現行install tree・export境界・release artifacts |
+| [V1 LAB quickstart](docs/v1-lab-quickstart.md) | `v1.0-lab-rc2`履歴スナップショット |
+| [V1 LAB developer](docs/v1-lab-developer.md) | `v1.0-lab-rc2`開発者向け履歴 |
+| [V1 LAB distribution](docs/v1-lab-distribution-manifest.md) | `v1.0-lab-rc2`配布履歴 |
 | [RC 残件](docs/work/2026-07-23-v1-rc-residuals.md) | 物理実機系のみの残作業 |
 | [CHANGELOG](CHANGELOG.md) | 利用者向け変更履歴 |
 | [CONTRIBUTING](CONTRIBUTING.md) | 貢献手順 |

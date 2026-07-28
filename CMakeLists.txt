@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 
 project(ninlil VERSION 0.1.0 LANGUAGES C CXX)
 
@@ -18,17 +18,20 @@ option(NINLIL_BUILD_TESTS "Build Ninlil's test suite"
     ${_ninlil_build_tests_default})
 option(NINLIL_ENABLE_STRICT_WARNINGS "Build Ninlil with warnings as errors"
     ${_ninlil_strict_warnings_default})
+option(NINLIL_BUILD_HOST_RUNTIME
+    "Build and install the static Host Runtime SDK target"
+    ${NINLIL_IS_TOP_LEVEL})
 option(NINLIL_BUILD_POSIX_SQLITE_STORAGE
     "Build POSIX SQLite storage port when SQLite3 is available" ON)
 
-# R7 Host private crypto uses OpenSSL major version exactly 3 (docs/31).
+# R7 Host crypto uses OpenSSL major version exactly 3 (docs/31).
 # find_package(OpenSSL 3) means >=3 and would accept 4.x; fail-closed on
-# major >=4 and on empty OPENSSL_VERSION. Top-level builds (including the
-# tests-OFF packaging gate) must prove that production adapter. A downstream
-# add_subdirectory consumer that builds only the installable public interface
-# is not forced to acquire a dependency for an EXCLUDE_FROM_ALL private target.
+# major >=4 and on empty OPENSSL_VERSION. The installable Host Runtime and
+# top-level/test builds must prove that production adapter. A downstream
+# add_subdirectory consumer that disables NINLIL_BUILD_HOST_RUNTIME and tests
+# is not forced to acquire OpenSSL for an EXCLUDE_FROM_ALL private target.
 set(NINLIL_R7_HOST_CRYPTO_ENABLED FALSE)
-if(NINLIL_IS_TOP_LEVEL OR NINLIL_BUILD_TESTS)
+if(NINLIL_IS_TOP_LEVEL OR NINLIL_BUILD_TESTS OR NINLIL_BUILD_HOST_RUNTIME)
     find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
     if(NOT DEFINED OPENSSL_VERSION OR OPENSSL_VERSION STREQUAL "")
         message(FATAL_ERROR
@@ -396,8 +399,8 @@ if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
     endif()
 endif()
 
-# Installable OSS SDK package. The portable interface is always exported;
-# the host SQLite archive/factory header are exported only when discovered.
+# Installable OSS SDK package. The portable interface is always exported.
+# Host Runtime and SQLite install rules are added by their target blocks.
 install(TARGETS ninlil EXPORT NinlilTargets)
 install(DIRECTORY include/ninlil
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
@@ -412,24 +415,6 @@ if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
     install(FILES ports/posix/include/ninlil_posix_sqlite_storage.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
-set(NINLIL_CONFIG_HAS_POSIX_SQLITE
-    ${NINLIL_POSIX_SQLITE_STORAGE_ENABLED})
-configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NinlilConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
-write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion)
-install(EXPORT NinlilTargets
-    FILE NinlilTargets.cmake
-    NAMESPACE Ninlil::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
-install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
 
 # Production private Runtime sources: single authority shared with the
 # ESP-IDF component packaging under ports/esp-idf/components/ninlil.
@@ -621,6 +606,73 @@ if(NINLIL_BUILD_TESTS)
         NINLIL_R7_BINDING_TEST_BUILD=1)
 endif()
 
+# Installable Host Runtime. It compiles the same explicit production source
+# authority as the private gate target, plus the Host OpenSSL 3 adapter. It
+# intentionally receives none of ninlil_runtime_private's test definitions.
+set(NINLIL_HOST_RUNTIME_ENABLED FALSE)
+if(NINLIL_BUILD_HOST_RUNTIME)
+    if(NOT NINLIL_R7_HOST_CRYPTO_ENABLED)
+        message(FATAL_ERROR
+            "NINLIL_BUILD_HOST_RUNTIME requires the OpenSSL 3 Host adapter")
+    endif()
+    add_library(ninlil_runtime STATIC
+        ${NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES}
+        ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}
+    )
+    add_library(Ninlil::runtime ALIAS ninlil_runtime)
+    target_include_directories(ninlil_runtime PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    )
+    target_link_libraries(ninlil_runtime
+        PUBLIC
+            ninlil
+            OpenSSL::Crypto
+    )
+    set_target_properties(ninlil_runtime PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        POSITION_INDEPENDENT_CODE ON
+        EXPORT_NAME runtime
+    )
+    ninlil_apply_strict_warnings(ninlil_runtime)
+    ninlil_apply_installed_archive_path_remap(ninlil_runtime)
+    if(NINLIL_ENABLE_SANITIZERS)
+        target_link_options(ninlil_runtime INTERFACE
+            -fsanitize=address,undefined)
+    endif()
+    install(TARGETS ninlil_runtime
+        EXPORT NinlilTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    set(NINLIL_HOST_RUNTIME_ENABLED TRUE)
+endif()
+
+# Generate the package only after all optional exported targets are known.
+set(NINLIL_CONFIG_HAS_HOST_RUNTIME ${NINLIL_HOST_RUNTIME_ENABLED})
+set(NINLIL_CONFIG_HAS_POSIX_SQLITE
+    ${NINLIL_POSIX_SQLITE_STORAGE_ENABLED})
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NinlilConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+install(EXPORT NinlilTargets
+    FILE NinlilTargets.cmake
+    NAMESPACE Ninlil::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
+
 # U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
 # C1 byte-stream contract. NOT installed; NOT public include/ninlil; NOT
 # linked into ESP packaging. Required HIL Linux+macOS still pending — do not
@@ -660,6 +712,31 @@ endif()
 if(NINLIL_BUILD_TESTS)
     enable_testing()
 
+    if(NINLIL_HOST_RUNTIME_ENABLED)
+        add_test(
+            NAME host_runtime_tests_off_installed_consumer
+            COMMAND ${CMAKE_COMMAND}
+                -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                -DNINLIL_SMOKE_WITH_SQLITE=OFF
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_host_runtime_tests_off_smoke.cmake
+        )
+        if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
+            add_test(
+                NAME host_runtime_tests_off_installed_consumer_sqlite
+                COMMAND ${CMAKE_COMMAND}
+                    -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                    -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                    -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                    -DNINLIL_SMOKE_WITH_SQLITE=ON
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_host_runtime_tests_off_smoke.cmake
+            )
+        endif()
+    endif()
+
     add_test(
         NAME runtime_private_subproject_smoke
         COMMAND ${CMAKE_COMMAND}
@@ -667,6 +744,7 @@ if(NINLIL_BUILD_TESTS)
             -DNINLIL_SMOKE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/private_subproject
             -DNINLIL_SMOKE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/private-subproject-smoke
             "-DNINLIL_GENERATOR=${CMAKE_GENERATOR}"
+            -DNINLIL_BUILD_CONFIG=$<CONFIG>
             -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
             -DNINLIL_SANITIZER_SUPPORTED=${_ninlil_sanitizer_supported}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/private_subproject_smoke.cmake

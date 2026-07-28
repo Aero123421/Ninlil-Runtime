@@ -1,16 +1,32 @@
 # Ninlil Documentation
 
-## V1 LAB RC2（利用者入口）
+## 現行 Host Runtime SDK（利用者入口）
 
-**タグ `v1.0-lab-rc2`** — 隔離 LAB 向け host simulation **機能完成**。10 項目縦切り + 統合 E2E gate green。LAB_ONLY（国内実運用・production 法規認定は非主張）。物理 HIL は [RC 残件](work/2026-07-23-v1-rc-residuals.md)。
+現行 `main` のinstallable CMake packageは、公開header、`Ninlil::runtime`、
+任意のPOSIX SQLite providerを提供します。これは物理HILやRuntime Fabric全体の
+完成宣言ではありません。
 
 | 文書 | 対象 |
 | --- | --- |
-| [README（repository 入口）](../README.md) | 価値説明・3 区分・quickstart・examples |
+| [Host Runtime SDK](host-runtime-sdk.md) | CMake 3.20、build / install、external consumer、package gate |
+| [SDK distribution manifest](sdk-distribution-manifest.md) | 現行install tree、export / non-export、release artifacts |
+| [Release Guide](releasing.md) | dry run、tag、SBOM、checksum、provenance、公開後検証 |
+| [README（repository 入口）](../README.md) | 価値説明・状態・quickstart・examples |
+
+---
+
+## V1 LAB RC2（履歴スナップショット）
+
+**タグ `v1.0-lab-rc2`** — 隔離 LAB 向け host simulation **機能完成**。10 項目縦切り + 統合 E2E gate green。LAB_ONLY（国内実運用・production 法規認定は非主張）。物理 HIL は [RC 残件](work/2026-07-23-v1-rc-residuals.md)。
+
+次の3文書はRC2時点のhistorical factsを保持します。現行Host SDKのpackage仕様を
+上書きする正本ではありません。
+
+| 文書 | 対象 |
+| --- | --- |
 | [V1 LAB quickstart](v1-lab-quickstart.md) | clone → build → ctest → examples |
 | [V1 LAB developer](v1-lab-developer.md) | layout・テスト・provider 拡張 |
-| [Distribution manifest](v1-lab-distribution-manifest.md) | 配布物一覧 |
-| [Release Guide](releasing.md) | dry run、tag、SBOM、checksum、provenance、公開後検証 |
+| [V1 LAB distribution manifest](v1-lab-distribution-manifest.md) | RC2配布物一覧 |
 | [Pre-V1 実装履歴](release-history.md) | M0–R7 candidate スライス（旧 README 履歴） |
 
 ---
