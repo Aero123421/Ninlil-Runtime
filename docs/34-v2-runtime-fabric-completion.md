@@ -113,7 +113,7 @@ storeを自動migration/open、またはsupport済みと広告してはならな
 | NCL1 envelope | `logical_version=1` | 不変 | control catalog versionと番号空間を共有しない |
 | Private control | v2 | v2不変 + multi-frameはv3 | v2 catalogへmessage typeをsilent追加しない |
 | Wi-Fi bearer framing | 未割当 | `NWB1 framing version 1`候補 | exact byte spec/KATの`SPEC_ACCEPTED`でreserved、`RELEASE_SUPPORTED`でsupport掲載 |
-| Wi-Fi security management | 未割当 | `NRV1` / `NCM1` version 1候補 | ADR-0018とbounded credential-store profileの`SPEC_ACCEPTED`でlocal reserved。credential record schemaをmanifestから推測しない |
+| Wi-Fi security management | 未割当 | `NRV1` / `NCM1` + `NINLIL-WIFI-CREDENTIAL-STORE-V1`（NWS1/NWA1/NWC1/NWP1/NWM1）version 1候補 | ADR-0018 `SPEC_ACCEPTED`でlocal reserved。NCM1からcredential record schemaを推測せず、exact dedicated namespace/key/boundを使う |
 | Foundation storage | schema 1 | schema 1不変 | 既存recordを再解釈しない |
 | ESP physical store | format 4 | format 4不変 | 新namespaceを既存header意味変更に使わない |
 | Bearer registry store | 未割当 | schema 1候補 | bearer identity、policy revision、availability epoch |
@@ -337,6 +337,22 @@ path_selection_epoch + route_flags`を固定する。受信側はpolicy digest�
 - `CHANNEL_AUTHENTICATED`はfull non-resumed TLS 1.3 mTLS、exact suite/group/signature、
   peer binding、authority snapshot、exporterの全検査後だけpublishする。TCP/TLS handshake成功を
   単独でavailability、Attachment、NFL1 deliveryへ昇格しない。
+- credentialはADR-0018 §14.3.2の専用`ninlil.wifi.security.v1` storeへ置く。NWC1は最大4544、
+  current/candidate各64 recordを2 bank/8 pageで保持し、25 keys / 606003 committed logical bytes、
+  provider staging 50 / 1212006を保守的なhard reservation ceilingとする
+  （constraint-aware semantic maximumは600883 / 1201766）。private keyはimmutable
+  `provider_id || handle`参照だけで、raw keyをstoreへ保存しない。既存6272-byte NCM1、
+  148-byte selector、8612-byte atomic activation payloadを変更しない。
+  published bankはactive local credentialを1件以上持つ。NCM1 `local_role_mask`
+  （client/server/both）をlocal role setのdurable正本とし、maskの各roleにexact 1 local NWC1、
+  mask外local role 0件を要求する。Controller-authenticated configurationはcandidate maskへの
+  入力に限り、restartでvolatile設定から再導出しない。role変更はmanifest generation strict +1、
+  NCM1 digest、selector FULL publish、旧session fenceへ同時に含める。active 0/mask 0は
+  codec-onlyでpublish不可とする。
+- TLS/crypto allocator boundはWi-Fi driver/LwIP/socket/netif/DHCP/PBUF resourceを含まない。
+  ESP実経路の`RELEASE_SUPPORTED`にはpinned sdkconfig、pool/count/byte ceiling、watermark、
+  OOM/reconnect/sleep-wake traceを別resource profileとしてC7/C8で閉じる。未固定値をTLS budgetへ
+  推測加算しない。
 
 ## 7. Relay
 
@@ -428,7 +444,7 @@ process-wide allocator accountingとwatermarkでhard gateする。上限また�
 | Wi-Fi Host TLS | total 64、handshake 8、peer 2、262144 bytes/session、session pool 16777216、crypto global 4194304、total 20971520、in plaintext 16384、application emit 4096、Certificate handshake 4114許容、wire record 16645、pre-Finished flight 32768/direction、cert count/each DER/sum 2/2048/4096、Certificate body 4110 | admission拒否または未認証session close。delivery/custody 0 |
 | Wi-Fi security snapshot | immutable identity 226 + mutable freshness 48 = 274 bytes/session fixed。NRV1-owned 84 bytesとcredential-owned 44 bytesはこの内数 | reserve不能ならadmission reject。sessionごとの可変record保持禁止 |
 | Wi-Fi NRV1 | revoked leaf 64、record 2192 bytes、current/candidate 2 × 2192 fixed、session subset 84 bytes | missing/corrupt/stale/oversizeをreject。handshake 0、existing session fence |
-| Wi-Fi credential activation | active + retired peer-role key合計64（dual-role peerは2消費）、NCM1 manifest generation strict +1、96-byte same-term tombstone、record 6272 bytes、current/candidate 2 × 6272 fixed、selector 148 bytes、NRV1/NCM1/selector atomic owned payload 8612 bytes、session subset 44 bytes。credential record inventoryはcurrent/candidate各64で、選択credential-store profileがcanonical record/aggregate durable byte上限を`SPEC_ACCEPTED`前に固定 | 合計65件目、same-term再追加/GC、generation gap/rollback/replay/wrap、missing/corrupt/reference mismatch、2-set reservation不能、未bound store profileをreject。old selector fallback禁止 |
+| Wi-Fi credential activation | local + peerのactive + retired subject-role key合計64（client/serverは各1消費）、NCM1 `local_role_mask` 1..3をdurable role-set authorityとし各set roleにexact 1 local NWC1・mask外local role 0件・active 1以上、role変更をmanifest strict +1/selector FULL/旧session fenceへ含める、96-byte same-term tombstone、record 6272 bytes、current/candidate 2 × 6272 fixed、selector 148 bytes、atomic owned payload 8612 bytes、session subset 44 bytes。Credential Store v1はNWC1 4544/record、NWP1 36480/page、2 bank、current/candidate各64、25 keys / 606003 committed logical bytes、provider staging 50 / 1212006（いずれも保守reservation ceiling。semantic maximum 600883 / 1201766）、専用caller-owned scratch 1 × 36480/store、external key binding metadata 64 × 128 = 8192 canonical bytes | active 0/mask 0/unknown mask publish、management入力mask mismatch、local role missing/duplicate/extra、role変更generation gap、NWA1 root置換、65件目、4545-byte record、36481-byte page、26 key、606004 committed、1212007 staging、65番目のkey bindingをreject。binding history 65はV1内epoch rolloverせず将来Accepted別namespace migrationまでterminal RESOURCE。scratch reserve不能、same-term再追加/GC、generation gap/rollback/replay/wrap、missing/corrupt/reference/key-handle alias、2-bank ambiguityをreject。Foundation private 4096-byte scannerへfallback、old selector fallbackは禁止 |
 | Routes | route record、lease、children、forward queue | route installまたはforwardを拒否 |
 | Parents | discovered/eligible/active parent数 | deterministic scoreで上限内だけ保持 |
 | Radio fragments | [30章](30-r6-secure-radio-wire.md)のfragment/reassembly/tombstone上限 | 同章のexact fail-closed動作 |
@@ -451,7 +467,7 @@ re-`SPEC_ACCEPTED`する。runtime fallbackやsilent relaxationを行わない�
 | --- | --- | --- | --- |
 | Core/API/storage | 全public API contract、independent model、全write-point crash、restart | ABI old/new、schema migration、corrupt/unknown schema | target conformance、power-cut |
 | Bearer registry | 2種3 instance、policy/security snapshot、fairness、deadline | loss、availability/security attestation epoch race、hot unregister、old ABI | Wi-Fi実経路。LoRa同時稼働は別compact mapping `SPEC_ACCEPTED`後 |
-| Wi-Fi | pinned Host 2 tuple client/server、OWF1、exact TLS/NWB/X.509/NRV1/NCM1/exporter KAT、partial read/write、backpressure、10,000 message | 全suite/group/sig/mTLS/binding/clock/revocation/credential activation/resumption/0-RTT/KeyUpdate/allocator/config/provider negative、Certificate body 4110/4111・handshake 4114、NRV1/NCM1/selector crash、disconnect/reconnect、peer restart、mixed framing | direct mbedTLS client/server + Accepted R7 raw adapter、probe/production ELF closure report、forbidden HW crypto/port/allocation reachable path 0、Host↔ESP両方向、実AP、強制切断、sleep/wake、allocator/heap/stack/watchdog、24h soak |
+| Wi-Fi | pinned Host 2 tuple client/server、OWF1、exact TLS/NWB/X.509/NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1/exporter KAT、partial read/write、backpressure、10,000 message | 全suite/group/sig/mTLS/binding/clock/revocation/credential activation/key-proof/2-bank/migration/resumption/0-RTT/KeyUpdate/allocator/config/provider negative、Certificate body 4110/4111・handshake 4114、全credential stage/selector crash、disconnect/reconnect、peer restart、mixed framing | direct mbedTLS client/server + Accepted R7 raw adapter、probe/production ELF closure report、forbidden HW crypto/port/allocation reachable path 0、dedicated credential store/power-cut、Wi-Fi driver/LwIP exact resource profile、Host↔ESP両方向、実AP、強制切断、sleep/wake、allocator/heap/pool/stack/watchdog、24h soak |
 | NRW1 FRAG | exact KAT、2〜13 fragment、loss/reorder/duplicate/conflict、fuzz | resource exhaustion、timer edge、tombstone、restart規則 | 2実機RF、loss injection |
 | U6 single-frame | dual FULL、全write-point crash | COMMIT_UNKNOWN、duplicate OFFER/ACCEPT、reconnect | USB/TCP実経路、power-cut |
 | Multi-frame custody | manifest/chunk/reassembly oracle、partial apply 0 | 各chunk/ACK/commit crash、resume conflict、v2拒否 | 実transport、送受信電源断 |
@@ -509,7 +525,8 @@ C1〜C10に加え、次をrequired CIまたはrelease checklistで証明する�
 
 本Proposed文書とADR-0017〜0021を追加しただけでは、次を主張しない。
 
-- Fabric API version 1、NFL1、NWB1、NRV1/NCM1、control v3、各storage schemaのreserved採番またはsupport
+- Fabric API version 1、NFL1、NWB1、NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1、control v3、
+  各storage schemaのreserved採番またはsupport
 - Wi-Fi driver、TCP/UDP session、physical RF、Relay、Multi-parent、FRAGの実装
 - U6 dual FULL conformance、multi-frame resume、ESP power-cut成功
 - RF距離、50/100 node SLO、battery life、Japan legal、技適、field readiness

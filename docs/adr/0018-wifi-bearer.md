@@ -774,20 +774,37 @@ active entryは56 bytes、retired tombstoneは96 bytes、末尾digestは32 bytes
 | 48 | 8 | non-zero `credential_manifest_generation` |
 | 56 | 2 | `retired_count` = 0..64 |
 | 58 | 2 | retired_entry_length = 96 |
-| 60 | 4 | reserved = all zero |
+| 60 | 1 | `local_role_mask`: bit 0=`client`、bit 1=`server`。activatable bankは `1..3`、codec-only bankは0 |
+| 61 | 3 | reserved = all zero |
 | 64 | 32 | `revoked_set_digest`、NRV1とbit-exact同じ |
 | 96 | `56 * count` | credential entries |
 | `96 + 56 * count` | `96 * retired_count` | retired credential tombstones |
 | `96 + 56 * count + 96 * retired_count` | 32 | `credential_manifest_digest` |
 
-各entryは1個のactive peer-role credentialを表し、
+各entryは1個のactive credential subject + TLS roleを表す。選択credential-store profileでは
+`runtime_id == local_runtime_id`のlocal signing identityも同じinventoryへ入り、それ以外が
+authenticated peer identityである。
 `runtime_id[16] || role_u8 || flags_u8 || reserved_u16 || credential_generation_u32 ||
 provisioning_record_digest[32]` exactとする。roleは`0x01`/`0x02`だけ、flags/reservedは0、
 runtime ID、generation、digestはnon-zeroとする。entryは
 `runtime_id || role`のunsigned lexicographic順でstrict ascending、uniqueとする。
 同じRuntimeのclient/serverは2 entryを消費する。上限は64 peerではなく
-**64 active peer-role credentials**であり、dual-role 64 peersを保証しない。65件目はcandidate全体を
+**local + peer合計64 active subject-role credentials**であり、dual-role 64 peersを保証しない。
+65件目はcandidate全体を
 `RESOURCE` rejectし、既存active setを変更しない。
+
+`local_role_mask`はこのbankでRuntimeが公開するlocal TLS role setの唯一のdurable正本である。
+Controller-authenticated management envelopeが要求するrole setはcandidate NCM1のmaskと
+bit-exact一致しなければならないが、restart後の有効性をvolatile endpoint configuration、
+process argument、Wi-Fi association stateから再導出しない。maskの各set bitについて
+`runtime_id == NWS1.local_runtime_id`かつ対応roleのactive NCM1 entryとNWC1をexact 1個要求し、
+maskにないlocal role entry、missing、duplicate、remote entry、retired tombstoneによる代用を
+rejectする。mask 0、unknown bit、またはactive 0はbyte codecでは表現できるがpublishできない。
+`credential_manifest_generation`をrole-set revisionとしても用い、同じauthority termでmaskを
+変更するcandidateは他のNCM1 semantic updateと同様にprevious + 1 exactとする。別の独立role
+revisionや外部設定revisionを設けない。trailing `credential_manifest_digest`と148-byte selectorが
+maskを含むNCM1全bytesを拘束するため、role変更、credential activation、restart判定は同じ
+selector FULL publishへlinearizeする。
 
 retired tombstoneは
 `runtime_id[16] || role_u8 || flags_u8 || reserved_u16 ||
@@ -801,7 +818,7 @@ the trailing digest)`で、末尾digest自身をinputへ含めない。
 unknown/mismatch/trailingをrejectする。
 
 authority termごとの最初のNCM1は`credential_manifest_generation=1`とする。同じtermでentryの
-追加、削除、順序以外の1-byte変更を行うsemantic updateは
+追加、削除、`local_role_mask`変更、順序以外の1-byte変更を行うsemantic updateは
 `credential_manifest_generation = previous + 1` exact、同じrecord bytesの再読は更新ではない。
 同一revoked setのNRV1 freshness refreshではNCM1全bytes、generation、manifest digestを
 bit-exact維持する。generation gap、rollback、同generation別bytes、old manifest replay、
@@ -820,32 +837,488 @@ NCM1 canonical KAT familyはauthority/term/revocation generationを上記NRV1 KA
 `96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7`
 とする。active-only KATは`credential_manifest_generation=1`で、entry index `i=0..N-1`は
 `runtime_id = 15 * 00 || u8(i+1)`、role `0x01`、flags/reserved 0、
-credential generation 1、`provisioning_record_digest = 31 * 00 || u8(i+1)`である。
+credential generation 1、`provisioning_record_digest = 31 * 00 || u8(i+1)`、
+`local_role_mask=1`である。
 retired-only KATはactive count 0、retired count 64、manifest generation 2とし、
 tombstone index `i=0..63`を同じruntime/role、flags/reserved 0、last credential generation 1、
 removal manifest generation 2、
 `leaf_der_sha256 = 30 * 00 || 01 || u8(i+1)`、
-`provisioning_record_digest = 31 * 00 || u8(i+1)`とする。
+`provisioning_record_digest = 31 * 00 || u8(i+1)`、`local_role_mask=0`とする。
 mixed 1/1 KATは上記active index 0と、runtime末尾/provisioning digest末尾を`02`、
 leaf末尾2 bytesを`01 02`としたretired tombstone 1個をこの順に置き、manifest/removal
-generationを2とする。
+generationを2、`local_role_mask=1`とする。0/0 KATは`local_role_mask=0`である。
+これらはNCM1 byte-codec KATであり、NWS1/NWC1とのlocal-role activation semantic positiveを
+単独では主張しない。
 `record_sha256`はfieldではなく末尾manifest digestを含むNCM1全bytesの確認値である。
 
 | active / retired | total | credential_manifest_digest | record_sha256 |
 | ---: | ---: | --- | --- |
 | 0 / 0 | 128 | `876ad2c5c0af8f78e1b8ad94ff78faee25612cd1d7c2e5b527092f1af69cbabb` | `5a211f3150216e65d0dcc8a6a69282db8f2411542e8f07a699736d8ffbf2ed69` |
-| 1 / 0 | 184 | `42f5fa63ce4686c76acb9e12c990a91cdd8e6d21306f5c3d00fc383fbfa9ba51` | `67b1993773c1a448a5b74fe910322ee2378fb7846b3630c3191d97e5cff18580` |
-| 1 / 1 | 280 | `e5ea283c4a3cda199644d082506382fa2389946a0c3a63fe912c4f589c80881b` | `dffa3e30478f4d1cc69b8af2ee127ffdd8f3b682bc1af064a1f730a9ab7d98a3` |
-| 64 / 0 | 3712 | `85067bceba4d2fab4edfe51e4daaa0f99437409c6a43c7ede32da9e0e59f0f0c` | `6e846261515e29e4e5431162fe8404e77621c503d7e22ebf811d8281e24e1b4e` |
+| 1 / 0 | 184 | `9f5826074fb3ab217fd5df84f9628bb500cc24e248297cae4159cc8e6ac68382` | `56d5aaec32c7bb0be4a3e9521f77503606134f13a01ccb2955854ad90cacbc7b` |
+| 1 / 1 | 280 | `5cb500100f1579a4f370dc4d5248d455a2ac08d313b419dd30598e2b4f4fec98` | `aae2cfcf2ba3b03cfb744e8c62eaa6997154dbdd452c921b25f856f40111a1fc` |
+| 64 / 0 | 3712 | `b7fe4fc3f924e3aff1dc2ffc37f925ce28a9bf8dbc7de4627bc6a9b9922c7dd3` | `e2a7184830e888addb5e3c4da52f7ec3e6c958bcddcf0c1d13c3d3bd8805880a` |
 | 0 / 64 | 6272 | `6e686fa61f91b50798ded3f9e567f8e56e858ad9c96f416d83120db004213267` | `644568e94b4702902f32f9f20b7d7ef0fa6984bf939b332e603f5da1b9bc3304` |
 
 各`provisioning_record_digest`が指すcredential recordは、NCM1 publish前に個別FULL stageされ、
 record ownerがcanonical bytes、digest、entry identity/role/generation、authority/term、
 revocation generation/set digest、§14.2 binding/certificateを全検証する。candidate setは最大64 record、
 current + candidateの2 setだけとし、orphan stagingはactiveにならない。credential record自体の
-canonical schemaとper-record/aggregate durable byte boundは選択したcredential-store profileの
-Normative仕様へ固定する。そのprofile IDと上限が未固定、または2-set reservation不能なら
-本ADRを`SPEC_ACCEPTED`にできない。
+canonical schema、private-key reference、per-record/aggregate durable byte boundは次の
+`NINLIL-WIFI-CREDENTIAL-STORE-V1`だけを候補とする。
+
+#### 14.3.2 NINLIL-WIFI-CREDENTIAL-STORE-V1 exact profile
+
+本節も**Proposed normative candidate / docs-only**である。既存Foundation Storage ABI、
+`NINLIL_STORAGE_SCHEMA_M1A=1`、key 1..255 bytes、single value 65536 bytes、FULL、
+COMMIT_UNKNOWN、begin/final union staging規則を変更しない。profileは既存Runtime、control、
+route、parent namespaceと共有せず、専用Storage provider instance/partitionへexact namespace
+ASCII `ninlil.wifi.security.v1`（23 bytes、
+hex `6e696e6c696c2e776966692e73656375726974792e7631`）を
+`expected_schema=1`でopenする。port固有partition名、file path、NVS key、pointerはdurable identity
+ではない。
+
+profile内の全整数はunsigned big-endian、全reserved byteは0、全SHA-256は32 raw bytesである。
+trailing digestは「そのdigest直前までのrecord bytes」へSHA-256を適用する。digestは
+Controller-authenticated management envelopeの代替ではなく、stage ownerはsignature/authority
+検証後だけFULL writeする。keyは次のbinary値だけを許し、unknown/duplicate keyはcorruptとする。
+
+| Key bytes | Value |
+| --- | --- |
+| `01` | exact 1個の`NWS1` store header |
+| `02` | current 148-byte selector。§14.3.1 layoutを変更しない |
+| `03` | optional exact 1個の`NWM1` migration fence |
+| `(0x10 + bank_id) 00` | `NWA1` authority/root record。`bank_id=0..1` |
+| `(0x10 + bank_id) 01` | exact `NRV1` |
+| `(0x10 + bank_id) 02` | exact `NCM1` |
+| `(0x10 + bank_id) (0x10 + page_index)` | `NWP1` credential page。`page_index=0..7` |
+
+##### NWS1 store header
+
+`NWS1`は160 bytes fixedで、offset 0..127のSHA-256をoffset 128へ置く。
+
+| Offset | Bytes | Field / exact rule |
+| ---: | ---: | --- |
+| 0 | 4 | magic ASCII `NWS1` |
+| 4 | 2 | version = 1 |
+| 6 | 2 | header_length = 128 |
+| 8 | 4 | total_length = 160 |
+| 12 | 4 | flags = 0 |
+| 16 | 16 | non-zero `local_runtime_id` |
+| 32 | 16 | non-zero random `store_epoch_id` |
+| 48 | 8 | profile_generation = 1 |
+| 56 | 2 | bank_count = 2 |
+| 58 | 2 | pages_per_bank = 8 |
+| 60 | 2 | records_per_page = 8 |
+| 62 | 2 | records_per_bank = 64 |
+| 64 | 4 | max_credential_record_length = 4544 |
+| 68 | 4 | max_page_length = 36480 |
+| 72 | 4 | expected_storage_schema = 1 |
+| 76 | 2 | profile key ceiling = 25 |
+| 78 | 2 | reserved = 0 |
+| 80 | 8 | profile logical-byte ceiling = 606003 |
+| 88 | 8 | minimum provider staging entries = 50 |
+| 96 | 8 | minimum provider staging logical bytes = 1212006 |
+| 104 | 24 | reserved = 0 |
+| 128 | 32 | `store_header_digest` |
+
+fresh namespaceは全row absenceだけを許す。ownerはNWS1を1回FULL commitし、その結果を
+authoritativeに解決してからcandidateをstageする。NWS1が存在するnamespaceのheader absence、
+digest/profile/local Runtime/store epoch mismatchはfreshへ戻さずcorruptである。NWS1を別Runtimeへ
+copyしてopenしてはならない。
+
+##### NWA1 authority/root record
+
+各bankは§14.2のroot 1個を次の`NWA1`でcopy-ownする。全長は`160 + root_der_length`、
+最大2208 bytesである。
+
+| Offset | Bytes | Field / exact rule |
+| ---: | ---: | --- |
+| 0 | 4 | magic ASCII `NWA1` |
+| 4 | 2 | version = 1 |
+| 6 | 2 | header_length = 128 |
+| 8 | 4 | total_length |
+| 12 | 4 | flags = 0 |
+| 16 | 16 | non-zero `authority_id` |
+| 32 | 8 | non-zero `authority_term` |
+| 40 | 16 | non-zero `clock_epoch_id` |
+| 56 | 32 | SHA-256(root certificate DER) |
+| 88 | 32 | SHA-256(root SubjectPublicKeyInfo DER) |
+| 120 | 2 | `root_der_length` = 1..2048 |
+| 122 | 2 | root SPKI DER length = 91 |
+| 124 | 4 | reserved = 0 |
+| 128 | `root_der_length` | root certificate DER |
+| `128 + root_der_length` | 32 | `authority_record_digest` |
+
+rootは§14.2のP-256 self-signed root、extension allowlist、signature、validityを満たし、parsed SPKIは
+exact 91-byte canonical DER
+`30 59 30 13 06 07 2a8648ce3d0201 06 08 2a8648ce3d030107 03 42 00 04 || X[32] || Y[32]`
+でなければならない。authority/termはselector、NRV1、NCM1と、clock epochはselector、NRV1と
+bit-exact一致する
+（NCM1にclock epoch fieldはない）。
+
+##### NWC1 canonical credential record
+
+1 active credential subject + TLS roleは次の`NWC1` 1個で表す。byte-codec全長は
+`448 + leaf_der_length + intermediate_der_length`、449..4544 bytesである。
+
+| Offset | Bytes | Field / exact rule |
+| ---: | ---: | --- |
+| 0 | 4 | magic ASCII `NWC1` |
+| 4 | 2 | version = 1 |
+| 6 | 2 | header_length = 416 |
+| 8 | 4 | total_length |
+| 12 | 4 | flags = 0 |
+| 16 | 16 | non-zero `authority_id` |
+| 32 | 8 | non-zero `authority_term` |
+| 40 | 16 | non-zero credential `runtime_id` |
+| 56 | 1 | TLS role `0x01` client / `0x02` server |
+| 57 | 1 | private-key ref kind `0x00` NONE / `0x01` OPAQUE_SIGNING_KEY |
+| 58 | 1 | certificate_count = 1 or 2 |
+| 59 | 1 | reserved = 0 |
+| 60 | 4 | non-zero `credential_generation` |
+| 64 | 4 | non-zero `revocation_generation` |
+| 68 | 8 | non-zero `credential_manifest_generation` |
+| 76 | 32 | non-zero Attachment binding digest |
+| 108 | 32 | `revoked_set_digest` |
+| 140 | 32 | SHA-256(leaf DER) |
+| 172 | 32 | SHA-256(exact 91-byte leaf SPKI DER) |
+| 204 | 32 | `chain_der_digest` |
+| 236 | 32 | SHA-256(NWA1 root DER) |
+| 268 | 16 | private-key provider ID |
+| 284 | 32 | opaque private-key handle |
+| 316 | 2 | `leaf_der_length` = 1..2048 |
+| 318 | 2 | `intermediate_der_length` = 0..2048 |
+| 320 | 2 | SPKI DER length = 91 |
+| 322 | 2 | reserved = 0 |
+| 324 | 91 | exact canonical leaf SPKI DER |
+| 415 | 1 | reserved = 0 |
+| 416 | `leaf_der_length` | leaf certificate DER |
+| `416 + leaf_der_length` | `intermediate_der_length` | optional intermediate DER |
+| `416 + leaf + intermediate` | 32 | `provisioning_record_digest` |
+
+`certificate_count=1`ではintermediate length 0、count 2ではintermediate length 1..2048とし、
+DER合計を4096以下にする。leaf/intermediate、SPKI、chain、role、critical binding、
+authority/term/runtime/Attachment/credential/revocation generationは§14.2とbit-exact一致させる。
+
+```text
+chain_der_digest =
+  SHA-256(certificate_count_u8 ||
+          leaf_der_length_u16_be || leaf_der ||
+          intermediate_der_length_u16_be || intermediate_der)
+provisioning_record_digest =
+  SHA-256(NWC1 bytes before the trailing digest)
+```
+
+NCM1 entryの`provisioning_record_digest`はこのtrailing digestそのものである。record内の
+authority/term/revocation generation/set digest/manifest generation/runtime/role/credential
+generationは参照NWA1/NRV1/NCM1と一致しなければならない。
+
+handshakeはlocal側を
+`{NWS1.local_runtime_id, handshakeでのlocal TLS role}`、peer側を
+`{authenticated peer runtime_id, peer TLS role}`でlookupし、両方exact 1 entryを要求する。
+同一entryをlocal/peer両方へ使わず、missing/duplicate/role inversionはhandshake 0である。
+local entryも64上限とNCM1 generation/tombstone規則を消費するため、capacity表示でpeerだけ64件を
+広告してはならない。
+
+`runtime_id != NWS1.local_runtime_id`ではkey-ref kind 0かつprovider ID/handle all-zeroだけを許す。
+local Runtimeのclient/server credentialではkind 1かつprovider IDとhandleをそれぞれnon-zeroとし、
+raw private-key byte、PEM、filesystem path、pointerを本storeへ保存しない。provider ID/handleは
+opaque fixed bytesで、ownerはactivation前にproviderから91-byte public SPKIを取得してrecordと照合し、
+次の32-byte digestへP-256 ECDSAを**prehashed input（再SHA-256なし）**として署名させる。
+
+```text
+key_proof_digest =
+  SHA-256(ASCII "Ninlil-WiFi-key-proof-v1" without NUL ||
+          provisioning_record_digest)
+```
+
+private provider adapterの唯一のproof outputは64 bytes `r[32] || s[32]` unsigned big-endianで、
+DER signatureをprofile ownerへ返さない。`1 <= r,s < n`かつlow-S
+`s <= n/2`を必須とし、`n =
+ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551`、
+`floor(n/2) =
+7fffffff800000007fffffffffffffffde737d56d38bcf4279dce5617e3192a8`
+である。provider backendがDER/high-Sを返す場合はprivate adapter内でstrict DERをdecodeし、
+high-Sを`n-s`へcanonicalizeしてfixed raw64を返す。zero/overflow/non-minimal DER、trailing、
+wrong curve/hash、raw length 63/65をrejectする。ownerはrecord SPKIでraw64をverifyし、proof
+signatureをdurable化せず直後にzeroizeする。private keyをexportできることを要件にせず、
+resolve/sign/verify/zeroize failureはcandidate rejectとする。
+
+`provider_id || handle`はprivate provider自身のFULL metadataで
+`{NWS1.store_epoch_id, local_runtime_id, role, P-256 SPKI}`へimmutableにbindし、resolverは
+この4 fieldをproofごとにcopy-ownして返す。ownerはNWS1/NWC1と全fieldを比較し、providerがhandleを
+別store epoch/identity/role/keyへ再割当してはならない。このprovider bindingはcredential pageの
+GC後もstore epoch破棄まで残るため、NCM1 tombstoneからhandle fieldが省略されてもalias historyを
+失わない。同じcurrent/candidate inventory内で同一referenceを共有できるのは、
+同じ`local_runtime_id || role`かつ同じSPKIのcredential rotationだけである。
+別runtime、client/server別role、別SPKIの2 recordが同じreferenceを共有するcandidateはrejectする。
+currentとcandidateのcross-bank照合にも同じ規則を適用し、removed/tombstoned recordのreferenceを
+同じstore epoch中に別identityへaliasしない。strictly greater authority termでも同じidentity/role/
+SPKIへの継続利用だけを許す。別identityへ同じreferenceを再利用してはならない。
+同じRuntimeが両TLS roleを持つ場合も2 NWC1、2 NCM1 entryを消費し、leaf/key referenceを共有しない。
+
+providerがreferenceごとに返しFULL保持する`key_binding_v1`はexact 128 bytes
+`store_epoch_id[16] || runtime_id[16] || role_u8 || reserved_zero[4] || spki_der[91]`である。
+同じstore epochで過去に使用したhandleを含め最大64 binding、8192 canonical metadata bytesを
+別key-provider resource domainへreserveする。このhistory ceilingはNCM1のcurrent
+active/retired countとは別である。V1内で65個目のdistinct handleが必要なcandidateは
+terminal `RESOURCE`としてrejectし、current selector、bank、binding historyを変更しない。
+authority termを上げる、同じnamespaceをerase/recreateする、NWS1だけを差し替える、
+または新しい`store_epoch_id`を同じprofileへ書くことで回復してはならない。回復経路は、
+将来`SPEC_ACCEPTED`になった別profile・別namespaceへのNWM1 migrationだけである。
+そのmigrationはtarget側new handle/bindingのauthoritative FULL install、target selector publish、
+source rollback fence、旧session drain、provider key cleanupとsecure eraseを順序付きで定義しなければ
+ならず、単独のstore-epoch rolloverをV1から推測しない。private key materialとproviderの
+physical journal/error-correction overheadはこの8192にもStorage ABIの606003にも含めず、C7の
+provider profileでslot数、physical bytes、FULL/power-cut、zeroizeを固定する。new handle/keyは
+binding+keyのauthoritative FULL install後にだけNWC1へstageし、install result unknownではresolve後
+までcandidate publish 0とする。retired key materialは旧session終了後に破棄できるが128-byte binding
+tombstoneはstore epoch終了まで保持する。
+
+##### NWP1 pages and NCM1 relation
+
+各bankは8個の`NWP1` pageを必ずFULL stageする。header 64 bytes、末尾digest 32 bytesで、
+record_count 0..8、最大36480 bytesである。
+
+| Offset | Bytes | Field / exact rule |
+| ---: | ---: | --- |
+| 0 | 4 | magic ASCII `NWP1` |
+| 4 | 2 | version = 1 |
+| 6 | 2 | header_length = 64 |
+| 8 | 4 | total_length |
+| 12 | 4 | flags = 0 |
+| 16 | 1 | bank_id = 0 or 1 |
+| 17 | 1 | page_index = 0..7 |
+| 18 | 2 | record_count = 0..8 |
+| 20 | 16 | `authority_id` |
+| 36 | 8 | `authority_term` |
+| 44 | 8 | `credential_manifest_generation` |
+| 52 | 2 | first_slot = `8 * page_index` |
+| 54 | 10 | reserved = 0 |
+| 64 | variable | rows |
+| end - 32 | 32 | `page_digest` |
+
+各rowは
+`slot_index_u16_be || credential_record_length_u16_be || complete NWC1 bytes`である。
+slotは`first_slot..first_slot+7`をgapなしstrict ascendingで使用する。全pageを連結したslot
+0..`credential_count-1`はNCM1 active entryの`runtime_id || role`順とexact同じで、
+各NWC1 digest/generation/identityを対応entryへ照合する。残りslotは存在せず、残りpageは
+record_count 0の96-byte canonical empty pageである。NCM1 retired tombstoneにはNWC1を置かない。
+removed recordがinactive bankに残ってもcurrent selectorから到達不能であり、same-term再追加禁止の
+正本はcurrent NCM1 tombstoneである。active + retired 64上限、96-byte tombstone、6272-byte
+NCM1最大を重複store schemaで変更しない。
+
+##### Current/candidate bank、容量、FULL ordering
+
+fresh installはbank 0を使う。以後、identity-changing update
+（revoked set、credential set、manifest、authority term、root/Attachment/keyの変更）はcurrentと
+反対bankへstageする。同一set NRV1 freshness refreshだけはcurrent bankのNRV1/NCM1/selectorを
+atomic replaceし、NCM1 bytesを維持する。bank IDをselectorへ追加せず、restart時は2 bankをscanし、
+selectorのauthority/term/revocation generation/set+record digest/manifest generation+digestへ
+NRV1とNCM1が一致するbankを**exact 1個**要求する。0個または2個はcorrupt、old bankへfallbackしない。
+selectorでpublishするbankは`credential_count >= 1`とNCM1 `local_role_mask in 1..3`を必須とする。
+Controller-authenticated endpoint configurationはcandidateへ要求するmaskを運ぶ入力であり、
+publish後とrestart時の正本はselected NCM1内のmaskである。そのmaskのclosed non-empty set
+（client、server、または両方）ごとに、`runtime_id == NWS1.local_runtime_id`かつ同じrole、
+`key_ref_kind=OPAQUE_SIGNING_KEY`のNWC1をexact 1個要求する。別role、remote NWC1、
+retired tombstoneはこの要件を満たさない。configured roleのmissing/duplicate、
+maskにない余分なlocal role、mask 0、unknown bit、またはactive count 0のbankはcandidate
+stage/publishをrejectし、
+restart時にselectorが指していればCORRUPT/profile unavailableとする。各required local NWC1の
+offset 236 root DER SHA-256がselected NWA1と一致するため、NWA1は
+selector→NCM1→NWC1から拘束される。active 0のNCM1、retired-only NCM1、
+それらを組み合わせたselectorはbyte-codec/mutation KAT専用で、activatable setではない。
+fresh headerでselectorがabsentの場合、両bankのNRV1/NCM1もabsentならUNPROVISIONEDであり、
+どちらか1 valueでも存在すればcorruptである。candidate stageはfinal publishまでNRV1/NCM1を
+書かない。
+
+providerが常に予約する保守上限は次である。全valueはFoundationの65536-byte
+single-value上限内である。この表は各valueの独立最大を同時に足したreservation ceilingであり、
+semanticに同時到達可能なaggregate maximumではない。
+
+| Item | Conservative provider reservation ceiling |
+| --- | ---: |
+| NWC1 | `416 + 4096 + 32 = 4544` |
+| NWP1 | `64 + 8 * (4 + 4544) + 32 = 36480` |
+| 1 bank values | `2208 + 2192 + 6272 + 8 * 36480 = 302512` |
+| 2 bank + NWS1 + selector + optional NWM1 values | `2 * 302512 + 160 + 148 + 224 = 605556` |
+| key/logical overhead | `3 * (16 + 1) + 22 * (16 + 2) = 447` |
+| profile committed logical bytes | `605556 + 447 = 606003` |
+| committed key count | 25 |
+| provider begin/final union staging | 50 entries / 1212006 logical bytes |
+| external private-key binding metadata | 64 × 128 = 8192 canonical bytes（private key material別domain） |
+
+active countを`A`、retired countを`R`とすると`A + R <= 64`であり、1 bankの
+constraint-aware bytesは`5296 + 4604*A + 96*R`、到達可能最大は
+`A=64, R=0`の299952 bytesである。したがって2 bank、global values、key overheadを含む
+semantic reachable maximumは600883 logical bytes、begin/final unionは1201766 bytesである。
+実装はこの小さい値をprovider reservationへ使わず、上表の606003 / 1212006を固定reserveする。
+oracleは保守予約境界とconstraint-aware境界を別々に検証する。
+
+ownerは`capacity()`で少なくとも25 entries / 606003 logical bytesをreserveし、providerはAccepted
+begin+final union規則により50 / 1212006をstageできなければならない。profile ownerはproviderの
+余剰容量を利用して26件目や606004 byte目をadmitしない。現行M3 ESP storage production default
+（32 entries / 69632 bytes、staging 64 / 139264）はこのprofileを満たさず、黙って上限を変えたり
+同じpartitionへ押し込んではならない。ESP C7/C8では専用credential-store provider profile、
+partition/workspace、PSRAM、FULL power-cut evidenceを別に実装・検証する。これは本docs-only
+候補からtarget成立を導出するものではない。
+
+Foundation private Runtime namespace scannerの4096-byte value workspaceは本専用namespaceへ
+適用・再利用しない。Storage ABIのsingle value上限65536に従い、credential-store ownerは
+storeごとにexact 1個のcaller-owned 36480-byte scratchをreserveし、NWA1/NRV1/NCM1/NWP1を
+exclusive gate下で1 valueずつcopy-own、validate、encodeする。Storage `put: OK`後はproviderが
+deep-copy済みなので同scratchを次valueへ再利用できる。sessionへpage pointerを渡さず274-byte
+security snapshotだけを渡す。scratchのheap/stack/PSRAM配置、alignment、ESP peak/watermarkは
+C7で固定・測定し、Foundation 4096-byte scanner成功やHost heapをtarget成立の証拠にしない。
+namespace completeness scanはzero-prefix iterator、2-byte caller-owned key buffer、同scratchを使い、
+unsigned-byte lexicographic順を検査する。`iter_next: BUFFER_TOO_SMALL`でrequired keyが3以上または
+required valueが36481以上、unknown key、duplicate/out-of-order keyを検出した場合は、bytesを
+推測せず再読・追加allocation 0でCORRUPTとする。
+
+stage/publish orderは次のexact sequenceだけを許す。
+
+1. Controller-authenticated candidateをcopy-ownし、management envelopeが要求するlocal role
+   setとNCM1 `local_role_mask`をbit-exact照合したうえで、NWA1、8 NWP1、全NWC1と
+   NCM1/NRV1参照をmemory上で完全検証する。current bank reader/sessionが残るbankを上書きしない。
+2. inactive bankのNWA1と8 NWP1を、各keyのcomplete valueごとにFULL commitする。
+   COMMIT_UNKNOWNではhandleを閉じてreopenし、intended bytes exactならそのkeyだけstage済み、
+   old/absentなら未stageと解決する。別bytes、partial、digest mismatchはcorruptである。
+3. 全9 staged valueを再読・再検証し、exclusive security gateを取得する。gate取得後にcurrent
+   selectorがpreflight値から変わればcandidateをpublishしない。
+4. inactive bankのNRV1、NCM1、global selectorだけを同じStorage transactionへputし、
+   `commit(FULL)`する。owned value payload最大は既存どおり
+   `2192 + 6272 + 148 = 8612` bytesで、NWA1/NWP1/NWC1やStorage key/16-byte accounting overheadを
+   再包含しない。
+5. OKならnew selectorをlinearization pointとし、role mask変更を含む旧identity sessionを
+   gate解放前にfenceする。
+   COMMIT_UNKNOWNならreopenしてselectorを唯一のauthorityとしてold全部またはnew全部へ解決する。
+   oldならcandidateはinert、newならfenceを完了する。missing/mixed/unknownへfallbackしない。
+6. old bankはgate reader 0かつ全旧session fence後だけ次candidateのinactive bankとして上書きできる。
+   orphan/partial candidateはactiveにならず、bounded diagnostic後に同じbank全9 valueを再stageする。
+
+credential/manifest/revocation/authority generationのgap、rollback、same-generation別bytes、wrap、
+old selector replayは§14.3.1どおりrejectする。NWC1にも同じgenerationをcopyするため、古いpageを
+新NCM1へ差し替えられない。same-term tombstone keyの再追加、tombstone削除/変更、old page replayを
+rejectし、strictly greater authority termだけがgeneration 1、new root/clock epoch/NRV1/NCM1へ
+移行できる。
+
+##### NWM1 migration、rollback、unknown schema
+
+v1 recordをin-placeで再解釈しない。将来profileは別exact namespaceを使い、source key `03`へ
+次の224-byte `NWM1`をFULL publishして旧binaryを先にfenceする。
+
+| Offset | Bytes | Field / exact rule |
+| ---: | ---: | --- |
+| 0 | 4 | magic ASCII `NWM1` |
+| 4 | 2 | version = 1 |
+| 6 | 2 | header_length = 192 |
+| 8 | 4 | total_length = 224 |
+| 12 | 4 | flags = 0 |
+| 16 | 1 | state: PREPARED=`0x01` / DESTINATION_COMMITTED=`0x02` |
+| 17 | 7 | reserved = 0 |
+| 24 | 16 | non-zero `migration_id` |
+| 40 | 16 | source NWS1 `store_epoch_id` |
+| 56 | 32 | SHA-256(source 148-byte selector) |
+| 88 | 32 | SHA-256(exact target namespace bytes) |
+| 120 | 32 | non-zero target profile document/artifact digest |
+| 152 | 4 | non-zero target storage schema |
+| 156 | 4 | reserved = 0 |
+| 160 | 32 | target selector SHA-256。PREPAREDはall-zero、COMMITTEDはnon-zero |
+| 192 | 32 | `migration_record_digest` |
+
+orderはsource PREPARED FULL → target initialize/copy/validate → target selector FULL →
+source DESTINATION_COMMITTED FULLである。NWM1存在中は通常v1 Runtimeを起動せずmigration ownerだけが
+openする。PREPARED COMMIT_UNKNOWNはreopenしmarker有無/bytesを解決する。PREPARED rollbackは、
+target namespaceにselector/activation recordがなくtargetを完全消去したことを同じauthorityが
+証明した場合だけ、source markerをFULL eraseして許す。target selectorが存在する、またはtruthが
+unknownならeraseしない。DESTINATION_COMMITTED後のsource rollback/old selector利用は禁止する。
+crash後はmarkerと両selectorを再読し、target activeならstate 2へ進め、sourceへ戻さない。
+
+NWS1/NWA1/NWC1/NWP1/NWM1のknown magic + future versionはUNSUPPORTED_SCHEMA、known versionの
+length/reserved/digest/semantic mismatchはCORRUPTとする。unknown key/magic、extra/trailing、
+partial migration、source selector mismatchもCORRUPTである。future profileをv1 readerが
+best-effort decodeしたり、missing selectorをfreshとして作り直したりしない。
+
+##### Canonical KAT、independent oracle、S1〜S6 trace
+
+codec KAT familyはauthority `00..0f`、term 1、clock epoch `10..1f`、local Runtime
+`f0..ff`、store epoch `e0..ef`、peer Runtime `10..1f`、Attachment `20..3f`、
+NRV1 count-0 set digestを用いる。91-byte SPKIはP-256 generator pointを上記canonical DERへ
+encodeする。short KATのrootはbytes `00..7f`、leafはbytes `80..ff`、intermediateなしである。
+これら2 synthetic DERは**byte codec/digest専用でX.509 semantic positiveではない**。
+全NWC1 KATはrole client、credential/revocation/manifest generation各1とする。remote KATなので
+key-ref kindはNONE、provider ID/handleはall-zero、shortのcertificate countは1である。
+max KATのrootは`byte(i mod 256)` 2048 bytes、credential index `j`のleafは
+`byte((i+j) mod 256)` 2048 bytes、intermediateは
+`byte((0x80+i+j) mod 256)` 2048 bytes、runtimeは
+`15 * 00 || u8(j+1)`、Attachment byte index `i`は
+`byte((0x20+i+j) mod 256)`とする。他fieldはshort familyと同じで、certificate count 2、
+page row/slotは`j=0..7` strict ascendingである。NWP1 shortはbank 0/page 0/slot 0の1 row、
+emptyはbank 0/page 1、両方manifest generation 1である。
+
+| Artifact | Length | Trailing digest | SHA-256(complete bytes) |
+| --- | ---: | --- | --- |
+| NWS1 | 160 | `d2d782ed6c6f434781f5f05bc62d2182bf3df1bc6cf2f99f1d649ca9c9066bc0` | `90b8c210c2249c4d3472338295d28362990871891d486cf8bf819b90ce693e12` |
+| NWA1 short | 288 | `8fa81bdf8c774478f1c39af55364cc08629e869a12e2cc22fc0fbbd31eb306d8` | `2917dfa9039fcb4930ef1f7f2d32459cd43efc07d769b873a470469e266b8293` |
+| NWC1 short | 576 | `b357046ef51bbaab75891cc1d5a587b61fe08afa64ef138f86d06d3aea1125e6` | `0eaeff06d0cb26e8a1642d115ee2d4597d0da23b279588f6d17b14d8a842c2b3` |
+| NWP1 bank0/page0/1 row | 676 | `5d51f88ac1367cbac0a43d67c40f9593c4ea1fc07329806acc78016a016be6ef` | `113e204f457b9353a82945955e488c23f84a104e285940e50b2e9168865ad4c9` |
+| NWP1 bank0/page1/empty | 96 | `548a73c7ae4908d94e413426e075614c8dcd435d06bb15be4f0b0db116d353cb` | `895104f1ed76aa394bfc8d5bba56d1ef437ea19862a9988ace1521046ededd85` |
+| NWA1 max | 2208 | `5730a09bb5e6f566ed4197dff0371ccd5cf5cb74e2f164fc19721095087f09f4` | `3f867e60d3b18e7e29595d76f6bb328dc5ec0a70fe6f3e6688446561b4e95f11` |
+| NWC1 max index 0 | 4544 | `cf55c1dd5d38c44fb56b2fb9bb69d7f9101e3113967fff3757aee734d2533954` | `f540060f4931f22dfd1cf66ec47a3ea04b68ff008d5b9e1a3c6a41907eccf8f6` |
+| NWP1 max 8 rows | 36480 | `3d39f7e018b7dca581c2be7b9c33c6e7c2fb90fdf2be19910ca65625780c30d3` | `a79721eef26f533da9a7b6d1c09fd9dfebc911bdd53b64ee100b0f7d96589762` |
+| NWM1 PREPARED | 224 | `d3aa18e461a77142faafbd99936242346cf28e0cfe6dc221cfd515d35c9258c0` | `0a971946b1821e8c33a2c755e67ed8c13d43d920e4f8fd3d600c31f7d76739b2` |
+
+NWM1 KATはmigration ID `d0..df`、source store epoch `e0..ef`、上記short NWC1をactive
+1/retired 0にしたintegration selector、target namespace ASCII
+`ninlil.wifi.security.v2`、target profile identity ASCII
+`NINLIL-WIFI-CREDENTIAL-STORE-V2`の各SHA-256、target storage schema 2、PREPARED、
+target selector digest all-zeroを使う。
+
+short componentsはroot SHA
+`471fb943aa23c511f6f72f8d1652d9c880cfa392ad80503120547703e56a2be5`、
+SPKI SHA
+`5cd252fb0ce8932436faf8ccd1040981b89ee4ad6b9fe9e2a2b7e71aacb27cd3`、
+leaf SHA
+`60ae23ee1dd9974d2f4036aa646f97b13f1a5a8b6304c31faea05c59cb363c65`、
+chain digest
+`0fe23a2f305a85244c78d4bf24d41b65023913634db096372c521d94267c00be`
+である。short NWC1をNCM1 active 1/retired 0、`local_role_mask=0`へ入れた
+remote credential byte-integration KAT（codec-only / non-activatable）はNCM1 digest
+`7fe2ece8ef76a491ac906c13591ad400978bb835a52529e887bb5dea16d4ae31`、
+NCM1全体SHA
+`164177b6c9cca59755e3f044b77d9ca5953d4579c0c90cf3a91848c68796dfb1`、
+NRV1 count 0と組み合わせた148-byte selector SHA
+`9556217fc951674f3bf7070eabde76c4f61b8836da420f3cfcf781e8009b81e2`
+である。上記値と4544/36480/302512/605556/447/606003/1212006の保守予約算術、
+および299952/600883/1201766のconstraint-aware算術は、
+Python `hashlib`/`struct`とNode `crypto`/Bufferの独立実装でbit-exact一致した。
+
+key-proof verifier KATはshort NWC1のprovisioning digestを使い、proof digest
+`5ba86332ee21169fe798ac9158bac2f0553194df1310c617fee9ae0d6e6b7d76`、
+P-256 private scalar 1 / test nonce 1で得るlow-S raw64を
+`6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296`
+`393fcad930b2a7191faa6c8943a0fc1cf0b1e84d661ba4cc002ee36fb55ee545`
+とする。これはverify/encoding oracleであり、production providerにnonce 1や同一signatureを
+要求しない。対応high-S
+`c6c03525cf4d58e7e0559376bc5f03e2cc35126040fbf9b8f38ae7534704400c`はowner境界でrejectする。
+
+semantic oracleは§14.2のvalid leaf-only/leaf+intermediate/root DERを使い、short synthetic DERを
+positiveへ流用しない。minimum/maximum、1/2 cert、local/remote key ref、64 active、
+0/64 retired、active+retired 64/65、publish時のlocal role client/server/both、
+mask 0/unknown/missing/extra role、role mask変更時のmanifest generation +1、
+active 0 codec-only/publish拒否、NWA1 root置換、各field/length/digest/row/key mutation、
+2 bank ambiguity、key-binding history 64/65、全FULL write crash、migration stateをclosed
+vector catalogにする。capacity oracleは606003/1212006の保守provider reservation ceilingと、
+600883/1201766のconstraint-aware semantic maximumを別artifactとして検証する。
+
+| Gate | 本節で固定したもの | `SPEC_ACCEPTED`前の残り |
+| --- | --- | --- |
+| S1 | owner、専用failure domain、private key非保存、NCM1との責務分離 | ADR全体scope trace同期 |
+| S2 | profile/NWS1/NWA1/NWC1/NWP1/NWM1 v1候補、exact namespace/key | [06章](../06-versioning-and-compatibility.md)とdecision index同期 |
+| S3 | field、generation、2-bank、FULL/crash、capacity/migration、local-role/root bindingをexact化 | なし（本profile slice） |
+| S4 | independent digest/arithmetic KATとmutation catalog | valid X.509 semantic fixture、machine-readable oracle artifact、全crash-vector生成 |
+| S5 | old/future拒否、no in-place migration、rollback fence、docs-only nonclaim | mixed-version executable testはRELEASE gate |
+| S6 | trace表 | 独立review、P0/P1=0、関連文書の最終整合 |
 
 Controller-authenticated management envelopeを検証したownerだけがcandidateを受け入れる。
 digestはauthority signatureの代替ではない。ownerはcandidate bytesとNCM1参照先を全検証してから、
@@ -1012,7 +1485,7 @@ NWB1/Core資源とstock TLS資源を次の別accounting domainにする。
 | NCM1 current/candidate buffers | 2 × 6272 bytes fixed | 2 × 6272 bytes fixed |
 | NRV1/NCM1 active selector | 148 bytes fixed | 148 bytes fixed |
 | management atomic owned payload | 8612 bytes max | 8612 bytes max |
-| credential records | active + retired peer-role key合計64、current + candidate各64 active record（dual-role peerは2消費）。canonical/aggregate durable bytesは選択credential-store profileでSPEC_ACCEPTED前に固定 | 同左 |
+| credential store | `NINLIL-WIFI-CREDENTIAL-STORE-V1`: local + peer active subject-role合計64/bank、published bankはactive local credential 1件以上、NWC1 4544 bytes/record、NWP1 8 × 36480/bank、NWA1 2208/bank、25 keys / 606003 committed logical bytes、provider staging 50 / 1212006（保守reservation。semantic maximum 600883 / 1201766）、scratch 36480/store、external key-binding history 64 × 128 = 8192（client/serverは各1 record） | 同左 |
 | security identity + freshness / session | 226 + 48 = 274 bytes fixed | 226 + 48 = 274 bytes fixed |
 | NRV1-owned subset / session | 84 bytes（generation 4 + set digest 32 + freshness view 48、上記274内で非加算） | 同左 |
 | credential-owned subset / session | 44 bytes（manifest generation 8 + credential generation 4 + provisioning record digest 32、上記226内で非加算） | 同左 |
@@ -1022,6 +1495,13 @@ NWB1/Core資源とstock TLS資源を次の別accounting domainにする。
 | TLS + crypto total allocation budget / process | 262144 bytes | 20971520 bytes |
 | minimum post-admission free internal heap | 65536 bytes | N/A |
 | minimum TLS task stack watermark | 2048 bytes | N/A |
+
+本表のTLS/crypto allocation値はmbedTLS/OpenSSL closureだけをboundし、ESP-IDF Wi-Fi driver、
+event/task、LwIP、socket、netif、DHCP、PBUFのdynamic/static allocationを閉じない。Wi-Fi実経路全体を
+`RELEASE_SUPPORTED`とするには、pinned ESP-IDFでそれらのexact sdkconfig、pool/count/byte ceiling、
+owner、admission前reservation、peak/watermark、OOM/reconnect/sleep-wake動作を別resource profileへ
+固定し、C7/C8でtarget traceを取る。未固定値をTLS totalへ推測加算したり、TLS allocator probeを
+Wi-Fi driver/LwIP heap evidenceとして使ってはならない。
 
 ESPの`mbedtls_platform_set_calloc_free()`はmbedTLS/PSA Cryptoの全entrypoint、自動初期化、
 R7 crypto利用より前に1回だけinstallする。Hostの`CRYPTO_set_mem_functions()`はbootstrapの
@@ -1067,9 +1547,9 @@ exhaustion動作、構造gate、算術/KATを設計として固定するが、ta
 - NWB1 version 1は本ADRの`SPEC_ACCEPTED`とexact KAT固定まで未割当候補、以後はreservedである。
   reserved値はprivate/feature-gated implementationへ使用できるが、`RELEASE_SUPPORTED`前に
   production on-air supportやstable public wireとして広告しない。
-- NRV1/NCM1 version 1も本ADRと選択credential-store profileの`SPEC_ACCEPTED`まで未割当候補、
-  以後は当該profile内のreserved local management formatである。NCM1だけでcredential record
-  schemaやbyte boundを代替しない。
+- NRV1/NCM1と`NINLIL-WIFI-CREDENTIAL-STORE-V1`のNWS1/NWA1/NWC1/NWP1/NWM1 version 1も
+  本ADRの`SPEC_ACCEPTED`まで未割当候補、以後は当該profile内のreserved local management
+  formatである。NCM1だけでcredential record schemaやbyte boundを代替しない。
 - `NINLIL-WIFI-TLS13-P256-V1`はsuite、credential/authority lifecycle、exporter/DER/NRV1 KAT、
   backend/build/allocator closure設計が`SPEC_ACCEPTED`になるまで候補である。実fingerprint allowlist、
   target-executed handshake、HILは`RELEASE_SUPPORTED` gateであり、設計受入を循環依存させない。
@@ -1096,13 +1576,16 @@ HIL、production supportを意味しない。次をすべて閉じた時だけPr
    actual target archives、per-target fingerprint allowlist、runtime/HIL合格は未要求・未主張とする。
 4. X.509 UUIDv5/OID/124-byte Extension/82-byte binding、Certificate body
    `2057/4110/4111` boundary、NRV1 `144/176/2192` KATとset/record digest、NCM1
-   `128..6272` layout/manifest generation/digest/8612-byte atomic accounting、age/update/fence
-   state machineを2個以上の独立計算でbit-exact照合する。
+   `128..6272` layout/manifest generation/digest/8612-byte atomic accounting、
+   NWS1/NWA1/NWC1/NWP1/NWM1 short/max/integration KAT、age/update/fence state machineを
+   2個以上の独立計算でbit-exact照合する。synthetic byte KATとvalid X.509 semantic KATを分離する。
 5. NWB1/TLS/NRV1の全resource bound、exhaustion、allocator owner、certificate/flight/record
    arithmetic、crash FULL ordering、TOCTOU linearization、rotation/compatibilityをNormative値として
-   固定する。選択credential-store profileはcanonical record schema、per-record/aggregate durable
-   byte上限、current/candidate各64 record reservationを固定する。target feasibilityは設計reviewで
-   riskを明示するが、target PASSを受入条件にしない。
+   固定する。credential storeは§14.3.2のcanonical schema、4544-byte record、2 bank、
+   25 keys / 606003 committed / 50 keys / 1212006 stagingの保守reservation ceiling、
+   600883 / 1201766のconstraint-aware semantic maximum、current/candidate各64 record、
+   opaque private-key referenceを固定する。target feasibilityは設計reviewでriskを明示するが、
+   target PASSを受入条件にしない。
 6. [34章](../34-v2-runtime-fabric-completion.md)のS1〜S6、既存Accepted contract優先、
    version/migration文書、decision log、独立security reviewを同期し、未解決P0/P1を0にする。
 7. `SPEC_ACCEPTED`後のimplementationはprivate/feature-gated、default OFFから開始し、
@@ -1164,11 +1647,20 @@ C1〜C10をすべて閉じた時だけ`RELEASE_SUPPORTED`へ遷移できる。
    concurrent management FULL switchを全publish境界へ注入し、bounded read/exclusive gateにより
    recordがoldまたはnew viewへだけlinearizeし、exclusive gate解放前に全旧identity sessionが
    fenceされ、mixed/unchecked publish 0であることを証明する。
-   NCM1 active/retired count `0/1/64`、128/184/3712/6272 length、entry/tombstone
+   NCM1 active/retired count `0/1/64`、active 0 publish拒否、durable `local_role_mask`
+   0/client/server/both/unknown、management inputとのmask mismatch、missing/extra local role、
+   role変更時のmanifest strict +1と旧session fence、selected NWA1 root置換、
+   128/184/3712/6272 length、entry/tombstone
    ordering/duplicate/overlap/role/reserved/digest mutation、active + retired 64/65、
    same-term tombstone再追加/GC、missing/corrupt staged record、manifest generation
    gap/rollback/replay/wrap、current/candidate各64、atomic payload 8612/8613、
-   全NCM1/selector write crash point、orphan stage GCを独立oracleで検証する。
+   全NCM1/selector write crash point、COMMIT_UNKNOWN、restart old/new、orphan stage GCを
+   独立oracleで検証する。
+   NWS1/NWA1/NWC1/NWP1/NWM1のshort/max KAT、4544/4545、36480/36481、
+   25/26 key、保守reservation 606003/606004 bytes、staging 1212006/1212007、
+   semantic maximum 600883/1201766、local opaque-key proof、
+   key binding 64/65・8192/8193 canonical bytes、65番目でV1 epoch rollover 0、2-bank ambiguity、
+   全stage/key-provider/publish/migration write crash、PREPARED rollback条件も検証する。
    handshake中と確立後の各fenceでdelivery 0、availability epoch exact +1、closeを証明する。
 7. exporter KATはlabel `EXPORTER-Ninlil-NWB1-v1`、94-byte context、16-byte outputを
    OpenSSL/mbedTLS独立oracleで一致させる。両endpoint同一non-zero、client/server order、
@@ -1206,12 +1698,15 @@ C1〜C10をすべて閉じた時だけ`RELEASE_SUPPORTED`へ遷移できる。
     outstanding 0、last close後global baseline復帰をraw allocator traceで証明する。Hostも
     per-session `<=262144`、session pool `<=16777216`、crypto global `<=4194304`、
     total `<=20971520`、session outstanding 0、global baseline復帰を証明する。
+    ESP Wi-Fi driver/LwIP/socket/netif/DHCP/PBUFはTLS closureと別にexact config、pool/count/byte
+    ceiling、peak/watermark、OOMをtarget artifact化し、未所有allocationとunbounded growthを0にする。
 12. 2-process POSIX TCPで10,000 NFL1、bulk/critical fairness、backpressure、peer/process restart、
     rotation、1-hour session lifetime boundary、24h soakを行い、memory/resource high-watermarkが
     §14.5を超えないことを証明する。
 13. ESP32-S3 HILは実AP/DHCP/TCPでESP client↔Host serverとHost client↔ESP serverを行い、
     強制AP断、IP変更、peer restart、sleep/wake、credential rotation、allocator OOM、
-    watchdog、power/association/reconnectをraw timestamp付きで保存する。
+    Wi-Fi/LwIP pool exhaustion、watchdog、power/association/reconnectをraw timestamp、
+    driver/LwIP heap・pool high-watermark付きで保存する。
 14. Wi-Fi断時はeligible fallback継続と不適格fallback拒否を分ける。LoRa fallback HILは
     別compact-radio mapping `SPEC_ACCEPTED`後だけであり、本profileの代替evidenceにしない。
 15. clean Linux/macOS example、ESP porting guide、credential/NRV1 generatorと独立DER/SHA oracle、
@@ -1235,8 +1730,9 @@ C1〜C10をすべて閉じた時だけ`RELEASE_SUPPORTED`へ遷移できる。
 
 ## 非主張
 
-本ADRはProposed docs-onlyであり、NWB1 reserved採番、Wi-Fi/TCP/TLS実装、credential profile、
-ESP target execution、HIL、implementation security review、production supportを主張しない。
+本ADRはProposed docs-onlyであり、NWB1/NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1 reserved採番、
+Wi-Fi/TCP/TLS/credential-store実装、ESP target execution、HIL、implementation security review、
+production supportを主張しない。
 将来の`SPEC_ACCEPTED`もexact design、KAT、reserved採番だけを主張し、実装済みや
 `RELEASE_SUPPORTED`を意味しない。
 
