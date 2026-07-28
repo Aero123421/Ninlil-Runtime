@@ -16,6 +16,9 @@ endif()
 if(NOT DEFINED NINLIL_INSTALL_SMOKE_SANITIZERS)
     set(NINLIL_INSTALL_SMOKE_SANITIZERS OFF)
 endif()
+if(NOT DEFINED NINLIL_SMOKE_HOST_RUNTIME_ENABLED)
+    set(NINLIL_SMOKE_HOST_RUNTIME_ENABLED OFF)
+endif()
 
 # Optional: force the same SQLite archive the producer used (required for
 # static false-green prevention).
@@ -27,6 +30,27 @@ if(NOT DEFINED NINLIL_SMOKE_SQLITE3_INCLUDE_DIR)
 endif()
 if(NOT DEFINED NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
     set(NINLIL_SMOKE_EXPECT_STATIC_SQLITE OFF)
+endif()
+
+# This smoke installs the complete enabled package. Build every enabled
+# installable archive first so focused CI jobs cannot pass configuration while
+# leaving another exported target absent from the install tree.
+set(_producer_targets ninlil_posix_sqlite_storage)
+if(NINLIL_SMOKE_HOST_RUNTIME_ENABLED)
+    list(APPEND _producer_targets ninlil_runtime)
+endif()
+set(_producer_build_command
+    "${CMAKE_COMMAND}" --build "${NINLIL_BUILD_DIR}"
+    --target ${_producer_targets})
+if(NINLIL_BUILD_CONFIG AND NOT NINLIL_BUILD_CONFIG STREQUAL "")
+    list(APPEND _producer_build_command --config "${NINLIL_BUILD_CONFIG}")
+endif()
+execute_process(
+    COMMAND ${_producer_build_command}
+    RESULT_VARIABLE _producer_build_rc)
+if(NOT _producer_build_rc EQUAL 0)
+    message(FATAL_ERROR
+        "Ninlil installable target build failed: ${_producer_build_rc}")
 endif()
 
 set(_install_command

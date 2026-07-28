@@ -3,8 +3,13 @@
 
 check --src-root ROOT --compile-commands PATH [--verbose-log PATH]
 
-Authority selects production TUs only when output is the exact path:
+Authority selects private production TUs only when output is the exact path:
   <compile_commands build root>/CMakeFiles/ninlil_runtime_private.dir/src/radio/<base>.o
+The installable public Runtime may compile the same TUs at the exact path:
+  <compile_commands build root>/CMakeFiles/ninlil_runtime.dir/src/radio/<base>.o
+When any public Runtime entry is present, all three must be present exactly once
+and satisfy the same compiler/flag authority. Private production remains
+required and remains the verbose-log / stack-usage authority.
   (suffix-only / external-prefix absolute paths are RED, not production)
 
 compile_commands.json path and its parent build directory:
@@ -78,6 +83,7 @@ REQUIRED_FLAGS: tuple[str, ...] = (
 )
 
 PROD_DIR_MARKER = "CMakeFiles/ninlil_runtime_private.dir/src/radio/"
+PUBLIC_RUNTIME_DIR_MARKER = "CMakeFiles/ninlil_runtime.dir/src/radio/"
 TESTBUILD_DIR_MARKER = "CMakeFiles/ninlil_n6_store_testbuild.dir/src/radio/"
 ALLOWED_WRAPPERS = frozenset({"ccache", "sccache"})
 
@@ -316,9 +322,12 @@ def _classify_output(out_canon: Path, leaf_o: str, *, build_root: Path) -> str:
     if ".." in out_canon.parts:
         return "traversal"
     expected_prod = build_root / (PROD_DIR_MARKER + leaf_o)
+    expected_public = build_root / (PUBLIC_RUNTIME_DIR_MARKER + leaf_o)
     expected_test = build_root / (TESTBUILD_DIR_MARKER + leaf_o)
     if out_canon == expected_prod:
         return "production"
+    if out_canon == expected_public:
+        return "public_runtime"
     if out_canon == expected_test:
         return "testbuild"
     return "ambiguous"
@@ -518,6 +527,9 @@ def check_compile_commands(
     prod: dict[str, list[tuple[list[str], Path, Path]]] = {
         rel: [] for rel in N6_SRC
     }
+    public_runtime: dict[str, list[tuple[list[str], Path, Path]]] = {
+        rel: [] for rel in N6_SRC
+    }
 
     for entry in data:
         if not isinstance(entry, dict):
@@ -713,7 +725,8 @@ def check_compile_commands(
             continue
         if kind == "ambiguous":
             errs.append(
-                f"{matched_rel}: output not production/testbuild: {out_canon}"
+                f"{matched_rel}: output not production/testbuild/public-runtime: "
+                f"{out_canon}"
             )
             continue
         if kind == "testbuild":
@@ -721,7 +734,8 @@ def check_compile_commands(
             # not materialized the object dir (production-only builds).
             # Symlink on any *existing* prefix already RED above.
             continue
-        # Production: every output path component must exist (fail-closed).
+        # Production and public Runtime: every output path component must exist
+        # (fail-closed). Exact testbuild alone may remain absent.
         if not out_complete or not o_complete:
             missing = out_leaf if not out_complete else o_argv_leaf
             errs.append(
@@ -729,7 +743,10 @@ def check_compile_commands(
             )
             continue
         # dir_canon is already exact-matched to build_root; out_canon exact prod
-        prod[matched_rel].append((argv, out_canon, dir_canon))
+        if kind == "public_runtime":
+            public_runtime[matched_rel].append((argv, out_canon, dir_canon))
+        else:
+            prod[matched_rel].append((argv, out_canon, dir_canon))
 
     for rel in N6_SRC:
         if rel not in expected_files:
@@ -748,6 +765,28 @@ def check_compile_commands(
             )
         for argv, _out, _dir in lst:
             errs.extend(check_argv_flags(rel, argv))
+
+    # The public Runtime is optional for private/subproject-only configurations.
+    # Once any public entry is present, require the complete exact-three set and
+    # validate it with the same production compiler/flag contract.
+    public_runtime_present = any(public_runtime[rel] for rel in N6_SRC)
+    if public_runtime_present:
+        for rel in N6_SRC:
+            lst = public_runtime[rel]
+            if not lst:
+                errs.append(
+                    f"{rel}: public Runtime compile set is partial "
+                    f"(need output …/{PUBLIC_RUNTIME_DIR_MARKER}"
+                    f"{Path(rel).name}.o)"
+                )
+                continue
+            if len(lst) != 1:
+                errs.append(
+                    f"{rel}: expected exactly one public Runtime compile entry, "
+                    f"found {len(lst)}"
+                )
+            for argv, _out, _dir in lst:
+                errs.extend(check_argv_flags(f"{rel} [public runtime]", argv))
 
     if verbose_log is not None:
         errs.extend(
@@ -967,13 +1006,15 @@ def self_test() -> int:
             name: str,
             specs: list[tuple[str, list[str], str]],
         ) -> tuple[Path, Path]:
-            """specs: (rel, argv_base, out_kind) out_kind prod|test|other"""
+            """specs: (rel, argv_base, out_kind) prod|public|test|other."""
             r = root / name
             r.mkdir()
             items: list[tuple[str, Sequence[str], str, str]] = []
             for rel, argv, kind in specs:
                 if kind == "prod":
                     out = PROD_DIR_MARKER + Path(rel).name + ".o"
+                elif kind == "public":
+                    out = PUBLIC_RUNTIME_DIR_MARKER + Path(rel).name + ".o"
                 elif kind == "test":
                     out = TESTBUILD_DIR_MARKER + Path(rel).name + ".o"
                 else:
@@ -992,6 +1033,34 @@ def self_test() -> int:
             fail(f"GREEN production red: {e}")
         else:
             ok("production-only GREEN")
+
+        # GREEN: installable public Runtime duplicates the exact production
+        # sources and satisfies the same GCC/flag contract.
+        specs = []
+        for rel in N6_SRC:
+            specs.append((rel, _base_ok_argv(), "prod"))
+            specs.append((rel, _base_ok_argv(), "public"))
+        r, cc = make("private_and_public_runtime", specs)
+        e = check_compile_commands(cc, src_root=r)
+        if e:
+            fail(f"GREEN private+public Runtime red: {e}")
+        else:
+            ok("private+public Runtime GREEN")
+
+        # RED: an installable public Runtime entry cannot bypass the production
+        # compiler/flag authority while the private target remains valid.
+        specs = []
+        for rel in N6_SRC:
+            specs.append((rel, _base_ok_argv(), "prod"))
+            specs.append((rel, _base_ok_argv("gcc-12"), "public"))
+        r, cc = make("bad_public_runtime_compiler", specs)
+        e = check_compile_commands(cc, src_root=r)
+        if not e:
+            fail("bad public Runtime compiler: expected RED, got GREEN")
+        elif "compiler must be" not in " ".join(e):
+            fail(f"bad public Runtime compiler: wrong RED reasons: {e}")
+        else:
+            red_ok("bad public Runtime compiler RED")
 
         # GREEN production+testbuild
         specs: list[tuple[str, list[str], str]] = []
