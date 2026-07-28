@@ -236,9 +236,13 @@ oracle/gate/bridge-skip/tag-truncation/prior-publish を各 mutation self-test �
   定義されていれば fail。tests-ON archive は seam を持ち得るため、親 tests-ON tree の
   archive を流用しない。
 - install tree は path 禁止に加え、インストールされた **static/shared library 全ての
-  `nm` defined symbol** を検査する。`ninlil_r7_crypto_*`、`ninlil_r7_mbedtls_*`、
-  provider factory / private seam が public 配布 lib へ混ざれば fail。`nm` 欠落・
-  非ゼロ終了は fail closed。
+  `nm` defined symbol** を検査する。通常のpublic配布libへ
+  `ninlil_r7_crypto_*`、`ninlil_r7_mbedtls_*`、provider factory / private seam が
+  混ざればfailする。唯一の例外はexact basenameのHost Runtime archive
+  (`libninlil_runtime.a` / platform-equivalent)である。このarchiveはpublic Runtime ABIの
+  内部実装としてHost production crypto 8 symbolをexactに持たなければならず、欠落・追加・
+  mbedTLS・TEST_BUILD seam・test/oracle/fixture symbolはfailする。この例外はprivate headerや
+  R7関数をpublic ABIへ昇格させない。`nm`欠落・非ゼロ終了はfail closed。
 
 ## 11. T0 acceptance gates
 

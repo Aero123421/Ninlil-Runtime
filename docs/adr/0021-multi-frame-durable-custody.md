@@ -65,7 +65,7 @@ application-level durable transferと同一ではない。
 ## Radio fragmentationとの境界
 
 - Radio FRAGは1個のradio semantic messageを[30章](../30-r6-secure-radio-wire.md)どおり
-  2〜16 fragmentへ分けるlink-layer reliabilityである。
+  2〜13 fragmentへ分けるlink-layer reliabilityである。
 - v3 chunkはdurable transferのstorage/custody単位であり、1 chunkがさらにRadio FRAGへ
   写像される場合がある。
 - Radio FRAG_ACKはchunk durable commitを意味せず、Chunk AcceptはRF airtime permitを意味しない。

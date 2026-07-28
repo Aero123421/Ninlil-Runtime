@@ -34,6 +34,7 @@
 **SEMANTIC: TYPE_LENGTH_START_130_255**  
 **SEMANTIC: TYPE_LENGTH_CONT_76_255**  
 **SEMANTIC: TYPE_LENGTH_FRAG_ACK_79_EXACT**  
+**SEMANTIC: FRAG_COUNT_EFFECTIVE_MAX_13**  
 **SEMANTIC: ENCODE_CANON_BYTE_EXACT**  
 **SEMANTIC: ENVIRONMENT_CODE_LAB_FIELD**  
 **SEMANTIC: HKDF_SALT_IS_CONTEXT_BINDING_DIGEST**  
@@ -2252,7 +2253,9 @@ LAYOUT_FRAG_START_END
 ```
 
 Domains: `1 ≤ S ≤ 126`, `S < total_len ≤ 2048`, `continuation_unit = 180` exact.  
-`frag_count = 1 + ceil((total_len - S) / 180)` with `2 ≤ frag_count ≤ 16`.  
+`frag_count = 1 + ceil((total_len - S) / 180)` with `2 ≤ frag_count ≤ 13`.  
+The upper bound is derived from the same frozen domains:
+`1 + ceil((2048 - 1) / 180) = 13`; values 14..16 are non-canonical and reject.  
 Outer total = **129+S** (check 129+S ≤ 255 ⇒ S≤126). Packet domain **130..255**.
 
 **TRANSFER_HANDLE_SENDER_ENCODER_RULE / FIRST_FRAG_START_TEMPLATE_HANDLE_INJECT (exact; same 7 events):**  
@@ -2392,7 +2395,7 @@ Generated FRAG_ACK reverse E2E burns obey §15.3.7 (semantic version max2; trans
 
 1. Reverse E2E context is the exact handshake pair of the saved forward outgoing E2E context  
 2. Active outgoing transfer exists with **exact** `transfer_handle`  
-3. Saved manifest `frag_count` ∈ 2..16 and wire `frag_count` exact match  
+3. Saved manifest `frag_count` ∈ 2..13 and wire `frag_count` exact match  
 4. Bitmap bits at indices ≥ frag_count are 0  
 5. Status table:  
    - PARTIAL: reason NONE, bit0=1, not full  
@@ -3439,3 +3442,23 @@ Portable private host candidate + exhaustive host gates (codec KAT/faults, HKDF/
 8. **Test-only fault seams.** Seams that inject arbitrary internal `lane_kind` values or mutate individual CU plan fields exist **only** under `NINLIL_N6_TEST_BUILD` and **MUST NOT** appear in tests-OFF production objects, install trees, or archives. Production public/private headers **SHOULD** remain free of new seam declarations when tests can use test-build-only `extern` linkage.
 
 9. **Non-claims.** This erratum does **not** claim R6 product complete, R7 AEAD codec complete, M4/M5, ESP N6 capacity, RF/USB HIL, Japan legal, or production radio. gate PASS ≠ product GO.
+
+### 20.13 Frozen erratum — reachable FRAG count domain (2026-07-28; Accepted)
+
+**Status:** Normative Accepted arithmetic erratum to §12.1 and §12.3.  
+**Wire profile / field width / layout / schema / public ABI / version:** **unchanged**.
+
+The frozen domains are `S >= 1`, `total_len <= 2048`, and continuation unit
+`180` exact. Therefore the largest reachable canonical fragment count is:
+
+```text
+1 + ceil((2048 - 1) / 180) = 13
+```
+
+For wire profile `0x11`, encoder and decoder MUST use `2..13` as the closed
+`frag_count` domain. Values `14..16` were never constructible from the frozen
+length equation and are now explicitly non-canonical/rejected. The 16-bit ACK
+bitmap layout remains unchanged; bits at indices `frag_count..15` remain zero.
+Conformance matrices MUST exercise every count `2..13` and MUST reject
+`0`, `1`, and `14..65535`. This correction does not increase resource limits,
+packet lengths, transfer length, retry budgets, or any on-wire field width.

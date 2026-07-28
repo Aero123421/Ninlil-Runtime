@@ -396,6 +396,14 @@ oracleにしない。
 archiveではproduction object/symbol exact once、install/public include/library/vector/tool leakage 0を
 検査する。HostはAccepted OpenSSL 3 adapter、ESPはAccepted mbedTLS adapterだけをlinkする。
 
+install対象のHost Runtime static archive
+`libninlil_runtime.a`（Windowsでは`ninlil_runtime.lib`または`libninlil_runtime.lib`）だけは、
+production private binding implementationを内部に保持できる。このexact basename例外でも
+`r7_context_binding.c.o` exact once、binding family production 6 symbol exact、
+test seam/oracle/fixture/extra family symbol 0を必須とする。通常public libraryはbinding
+member/symbol 0のままであり、public header/package config/vector/test/toolへのprivate token/path
+exportも許可しない。
+
 CTest prefixは`nrw1_t1b_*`とする。これはT0 `r7_*`にもT1 `nrw1_t1_*`にもprefix一致せず、
 両方のexact-set authorityを変更しない。
 normal profileのexact登録multisetは次の13 names、各exact onceとする。

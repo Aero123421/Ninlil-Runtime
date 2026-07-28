@@ -208,18 +208,49 @@ def validate_texts(texts: Mapping[str, str]) -> list[str]:
         "OPENSSL_VERSION VERSION_GREATER_EQUAL 4" not in host
     ):
         errors.append("Host CMake missing OpenSSL major upper-bound (<4 / exact 3)")
-    require_once(
-        errors,
+    private_host_sources = re.search(
+        r"target_sources\s*\(\s*ninlil_runtime_private\s+PRIVATE\s+"
+        r"\$\{NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES\}\s*\)",
         host,
-        "${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}",
-        "Host adapter expansion",
+        re.DOTALL,
     )
+    if private_host_sources is None:
+        errors.append("Host private target adapter expansion missing")
+    public_runtime_sources = re.search(
+        r"add_library\s*\(\s*ninlil_runtime\s+STATIC\b(.*?)\)",
+        host,
+        re.DOTALL,
+    )
+    if public_runtime_sources is None:
+        errors.append("installable Host Runtime target missing")
+    elif public_runtime_sources.group(1).count(
+        "${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}"
+    ) != 1:
+        errors.append(
+            "installable Host Runtime must carry the Host adapter exactly once"
+        )
+    if host.count("${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}") != 2:
+        errors.append(
+            "Host adapter variable must appear exactly once in the private "
+            "target and once in the installable Host Runtime"
+        )
     require_once(
         errors,
         host,
         "target_link_libraries(ninlil_runtime_private PRIVATE OpenSSL::Crypto)",
         "Host private crypto link",
     )
+    public_runtime_link = re.search(
+        r"target_link_libraries\s*\(\s*ninlil_runtime\b(.*?)\)",
+        host,
+        re.DOTALL,
+    )
+    if public_runtime_link is None or public_runtime_link.group(1).count(
+        "OpenSSL::Crypto"
+    ) != 1:
+        errors.append(
+            "installable Host Runtime must link OpenSSL::Crypto exactly once"
+        )
     if "${NINLIL_R7_CRYPTO_ESP_RELATIVE_SOURCES}" in host:
         errors.append("ESP adapter variable leaked into Host CMake")
 
@@ -269,7 +300,10 @@ def run_check() -> int:
         for error in errors:
             print(f"r7 crypto platform split gate FAIL: {error}", file=sys.stderr)
         return 1
-    print("r7 crypto platform split gate: PASS (portable=2 host=1 esp=1)")
+    print(
+        "r7 crypto platform split gate: PASS "
+        "(portable=2 host-source=1 private+public consumers=2 esp=1)"
+    )
     return 0
 
 
@@ -286,7 +320,29 @@ def run_self_test() -> int:
     mutations = (
         (AUTHORITY, "src/radio/r7_crypto_nonce.c", "src/radio/r7_crypto_openssl3.c"),
         (AUTHORITY, "ports/esp-idf/src/r7_crypto_mbedtls.c", "src/radio/r7_crypto_openssl3.c"),
-        (HOST_CMAKE, "OpenSSL::Crypto", "OpenSSL::Crypt0"),
+        (
+            HOST_CMAKE,
+            "target_link_libraries(ninlil_runtime_private PRIVATE OpenSSL::Crypto)",
+            "target_link_libraries(ninlil_runtime_private PRIVATE OpenSSL::Crypt0)",
+        ),
+        (
+            HOST_CMAKE,
+            "        ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}\n"
+            "    )\n"
+            "    add_library(Ninlil::runtime ALIAS ninlil_runtime)",
+            "    )\n"
+            "    add_library(Ninlil::runtime ALIAS ninlil_runtime)",
+        ),
+        (
+            HOST_CMAKE,
+            "        PUBLIC\n"
+            "            ninlil\n"
+            "            OpenSSL::Crypto\n"
+            "    )",
+            "        PUBLIC\n"
+            "            ninlil\n"
+            "    )",
+        ),
         (ESP_CMAKE, "        mbedtls\n", ""),
         (
             RUNTIME_AUTHORITY,
