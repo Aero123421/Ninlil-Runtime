@@ -31,12 +31,12 @@ entry.file / argv -c / entry.output / argv -o:
 Outputs (production authority vs exact testbuild out-of-authority):
   raw ``..`` RED; entry.output / argv -o disagreement RED;
   every *existing* path component is lstat'd — symlinks RED even on
-  testbuild prefixes; missing components after a clean prefix are allowed
-  only long enough to classify exact ``build_root`` testbuild and ignore it
-  (CI may compile production-only while compile_commands still lists
-  ``ninlil_n6_store_testbuild``). Exact production outputs remain fail-closed:
-  all components must exist and be non-symlink. Suffix-only / external-prefix
-  absolute paths stay ``ambiguous`` RED (never silent testbuild skip).
+  testbuild/public-runtime prefixes; missing components after a clean prefix are
+  allowed only long enough to classify exact ``build_root`` testbuild or an
+  exact configured-but-unbuilt public Runtime entry (CI may build only the
+  private authority target). Exact private production outputs remain
+  fail-closed: all components must exist and be non-symlink. Suffix-only /
+  external-prefix absolute paths stay ``ambiguous`` RED.
 
 Compiler: argv0 basename gcc-13, or argv0 in {ccache,sccache} + argv1 gcc-13.
 All -O* tokens must be exactly ['-O2']. Required flags include -Wall -Wextra
@@ -734,8 +734,16 @@ def check_compile_commands(
             # not materialized the object dir (production-only builds).
             # Symlink on any *existing* prefix already RED above.
             continue
-        # Production and public Runtime: every output path component must exist
-        # (fail-closed). Exact testbuild alone may remain absent.
+        # The public Runtime may be configured but not built by a focused
+        # private-authority CI job. Its exact build-root entry still has to obey
+        # source/output/flags and all existing-prefix symlink checks; only the
+        # final missing output is permitted. Private production remains the
+        # materialized fail-closed authority.
+        if kind == "public_runtime":
+            public_runtime[matched_rel].append((argv, out_canon, dir_canon))
+            continue
+
+        # Private production: every output path component must exist.
         if not out_complete or not o_complete:
             missing = out_leaf if not out_complete else o_argv_leaf
             errs.append(
@@ -743,10 +751,7 @@ def check_compile_commands(
             )
             continue
         # dir_canon is already exact-matched to build_root; out_canon exact prod
-        if kind == "public_runtime":
-            public_runtime[matched_rel].append((argv, out_canon, dir_canon))
-        else:
-            prod[matched_rel].append((argv, out_canon, dir_canon))
+        prod[matched_rel].append((argv, out_canon, dir_canon))
 
     for rel in N6_SRC:
         if rel not in expected_files:
@@ -1046,6 +1051,19 @@ def self_test() -> int:
             fail(f"GREEN private+public Runtime red: {e}")
         else:
             ok("private+public Runtime GREEN")
+
+        # GREEN: compile_commands may list the public Runtime while the focused
+        # CI target builds only the private authority archive.
+        for rel in N6_SRC:
+            public_out = (
+                r / "build" / (PUBLIC_RUNTIME_DIR_MARKER + Path(rel).name + ".o")
+            )
+            public_out.unlink()
+        e = check_compile_commands(cc, src_root=r)
+        if e:
+            fail(f"GREEN configured-unbuilt public Runtime red: {e}")
+        else:
+            ok("configured-unbuilt public Runtime GREEN")
 
         # RED: an installable public Runtime entry cannot bypass the production
         # compiler/flag authority while the private target remains valid.
