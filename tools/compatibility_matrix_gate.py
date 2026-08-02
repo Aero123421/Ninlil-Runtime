@@ -196,6 +196,7 @@ FEATURE_README_ROWS: dict[str, str] = {
     "relay": "Relay",
     "multi-parent-multi-controller": "Multi-parent / multi-Controller",
     "multi-frame-durable-transfer": "Multi-frame durable transfer",
+    "v1-functional-lab-vertical-slice": "V1 functional LAB vertical slice",
     "oss-package-docs-release-ci": "OSS package / docs / release CI",
 }
 
@@ -451,6 +452,26 @@ FEATURE_AUTHORITY = {
             ev(
                 "work-record",
                 "docs/work/2026-08-01-mfdt-spec-accepted-promotion.md",
+                "P0=0 / P1=0 / P2=0",
+            ),
+        ],
+    },
+    "v1-functional-lab-vertical-slice": {
+        "required_hil": True,
+        "state_ceiling": "HIL_VERIFIED",
+        "depends_on": [
+            "portable-core-host-runtime",
+            "fabric-bearer-nfl1-path-registry",
+        ],
+        "evidence": [
+            ev(
+                "accepted-adr",
+                "docs/adr/0034-v1-functional-lab-scope.md",
+                "ACCEPTED",
+            ),
+            ev(
+                "independent-review",
+                "docs/reviews/2026-08-03-v1-functional-lab-scope-review.md",
                 "P0=0 / P1=0 / P2=0",
             ),
         ],

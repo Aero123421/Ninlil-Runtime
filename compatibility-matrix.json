@@ -274,6 +274,18 @@
       ]
     },
     {
+      "id": "v1-functional-lab-vertical-slice",
+      "state": "PROPOSED",
+      "state_ceiling": "HIL_VERIFIED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["portable-core-host-runtime", "fabric-bearer-nfl1-path-registry"],
+      "evidence": [
+        {"class": "accepted-adr", "path": "docs/adr/0034-v1-functional-lab-scope.md", "contains": "ACCEPTED"},
+        {"class": "independent-review", "path": "docs/reviews/2026-08-03-v1-functional-lab-scope-review.md", "contains": "P0=0 / P1=0 / P2=0"}
+      ]
+    },
+    {
       "id": "oss-package-docs-release-ci",
       "state": "HOST_CANDIDATE",
       "state_ceiling": "HOST_CANDIDATE",
