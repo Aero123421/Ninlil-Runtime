@@ -195,10 +195,40 @@ rm -f "${OUT_DIR}/ca.ext.cnf"
   -keyout "${OUT_DIR}/expired.key.pem" -out "${OUT_DIR}/expired.csr.pem" \
   -subj "/CN=ninlil-wifi-test-expired" -sha256 \
   -config /dev/null >/dev/null 2>&1
-"${OPENSSL_BIN}" x509 -req -in "${OUT_DIR}/expired.csr.pem" \
-  -CA "${OUT_DIR}/ca.cert.pem" -CAkey "${OUT_DIR}/ca.key.pem" -CAcreateserial \
-  -out "${OUT_DIR}/expired.cert.pem" -sha256 \
-  -not_before 20000101000000Z -not_after 20000102000000Z >/dev/null 2>&1
+python3 - "${OUT_DIR}" <<'PY'
+from pathlib import Path
+import sys
+
+out_dir = Path(sys.argv[1])
+(out_dir / "expired-ca-index.txt").write_text("", encoding="ascii")
+(out_dir / "expired-ca-serial").write_text("10000001\n", encoding="ascii")
+(out_dir / "expired-ca.cnf").write_text(
+    """[ca]
+default_ca=ninlil_test_ca
+[ninlil_test_ca]
+database=$ENV::NINLIL_EXPIRED_CA_DIR/expired-ca-index.txt
+new_certs_dir=$ENV::NINLIL_EXPIRED_CA_DIR
+certificate=$ENV::NINLIL_EXPIRED_CA_DIR/ca.cert.pem
+private_key=$ENV::NINLIL_EXPIRED_CA_DIR/ca.key.pem
+serial=$ENV::NINLIL_EXPIRED_CA_DIR/expired-ca-serial
+default_md=sha256
+default_days=1
+policy=policy_any
+unique_subject=no
+[policy_any]
+commonName=supplied
+""",
+    encoding="ascii",
+)
+PY
+# `openssl x509` only gained notBefore/notAfter setters after OpenSSL 3.0.
+# `openssl ca` supports explicit validity dates across the supported host range.
+NINLIL_EXPIRED_CA_DIR="${OUT_DIR}" "${OPENSSL_BIN}" ca -batch \
+  -config "${OUT_DIR}/expired-ca.cnf" \
+  -in "${OUT_DIR}/expired.csr.pem" \
+  -out "${OUT_DIR}/expired.cert.pem" -notext \
+  -startdate 20000101000000Z -enddate 20000102000000Z >/dev/null 2>&1
 rm -f "${OUT_DIR}/expired.csr.pem" "${OUT_DIR}/"*.srl 2>/dev/null || true
+rm -f "${OUT_DIR}/10000001.pem" "${OUT_DIR}/expired-ca-"* 2>/dev/null || true
 # Do not print key material.
 echo "wifi_v1_gen_test_certs: ok ecdsa-p256 dir=${OUT_DIR}"
