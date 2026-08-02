@@ -36,11 +36,11 @@ ABIとしてexportしません。
 | POSIX TCP/TLS reference | **SPEC_ACCEPTED / experimental public Host package** | ADR-0030の`ninlil/posix_tls_v1.h`と`Ninlil::posix_tls_v1`を公開。installed public APIだけの2プロセス実TLSでverified Receipt、同じSQLiteを使う2周のclean restartを確認。物理AP・長時間HILは`NOT_RUN` |
 | POSIX USB serial reference | **SPEC_ACCEPTED / experimental public Host package** | ADR-0031の`ninlil/posix_usb_serial_v1.h`と`Ninlil::posix_usb_serial_v1`を公開。tests-OFF install後の外部C11 consumerで実PTY双方向通信、close/reopen、generation更新を通常・ASan/UBSan・独立レビューで確認。Linux実行CIとLinux/macOS物理USB CDC HILは別gate |
 | ESP32-S3 Wi-Fi STA/TCP/TLS | **PROPOSED / TLS target build合格** | R7 `OTHER_REGISTERED`同居管理はADR-0026として受入済み。internal/PSRAM予約、通常・Sanitizer、ESP-IDF v5.5.3 compile/link/mapも合格。Wi-Fi/LwIPの実行時資源、実AP・切断/restart・peak・soak HILを閉じる |
-| NRW1 LINK / FRAG / reassembly | **SPEC_ACCEPTED / target build合格** | 全authority bridgeとsemantic hook、通常・Sanitizer、ESP compile/linkは合格。全private同時build、target実行、loss/reorder/restartと物理RF HILを閉じる |
+| NRW1 LINK / FRAG / reassembly | **SPEC_ACCEPTED / target build合格** | 全authority bridgeとsemantic hook、通常・Sanitizer、ESP compile/link、全private候補の同時compile/link/mapは合格。target実行、loss/reorder/restartと物理RF HILを閉じる |
 | Relay | **SPEC_ACCEPTED / software候補レビュー合格** | 64KiB以下のatomic storage bundle、strict dual-image import、FULL/CU matrix、通常・Sanitizer各18/18は合格。公開ABI判断と3台RF HILを閉じる |
 | Multi-parent / multi-Controller | **SPEC_ACCEPTED / software候補レビュー合格** | durable used-attempt台帳、old/new exact authority CAS、global split-brain fence、10,000 lifecycleは合格。公開ABI判断と実機failover HILを閉じる |
 | Multi-frame durable transfer | **SPEC_ACCEPTED / Host software候補** | private MFDT protocol v1、revision 2 OPEN、Host 4-slot coordinator、Runtimeごとのsidecar、1〜4 target admission/restart reconciliationを実装。公開`ninlil_submit()`から2つのHost Runtimeを通常の`ninlil_runtime_step()`だけで駆動し、927〜32768 byteの分割・再構成・digest検証、Application Service apply、positive evidence、handoff、既存Receipt、durable closure、terminal/content releaseまで通常・ASan/UBSanで合格。READY、HANDED_OFF、Receipt closed、retained terminalのcold restartと不一致fail-closedも確認済み。残件はinstalled module/package受入、ESP exact-1 owner、MF-O08 target promotion、物理Wi-Fi/RF/power-cut HIL |
-| V1 composition | **SPEC_ACCEPTED / base owner Host候補** | ADR-0032の公開`composition_v1` base owner（workspace/create、Runtime/Fabric借用、bounded step、terminal release、close/destroy）を実装。namespace分離、残作業OR、順不同terminalの再走査、C/C++ header自己完結、ABI manifestを通常・ASan/UBSanで確認。Bearer前sidecar recovery、MFDT/FRAG/relay/multi-parent接続、tests-OFF installed composition consumerとlarge-data/relay受入は未完。8-module制度や汎用plugin frameworkはV1非対象 |
+| V1 composition | **SPEC_ACCEPTED / Host・ESP package候補** | ADR-0032の公開`composition_v1` base owner（workspace/create、Runtime/Fabric借用、bounded step、terminal release、close/destroy）を実装。tests-OFF install後の公開APIだけで2つのCompositionを駆動するApplicationData→Receipt E2Eを通常・ASan/UBSanで確認。HostとESP-IDFは同じFabric/Composition source authorityを使用し、ESP32-S3 component archiveのexact-one、最終ELF symbol/map、公開headerだけのtarget翻訳単位を確認済み。target上のdurable create/step/close、Bearer前sidecar recovery、MFDT/FRAG/relay/multi-parent接続とlarge-data/relay受入は未完。8-module制度や汎用plugin frameworkはV1非対象 |
 | OSS package / docs / release CI | **HOST_CANDIDATE** | actionlint・全shellcheck・固定OpenSSL authorityは合格。commit-tree dry run、公開asset照合、独立review（`RELEASE_SUPPORTED`は未昇格） |
 
 OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost software候補を
@@ -56,9 +56,9 @@ OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost softwa
 1. ~~Portable Fabric公開と実Runtime取引~~ — 完了
 2. ~~POSIX TCP/TLS公開と2プロセスrestart E2E~~ — 完了
 3. ~~POSIX USB serial公開とinstalled PTY E2E~~ — 完了
-4. `composition_v1`でlarge-data、fragmentation、relay/multi-parentを内部接続 — base ownerはHost候補、sidecar/FRAG/relay接続とinstalled E2Eは未完
-5. ESP-IDFのWi-Fi／SX1262／USB composition helperとESP32-S3 build/map — 未着手
-6. README・SDK配布物・CIの最終整合監査 — 未着手
+4. `composition_v1`でlarge-data、fragmentation、relay/multi-parentを内部接続 — base ownerとtests-OFF installed E2EはHost合格、sidecar/FRAG/relay接続は未完
+5. ESP-IDFのWi-Fi／SX1262／USB composition境界とESP32-S3 build/map — Host/ESP共通source authority、component archive exact-one、最終ELF symbol/map、公開headerだけのtarget翻訳単位は合格。target上のlive composition、Wi-Fi public facade、RF mappingは未完
+6. README・SDK配布物・CIの最終整合監査 — 今回の公開Composition package差分を監査中
 7. 物理USB、実AP、SX1262、電源断HIL — 機材で実行するまで`NOT_RUN`
 
 ## 検証区分
@@ -66,7 +66,7 @@ OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost softwa
 | 区分 | 内容 |
 | --- | --- |
 | **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。composition sidecar接続、ESP ownerと実機経路は未完であり、機能ごとの正式状態は上表を優先します |
-| **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter。target上での実行が未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
+| **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter、公開Fabric/Compositionのcomponent packagingと最終ELF link。target上でのlive compositionと物理経路は未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
 | **物理HIL待ち** | ESP flash、実AP、USB CDC、SX1262 TX/RX、2/3-hop、multi-parent failover、電源断、長時間soak。証拠がない項目は一律`NOT_RUN`です |
 
 ## アーキテクチャ

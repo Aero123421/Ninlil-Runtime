@@ -19,6 +19,7 @@
 #include "ninlil_port/esp_storage.h"
 #include "ninlil_port/esp_storage_flash.h"
 #include "multi_service_node_profile.h"
+#include "composition_public_target_smoke.h"
 
 /* R7 production-private link probe; not a public component include. */
 #include "r7_crypto_mbedtls.h"
@@ -1207,9 +1208,17 @@ void app_main(void)
     smoke_cleanup_basic();
 
     /*
-     * Owner/cell first, then the shared application module, storage, U2 CDC,
-     * and R7 crypto/T1b/wire probes.
+     * Owner/cell first, then the public Composition target contract, shared
+     * application module, storage, U2 CDC, and R7 crypto/T1b/wire probes.
      */
+    if (ninlil_composition_public_target_smoke() != 0) {
+        ESP_LOGE(TAG, "public Composition target contract FAIL");
+        fail = 1;
+    } else {
+        ESP_LOGI(TAG,
+            "public Composition target contract OK; durable create/HIL "
+            "remains NOT_RUN");
+    }
     if (smoke_multi_service_node() != 0) {
         fail = 1;
     }
@@ -1265,8 +1274,9 @@ void app_main(void)
         ESP_LOGE(TAG, "SELFTEST FAIL (device HIL required for runtime verdict)");
     } else {
         ESP_LOGI(TAG,
-            "SELFTEST owner/cell + role-neutral four-Service app + storage + "
-            "U2 CDC + R7 crypto/T1b/wire link exercised; compile!=HIL; "
+            "SELFTEST owner/cell + public Composition contract + role-neutral "
+            "four-Service app + storage + U2 CDC + R7 crypto/T1b/wire link "
+            "exercised; compile!=HIL; "
             "U2/R7 Required HIL pending; not device KAT/RF/FIELD/R7 complete; "
             "flash monitor for runtime");
     }

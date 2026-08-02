@@ -147,6 +147,52 @@ ls -la "${N6_SU_DIR}" | tee ports/esp-idf/smoke_app/build/ninlil_n6_su_list.txt
 python3 tools/n6_frame_stack_gate.py check \
   --su-dir "${N6_SU_DIR}" \
   --esp-su-dir "${N6_SU_DIR}"
+# ADR-0032/0033: the ESP package uses the same public Fabric/Composition
+# implementation as Host, each exact once. The target probe executes every
+# Composition API validation path without pretending flash FULL is attested.
+composition_members=(
+  nfl1_codec.c.obj
+  fabric_private_util.c.obj
+  fabric_workspace.c.obj
+  fabric_private_records.c.obj
+  fabric_private_select.c.obj
+  fabric_private_core.c.obj
+  fabric_v1_public.c.obj
+  composition_v1.c.obj
+)
+for member in "${composition_members[@]}"; do
+  count="$(xtensa-esp32s3-elf-ar t "${ARCHIVE}" \
+    | grep -E "^${member}$" | wc -l | tr -d ' ')"
+  if [[ "${count}" != "1" ]]; then
+    echo "ESP Composition member ${member}: expected exact 1, got ${count}" >&2
+    exit 1
+  fi
+done
+composition_symbols=(
+  ninlil_composition_v1_workspace_required
+  ninlil_composition_v1_create
+  ninlil_composition_v1_runtime
+  ninlil_composition_v1_fabric
+  ninlil_composition_v1_step
+  ninlil_composition_v1_close_begin
+  ninlil_composition_v1_close_poll
+  ninlil_composition_v1_destroy
+)
+xtensa-esp32s3-elf-nm "${ELF}" > /tmp/ninlil_composition_nm.txt
+for symbol in "${composition_symbols[@]}"; do
+  grep -E "[[:space:]][Tt][[:space:]]${symbol}$" \
+    /tmp/ninlil_composition_nm.txt
+done
+grep -F 'libninlil.a(composition_v1.c.obj)' "${SMOKE_MAP}"
+grep -F 'libninlil.a(fabric_v1_public.c.obj)' "${SMOKE_MAP}"
+composition_probe=ports/esp-idf/smoke_app/main/composition_public_target_smoke.c
+test "$(grep -Ec '^#include "ninlil/composition_v1\.h"$' \
+  "${composition_probe}")" = "1"
+if grep -E '^#include "(src|drivers|ninlil_private|wifi_|r7_|rrmp_|mfdt_)' \
+    "${composition_probe}"; then
+  echo "public Composition target probe includes a private header" >&2
+  exit 1
+fi
 # R7: after N6 stack gate only.  Inline python/heredoc before the N6
 # gate confuses n6_frame_stack_gate structure analysis ($() + if).
 # Component-archive compile alone is a false green: require exact
@@ -486,7 +532,7 @@ for obj in rrmp_core.c.obj rrmp_codec.c.obj rrmp_store.c.obj rrmp_util.c.obj; do
 done
 python3 tools/rrmp_esp_dram_budget_gate.py check \
   --map "${RRMP_MAP}" \
-  --sdkconfig "${RRMP_ON_BUILD}/sdkconfig"
+  --sdkconfig "${RRMP_SDK_H}"
 # Source-level frame/stack gate (no 4 KiB page temps; ceiling 2048).
 python3 tools/rrmp_frame_stack_gate.py
 # Collect .su evidence when toolchain emitted it (informational archive).
@@ -548,7 +594,7 @@ done
 ALLFEAT_ON_BUILD=ports/esp-idf/smoke_app/build-all-private-features-on
 rm -rf "${ALLFEAT_ON_BUILD}"
 idf.py -C ports/esp-idf/smoke_app -B "${ALLFEAT_ON_BUILD}" \
-  -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.all_private_features_on" \
+  -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;../wifi_hil_app/sdkconfig.defaults;sdkconfig.defaults.all_private_features_on" \
   set-target esp32s3 build
 ALLFEAT_ELF="${ALLFEAT_ON_BUILD}/ninlil_m3_combined_smoke.elf"
 ALLFEAT_MAP="${ALLFEAT_ON_BUILD}/ninlil_m3_combined_smoke.map"

@@ -130,6 +130,7 @@ set(_expected_private_source_names
     resource_ledger_batch.c
     runtime_lifecycle_model.c
     runtime_public.c
+    runtime_terminal_owner_projection.c
     runtime_store_bootstrap.c
     runtime_store_codec.c
     runtime_store_orchestrator.c

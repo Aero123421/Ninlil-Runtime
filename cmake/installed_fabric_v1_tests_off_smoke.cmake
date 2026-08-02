@@ -1,4 +1,4 @@
-# Fresh tests-OFF install/export and two-instance public Fabric consumer gate.
+# Fresh tests-OFF install/export and two-instance public Composition/Fabric gate.
 if(NOT DEFINED NINLIL_SOURCE_DIR
    OR NOT DEFINED NINLIL_PARENT_BUILD_DIR
    OR NOT DEFINED NINLIL_GENERATOR
@@ -60,6 +60,9 @@ endif()
 
 if(NOT EXISTS "${_prefix}/include/ninlil/fabric_v1.h")
     message(FATAL_ERROR "installed package lacks ninlil/fabric_v1.h")
+endif()
+if(NOT EXISTS "${_prefix}/include/ninlil/composition_v1.h")
+    message(FATAL_ERROR "installed package lacks ninlil/composition_v1.h")
 endif()
 file(GLOB_RECURSE _fabric_archives
     "${_prefix}/*ninlil_fabric_v1.a"
@@ -178,6 +181,6 @@ endif()
 
 file(REMOVE_RECURSE "${_work}")
 message(STATUS
-    "installed Fabric v1 tests-OFF smoke: OK (public target/header; "
-    "two isolated Runtime/Fabric instances; forward ApplicationData; "
+    "installed Composition/Fabric v1 tests-OFF smoke: OK (public headers; "
+    "two isolated Composition-owned Runtime/Fabric instances; ApplicationData; "
     "reverse Receipt; no private include/install leak)")

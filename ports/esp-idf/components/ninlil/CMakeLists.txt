@@ -40,6 +40,8 @@ include("${NINLIL_REPO_ROOT}/cmake/ninlil_m4_lab_ctest.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_idf_port_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_esp_storage_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_sx1262_sources.cmake")
+# Public Fabric/Composition source authority shared with the Host SDK build.
+include("${NINLIL_REPO_ROOT}/cmake/ninlil_composition_v1_sources.cmake")
 # FRAG source authority only — do not auto-append; gated by Kconfig below.
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_r7_frag_sources.cmake")
 # MFDT source authority only — do not auto-append; gated by Kconfig below.
@@ -56,6 +58,14 @@ foreach(_rel IN LISTS NINLIL_ESP_IDF_PORT_ALL_RELATIVE_SOURCES)
     list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
 endforeach()
 foreach(_rel IN LISTS NINLIL_ESP_STORAGE_TARGET_RELATIVE_SOURCES)
+    list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
+# Fabric and Composition are public portable SDK surfaces on ESP32-S3. Packet
+# links remain separate platform/application-owned objects.
+foreach(_rel IN LISTS NINLIL_FABRIC_V1_PUBLIC_RELATIVE_SOURCES)
+    list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
+foreach(_rel IN LISTS NINLIL_COMPOSITION_V1_RELATIVE_SOURCES)
     list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
 endforeach()
 # R4 control-plane always. R9 phy+edge only when Kconfig enables R9 (default n).
@@ -179,12 +189,6 @@ if(CONFIG_NINLIL_ENABLE_PRIVATE_WIFI_V1)
     # fabric_adapter to owner (non-null) with STA/TLS/NWB1 path.
     if(CONFIG_NINLIL_ENABLE_PRIVATE_FABRIC_V1)
         list(APPEND NINLIL_COMPONENT_SRCS
-            "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/nfl1_codec.c"
-            "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/fabric_private_util.c"
-            "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/fabric_workspace.c"
-            "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/fabric_private_records.c"
-            "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/fabric_private_select.c"
-            "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/fabric_private_core.c"
             "${NINLIL_REPO_ROOT}/src/transport/wifi_v1/wifi_esp_fabric_link_ops.c"
             "${NINLIL_REPO_ROOT}/src/transport/wifi_v1/wifi_adapter_v1_esp.c"
         )
@@ -243,6 +247,7 @@ idf_component_register(
         "${NINLIL_REPO_ROOT}/src/model"
         "${NINLIL_REPO_ROOT}/src/runtime"
         "${NINLIL_REPO_ROOT}/src/transport"
+        "${NINLIL_REPO_ROOT}/src/transport/fabric_v1"
         "${NINLIL_REPO_ROOT}/src/radio"
         ${NINLIL_R7_FRAG_PRIV_INCLUDES}
         ${NINLIL_MFDT_V1_PRIV_INCLUDES}
@@ -281,6 +286,16 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
 # Production ESP build: exclude legacy request_transmit_with_permit symbol.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     NINLIL_SX1262_PRODUCTION_BUILD=1
+)
+# The public Composition owner is caller-workspace based; its glue must stay
+# off task stacks and below the ESP V1 frame ceiling.
+set(_ninlil_composition_v1_srcs "")
+foreach(_rel IN LISTS NINLIL_COMPOSITION_V1_RELATIVE_SOURCES)
+    list(APPEND _ninlil_composition_v1_srcs
+        "${NINLIL_REPO_ROOT}/${_rel}")
+endforeach()
+set_source_files_properties(${_ninlil_composition_v1_srcs} PROPERTIES
+    COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048"
 )
 if(CONFIG_NINLIL_ENABLE_PRIVATE_WIFI_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE

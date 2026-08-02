@@ -23,6 +23,7 @@ REFERENCE_LINK = re.compile(
     r"^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(<[^>\n]+>|[^ \t\n]+)",
     re.MULTILINE,
 )
+FENCE_START = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})[^\r\n]*$")
 REMOTE_SCHEMES = {
     "app",
     "data",
@@ -65,7 +66,36 @@ def _all_markdown(root: pathlib.Path) -> list[pathlib.Path]:
     )
 
 
+def _without_fenced_code(text: str) -> str:
+    """Mask fenced code so regex-like examples cannot become false links."""
+    output: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        if fence_character is None:
+            opening = FENCE_START.match(body)
+            if opening is None:
+                output.append(line)
+                continue
+            marker = opening.group(1)
+            fence_character = marker[0]
+            fence_length = len(marker)
+        else:
+            closing = re.fullmatch(
+                rf"[ \t]{{0,3}}{re.escape(fence_character)}"
+                rf"{{{fence_length},}}[ \t]*",
+                body,
+            )
+            if closing is not None:
+                fence_character = None
+                fence_length = 0
+        output.append(line[len(body) :])
+    return "".join(output)
+
+
 def _targets(text: str) -> list[str]:
+    text = _without_fenced_code(text)
     found = [match.group(1) for match in INLINE_LINK.finditer(text)]
     found.extend(match.group(1) for match in REFERENCE_LINK.finditer(text))
     return found
@@ -143,7 +173,10 @@ def self_test() -> None:
             "[relative](docs/target.md#section)\n"
             "[remote](https://example.invalid/no-network)\n"
             "[anchor](#local)\n"
-            "[ref]: <docs/target.md>\n",
+            "[ref]: <docs/target.md>\n"
+            "```text\n"
+            "[regex](missing-inside-code.md)\n"
+            "```\n",
             encoding="utf-8",
         )
         assert check(root, [good, target]) == []

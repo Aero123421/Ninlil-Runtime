@@ -1,4 +1,5 @@
-/* Clean installed-package proof: Runtime -> public Fabric -> peer -> Receipt. */
+/* Clean installed-package proof: Composition -> Runtime/Fabric -> Receipt. */
+#include <ninlil/composition_v1.h>
 #include <ninlil/fabric_v1.h>
 #include <ninlil/runtime.h>
 
@@ -37,18 +38,26 @@ typedef struct consumer_fixture {
     uint8_t permit_tag;
 } consumer_fixture_t;
 
+typedef struct composition_storage_router {
+    ninlil_storage_ops_t ops;
+    const ninlil_storage_ops_t *runtime;
+    const ninlil_storage_ops_t *fabric;
+    ninlil_bytes_view_t runtime_namespace;
+} composition_storage_router_t;
+
 typedef struct runtime_side {
     consumer_memory_storage_t *runtime_storage;
     consumer_memory_storage_t *fabric_storage;
+    composition_storage_router_t storage_router;
     consumer_fixture_t fixture;
+    void *composition_workspace;
+    uint32_t composition_workspace_bytes;
+    ninlil_composition_v1_t *composition;
     ninlil_fabric_v1_t *fabric;
-    const ninlil_bearer_ops_t *fabric_bearer;
     ninlil_fabric_link_registration_v1_t *registration;
     ninlil_runtime_t *runtime;
     ninlil_service_t *service;
     installed_pair_link_t link;
-    _Alignas(max_align_t)
-        uint8_t fabric_workspace[NINLIL_FABRIC_WORKSPACE_BYTES];
 } runtime_side_t;
 
 static uint32_t g_delivery_calls;
@@ -58,6 +67,213 @@ static void set_header(uint16_t *version, uint16_t *size, size_t value_size)
 {
     *version = NINLIL_ABI_VERSION;
     *size = (uint16_t)value_size;
+}
+
+static int views_equal(ninlil_bytes_view_t left, ninlil_bytes_view_t right)
+{
+    return left.length == right.length && left.data != NULL
+        && right.data != NULL
+        && memcmp(left.data, right.data, left.length) == 0;
+}
+
+static ninlil_storage_status_t router_open(
+    void *user,
+    ninlil_bytes_view_t storage_namespace,
+    uint32_t expected_schema,
+    ninlil_storage_handle_t *out_handle)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    const ninlil_storage_ops_t *target;
+    if (router == NULL || router->runtime == NULL || router->fabric == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    target = views_equal(storage_namespace, router->runtime_namespace)
+        ? router->runtime : router->fabric;
+    return target->open(
+        target->user, storage_namespace, expected_schema, out_handle);
+}
+
+static void router_close(void *user, ninlil_storage_handle_t handle)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return;
+    }
+    router->runtime->close(router->runtime->user, handle);
+    router->fabric->close(router->fabric->user, handle);
+}
+
+#define ROUTER_TRY_BOTH(router_, member_, ...)                                \
+    do {                                                                       \
+        ninlil_storage_status_t router_status_ = (router_)->runtime->member_(  \
+            (router_)->runtime->user, __VA_ARGS__);                            \
+        if (router_status_ == NINLIL_STORAGE_CORRUPT) {                        \
+            router_status_ = (router_)->fabric->member_(                       \
+                (router_)->fabric->user, __VA_ARGS__);                         \
+        }                                                                      \
+        return router_status_;                                                 \
+    } while (0)
+
+static ninlil_storage_status_t router_begin(
+    void *user,
+    ninlil_storage_handle_t handle,
+    ninlil_storage_mode_t mode,
+    ninlil_storage_txn_t *out_transaction)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, begin, handle, mode, out_transaction);
+}
+
+static ninlil_storage_status_t router_get(
+    void *user,
+    ninlil_storage_txn_t transaction,
+    ninlil_bytes_view_t key,
+    ninlil_mut_bytes_t *inout_value)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, get, transaction, key, inout_value);
+}
+
+static ninlil_storage_status_t router_put(
+    void *user,
+    ninlil_storage_txn_t transaction,
+    ninlil_bytes_view_t key,
+    ninlil_bytes_view_t value)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, put, transaction, key, value);
+}
+
+static ninlil_storage_status_t router_erase(
+    void *user,
+    ninlil_storage_txn_t transaction,
+    ninlil_bytes_view_t key)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, erase, transaction, key);
+}
+
+static ninlil_storage_status_t router_iter_open(
+    void *user,
+    ninlil_storage_txn_t transaction,
+    ninlil_bytes_view_t prefix,
+    ninlil_storage_iter_t *out_iterator)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, iter_open, transaction, prefix, out_iterator);
+}
+
+static ninlil_storage_status_t router_iter_next(
+    void *user,
+    ninlil_storage_iter_t iterator,
+    ninlil_mut_bytes_t *inout_key,
+    ninlil_mut_bytes_t *inout_value)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, iter_next, iterator, inout_key, inout_value);
+}
+
+static void router_iter_close(void *user, ninlil_storage_iter_t iterator)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return;
+    }
+    router->runtime->iter_close(router->runtime->user, iterator);
+    router->fabric->iter_close(router->fabric->user, iterator);
+}
+
+static ninlil_storage_status_t router_capacity(
+    void *user,
+    ninlil_storage_handle_t handle,
+    ninlil_storage_capacity_t *out_capacity)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, capacity, handle, out_capacity);
+}
+
+static ninlil_storage_status_t router_commit(
+    void *user,
+    ninlil_storage_txn_t transaction,
+    ninlil_durability_t durability)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, commit, transaction, durability);
+}
+
+static ninlil_storage_status_t router_rollback(
+    void *user, ninlil_storage_txn_t transaction)
+{
+    composition_storage_router_t *router =
+        (composition_storage_router_t *)user;
+    if (router == NULL) {
+        return NINLIL_STORAGE_CORRUPT;
+    }
+    ROUTER_TRY_BOTH(router, rollback, transaction);
+}
+
+#undef ROUTER_TRY_BOTH
+
+static void storage_router_init(
+    composition_storage_router_t *router,
+    consumer_memory_storage_t *runtime_storage,
+    consumer_memory_storage_t *fabric_storage,
+    ninlil_bytes_view_t runtime_namespace)
+{
+    (void)memset(router, 0, sizeof(*router));
+    router->runtime = consumer_memory_storage_ops(runtime_storage);
+    router->fabric = consumer_memory_storage_ops(fabric_storage);
+    router->runtime_namespace = runtime_namespace;
+    set_header(&router->ops.abi_version, &router->ops.struct_size,
+               sizeof(router->ops));
+    router->ops.user = router;
+    router->ops.open = router_open;
+    router->ops.close = router_close;
+    router->ops.begin = router_begin;
+    router->ops.get = router_get;
+    router->ops.put = router_put;
+    router->ops.erase = router_erase;
+    router->ops.iter_open = router_iter_open;
+    router->ops.iter_next = router_iter_next;
+    router->ops.iter_close = router_iter_close;
+    router->ops.capacity = router_capacity;
+    router->ops.commit = router_commit;
+    router->ops.rollback = router_rollback;
 }
 
 static void set_id(ninlil_id128_t *id, uint8_t seed)
@@ -640,10 +856,10 @@ static int install_forward_policy(
 
 static int side_init(
     runtime_side_t *side,
+    const ninlil_runtime_config_t *runtime_config_value,
     const ninlil_id128_t *peer_runtime_id,
     uint8_t permit_tag)
 {
-    ninlil_fabric_config_v1_t fabric_config;
     ninlil_fabric_link_descriptor_v1_t descriptor;
     ninlil_fabric_packet_link_ops_v1_t link_ops;
     ninlil_time_sample_t now;
@@ -653,39 +869,46 @@ static int side_init(
     (void)memset(side, 0, sizeof(*side));
     side->runtime_storage = consumer_memory_storage_create();
     side->fabric_storage = consumer_memory_storage_create();
-    if (side->runtime_storage == NULL || side->fabric_storage == NULL) {
+    if (side->runtime_storage == NULL || side->fabric_storage == NULL
+        || runtime_config_value == NULL) {
         return 0;
     }
+    storage_router_init(
+        &side->storage_router,
+        side->runtime_storage,
+        side->fabric_storage,
+        runtime_config_value->storage_namespace);
     fixture_init(
         &side->fixture,
-        consumer_memory_storage_ops(side->runtime_storage),
+        &side->storage_router.ops,
         permit_tag);
     installed_pair_link_init(&side->link, &side->fixture.clock);
 
-    if (ninlil_fabric_v1_workspace_required(
-            NINLIL_FABRIC_PROFILE_1, &bytes, &alignment)
-            != NINLIL_FABRIC_OK
-        || bytes != sizeof(side->fabric_workspace)
+    if (ninlil_composition_v1_workspace_required(
+            NINLIL_COMPOSITION_PROFILE_1, &bytes, &alignment)
+            != NINLIL_OK
+        || bytes == 0u || alignment == 0u
         || alignment > _Alignof(max_align_t)) {
         return 0;
     }
-    (void)memset(&fabric_config, 0, sizeof(fabric_config));
-    fabric_config.api_version = NINLIL_FABRIC_API_VERSION;
-    fabric_config.struct_size = (uint16_t)sizeof(fabric_config);
-    fabric_config.profile_id = NINLIL_FABRIC_PROFILE_1;
-    fabric_config.storage = consumer_memory_storage_ops(side->fabric_storage);
-    fabric_config.clock = side->fixture.platform.clock;
-    fabric_config.execution = side->fixture.platform.execution;
-    if (ninlil_fabric_v1_create(
-            &fabric_config,
-            side->fabric_workspace,
-            sizeof(side->fabric_workspace),
-            &side->fabric)
-        != NINLIL_FABRIC_OK) {
+    side->composition_workspace = malloc(bytes);
+    side->composition_workspace_bytes = bytes;
+    if (side->composition_workspace == NULL
+        || (uintptr_t)side->composition_workspace % alignment != 0u) {
         return 0;
     }
-    if (ninlil_fabric_v1_bearer_ops(side->fabric, &side->fabric_bearer)
-        != NINLIL_FABRIC_OK) {
+    if (ninlil_composition_v1_create(
+            NINLIL_COMPOSITION_PROFILE_1,
+            runtime_config_value,
+            &side->fixture.platform,
+            side->composition_workspace,
+            side->composition_workspace_bytes,
+            &side->composition)
+            != NINLIL_OK
+        || ninlil_composition_v1_runtime(side->composition, &side->runtime)
+            != NINLIL_OK
+        || ninlil_composition_v1_fabric(side->composition, &side->fabric)
+            != NINLIL_OK) {
         return 0;
     }
     (void)memset(&now, 0, sizeof(now));
@@ -701,7 +924,6 @@ static int side_init(
         != NINLIL_FABRIC_OK) {
         return 0;
     }
-    side->fixture.platform.bearer = side->fabric_bearer;
     return 1;
 }
 
@@ -712,26 +934,50 @@ static int side_close(runtime_side_t *side)
     uint32_t spins;
     int ok = 1;
 
-    if (side->runtime != NULL) {
-        if (ninlil_runtime_destroy(side->runtime) != NINLIL_OK) {
-            ok = 0;
-        }
-        side->runtime = NULL;
-    }
-    if (side->fabric != NULL) {
-        if (ninlil_fabric_v1_close_begin(side->fabric) != NINLIL_FABRIC_OK) {
+    if (side->registration != NULL && side->fabric != NULL) {
+        if (ninlil_fabric_v1_unregister_begin(
+                side->fabric, side->registration)
+            != NINLIL_FABRIC_OK) {
             ok = 0;
         }
         for (spins = 0u; spins < 128u && done == 0u; ++spins) {
             (void)ninlil_fabric_v1_step(side->fabric, 64u, &work);
-            (void)ninlil_fabric_v1_close_poll(side->fabric, &done);
+            if (ninlil_fabric_v1_unregister_poll(
+                    side->fabric, side->registration, &done)
+                != NINLIL_FABRIC_OK) {
+                ok = 0;
+                break;
+            }
         }
-        if (done == 0u
-            || ninlil_fabric_v1_destroy(side->fabric) != NINLIL_FABRIC_OK) {
+        if (done == 0u) {
             ok = 0;
         }
+        side->registration = NULL;
+    }
+    done = 0u;
+    if (side->composition != NULL) {
+        if (ninlil_composition_v1_close_begin(side->composition) != NINLIL_OK) {
+            ok = 0;
+        }
+        for (spins = 0u; spins < 128u && done == 0u; ++spins) {
+            if (ninlil_composition_v1_close_poll(
+                    side->composition, 64u, &done)
+                != NINLIL_OK) {
+                ok = 0;
+                break;
+            }
+        }
+        if (done == 0u
+            || ninlil_composition_v1_destroy(side->composition) != NINLIL_OK) {
+            ok = 0;
+        }
+        side->composition = NULL;
+        side->runtime = NULL;
         side->fabric = NULL;
     }
+    free(side->composition_workspace);
+    side->composition_workspace = NULL;
+    side->composition_workspace_bytes = 0u;
     if (side->runtime_storage != NULL) {
         if (consumer_memory_storage_live_handles(side->runtime_storage) != 0u
             || consumer_memory_storage_live_transactions(side->runtime_storage)
@@ -833,18 +1079,28 @@ static int run_installed_pair(void)
     ninlil_submission_result_t submission_result;
     ninlil_concrete_target_t target;
     ninlil_step_budget_t budget;
-    ninlil_step_result_t step_result;
     ninlil_transaction_snapshot_t snapshot;
     ninlil_target_snapshot_t target_snapshot;
-    ninlil_status_t status;
     uint32_t step;
     int satisfied = 0;
 
     set_id(&controller_runtime_id, 0x10u);
     set_id(&endpoint_runtime_id, 0x21u);
     set_id(&endpoint_app_id, 0x81u);
-    REQUIRE(side_init(&controller, &endpoint_runtime_id, 0x31u));
-    REQUIRE(side_init(&endpoint, &controller_runtime_id, 0x51u));
+    controller_config = runtime_config(
+        NINLIL_ROLE_CONTROLLER,
+        controller_namespace,
+        sizeof(controller_namespace) - 1u,
+        0x10u);
+    endpoint_config = runtime_config(
+        NINLIL_ROLE_ENDPOINT,
+        endpoint_namespace,
+        sizeof(endpoint_namespace) - 1u,
+        0x21u);
+    REQUIRE(side_init(
+        &controller, &controller_config, &endpoint_runtime_id, 0x31u));
+    REQUIRE(side_init(
+        &endpoint, &endpoint_config, &controller_runtime_id, 0x51u));
     installed_pair_link_connect(&controller.link, &endpoint.link);
 
     (void)memset(&controller_now, 0, sizeof(controller_now));
@@ -877,33 +1133,6 @@ static int run_installed_pair(void)
         &endpoint_runtime_id,
         &endpoint_app_id,
         &endpoint_now));
-
-    controller_config = runtime_config(
-        NINLIL_ROLE_CONTROLLER,
-        controller_namespace,
-        sizeof(controller_namespace) - 1u,
-        0x10u);
-    endpoint_config = runtime_config(
-        NINLIL_ROLE_ENDPOINT,
-        endpoint_namespace,
-        sizeof(endpoint_namespace) - 1u,
-        0x21u);
-    status = ninlil_runtime_create(
-        &controller_config,
-        &controller.fixture.platform,
-        &controller.runtime);
-    if (status != NINLIL_OK) {
-        (void)fprintf(stderr, "controller runtime_create status=%u\n",
-                      (unsigned)status);
-    }
-    REQUIRE(status == NINLIL_OK);
-    status = ninlil_runtime_create(
-        &endpoint_config, &endpoint.fixture.platform, &endpoint.runtime);
-    if (status != NINLIL_OK) {
-        (void)fprintf(stderr, "endpoint runtime_create status=%u\n",
-                      (unsigned)status);
-    }
-    REQUIRE(status == NINLIL_OK);
 
     (void)memset(&callbacks, 0, sizeof(callbacks));
     set_header(
@@ -960,30 +1189,32 @@ static int run_installed_pair(void)
     budget.max_state_transitions = 16u;
     budget.max_bearer_sends = 8u;
     for (step = 0u; step < 512u; ++step) {
-        uint32_t work = 0u;
-        (void)memset(&step_result, 0, sizeof(step_result));
-        set_header(
-            &step_result.abi_version,
-            &step_result.struct_size,
-            sizeof(step_result));
-        REQUIRE(ninlil_runtime_step(
-                    controller.runtime, &budget, &step_result)
+        ninlil_composition_step_budget_v1_t composition_budget;
+        ninlil_composition_step_result_v1_t composition_result;
+        (void)memset(&composition_budget, 0, sizeof(composition_budget));
+        composition_budget.api_version = NINLIL_COMPOSITION_API_VERSION;
+        composition_budget.struct_size =
+            (uint16_t)sizeof(composition_budget);
+        composition_budget.runtime = budget;
+        composition_budget.fabric_work = 64u;
+        (void)memset(&composition_result, 0, sizeof(composition_result));
+        composition_result.api_version = NINLIL_COMPOSITION_API_VERSION;
+        composition_result.struct_size =
+            (uint16_t)sizeof(composition_result);
+        REQUIRE(ninlil_composition_v1_step(
+                    controller.composition,
+                    &composition_budget,
+                    &composition_result)
             == NINLIL_OK);
-        REQUIRE(ninlil_fabric_v1_step(controller.fabric, 64u, &work)
-            == NINLIL_FABRIC_OK);
-        REQUIRE(ninlil_fabric_v1_step(endpoint.fabric, 64u, &work)
-            == NINLIL_FABRIC_OK);
-        (void)memset(&step_result, 0, sizeof(step_result));
-        set_header(
-            &step_result.abi_version,
-            &step_result.struct_size,
-            sizeof(step_result));
-        REQUIRE(ninlil_runtime_step(endpoint.runtime, &budget, &step_result)
+        (void)memset(&composition_result, 0, sizeof(composition_result));
+        composition_result.api_version = NINLIL_COMPOSITION_API_VERSION;
+        composition_result.struct_size =
+            (uint16_t)sizeof(composition_result);
+        REQUIRE(ninlil_composition_v1_step(
+                    endpoint.composition,
+                    &composition_budget,
+                    &composition_result)
             == NINLIL_OK);
-        REQUIRE(ninlil_fabric_v1_step(endpoint.fabric, 64u, &work)
-            == NINLIL_FABRIC_OK);
-        REQUIRE(ninlil_fabric_v1_step(controller.fabric, 64u, &work)
-            == NINLIL_FABRIC_OK);
         REQUIRE(query_transaction(
             controller.runtime,
             &submission_result.transaction_id,

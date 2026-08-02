@@ -543,21 +543,12 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c4_c5_lab_ctest.cmake)
 # R4 SX1262 portable control-plane (D1). Not public ABI. Not RF TX complete.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
 
-# ADR-0029 portable Fabric v1.  The implementation source list is shared with
-# the private aggregate so the public target is a thin wrapper over exactly the
-# accepted private candidate, never a fork of the 8k-line core.
-set(_ninlil_fabric_v1_core_srcs
-    src/transport/fabric_v1/nfl1_codec.c
-    src/transport/fabric_v1/fabric_private_util.c
-    src/transport/fabric_v1/fabric_workspace.c
-    src/transport/fabric_v1/fabric_private_records.c
-    src/transport/fabric_v1/fabric_private_select.c
-    src/transport/fabric_v1/fabric_private_core.c
-)
+# ADR-0029 portable Fabric v1 / ADR-0032 Composition v1. Host and ESP-IDF
+# consume the same explicit production source authority.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_composition_v1_sources.cmake)
 if(NINLIL_BUILD_FABRIC_V1)
     add_library(ninlil_fabric_v1 STATIC
-        ${_ninlil_fabric_v1_core_srcs}
-        src/transport/fabric_v1/fabric_v1_public.c)
+        ${NINLIL_FABRIC_V1_PUBLIC_RELATIVE_SOURCES})
     add_library(Ninlil::fabric_v1 ALIAS ninlil_fabric_v1)
     target_include_directories(ninlil_fabric_v1
         PUBLIC
@@ -690,7 +681,7 @@ if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
     # Private Fabric v1 candidate (ADR-0017). Canonical NFL1 is nfl1_codec.c only.
     # Headers under src/transport/fabric_v1/ are never installed.
     target_sources(ninlil_runtime_private PRIVATE
-        ${_ninlil_fabric_v1_core_srcs})
+        ${NINLIL_FABRIC_V1_CORE_RELATIVE_SOURCES})
     target_compile_definitions(ninlil_runtime_private PRIVATE
         NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
     target_include_directories(ninlil_runtime_private PRIVATE
@@ -1116,7 +1107,8 @@ if(NINLIL_BUILD_HOST_RUNTIME)
             OpenSSL::Crypto
     )
     if(TARGET ninlil_fabric_v1)
-        target_sources(ninlil_runtime PRIVATE src/runtime/composition_v1.c)
+        target_sources(ninlil_runtime PRIVATE
+            ${NINLIL_COMPOSITION_V1_RELATIVE_SOURCES})
         target_link_libraries(ninlil_runtime PUBLIC ninlil_fabric_v1)
     endif()
     set_target_properties(ninlil_runtime PROPERTIES
@@ -2901,7 +2893,7 @@ print('domain_schema1 exact symbol archive ok feature='+feature+' count='+str(le
     # always compile the private TUs with the feature definition ON so KATs run
     # without requiring NINLIL_ENABLE_PRIVATE_FABRIC_V1 for the archive.
     set(_ninlil_fabric_v1_private_srcs
-        ${_ninlil_fabric_v1_core_srcs}
+        ${NINLIL_FABRIC_V1_CORE_RELATIVE_SOURCES}
         src/transport/fabric_v1/fabric_host_radio_packet_link.c
     )
     if(NINLIL_BUILD_FABRIC_V1)

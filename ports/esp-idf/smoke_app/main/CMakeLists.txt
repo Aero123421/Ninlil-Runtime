@@ -21,11 +21,16 @@ endif()
 idf_component_register(
     SRCS
         "main.c"
+        "composition_public_target_smoke.c"
         "${NINLIL_SMOKE_REPO_ROOT}/examples/multi_service_node/multi_service_node_profile.c"
     INCLUDE_DIRS "."
     PRIV_INCLUDE_DIRS ${NINLIL_SMOKE_PRIV_INCLUDES}
     REQUIRES ninlil
     PRIV_REQUIRES esp_timer freertos
+)
+
+set_source_files_properties("composition_public_target_smoke.c" PROPERTIES
+    COMPILE_OPTIONS "-Wvla;-fstack-usage;-Wframe-larger-than=2048"
 )
 
 # Ensure ISR timer dispatch is available for real from_isr path.
