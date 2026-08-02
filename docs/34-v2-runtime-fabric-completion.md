@@ -194,11 +194,14 @@ Fabric Logical Envelope v1（`NFL1`）をportable canonical logical packetのPro
 これはNinlil public application data wireでもNRW1 radio frameでもない。Wi-Fi/USB byte-streamは
 NFL1をtransport packetとして運ぶ。
 
-compact radio用logical envelopeとNFL1↔NRW1 mappingは**未定義**である。別のNormative byte
-layout、全6 message kindの完全な双方向mapping、lossless/unsupported規則、KATを
-`SPEC_ACCEPTED` ADRで
-freezeするまで、LoRa adapterはNFL1のsend/receiveを禁止する。full NFL1 bytesをNRW1へ運ぶ方式を
-defaultにせず、NRW1 `0x11`のbyte/profileも変更しない。
+V1 compact radio用のApplication/Receipt projectionは
+[ADR-0035](adr/0035-v1-compact-radio-mapping.md)で**Proposed**である。byte layout、
+lossless off-wire binding、unsupported kind、KATとairtime gateの候補は存在するが、
+Host adapter統合とUSB binding framingが未完なのでまだ`SPEC_ACCEPTED`ではない。
+ADR-0035がAcceptedになるまでLoRa adapterはFabric Application/Receiptのsend/receiveを
+禁止する。full NFL1 bytesをNRW1へ運ぶ方式をdefaultにせず、NRW1 `0x11`の
+byte/profileも変更しない。V2で全6 message kindを追加する場合は別のAccepted mappingを
+要求する。
 
 全整数はunsigned big-endian。IDとdigestは記載順のopaque byte列とする。固定headerは
 **584 bytes**、codec buffer ceilingは**2048 bytes**、3個のtext IDを各1..63 bytesとするため

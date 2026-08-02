@@ -1145,6 +1145,7 @@ def check() -> None:
         "ports/esp-idf/src/tx_gate_lease_logic.c",
         "ports/esp-idf/src/esp_idf_clock.c",
         "ports/esp-idf/src/esp_idf_entropy.c",
+        "ports/esp-idf/src/radio_entropy_drbg.c",
         "ports/esp-idf/src/esp_idf_execution.c",
         "ports/esp-idf/src/esp_idf_owner_task.c",
         "ports/esp-idf/src/esp_idf_cell_agent.c",

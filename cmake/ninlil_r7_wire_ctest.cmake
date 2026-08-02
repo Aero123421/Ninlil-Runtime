@@ -65,6 +65,27 @@ add_test(
     COMMAND ninlil_r7_wire_vectors_bridge_test
 )
 
+add_executable(ninlil_nra1_codec_test
+    tests/transport/fabric_v1/nra1_codec_test.c
+)
+target_include_directories(ninlil_nra1_codec_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+)
+target_link_libraries(ninlil_nra1_codec_test PRIVATE
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_nra1_codec_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_nra1_codec_test)
+add_test(
+    NAME nra1_v1_codec
+    COMMAND ninlil_nra1_codec_test
+)
+
 # ---------------------------------------------------------------------------
 # Python gates: oracle, pin, platform, packaging, stack, ctest authority
 # ---------------------------------------------------------------------------
@@ -82,6 +103,13 @@ add_test(
         verify-json
         --json
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio/private/r7_wire_single_t1_vectors.json
+)
+
+add_test(
+    NAME nra1_v1_mapping_gate
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/nra1_mapping_gate.py
+        check
 )
 
 add_test(

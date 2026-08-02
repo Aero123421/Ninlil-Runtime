@@ -44,6 +44,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/v1_durable_restart.c
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
+    src/transport/fabric_v1/nra1_codec.c
     src/radio/airtime_calculator.c
     src/radio/radio_hal.c
     src/radio/pcp_authority.c

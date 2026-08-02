@@ -33,6 +33,7 @@ set(NINLIL_ESP_IDF_PORT_PURE_RELATIVE_SOURCES
 set(NINLIL_ESP_IDF_PORT_BACKEND_RELATIVE_SOURCES
     ports/esp-idf/src/esp_idf_clock.c
     ports/esp-idf/src/esp_idf_entropy.c
+    ports/esp-idf/src/radio_entropy_drbg.c
     ports/esp-idf/src/esp_idf_execution.c
     ports/esp-idf/src/esp_idf_owner_task.c
     ports/esp-idf/src/esp_idf_cell_agent.c

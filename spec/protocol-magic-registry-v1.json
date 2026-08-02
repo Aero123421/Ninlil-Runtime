@@ -56,6 +56,7 @@
       "docs/adr/0022-domain-store-schema1-runtime-binding.md",
       "docs/adr/0023-production-attachment-edhoc-profile.md",
       "docs/adr/0030-posix-tls-fabric-reference-port.md",
+      "docs/adr/0035-v1-compact-radio-mapping.md",
       "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
       "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
       "src/radio/n6_record_codec.h",
@@ -2149,6 +2150,20 @@
       ]
     },
     {
+      "magic": "NRA1",
+      "owner": "FABRIC",
+      "artifact": "WIRE_RECORD",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0035-v1-compact-radio-mapping.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/nra1_codec.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        }
+      ]
+    },
+    {
       "magic": "NRC1",
       "owner": "MFDT",
       "artifact": "DURABLE_RECORD",
@@ -3390,7 +3405,7 @@
         {
           "path": "tools/sx1262_radio_hil_protocol.py",
           "representation": "QUOTED",
-          "count": 2
+          "count": 3
         }
       ]
     },
@@ -3648,7 +3663,7 @@
         {
           "path": "tools/sx1262_radio_hil_protocol.py",
           "representation": "QUOTED",
-          "count": 2
+          "count": 3
         }
       ]
     },
@@ -4671,7 +4686,7 @@
         {
           "path": "tools/sx1262_radio_hil_protocol.py",
           "representation": "QUOTED",
-          "count": 1
+          "count": 2
         }
       ]
     },
@@ -4709,7 +4724,7 @@
         {
           "path": "tools/sx1262_radio_hil_protocol.py",
           "representation": "QUOTED",
-          "count": 2
+          "count": 5
         }
       ]
     },

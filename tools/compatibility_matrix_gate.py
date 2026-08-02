@@ -73,17 +73,14 @@ MODULE_API_DOMAIN_AUTHORITY = {
     "supplemental_completion_features": [
         {
             "id": "nfl1-r7-nrw1-rf-mapping",
-            "state": "UNALLOCATED",
-            "state_ceiling": "UNALLOCATED",
+            "state": "PROPOSED",
+            "state_ceiling": "HIL_VERIFIED",
             "depends_on": [
                 "fabric-bearer-nfl1-path-registry",
                 "nrw1-link-frag-reassembly",
                 "identity-attachment-session-install",
             ],
-            "authority": (
-                "docs/adr/0028-composable-public-runtime-modules.md"
-                "#7-radio-fragmentationとrf-mappingの分離"
-            ),
+            "authority": "docs/adr/0035-v1-compact-radio-mapping.md",
         }
     ],
 }
