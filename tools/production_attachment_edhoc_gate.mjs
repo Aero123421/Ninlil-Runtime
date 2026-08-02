@@ -3024,6 +3024,7 @@ function assertMagicRegistry(document, executed) {
       "duplicate_json_keys_rejected",
       "undeclared_scanned_candidate_rejected",
       "stale_registry_entry_rejected",
+      "exact_occurrence_manifest_required",
     ],
     "magic registry policy",
   );
@@ -3037,7 +3038,8 @@ function assertMagicRegistry(document, executed) {
     registry.policy.transport_or_storage_partition_exempts_collision !== false ||
     registry.policy.duplicate_json_keys_rejected !== true ||
     registry.policy.undeclared_scanned_candidate_rejected !== true ||
-    registry.policy.stale_registry_entry_rejected !== true
+    registry.policy.stale_registry_entry_rejected !== true ||
+    registry.policy.exact_occurrence_manifest_required !== true
   ) {
     fail("global magic registry identity/policy");
   }
@@ -3073,6 +3075,58 @@ function assertMagicRegistry(document, executed) {
     registry.domains.exclusion_reasons,
     "magic exclusion reason domain",
   );
+  const occurrenceRepresentations = new Set([
+    "CHAR_ARRAY",
+    "CONCAT_QUOTED",
+    "HEX_ESCAPED",
+    "QUOTED",
+    "U32_BE",
+    "U32_LE",
+  ]);
+  const validateOccurrences = (value, field) => {
+    if (!Array.isArray(value) || value.length === 0) {
+      fail(`${field}: non-empty occurrence array required`);
+    }
+    const rows = value.map((row, index) => {
+      exactKeys(
+        row,
+        ["path", "representation", "count"],
+        `${field}[${index}]`,
+      );
+      if (
+        typeof row.path !== "string" ||
+        row.path.length === 0 ||
+        path.posix.isAbsolute(row.path) ||
+        row.path.split("/").includes("..") ||
+        !occurrenceRepresentations.has(row.representation) ||
+        !Number.isSafeInteger(row.count) ||
+        row.count < 1
+      ) {
+        fail(`${field}[${index}]: occurrence domain`);
+      }
+      const occurrencePath = path.resolve(repositoryRoot, row.path);
+      if (
+        !occurrencePath.startsWith(`${path.resolve(repositoryRoot)}${path.sep}`) ||
+        !fs.existsSync(occurrencePath) ||
+        !fs.statSync(occurrencePath).isFile()
+      ) {
+        fail(`${field}[${index}]: missing/escaping occurrence path`);
+      }
+      return [row.path, row.representation, row.count];
+    });
+    const compareRows = (left, right) => {
+      if (left[0] !== right[0]) return left[0] < right[0] ? -1 : 1;
+      if (left[1] !== right[1]) return left[1] < right[1] ? -1 : 1;
+      return left[2] - right[2];
+    };
+    const canonical = [...rows].sort(compareRows);
+    if (
+      new Set(rows.map((row) => JSON.stringify(row))).size !== rows.length ||
+      JSON.stringify(rows) !== JSON.stringify(canonical)
+    ) {
+      fail(`${field}: canonical exact occurrence order`);
+    }
+  };
 
   const scanRoots = [
     "cmake",
@@ -3103,7 +3157,8 @@ function assertMagicRegistry(document, executed) {
     "build",
     "managed_components",
   ];
-  const candidatePattern =
+  const candidatePattern = "C_QUOTED_CHAR_ARRAY_U32_BE_U32_LE_V1";
+  const quotedCandidatePattern =
     String.raw`(?<![A-Za-z0-9_])(?:[bBuU])?["']([A-Z][A-Z0-9]{3})["']`;
   exactKeys(
     registry.scan,
@@ -3133,7 +3188,7 @@ function assertMagicRegistry(document, executed) {
   for (const [index, entry] of registry.entries.entries()) {
     exactKeys(
       entry,
-      ["magic", "owner", "artifact", "status", "authority"],
+      ["magic", "owner", "artifact", "status", "authority", "occurrences"],
       `magic registry entry ${index}`,
     );
     if (
@@ -3151,6 +3206,7 @@ function assertMagicRegistry(document, executed) {
     ) {
       fail(`global magic registry entry domain ${entry.magic}`);
     }
+    validateOccurrences(entry.occurrences, `magic registry entry ${index}.occurrences`);
     const authority = path.resolve(repositoryRoot, entry.authority);
     if (
       !authority.startsWith(`${path.resolve(repositoryRoot)}${path.sep}`) ||
@@ -3171,7 +3227,7 @@ function assertMagicRegistry(document, executed) {
   const exclusions = new Map();
   const exclusionOrder = [];
   for (const [index, row] of registry.explicit_exclusions.entries()) {
-    exactKeys(row, ["token", "reason"], `magic exclusion ${index}`);
+    exactKeys(row, ["token", "reason", "occurrences"], `magic exclusion ${index}`);
     if (
       typeof row.token !== "string" ||
       !/^[A-Z][A-Z0-9]{3}$/.test(row.token) ||
@@ -3182,6 +3238,7 @@ function assertMagicRegistry(document, executed) {
     ) {
       fail(`magic registry exclusion domain ${row.token}`);
     }
+    validateOccurrences(row.occurrences, `magic exclusion ${index}.occurrences`);
     exclusions.set(row.token, row.reason);
     exclusionOrder.push(row.token);
   }
@@ -3208,13 +3265,18 @@ function assertMagicRegistry(document, executed) {
     if (
       candidatePath
         .split(path.sep)
-        .some((component) => excludedComponentSet.has(component))
+        .some(
+          (component) =>
+            excludedComponentSet.has(component) ||
+            (excludedComponentSet.has("build") &&
+              component.startsWith("build-")),
+        )
     ) {
       return;
     }
     const relative = path.relative(repositoryRoot, candidatePath).split(path.sep).join("/");
     const source = fs.readFileSync(candidatePath, "utf8");
-    const regex = new RegExp(candidatePattern, "g");
+    const regex = new RegExp(quotedCandidatePattern, "g");
     for (let match = regex.exec(source); match !== null; match = regex.exec(source)) {
       if (!inventory.has(match[1])) inventory.set(match[1], new Set());
       inventory.get(match[1]).add(relative);
@@ -3231,16 +3293,9 @@ function assertMagicRegistry(document, executed) {
       fail(`undeclared scanned magic candidate ${candidate}`);
     }
   }
-  for (const registered of byMagic.keys()) {
-    if (!discovered.has(registered)) {
-      fail(`stale registered magic ${registered}`);
-    }
-  }
-  for (const excluded of exclusions.keys()) {
-    if (!discovered.has(excluded)) {
-      fail(`stale magic exclusion ${excluded}`);
-    }
-  }
+  // Cross-representation liveness and exact counts are owned by the adjacent
+  // protocol_magic_registry_gate.py check. This independent gate validates
+  // the closed occurrence manifest and rejects undeclared quoted candidates.
   const required = ["NAC1", "NAR1", "NAS1"];
   const forbidden = ["NPA1", "NPS1"];
   if (

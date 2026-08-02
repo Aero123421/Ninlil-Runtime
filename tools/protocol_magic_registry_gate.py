@@ -40,7 +40,8 @@ SHORT_QUOTED_RE = re.compile(
     r'''(?:[bBuU])?["']([A-Z0-9]{1,3})["']'''
 )
 U32_CANDIDATE_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(?:UINT32_C\s*\(\s*)?0x([0-9A-Fa-f]{8})(?:[uUlL]+)?\s*\)?"
+    r"(?<![A-Za-z0-9_])(?:UINT32_C\s*\(\s*)?0x([0-9A-Fa-f]{8})"
+    r"(?![0-9A-Fa-f])(?:[uUlL]+)?\s*\)?"
 )
 SCAN_ROOTS = (
     "cmake",
@@ -214,7 +215,11 @@ def scan_inventory(
             relative = path.relative_to(repository_root).as_posix()
             if relative in excluded_paths:
                 continue
-            if any(component in excluded_components for component in path.parts):
+            if any(
+                component in excluded_components
+                or ("build" in excluded_components and component.startswith("build-"))
+                for component in path.parts
+            ):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
@@ -683,14 +688,31 @@ def self_test() -> int:
     _expect_rejected_raw(duplicate_key_raw, "duplicate JSON status key")
     mutations += 1
 
+    sentinel_prefix = "ZZ"
+    sentinel_quoted = sentinel_prefix + "92"
+    sentinel_be = int.from_bytes((sentinel_prefix + "94").encode("ascii"), "big")
+    sentinel_le = int.from_bytes((sentinel_prefix + "95").encode("ascii"), "little")
+    sentinel_hex = "".join(
+        f"\\x{byte:02x}" for byte in (sentinel_prefix + "96").encode("ascii")
+    )
     for source, label in (
-        ('const char *candidate = "ZZ92";\n', "undeclared quoted magic"),
-        ("const char candidate[4] = {'Z','Z','9','3'};\n", "char-array magic"),
-        ("const unsigned candidate = 0x5a5a3934u;\n", "u32 big-endian magic"),
-        ("const unsigned candidate = 0x35395a5au;\n", "u32 little-endian magic"),
-        ('const char *candidate = "\\x5a\\x5a\\x39\\x36";\n', "hex-escaped magic"),
-        ('const char *candidate = "ZZ" "97";\n', "concatenated magic"),
-        ('const char *unrelated_owner = "NAC1";\n', "registered magic owner/path collision"),
+        (f'const char *candidate = "{sentinel_quoted}";\n', "undeclared quoted magic"),
+        (
+            "const char candidate[4] = "
+            f"{{'{sentinel_prefix[0]}','{sentinel_prefix[1]}','9','3'}};\n",
+            "char-array magic",
+        ),
+        (f"const unsigned candidate = 0x{sentinel_be:08x}u;\n", "u32 big-endian magic"),
+        (f"const unsigned candidate = 0x{sentinel_le:08x}u;\n", "u32 little-endian magic"),
+        (f'const char *candidate = "{sentinel_hex}";\n', "hex-escaped magic"),
+        (
+            f'const char *candidate = "{sentinel_prefix}" "97";\n',
+            "concatenated magic",
+        ),
+        (
+            f'const char *unrelated_owner = "{PA_REQUIRED[0]}";\n',
+            "registered magic owner/path collision",
+        ),
     ):
         _expect_rejected_repository_source(source, label)
         mutations += 1

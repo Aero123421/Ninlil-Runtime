@@ -144,7 +144,9 @@ jobs:
             -DNINLIL_BUILD_HOST_RUNTIME=ON \
             -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=ON
           cmake --build build/ci-cmake-floor-on --parallel 2 \
-            --target ninlil_runtime ninlil_posix_sqlite_storage
+            --target ninlil_runtime ninlil_posix_sqlite_storage \
+              ninlil_fabric_v1 ninlil_posix_tls_v1 \
+              ninlil_posix_usb_serial
           test "$(ctest --test-dir build/ci-cmake-floor-on -N \
             -R '^(host_runtime_tests_off_installed_consumer(_sqlite)?|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$' \
             | tail -n 1)" = "Total Tests: 4"
@@ -173,7 +175,8 @@ jobs:
             -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=OFF \
             -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
           cmake --build build/ci-cmake-floor-off --parallel 2 \
-            --target ninlil_runtime
+            --target ninlil_runtime ninlil_fabric_v1 \
+              ninlil_posix_tls_v1 ninlil_posix_usb_serial
           test "$(ctest --test-dir build/ci-cmake-floor-off -N \
             -R '^(host_runtime_tests_off_installed_consumer|runtime_private_subproject_smoke)$' \
             | tail -n 1)" = "Total Tests: 2"
@@ -1188,12 +1191,15 @@ jobs:
             wifi_v1_journal_test wifi_v1_storage_commit_unknown_test
             wifi_v1_reconnect_test wifi_v1_exporter_kat_test
             wifi_v1_attachment_gate_test wifi_v1_esp_owner_test
-            wifi_v1_esp_owner_sm_test wifi_v1_m4_evidence_test
+            wifi_v1_esp_owner_sm_test wifi_v1_tls_arena_test
+            wifi_v1_r7_other_registered_fault_test
+            wifi_v1_esp_tls_identity_matrix_test wifi_v1_m4_evidence_test
             wifi_v1_m4_forge_probe_test wifi_v1_m4_owner_concurrency_test
             wifi_v1_m4_stale_load_barrier_test wifi_v1_queue_drop_wrap_test
             wifi_v1_tls_storage_align_test wifi_v1_fabric_link_test
             wifi_v1_adapter_lifecycle_test wifi_v1_esp_adapter_e2e_test
             wifi_v1_actual_adapter_fabric_e2e_test
+            wifi_v1_reconnect_tsan_test
             wifi_v1_host_e2e_driver
           )
           cmake --build build/wifi-on --parallel 2 --target "${wifi_tgts[@]}"
@@ -1230,7 +1236,9 @@ jobs:
             wifi_v1_journal_test wifi_v1_storage_commit_unknown_test
             wifi_v1_reconnect_test wifi_v1_exporter_kat_test
             wifi_v1_attachment_gate_test wifi_v1_esp_owner_test
-            wifi_v1_esp_owner_sm_test wifi_v1_m4_evidence_test
+            wifi_v1_esp_owner_sm_test wifi_v1_tls_arena_test
+            wifi_v1_r7_other_registered_fault_test
+            wifi_v1_esp_tls_identity_matrix_test wifi_v1_m4_evidence_test
             wifi_v1_m4_forge_probe_test wifi_v1_m4_owner_concurrency_test
             wifi_v1_m4_stale_load_barrier_test wifi_v1_queue_drop_wrap_test
             wifi_v1_tls_storage_align_test wifi_v1_fabric_link_test

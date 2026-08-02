@@ -55,6 +55,7 @@
       "docs/adr/0021-multi-frame-durable-custody.md",
       "docs/adr/0022-domain-store-schema1-runtime-binding.md",
       "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "docs/adr/0030-posix-tls-fabric-reference-port.md",
       "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
       "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
       "src/radio/n6_record_codec.h",
@@ -130,7 +131,7 @@
         {
           "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
           "representation": "QUOTED",
-          "count": 37
+          "count": 41
         },
         {
           "path": "tests/transport/fabric_v1/fabric_v1_vector_matrix_test.c",
@@ -246,12 +247,12 @@
         {
           "path": "src/transport/fabric_v1/fabric_private_core.c",
           "representation": "QUOTED",
-          "count": 3
+          "count": 5
         },
         {
           "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
           "representation": "QUOTED",
-          "count": 6
+          "count": 7
         },
         {
           "path": "tests/transport/fabric_v1/fabric_v1_records_test.c",
@@ -285,7 +286,7 @@
         {
           "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
           "representation": "QUOTED",
-          "count": 14
+          "count": 24
         },
         {
           "path": "tools/fabric_bearer_spec_gate.py",
@@ -1164,6 +1165,11 @@
       "authority": "docs/adr/0006-u6-transport-custody.md",
       "occurrences": [
         {
+          "path": "src/runtime/composition_v1.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
           "path": "src/runtime/submission_canonical_v1.c",
           "representation": "QUOTED",
           "count": 1
@@ -1567,6 +1573,21 @@
           "count": 1
         },
         {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
           "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
           "representation": "QUOTED",
           "count": 5
@@ -1646,6 +1667,16 @@
           "count": 1
         },
         {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
           "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
           "representation": "QUOTED",
           "count": 5
@@ -1687,7 +1718,7 @@
         {
           "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
           "representation": "QUOTED",
-          "count": 1
+          "count": 2
         },
         {
           "path": "src/runtime/mfdt_v1/mfdt_v1_record.c",
@@ -1722,7 +1753,7 @@
         {
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
           "representation": "QUOTED",
-          "count": 3
+          "count": 5
         },
         {
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_sqlite_restart_test.c",
@@ -1745,6 +1776,16 @@
           "count": 8
         },
         {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
           "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_sidecar_fault_test.c",
           "representation": "CHAR_ARRAY",
           "count": 1
@@ -1753,6 +1794,11 @@
           "path": "tests/runtime/mfdt_v1/mfdt_v1_transport_sim_test.c",
           "representation": "QUOTED",
           "count": 1
+        },
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "QUOTED",
+          "count": 10
         },
         {
           "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
@@ -1792,6 +1838,11 @@
           "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_sidecar_fault_test.c",
           "representation": "QUOTED",
           "count": 1
+        },
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "QUOTED",
+          "count": 2
         },
         {
           "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
@@ -2117,7 +2168,7 @@
         {
           "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
           "representation": "QUOTED",
-          "count": 6
+          "count": 7
         },
         {
           "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
@@ -2142,7 +2193,7 @@
         {
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
           "representation": "QUOTED",
-          "count": 5
+          "count": 6
         },
         {
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_mutation_test.c",
@@ -2168,6 +2219,16 @@
           "path": "tests/runtime/mfdt_v1/mfdt_v1_request_kat_test.c",
           "representation": "QUOTED",
           "count": 4
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "QUOTED",
+          "count": 13
         },
         {
           "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
@@ -2398,6 +2459,25 @@
       ]
     },
     {
+      "magic": "PTR1",
+      "owner": "POSIX_BEARER",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0030-posix-tls-fabric-reference-port.md",
+      "occurrences": [
+        {
+          "path": "src/transport/posix_tls_v1/posix_tls_v1_records.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/posix_tls_v1/posix_tls_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
       "magic": "R7DR",
       "owner": "RADIO_R7_FRAGMENT",
       "artifact": "SNAPSHOT_RECORD",
@@ -2562,22 +2642,6 @@
           "path": "tools/domain_scan_crossrow_d3s2_vector_gen.py",
           "representation": "QUOTED",
           "count": 2
-        }
-      ]
-    },
-    {
-      "token": "ABCD",
-      "reason": "NEGATIVE_TEST_SENTINEL",
-      "occurrences": [
-        {
-          "path": "tests/model/runtime_store_codec_test.c",
-          "representation": "U32_BE",
-          "count": 1
-        },
-        {
-          "path": "tests/radio/n6_record_codec_test.c",
-          "representation": "U32_BE",
-          "count": 4
         }
       ]
     },
@@ -2900,17 +2964,6 @@
       ]
     },
     {
-      "token": "CONT",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
-          "representation": "U32_BE",
-          "count": 1
-        }
-      ]
-    },
-    {
       "token": "CP5R",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
@@ -2962,22 +3015,6 @@
           "path": "tools/radio_wire_r6_docs_gate.py",
           "representation": "QUOTED",
           "count": 5
-        }
-      ]
-    },
-    {
-      "token": "DCBA",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "tests/model/runtime_store_codec_test.c",
-          "representation": "U32_LE",
-          "count": 1
-        },
-        {
-          "path": "tests/radio/n6_record_codec_test.c",
-          "representation": "U32_LE",
-          "count": 4
         }
       ]
     },
@@ -3291,17 +3328,6 @@
       ]
     },
     {
-      "token": "ENDP",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
-          "representation": "U32_BE",
-          "count": 1
-        }
-      ]
-    },
-    {
       "token": "ES7R",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
@@ -3434,17 +3460,6 @@
       ]
     },
     {
-      "token": "H3MN",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
-          "representation": "U32_LE",
-          "count": 1
-        }
-      ]
-    },
-    {
       "token": "H4FM",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
@@ -3500,17 +3515,6 @@
           "path": "src/radio/r7_crypto_openssl3.c",
           "representation": "QUOTED",
           "count": 2
-        }
-      ]
-    },
-    {
-      "token": "I3MN",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
-          "representation": "U32_LE",
-          "count": 1
         }
       ]
     },
@@ -3624,17 +3628,6 @@
           "path": "tests/support/v1_lab_integration_topology.c",
           "representation": "U32_LE",
           "count": 1
-        }
-      ]
-    },
-    {
-      "token": "IFIW",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "tools/wifi_v1_runtime_host_e2e.c",
-          "representation": "U32_LE",
-          "count": 2
         }
       ]
     },
@@ -3848,17 +3841,6 @@
       ]
     },
     {
-      "token": "LNIN",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "ports/posix/lab_platform/ninlil_posix_lab_platform.c",
-          "representation": "U32_LE",
-          "count": 1
-        }
-      ]
-    },
-    {
       "token": "LOOP",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
@@ -4027,7 +4009,7 @@
         {
           "path": "tests/runtime/v1_runtime_capability_test.c",
           "representation": "U32_BE",
-          "count": 1
+          "count": 2
         }
       ]
     },
@@ -4162,44 +4144,11 @@
       ]
     },
     {
-      "token": "NINL",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "ports/posix/lab_platform/ninlil_posix_lab_platform.c",
-          "representation": "U32_BE",
-          "count": 1
-        }
-      ]
-    },
-    {
       "token": "NLEU",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
         {
           "path": "ports/esp-idf/include/ninlil_esp_idf/entropy.h",
-          "representation": "U32_BE",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "token": "NM3H",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
-          "representation": "U32_BE",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "token": "NM3I",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
           "representation": "U32_BE",
           "count": 1
         }
@@ -4555,7 +4504,7 @@
         {
           "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
           "representation": "QUOTED",
-          "count": 5
+          "count": 7
         }
       ]
     },
@@ -4617,7 +4566,7 @@
         {
           "path": "tools/public_module_manifest_gate.py",
           "representation": "QUOTED",
-          "count": 21
+          "count": 23
         },
         {
           "path": "tools/rrmp_hil_evidence_template.json",
@@ -4685,17 +4634,6 @@
         {
           "path": "src/radio/pcp_authority.h",
           "representation": "U32_BE",
-          "count": 1
-        }
-      ]
-    },
-    {
-      "token": "PDNE",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
-          "representation": "U32_LE",
           "count": 1
         }
       ]
@@ -4794,17 +4732,6 @@
           "path": "ports/esp-idf/include/ninlil_esp_idf/sx1262_bus.h",
           "representation": "U32_LE",
           "count": 1
-        }
-      ]
-    },
-    {
-      "token": "QRST",
-      "reason": "NEGATIVE_TEST_SENTINEL",
-      "occurrences": [
-        {
-          "path": "tests/radio/n6_record_codec_test.c",
-          "representation": "U32_BE",
-          "count": 6
         }
       ]
     },
@@ -5099,7 +5026,7 @@
         {
           "path": "tests/runtime/v1_runtime_capability_test.c",
           "representation": "U32_LE",
-          "count": 1
+          "count": 2
         }
       ]
     },
@@ -5163,17 +5090,6 @@
       ]
     },
     {
-      "token": "TNOC",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
-          "representation": "U32_LE",
-          "count": 1
-        }
-      ]
-    },
-    {
       "token": "TR6N",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
@@ -5223,17 +5139,6 @@
           "path": "src/radio/n6_context_store.c",
           "representation": "U32_LE",
           "count": 1
-        }
-      ]
-    },
-    {
-      "token": "TSRQ",
-      "reason": "NON_MAGIC_ENUM_OR_LABEL",
-      "occurrences": [
-        {
-          "path": "tests/radio/n6_record_codec_test.c",
-          "representation": "U32_LE",
-          "count": 6
         }
       ]
     },
@@ -5485,11 +5390,6 @@
           "path": "tools/fabric_v1_selection_vector_gen.py",
           "representation": "QUOTED",
           "count": 1
-        },
-        {
-          "path": "tools/wifi_v1_runtime_host_e2e.c",
-          "representation": "U32_BE",
-          "count": 2
         }
       ]
     },
@@ -5670,11 +5570,6 @@
       "reason": "NEGATIVE_TEST_SENTINEL",
       "occurrences": [
         {
-          "path": "tests/port/in_memory_storage_boundary_test.c",
-          "representation": "U32_BE",
-          "count": 1
-        },
-        {
           "path": "tests/port/typed_simulated_bearer_test.c",
           "representation": "U32_BE",
           "count": 2
@@ -5697,7 +5592,7 @@
         {
           "path": "tests/runtime/v1_runtime_spine_test.c",
           "representation": "U32_BE",
-          "count": 3
+          "count": 1
         },
         {
           "path": "tools/production_attachment_edhoc_gate.mjs",

@@ -2683,7 +2683,7 @@ if(NINLIL_BUILD_TESTS)
 
         # Optional TSan build of unit tests when compiler supports it.
         if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU|AppleClang"
-            AND NOT APPLE)
+            AND NOT APPLE AND NOT NINLIL_ENABLE_SANITIZERS)
             add_executable(wifi_v1_reconnect_tsan_test
                 tests/transport/wifi_v1/wifi_v1_reconnect_test.c)
             target_link_libraries(wifi_v1_reconnect_tsan_test PRIVATE

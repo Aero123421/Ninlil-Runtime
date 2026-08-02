@@ -7,6 +7,7 @@
 #define POSIX_TLS_RECORD_VERSION UINT16_C(1)
 #define POSIX_TLS_RECORD_DURABILITY_FULL UINT8_C(1)
 
+static const uint8_t posix_tls_record_magic[4] = {'P', 'T', 'R', '1'};
 static const char posix_tls_record_path_prefix[] = "ninlil.posix_tls_v1/";
 
 static const char *const posix_tls_record_keys[] = {
@@ -179,7 +180,8 @@ ninlil_wifi_status_t ninlil_posix_tls_v1_record_read_lifecycle(
     *out_existing_private_state = 1;
     if (observed_length != NINLIL_POSIX_TLS_V1_RECORD_HEADER_BYTES
             + NINLIL_POSIX_TLS_V1_LIFECYCLE_PAYLOAD_BYTES
-        || memcmp(observed, "PTR1", 4u) != 0
+        || memcmp(observed, posix_tls_record_magic,
+               sizeof(posix_tls_record_magic)) != 0
         || posix_tls_load_u16_be(&observed[4]) != POSIX_TLS_RECORD_VERSION
         || observed[6] != NINLIL_POSIX_TLS_V1_RECORD_LIFECYCLE
         || observed[7] != POSIX_TLS_RECORD_DURABILITY_FULL
@@ -240,10 +242,7 @@ ninlil_wifi_status_t ninlil_posix_tls_v1_record_put_full_verify(
     (void)path_length;
 
     memset(intended, 0, sizeof(intended));
-    intended[0] = (uint8_t)'P';
-    intended[1] = (uint8_t)'T';
-    intended[2] = (uint8_t)'R';
-    intended[3] = (uint8_t)'1';
+    memcpy(intended, posix_tls_record_magic, sizeof(posix_tls_record_magic));
     posix_tls_store_u16_be(&intended[4], POSIX_TLS_RECORD_VERSION);
     intended[6] = kind;
     intended[7] = POSIX_TLS_RECORD_DURABILITY_FULL;

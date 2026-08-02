@@ -90,7 +90,13 @@ if command -v arm-none-eabi-gcc >/dev/null 2>&1; then
   log "OK fabric_private_core.o for cortex-m4 (ILP32 pointers)"
   # Extract sizeof via nm/size is weak; emit preprocessor evidence:
   arm-none-eabi-gcc -std=c11 -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -dM -E -x c /dev/null \
-    | rg "UINTPTR_MAX|__SIZEOF_POINTER__|__INTPTR_WIDTH__" | tee -a "$REPORT" || true
+    | {
+        if command -v rg >/dev/null 2>&1; then
+          rg "UINTPTR_MAX|__SIZEOF_POINTER__|__INTPTR_WIDTH__"
+        else
+          grep -E "UINTPTR_MAX|__SIZEOF_POINTER__|__INTPTR_WIDTH__"
+        fi
+      } | tee -a "$REPORT" || true
 else
   log "WARN: arm-none-eabi-gcc missing; ILP32 object evidence skipped"
 fi

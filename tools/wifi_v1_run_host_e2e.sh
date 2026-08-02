@@ -69,10 +69,22 @@ if [ "${FABRIC_SEND_SUPPORTED}" -eq 1 ]; then
   "${BIN}" --server --port "${PORT}" --certs "${WORKDIR}/certs" --frames 1 \
     --runtime-e2e >"${WORKDIR}/server_runtime.log" 2>&1 &
   SPID=$!
-  sleep 0.35
-  "${BIN}" --client --port "${PORT}" --certs "${WORKDIR}/certs" --frames 1 \
-    --runtime-e2e >"${WORKDIR}/client_runtime.log" 2>&1
-  wait "${SPID}"
+  sleep 0.5
+  if ! "${BIN}" --client --port "${PORT}" --certs "${WORKDIR}/certs" --frames 1 \
+      --runtime-e2e >"${WORKDIR}/client_runtime.log" 2>&1; then
+    echo "wifi_v1_run_host_e2e: joined client failed" >&2
+    cat "${WORKDIR}/client_runtime.log" >&2 || true
+    cat "${WORKDIR}/server_runtime.log" >&2 || true
+    kill "${SPID}" 2>/dev/null || true
+    wait "${SPID}" 2>/dev/null || true
+    exit 1
+  fi
+  if ! wait "${SPID}"; then
+    echo "wifi_v1_run_host_e2e: joined server failed" >&2
+    cat "${WORKDIR}/server_runtime.log" >&2 || true
+    cat "${WORKDIR}/client_runtime.log" >&2 || true
+    exit 1
+  fi
   exact_grep \
     "public Runtime/Fabric/TLS peer delivery verified exactly-once" \
     "${WORKDIR}/server_runtime.log"

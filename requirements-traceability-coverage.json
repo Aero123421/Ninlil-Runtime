@@ -4,7 +4,7 @@
   "normative_sources": [
     {
       "path": "docs/12-foundation-abi.md",
-      "sha256": "9dc1450afb347ac25cdc3c39d7bfe21922dbd45673f5d4d58e3e88d4be15a1fd",
+      "sha256": "d7116cf61eb3f17f768d98ed26bf8883a03fd105f96ccc90e37f696c6d18f312",
       "heading_units": [
         {
           "id": "NIN-PR1-DOC12-001",
@@ -959,7 +959,7 @@
     },
     {
       "path": "docs/13-foundation-state-machine.md",
-      "sha256": "5fdb3d349ba1ed1de86a2dd61d383fb0fe5604ba97ca209410fe4091bc5aa7f5",
+      "sha256": "90ba03914e91024565a41c5e70a31015ed9cbb9c36a0dd911e3fe15190289a31",
       "heading_units": [
         {
           "id": "NIN-PR1-DOC13-001",
@@ -3173,7 +3173,7 @@
     },
     {
       "path": "docs/14-foundation-ports-and-simulator.md",
-      "sha256": "7f4ded41857f06775a566d9deef3a6a9e3246498f1850812e8dbda3a18c2cf7b",
+      "sha256": "93014c4d61a4a8df5374988e6afca0486e5296b0f3fdb81c1dd13c2023433b5e",
       "heading_units": [
         {
           "id": "NIN-PR1-DOC14-001",

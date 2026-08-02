@@ -6,7 +6,11 @@
 set -euo pipefail
 OUT_DIR="${1:?usage: wifi_v1_gen_test_certs.sh OUT_DIR}"
 mkdir -p "${OUT_DIR}"
-OPENSSL_BIN="${OPENSSL_BIN:-openssl}"
+if [[ -z "${OPENSSL_BIN:-}" && -n "${OPENSSL_ROOT:-}" && -x "${OPENSSL_ROOT}/bin/openssl" ]]; then
+  OPENSSL_BIN="${OPENSSL_ROOT}/bin/openssl"
+else
+  OPENSSL_BIN="${OPENSSL_BIN:-openssl}"
+fi
 
 # Build exact 112-byte GeneralNames DER + OpenSSL conf for a role.
 # binding fields match e2e fill_peer_inputs / exporter KAT layout.

@@ -351,12 +351,14 @@ fabric_tests_off_boundary() {
     -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=OFF
   cmake --build "${b}" --parallel "${JOBS}"
   cmake --install "${b}" --prefix "${b}/install"
-  if find "${b}/install" \( -iname '*fabric_v1*' -o -iname '*nfl1*' \) | grep -q .; then
+  test -f "${b}/install/include/ninlil/fabric_v1.h"
+  test -f "${b}/install/lib/libninlil_fabric_v1.a"
+  if find "${b}/install" \( -iname '*fabric_private*' -o -iname '*nfl1*' \) | grep -q .; then
     echo "false-green: fabric private path in tests-OFF install" >&2
-    find "${b}/install" \( -iname '*fabric_v1*' -o -iname '*nfl1*' \)
+    find "${b}/install" \( -iname '*fabric_private*' -o -iname '*nfl1*' \)
     exit 1
   fi
-  # Feature ON still non-installed (private candidate).
+  # Enabling the private candidate must not change the installed public surface.
   configure_ninja "${b}-on" \
     -DCMAKE_BUILD_TYPE=Release \
     -DNINLIL_BUILD_TESTS=OFF \
@@ -367,9 +369,11 @@ fabric_tests_off_boundary() {
   cmake --build "${b}-on" --parallel "${JOBS}"
   cmake --build "${b}-on" --parallel "${JOBS}" --target ninlil_runtime_private
   cmake --install "${b}-on" --prefix "${b}-on/install"
-  if find "${b}-on/install" \( -iname '*fabric_v1*' -o -path '*/include/*fabric*' \) | grep -q .; then
+  test -f "${b}-on/install/include/ninlil/fabric_v1.h"
+  test -f "${b}-on/install/lib/libninlil_fabric_v1.a"
+  if find "${b}-on/install" \( -iname '*fabric_private*' -o -iname '*nfl1*' \) | grep -q .; then
     echo "false-green: fabric private headers/path installed under tests-OFF feature-ON" >&2
-    find "${b}-on/install" \( -iname '*fabric_v1*' -o -path '*/include/*fabric*' \)
+    find "${b}-on/install" \( -iname '*fabric_private*' -o -iname '*nfl1*' \)
     exit 1
   fi
   # Public installed headers must not expose private fabric API.
@@ -377,7 +381,7 @@ fabric_tests_off_boundary() {
     echo "false-green: fabric private symbol names in installed headers" >&2
     exit 1
   fi
-  log "fabric_v1 tests-OFF non-installed boundary OK"
+  log "fabric_v1 tests-OFF public install/private non-exposure boundary OK"
 }
 
 # ---- r7 frag ---------------------------------------------------------------
