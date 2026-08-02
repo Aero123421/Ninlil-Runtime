@@ -68,7 +68,7 @@ OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost softwa
 | --- | --- |
 | **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。composition sidecar接続、ESP ownerと実機経路は未完であり、機能ごとの正式状態は上表を優先します |
 | **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter、公開Fabric/Compositionのcomponent packagingと最終ELF link。target上でのlive compositionと物理経路は未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
-| **物理HIL待ち** | ESP flash、実AP、USB CDC、SX1262 TX/RX、2/3-hop、multi-parent failover、電源断、長時間soak。証拠がない項目は一律`NOT_RUN`です |
+| **物理HIL待ち** | ESP flash、実AP、USB CDC、SX1262 TX/RX、2/3-hop、multi-parent failover、電源断、長時間soak。SX1262は2台双方向raw RF runnerまで用意済みですが、機材未接続のため一律`NOT_RUN`です |
 
 ## アーキテクチャ
 

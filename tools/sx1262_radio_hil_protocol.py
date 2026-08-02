@@ -5,12 +5,15 @@ Claim layers (never collapsed):
   - compile_link_radio_hil: ELF/map evidence only (other tool)
   - same_session_pcp_recover: in-process recover on live g_pcp
   - physical_two_boot_recovery: PREPARE_TWO_BOOT → REBOOT → COMPLETE_TWO_BOOT
+  - rf_hil_pass: two distinct boards exchange exact payloads in both directions
   - physical_powercut_pass: remains NOT_RUN without power-cut fixture
-  - rf_hil_pass / japan_legal / telec: always false here
+  - japan_legal / telec: always false here
 
 Same-session PCP recover is NEVER counted as restart recovery.
 When no device is connected, records physical_status=NOT_RUN (exit 0).
-Physical FAIL or post-response exceptions exit nonzero.
+Physical FAIL or post-response exceptions exit nonzero.  The pair runner proves
+the raw R1/R2/R5/R9 radio path only; it does not claim Fabric/ApplicationData,
+Join, relay, field SLO, or regulatory acceptance.
 """
 
 from __future__ import annotations
@@ -65,11 +68,11 @@ def base_claims() -> dict:
         "physical_powercut_pass": False,
         "physical_stack_watermark_pass": False,
         "restart_recovery_protocol": False,  # deprecated alias; always false
-        "rf_hil_pass": False,
+        "rf_hil_pass": False,  # pair-run only
         "japan_legal": False,
         "telec_certification": False,
         "adr_0025_accepted": False,
-        "over_the_air_verified": False,
+        "over_the_air_verified": False,  # pair-run only
     }
 
 
@@ -82,6 +85,7 @@ def base_payload() -> dict:
             "compile_link": "tools/sx1262_radio_hil_elf_evidence_gate.py",
             "same_session_pcp_recover": "PCP_RECOVER_SAME_SESSION (in-process)",
             "physical_two_boot_recovery": "PREPARE_TWO_BOOT/REBOOT/COMPLETE_TWO_BOOT",
+            "rf_hil_pass": "pair-run with two distinct physical boards",
             "physical_powercut": "NOT_RUN without power-cut fixture",
             "rf_hil_legal": "never claimed by this protocol",
         },
@@ -163,6 +167,41 @@ def reject_same_session_as_restart(claims: dict) -> None:
         )
 
 
+def parse_rx_take(line: str) -> dict | None:
+    """Parse the stable RX_TAKE response without accepting partial matches."""
+    match = re.fullmatch(
+        r"OK rx_take class=(\d+) len=(\d+) rssi=(-?\d+) snr=(-?\d+) "
+        r"irq=0x([0-9a-fA-F]+) gen=(\d+) payload=([0-9a-fA-F]*)",
+        line,
+    )
+    if match is None:
+        return None
+    payload_hex = match.group(7)
+    declared_len = int(match.group(2))
+    if len(payload_hex) != declared_len * 2:
+        return None
+    return {
+        "class": int(match.group(1)),
+        "length": declared_len,
+        "rssi_dbm": int(match.group(3)),
+        "snr_db": int(match.group(4)),
+        "irq_status": int(match.group(5), 16),
+        "generation": int(match.group(6)),
+        "payload": bytes.fromhex(payload_hex),
+    }
+
+
+def pair_payload(direction: int, sequence: int, size: int) -> bytes:
+    """Deterministic non-secret payload used by the physical pair runner."""
+    if direction not in (0, 1) or sequence < 0 or size < 8 or size > 64:
+        raise ValueError("invalid pair payload parameters")
+    prefix = bytes((0xA5, 0x5A, 0xC3, 0x3C, direction)) + sequence.to_bytes(
+        2, "big"
+    )
+    body = bytes(((sequence + direction + i) & 0xFF) for i in range(size - 7))
+    return prefix + body
+
+
 def self_test() -> None:
     """CLI self-tests: reject false restart claims without hardware."""
     # 1) unchanged boot id is not a restart
@@ -193,6 +232,27 @@ def self_test() -> None:
         r'["\']restart_recovery_protocol["\']\s*:\s*True', src
     ):
         fail("self-test: source must not claim restart_recovery_protocol=True")
+
+    # 6) Exact RX parser rejects truncation and length mismatches.
+    parsed = parse_rx_take(
+        "OK rx_take class=0 len=4 rssi=-71 snr=9 irq=0x2 gen=3 "
+        "payload=0102a0ff"
+    )
+    if parsed is None or parsed["payload"] != bytes.fromhex("0102a0ff"):
+        fail("self-test: valid RX_TAKE response rejected")
+    if parse_rx_take(
+        "OK rx_take class=0 len=5 rssi=-71 snr=9 irq=0x2 gen=3 "
+        "payload=0102a0ff"
+    ) is not None:
+        fail("self-test: RX_TAKE length mismatch accepted")
+
+    # 7) Pair payloads are exact, bounded, and direction-separated.
+    a = pair_payload(0, 7, 64)
+    b = pair_payload(1, 7, 64)
+    if len(a) != 64 or len(b) != 64 or a == b or a[:4] != bytes(
+        (0xA5, 0x5A, 0xC3, 0x3C)
+    ):
+        fail("self-test: pair payload contract")
 
     print("sx1262_radio_hil_protocol: self-test OK")
 
@@ -324,6 +384,181 @@ def run_two_boot(port: str, baud: int, timeout_s: float) -> dict:
         _require_ok(r, "OK reboot", steps)
     finally:
         ser.close()
+    return _complete_two_boot(port, baud, timeout_s, steps, boot_a, fence)
+
+
+def run_pair(
+    first_port: str,
+    second_port: str,
+    baud: int,
+    timeout_s: float,
+    count: int,
+    interval_ms: int,
+    payload_bytes: int,
+) -> dict:
+    """Exchange exact raw frames over RF using two physical radio_hil boards."""
+    import serial  # type: ignore
+
+    if first_port == second_port:
+        raise ValueError("pair-run requires two distinct serial ports")
+    if count < 1 or count > 100:
+        raise ValueError("count must be in 1..100")
+    if interval_ms < 0 or interval_ms > 60000:
+        raise ValueError("interval-ms must be in 0..60000")
+    if payload_bytes < 8 or payload_bytes > 64:
+        raise ValueError("payload-bytes must be in 8..64")
+
+    steps: list[dict] = []
+    first = serial.Serial(first_port, baudrate=baud, timeout=0.2)
+    try:
+        second = serial.Serial(second_port, baudrate=baud, timeout=0.2)
+    except Exception:
+        first.close()
+        raise
+
+    def command(port, label: str, line: str, deadline_s: float = 8.0) -> str:
+        port.write((line + "\n").encode("ascii"))
+        port.flush()
+        deadline = time.monotonic() + deadline_s
+        while time.monotonic() < deadline:
+            response = port.readline().decode("utf-8", errors="replace").strip()
+            if not response:
+                continue
+            steps.append({"board": label, "cmd": line, "resp": response})
+            if response.startswith("ERR "):
+                raise RuntimeError(f"{label} error for {line}: {response}")
+            if response.startswith("OK "):
+                return response
+        raise RuntimeError(f"{label} timeout for {line}")
+
+    def initialize(port, label: str) -> None:
+        port.reset_input_buffer()
+        _require_ok(command(port, label, "PING"), "OK pong", steps)
+        response = command(port, label, "INIT", deadline_s=max(timeout_s, 15.0))
+        _require_ok(response, "OK init", steps)
+        if "board=xiao_esp32s3_wio_sx1262_v1" not in response:
+            raise RuntimeError(f"{label} board profile mismatch: {response}")
+        if "ledger=flash_full" not in response:
+            raise RuntimeError(f"{label} does not use flash_full: {response}")
+
+    def exchange(
+        tx_port,
+        tx_label: str,
+        rx_port,
+        rx_label: str,
+        direction: int,
+        sequence: int,
+    ) -> dict:
+        payload = pair_payload(direction, sequence, payload_bytes)
+        _require_ok(command(rx_port, rx_label, "RX_START"), "OK rx_start", steps)
+        _require_ok(
+            command(tx_port, tx_label, f"TX_DATA {payload.hex()}"),
+            "OK tx_armed",
+            steps,
+        )
+        deadline = time.monotonic() + max(timeout_s, 8.0)
+        last_rx: dict | None = None
+        while time.monotonic() < deadline:
+            _require_ok(command(tx_port, tx_label, "POLL"), "OK poll", steps)
+            _require_ok(command(rx_port, rx_label, "POLL"), "OK poll", steps)
+            response = command(rx_port, rx_label, "RX_TAKE")
+            parsed = parse_rx_take(response)
+            if parsed is None:
+                raise RuntimeError(f"{rx_label} malformed RX_TAKE: {response}")
+            last_rx = parsed
+            if parsed["class"] == 0:
+                if parsed["payload"] != payload:
+                    raise RuntimeError(
+                        f"{rx_label} payload mismatch for sequence {sequence}"
+                    )
+                while time.monotonic() < deadline:
+                    tx_state = command(tx_port, tx_label, "POLL")
+                    state_match = re.search(r"\bstate=(\d+)\b", tx_state)
+                    if state_match is None:
+                        raise RuntimeError(
+                            f"{tx_label} malformed POLL response: {tx_state}"
+                        )
+                    state = int(state_match.group(1))
+                    if state == 0:
+                        break
+                    if state == 6:
+                        raise RuntimeError(
+                            f"{tx_label} radio fault after sequence {sequence}"
+                        )
+                    time.sleep(0.02)
+                else:
+                    raise RuntimeError(
+                        f"{tx_label} TX completion timeout sequence={sequence}"
+                    )
+                return {
+                    "direction": f"{tx_label}_to_{rx_label}",
+                    "sequence": sequence,
+                    "length": len(payload),
+                    "payload_hex": payload.hex(),
+                    "rssi_dbm": parsed["rssi_dbm"],
+                    "snr_db": parsed["snr_db"],
+                    "radio_generation": parsed["generation"],
+                }
+            if parsed["class"] not in (6,):
+                raise RuntimeError(
+                    f"{rx_label} RX failed class={parsed['class']} "
+                    f"sequence={sequence}"
+                )
+            time.sleep(0.02)
+        raise RuntimeError(
+            f"{rx_label} RF receive timeout sequence={sequence} last={last_rx}"
+        )
+
+    observations: list[dict] = []
+    try:
+        initialize(first, "first")
+        initialize(second, "second")
+        for sequence in range(count):
+            observations.append(
+                exchange(first, "first", second, "second", 0, sequence)
+            )
+            if interval_ms:
+                time.sleep(interval_ms / 1000.0)
+        for sequence in range(count):
+            observations.append(
+                exchange(second, "second", first, "first", 1, sequence)
+            )
+            if interval_ms:
+                time.sleep(interval_ms / 1000.0)
+    finally:
+        first.close()
+        second.close()
+
+    claims = base_claims()
+    claims["rf_hil_pass"] = True
+    claims["over_the_air_verified"] = True
+    return {
+        "physical_status": "DEVICE_RF_PAIR_OK",
+        "ports": [first_port, second_port],
+        "message_count_per_direction": count,
+        "payload_bytes": payload_bytes,
+        "interval_ms": interval_ms,
+        "observations": observations,
+        "steps": steps,
+        "claims": claims,
+        "note": (
+            "Two-board bidirectional raw RF HIL only. "
+            "Fabric/ApplicationData, Join, relay, field SLO, Japan legal, "
+            "TELEC, and physical power-cut remain unproven."
+        ),
+    }
+
+
+def _complete_two_boot(
+    port: str,
+    baud: int,
+    timeout_s: float,
+    steps: list[dict],
+    boot_a: str,
+    fence: str,
+) -> dict:
+    """Reopen after esp_restart and finish the physical two-boot proof."""
+    import serial  # type: ignore
 
     # Device reboots — reopen and complete.
     time.sleep(2.0)
@@ -396,19 +631,29 @@ def main() -> None:
             "probe",
             "run",
             "two-boot-run",
+            "pair-run",
             "not-run-evidence",
             "self-test",
         ),
         help=(
             "probe/run: device protocol; two-boot-run: real reboot recovery; "
+            "pair-run: bidirectional raw RF HIL using two boards; "
             "not-run-evidence: seal NOT_RUN; self-test: host checks"
         ),
     )
     ap.add_argument(
         "--port", default=None, help="serial device e.g. /dev/cu.usbserial-*"
     )
+    ap.add_argument(
+        "--peer-port",
+        default=None,
+        help="second serial device for pair-run",
+    )
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--timeout", type=float, default=3.0)
+    ap.add_argument("--count", type=int, default=1)
+    ap.add_argument("--interval-ms", type=int, default=100)
+    ap.add_argument("--payload-bytes", type=int, default=32)
     ap.add_argument(
         "--out-json",
         type=pathlib.Path,
@@ -433,6 +678,10 @@ def main() -> None:
             ),
             "executable_two_boot_protocol": (
                 "tools/sx1262_radio_hil_protocol.py two-boot-run --port <dev>"
+            ),
+            "executable_pair_protocol": (
+                "tools/sx1262_radio_hil_protocol.py pair-run "
+                "--port <first-dev> --peer-port <second-dev>"
             ),
             "same_session_command": "PCP_RECOVER_SAME_SESSION",
             "physical_two_boot_recovery": False,
@@ -459,6 +708,44 @@ def main() -> None:
         }
         write_evidence(args.out_json, payload)
         print(f"sx1262_radio_hil_protocol: probe {status}")
+        return
+
+    if args.cmd == "pair-run":
+        if not args.port or not args.peer_port:
+            payload = {
+                **base,
+                "physical_status": "NOT_RUN",
+                "reason": "pair-run requires --port and --peer-port",
+            }
+            write_evidence(args.out_json, payload)
+            print("sx1262_radio_hil_protocol: NOT_RUN (two ports required)")
+            raise SystemExit(0)
+        try:
+            result = run_pair(
+                args.port,
+                args.peer_port,
+                args.baud,
+                args.timeout,
+                args.count,
+                args.interval_ms,
+                args.payload_bytes,
+            )
+        except Exception as exc:  # noqa: BLE001
+            payload = {
+                **base,
+                "physical_status": "FAIL",
+                "error": str(exc),
+                "ports": [args.port, args.peer_port],
+            }
+            write_evidence(args.out_json, payload)
+            print(f"sx1262_radio_hil_protocol: FAIL: {exc}", file=sys.stderr)
+            raise SystemExit(1)
+        payload = {**base, **result}
+        merged = base_claims()
+        merged.update(result["claims"])
+        payload["claims"] = merged
+        write_evidence(args.out_json, payload)
+        print("sx1262_radio_hil_protocol: DEVICE_RF_PAIR_OK")
         return
 
     if args.cmd in ("run", "two-boot-run"):

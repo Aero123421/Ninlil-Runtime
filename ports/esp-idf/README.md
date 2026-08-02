@@ -199,6 +199,21 @@ bash tools/esp_idf_local_arm64_radio_hil_run.sh v5.5.3
 
 compile/link と ELF/map 証跡のみ。**RF HIL PASS / legal / ADR-0025 Accepted は主張しない。**
 
+2台の実機をUSB接続した後は、既存の同じ`radio_hil_app`を両方へ書き込み、
+両方を再起動してから次の1コマンドで双方向のraw RF payload一致を検証できます。
+
+```sh
+python3 -m pip install pyserial
+python3 tools/sx1262_radio_hil_protocol.py pair-run \
+  --port /dev/cu.usbmodem-FIRST \
+  --peer-port /dev/cu.usbmodem-SECOND \
+  --count 20 --interval-ms 100 --payload-bytes 32
+```
+
+成功時のJSONは各方向のpayload、RSSI、SNR、radio generationを記録します。この
+`pair-run`が証明するのは2台間のR1/R2/R5/R9 raw RF経路だけです。
+Fabric/ApplicationData、Join、relay、法規適合、電源断は別gateであり、推論しません。
+
 ## Source list drift
 
 host の `ninlil_runtime_private` と本 component の portable 部分は、同じ
