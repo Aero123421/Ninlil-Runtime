@@ -147,7 +147,8 @@ for role in server client; do
     -out "${OUT_DIR}/${role}.key.pem" >/dev/null 2>&1
   "${OPENSSL_BIN}" req -new -key "${OUT_DIR}/${role}.key.pem" \
     -out "${OUT_DIR}/${role}.csr.pem" \
-    -subj "/CN=ninlil-wifi-test-${role}" -sha256 >/dev/null 2>&1
+    -subj "/CN=ninlil-wifi-test-${role}" -sha256 \
+    -config /dev/null >/dev/null 2>&1
   make_san_conf \
     "${role}" "${OUT_DIR}/${role}.ext.cnf" "${OUT_DIR}/${role}.key.pem"
   "${OPENSSL_BIN}" x509 -req -in "${OUT_DIR}/${role}.csr.pem" \
@@ -167,7 +168,8 @@ done
 # the same CA, role binding, key, and all other extensions valid.
 "${OPENSSL_BIN}" req -new -key "${OUT_DIR}/client.key.pem" \
   -out "${OUT_DIR}/invalid-client.csr.pem" \
-  -subj "/CN=ninlil-wifi-test-client" -sha256 >/dev/null 2>&1
+  -subj "/CN=ninlil-wifi-test-client" -sha256 \
+  -config /dev/null >/dev/null 2>&1
 for variant in bad-ku bad-eku bad-san bad-ski bad-aki; do
   make_san_conf \
     client \
@@ -187,7 +189,8 @@ rm -f "${OUT_DIR}/ca.ext.cnf"
 # No leaf OID required — rejected at local notAfter before handshake identity.
 "${OPENSSL_BIN}" req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
   -keyout "${OUT_DIR}/expired.key.pem" -out "${OUT_DIR}/expired.csr.pem" \
-  -subj "/CN=ninlil-wifi-test-expired" -sha256 >/dev/null 2>&1
+  -subj "/CN=ninlil-wifi-test-expired" -sha256 \
+  -config /dev/null >/dev/null 2>&1
 "${OPENSSL_BIN}" x509 -req -in "${OUT_DIR}/expired.csr.pem" \
   -CA "${OUT_DIR}/ca.cert.pem" -CAkey "${OUT_DIR}/ca.key.pem" -CAcreateserial \
   -out "${OUT_DIR}/expired.cert.pem" -sha256 \

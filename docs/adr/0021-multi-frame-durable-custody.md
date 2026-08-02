@@ -1,6 +1,6 @@
 # ADR-0021: Multi-frame Durable Transfer and Custody
 
-状態: **Accepted baseline / Application-handoff amendment SPEC_ACCEPTED**
+状態: **Accepted / SPEC_ACCEPTED**
 状態補足: 2026-08-01のSPEC_ACCEPTED baselineは履歴として維持する。本文の
 Application-handoff amendment（MFN1 admission profile revision 2、改訂OPEN、Foundation
 handoff）は独立限定re-reviewで**P0=0 / P1=0 / P2=0**を確認し、

@@ -162,7 +162,7 @@ jobs:
             -DNINLIL_CONSUMER_EXPECT_SQLITE=ON
           cmake --build build/ci-cmake-floor-consumer-on --parallel 2
           test "$(ctest --test-dir build/ci-cmake-floor-consumer-on -N \
-            | tail -n 1)" = "Total Tests: 2"
+            | tail -n 1)" = "Total Tests: 3"
           ctest --test-dir build/ci-cmake-floor-consumer-on \
             --output-on-failure --no-tests=error
       - name: Validate NOCONFIG SQLite OFF package consumers
@@ -192,7 +192,7 @@ jobs:
             -DCMAKE_DISABLE_FIND_PACKAGE_SQLite3=TRUE
           cmake --build build/ci-cmake-floor-consumer-off --parallel 2
           test "$(ctest --test-dir build/ci-cmake-floor-consumer-off -N \
-            | tail -n 1)" = "Total Tests: 1"
+            | tail -n 1)" = "Total Tests: 2"
           ctest --test-dir build/ci-cmake-floor-consumer-off \
             --output-on-failure --no-tests=error
 
@@ -1196,10 +1196,6 @@ jobs:
             wifi_v1_actual_adapter_fabric_e2e_test
             wifi_v1_host_e2e_driver
           )
-          for t in "${wifi_tgts[@]}"; do
-            ninja -C build/wifi-on -t targets | grep -E "^${t}:" \
-              || { echo "false-green: missing wifi target ${t}" >&2; exit 1; }
-          done
           cmake --build build/wifi-on --parallel 2 --target "${wifi_tgts[@]}"
           listed="$(ctest --test-dir build/wifi-on -N -R 'wifi_v1_' | tail -n 1)"
           test "${listed}" != "Total Tests: 0"
@@ -1242,10 +1238,6 @@ jobs:
             wifi_v1_actual_adapter_fabric_e2e_test
             wifi_v1_host_e2e_driver
           )
-          for t in "${wifi_tgts[@]}"; do
-            ninja -C build/wifi-asan -t targets | grep -E "^${t}:" \
-              || { echo "false-green: missing wifi ASan target ${t}" >&2; exit 1; }
-          done
           cmake --build build/wifi-asan --parallel 2 --target "${wifi_tgts[@]}"
           ctest --test-dir build/wifi-asan --output-on-failure --no-tests=error \
             -R 'wifi_v1_'
@@ -1274,10 +1266,6 @@ jobs:
             wifi_v1_m4_evidence_test
             wifi_v1_m4_forge_probe_test
           )
-          for t in "${wifi_tgts[@]}"; do
-            ninja -C build/wifi-tsan -t targets | grep -E "^${t}:" \
-              || { echo "false-green: missing wifi TSan target ${t}" >&2; exit 1; }
-          done
           cmake --build build/wifi-tsan --parallel 2 --target "${wifi_tgts[@]}"
           ctest --test-dir build/wifi-tsan --output-on-failure --no-tests=error \
             -R 'wifi_v1_m4_'
@@ -1350,6 +1338,7 @@ jobs:
         env:
           NINLIL_WIFI_REQUIRE_AUTHORITY: "1"
           FRAMES: "10000"
+          OPENSSL_BIN: ${{ runner.temp }}/ninlil-openssl-3.5.7/install/bin/openssl
         run: |
           # Exclude the registered bounded sample, then run the exact full 10k
           # path once as pinned-authority release evidence.

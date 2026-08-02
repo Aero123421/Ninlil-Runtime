@@ -1520,8 +1520,8 @@ static int pa_classify_group(
     int marker_value_ok,
     const uint8_t *const *present_value_sha256,
     const uint8_t *const *present_context_digest,
-    const uint8_t expected_value_sha256[][32],
-    const uint8_t expected_context_digest[][32],
+    const uint8_t *expected_value_sha256,
+    const uint8_t *expected_context_digest,
     char out_label[40])
 {
     size_t i;
@@ -1606,8 +1606,12 @@ static int pa_classify_group(
                         out_label, "VALUE_OR_CONTEXT_DIGEST_MISMATCH_CORRUPT", 40);
                     return 1;
                 }
-                if (memcmp(got_vs, expected_value_sha256[i], 32u) != 0
-                    || memcmp(got_cd, expected_context_digest[i], 32u) != 0) {
+                if (memcmp(
+                        got_vs, expected_value_sha256 + (i * 32u), 32u)
+                        != 0
+                    || memcmp(
+                        got_cd, expected_context_digest + (i * 32u), 32u)
+                        != 0) {
                     (void)memcpy(
                         out_label, "VALUE_OR_CONTEXT_DIGEST_MISMATCH_CORRUPT", 40);
                     return 1;
@@ -2738,7 +2742,7 @@ static int pa_positive(void)
                 }
             }
 
-if (!pa_classify_group(
+            if (!pa_classify_group(
                     keys,
                     lens,
                     15u,
@@ -2748,8 +2752,8 @@ if (!pa_classify_group(
                     1,
                     present_vs,
                     present_cd,
-                    exp_vs_pending,
-                    exp_cd,
+                    &exp_vs_pending[0][0],
+                    &exp_cd[0][0],
                     label)
                 || memcmp(label, "EXACT_NEW_PENDING_15", 19) != 0) {
                 return 0;
@@ -2767,8 +2771,8 @@ if (!pa_classify_group(
                     1,
                     present_vs,
                     present_cd,
-                    exp_vs_active,
-                    exp_cd,
+                    &exp_vs_active[0][0],
+                    &exp_cd[0][0],
                     label)
                 || memcmp(label, "EXACT_NEW_ACTIVE_MARKER_IN_15", 28) != 0) {
                 return 0;
@@ -2790,8 +2794,8 @@ if (!pa_classify_group(
                     1,
                     present_vs,
                     present_cd,
-                    exp_vs_pending,
-                    exp_cd,
+                    &exp_vs_pending[0][0],
+                    &exp_cd[0][0],
                     label)
                 || memcmp(
                     label, "VALUE_OR_CONTEXT_DIGEST_MISMATCH_CORRUPT", 39)
@@ -2811,8 +2815,8 @@ if (!pa_classify_group(
                     1,
                     present_vs,
                     present_cd,
-                    exp_vs_active,
-                    exp_cd,
+                    &exp_vs_active[0][0],
+                    &exp_cd[0][0],
                     label)
                 || memcmp(
                     label, "VALUE_OR_CONTEXT_DIGEST_MISMATCH_CORRUPT", 39)
@@ -2839,8 +2843,8 @@ if (!pa_classify_group(
                     1,
                     present_vs,
                     present_cd,
-                    exp_vs_pending,
-                    exp_cd,
+                    &exp_vs_pending[0][0],
+                    &exp_cd[0][0],
                     label)
                 || memcmp(
                     label, "VALUE_OR_CONTEXT_DIGEST_MISMATCH_CORRUPT", 39)
@@ -2860,8 +2864,8 @@ if (!pa_classify_group(
                     1,
                     present_vs,
                     present_cd,
-                    exp_vs_active,
-                    exp_cd,
+                    &exp_vs_active[0][0],
+                    &exp_cd[0][0],
                     label)
                 || memcmp(
                     label, "VALUE_OR_CONTEXT_DIGEST_MISMATCH_CORRUPT", 39)
@@ -2878,25 +2882,11 @@ if (!pa_classify_group(
                 static uint8_t foreign[48];
                 uint8_t f_vs[32];
                 uint8_t f_cd[32];
-                const uint8_t *f_keys[16];
-                size_t f_lens[16];
-                const uint8_t *f_vs_p[16];
-                const uint8_t *f_cd_p[16];
                 (void)memcpy(
                     foreign, inv[0].complete_key, inv[0].complete_key_length);
                 foreign[0] ^= 0x80u;
-                for (i = 0u; i < 15u; ++i) {
-                    f_keys[i] = inv[i].complete_key;
-                    f_lens[i] = inv[i].complete_key_length;
-                    f_vs_p[i] = present_vs[i];
-                    f_cd_p[i] = present_cd[i];
-                }
-                f_keys[15] = foreign;
-                f_lens[15] = inv[0].complete_key_length;
                 (void)memcpy(f_vs, exp_vs_pending[0], 32u);
                 (void)memcpy(f_cd, exp_cd[0], 32u);
-                f_vs_p[15] = f_vs;
-                f_cd_p[15] = f_cd;
                 /* write-set value-image with foreign present → FOREIGN */
                 {
                     /* Reuse pa_classify_write_set with 15 write-set + foreign present:
@@ -2974,8 +2964,8 @@ if (!pa_classify_group(
                     0,
                     present_vs,
                     present_cd,
-                    exp_vs_pending,
-                    exp_cd,
+                    &exp_vs_pending[0][0],
+                    &exp_cd[0][0],
                     label)
                 || memcmp(label, "THIRD_OR_MISMATCH_CORRUPT", 24) != 0) {
                 return 0;

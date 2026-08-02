@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""R7 private FRAG static-frame gate (ESP -Wframe-larger-than=4096 exact).
+"""R7 private FRAG bounded-frame gate (ESP 4096-byte maximum exact).
 
 Authority: cmake/ninlil_r7_frag_sources.cmake production relative sources.
 Rules:
   - every production FRAG .c has exactly one .su under --su-dir
-  - every parsed .su row is kind=static
+  - every parsed .su row is static or compiler-proven dynamic,bounded
+  - unbounded dynamic rows are rejected outside sanitizer-only presence mode
   - every function frame <= 4096 (never raise ceiling)
   - recover_cu and restart_encode must appear and be under ceiling
   - structural: ESP component enables -Wframe-larger-than=4096 for FRAG
@@ -105,7 +106,8 @@ def parse_su_lines(
 ) -> tuple[list[str], dict[str, tuple[int, str]]]:
     """Parse .su records.
 
-    Production/ESP authoritative path requires kind=static.
+    Production/ESP authoritative paths accept exact static frames and GCC's
+    dynamic,bounded form, whose reported byte count is an upper bound.
     Sanitizer host builds rewrite frames to a compiler-specific dynamic form
     and inflate sizes.  When allow_dynamic=True, accept GCC/Clang dynamic
     kinds and skip the 4096 ceiling (presence + required-symbol registration
@@ -131,8 +133,8 @@ def parse_su_lines(
                 f"{function}: frame kind must be static or a known dynamic kind, got {kind}"
             )
             continue
-        if kind != "static" and not allow_dynamic:
-            errors.append(f"{function}: frame kind must be static, got {kind}")
+        if kind == "dynamic" and not allow_dynamic:
+            errors.append(f"{function}: unbounded dynamic frame is forbidden")
             continue
         frame = int(byte_text)
         if not allow_dynamic and frame > CEILING:
@@ -222,7 +224,7 @@ def check(
         fail(f"{len(errors)} error(s)")
     mode = "structural-only"
     if su_dir is not None:
-        mode = "sanitizer-dynamic" if allow_dynamic else "static-checked"
+        mode = "sanitizer-dynamic" if allow_dynamic else "bounded-checked"
     print(
         f"r7_frag_stack_gate OK: ceiling={CEILING} "
         f"sources={len(authority_basenames())} "
@@ -232,15 +234,23 @@ def check(
 
 def self_test() -> None:
     check(None)
-    dynamic_lines = ["fixture.c:1:dynamic_fn\t128\tdynamic,bounded"]
-    dynamic_errors, dynamic_records = parse_su_lines(
-        dynamic_lines, allow_dynamic=True
+    bounded_lines = ["fixture.c:1:bounded_fn\t128\tdynamic,bounded"]
+    bounded_errors, bounded_records = parse_su_lines(
+        bounded_lines, allow_dynamic=False
     )
-    if dynamic_errors or "dynamic_fn" not in dynamic_records:
-        fail("self-test rejected GCC dynamic,bounded sanitizer frame")
-    static_errors, _ = parse_su_lines(dynamic_lines, allow_dynamic=False)
-    if not any("must be static" in error for error in static_errors):
-        fail("self-test accepted dynamic,bounded frame on authoritative path")
+    if bounded_errors or "bounded_fn" not in bounded_records:
+        fail("self-test rejected compiler-bounded dynamic frame")
+    unbounded_errors, _ = parse_su_lines(
+        ["fixture.c:1:unbounded_fn\t128\tdynamic"], allow_dynamic=False
+    )
+    if not any("unbounded dynamic" in error for error in unbounded_errors):
+        fail("self-test accepted unbounded dynamic frame on authoritative path")
+    over_errors, _ = parse_su_lines(
+        ["fixture.c:1:bounded_over\t5000\tdynamic,bounded"],
+        allow_dynamic=False,
+    )
+    if not any("exceeds" in error for error in over_errors):
+        fail("self-test accepted over-ceiling compiler-bounded frame")
     # Synthetic .su under ceiling for required funcs + one source identity.
     basenames = authority_basenames()
     with tempfile.TemporaryDirectory() as tmp:

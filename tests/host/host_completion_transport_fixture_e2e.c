@@ -1086,7 +1086,7 @@ static int role_parent(uint16_t port, const char *certs, const char *log_tag)
 
     (void)memset(&cfg, 0, sizeof(cfg));
     cfg.policy = NINLIL_MFDT_V1_POLICY_ON;
-    cfg.mfdt_admission_version = 1;
+    cfg.mfdt_admission_version = NINLIL_MFDT_V1_ADMISSION_VERSION;
     cfg.session_generation = 1;
     cfg.mfdt_capability = 2;
     cfg.host_mode = 1;
@@ -2197,7 +2197,7 @@ static int role_endpoint(
 
     (void)memset(&cfg, 0, sizeof(cfg));
     cfg.policy = NINLIL_MFDT_V1_POLICY_ON;
-    cfg.mfdt_admission_version = 1;
+    cfg.mfdt_admission_version = NINLIL_MFDT_V1_ADMISSION_VERSION;
     cfg.session_generation = 1;
     cfg.mfdt_capability = 2;
     cfg.host_mode = 1;
@@ -2304,7 +2304,8 @@ static int role_endpoint(
                     }
                     (void)memset(&cfg_cold, 0, sizeof(cfg_cold));
                     cfg_cold.policy = NINLIL_MFDT_V1_POLICY_ON;
-                    cfg_cold.mfdt_admission_version = 1;
+                    cfg_cold.mfdt_admission_version =
+                        NINLIL_MFDT_V1_ADMISSION_VERSION;
                     cfg_cold.session_generation = 1;
                     cfg_cold.mfdt_capability = 2;
                     cfg_cold.host_mode = 1;

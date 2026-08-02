@@ -2631,6 +2631,8 @@ if(NINLIL_BUILD_TESTS)
         target_include_directories(wifi_v1_host_e2e_driver PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
             ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_definitions(
+            wifi_v1_host_e2e_driver PRIVATE _DEFAULT_SOURCE=1)
         target_link_libraries(wifi_v1_host_e2e_driver PRIVATE ninlil_wifi_v1_private)
         if(NINLIL_ENABLE_PRIVATE_FABRIC_V1
             AND NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
@@ -5648,6 +5650,7 @@ else:
             ${CMAKE_CURRENT_SOURCE_DIR}/include)
         target_compile_definitions(
             ninlil_host_completion_transport_fixture_e2e PRIVATE
+            _DEFAULT_SOURCE=1
             NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1
             NINLIL_ENABLE_PRIVATE_WIFI_V1=1
             NINLIL_ENABLE_PRIVATE_FABRIC_V1=1

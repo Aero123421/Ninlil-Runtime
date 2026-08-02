@@ -299,20 +299,7 @@ static void test_restart_rehydrates_durable(void) {
     bytes[16] = 1; /* occupied */
     bytes[17] = 1; /* role sender */
   }
-  /* direct: use restart after partial meta restore via second open fail path —
-     call restart after manually packing occupied flag via open was wiped.
-     Use lab_get NM3S and record_unpack through restart_scan by re-setting
-     transfer via mem layout of mfdt_xfer (fragile). Prefer public path: */
-  /* Re-init eng without zeroing store; set occupied by sender_open fails if capacity.
-     Instead: create fresh eng, put known meta by calling open then scan. */
-  ninlil_mfdt_v1_engine_init(&eng, &ws, &st, &cfg);
-  /* store still has NM3S; invent scan entry by temporary open on different tid fails;
-     load via restart after open of same tid is capacity because active RAM empty but
-     durable present — open should still work if active_count 0. */
-  expect(ninlil_mfdt_v1_sender_open(&eng, tid, content, 4, open, &olen, 2) != 0 ||
-             eng.active_count >= 0,
-         "second open may fail capacity or layout");
-  /* Explicit: zero eng, lab_get proves durable, restart_scan with seeded xfer */
+  /* A fresh engine must recover the durable transfer without reopening it. */
   {
     ninlil_mfdt_v1_engine_t e2;
     ninlil_mfdt_v1_workspace_t w2;

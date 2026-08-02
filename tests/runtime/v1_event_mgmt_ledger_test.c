@@ -1216,9 +1216,9 @@ static int test_eight_resume_limit_and_old_replay(void)
     event_env_t env;
     ninlil_rt_transaction_slot_t *transaction;
     ninlil_event_resume_request_t request;
-    ninlil_event_resume_request_t first_request;
+    ninlil_event_resume_request_t first_request = {0};
     ninlil_event_resume_result_t result;
-    ninlil_event_resume_result_t first_result;
+    ninlil_event_resume_result_t first_result = {0};
     ninlil_rt_v1_event_ledger_record_t ledger_record;
     ninlil_model_runtime_store_counter_t ordered_counter;
     uint32_t index;

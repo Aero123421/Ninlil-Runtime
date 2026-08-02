@@ -93,8 +93,9 @@ add_test(
 )
 # After private lib build, re-check with host .su artifacts.
 # Sanitizer builds rewrite .su kind to dynamic and inflate frames — register
-# presence without hiding the authoritative static path (normal builds omit
-# --allow-dynamic and enforce kind=static + 4096 ceiling).
+# presence without hiding the authoritative bounded path. Normal builds omit
+# --allow-dynamic, reject unbounded dynamic rows, and enforce the 4096 ceiling
+# for both static and compiler-proven dynamic,bounded rows.
 if(DEFINED _ninlil_any_sanitizer_active AND _ninlil_any_sanitizer_active)
     add_test(
         NAME nrw1_frag_stack_gate_host_su

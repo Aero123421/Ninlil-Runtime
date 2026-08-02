@@ -287,6 +287,8 @@ fabric_on_normal() {
     -DNINLIL_ENABLE_PRIVATE_WIFI_V1=OFF
   build_targets_or_fail "${b}" \
     ninlil_runtime_private \
+    ninlil_fabric_v1_public_api_test \
+    ninlil_fabric_v1_public_behavior_test \
     ninlil_fabric_v1_nfl1_codec_test \
     ninlil_fabric_v1_lifecycle_test \
     ninlil_fabric_v1_p1_contracts_test \
@@ -296,6 +298,8 @@ fabric_on_normal() {
     ninlil_fabric_v1_vector_matrix_test \
     ninlil_fabric_v1_host_acceptance_test
   require_tests_present "${b}" \
+    fabric_v1_public_api \
+    fabric_v1_public_behavior \
     fabric_v1_nfl1_codec \
     fabric_v1_lifecycle \
     fabric_v1_p1_contracts \
@@ -503,6 +507,7 @@ rrmp_off_residual() {
     ninlil_rrmp_token_ledger_test \
     ninlil_rrmp_sim_lifecycle_test \
     ninlil_rrmp_composition_test \
+    ninlil_rrmp_fabric_two_instance_isolation_test \
     ninlil_rrmp_prod_off_proxy
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
@@ -512,6 +517,7 @@ rrmp_off_residual() {
     ninlil_rrmp_token_ledger_test \
     ninlil_rrmp_sim_lifecycle_test \
     ninlil_rrmp_composition_test \
+    ninlil_rrmp_fabric_two_instance_isolation_test \
     rrmp_private_feature_symbol_archive \
     rrmp_private_feature_symbol_prod_off_proxy
   require_tests_absent_regex "${b}" '^rrmp_private_feature_symbol_probe$' "rrmp OFF residual probe"
@@ -539,6 +545,7 @@ rrmp_on_normal() {
     ninlil_rrmp_token_ledger_test \
     ninlil_rrmp_sim_lifecycle_test \
     ninlil_rrmp_composition_test \
+    ninlil_rrmp_fabric_two_instance_isolation_test \
     rrmp_private_feature_symbol_probe \
     rrmp_private_feature_symbol_archive
   build_targets_or_fail "${b}" \
@@ -550,6 +557,7 @@ rrmp_on_normal() {
     ninlil_rrmp_token_ledger_test \
     ninlil_rrmp_sim_lifecycle_test \
     ninlil_rrmp_composition_test \
+    ninlil_rrmp_fabric_two_instance_isolation_test \
     ninlil_rrmp_private_probe
   run_ctest_regex "${b}" '^(ninlil_rrmp_|rrmp_private_|route_relay_multiparent_)'
   python3 tools/rrmp_frame_stack_gate.py
@@ -577,7 +585,8 @@ rrmp_on_asan() {
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
     ninlil_rrmp_sim_lifecycle_test \
-    ninlil_rrmp_composition_test
+    ninlil_rrmp_composition_test \
+    ninlil_rrmp_fabric_two_instance_isolation_test
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
@@ -585,7 +594,8 @@ rrmp_on_asan() {
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
     ninlil_rrmp_sim_lifecycle_test \
-    ninlil_rrmp_composition_test
+    ninlil_rrmp_composition_test \
+    ninlil_rrmp_fabric_two_instance_isolation_test
   ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0:halt_on_error=1}" \
   UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}" \
     run_ctest_regex "${b}" '^ninlil_rrmp_'

@@ -190,24 +190,41 @@ def validate_texts(texts: Mapping[str, str]) -> list[str]:
         errors.append("ESP adapter variable must not appear in shared authority")
 
     host = texts[HOST_CMAKE]
-    require_once(
-        errors,
+    r7_host_block_match = re.search(
+        r"set\(NINLIL_R7_HOST_CRYPTO_ENABLED FALSE\)"
+        r"(?P<body>.*?)"
+        r"set\(NINLIL_R7_HOST_CRYPTO_ENABLED TRUE\)\s*endif\(\)",
         host,
-        "find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)",
-        "Host OpenSSL discovery",
+        re.DOTALL,
     )
-    # Major exact 3: find_package(OpenSSL 3) alone accepts 4.x. Require the
-    # fail-closed upper/lower bound that keeps the contract at major 3.
-    if "OPENSSL_VERSION VERSION_LESS \"3\"" not in host and (
-        "OPENSSL_VERSION VERSION_LESS 3" not in host
-    ):
-        errors.append("Host CMake missing OpenSSL major lower-bound (VERSION_LESS 3)")
-    if "NOT OPENSSL_VERSION VERSION_LESS \"4\"" not in host and (
-        "NOT OPENSSL_VERSION VERSION_LESS 4" not in host
-    ) and "OPENSSL_VERSION VERSION_GREATER_EQUAL \"4\"" not in host and (
-        "OPENSSL_VERSION VERSION_GREATER_EQUAL 4" not in host
-    ):
-        errors.append("Host CMake missing OpenSSL major upper-bound (<4 / exact 3)")
+    if r7_host_block_match is None:
+        errors.append("Host R7 OpenSSL discovery block missing")
+    else:
+        r7_host_block = r7_host_block_match.group("body")
+        require_once(
+            errors,
+            r7_host_block,
+            "find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)",
+            "Host OpenSSL discovery",
+        )
+        # Scope the exact-major check to the R7 discovery block. Other Host
+        # transports have their own OpenSSL checks and cannot satisfy this one.
+        if "OPENSSL_VERSION VERSION_LESS \"3\"" not in r7_host_block and (
+            "OPENSSL_VERSION VERSION_LESS 3" not in r7_host_block
+        ):
+            errors.append(
+                "Host CMake missing OpenSSL major lower-bound (VERSION_LESS 3)"
+            )
+        has_upper_bound = (
+            "NOT OPENSSL_VERSION VERSION_LESS \"4\"" in r7_host_block
+            or "NOT OPENSSL_VERSION VERSION_LESS 4" in r7_host_block
+            or "OPENSSL_VERSION VERSION_GREATER_EQUAL \"4\"" in r7_host_block
+            or "OPENSSL_VERSION VERSION_GREATER_EQUAL 4" in r7_host_block
+        )
+        if not has_upper_bound:
+            errors.append(
+                "Host CMake missing OpenSSL major upper-bound (<4 / exact 3)"
+            )
     private_host_sources = re.search(
         r"target_sources\s*\(\s*ninlil_runtime_private\s+PRIVATE\s+"
         r"\$\{NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES\}\s*\)",
