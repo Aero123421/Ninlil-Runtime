@@ -221,7 +221,7 @@ not merely within one pair.
 
 The first accepted provisioning command in a boot performs one bounded FULL
 transaction that enumerates and erases every record in the dedicated
-`ninlil.n6.v1` namespace before an N6 object is created. Empty is valid.
+`ninlil.n6.v1` namespace before the N6 owner is bound or booted. Empty is valid.
 Definite reset failure leaves RF disabled; `COMMIT_UNKNOWN` requires restart.
 A later command in the same provisioning boot never resets the namespace
 again. Numeric context IDs may start again at the allocator floor only under
@@ -323,7 +323,7 @@ or restart releases them.
    receiver IDs/collision/floors, token single-consume and failure atomicity,
    FULL failure/COMMIT_UNKNOWN, cold-restart deny, one global strictly newer
    boot membership epoch shared by both pairs, pair generation floors,
-   two-pair 28-row bound and fifth-record fence.
+   two-pair maximum-28-row bound, exact 32-row reset and fifth-record fence.
 4. A PTY test uses the installed POSIX USB port and the same private bridge as
    ESP packaging.
 5. Host vertical simulation covers two peers, the multi-Service node, both

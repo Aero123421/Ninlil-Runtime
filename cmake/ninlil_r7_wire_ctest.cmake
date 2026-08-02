@@ -154,6 +154,31 @@ add_test(
     NAME v1_lab_n6_owner
     COMMAND ninlil_v1_lab_n6_owner_test
 )
+
+add_executable(ninlil_v1_lab_provisioner_test
+    tests/transport/fabric_v1/v1_lab_provisioner_test.c
+    tests/support/in_memory_storage.c
+)
+target_include_directories(ninlil_v1_lab_provisioner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+)
+target_link_libraries(ninlil_v1_lab_provisioner_test PRIVATE
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_v1_lab_provisioner_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_v1_lab_provisioner_test)
+add_test(
+    NAME v1_lab_provisioner
+    COMMAND ninlil_v1_lab_provisioner_test
+)
 add_test(
     NAME v1_lab_n6_callsite_gate
     COMMAND ${Python3_EXECUTABLE}

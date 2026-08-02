@@ -1385,6 +1385,25 @@
       ]
     },
     {
+      "magic": "NLB1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "DURABLE_RECORD",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/v1_lab_provisioner.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/fabric_v1/v1_lab_provisioner_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
       "magic": "NLBK",
       "owner": "POSIX_BEARER",
       "artifact": "WIRE_RECORD",

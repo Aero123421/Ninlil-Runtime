@@ -85,6 +85,19 @@ int ninlil_test_storage_fault_enqueue(
     int has_commit_unknown_truth,
     int commit_unknown_committed);
 
+/*
+ * As above, after allowing calls_to_skip otherwise-valid calls through.
+ * This targets a later operation without making successful calls into faults.
+ */
+int ninlil_test_storage_fault_enqueue_after(
+    ninlil_test_storage_t *storage,
+    ninlil_test_storage_operation_t operation,
+    uint32_t calls_to_skip,
+    ninlil_storage_status_t status,
+    uint32_t remaining_count,
+    int has_commit_unknown_truth,
+    int commit_unknown_committed);
+
 /* Preserve committed namespaces while discarding every volatile resource. */
 void ninlil_test_storage_simulate_crash(ninlil_test_storage_t *storage);
 

@@ -2214,8 +2214,12 @@ if(NINLIL_BUILD_TESTS)
         PROPERTIES DEPENDS production_attachment_edhoc_vector_oracle
     )
     # The registry self-test creates short-lived mutation files under tools/.
-    # Keep the production scan and that mutation window mutually exclusive.
+    # Serialize every gate that scans that tree with the mutation window.
     set_tests_properties(
+        production_attachment_edhoc_python_gate
+        production_attachment_edhoc_python_gate_self_test
+        production_attachment_edhoc_node_gate
+        production_attachment_edhoc_node_gate_self_test
         production_attachment_magic_registry_gate
         production_attachment_magic_registry_gate_self_test
         PROPERTIES RESOURCE_LOCK protocol_magic_registry
