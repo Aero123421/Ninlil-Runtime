@@ -269,7 +269,7 @@
       "hil_verified": false,
       "depends_on": ["portable-core-host-runtime", "canonical-domain-store", "identity-attachment-session-install"],
       "evidence": [
-        {"class": "accepted-adr", "path": "docs/adr/0021-multi-frame-durable-custody.md", "contains": "Accepted / SPEC_ACCEPTED"},
+        {"class": "accepted-adr", "path": "docs/adr/0021-multi-frame-durable-custody.md", "contains": "Accepted baseline / Application-handoff amendment SPEC_ACCEPTED"},
         {"class": "work-record", "path": "docs/work/2026-08-01-mfdt-spec-accepted-promotion.md", "contains": "P0=0 / P1=0 / P2=0"}
       ]
     },

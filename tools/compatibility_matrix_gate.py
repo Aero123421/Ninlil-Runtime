@@ -446,7 +446,7 @@ FEATURE_AUTHORITY = {
             ev(
                 "accepted-adr",
                 "docs/adr/0021-multi-frame-durable-custody.md",
-                "Accepted / SPEC_ACCEPTED",
+                "Accepted baseline / Application-handoff amendment SPEC_ACCEPTED",
             ),
             ev(
                 "work-record",
