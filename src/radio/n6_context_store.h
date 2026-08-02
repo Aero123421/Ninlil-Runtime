@@ -178,6 +178,42 @@ typedef struct ninlil_n6_authority_stamp {
     uint32_t reserved0;
 } ninlil_n6_authority_stamp_t;
 
+/* Private accepted class-D authority adapter. No raw trust boolean crosses it. */
+typedef struct ninlil_n6_accepted_authority_token
+    ninlil_n6_accepted_authority_token_t;
+
+typedef uint32_t ninlil_n6_authority_accept_status_t;
+#define NINLIL_N6_AUTHORITY_ACCEPT_OK ((ninlil_n6_authority_accept_status_t)0u)
+#define NINLIL_N6_AUTHORITY_ACCEPT_REJECTED \
+    ((ninlil_n6_authority_accept_status_t)1u)
+#define NINLIL_N6_AUTHORITY_ACCEPT_STALE \
+    ((ninlil_n6_authority_accept_status_t)2u)
+#define NINLIL_N6_AUTHORITY_ACCEPT_INTERNAL \
+    ((ninlil_n6_authority_accept_status_t)3u)
+
+#define NINLIL_N6_AUTHORITY_CLAIM_ABI ((uint16_t)1u)
+#define NINLIL_N6_AUTHORITY_CLAIM_BYTES ((uint16_t)32u)
+#define NINLIL_N6_AUTHORITY_OPS_ABI ((uint16_t)1u)
+
+typedef struct ninlil_n6_authority_claim {
+    uint16_t abi_version;
+    uint16_t struct_size;
+    uint32_t reserved_zero;
+    uint8_t clock_epoch_id[16];
+    uint64_t now_ms;
+} ninlil_n6_authority_claim_t;
+
+typedef struct ninlil_n6_authority_ops {
+    uint16_t abi_version;
+    uint16_t struct_size;
+    uint32_t reserved_zero;
+    void *user;
+    ninlil_n6_authority_accept_status_t (*consume)(
+        void *user,
+        ninlil_n6_accepted_authority_token_t *mutable_token,
+        ninlil_n6_authority_claim_t *claim_out);
+} ninlil_n6_authority_ops_t;
+
 /*
  * Private accepted local-identity adapter ABI (docs/30 §20.4.1).
  * Incomplete token; sole binder ninlil_n6_bind_local_identity_accepted.
@@ -243,6 +279,51 @@ typedef struct ninlil_n6_install_capsule {
     uint8_t receiver_node_id[16];
 } ninlil_n6_install_capsule_t;
 
+/* Private accepted fresh-install adapter shared by Hop and E2E. */
+typedef struct ninlil_n6_accepted_install_token
+    ninlil_n6_accepted_install_token_t;
+
+typedef uint32_t ninlil_n6_install_accept_status_t;
+#define NINLIL_N6_INSTALL_ACCEPT_OK ((ninlil_n6_install_accept_status_t)0u)
+#define NINLIL_N6_INSTALL_ACCEPT_REJECTED \
+    ((ninlil_n6_install_accept_status_t)1u)
+#define NINLIL_N6_INSTALL_ACCEPT_STALE \
+    ((ninlil_n6_install_accept_status_t)2u)
+#define NINLIL_N6_INSTALL_ACCEPT_INTERNAL \
+    ((ninlil_n6_install_accept_status_t)3u)
+
+#define NINLIL_N6_INSTALL_CLAIM_ABI ((uint16_t)1u)
+#define NINLIL_N6_INSTALL_CLAIM_BYTES ((uint16_t)128u)
+#define NINLIL_N6_INSTALL_OPS_ABI ((uint16_t)1u)
+
+typedef struct ninlil_n6_install_claim {
+    uint16_t abi_version;
+    uint16_t struct_size;
+    uint32_t reserved_zero;
+    uint8_t layer_code;
+    uint8_t direction_code;
+    uint8_t alloc_side;
+    uint8_t reserved0;
+    uint32_t context_id;
+    uint64_t membership_epoch;
+    uint64_t key_generation;
+    uint8_t binding_digest32[32];
+    uint8_t traffic_secret32[32];
+    uint8_t local_node_id[16];
+    uint8_t receiver_node_id[16];
+} ninlil_n6_install_claim_t;
+
+typedef struct ninlil_n6_install_ops {
+    uint16_t abi_version;
+    uint16_t struct_size;
+    uint32_t reserved_zero;
+    void *user;
+    ninlil_n6_install_accept_status_t (*consume)(
+        void *user,
+        ninlil_n6_accepted_install_token_t *mutable_token,
+        ninlil_n6_install_claim_t *claim_out);
+} ninlil_n6_install_ops_t;
+
 /*
  * TX crypto lease: copy-owned materials for W1 Seal.
  * Single-use: consume via release (or auto on admit path N/A); secure-zero on release.
@@ -306,6 +387,12 @@ ninlil_n6_status_t ninlil_n6_bind_crypto(
 ninlil_n6_status_t ninlil_n6_bind_authority_stamp(
     ninlil_n6_t *n6, const ninlil_n6_authority_stamp_t *stamp);
 
+/* Sole production success path for an already-accepted class-D sample. */
+ninlil_n6_status_t ninlil_n6_bind_authority_stamp_accepted(
+    ninlil_n6_t *n6,
+    const ninlil_n6_authority_ops_t *ops,
+    ninlil_n6_accepted_authority_token_t *mutable_token);
+
 /*
  * Sole local-identity binder (docs/30 §20.4.1). One-shot consume; INIT+unbound only.
  * BOUND iff storage && crypto && local_identity. Identity required for empty boot.
@@ -336,6 +423,19 @@ ninlil_n6_status_t ninlil_n6_install_hop(
 ninlil_n6_status_t ninlil_n6_install_e2e(
     ninlil_n6_t *n6,
     const ninlil_n6_install_capsule_t *capsule,
+    ninlil_n6_handle_t *out_handle);
+
+/* Production fresh install from one-shot, copy-owned accepted claims. */
+ninlil_n6_status_t ninlil_n6_install_hop_accepted(
+    ninlil_n6_t *n6,
+    const ninlil_n6_install_ops_t *ops,
+    ninlil_n6_accepted_install_token_t *mutable_token,
+    ninlil_n6_handle_t *out_handle);
+
+ninlil_n6_status_t ninlil_n6_install_e2e_accepted(
+    ninlil_n6_t *n6,
+    const ninlil_n6_install_ops_t *ops,
+    ninlil_n6_accepted_install_token_t *mutable_token,
     ninlil_n6_handle_t *out_handle);
 
 /*

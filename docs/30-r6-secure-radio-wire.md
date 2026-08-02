@@ -3198,9 +3198,9 @@ Testbuild (`NINLIL_N6_TEST_BUILD`) **derives from the same source list** and is 
 
 ### 20.3 Private API closed set (signatures in `n6_context_store.h`)
 
-`context_pool_bytes` · `init` · `bind_storage` · `bind_crypto` · `bind_authority_stamp` · `bind_local_identity_accepted` · `boot_scan` · `install_hop` · `install_e2e` · `recover_cu` (internal classify; no external classification arg) · `tx_burn` (returns copy-owned TX crypto lease) · `tx_lease_release` · `rx_precheck` (returns AEAD-open ticket materials) · `rx_admit_after_aead` · `rx_abort` · `fence` · `restamp` · `reclaim` · `gc` · `stats` · `last_error` · `shutdown` · `esp_ready` · `state`.
+`context_pool_bytes` · `init` · `bind_storage` · `bind_crypto` · `bind_authority_stamp` · `bind_authority_stamp_accepted` · `bind_local_identity_accepted` · `boot_scan` · `install_hop` · `install_e2e` · `install_hop_accepted` · `install_e2e_accepted` · `recover_cu` (internal classify; no external classification arg) · `tx_burn` (returns copy-owned TX crypto lease) · `tx_lease_release` · `rx_precheck` (returns AEAD-open ticket materials) · `rx_admit_after_aead` · `rx_abort` · `fence` · `restamp` · `reclaim` · `gc` · `stats` · `last_error` · `shutdown` · `esp_ready` · `state`.
 
-**Production rules:** The **durable install/TX/RX/boot engine compiles in the production private object**. Only fixture authority stamp and FIXTURE_ONLY install-provenance admission are gated by `NINLIL_N6_TEST_BUILD` / test support (separate testbuild TU). **Local identity has no raw fixture bind symbol in core** — tests call the **same** production `bind_local_identity_accepted` with fixture token+ops living only under `tests/support/` (§20.4.1). Production **MUST NOT** export fixture/test-binder symbols and **MUST NOT** provide fake-success or no-op stubs for install/TX/RX that pretend readiness. Without authenticated M4/M5/local-identity inputs, entry points **fail closed at the provenance/secret/identity boundary** (typed status; no half-success). M4 provenance without M4 adapter ⇒ `M4_REQUIRED`. Fence/restamp/reclaim/gc production path ⇒ `M4_REQUIRED` (no bit-flag proof success). Caller-owned pool **1..128** slots (controller ceiling); no heap/VLA. Handles/lease_id/ticket_id nonzero monotonic; no reuse after release/retire. TX/RX counters and accept windows are multi-key **FULL** durable; RAM/output publish only after FULL_OK. TX leases issue one counter at a time from a durable-covered `[ram_next, ram_limit)` window; a FULL block of **64** is reserved only when the window is exhausted. COMMIT_UNKNOWN retains copy-owned write plan; `recover_cu` runs NEED_CLOSE_OLD→NEED_OPEN→READ_CLASSIFY (re-entrant on phase fault), re-reads storage, and computes ALL_OLD/ALL_PROPOSED/MIXED/THIRD internally (NOT_FOUND with `old_present==0` is ALL_OLD side; `old_present==1` is THIRD). ALL_PROPOSED applies copy-owned post-actions (TX next/limit, RX accept_through); install CU never publishes a handle. Authority: production `bind_authority_stamp` is fail-closed without R2 accepted-token verifier (raw boolean / struct fields alone do **not** establish trust). Host fixture stamp injection exists only in the test-build TU. N6 does not call OS time / R2 clock_ops.
+**Production rules:** The **durable install/TX/RX/boot engine compiles in the production private object**. Only fixture authority stamp and FIXTURE_ONLY install-provenance admission are gated by `NINLIL_N6_TEST_BUILD` / test support (separate testbuild TU). **Local identity has no raw fixture bind symbol in core** — tests call the **same** production `bind_local_identity_accepted` with fixture token+ops living only under `tests/support/` (§20.4.1). Production **MUST NOT** export fixture/test-binder symbols and **MUST NOT** provide fake-success or no-op stubs for install/TX/RX that pretend readiness. Raw `bind_authority_stamp` and raw `install_hop` / `install_e2e` remain production fail-closed. ADR-0036's private V1 LAB owner may use only the opaque one-shot `*_accepted` adapters described in §20.4.2; their fixed claims are copy-owned and validated before Storage mutation. Without an accepted token/local identity, entry points **fail closed at the provenance/secret/identity boundary** (typed status; no half-success). Fence/restamp/reclaim/gc production path ⇒ `M4_REQUIRED` (no bit-flag proof success). Caller-owned pool **1..128** slots (controller ceiling); no heap/VLA. Handles/lease_id/ticket_id nonzero monotonic; no reuse after release/retire. TX/RX counters and accept windows are multi-key **FULL** durable; RAM/output publish only after FULL_OK. TX leases issue one counter at a time from a durable-covered `[ram_next, ram_limit)` window; a FULL block of **64** is reserved only when the window is exhausted. COMMIT_UNKNOWN retains copy-owned write plan; `recover_cu` runs NEED_CLOSE_OLD→NEED_OPEN→READ_CLASSIFY (re-entrant on phase fault), re-reads storage, and computes ALL_OLD/ALL_PROPOSED/MIXED/THIRD internally (NOT_FOUND with `old_present==0` is ALL_OLD side; `old_present==1` is THIRD). ALL_PROPOSED applies copy-owned post-actions (TX next/limit, RX accept_through); install CU never publishes a handle. N6 does not call OS time / R2 clock_ops.
 
 **State BOUND (exact):**  
 `STATE_BOUND` ⇔ `storage_bound && crypto_bound && local_identity_bound`.  
@@ -3214,6 +3214,23 @@ Install inputs MUST be an **authenticated provenance capsule** (M4) or an explic
 **Forbidden:** production install from caller-supplied raw node IDs alone. Missing M4 binder on production provenance ⇒ **`M4_REQUIRED`** (fail-closed).  
 FIXTURE_ONLY admission exists only under `NINLIL_N6_TEST_BUILD`.  
 RAM usable handle publish **only after** durable multi-key **FULL_OK**. Publish-before-FULL is forbidden.
+
+#### 20.4.2 V1 LAB accepted authority/install adapters
+
+ADR-0036 adds one deliberately bounded production path for fresh V1 LAB
+provisioning. An incomplete one-shot authority token copy-owns an exact 32-byte
+accepted class-D claim. A separate incomplete one-shot install token copy-owns
+an exact 128-byte Hop/E2E install claim. N6 validates exact ABI/size/reserved,
+local/receiver allocation shape, layer, context, epoch, digest and secret before
+durable work. Rejected, stale, malformed or wrong-layer claims perform no
+Storage/context mutation. The existing raw APIs do not inherit this authority.
+The callbacks are a trusted private-caller seam, not independently
+cryptographic capabilities. Production source calls are fixed by CI to the
+single ADR-0036 V1 owner, which revalidates the binding, local side, directional
+receiver and canonical R7 binding digests before minting a token.
+The full V1 constraints, allocator-coordinator amendment and acceptance tests
+are normative in ADR-0036; this subsection does not generalize them to FIELD,
+resume/M5 or arbitrary M4 callers.
 
 #### 20.4.1 Authenticated local identity — exact private accepted adapter ABI
 
@@ -3359,7 +3376,13 @@ Durable active records **MUST NOT** store `traffic_secret32`. After `boot_scan`:
 
 ### 20.6 Authority time
 
-N6 accepts only a **copy-in** of an already-accepted R2 class-D token via `bind_authority_stamp` **after** R2 verifier / opaque accepted-token adapter acceptance. Production without that adapter ⇒ fail-closed (`M4_REQUIRED` / stamp reason). Raw caller-supplied boolean trust fields alone MUST NOT establish authority. Host fixture stamp injection is test-build-only. N6 **MUST NOT** sample OS or host local time itself (no R2 clock_ops call from N6). Epoch mismatch / regression on re-stamp (test path) ⇒ fail-closed.
+N6 accepts only a **copy-in** of an already-accepted R2 class-D token via
+`bind_authority_stamp_accepted`. Raw `bind_authority_stamp` remains production
+fail-closed (`M4_REQUIRED` / stamp reason). Raw caller-supplied boolean trust
+fields alone MUST NOT establish authority. Host fixture stamp injection is
+test-build-only. N6 **MUST NOT** sample OS or host local time itself (no R2
+clock_ops call from N6). Epoch mismatch / regression on accepted refresh or
+test fixture re-stamp ⇒ fail-closed.
 
 ### 20.7 Durable codec / crypto (cross-ref §5.3 / §8)
 

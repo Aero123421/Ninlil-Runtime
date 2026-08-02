@@ -2213,6 +2213,13 @@ if(NINLIL_BUILD_TESTS)
         production_attachment_edhoc_fixture_freshness
         PROPERTIES DEPENDS production_attachment_edhoc_vector_oracle
     )
+    # The registry self-test creates short-lived mutation files under tools/.
+    # Keep the production scan and that mutation window mutually exclusive.
+    set_tests_properties(
+        production_attachment_magic_registry_gate
+        production_attachment_magic_registry_gate_self_test
+        PROPERTIES RESOURCE_LOCK protocol_magic_registry
+    )
 
     # ADR-0018 Proposed Wi-Fi real-path authority candidate (spec-only).
     # Independent generator/Python/Node/C11 gates; no Wi-Fi driver/TLS/HIL claim.
@@ -5393,6 +5400,32 @@ else:
     add_test(
         NAME n6_context_store
         COMMAND ninlil_n6_context_store_test
+    )
+
+    add_executable(ninlil_n6_accepted_adapters_test
+        tests/radio/n6_accepted_adapters_test.c
+        tests/support/n6_mem_storage.c
+        tests/support/n6_local_identity_fixture.c
+    )
+    target_include_directories(ninlil_n6_accepted_adapters_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ninlil_n6_accepted_adapters_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_n6_accepted_adapters_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_n6_accepted_adapters_test)
+    add_test(
+        NAME n6_accepted_adapters
+        COMMAND ninlil_n6_accepted_adapters_test
     )
 
     # Production private archive leakage + canonical N6 source authority.

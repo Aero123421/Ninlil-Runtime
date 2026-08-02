@@ -45,6 +45,9 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/storage_canonical_plan.c
     src/transport/control_session.c
     src/transport/fabric_v1/nra1_codec.c
+    src/transport/fabric_v1/nvb1_codec.c
+    src/transport/fabric_v1/v1_lab_binding.c
+    src/transport/fabric_v1/v1_lab_n6_owner.c
     src/radio/airtime_calculator.c
     src/radio/radio_hal.c
     src/radio/pcp_authority.c
@@ -103,6 +106,9 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/radio/pcp_authority.c
     src/radio/profile_loader.c
     src/transport/logical_session.c
+    src/transport/fabric_v1/nvb1_codec.c
+    src/transport/fabric_v1/v1_lab_binding.c
+    src/transport/fabric_v1/v1_lab_n6_owner.c
     ${NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES}
     ${NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES}
     ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}

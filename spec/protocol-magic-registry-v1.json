@@ -57,6 +57,7 @@
       "docs/adr/0023-production-attachment-edhoc-profile.md",
       "docs/adr/0030-posix-tls-fabric-reference-port.md",
       "docs/adr/0035-v1-compact-radio-mapping.md",
+      "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
       "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
       "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
       "src/radio/n6_record_codec.h",
@@ -2389,6 +2390,20 @@
           "path": "tools/domain_store_schema1_binding_vector_gen.py",
           "representation": "QUOTED",
           "count": 7
+        }
+      ]
+    },
+    {
+      "magic": "NVB1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "STREAM_WRAPPER",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/nvb1_codec.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
         }
       ]
     },

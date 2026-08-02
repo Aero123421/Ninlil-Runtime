@@ -123,18 +123,27 @@ retain every Foundation field omitted from NRA1:
   and E2E context IDs.
 
 The directory is provisioned through the trusted-local USB path and committed
-with the keys before it becomes active. The USB framing amendment owns the
-exact byte layout of the provisioned `binding_payload`; those exact bytes are
-stored without re-encoding. Its `attachment_binding_digest` is
-`SHA-256(binding_payload)`. That same 32-byte value is used as the opaque
-attachment/E2E-security identity input when deriving both directional R7
-contexts. Thus a different directory, endpoint, priority or authority snapshot
-derives a different authenticated context and cannot decrypt as the current
-binding. The RF adapter remains disabled until the USB amendment freezes and
-tests those bytes. There is no RF slot negotiation and no compiled default row
-or key. Reprovisioning replaces the pair generation and both children together;
-a stale or wrong binding cannot be accepted by filling missing fields from
-current local state.
+with the keys before it becomes active. ADR-0036 owns the exact byte layout of
+the provisioned `binding_payload`; those exact bytes are stored without
+re-encoding. Its Hop attachment identity is `SHA-256(binding_payload)`. Fabric
+`attachment_binding_digest` and the E2E security identity use ADR-0036's
+separate logical projection, which excludes Hop context material and every
+secret. Both values are passed through the existing directional R7 binding
+digest functions; one digest is never reused across layers. Thus a different
+directory, endpoint, priority or authority snapshot cannot decrypt as the
+current binding, while Hop-only material cannot change the E2E identity. The
+RF adapter remains disabled until ADR-0036 freezes and tests those bytes. There
+is no RF slot negotiation and no compiled default row or key. Reprovisioning
+replaces all Hop/E2E children together; a stale or wrong binding cannot be
+accepted by filling missing fields from current local state.
+
+V1 uses only fresh N6 LAB contexts. After restart, stored binding bytes recover
+generation/membership floors but never reactivate keys. A strictly newer
+binding resets the dedicated N6 namespace before installing new receiver-owned
+allocation namespaces and secrets through ADR-0036's accepted LAB token. N6
+then provides every durable TX burn and RX replay admission used by R7. This
+prevents key/counter reset without implementing or claiming M5 same-context
+resume.
 
 On Application encode, the adapter checks the full Fabric message against the
 selected immutable row, computes SHA-256 over the exact payload, and requires
@@ -166,8 +175,8 @@ For every V1 Application and Receipt:
 - `ack_requested=0`;
 - the direct/local outer route tuple is handle 0, generation 0 and remaining
   hops 0;
-- directional hop/E2E context IDs and counters come only from the active
-  durable binding/N6 owners; and
+- directional Hop/E2E context IDs and durable counter/replay state come only
+  from the active V1 binding owner and existing N6 engine; and
 - every transmit uses the existing R1/R2/R5/R9 permit and physical sole edge.
 
 An NRA1 parse result alone is never authenticated and never authorizes RF TX,
@@ -246,7 +255,8 @@ Before this ADR becomes Accepted:
    output atomicity;
 3. an independent R3 gate recomputes all table values and the 10-pair bound;
 4. Host integration covers wrong binding, wrong Service, duplicate/replay,
-   tamper, unknown Receipt correlation, timeout and restart; and
+   tamper, unknown Receipt correlation, timeout and restart with mandatory
+   fresh reprovisioning; and
 5. the private ESP adapter and phase-separated DRBG compile/link in the pinned
    ESP-IDF 5.5.3 image before the V1 feature may advance beyond
    `SPEC_ACCEPTED`.

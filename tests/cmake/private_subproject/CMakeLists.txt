@@ -118,6 +118,8 @@ set(_expected_private_source_names
     n6_crypto_host.c
     n6_record_codec.c
     ncl1_codec.c
+    nra1_codec.c
+    nvb1_codec.c
     pcp_authority.c
     pcp_lab_session_ledger.c
     profile_loader.c
@@ -153,6 +155,8 @@ set(_expected_private_source_names
     v1_durable_allowlist.c
     v1_durable_restart.c
     v1_frame_manifest.c
+    v1_lab_binding.c
+    v1_lab_n6_owner.c
 )
 list(LENGTH _expected_private_source_names _expected_private_source_count)
 if(NOT _private_source_count EQUAL _expected_private_source_count)
