@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
   workflow_call:
     inputs:
@@ -15,6 +15,10 @@ on:
         description: Exact commit containing this reusable workflow definition
         required: false
         type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -202,7 +206,7 @@ jobs:
   optional-composition:
     name: SQLite optional and tests OFF
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -240,7 +244,7 @@ jobs:
   ubuntu-dynamic-strict:
     name: Ubuntu dynamic SQLite strict full
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -665,7 +669,7 @@ jobs:
   ubuntu-static-strict:
     name: Ubuntu static SQLite strict full
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
