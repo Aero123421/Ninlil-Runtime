@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #define RUNTIME_WIFI_MAX_STEPS 30000u
+#define RUNTIME_WIFI_PEER_CLOSE_MAX_STEPS 5000u
 
 typedef struct runtime_wifi_context {
     ninlil_posix_lab_platform_t *platform;
@@ -778,6 +779,27 @@ static int runtime_wifi_step(runtime_wifi_context_t *context)
         == NINLIL_FABRIC_PRIVATE_OK;
 }
 
+static int runtime_wifi_wait_for_peer_close(ninlil_wifi_session_t *session)
+{
+    uint32_t step;
+
+    for (step = 0u; step < RUNTIME_WIFI_PEER_CLOSE_MAX_STEPS; ++step) {
+        ninlil_wifi_status_t status = ninlil_wifi_session_poll(session);
+        if (session->phase == NINLIL_WIFI_PHASE_CLOSED
+            || session->phase == NINLIL_WIFI_PHASE_FENCED) {
+            return 1;
+        }
+        if (status != NINLIL_WIFI_OK
+            && status != NINLIL_WIFI_WOULD_BLOCK
+            && status != NINLIL_WIFI_BACKPRESSURE) {
+            return 0;
+        }
+        usleep(1000u);
+    }
+    (void)fprintf(stderr, "runtime Wi-Fi peer close timeout\n");
+    return 0;
+}
+
 static int runtime_wifi_query_satisfied(
     ninlil_runtime_t *runtime,
     const ninlil_id128_t *transaction_id)
@@ -961,6 +983,16 @@ int ninlil_wifi_host_public_runtime_e2e(
             (unsigned long long)context.link_user.accepted_receive_count,
             runtime_wifi_provider_released(&context.link_user),
             (unsigned)session->phase);
+        goto cleanup;
+    }
+    /*
+     * The server's final Receipt has no application-level acknowledgement.
+     * Keep the TLS session alive until the successful client closes it, so a
+     * fast server cannot fence the client before its Runtime consumes the
+     * already-received Receipt.  The shell harness checks both process exits.
+     */
+    if (is_server != 0 && !runtime_wifi_wait_for_peer_close(session)) {
+        success = 0;
         goto cleanup;
     }
     if (is_server != 0) {
