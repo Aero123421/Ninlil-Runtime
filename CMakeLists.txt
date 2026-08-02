@@ -1303,6 +1303,8 @@ if(NINLIL_BUILD_TESTS)
                 -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
                 -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                 -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                 -DNINLIL_SMOKE_WITH_SQLITE=OFF
                 -DNINLIL_SMOKE_DOMAIN_SCHEMA1=OFF
                 -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
@@ -1316,6 +1318,8 @@ if(NINLIL_BUILD_TESTS)
                     -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
                     -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                     -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                    "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                     -DNINLIL_SMOKE_WITH_SQLITE=ON
                     -DNINLIL_SMOKE_DOMAIN_SCHEMA1=OFF
                     -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
@@ -1330,6 +1334,8 @@ if(NINLIL_BUILD_TESTS)
                 -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
                 -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                 -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                 -DNINLIL_SMOKE_WITH_SQLITE=OFF
                 -DNINLIL_SMOKE_DOMAIN_SCHEMA1=ON
                 -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
@@ -1343,6 +1349,8 @@ if(NINLIL_BUILD_TESTS)
                     -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
                     -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                     -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                    "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                     -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_fabric_v1_tests_off_smoke.cmake)
         endif()
@@ -1356,6 +1364,8 @@ if(NINLIL_BUILD_TESTS)
                     -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
                     -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                     -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                    "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                     -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_posix_tls_runtime_e2e_tests_off_smoke.cmake)
             set_tests_properties(
@@ -1372,6 +1382,8 @@ if(NINLIL_BUILD_TESTS)
                 -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
                 -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                 -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                 -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_posix_usb_serial_tests_off_smoke.cmake)
         set_tests_properties(
@@ -7489,13 +7501,14 @@ else:
     )
 
     # Coverage evidence is profile-specific.  Domain Schema 1 currently
-    # disables the public Runtime regression tests, so a partial feature-ON
-    # tree is neither baseline nor all-private and must not be mislabelled.
+    # disables the public Runtime regression tests, and a no-SQLite build omits
+    # the POSIX provider evidence. Neither is a complete baseline profile.
     set(_ninlil_traceability_coverage_profile "")
-    if(NOT NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+    if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED
+       AND NOT NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
         set(_ninlil_traceability_coverage_profile "baseline")
-    elseif(
-        NINLIL_ENABLE_PRIVATE_WIFI_V1
+    elseif(NINLIL_POSIX_SQLITE_STORAGE_ENABLED
+        AND NINLIL_ENABLE_PRIVATE_WIFI_V1
         AND NINLIL_ENABLE_PRIVATE_FABRIC_V1
         AND NINLIL_ENABLE_R7_FRAG_PRIVATE
         AND NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1

@@ -40,6 +40,17 @@ endif()
 if(NOT DEFINED NINLIL_SMOKE_ENABLE_SANITIZERS)
     set(NINLIL_SMOKE_ENABLE_SANITIZERS OFF)
 endif()
+set(_compiler_args)
+if(DEFINED NINLIL_SMOKE_C_COMPILER
+   AND NOT NINLIL_SMOKE_C_COMPILER STREQUAL "")
+    list(APPEND _compiler_args
+        "-DCMAKE_C_COMPILER=${NINLIL_SMOKE_C_COMPILER}")
+endif()
+if(DEFINED NINLIL_SMOKE_CXX_COMPILER
+   AND NOT NINLIL_SMOKE_CXX_COMPILER STREQUAL "")
+    list(APPEND _compiler_args
+        "-DCMAKE_CXX_COMPILER=${NINLIL_SMOKE_CXX_COMPILER}")
+endif()
 
 set(_consumer_source_path
     "${NINLIL_SOURCE_DIR}/tests/cmake/installed_host_runtime_consumer/consumer.c")
@@ -170,6 +181,7 @@ execute_process(
         -S "${NINLIL_SOURCE_DIR}"
         -B "${_producer_build}"
         -G "${NINLIL_GENERATOR}"
+        ${_compiler_args}
         -DCMAKE_BUILD_TYPE=Release
         -DNINLIL_BUILD_TESTS=OFF
         -DNINLIL_BUILD_HOST_RUNTIME=ON
@@ -408,6 +420,7 @@ set(_consumer_args
     -S "${NINLIL_SOURCE_DIR}/tests/cmake/installed_host_runtime_consumer"
     -B "${_consumer_build}"
     -G "${NINLIL_GENERATOR}"
+    ${_compiler_args}
     "-DCMAKE_PREFIX_PATH=${_prefix}"
     -DCMAKE_MAP_IMPORTED_CONFIG_DEBUG=DEBUG
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON

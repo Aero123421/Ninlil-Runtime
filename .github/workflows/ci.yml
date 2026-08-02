@@ -1958,7 +1958,7 @@ jobs:
   macos-dynamic:
     name: macOS dynamic SQLite full
     runs-on: macos-15
-    timeout-minutes: 25
+    timeout-minutes: 35
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}

@@ -9,6 +9,17 @@ endif()
 if(NOT DEFINED NINLIL_SMOKE_ENABLE_SANITIZERS)
     set(NINLIL_SMOKE_ENABLE_SANITIZERS OFF)
 endif()
+set(_compiler_args)
+if(DEFINED NINLIL_SMOKE_C_COMPILER
+   AND NOT NINLIL_SMOKE_C_COMPILER STREQUAL "")
+    list(APPEND _compiler_args
+        "-DCMAKE_C_COMPILER=${NINLIL_SMOKE_C_COMPILER}")
+endif()
+if(DEFINED NINLIL_SMOKE_CXX_COMPILER
+   AND NOT NINLIL_SMOKE_CXX_COMPILER STREQUAL "")
+    list(APPEND _compiler_args
+        "-DCMAKE_CXX_COMPILER=${NINLIL_SMOKE_CXX_COMPILER}")
+endif()
 
 get_filename_component(NINLIL_PARENT_BUILD_DIR
     "${NINLIL_PARENT_BUILD_DIR}" ABSOLUTE BASE_DIR "${NINLIL_SOURCE_DIR}")
@@ -24,6 +35,7 @@ execute_process(
         -S "${NINLIL_SOURCE_DIR}"
         -B "${_producer}"
         -G "${NINLIL_GENERATOR}"
+        ${_compiler_args}
         -DCMAKE_BUILD_TYPE=Release
         -DNINLIL_BUILD_TESTS=OFF
         -DNINLIL_BUILD_HOST_RUNTIME=ON
@@ -115,6 +127,7 @@ set(_consumer_args
     -S "${NINLIL_SOURCE_DIR}/tests/cmake/installed_posix_tls_runtime_e2e_consumer"
     -B "${_consumer}"
     -G "${NINLIL_GENERATOR}"
+    ${_compiler_args}
     "-DCMAKE_PREFIX_PATH=${_prefix}"
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DNINLIL_CONSUMER_ENABLE_SANITIZERS=${NINLIL_SMOKE_ENABLE_SANITIZERS})

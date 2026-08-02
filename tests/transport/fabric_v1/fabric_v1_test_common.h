@@ -12,6 +12,15 @@
 
 static int g_fabric_test_failures;
 
+static inline int fabric_test_pointer_outside_range(
+    const void *pointer, const void *range_begin, uint32_t range_length)
+{
+    uintptr_t address = (uintptr_t)pointer;
+    uintptr_t begin = (uintptr_t)range_begin;
+
+    return address < begin || address - begin >= (uintptr_t)range_length;
+}
+
 #define FABRIC_REQUIRE(cond)                                                \
     do {                                                                    \
         if (!(cond)) {                                                      \

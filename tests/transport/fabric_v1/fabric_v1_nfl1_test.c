@@ -154,9 +154,8 @@ static int test_kind_roundtrip(uint32_t kind)
     FABRIC_REQUIRE(
         out.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no pointer into packet retained */
-    FABRIC_REQUIRE(
-        out.namespace_id.bytes < packet
-        || out.namespace_id.bytes >= packet + len);
+    FABRIC_REQUIRE(fabric_test_pointer_outside_range(
+        out.namespace_id.bytes, packet, len));
 
     ninlil_fabric_private_nfl1_clear(&out);
     FABRIC_REQUIRE(out.message_kind == 0u);

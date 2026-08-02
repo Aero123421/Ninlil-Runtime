@@ -34,6 +34,15 @@ static int g_fail;
         }                                                                   \
     } while (0)
 
+static int pointer_outside_range(
+    const void *pointer, const void *range_begin, uint32_t range_length)
+{
+    uintptr_t address = (uintptr_t)pointer;
+    uintptr_t begin = (uintptr_t)range_begin;
+
+    return address < begin || address - begin >= (uintptr_t)range_length;
+}
+
 static uint32_t sha256_rotr(uint32_t v, unsigned b)
 {
     return (v >> b) | (v << (32u - b));
@@ -1283,8 +1292,8 @@ static int test_kat_k_app_min(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_app_min
-        || env.namespace_id.bytes >= k_app_min + k_app_min_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_app_min, k_app_min_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_app_min, k_app_min_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1327,8 +1336,8 @@ static int test_kat_k_receipt_min(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_receipt_min
-        || env.namespace_id.bytes >= k_receipt_min + k_receipt_min_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_receipt_min, k_receipt_min_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_receipt_min, k_receipt_min_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1371,8 +1380,8 @@ static int test_kat_k_disposition_min(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_disposition_min
-        || env.namespace_id.bytes >= k_disposition_min + k_disposition_min_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_disposition_min, k_disposition_min_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_disposition_min, k_disposition_min_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1415,8 +1424,8 @@ static int test_kat_k_cancel_req_min(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_cancel_req_min
-        || env.namespace_id.bytes >= k_cancel_req_min + k_cancel_req_min_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_cancel_req_min, k_cancel_req_min_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_cancel_req_min, k_cancel_req_min_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1459,8 +1468,8 @@ static int test_kat_k_custody_min(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_custody_min
-        || env.namespace_id.bytes >= k_custody_min + k_custody_min_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_custody_min, k_custody_min_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_custody_min, k_custody_min_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1503,8 +1512,8 @@ static int test_kat_k_cancel_res_min(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_cancel_res_min
-        || env.namespace_id.bytes >= k_cancel_res_min + k_cancel_res_min_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_cancel_res_min, k_cancel_res_min_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_cancel_res_min, k_cancel_res_min_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1547,8 +1556,8 @@ static int test_kat_k_absent_min(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_absent_min
-        || env.namespace_id.bytes >= k_absent_min + k_absent_min_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_absent_min, k_absent_min_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_absent_min, k_absent_min_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1591,8 +1600,8 @@ static int test_kat_k_app_semantic_max(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_app_semantic_max
-        || env.namespace_id.bytes >= k_app_semantic_max + k_app_semantic_max_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_app_semantic_max, k_app_semantic_max_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_app_semantic_max, k_app_semantic_max_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
@@ -1635,8 +1644,8 @@ static int test_kat_k_receipt_ev_max(void)
     REQUIRE(env.namespace_id.bytes >= ws.bytes);
     REQUIRE(env.namespace_id.bytes < ws.bytes + sizeof(ws.bytes));
     /* no retained pointer into input packet */
-    REQUIRE(env.namespace_id.bytes < k_receipt_ev_max
-        || env.namespace_id.bytes >= k_receipt_ev_max + k_receipt_ev_max_len);
+    REQUIRE(pointer_outside_range(
+        env.namespace_id.bytes, k_receipt_ev_max, k_receipt_ev_max_len));
     crc = ninlil_fabric_private_nfl1_crc32c(k_receipt_ev_max, k_receipt_ev_max_len);
     /* stored CRC field must match independent recomputation with zeroed field */
     {
