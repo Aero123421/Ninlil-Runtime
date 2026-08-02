@@ -41,6 +41,7 @@ REQUIRED_FUNCS_LAB = frozenset(
     }
 )
 REQUIRED_FUNCS = REQUIRED_FUNCS_PRODUCTION | REQUIRED_FUNCS_LAB
+DYNAMIC_FRAME_KINDS = frozenset({"dynamic", "dynamic,bounded"})
 
 
 def fail(msg: str) -> None:
@@ -105,9 +106,10 @@ def parse_su_lines(
     """Parse .su records.
 
     Production/ESP authoritative path requires kind=static.
-    Sanitizer host builds rewrite frames to dynamic and inflate sizes —
-    when allow_dynamic=True, accept dynamic kind and skip the 4096 ceiling
-    (presence + required-symbol registration still enforced).
+    Sanitizer host builds rewrite frames to a compiler-specific dynamic form
+    and inflate sizes.  When allow_dynamic=True, accept GCC/Clang dynamic
+    kinds and skip the 4096 ceiling (presence + required-symbol registration
+    still enforced).
     """
     errors: list[str] = []
     records: dict[str, tuple[int, str]] = {}
@@ -124,8 +126,10 @@ def parse_su_lines(
         if not function or not byte_text.isdigit():
             errors.append(f"line {line_number}: invalid function/frame record")
             continue
-        if kind not in ("static", "dynamic"):
-            errors.append(f"{function}: frame kind must be static|dynamic, got {kind}")
+        if kind != "static" and kind not in DYNAMIC_FRAME_KINDS:
+            errors.append(
+                f"{function}: frame kind must be static or a known dynamic kind, got {kind}"
+            )
             continue
         if kind != "static" and not allow_dynamic:
             errors.append(f"{function}: frame kind must be static, got {kind}")
@@ -228,6 +232,15 @@ def check(
 
 def self_test() -> None:
     check(None)
+    dynamic_lines = ["fixture.c:1:dynamic_fn\t128\tdynamic,bounded"]
+    dynamic_errors, dynamic_records = parse_su_lines(
+        dynamic_lines, allow_dynamic=True
+    )
+    if dynamic_errors or "dynamic_fn" not in dynamic_records:
+        fail("self-test rejected GCC dynamic,bounded sanitizer frame")
+    static_errors, _ = parse_su_lines(dynamic_lines, allow_dynamic=False)
+    if not any("must be static" in error for error in static_errors):
+        fail("self-test accepted dynamic,bounded frame on authoritative path")
     # Synthetic .su under ceiling for required funcs + one source identity.
     basenames = authority_basenames()
     with tempfile.TemporaryDirectory() as tmp:

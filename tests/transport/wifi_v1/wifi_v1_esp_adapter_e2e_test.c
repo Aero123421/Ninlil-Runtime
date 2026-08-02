@@ -23,16 +23,16 @@
  * durable semantics remain covered by its dedicated suite.
  */
 #if !defined(NINLIL_WIFI_ACTUAL_FABRIC_HELPERS_ONLY)
-struct ninlil_fabric_registration_private {
+struct ninlil_fabric_link_registration_v1 {
     ninlil_fabric_packet_link_ops_v1_t ops;
     ninlil_fabric_packet_link_handle_t handle;
-    struct ninlil_fabric_private *fabric;
+    struct ninlil_fabric_v1 *fabric;
     uint32_t active;
     uint32_t draining;
 };
 
-struct ninlil_fabric_private {
-    struct ninlil_fabric_registration_private registration;
+struct ninlil_fabric_v1 {
+    struct ninlil_fabric_link_registration_v1 registration;
     ninlil_fabric_link_status_t precommit_start_status;
     ninlil_fabric_packet_token_t precommit_token;
 };

@@ -4547,9 +4547,10 @@ def self_test(
         "esp_map_path": None,
         "esp_map_sha256": None,
         "result": "PASS",
-        "tested_commit_sha": current_single_parent_sha(
-            "self-test unregistered runner"
-        ),
+        # This fixture is rejected at runner registration before lineage is
+        # inspected.  Keep it independent of GitHub's two-parent PR checkout;
+        # production evidence still uses validate_tested_parent_commit().
+        "tested_commit_sha": "0" * 40,
         "tested_tree_sha": "a" * 40,
         "runner_kind": "LOCAL_CTEST_REPLAYABLE_RECEIPT",
         "runner_registration_path": "CMakeLists.txt",

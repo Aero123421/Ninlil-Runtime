@@ -1330,8 +1330,10 @@ jobs:
           NINLIL_OPENSSL_BUILD_JOBS: "2"
         run: |
           tools/wifi_v1_build_pinned_openssl.sh
-          test -f "${NINLIL_OPENSSL_BUILD_ROOT}/install/lib/libssl.a"
-          test -f "${NINLIL_OPENSSL_BUILD_ROOT}/install/lib/libcrypto.a"
+          find "${NINLIL_OPENSSL_BUILD_ROOT}/install" -type f \
+            -name libssl.a -print -quit | grep -q .
+          find "${NINLIL_OPENSSL_BUILD_ROOT}/install" -type f \
+            -name libcrypto.a -print -quit | grep -q .
       - name: Configure and build pinned static authority
         env:
           PIN_ROOT: ${{ runner.temp }}/ninlil-openssl-3.5.7/install

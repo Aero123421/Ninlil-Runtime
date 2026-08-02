@@ -1657,8 +1657,6 @@ static ninlil_fabric_link_status_t posix_tls_provider_start_send(
     if (port->next_tx_sequence == UINT32_MAX
         || port->next_tx_token_generation == 0u
         || port->next_tx_token_generation == UINT32_MAX
-        || (uint64_t)port->next_tx_token_generation
-            > (uint64_t)(UINTPTR_MAX >> 8)
         || port->state.accepted_send_count == UINT64_MAX) {
         posix_tls_provider_leave(port);
         return NINLIL_FABRIC_LINK_UNAVAILABLE;
@@ -1843,8 +1841,6 @@ static ninlil_fabric_link_status_t posix_tls_provider_receive_next(
         || port->rx_packet_length > sizeof(port->rx_packet)
         || port->next_rx_loan_generation == 0u
         || port->next_rx_loan_generation == UINT32_MAX
-        || (uint64_t)port->next_rx_loan_generation
-            > (uint64_t)(UINTPTR_MAX >> 8)
         || port->state.accepted_receive_count == UINT64_MAX) {
         posix_tls_provider_leave(port);
         return NINLIL_FABRIC_LINK_UNAVAILABLE;

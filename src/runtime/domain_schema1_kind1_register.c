@@ -341,7 +341,6 @@ ninlil_status_t ninlil_domain_schema1_kind1_encode_members(
     uint8_t zero32[32];
     uint64_t window_start;
     ninlil_model_domain_digest_t service_value_dig;
-    ninlil_bytes_view_t raw_view;
     ninlil_bytes_view_t id_view;
 
     if (descriptor == NULL || trusted_clock == NULL || ws == NULL
@@ -554,8 +553,6 @@ ninlil_status_t ninlil_domain_schema1_kind1_encode_members(
 
     /* SERVICE body. */
     (void)memset(&svc_body, 0, sizeof(svc_body));
-    raw_view.data = ws->service_raw;
-    raw_view.length = ws->service_raw_len;
     svc_body.service_key_raw = ws->service_raw;
     svc_body.service_key_raw_length = (uint16_t)ws->service_raw_len;
     svc_body.descriptor_revision = descriptor->descriptor_revision;

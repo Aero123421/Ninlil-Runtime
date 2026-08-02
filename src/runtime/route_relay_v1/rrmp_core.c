@@ -5067,6 +5067,8 @@ static ninlil_route_status_u32 route_forward_admit_impl(
         rrmp_q_t *qslot = NULL;
 
         ninlil_rrmp_memzero(selected_parent, sizeof(selected_parent));
+        ninlil_rrmp_memzero(old_attempt_id, sizeof(old_attempt_id));
+        ninlil_rrmp_memzero(old_selected_parent, sizeof(old_selected_parent));
 
         if (o->cfg.feature_multi_parent) {
             if (!o->scope_derivation_set ||
