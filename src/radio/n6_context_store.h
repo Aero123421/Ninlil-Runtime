@@ -77,6 +77,11 @@ typedef uint32_t ninlil_n6_state_t;
 #define NINLIL_N6_TICKET ((ninlil_n6_status_t)16u)
 #define NINLIL_N6_BOOT_DORMANT ((ninlil_n6_status_t)17u)
 #define NINLIL_N6_LEASE ((ninlil_n6_status_t)18u)
+/*
+ * Typed RX sliding-window reject (already admitted / below floor / OOR).
+ * Distinct from NINLIL_N6_TICKET (live-ticket collision / ticket pool).
+ */
+#define NINLIL_N6_REPLAY ((ninlil_n6_status_t)19u)
 
 #define NINLIL_N6_REASON_NONE ((ninlil_n6_reason_t)0u)
 #define NINLIL_N6_REASON_NULL ((ninlil_n6_reason_t)1u)
@@ -104,6 +109,7 @@ typedef uint32_t ninlil_n6_state_t;
 #define NINLIL_N6_REASON_STAMP ((ninlil_n6_reason_t)23u)
 #define NINLIL_N6_REASON_CU_CLASS ((ninlil_n6_reason_t)24u)
 #define NINLIL_N6_REASON_LOCAL_IDENTITY ((ninlil_n6_reason_t)25u)
+#define NINLIL_N6_REASON_REPLAY ((ninlil_n6_reason_t)26u)
 
 #define NINLIL_N6_STATE_UNINIT ((ninlil_n6_state_t)0u)
 #define NINLIL_N6_STATE_INIT ((ninlil_n6_state_t)1u)
@@ -252,6 +258,11 @@ typedef struct ninlil_n6_tx_lease {
     uint64_t counter; /* first counter of reserved block */
     uint64_t block_end; /* exclusive end */
     uint8_t key16[16];
+    /*
+     * Lane static_iv12 (docs/30 §8.6). NOT the final AEAD nonce.
+     * AEAD nonce = static_iv12 XOR (0x00000000 || counter_u64_be) applied once
+     * by r7 wire/frag codec (ninlil_r7_crypto_nonce_from_counter).
+     */
     uint8_t iv12[12];
     uint8_t reserved_pad[4];
 } ninlil_n6_tx_lease_t;
@@ -269,6 +280,7 @@ typedef struct ninlil_n6_rx_ticket {
     uint32_t context_id;
     uint64_t counter;
     uint8_t key16[16];
+    /* static_iv12 only — same contract as ninlil_n6_tx_lease_t.iv12. */
     uint8_t iv12[12];
     uint8_t reserved_pad[4];
 } ninlil_n6_rx_ticket_t;
@@ -394,6 +406,9 @@ uint8_t ninlil_n6_test_cu_phase(const ninlil_n6_t *n6);
 int ninlil_n6_test_cu_live(const ninlil_n6_t *n6);
 uint32_t ninlil_n6_test_live_ticket_count(const ninlil_n6_t *n6);
 int ninlil_n6_test_any_ticket_key_or_iv_nonzero(const ninlil_n6_t *n6);
+/* docs/30 §8.6: out = static_iv XOR (0||counter_be). Lease.iv is static only. */
+void ninlil_n6_test_nonce_from_static_and_counter(
+    const uint8_t static_iv12[12], uint64_t counter, uint8_t out_nonce12[12]);
 #endif
 
 #ifdef __cplusplus

@@ -51,6 +51,20 @@ def _tracked_markdown(root: pathlib.Path) -> list[pathlib.Path]:
     return sorted(paths)
 
 
+def _all_markdown(root: pathlib.Path) -> list[pathlib.Path]:
+    """Return every Markdown file in a sealed source tree.
+
+    Release clean-room extraction intentionally has no ``.git`` directory.
+    This mode lets the same checker validate the archive payload itself instead
+    of silently depending on the checkout which produced it.
+    """
+    return sorted(
+        path
+        for path in root.rglob("*.md")
+        if path.is_file() and ".git" not in path.parts
+    )
+
+
 def _targets(text: str) -> list[str]:
     found = [match.group(1) for match in INLINE_LINK.finditer(text)]
     found.extend(match.group(1) for match in REFERENCE_LINK.finditer(text))
@@ -145,6 +159,7 @@ def self_test() -> None:
         assert len(errors) == 3, errors
         assert any("missing or case-mismatched" in item for item in errors)
         assert any("escapes repository" in item for item in errors)
+        assert _all_markdown(root) == sorted([good, bad, target])
     print("markdown link gate self-test: ok")
 
 
@@ -157,18 +172,28 @@ def main() -> int:
         type=pathlib.Path,
         default=pathlib.Path(__file__).resolve().parents[1],
     )
+    check_parser.add_argument(
+        "--all-markdown",
+        action="store_true",
+        help="scan every Markdown file (for a sealed source archive without .git)",
+    )
     sub.add_parser("self-test")
     args = parser.parse_args()
     if args.command == "self-test":
         self_test()
         return 0
-    errors = check(args.root)
+    selected = _all_markdown(args.root.resolve()) if args.all_markdown else None
+    errors = check(args.root, selected)
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
         print(f"markdown link gate: {len(errors)} error(s)", file=sys.stderr)
         return 1
-    print("markdown link gate: all tracked local targets exist with exact case")
+    scope = "archive" if args.all_markdown else "tracked"
+    print(
+        "markdown link gate: "
+        f"all {scope} local targets exist with exact case"
+    )
     return 0
 
 

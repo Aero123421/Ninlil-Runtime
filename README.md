@@ -6,19 +6,20 @@ Ninlil Core は、特定のアプリケーション固有の業務語彙に依�
 
 ## 現在の状態
 
-**V1 LAB RC2 は host simulation の検証用候補であり、完成したRuntime SDKではありません。**
-タグ [`v1.0-lab-rc2`](https://github.com/Aero123421/Ninlil-Runtime/releases/tag/v1.0-lab-rc2)
-には統合E2Eと多数の故障試験があります。現在の `main` の install package は
-公開header、`Ninlil::runtime`、および任意の POSIX SQLite port を export します。
-また、公開API、完全なdurable admission/restart、payload実配送、実Wi-Fi/RF、
-relay、multi-parent、完全fragmentationには未完了項目があります。
+`main` は、Portable Core / Host RuntimeとOSS配布境界を持つ**プレリリースSDK**です。
+公開header、`Ninlil::runtime`、`Ninlil::fabric_v1`、Linux/macOS向けの
+`Ninlil::posix_tls_v1`と`Ninlil::posix_usb_serial_v1`、任意のPOSIX SQLite
+storage portをinstallできます。relay、multi-parent、multi-frame transferなどの
+内部engineは、V1の小さなcomposition APIから利用できる形にするまで個別のpublic
+ABIとしてexportしません。
 
-現在は、[V2 Runtime Fabric Completion Contract](docs/34-v2-runtime-fabric-completion.md)
-に基づき、機能ごとに仕様、実装、Host/ESP試験、HIL、互換性、release evidenceを
-閉じる作業を進めています。概算パーセントやテスト件数だけでは完成扱いにしません。
+完成判定は[Compatibility matrix](compatibility-matrix.json)と
+[V2 Runtime Fabric Completion Contract](docs/34-v2-runtime-fabric-completion.md)で行います。
+仕様、実装、Host試験、ESP target build、実機HIL、配布証拠を別々に管理し、
+テスト件数や概算パーセントだけで完成扱いにしません。
 
-**LAB_ONLY** — 国内実運用可能・production 法規認定は **主張しません**。物理
-USB / RF / flash / power-cut HILも未完了です。
+> **LAB_ONLY / pre-release:** production運用、920 MHz法規適合、field SLO、
+> 物理USB/RF、実AP、flash power-cutの完了は主張しません。
 
 ### 完成までの進捗台帳
 
@@ -28,59 +29,71 @@ USB / RF / flash / power-cut HILも未完了です。
 
 | 機能 | 現在の状態 | 次の必須gate |
 | --- | --- | --- |
-| Portable Core / Host Runtime | **HOST_CANDIDATE修正中** | durable lifecycleの独立レビューP0/P1=0、通常・sanitizer・package CI |
-| Canonical Domain Store | **PROPOSED** | ADR-0022の独立受入後、bootstrap / recovery / migrationの実装とcrash matrix |
-| Identity / Attachment / session install | **PROPOSED** | M4/M5のexact pre-attachment carrier、FULL durable Attachment、Hop/E2E key installとrestart/HIL |
-| Fabric Bearer / NFL1 / path registry | **PROPOSED** | ADR-0017のexact API・storage・vectorを`SPEC_ACCEPTED`へ |
-| POSIX TCP/TLS Wi-Fi reference | **UNALLOCATED（実装0）** | ADR-0017後にADR-0018を受入し、codec→Fabric→TCP→TLSの順でHost実装 |
-| ESP32-S3 Wi-Fi STA/TCP/TLS | **UNALLOCATED（実装0）** | Host候補後、pinned ESP-IDF target build・target test・実AP HIL |
-| NRW1 LINK / FRAG / reassembly | **SPEC_ACCEPTED相当のR6設計、実装未完** | R7 state/wire materialization、loss/reorder/restart試験、RF HIL |
-| Relay | **PROPOSED** | FabricとLINK/FRAG後にADR-0019受入、2〜3 hop実装・3台以上RF HIL |
-| Multi-parent / multi-Controller | **PROPOSED** | Relay後にADR-0020受入、single-owner fence・handoff・split-brain試験 |
-| Multi-frame durable transfer | **PROPOSED** | ADR-0021受入、chunk custody・再構成・power-cut matrix |
-| OSS package / docs / release CI | **HOST_CANDIDATE** | 全featureのsupport matrix、互換性、SBOM・attestation付きrelease、独立review |
+| Portable Core / Host Runtime | **SPEC_ACCEPTED / local Host候補** | 4 Service登録、submit、dedupe、query/list、memory/SQLite cold restartを含むtests-OFF installed consumerとworktree clean-roomはlocal合格済み。複数targetのtarget-local retry/outcome/late evidence、durable pre-sendの`DISPATCHING`投影、evidence counterのMAX/restart境界は通常・Sanitizerで合格。raw evidence cell全履歴、milestone独立レビュー、同一immutable SHAのLinux/macOS clean-room・Sanitizerが未完 |
+| Canonical Domain Store | **SPEC_ACCEPTED / scanner・target build候補** | D3-S4 authority 468/468、通常・Sanitizer・ESP compile/linkは合格。ただしDomain-ON public Runtimeは`NINLIL_DOMAIN_SCHEMA1_PUBLIC_RUNTIME_READY=0`で意図的にfail closed。D3-S5..S12、D4、T2/T3/T6、canonical operational writer、restart/cleanup受入を閉じるまでpublic binding完成とは扱わない |
+| Identity / Attachment / session install | **PROPOSED / repair中** | pre-attachment scratch lifecycle、quota/token/cookie境界、protocol magic registryを独立authorityで再検証中。M4/M5のFULL durable Attachment、Hop/E2E key install、restart/HILも未完 |
+| Fabric Bearer / NFL1 / path registry | **SPEC_ACCEPTED / experimental public package** | `ninlil/fabric_v1.h`と`Ninlil::fabric_v1`を公開。tests-OFF install、2組のRuntime/Fabricによるforward＋reverse Receipt、正当なavailability更新後のcold restart、tamper負例を通常・Sanitizer・独立レビューで確認。次はcomposition ownerから内部engineを束ねる |
+| POSIX TCP/TLS reference | **SPEC_ACCEPTED / experimental public Host package** | ADR-0030の`ninlil/posix_tls_v1.h`と`Ninlil::posix_tls_v1`を公開。installed public APIだけの2プロセス実TLSでverified Receipt、同じSQLiteを使う2周のclean restartを確認。物理AP・長時間HILは`NOT_RUN` |
+| POSIX USB serial reference | **SPEC_ACCEPTED / experimental public Host package** | ADR-0031の`ninlil/posix_usb_serial_v1.h`と`Ninlil::posix_usb_serial_v1`を公開。tests-OFF install後の外部C11 consumerで実PTY双方向通信、close/reopen、generation更新を通常・ASan/UBSan・独立レビューで確認。Linux実行CIとLinux/macOS物理USB CDC HILは別gate |
+| ESP32-S3 Wi-Fi STA/TCP/TLS | **PROPOSED / TLS target build合格** | R7 `OTHER_REGISTERED`同居管理はADR-0026として受入済み。internal/PSRAM予約、通常・Sanitizer、ESP-IDF v5.5.3 compile/link/mapも合格。Wi-Fi/LwIPの実行時資源、実AP・切断/restart・peak・soak HILを閉じる |
+| NRW1 LINK / FRAG / reassembly | **SPEC_ACCEPTED / target build合格** | 全authority bridgeとsemantic hook、通常・Sanitizer、ESP compile/linkは合格。全private同時build、target実行、loss/reorder/restartと物理RF HILを閉じる |
+| Relay | **SPEC_ACCEPTED / software候補レビュー合格** | 64KiB以下のatomic storage bundle、strict dual-image import、FULL/CU matrix、通常・Sanitizer各18/18は合格。公開ABI判断と3台RF HILを閉じる |
+| Multi-parent / multi-Controller | **SPEC_ACCEPTED / software候補レビュー合格** | durable used-attempt台帳、old/new exact authority CAS、global split-brain fence、10,000 lifecycleは合格。公開ABI判断と実機failover HILを閉じる |
+| Multi-frame durable transfer | **SPEC_ACCEPTED / Host software候補** | private MFDT protocol v1、revision 2 OPEN、Host 4-slot coordinator、Runtimeごとのsidecar、1〜4 target admission/restart reconciliationを実装。公開`ninlil_submit()`から2つのHost Runtimeを通常の`ninlil_runtime_step()`だけで駆動し、927〜32768 byteの分割・再構成・digest検証、Application Service apply、positive evidence、handoff、既存Receipt、durable closure、terminal/content releaseまで通常・ASan/UBSanで合格。READY、HANDED_OFF、Receipt closed、retained terminalのcold restartと不一致fail-closedも確認済み。残件はinstalled module/package受入、ESP exact-1 owner、MF-O08 target promotion、物理Wi-Fi/RF/power-cut HIL |
+| V1 composition | **SPEC_ACCEPTED / base owner Host候補** | ADR-0032の公開`composition_v1` base owner（workspace/create、Runtime/Fabric借用、bounded step、terminal release、close/destroy）を実装。namespace分離、残作業OR、順不同terminalの再走査、C/C++ header自己完結、ABI manifestを通常・ASan/UBSanで確認。Bearer前sidecar recovery、MFDT/FRAG/relay/multi-parent接続、tests-OFF installed composition consumerとlarge-data/relay受入は未完。8-module制度や汎用plugin frameworkはV1非対象 |
+| OSS package / docs / release CI | **HOST_CANDIDATE** | actionlint・全shellcheck・固定OpenSSL authorityは合格。commit-tree dry run、公開asset照合、独立review（`RELEASE_SUPPORTED`は未昇格） |
+
+OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost software候補を
+意味します。Portable Coreや各transport機能の完成、remote release成功、物理HIL、
+法規適合をまとめて主張する状態ではありません。
 
 物理USB、SX1262 RF、flash power-cut、実AP、24時間soakは、対応機材を接続して得た
 再現可能なartifactが揃うまで`HIL_VERIFIED`へ進めません。現在の詳細な依存順と
 完成条件は[34章](docs/34-v2-runtime-fabric-completion.md)を正本とします。
 
-## 検証区分（host verified / HIL pending / V2）
+### V1ソフトウェア完成までの順序
+
+1. ~~Portable Fabric公開と実Runtime取引~~ — 完了
+2. ~~POSIX TCP/TLS公開と2プロセスrestart E2E~~ — 完了
+3. ~~POSIX USB serial公開とinstalled PTY E2E~~ — 完了
+4. `composition_v1`でlarge-data、fragmentation、relay/multi-parentを内部接続 — base ownerはHost候補、sidecar/FRAG/relay接続とinstalled E2Eは未完
+5. ESP-IDFのWi-Fi／SX1262／USB composition helperとESP32-S3 build/map — 未着手
+6. README・SDK配布物・CIの最終整合監査 — 未着手
+7. 物理USB、実AP、SX1262、電源断HIL — 機材で実行するまで`NOT_RUN`
+
+## 検証区分
 
 | 区分 | 内容 |
 | --- | --- |
-| **host verified** | POSIX SQLite storage port、Foundation model、NRW1 SINGLE codec、USB / radio **software path**（host simulation）、2-process LAB E2E、examples 4 本 build+run、full CTest（通常 + ASan/UBSan） |
-| **HIL pending** | ESP flash / USB 実機、SX1262 physical RF TX/RX、power-cut / FULL durable attestation（ESP）、USB CDC HIL、Display / Leak **実機** node E2E（[RC 残件](docs/work/2026-07-23-v1-rc-residuals.md)） |
-| **completion work** | 全public API、canonical durable admission/restart、payload配送、Wi-Fi、relay、multi-parent、完全wire fragmentation |
+| **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。composition sidecar接続、ESP ownerと実機経路は未完であり、機能ごとの正式状態は上表を優先します |
+| **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter。target上での実行が未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
+| **物理HIL待ち** | ESP flash、実AP、USB CDC、SX1262 TX/RX、2/3-hop、multi-parent failover、電源断、長時間soak。証拠がない項目は一律`NOT_RUN`です |
 
-## 構成（V1 LAB host simulation）
+## アーキテクチャ
 
 ```
- Application (submit / service callbacks)
-        |
-        v
- +------------------+
- |  Public API      |  ninlil_submit, service_register, runtime_step, ...
- +------------------+
-        |
-        v
- +------------------+
- |  Runtime         |  admission / delivery / evidence / outcome
- |  (durable spine) |
- +------------------+
-        |
-   +----+----+
-   |         |
-   v         v
- Durable    Secure wire + bearer
- store      (POSIX SQLite)   (C4/C5/C6 LAB + loopback sim)
-   |              |
-   |              v
-   |         USB / radio software path
-   |              |
-   +------+-------+
-          v
-       Peer Runtime
+ Application services / arbitrary ApplicationData
+                    |
+                    v
+        +--------------------------+
+        | Portable Runtime Core    |
+        | admission / deadline     |
+        | retry / dedupe / outcome |
+        +------------+-------------+
+                     |
+           +---------+---------+
+           v                   v
+    Durable Storage       Fabric / Bearers
+    POSIX SQLite          Wi-Fi / USB / LoRa
+           |                   |
+           +---------+---------+
+                     v
+               Peer Runtime
 ```
+
+Coreはsocket、ESP-IDF、SX1262、アプリ固有語彙を知りません。platform adapterが
+storage・clock・entropy・Bearerを提供し、private機能はAccepted public ABIの外側で
+段階的に昇格します。
 
 ## 5 分 quickstart
 
@@ -100,16 +113,72 @@ ctest --test-dir tmp-v1 --output-on-failure
 
 現行SDKの詳細: [Host Runtime SDK](docs/host-runtime-sdk.md)
 
+### installしてCMakeから使う
+
+```bash
+cmake --install tmp-v1 --prefix "$PWD/tmp-install"
+```
+
+consumer側:
+
+```cmake
+find_package(Ninlil CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Ninlil::runtime)
+```
+
+用途に応じて`Ninlil::fabric_v1`、`Ninlil::posix_tls_v1`、
+`Ninlil::posix_usb_serial_v1`も同じinstalled packageからlinkできます。
+
+POSIX SQLite adapterのexport名と、testsを含まないclean installの確認方法は
+[Host Runtime SDK](docs/host-runtime-sdk.md)を参照してください。
+
+### private候補を開発・検証する
+
+以下は既定で`OFF`です。公開ABIやproduction supportを意味しません。
+
+| CMake option | 候補機能 |
+| --- | --- |
+| `NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING` | Canonical Domain Store runtime binding |
+| `NINLIL_ENABLE_PRIVATE_FABRIC_V1` | Fabric registry / NFL1 / path selection |
+| `NINLIL_ENABLE_PRIVATE_WIFI_V1` | POSIX/ESP Wi‑Fi packet-link |
+| `NINLIL_ENABLE_R7_FRAG_PRIVATE` | secure radio fragmentation/reassembly |
+| `NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1` | relay / multi-parent |
+| `NINLIL_ENABLE_MFDT_V1_PRIVATE` | multi-frame durable transfer |
+
+全private候補を同時にHost検証する例:
+
+```bash
+cmake -S . -B tmp-all-private -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DNINLIL_BUILD_TESTS=ON \
+  -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=ON \
+  -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+  -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+  -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON \
+  -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+  -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+  -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON
+cmake --build tmp-all-private -j
+ctest --test-dir tmp-all-private --output-on-failure
+```
+
+system OpenSSLを使うWi‑Fi Host buildはLAB用です。authority証拠には
+`tools/wifi_v1_build_pinned_openssl.sh`とCIで固定したOpenSSL profileを使います。
+
 ## Examples（host simulation）
 
-`examples/v1_lab/` の 4 本。いずれも `submit → delivery`（または Measurement の bearer egress）を host 上で再現します。
+`examples/v1_lab/` の 4 本。いずれも host 上で `submit → delivery` を再現します。
 
-| Example | 説明 | 実行 |
+**M1a 公開 family は DesiredState + EventFact のみ**（[ADR-0024](docs/adr/0024-m1a-public-family-matrix-freeze.md)）。named reserved `LATEST_STATE_RESERVED` / `MEASUREMENT_RESERVED` は `service_register = NINLIL_E_UNSUPPORTED` のままで、first-class public family ではありません。Display / Leak は製品ラベルの **display snapshot event (EventFact)** / **leak measurement event (EventFact)** です（service_id 文字列は `latest-state` / `leak-measurement` だが family enum は EventFact）。
+
+| Example | 説明 | 実行（historical target name; label-only） |
 | --- | --- | --- |
 | **Controller** | Site Controller から統合 topology へ DesiredState を submit | `cd tmp-v1 && ./ninlil_v1_lab_controller_submit_example` |
 | **Cell** | Cell Agent — USB custody + radio TX 経路 | `cd tmp-v1 && ./ninlil_v1_lab_cell_custody_example` |
-| **Display** | Display ノード相当の 2-process loopback 上行 LatestState | `cd tmp-v1 && ./ninlil_v1_lab_display_latest_state_example` |
-| **Leak** | Leak ノード相当の 2-process loopback 上行 MeasurementBatch | `cd tmp-v1 && ./ninlil_v1_lab_leak_measurement_example` |
+| **Display** | Display ノード相当の 2-process loopback 上行 — **display snapshot event (EventFact)** | `cd tmp-v1 && ./ninlil_v1_lab_display_latest_state_example` |
+| **Leak** | Leak ノード相当の 2-process loopback 上行 — **leak measurement event (EventFact)** | `cd tmp-v1 && ./ninlil_v1_lab_leak_measurement_example` |
+
+Executable / CTest 名 `*_display_latest_state_*` / `*_leak_measurement_*` は **互換用の historical label のみ**（deprecation 候補; 改名しない）。reserved public family の有効化を意味しません（ADR-0024）。
 
 一括実行: `ctest -R 'v1_lab_.*_example' --test-dir tmp-v1 --output-on-failure`
 
@@ -136,8 +205,8 @@ ctest --test-dir tmp-v1 --output-on-failure
 
 | Platform | 状態 |
 | --- | --- |
-| **POSIX host（Linux x86_64 / macOS arm64）** | **HOST_CANDIDATE** — LAB quickstart・examples・統合 E2E・consumer install smokeはHost検証済み。Release supportの主張ではない |
-| **ESP-IDF v5.5.3（ESP32-S3 target build）** | compile / link smoke（`.github/workflows/esp-idf.yml`）。**HIL 未** — flash / USB 実機 / RF / power-cut は RC 残件 |
+| **POSIX host（Linux x86_64 / macOS arm64）** | **HOST_CANDIDATE（software-ready）** — LAB quickstart・examples・統合 E2E・consumer install smoke・release archive clean-room は Host ソフトウェア検証対象。**`RELEASE_SUPPORTED` ではない**。物理 HIL は未 |
+| **ESP-IDF v5.5.3（ESP32-S3 target build）** | compile / link smoke（`.github/workflows/esp-idf.yml`）。**HIL pending** — flash / USB 実機 / RF / power-cut は RC 残件（software smoke ≠ field HIL） |
 
 ## 制限・security・法規
 
@@ -154,6 +223,8 @@ ctest --test-dir tmp-v1 --output-on-failure
 | [SDK distribution manifest](docs/sdk-distribution-manifest.md) | 現行install tree・export境界・release artifacts |
 | [Compatibility matrix](compatibility-matrix.json) | version・platform・feature状態・HIL境界のmachine-readable正本 |
 | [Dependency inventory](dependency-inventory.json) | Host / ESP-IDF dependency、version、license、lock hash、container digestのmachine-readable正本 |
+| [Release Guide](docs/releasing.md) | immutable source identity、source archive、SBOM、attestationの公開手順 |
+| [Requirements traceability](requirements-traceability.yaml) | Foundation PR1の厳密な試験対応表。Coverage V2がbaseline / all-private両profileのNormative見出し・要件・vector・invariantを検査 |
 | [V1 LAB quickstart](docs/v1-lab-quickstart.md) | `v1.0-lab-rc2`履歴スナップショット |
 | [V1 LAB developer](docs/v1-lab-developer.md) | `v1.0-lab-rc2`開発者向け履歴 |
 | [V1 LAB distribution](docs/v1-lab-distribution-manifest.md) | `v1.0-lab-rc2`配布履歴 |

@@ -19,7 +19,9 @@ extern "C" {
 
 typedef enum ninlil_rt_v1_bearer_route {
     NINLIL_RT_V1_BEARER_ROUTE_SIMULATED = 1,
-    NINLIL_RT_V1_BEARER_ROUTE_U6 = 2
+    NINLIL_RT_V1_BEARER_ROUTE_U6 = 2,
+    /* Private ADR-0021 multi-frame: logical ApplicationData up to 32768. */
+    NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1 = 3
 } ninlil_rt_v1_bearer_route_t;
 
 typedef struct ninlil_rt_v1_bearer_limit_row {
@@ -105,6 +107,13 @@ ninlil_status_t ninlil_rt_v1_stage_resource_ledger(
     ninlil_storage_txn_t storage_txn,
     ninlil_v1_durable_operation_t operation,
     const ninlil_model_resource_ledger_t *ledger);
+
+ninlil_status_t ninlil_rt_v1_stage_resource_ledger_kind(
+    ninlil_runtime_t *runtime,
+    ninlil_storage_txn_t storage_txn,
+    ninlil_v1_durable_operation_t operation,
+    const ninlil_model_resource_ledger_t *ledger,
+    ninlil_resource_kind_t kind);
 
 ninlil_status_t ninlil_rt_v1_restore_resource_ledger_row(
     ninlil_runtime_t *runtime,

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate the closed direct/transitive dependency and notice inventory."""
+"""Validate the closed direct/transitive dependency and notice inventory.
+
+Release SBOM tooling identity is bound to the *executed* workflow mapping
+values (comments do not count). Syft must be the exact immutable download-syft
+Action SHA plus the exact `syft-version` pin — no floating tags, no comment
+smuggling, no dynamic indirection.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,7 @@ import copy
 import json
 import pathlib
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -15,6 +22,63 @@ from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 INVENTORY_PATH = ROOT / "dependency-inventory.json"
+SYFT_ACTION = (
+    "anchore/sbom-action/download-syft@"
+    "e22c389904149dbc22b58101806040fa8d37a610"
+)
+SYFT_VERSION = "v1.49.0"
+PYYAML_VENDOR_PATH = "tools/_vendor"
+PYYAML_TREE_SHA256 = (
+    "00e9d5acfbcd65db22fb7ebc0637cd5920cf7ef43d512d059168026f72cc693a"
+)
+EXPECTED_VENDORED = [
+    {
+        "id": "pyyaml",
+        "name": "PyYAML",
+        "version": "6.0.2",
+        "spdx_license": "MIT",
+        "relationship": "DIRECT",
+        "source_path": PYYAML_VENDOR_PATH,
+        "download_location": "https://pypi.org/project/PyYAML/6.0.2/",
+        "component_hash": PYYAML_TREE_SHA256,
+        "supplier": "Organization: PyYAML project",
+        "syft_names": ["PyYAML", "pyyaml", "yaml"],
+        "comment": (
+            "Vendored pure-Python PyYAML for release workflow YAML semantic "
+            "gates (tools/_vendor)."
+        ),
+    }
+]
+EXPECTED_LOCK_COMPONENTS = [
+    {
+        "id": "espressif/esp_tinyusb",
+        "name": "esp_tinyusb",
+        "version": "2.1.1",
+        "component_hash": (
+            "fa0c96d7bdc3fe37383d735e2839a9007200a0b6bc039458d45d004b50146e81"
+        ),
+        "spdx_license": "Apache-2.0",
+        "relationship": "DIRECT",
+    },
+    {
+        "id": "espressif/tinyusb",
+        "name": "TinyUSB",
+        "version": "0.21.0~1",
+        "component_hash": (
+            "a72b7d67472914ab76309340fd50d578b31e310963d45ad0f81144bde3314752"
+        ),
+        "spdx_license": "MIT",
+        "relationship": "TRANSITIVE",
+    },
+    {
+        "id": "idf",
+        "name": "ESP-IDF",
+        "version": "5.5.3",
+        "component_hash": None,
+        "spdx_license": "Apache-2.0",
+        "relationship": "DIRECT",
+    },
+]
 
 
 class GateError(RuntimeError):
@@ -67,6 +131,183 @@ def exact(text: str, pattern: str, label: str) -> str:
     if isinstance(value, tuple):
         raise GateError(f"{label}: internal pattern must have one capture")
     return value
+
+
+
+_TOOLS = pathlib.Path(__file__).resolve().parent
+if str(_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_TOOLS))
+from yaml_semantic import (  # type: ignore  # noqa: E402
+    load_yaml_document,
+    step_uses,
+    step_with,
+    walk_job_steps,
+)
+
+
+def logical_shell_commands(script: str) -> list[str]:
+    commands: list[str] = []
+    current = ""
+    for raw_line in script.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        continued = line.endswith("\\")
+        piece = line[:-1].rstrip() if continued else line
+        current = f"{current} {piece}".strip()
+        if not continued:
+            commands.append(current)
+            current = ""
+    if current:
+        raise GateError("release workflow has unterminated shell continuation")
+    return commands
+
+
+def active_commands_with_marker(
+    doc: Any, marker: str
+) -> list[tuple[str, int, list[str]]]:
+    found: list[tuple[str, int, list[str]]] = []
+    from yaml_semantic import step_run  # type: ignore
+
+    for job_id, step_index, step in walk_job_steps(doc):
+        if step_index is None:
+            continue
+        run = step_run(step)
+        if not run:
+            continue
+        for command in logical_shell_commands(run):
+            if marker not in command:
+                continue
+            try:
+                words = shlex.split(command, comments=True, posix=True)
+            except ValueError as exc:
+                raise GateError(
+                    f"release job={job_id} step[{step_index}] invalid marked "
+                    f"shell command: {exc}"
+                ) from exc
+            if marker in " ".join(words):
+                found.append((job_id, step_index, words))
+    return found
+
+
+def validate_syft_tool_identity(release_workflow: str) -> None:
+    """Bind exact executed Syft identity on the download-syft step only.
+
+    `with.syft-version` on any non-download-syft step (e.g. checkout decoy) is
+    ignored as authority and, if present, rejected as smuggling. Unicode-escaped
+    keys resolve via YAML semantics before binding.
+    """
+    try:
+        doc = load_yaml_document(release_workflow)
+    except ValueError as exc:
+        raise GateError(f"release workflow YAML: {exc}") from exc
+
+    syft_steps: list[tuple[str, int, object, object]] = []
+    smuggled: list[str] = []
+    for job_id, step_index, step in walk_job_steps(doc):
+        if step_index is None:
+            continue
+        uses = step_uses(step)
+        with_map = step_with(step)
+        if uses is not None and str(uses).startswith("anchore/sbom-action/download-syft"):
+            syft_steps.append((job_id, step_index, uses, with_map))
+            continue
+        # syft-version on any other step is a decoy / smuggle channel.
+        if "syft-version" in with_map:
+            smuggled.append(
+                f"job={job_id} step[{step_index}] uses={uses!r} "
+                f"syft-version={with_map.get('syft-version')!r}"
+            )
+
+    if smuggled:
+        raise GateError(
+            "syft-version must only appear on the download-syft step; "
+            f"decoy/smuggle found: {smuggled}"
+        )
+    if len(syft_steps) != 1:
+        raise GateError(
+            "release workflow must contain exactly one download-syft step, "
+            f"got {len(syft_steps)}"
+        )
+    job_id, step_index, uses, with_map = syft_steps[0]
+    if uses != SYFT_ACTION:
+        raise GateError(
+            f"download-syft step uses must be exact {SYFT_ACTION!r}, got {uses!r}"
+        )
+    if set(with_map) != {"syft-version"}:
+        raise GateError(
+            f"download-syft with: fields must be exactly {{syft-version}}, got {sorted(with_map)}"
+        )
+    version = with_map.get("syft-version")
+    if version != SYFT_VERSION:
+        raise GateError(
+            f"download-syft with.syft-version must be exact {SYFT_VERSION!r}, "
+            f"got {version!r}"
+        )
+
+    # Remaining SBOM pipeline authority must be active shell commands. Full-line
+    # and inline comments are removed by semantic YAML + shlex before matching.
+    syft_scan = active_commands_with_marker(doc, "spdx-json=${RAW_SBOM}")
+    if len(syft_scan) != 1:
+        raise GateError(f"release Syft scan command count must be 1, got {len(syft_scan)}")
+    scan_words = syft_scan[0][2]
+    required_scan = (
+        "${SYFT_CMD}",
+        "scan",
+        "dir:.",
+        "--source-name",
+        "ninlil-runtime",
+        "--source-version",
+        "${SOURCE_VERSION}",
+        "--output",
+        "spdx-json=${RAW_SBOM}",
+    )
+    if tuple(scan_words) != required_scan:
+        raise GateError(f"release Syft scan argv mismatch: {scan_words!r}")
+
+    expected_tools = (
+        (
+            "enrich",
+            [
+                "python3",
+                "tools/spdx_release_sbom.py",
+                "enrich",
+                "${RAW_SBOM}",
+                "${SBOM}",
+                "--project-version",
+                "${PROJECT_VERSION}",
+                "--source-version",
+                "${SOURCE_VERSION}",
+            ],
+        ),
+        (
+            "check",
+            [
+                "python3",
+                "tools/spdx_release_sbom.py",
+                "check",
+                "${SBOM}",
+                "--project-version",
+                "${PROJECT_VERSION}",
+                "--source-version",
+                "${SOURCE_VERSION}",
+            ],
+        ),
+        (
+            "self-test",
+            ["python3", "tools/spdx_release_sbom.py", "self-test"],
+        ),
+    )
+    for subcommand, expected_words in expected_tools:
+        matches = active_commands_with_marker(
+            doc, f"tools/spdx_release_sbom.py {subcommand}"
+        )
+        exact_matches = [words for _job, _step, words in matches if words == expected_words]
+        if len(exact_matches) != 1:
+            raise GateError(
+                f"release SPDX {subcommand} active argv mismatch: "
+                f"candidates={[words for _job, _step, words in matches]!r}"
+            )
 
 
 def require_object(value: Any, label: str) -> dict[str, Any]:
@@ -123,8 +364,74 @@ def parse_lock(lock: str, label: str) -> tuple[dict[str, dict[str, str | None]],
     return components, direct
 
 
+def vendor_tree_sha256(rel_path: str) -> str:
+    import hashlib
+
+    root = ROOT / rel_path
+    if not root.is_dir():
+        raise GateError(f"vendored dependency path missing: {rel_path}")
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        rel = path.relative_to(root).as_posix()
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def assert_vendored_git_tracked(rel_path: str, package_id: str) -> None:
+    """Fail closed when vendored files would be omitted from `git archive`."""
+    import subprocess
+
+    git_dir = ROOT / ".git"
+    if not git_dir.exists():
+        return
+    try:
+        listed = subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-files", "--", rel_path],
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise GateError(
+            f"{package_id}: cannot list git-tracked files under {rel_path}: {exc}"
+        ) from exc
+    tracked = [line for line in listed.splitlines() if line.strip()]
+    if not tracked:
+        raise GateError(
+            f"{package_id}: {rel_path} must be git-tracked so source archives "
+            f"(git archive) include the vendored tree; currently untracked"
+        )
+    # Require pure-Python yaml package + license for PyYAML.
+    if package_id == "pyyaml":
+        required_suffixes = (
+            "yaml/__init__.py",
+            "pyyaml-6.0.2.dist-info/licenses/LICENSE",
+            "pyyaml-6.0.2.dist-info/METADATA",
+        )
+        joined = "\n".join(tracked)
+        for suffix in required_suffixes:
+            if not any(path.endswith(suffix) for path in tracked):
+                raise GateError(
+                    f"pyyaml: git-tracked vendor tree missing required path "
+                    f"ending with {suffix!r}"
+                )
+
+
+
 def validate_inventory_shape(inventory: dict[str, Any]) -> None:
-    expected_top = {"schema", "project", "host_dependencies", "esp_idf"}
+    expected_top = {
+        "schema",
+        "project",
+        "host_dependencies",
+        "vendored_dependencies",
+        "syft_reconciliation",
+        "esp_idf",
+    }
     if set(inventory) != expected_top:
         raise GateError("dependency inventory top-level fields are not closed")
     if inventory.get("schema") != "ninlil-dependency-inventory-v1":
@@ -161,6 +468,33 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
     if host != expected_host:
         raise GateError("host dependency set/order/version/license drift")
 
+    vendored = require_array(inventory.get("vendored_dependencies"), "vendored_dependencies")
+    if vendored != EXPECTED_VENDORED:
+        raise GateError("vendored dependency set/version/license/path/hash drift")
+    for item in vendored:
+        source_path = str(item["source_path"])
+        actual_hash = vendor_tree_sha256(source_path)
+        if actual_hash != item["component_hash"]:
+            raise GateError(
+                f"{item['id']}: vendored tree hash drift at {source_path}: "
+                f"{actual_hash} != {item['component_hash']}"
+            )
+        license_file = ROOT / source_path / "pyyaml-6.0.2.dist-info" / "licenses" / "LICENSE"
+        if item["id"] == "pyyaml" and not license_file.is_file():
+            raise GateError("vendored PyYAML LICENSE file missing under dist-info")
+        # Source tag archives use `git archive`; untracked vendor trees are omitted.
+        assert_vendored_git_tracked(source_path, str(item["id"]))
+
+    recon = require_object(inventory.get("syft_reconciliation"), "syft_reconciliation")
+    if set(recon) != {"justified_exclusions"}:
+        raise GateError("syft_reconciliation fields are not closed")
+    exclusions = require_array(recon.get("justified_exclusions"), "justified_exclusions")
+    if exclusions != []:
+        raise GateError(
+            "syft_reconciliation.justified_exclusions must be empty for current tree "
+            f"(got {exclusions!r})"
+        )
+
     esp = require_object(inventory.get("esp_idf"), "esp_idf")
     if set(esp) != {"container", "lock_components", "bundled_dependencies"}:
         raise GateError("esp_idf inventory fields are not closed")
@@ -175,6 +509,8 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
     }
     if esp.get("container") != expected_container:
         raise GateError("ESP-IDF container tag/platform/digest drift")
+    if esp.get("lock_components") != EXPECTED_LOCK_COMPONENTS:
+        raise GateError("ESP lock component name/version/hash/license/relationship drift")
     bundled = require_array(esp.get("bundled_dependencies"), "bundled_dependencies")
     if bundled != [
         {
@@ -258,6 +594,9 @@ def validate(inputs: Inputs) -> None:
     all_packages = (
         [inputs.inventory["project"]]
         + require_array(inputs.inventory["host_dependencies"], "host dependencies")
+        + require_array(
+            inputs.inventory["vendored_dependencies"], "vendored dependencies"
+        )
         + raw_components
         + require_array(esp["bundled_dependencies"], "bundled dependencies")
     )
@@ -265,36 +604,32 @@ def validate(inputs: Inputs) -> None:
         package_id = str(package["id"])
         version = str(package["version"])
         license_id = str(package["spdx_license"])
+        if package_id == "ninlil-runtime":
+            continue
+        machine_token = f"**Machine ID:** `{package_id}`"
+        if inputs.notices.count(machine_token) != 1:
+            raise GateError(f"{package_id}: notice machine ID expected once")
+        block = exact(
+            inputs.notices,
+            re.escape(machine_token)
+            + r"(?s:(.*?))(?=\n- \*\*Machine ID:\*\*|\n## |\Z)",
+            f"{package_id} notice block",
+        )
         for token in (
-            f"**Machine ID:** `{package_id}`",
             f"**Version:** `{version}`",
+            f"**License:** `{license_id}`",
         ):
-            if package_id == "ninlil-runtime":
-                continue
-            if inputs.notices.count(token) != 1:
+            if block.count(token) != 1:
                 raise GateError(
-                    f"{package_id}: notice token expected once, got "
-                    f"{inputs.notices.count(token)}: {token}"
+                    f"{package_id}: notice block token expected once: {token}"
                 )
-        license_token = f"**License:** `{license_id}`"
-        if package_id != "ninlil-runtime" and license_token not in inputs.notices:
-            raise GateError(f"{package_id}: notice license token absent")
         component_hash = package.get("component_hash")
         if component_hash is not None:
             token = f"**Component hash:** `{component_hash}`"
-            if inputs.notices.count(token) != 1:
+            if block.count(token) != 1:
                 raise GateError(f"{package_id}: notice component hash drift")
 
-    required_release_tokens = (
-        "syft-version: v1.49.0",
-        '--output "spdx-json=${RAW_SBOM}"',
-        "python3 tools/spdx_release_sbom.py enrich",
-        "python3 tools/spdx_release_sbom.py check",
-        "python3 tools/spdx_release_sbom.py self-test",
-    )
-    for token in required_release_tokens:
-        if token not in inputs.release_workflow:
-            raise GateError(f"release SBOM authority missing: {token}")
+    validate_syft_tool_identity(inputs.release_workflow)
 
 
 def expect_failure(label: str, inputs: Inputs) -> None:
@@ -331,6 +666,27 @@ def self_test() -> None:
     hash_drift.inventory["esp_idf"]["lock_components"][1]["component_hash"] = "0" * 64
     expect_failure("component hash drift", hash_drift)
 
+    license_drift = copy.deepcopy(baseline)
+    license_drift.inventory["esp_idf"]["lock_components"][1]["spdx_license"] = (
+        "Apache-2.0"
+    )
+    license_drift.notices = license_drift.notices.replace(
+        "**License:** `MIT`",
+        "**License:** `Apache-2.0`",
+        1,
+    )
+    expect_failure("component license authority drift", license_drift)
+
+    misplaced_license = copy.deepcopy(baseline)
+    misplaced_license.notices = misplaced_license.notices.replace(
+        "- **License:** `Apache-2.0`\n"
+        "  ([Espressif Component Registry]",
+        "- **License:** `MIT`\n"
+        "  ([Espressif Component Registry]",
+        1,
+    )
+    expect_failure("license token in wrong package block", misplaced_license)
+
     notice_missing = copy.deepcopy(baseline)
     notice_missing.notices = notice_missing.notices.replace(
         "**Machine ID:** `espressif/tinyusb`",
@@ -339,6 +695,23 @@ def self_test() -> None:
     )
     expect_failure("missing notice package", notice_missing)
 
+    # Vendored PyYAML must remain in inventory + notices (no silent omission).
+    no_pyyaml = copy.deepcopy(baseline)
+    no_pyyaml.inventory["vendored_dependencies"] = []
+    expect_failure("missing vendored PyYAML inventory entry", no_pyyaml)
+
+    pyyaml_hash_drift = copy.deepcopy(baseline)
+    pyyaml_hash_drift.inventory["vendored_dependencies"][0]["component_hash"] = "0" * 64
+    expect_failure("vendored PyYAML tree hash drift", pyyaml_hash_drift)
+
+    pyyaml_notice_missing = copy.deepcopy(baseline)
+    pyyaml_notice_missing.notices = pyyaml_notice_missing.notices.replace(
+        "**Machine ID:** `pyyaml`",
+        "**Machine ID:** `removed-pyyaml`",
+        1,
+    )
+    expect_failure("missing PyYAML notice machine ID", pyyaml_notice_missing)
+
     floating_sbom = copy.deepcopy(baseline)
     floating_sbom.release_workflow = floating_sbom.release_workflow.replace(
         "syft-version: v1.49.0",
@@ -346,6 +719,85 @@ def self_test() -> None:
         1,
     )
     expect_failure("floating SBOM generator", floating_sbom)
+
+    # Independent audit mutant: executed pin floats while old pin stays in comment.
+    comment_smuggle = copy.deepcopy(baseline)
+    comment_smuggle.release_workflow = comment_smuggle.release_workflow.replace(
+        "syft-version: v1.49.0",
+        "syft-version: latest  # syft-version: v1.49.0",
+        1,
+    )
+    expect_failure("syft latest with old pin in comment", comment_smuggle)
+
+    for label, live_line in (
+        ("commented Syft scan", '          "${SYFT_CMD}" scan dir:. \\'),
+        (
+            "commented SPDX enrich",
+            "          python3 tools/spdx_release_sbom.py enrich \\",
+        ),
+        (
+            "commented SPDX check",
+            "          python3 tools/spdx_release_sbom.py check \\",
+        ),
+        (
+            "commented SPDX self-test",
+            "          python3 tools/spdx_release_sbom.py self-test",
+        ),
+    ):
+        commented_pipeline = copy.deepcopy(baseline)
+        commented_pipeline.release_workflow = (
+            commented_pipeline.release_workflow.replace(
+                live_line,
+                live_line.replace("          ", "          # ", 1),
+                1,
+            )
+        )
+        expect_failure(label, commented_pipeline)
+
+    # Extra / alternate syft identities.
+    extra_syft = copy.deepcopy(baseline)
+    extra_syft.release_workflow = extra_syft.release_workflow + (
+        "\n      - uses: anchore/sbom-action/download-syft@main\n"
+        "        with:\n"
+        "          syft-version: latest\n"
+    )
+    expect_failure("extra floating syft Action", extra_syft)
+
+    dynamic_syft = copy.deepcopy(baseline)
+    dynamic_syft.release_workflow = dynamic_syft.release_workflow.replace(
+        "syft-version: v1.49.0",
+        "syft-version: ${{ vars.SYFT_VERSION }}",
+        1,
+    )
+    expect_failure("dynamic syft-version expression", dynamic_syft)
+
+    # Unicode-escaped key on the real download-syft step → latest, plus decoy.
+    unicode_latest = copy.deepcopy(baseline)
+    unicode_latest.release_workflow = unicode_latest.release_workflow.replace(
+        "syft-version: v1.49.0",
+        r'"syft-\u0076ersion": latest',
+        1,
+    )
+    unicode_latest.release_workflow += (
+        "\n      - uses: actions/checkout@"
+        "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0\n"
+        "        with:\n"
+        "          syft-version: v1.49.0\n"
+    )
+    expect_failure(
+        r"syft-\u0076ersion latest with checkout decoy v1.49.0",
+        unicode_latest,
+    )
+
+    # Decoy alone with good pin still fails (syft-version only on download-syft).
+    decoy_only = copy.deepcopy(baseline)
+    decoy_only.release_workflow += (
+        "\n      - uses: actions/checkout@"
+        "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0\n"
+        "        with:\n"
+        "          syft-version: v1.49.0\n"
+    )
+    expect_failure("checkout step syft-version decoy", decoy_only)
 
     mutable_container = copy.deepcopy(baseline)
     mutable_container.inventory["esp_idf"]["container"]["digest"] = "sha256:" + "0" * 64

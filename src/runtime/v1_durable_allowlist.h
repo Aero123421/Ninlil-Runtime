@@ -22,7 +22,7 @@
 extern "C" {
 #endif
 
-#define NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT ((uint32_t)34u)
+#define NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT ((uint32_t)41u)
 #define NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT ((uint32_t)19u)
 
 typedef enum ninlil_v1_durable_record_kind {
@@ -59,7 +59,17 @@ typedef enum ninlil_v1_durable_record_kind {
     NINLIL_V1_DURABLE_KIND_M4_INSTALL_TOKEN = 31,
     NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION = 32,
     NINLIL_V1_DURABLE_KIND_SPINE_BEARER_STATE = 33,
-    NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE = 34
+    NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE = 34,
+    /* docs/17 independent map secondaries (family 6 subtypes 0x24/0x25). */
+    NINLIL_V1_DURABLE_KIND_DOM_IDEMPOTENCY_MAP = 35,
+    NINLIL_V1_DURABLE_KIND_DOM_EVENT_ID_MAP = 36,
+    /* docs/17 admission witness group (family 6 subtypes 0x7f/0x7e). */
+    NINLIL_V1_DURABLE_KIND_DOM_WITNESS_HEADER = 37,
+    NINLIL_V1_DURABLE_KIND_DOM_WITNESS_MANIFEST_CHUNK = 38,
+    /* ADR-0022 kind-1 Domain SERVICE group (family 6 subtypes 0x10/0x11/0x23). */
+    NINLIL_V1_DURABLE_KIND_DOM_SERVICE = 39,
+    NINLIL_V1_DURABLE_KIND_DOM_SERVICE_QUOTA = 40,
+    NINLIL_V1_DURABLE_KIND_DOM_RESERVATION = 41
 } ninlil_v1_durable_record_kind_t;
 
 typedef enum ninlil_v1_durable_verification_owner {

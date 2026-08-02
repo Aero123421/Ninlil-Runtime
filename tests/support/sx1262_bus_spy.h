@@ -113,6 +113,17 @@ typedef struct ninlil_sx1262_bus_spy {
     uint64_t delay_calls;
     uint64_t now_calls;
     uint64_t settx_opcodes_seen;
+    uint64_t setrx_opcodes_seen;
+    uint64_t setcad_opcodes_seen;
+    /*
+     * After SetCad: if cad_force_busy != 0 → IRQ CadDone|CadDetected;
+     * else CadDone only (clear). cad_force_timeout: never set CadDone.
+     */
+    int cad_force_busy;
+    int cad_force_timeout;
+    uint16_t irq_status; /* GetIrqStatus bytes 2..3 */
+    uint8_t rx_payload_len;
+    uint8_t rx_payload[32];
     uint64_t ant_sw_set_calls;
     int last_ant_sw_active;
     uint64_t last_delay_us;

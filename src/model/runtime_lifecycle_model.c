@@ -3,6 +3,12 @@
 #include <stddef.h>
 #include <string.h>
 
+#if defined(NINLIL_MFDT_V1_PRIVATE)
+#define NINLIL_RUNTIME_LOGICAL_PAYLOAD_PROFILE_MAX ((uint32_t)32768u)
+#else
+#define NINLIL_RUNTIME_LOGICAL_PAYLOAD_PROFILE_MAX ((uint32_t)1024u)
+#endif
+
 static int header_is_current(uint16_t version, uint16_t size, size_t required)
 {
     return version == NINLIL_ABI_VERSION && (size_t)size >= required;
@@ -250,7 +256,8 @@ static int limits_fit_profile_upper(
     ninlil_role_t role,
     const ninlil_resource_limits_t *limits)
 {
-    const uint32_t service_max = role == NINLIL_ROLE_CONTROLLER ? 16u : 8u;
+    const uint32_t service_max =
+        role == NINLIL_ROLE_CONTROLLER ? 16u : 8u;
     const uint32_t transaction_max =
         role == NINLIL_ROLE_CONTROLLER ? 256u : 32u;
     const uint32_t retained_max =
@@ -258,8 +265,10 @@ static int limits_fit_profile_upper(
 
     if (limits->max_services > service_max
         || limits->max_nonterminal_transactions > transaction_max
-        || limits->max_targets_per_transaction > 1u
-        || limits->max_logical_payload_bytes > 1024u
+        || limits->max_targets_per_transaction
+            > NINLIL_FOUNDATION_MAX_EXACT_TARGETS
+        || limits->max_logical_payload_bytes
+            > NINLIL_RUNTIME_LOGICAL_PAYLOAD_PROFILE_MAX
         || limits->max_attempts_per_target_per_cycle
             > NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
         || limits->max_cancel_attempts_per_transaction > 1u
@@ -278,6 +287,11 @@ static int limits_fit_profile_upper(
 
     if (role == NINLIL_ROLE_CONTROLLER) {
         return limits->max_durable_outbox_payload_bytes <= 262144u
+            && limits->max_event_spool_count == 0u
+            && limits->max_event_spool_bytes == 0u;
+    }
+    if (role == NINLIL_ROLE_CELL_AGENT) {
+        return limits->max_durable_outbox_payload_bytes == 0u
             && limits->max_event_spool_count == 0u
             && limits->max_event_spool_bytes == 0u;
     }
@@ -419,16 +433,6 @@ ninlil_status_t ninlil_model_runtime_validate_and_derive(
         || config->environment > NINLIL_ENV_PRODUCTION_RESERVED) {
         set_validation_failure(out_result, NINLIL_E_INVALID_ARGUMENT,
             NINLIL_MODEL_RUNTIME_VALIDATION_UNKNOWN_ENVIRONMENT);
-        return out_result->status;
-    }
-    if (config->role == NINLIL_ROLE_CELL_AGENT_RESERVED) {
-        set_validation_failure(out_result, NINLIL_E_UNSUPPORTED,
-            NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ROLE);
-        return out_result->status;
-    }
-    if (config->environment != NINLIL_ENV_TEST) {
-        set_validation_failure(out_result, NINLIL_E_UNSUPPORTED,
-            NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ENVIRONMENT);
         return out_result->status;
     }
     if (config->storage_namespace.length < 1u

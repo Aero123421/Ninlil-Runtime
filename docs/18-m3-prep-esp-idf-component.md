@@ -33,11 +33,11 @@ M3 全体の exit gate（POSIX と同一 portable conformance subset、power-cut
 
 | 項目 | 値 |
 | --- | --- |
-| ESP-IDF release tag | **`v5.5.3`** |
+| ESP-IDF release tag（human pin） | **`v5.5.3`** |
 | 正本ファイル | [`ports/esp-idf/ESP_IDF_VERSION`](../ports/esp-idf/ESP_IDF_VERSION) |
-| 公式 Docker image | `espressif/idf:v5.5.3` |
+| 公式 Docker image（実行正本） | `docker.io/espressif/idf@sha256:3e77b709e0ba7f0e9a711039231103be822736b4105790b8e33339a3bf4e47fb`（v5.5.3 / **linux/amd64**） |
 | Component Manager 依存 | `idf_component.yml` の `idf.version: "==5.5.3"` |
-| CI | [`.github/workflows/esp-idf.yml`](../.github/workflows/esp-idf.yml) が上記 tag を読む |
+| CI | [`.github/workflows/esp-idf.yml`](../.github/workflows/esp-idf.yml) が上記 **immutable digest** + `--platform linux/amd64` で実行 |
 | Build target | **`esp32s3`**（必須） |
 
 `ports/esp-idf/ESP_IDF_VERSION`、本章、`idf_component.yml`、ESP-IDF workflow は **同一 concrete pin** でなければなりません。host CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）とは **分離** します。
@@ -47,7 +47,7 @@ M3 全体の exit gate（POSIX と同一 portable conformance subset、power-cut
 Web から「今日の最新 stable」を都度推測して pin しません。M3-prep では次の条件を満たす **既知の公式 stable release tag** を固定します。
 
 1. Espressif が公開する **concrete tag 形式 `vX.Y.Z`** であること（`master` / `release-v5.x` のような浮動参照ではない）。
-2. 公式の利用経路で再現できること。本 repository は **公式 Docker image `espressif/idf:<tag>`** を CI の setup 方式とする（外部 third-party Action に依存しない。`actions/checkout` のみ commit SHA pin）。
+2. 公式の利用経路で再現できること。本 repository は **公式 Docker image の immutable OCI digest（v5.5.3 / linux/amd64）** を CI の setup 方式とする（tag-only 追従は使わない。外部 third-party Action に依存しない。`actions/checkout` のみ commit SHA pin）。
 3. ESP32-S3 が supported target である世代の stable line であること。
 4. 本 pin は **「現時点で保証する唯一の ESP-IDF 検証 version」** であり、より新しい tag への追従や multi-version matrix は後続作業とする。
 
@@ -101,12 +101,14 @@ portable 実装本体は従来どおり repository の `include/ninlil/` と `sr
 - `tests/`、`generated/`、`tools/`、TEST-only transport begin を component に入れない。
 - ESP-IDF / FreeRTOS / NVS header を portable `src/**` へ include しない。
 - host と component の list drift は [`tools/esp_idf_component_packaging_gate.py`](../tools/esp_idf_component_packaging_gate.py) が CTest で検査する。
+- 同 gate は esp-idf.yml の **executed** `docker run` を immutable digest +
+  `--platform linux/amd64` に拘束し、`env` 埋め込みや dynamic docker を fail-closed する。
 
 ## 5. Component 利用者向け最小導入
 
 詳細手順と制約は [`ports/esp-idf/README.md`](../ports/esp-idf/README.md) を参照してください。要約:
 
-1. ESP-IDF **`v5.5.3`** を用意する（公式 install または `espressif/idf:v5.5.3`）。
+1. ESP-IDF **`v5.5.3`** を用意する（公式 install、または下記 immutable digest の公式 Docker image）。
 2. 自 project の `EXTRA_COMPONENT_DIRS` に `ports/esp-idf/components` を追加する。
 3. app component の `REQUIRES` に `ninlil` を書く。
 4. public header は `include/ninlil/*.h` のみを include する。
@@ -119,7 +121,7 @@ portable 実装本体は従来どおり repository の `include/ninlil/` と `sr
 | Workflow | 役割 |
 | --- | --- |
 | `.github/workflows/ci.yml` | host GCC normal + Clang ASan/UBSan + CTest（変更なしの意図） |
-| `.github/workflows/esp-idf.yml` | 公式 image `espressif/idf:<ESP_IDF_VERSION>` で `esp32s3` smoke build |
+| `.github/workflows/esp-idf.yml` | 公式 image immutable digest（v5.5.3 / `--platform linux/amd64`）で `esp32s3` smoke build |
 
 ESP-IDF job は host `ctest` を実行しません。host job は ESP-IDF を install しません。
 
@@ -128,8 +130,10 @@ ESP-IDF job は host `ctest` を実行しません。host job は ESP-IDF を in
 推奨（公式 Docker、巨大な host への ESP-IDF install を避ける）:
 
 ```sh
-pin="$(tr -d '[:space:]' < ports/esp-idf/ESP_IDF_VERSION)"
-docker run --rm -v "$PWD:/project" -w /project "espressif/idf:${pin}" \
+# human pin v5.5.3; execute immutable linux/amd64 OCI digest (not tag-only)
+docker run --rm --platform linux/amd64 \
+  -v "$PWD:/project" -w /project \
+  "docker.io/espressif/idf@sha256:3e77b709e0ba7f0e9a711039231103be822736b4105790b8e33339a3bf4e47fb" \
   bash -lc '. $IDF_PATH/export.sh && idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build'
 ```
 

@@ -112,7 +112,7 @@ storeを自動migration/open、またはsupport済みと広告してはならな
 | Public data wire | 未割当 | 未割当のまま | bearer framingやNRW1をpublic application wireと誤認しない |
 | Secure radio wire | `wire_profile_id=0x11` | 不変 | [30章](30-r6-secure-radio-wire.md) exact profile。変更時は新profile ID |
 | NCL1 envelope | `logical_version=1` | 不変 | control catalog versionと番号空間を共有しない |
-| Private control | v2 | v2不変 + multi-frameはv3 | v2 catalogへmessage typeをsilent追加しない |
+| Private control | v2 | v2不変 + multi-frameは独立MFDT protocol v1（SPEC_ACCEPTED design） | Accepted HELLO selectedは1/2だけ。MFN1 `0x34/0x35` + MFDT `0x36..0x43`をv2 catalogへsilent追加しない |
 | Wi-Fi bearer framing | 未割当 | `NWB1 framing version 1`候補 | exact byte spec/KATの`SPEC_ACCEPTED`でreserved、`RELEASE_SUPPORTED`でsupport掲載 |
 | Wi-Fi security management | 未割当 | `NRV1` / `NCM1` + `NINLIL-WIFI-CREDENTIAL-STORE-V1`（NWS1/NWA1/NWC1/NWP1/NWM1）version 1候補 | ADR-0018 `SPEC_ACCEPTED`でlocal reserved。NCM1からcredential record schemaを推測せず、exact dedicated namespace/key/boundを使う |
 | Foundation storage | schema 1、V1 LAB binding format 1 | schema 1不変、canonical Domain binding format 2候補 | [ADR-0022](adr/0022-domain-store-schema1-runtime-binding.md)のDomain-only profile ID/revision/min-writer/rollback epoch。Format 1 LABを再解釈せず、format 2から旧LAB binaryへのdowngrade mutationを拒否 |
@@ -120,7 +120,7 @@ storeを自動migration/open、またはsupport済みと広告してはならな
 | Bearer registry store | 未割当 | schema 1候補 | bearer identity、policy revision、availability epoch |
 | Route store | NRW1 route record semantics | schema 1候補 | 別物理Fabric storage partitionの`ninlil.route.v1`。8-slot × 16 pageで128 route、Controller management record、materialized docs/30 exact route record、R2 clock sidecar、drain stateを区別 |
 | Parent assignment store | 未割当 | schema 1候補 | 同Fabric partitionの`ninlil.parent.v1`。owner fence、parent set revision、`e2e_context_id/key_generation/e2e_security_id+epoch/binding` |
-| Durable transfer store | `ninlil.ctl.v1`内U5/U6 logical kinds | 同じ`ninlil.ctl.v1`内のv3 logical record kinds候補 | 新physical namespaceを作らずkey-space分離。namespace hard max 4/default 2、全control key hard max 32を維持 |
+| Durable transfer store | Foundation namespace内U5/U6 logical kinds | MFDT v1はADR-0021の36-byte deterministic derived sidecar namespace + `NMS1` binding + 別handle候補 | Foundationの4096-byte scannerを変更しない。2 namespace atomicityは主張せず、pre-arm→Foundation FULL→restart reconciliationを必須化。ESP MFDT namespaceはbinding込み32 key/69632 bytes、Hostはbinding + transfer 32 key |
 
 各schemaはmagic、schema、record length、canonical encoding、CRC/MAC要否、generation、
 maximum countを持つ。未知schema、途中migration、旧binaryによる不可逆schema openは明示拒否する。
@@ -457,9 +457,11 @@ FRAG_ACK、resource table、commit orderingをそのまま実装する。`wire_p
 変更しない。
 
 Transport multi-frame custodyは[ADR-0021](adr/0021-multi-frame-durable-custody.md)の
-別version domainとする。唯一のcarrierはnegotiated private control protocol v3 catalogの
-NCL1 `logical_version=1` over NCG1 `DATA (0x03)`であり、NFL1/NWB1 application packetへ
-載せない。U6 v2はsingle-frameのまま維持し、次を禁止する。
+独立`private_mfdt_admission_v1` domainとする。Accepted HELLO/control selectedは
+exact 1または2のまま、active sessionへbindしたMFN1 v1 transcript後だけprivate
+NCL1 `0x34..0x43`をNCL1 `logical_version=1` over NCG1 `DATA (0x03)`で運ぶ。
+NFL1/NWB1 application packetへraw controlを載せず、U6 v2はsingle-frameのまま維持する。
+docs/23·25·26とADR-0006はbyte-exactに維持し、次を禁止する。
 
 - v2 OFFER payloadを暗黙にfragment manifestへ再解釈する
 - RAM reassemblyだけでACCEPTを返す
@@ -469,11 +471,13 @@ NCL1 `logical_version=1` over NCG1 `DATA (0x03)`であり、NFL1/NWB1 applicatio
 
 multi-frame成功は、受信側の全chunk検証済みmanifestと再構成結果がFULL、受信側ACCEPTがFULL、
 送信側受領記録がFULLになった後だけ成立する。正確なlinearizationとCOMMIT_UNKNOWN recoveryは
-ADR-0021 `SPEC_ACCEPTED`後のNormative byte/storage specで固定する。manifestはbounded paged形式を必須とし、
-page count/entry count/chunk count/chunk size/total sizeと全v3 message ID/layoutをfreezeする。
-ADR-0021の`SPEC_ACCEPTED`前に[06章](06-versioning-and-compatibility.md)、[23章](23-usb-radio-boundary.md)、
-[25章](25-u5-cell-operating-assignment.md)、[26章](26-u6-transport-custody.md)を同一changeで更新・
-re-freezeしなければならない。
+ADR-0021のSPEC_ACCEPTED Normative byte/storage designで固定する。manifestはbounded paged形式を必須とし、
+page count/entry count/chunk count/chunk size/total sizeと全MFDT v1 message ID/layoutをfreezeする。
+本昇格では[06章](06-versioning-and-compatibility.md)と本章をdesign authorityへ同期し、
+[23章](23-usb-radio-boundary.md)、
+[25章](25-u5-cell-operating-assignment.md)、[26章](26-u6-transport-custody.md)、
+ADR-0006のbyte-exact freeze non-interferenceを独立gateで証明する。これらAccepted正本を
+MFDTのためにre-freezeしてはならない。
 
 ## 10. Bounded resource contract
 
@@ -576,10 +580,10 @@ C1〜C10に加え、次をrequired CIまたはrelease checklistで証明する�
 
 ## 15. 非主張
 
-本Proposed文書とADR-0017〜0021を追加しただけでは、次を主張しない。
+本章と各SPEC_ACCEPTED design ADRを追加しただけでは、次を主張しない。
 
 - private Fabric source API version `0x0001`、NFL1、NWB1、
-  NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1、control v3、
+  NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1、private MFDT default-ON、
   各storage schemaのreserved採番またはsupport
 - Wi-Fi driver、TCP/UDP session、physical RF、Relay、Multi-parent、FRAGの実装
 - U6 dual FULL conformance、multi-frame resume、ESP power-cut成功
@@ -596,3 +600,59 @@ claimの代替ではない。compile/link、host simulation、docs freeze、Prop
 - [ADR-0019: Route Authority and Relay Lifecycle](adr/0019-route-relay.md)
 - [ADR-0020: Multi-parent Ownership and Failover](adr/0020-multi-parent.md)
 - [ADR-0021: Multi-frame Durable Custody](adr/0021-multi-frame-durable-custody.md)
+
+## 17. Composable public module T0 authority
+
+[ADR-0028](adr/0028-composable-public-runtime-modules.md)は、上記completion featureを
+install可能なoptional moduleへ昇格する際の構造契約を定める。ただしADR-0028自体は
+`Proposed`で、全moduleは`PRIVATE_CANDIDATE`、packageは`ABSENT`である。private sourceや
+Host testの存在をpublic package completionへ読み替えない。
+
+module APIの4状態と本章のcompletion 7状態は別domainである。
+
+| module API | completion側の最低条件 | package / evidence |
+| --- | --- | --- |
+| `PRIVATE_CANDIDATE` | floorなし | `ABSENT` |
+| `PUBLIC_API_SPEC_ACCEPTED` | mapped featureとdependency closureが最低`SPEC_ACCEPTED` | public spec Accepted、package `ABSENT` |
+| `PACKAGE_EXPERIMENTAL` | 上記floorを維持 | package `PRESENT`、non-HIL acceptance全PASS |
+| `RELEASE_SUPPORTED` | mapped feature、dependency closure、対象platformが全てexact `RELEASE_SUPPORTED` | 全acceptanceとrequired HIL PASS |
+
+正本は`public-module-manifest.json`、schemaは
+`spec/public-module-manifest-v1.schema.json`、検査は
+`python3 tools/public_module_manifest_gate.py check`および`self-test`である。
+manifestは次をfail closedで固定する。
+
+- Fabric、Wi-Fi common/POSIX/ESP、Route/Relay、pure R7 fragmentation、
+  radio Fabric adapter、MFDTのcomponent/target/header/dependency。
+- Identity/Attachment/session installを含むtransitive completion dependency。
+- pure fragmentationと未Accepted NFL1↔R7↔NRW1 mapping adapterの分離。
+- version/size付き`ninlil_fabric_observer_v1` C ABI、callback drain、reentry、
+  stale/cross-instance rejection。
+- 別version/size付き`ninlil_fabric_selection_port_v1`のauthority echo、Fabric最終決定、
+  security/path/health enum、flags/score bounds、
+  stale/cross-instance/unknown/partial時の送信0。
+- `ninlil_identity_attachment_provider_v1`の6 callback、全request/result/event/opaque handle、
+  key usage/flag mask、u32 boolean/changed-floor domain、operation shape、
+  subscribe/unsubscribe順序、exact 308-byte SHA-256+CRC32C restart floor checkpoint。
+- 各moduleのexact 2 Runtime + 2 module instance、caller-supplied storage realm、
+  single writer fence、physical driver owner exact 1、bounded child demux、
+  aggregate all-or-none reservation。
+- `COMPONENTS`/`OPTIONAL_COMPONENTS`のrequired/optional/platform mismatchと、
+  `COMPLETION_STATE_BY_PLATFORM`によるPOSIX/ESP Wi-Fi stateの分離。
+- feature macroがpublic layoutを変えないcompile matrixと、conditional fieldを
+  注入した負例のcompile失敗を必ず観測するanti-false-green gate。
+- `V2_NOT_ALLOCATED`をco-install可能と誤認しないv1/v2 metadata。
+- module固有Accepted仕様を含むtested parentへbindした独立GO、検証可能なreviewer
+  provenance/implementer separation、P0/P1/P2=0と、
+  manifest/matrix/review/evidenceだけを変えるexact single administrative childなしに
+  `PUBLIC_API_SPEC_ACCEPTED`へ進めないpromotion authority。
+- PASS evidenceをtest ID、platform、tested commit/tree、active CTest、exact replay command、
+  observed exit/stdout/stderr receiptへbindし、自己申告CI ID、空test、任意logを拒否する。
+- public module gate自体をCMake CTestとLinux/macOS CIへactive exact commandで登録し、
+  `if(FALSE)`、comment、`echo ctest`を登録・実行証拠として扱わない。
+- JSON numeric fieldへのboolean代入、root外/path traversal/symlink escape、ADR H1差替えを
+  fail closedで拒否する。
+
+T0ではこれらの仕様、manifest、acceptance IDを固定するだけで、public header、
+public CMake target、実装、HILを完成とはしない。各moduleのmachine acceptanceは
+`NOT_RUN`のまま保持し、実装trancheで実在test/evidenceへ置換してから昇格する。

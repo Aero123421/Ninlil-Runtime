@@ -61,6 +61,27 @@ ninlil_status_t ninlil_rt_v1_bearer_reduce_pending_ingress(
     uint32_t send_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result);
 
+#if defined(NINLIL_MFDT_V1_PRIVATE)
+/*
+ * Commit/reconcile one receiver-side canonical OPEN as the existing inbound
+ * Foundation transaction. The large payload remains sidecar-owned and is
+ * represented by logical length plus zero inline bytes.
+ */
+ninlil_status_t ninlil_rt_v1_bearer_commit_mfdt_ingress(
+    ninlil_runtime_t *runtime,
+    const ninlil_bearer_message_t *message,
+    const uint8_t transfer_id[16],
+    uint32_t target_ordinal,
+    const ninlil_time_sample_t *clock_sample,
+    uint32_t *durable_transition_out);
+
+int ninlil_rt_v1_bearer_mfdt_ingress_matches(
+    ninlil_runtime_t *runtime,
+    const ninlil_bearer_message_t *message,
+    const uint8_t transfer_id[16],
+    uint32_t target_ordinal);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

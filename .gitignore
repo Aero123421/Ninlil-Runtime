@@ -17,3 +17,31 @@ __pycache__/
 /ports/esp-idf/hil_app/sdkconfig.old
 # dependencies.lock is committed for U2 reproducible Component Manager pins.
 /ports/esp-idf/hil_app/managed_components/
+
+# ESP-IDF radio_hil_app local artifacts (SX1262 R1+R9 composition; compile≠RF HIL)
+/ports/esp-idf/radio_hil_app/build/
+/ports/esp-idf/radio_hil_app/sdkconfig
+/ports/esp-idf/radio_hil_app/sdkconfig.old
+# dependencies.lock is committed for reproducible Component Manager pins.
+/ports/esp-idf/radio_hil_app/managed_components/
+
+# All ESP-IDF application directories generate the same local surface.
+# This also covers future smoke/HIL apps without shipping local tool output.
+/ports/esp-idf/*_app/build*/
+/ports/esp-idf/*_app/sdkconfig
+/ports/esp-idf/*_app/sdkconfig.old
+/ports/esp-idf/*_app/managed_components/
+/ports/esp-idf/wifi_hil_app/.private/
+/ports/esp-idf/wifi_hil_app/wifi_map_proof_status.txt
+
+# macOS crash dump created by sanitizer/toolchain failures.
+/core
+
+# Local compiler/self-test scratch must never enter a source distribution.
+/-
+/-.su
+/tmp-a2/
+
+# Apple Clang static-analyzer scratch emitted by local MFDT checks.
+/mfdt_v1_host_store.plist
+/mfdt_v1_store_port.plist

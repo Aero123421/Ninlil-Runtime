@@ -261,8 +261,32 @@ def validate_texts(texts: Mapping[str, str]) -> list[str]:
         "foreach(_rel IN LISTS NINLIL_R7_CRYPTO_ESP_RELATIVE_SOURCES)",
         "ESP adapter expansion",
     )
-    if not re.search(r"\bPRIV_REQUIRES\b[\s\S]*?\bmbedtls\b", esp):
-        errors.append("ESP component missing private mbedtls requirement")
+    # R7 ESP crypto requires idf_component_register PRIV_REQUIRES to list
+    # bare "mbedtls" (not only a later idf::mbedtls link or a comment).
+    # False-green: PRIV_REQUIRES in a comment + idf::mbedtls elsewhere.
+    reg = re.search(
+        r"idf_component_register\s*\(([\s\S]*?)\)\s*(?:\n|$)",
+        esp,
+    )
+    if reg is None:
+        errors.append("ESP component missing idf_component_register(...)")
+    else:
+        body = reg.group(1)
+        priv = re.search(
+            r"\bPRIV_REQUIRES\b([\s\S]*?)(?=\bREQUIRES\b|\bSRCS\b|\bINCLUDE_DIRS\b|\bPRIV_INCLUDE_DIRS\b|\Z)",
+            body,
+        )
+        if priv is None:
+            errors.append(
+                "ESP idf_component_register missing PRIV_REQUIRES block"
+            )
+        else:
+            tokens = re.findall(r"[A-Za-z0-9_.:${}]+", priv.group(1))
+            if "mbedtls" not in tokens:
+                errors.append(
+                    "ESP idf_component_register PRIV_REQUIRES missing "
+                    "exact token mbedtls"
+                )
     if "${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}" in esp:
         errors.append("Host adapter variable leaked into ESP CMake")
 

@@ -15,7 +15,12 @@
 - transaction、deadline、cancel、Receipt、EventFact retry/recoveryの状態遷移は[13-foundation-state-machine.md](13-foundation-state-machine.md)を正本とします。
 - 本章はport transaction、durability、capacity unit、simulator ordering、fixture byteを詳細化します。
 - SimulatorはRuntime roleではありません。`CONTROLLER`と`ENDPOINT`を外部から駆動するtest harnessです。`SIMULATOR`というRuntime role、identity、admission authorityを作ってはなりません。
-- M1aはconcrete target 1件だけを受理します。EventFactは`NINLIL_NO_DEADLINE`かつ`evidence_grace_ms = 0`であり、8-attempt cycle枯渇後も`PARKED_RETRY`でpayloadを保持します。fresh Bearer availability epoch + `available=1`または一意なoperator resume operationでだけ次cycleへ進みます。
+- ADR-0027 exact roster profileではDesiredStateのconcrete target 1〜4件を
+  `ALL_TARGETS`で受理します。EventFactはexactly 1件、
+  `NINLIL_NO_DEADLINE`かつ`evidence_grace_ms = 0`であり、8-attempt cycle
+  枯渇後も`PARKED_RETRY`でpayloadを保持します。fresh Bearer availability
+  epoch + `available=1`または一意なoperator resume operationでだけ次cycleへ
+  進みます。
 
 本章で使用する`MUST`、`MUST NOT`、`SHOULD`、`MAY`は[README.md](README.md)の規範語に従います。
 
@@ -212,6 +217,10 @@ ACTIVE --rollback/error--> ABORTED_DEGRADED_CLOSED
 規則:
 
 - 1 storage handleにつきactive write transactionは最大1つです。nested transactionとimplicit savepointは禁止します。
+- この上限とexact namespace exclusive-writer openは、互いに独立した複数handle間の
+  conditional put/CASを提供しません。private featureがmulti-controller authority CASを必要と
+  する場合は、そのfeature固有のdefault-OFF provider境界で実装し、public Storage ABIの保証と
+  して扱ってはなりません。
 - `begin`成功時に、以後のread viewとなるsnapshotを固定します。
 - `get`、`put`、`erase`、iteratorは`ACTIVE`でだけ有効です。
 - transactionはread-your-writesです。`put`した値を同じtransactionの`get`と新規iteratorから読め、`erase`したkeyは見えません。
@@ -1797,7 +1806,7 @@ Quota suiteは12章のexact keyを使い、receiver ingressをcounterへ混ぜ�
 
 ### Role × family and callback-shape vectors
 
-M1a registration/submit matrixは次の4行だけです。Local sender/receiverはrole、family、required directionからCoreが導出し、caller指定fieldを追加しません。
+Foundation registration/submit matrixは次の4行だけです。Local sender/receiverはrole、family、required directionからCoreが導出し、caller指定fieldを追加しません。Controller DesiredState senderだけが1〜4 exact targetをadmitし、他3行はexactly 1を維持します。
 
 | Runtime | Family / descriptor | Local side | Required callbacks | Submit |
 | --- | --- | --- | --- | --- |
@@ -2134,7 +2143,7 @@ repeated fixed 100-byte records:
 
 `target_flags`は12章`NINLIL_TARGET_HAS_DEVICE / INSTALLATION / SITE`のbit値です。flagなしfieldはzero placeholder、flagありrequired IDはnon-zeroでなければなりません。未知flag、non-zero `reserved_zero`、flagとplaceholderの不一致はcanonical encode前にrejectします。
 
-Recordをrecord全100 bytesのunsigned lexicographic orderでsortします。完全一致duplicateはvalidation errorです。M1aは`target_count=1`だけをadmitしますが、encoder自体は同じcanonical sortを実装します。required evidenceはtop-level tag `0d`だけに存在し、target recordへ重複encodeしません。
+Recordをrecord全100 bytesのunsigned lexicographic orderでsortします。完全一致duplicateはvalidation errorです。DesiredStateは1〜4件をadmitし、EventFactはexactly 1件です。required evidenceはtop-level tag `0d`だけに存在し、target recordへ重複encodeしません。
 
 ### Family metadata
 
@@ -2282,7 +2291,63 @@ E1のidempotency keyをlength 11 / exact ASCII `event-key-a`、E3をlength 11 / 
 
 E4 payload hexは`01000200000000000000`、lengthは10です。E3はkeyだけが異なるためcanonical byte列もE1と完全一致しますが、event mappingのexact raw key不一致でconflictになります。補助index digestをtest doubleで同値に強制したE3 variantも同じconflictで、hash一致をexact key一致に格上げしません。
 
-Golden testはencoder出力、decoder round-trip、1-bit mutation、field order、target fixed-record/flags、invalid ASCII/pattern/length、NO_DEADLINE、overflowを検査します。Multi-target sortはM1b forward-only encoder testであり、M1a admission successに数えません。C1/E1のraw payload schemaはfixture内でlittle-endianですが、canonical metadataのintegerは常にbig-endianです。
+Golden testはencoder出力、decoder round-trip、1-bit mutation、field order、target fixed-record/flags、invalid ASCII/pattern/length、NO_DEADLINE、overflowを検査します。2-target reverse-order inputと4-target maximumはADR-0027 admission/restart成功vectorです。C1/E1のraw payload schemaはfixture内でlittle-endianですが、canonical metadataのintegerは常にbig-endianです。
+
+### ADR-0027 exact-roster vectors
+
+`X2_COMMAND_EXACT`はC1と同じdescriptor/schema/payload/deadline/evidence/
+generationを使い、target record `T20`と`T30`をcallerから逆順で渡します。
+Golden fixtureは`NCS1` canonical bytesに`target_count=2`、続いてunsigned
+lexicographic orderの`T20 || T30`をexactに含め、その全byte列とSHA-256 digestを
+fixtureへ固定します。C実装内で再計算した値だけとの自己比較を合格根拠にしては
+なりません。Same key + reordered rosterは同じdigest/transaction、
+1 target変更はconflictです。
+
+`X2_DELIVERY_RESTART`はA required Receipt後、B initial attempt timeout/retry
+commit後にcold restartします。Restart後のqueryはA terminal/counter/evidenceと
+B retry timer/counterをexact復元し、Aを再送せずBだけを完了します。
+`X2_EXHAUST_CONTINUE`はAの8 attemptsを使い切ってもBをdispatchし、B完了後に
+だけmixed aggregateを13章優先順位で確定します。
+`X2_ATTEMPT_TARGET_BINDING`はA attempt + B source、B attempt + A source、
+stale/duplicateを投入し、target state、resource ledger、record revision
+（invalid crossing）、aggregateが不変であることを検査します。
+
+`X2_LATE_EVIDENCE_MONOTONIC`はAへhigher-stage new material、Bへlower-stage
+new material、A terminal後へknown past attemptのlate new material、同じexact
+tupleのduplicateを順に投入します。A/Bのlatest/counter/fingerprintが独立し、
+top-level latestとterminal Outcome/reasonが巻き戻らず、wrong-target crossingは
+record revisionを含めmutation 0であることを検査します。途中とterminal後の
+cold restartを挟み、同じtupleがduplicate、異なるlower/same/higher tupleがnew
+materialとして同じ結果へ収束することを要求します。
+
+`X4_CAPACITY_MAX`は4 target、Runtime `max_evidence_per_target=8`でadmitし、
+TARGET total 4、EVIDENCE total 36（used + reserved）を同じFULL transactionで
+観測します。Caller roster mutation、BUFFER_TOO_SMALL target-array nonmutation、
+terminal release、cold restart、queryを含めます。
+
+Private LAB NTS3はschema `1.2`だけをdecodeします。Target-local attempt bindingを
+持たない`1.0`、MFDT correlationを持たない`1.1`、unknown minor/major、CRC/length corruptionは
+`NINLIL_E_UNSUPPORTED`または`NINLIL_E_STORAGE_CORRUPT`でfail closedし、
+部分restoreしません。`X4_NTS3_MAX`は4 targets × 8 attempts、payload 926、
+最大evidenceを含むnon-MFDT recordを4,031 bytesでencode/decode round-tripし、
+4,030-byte capacityをBUFFER_TOO_SMALLにします。`v1_transaction_codec`の
+MFDT correlation caseは4-target record 3,185 bytes、各target末尾の
+16-byte transfer ID + u32 BE ordinal、
+3,184-byte capacityのBUFFER_TOO_SMALL/output不変、receiver ordinal 3保存、
+non-MFDT suffix不在/zero projectionを検査します。
+`X_MFDT_NTS3_LOGICAL`はMFDT logical length 927と32768をinline length 0で
+round-tripし、owned inline bytesを読み書きしません。Single-frame
+logical/inline不一致、MFDT inline non-zero、MFDT logical 926以下/32769以上、
+record内length corruptionはfail closedし、再起動で部分transactionを公開
+しません。
+
+`X_MFDT_RUNTIME_FAIL_CLOSED`はprivate MFDTを有効にしてpublic APIから927 bytesを
+admitし、通常起動とcold restart後の複数stepで、public/target stateが
+`ADMITTED_READY`、`more_work=1`、pendingのまま、Tx Gate acquire、Bearer send、
+attempt/retry/record revision、terminal transitionが全て0であることを検査します。
+同じfixtureで926-byte single-frameをnegative controlとして送信し、guardが
+通常Application経路を誤って止めないことも検査します。これは未接続MFDT
+schedulerの完成証跡ではありません。
 
 ### Submission result all-field vectors
 
@@ -2393,6 +2458,10 @@ Storage suiteは各operationに対し、success、invalid argument、capacity、
 - same seed/scriptから同じevent order、trace digest、public final snapshotを得る。
 - C1/E1 scenario resetでmetrics/transaction/attempt IDがblock0/1/2 goldenへ一致する。
 - crash/restart後にfalse success、EventFact silent loss、terminal reversal、permit bypassが0である。
+- DesiredState 1〜4 exact rosterでattempt/Receipt/retry/timer/evidenceが
+  target-localに復元され、wrong-target crossingとaggregate fallbackが0である。
+- X2/X4のcanonical golden、mixed outcome、4-target capacity、NTS3 1.2
+  maximum/corruption vectorsがnormalとASan/UBSanで一致する。
 - Remote cancelがsingle prepareを守り、definite WOULD_BLOCK以外またはuncertain crash後にrequestを再invokeしない。
 - deferred timeout後のlate completionがstateを変えず、reconcile完了までdelivery resourceを解放しない。
 - `PARKED_RETRY` EventFactがrestartだけで再送されず、fresh Bearer availability epoch + `available=1`または一意resumeでだけ再開する。

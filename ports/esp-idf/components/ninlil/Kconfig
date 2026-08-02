@@ -1,0 +1,191 @@
+menu "Ninlil SX1262 board profile (XIAO ESP32-S3 + Wio-SX1262)"
+
+    config NINLIL_SX1262_PIN_NSS
+        int "SX1262 NSS GPIO"
+        default 41
+        help
+            Immutable XIAO ESP32-S3 + Wio-SX1262 profile: GPIO 41.
+            Release radio_hil fails compile if this diverges.
+
+    config NINLIL_SX1262_PIN_SCK
+        int "SX1262 SCK GPIO"
+        default 7
+        help
+            Target board default: GPIO 7.
+
+    config NINLIL_SX1262_PIN_MOSI
+        int "SX1262 MOSI GPIO"
+        default 9
+        help
+            Target board default: GPIO 9.
+
+    config NINLIL_SX1262_PIN_MISO
+        int "SX1262 MISO GPIO"
+        default 8
+        help
+            Target board default: GPIO 8.
+
+    config NINLIL_SX1262_PIN_RESET
+        int "SX1262 RESET GPIO"
+        default 42
+        help
+            Target board default: GPIO 42.
+
+    config NINLIL_SX1262_PIN_BUSY
+        int "SX1262 BUSY GPIO"
+        default 40
+        help
+            Target board default: GPIO 40.
+
+    config NINLIL_SX1262_PIN_DIO1
+        int "SX1262 DIO1 GPIO"
+        default 39
+        help
+            Target board default: GPIO 39. ISR latches only; owner task polls.
+
+    config NINLIL_SX1262_PIN_ANT_SW
+        int "SX1262 ANT_SW GPIO (-1 if unused)"
+        default 38
+        help
+            Target board default: GPIO 38. Set -1 to disable ANT_SW.
+
+    config NINLIL_SX1262_ANT_SW_ACTIVE_HIGH
+        bool "ANT_SW active-high polarity"
+        default y
+        help
+            When enabled, logical active drives the pin high. When disabled,
+            active drives low. Ignored if ANT_SW pin is -1.
+
+    config NINLIL_SX1262_SPI_HOST
+        int "SPI host id (SPI2_HOST typically 1 on S3)"
+        default 1
+
+    config NINLIL_ENABLE_SX1262_R9
+        bool "Enable R9 SX1262 physical TX/RX path (Proposed ADR-0025)"
+        default n
+        help
+            Compile R9 physical path TUs: ninlil_sx1262_phy + sx1262_r9_edge.
+            Default OFF: zero R9 symbols in default smoke / production archives.
+
+            When enabled (radio_hil_app only in this tree): sole-edge SetTx after
+            R1 HAL + R2/R5 permit. Not RF HIL PASS, not Japan legal, not public
+            ABI. R4 control-plane (reset/init/SPI deny) remains packaged.
+
+    config NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG
+        bool "Diagnostic-only: allow PCP session RAM ledger (NOT release HIL)"
+        default n
+        depends on NINLIL_ENABLE_SX1262_R9
+        help
+            Packages pcp_lab_session_ledger and permits radio_hil to use it.
+            Default OFF. V1 release radio_hil MUST use flash FULL only and
+            fail closed without it. Session ledger is diagnostic-only and must
+            not appear in release ELF evidence.
+
+            Do not enable for release HIL / power-cut recovery claims.
+
+endmenu
+
+menu "Ninlil private candidates"
+
+    config NINLIL_ENABLE_R7_FRAG_PRIVATE
+        bool "Enable private NRW1 LINK/FRAG candidate (not public ABI)"
+        default n
+        help
+            Compile private NRW1 LINK/FRAG sources from the single cmake
+            authority cmake/ninlil_r7_frag_sources.cmake into this component.
+
+            Default is disabled: zero FRAG TUs and zero FRAG symbols in the
+            installed/public surface and in the default smoke ELF.
+
+            When enabled: private compile/link only. Not OSS public headers,
+            not installed ABI, not RF/HIL/legal complete. Physical RF/HIL
+            remains a separate gate.
+
+    config NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING
+        bool "Enable private Domain schema1 Canonical startup (HOST_CANDIDATE)"
+        default n
+        help
+            Compile ADR-0022 Domain schema1 private TUs and invoke the
+            feature-gated runtime create path. Default OFF: zero Domain
+            schema1 symbols in production archives.
+
+            HOST_CANDIDATE only: not public ABI, not HIL, not production
+            Domain Store complete. Workspace is Runtime-arena owned
+            (not ESP task stack). Frames remain <= 4096.
+
+    config NINLIL_ENABLE_PRIVATE_WIFI_V1
+        bool "Enable private Wi-Fi v1 candidate (ADR-0018, not public ABI)"
+        default n
+        help
+            Compile private wifi_v1 sources (NWB1/stream/queues/reconnect/
+            ESP STA+lwIP+mbedTLS owner). Default OFF: zero wifi_v1 symbols
+            in production archives and default smoke ELF.
+
+            Private only: not OSS public headers, not installed ABI, not
+            AP/HIL complete. Requires WIFI_STORAGE_RAM STA owner and direct
+            mbedTLS (no esp_tls). Hardware AP association remains separate.
+
+    config NINLIL_ENABLE_PRIVATE_FABRIC_V1
+        bool "Enable private Fabric v1 (ADR-0017) with Wi-Fi packet-link"
+        depends on NINLIL_ENABLE_PRIVATE_WIFI_V1
+        default n
+        help
+            Compile private fabric_v1 headers path and wifi fabric_link_ops
+            into the component when Wi-Fi is also ON. Default OFF.
+
+            Not public ABI. Wi-Fi final HIL app may enable this for
+            STA+TLS+NWB1+Fabric composition proof. Physical AP remains NOT_RUN.
+
+    config NINLIL_ENABLE_MFDT_V1_PRIVATE
+        bool "Enable private ADR-0021 MFDT candidate (not public ABI)"
+        default n
+        help
+            Compile private multi-frame durable transfer sources from
+            cmake/ninlil_mfdt_v1_sources.cmake into this component.
+
+            Default is disabled: zero MFDT TUs and zero MFDT symbols in the
+            installed/public surface and in the default smoke ELF.
+
+            When enabled: private compile/link only. Not OSS public headers,
+            not installed ABI, not power-cut HIL, not RF HIL. Physical H50
+            remains a separate hardware residual.
+
+    config NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+        bool "Enable private route-relay / multi-parent candidate (ADR-0019/0020)"
+        default n
+        help
+            Compile private route-relay and multi-parent Host-candidate TUs
+            from src/runtime/route_relay_v1/ into this component.
+
+            Default is disabled: zero route-relay/multi-parent symbols in the
+            installed/public surface and in the default smoke ELF.
+
+            When enabled: private compile/link only. Not OSS public headers,
+            not installed ABI. A single physical node may advertise endpoint
+            services and relay concurrently — no fixed single role is encoded.
+            Physical 2-hop / multi-parent HIL remains hardware-only residual;
+            do not claim RF multi-hop complete without hardware.
+
+    config NINLIL_RRMP_ROLE_ENDPOINT
+        bool "Advertise endpoint services when route-relay candidate is enabled"
+        depends on NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+        default y
+        help
+            Role flag only for production composition smoke. Independent of
+            relay/parent flags; concurrent with NINLIL_RRMP_ROLE_RELAY.
+
+    config NINLIL_RRMP_ROLE_RELAY
+        bool "Enable relay forward path when route-relay candidate is enabled"
+        depends on NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+        default n
+        help
+            Role flag only. May be combined with endpoint and/or parent.
+
+    config NINLIL_RRMP_ROLE_PARENT
+        bool "Enable multi-parent owner path when route-relay candidate is enabled"
+        depends on NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+        default n
+        help
+            Role flag only. May be combined with endpoint and/or relay.
+
+endmenu

@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "binaries": [
+    {
+      "name": "ninlil_mfdt_v1_host_slot_contract_test",
+      "timeout_seconds": 30,
+      "witnesses": [
+        "valid_disjoint_slot_layout",
+        "unaligned_region_zero_mutation",
+        "overlapping_regions_zero_mutation",
+        "engine_alias_zeroed_region_zero_mutation",
+        "descriptor_alias_zeroed_region_zero_mutation",
+        "config_alias_zeroed_region_zero_mutation",
+        "config_alias_engine_zero_mutation",
+        "engine_alias_descriptor_zero_mutation",
+        "store_port_alias_engine_zero_mutation",
+        "committed_counters_alias_zero_mutation",
+        "shared_flags_alias_zero_mutation",
+        "committed_keys_alias_engine_zero_mutation",
+        "full_lock_alias_store_port_zero_mutation",
+        "inventory_flag_alias_config_zero_mutation",
+        "committed_keys_alias_descriptor_zero_mutation"
+      ]
+    },
+    {
+      "name": "ninlil_mfdt_v1_host_store_mutation_test",
+      "timeout_seconds": 30,
+      "witnesses": [
+        "typed_cu_old",
+        "typed_cu_new",
+        "typed_cu_partial",
+        "typed_cu_both",
+        "typed_cu_extra",
+        "typed_cu_third",
+        "typed_cu_absent"
+      ]
+    },
+    {
+      "name": "ninlil_mfdt_v1_host_coordinator_acceptance_test",
+      "timeout_seconds": 120,
+      "witnesses": [
+        "exact_owner_geometry",
+        "owner_init_guards_zero_mutation",
+        "four_slots_and_fifth_atomic",
+        "duplicate_conflict_unknown_no_allocation",
+        "lowest_free_after_receiver_abort",
+        "restart_canonical_rebind_gate",
+        "nrc1_fresh_vs_duplicate_signal",
+        "scheduler_round_robin_actual_ncl1",
+        "peer_fence_exact_release_and_retry",
+        "terminal_reject_exact_peer_fence_release",
+        "bidirectional_complete_retention_gc",
+        "commit_unknown_global_fence_cold_recover",
+        "snapshot_recovery_toctou",
+        "recovery_semantic_and_active_ceiling",
+        "gc_concurrent_row_mutation_fail_closed",
+        "post_start_allocator_trap_end_to_end",
+        "host_semantic_reject_outbox_contract",
+        "active_finalize_reject_matrix",
+        "active_resume_reject_matrix",
+        "active_abort_reject_matrix"
+      ]
+    },
+    {
+      "name": "ninlil_mfdt_v1_request_kat_test",
+      "timeout_seconds": 30,
+      "witnesses": [
+        "finalize_precontent_layout_digest",
+        "resume_bind_layout_qgen_zero_gap_rollback",
+        "abort_layout_authority_generation",
+        "same_rid_different_body_nrc1_bit_exact",
+        "valid_length_malformed_open_stateless_exact_reject",
+        "short_bind52_no_response",
+        "request_expiry_three_op_full_warm_replay",
+        "request_epoch_change_three_op_full_warm_replay"
+      ]
+    },
+    {
+      "name": "ninlil_mfdt_v1_store_port_adversarial_test",
+      "timeout_seconds": 30,
+      "witnesses": [
+        "store_port_init_alias_zero_mutation",
+        "store_begin_output_shape_cleanup",
+        "store_snapshot_open_shape_cleanup",
+        "store_get_mutable_shape_fail_closed",
+        "store_iter_next_mutable_shape_fail_closed"
+      ]
+    }
+  ]
+}

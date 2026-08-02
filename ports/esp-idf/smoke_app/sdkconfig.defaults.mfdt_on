@@ -1,0 +1,2 @@
+# Private MFDT V1 ON for ESP map/compile proof (default smoke remains OFF).
+CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE=y

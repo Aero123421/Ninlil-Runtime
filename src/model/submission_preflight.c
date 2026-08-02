@@ -724,7 +724,8 @@ static int build_resource_requests(
     ninlil_model_resource_reservation_plan_t *plan)
 {
     uint64_t evidence_amount =
-        (uint64_t)input->service.max_evidence_per_target + 1u;
+        ((uint64_t)input->service.max_evidence_per_target + 1u)
+        * input->submission.target_count;
 
     if (!add_request(
             plan->reserve_requests,
@@ -735,7 +736,7 @@ static int build_resource_requests(
             plan->reserve_requests,
             &plan->reserve_request_count,
             NINLIL_RESOURCE_TARGET,
-            1u)) {
+            input->submission.target_count)) {
         return 0;
     }
     if (family_uses_outbox(input->service.family)) {
@@ -778,7 +779,7 @@ static int build_resource_requests(
             plan->commit_requests,
             &plan->commit_request_count,
             NINLIL_RESOURCE_TARGET,
-            1u)) {
+            input->submission.target_count)) {
         return 0;
     }
     if (family_uses_outbox(input->service.family)) {
@@ -807,7 +808,7 @@ static int build_resource_requests(
         plan->commit_requests,
         &plan->commit_request_count,
         NINLIL_RESOURCE_EVIDENCE,
-        1u);
+        input->submission.target_count);
 }
 
 static ninlil_status_t evaluate_resources(
@@ -993,6 +994,16 @@ static void fill_admission_plan(
     plan->registered_service = input->service;
     plan->source = input->service.source;
     plan->target = input->submission.target;
+    plan->target_count = input->submission.target_count;
+    if (plan->target_count == 1u
+        && !concrete_target_is_valid(&input->submission.targets[0])) {
+        plan->targets[0] = input->submission.target;
+    } else {
+        (void)memcpy(
+            plan->targets,
+            input->submission.targets,
+            (size_t)plan->target_count * sizeof(plan->targets[0]));
+    }
     plan->service = input->service.identity;
     plan->idempotency_key = input->submission.idempotency_key;
     plan->content_digest = input->submission.content_digest;
@@ -1057,7 +1068,14 @@ ninlil_status_t ninlil_model_submission_preflight(
     }
 
     /* 13 Submission reducer: semantic guards are intentionally ordered. */
-    if (input->submission.target_count != 1u) {
+    if (input->submission.target_count == 0u
+        || input->submission.target_count
+            > NINLIL_FOUNDATION_MAX_EXACT_TARGETS) {
+        set_rejected(out_result, NINLIL_REASON_TARGET_COUNT_UNSUPPORTED);
+        return NINLIL_OK;
+    }
+    if (input->service.family != NINLIL_FAMILY_DESIRED_STATE
+        && input->submission.target_count != 1u) {
         set_rejected(out_result, NINLIL_REASON_TARGET_COUNT_UNSUPPORTED);
         return NINLIL_OK;
     }
@@ -1081,8 +1099,21 @@ ninlil_status_t ninlil_model_submission_preflight(
         set_api_error(out_result, NINLIL_E_INVALID_ARGUMENT);
         return NINLIL_OK;
     }
-    if (!concrete_target_is_valid(&input->submission.target)) {
-        return NINLIL_E_INVALID_ARGUMENT;
+    {
+        uint32_t target_index;
+        for (target_index = 0u;
+             target_index < input->submission.target_count;
+             ++target_index) {
+            const ninlil_concrete_target_t *target =
+                &input->submission.targets[target_index];
+            if (input->submission.target_count == 1u
+                && !concrete_target_is_valid(target)) {
+                target = &input->submission.target;
+            }
+            if (!concrete_target_is_valid(target)) {
+                return NINLIL_E_INVALID_ARGUMENT;
+            }
+        }
     }
     if (!submission_identity_shape_is_valid(input)) {
         return NINLIL_E_INVALID_ARGUMENT;

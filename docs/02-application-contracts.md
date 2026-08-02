@@ -99,6 +99,8 @@ Transport の queue、TX、RX、RSSI は `Observation` として別に扱いま�
 - state transition の履歴が業務上必要なら、別途 EventFact を発行する。
 - periodic reconciliation の有無を contract に記載する。
 
+**M1a 実装境界（[ADR-0024](adr/0024-m1a-public-family-matrix-freeze.md)）:** 製品概念名 `LatestState` は public enum `LATEST_STATE_RESERVED` として存在しても `service_register = NINLIL_E_UNSUPPORTED`。V1 LAB の display 上行は **display snapshot event (EventFact)** としてモデルし、reserved family の first-class 有効化ではない。
+
 ### 4. MeasurementBatch
 
 時刻または sequence を持つ有限個の計測値です。
@@ -115,6 +117,8 @@ Transport の queue、TX、RX、RSSI は `Observation` として別に扱いま�
 - loss、downsample、aggregation、retention の許容範囲を contract に記載する。
 - alert に変換された異常 transition は EventFact として扱う。
 - 無限 stream は扱わない。
+
+**M1a 実装境界（[ADR-0024](adr/0024-m1a-public-family-matrix-freeze.md)）:** 製品概念名 `MeasurementBatch` は public enum `MEASUREMENT_RESERVED` として存在しても `service_register = NINLIL_E_UNSUPPORTED`。V1 LAB の leak 上行は **leak measurement event (EventFact)** としてモデルし、reserved family の first-class 有効化ではない。
 
 ### 5. BoundedTransfer
 

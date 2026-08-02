@@ -1,6 +1,7 @@
 /*
- * A1 POSIX USB/serial adapter — production-private host implementation.
- * See ninlil_posix_usb_serial.h and docs/23 §3.2 / §4 / §6 / §10.1.
+ * POSIX USB/serial reference-port implementation.
+ * Public surface: <ninlil/posix_usb_serial_v1.h> (ADR-0031).
+ * Private test seams: ninlil_posix_usb_serial.h.
  */
 
 #include "ninlil_posix_usb_serial.h"

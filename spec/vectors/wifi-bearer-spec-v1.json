@@ -1,0 +1,1408 @@
+{
+  "acceptance_id_count": 79,
+  "acceptance_ids_emitted": [
+    "WIFI-ASSOC-AUTHORITY-EPOCH-BASELINE",
+    "WIFI-ASSOC-SAME-SSID-BSSID-CHANGE-FENCE",
+    "WIFI-ASSOC-SAME-SSID-CHANNEL-CHANGE-FENCE",
+    "WIFI-ASSOC-PROFILE-DIGEST-CHANGE-FENCE",
+    "WIFI-ASSOC-SAME-TUPLE-NO-EPOCH",
+    "WIFI-ASSOC-SESSION-FENCE-AVAILABILITY-PLUS-ONE",
+    "WIFI-LIVENESS-KEEPALIVE-EXCLUSIVE-TIMER",
+    "WIFI-LIVENESS-MISSED-RESPONSE-THRESHOLD",
+    "WIFI-LIVENESS-BLACKHOLE-DETECTION",
+    "WIFI-LIVENESS-TCP-HALF-OPEN",
+    "WIFI-LIVENESS-AP-DEAD-BACKHAUL",
+    "WIFI-LIVENESS-AVAILABILITY-EPOCH-CHANGE",
+    "WIFI-NETCRED-FULL-OLD",
+    "WIFI-NETCRED-FULL-NEW",
+    "WIFI-NETCRED-FULL-ABSENT",
+    "WIFI-NETCRED-FULL-BOTH",
+    "WIFI-NETCRED-PARTIAL",
+    "WIFI-NETCRED-EXTRA",
+    "WIFI-NETCRED-THIRD",
+    "WIFI-NETCRED-DUPLICATE-KEY",
+    "WIFI-NETCRED-COMMIT-UNKNOWN-RECOVERY",
+    "WIFI-NETCRED-ROLLBACK-REJECT",
+    "WIFI-NETCRED-SAME-REVISION-DIGEST-CONFLICT",
+    "WIFI-NETCRED-NO-PLAINTEXT-SECRET",
+    "WIFI-ENDPOINT-IPV4-SCOPE",
+    "WIFI-ENDPOINT-IPV6-SCOPE",
+    "WIFI-ENDPOINT-LINK-LOCAL-SCOPE-ID",
+    "WIFI-ENDPOINT-DNS-MDNS-NON-AUTHORITY",
+    "WIFI-ENDPOINT-ADDRESS-CHANGE-FENCE",
+    "WIFI-NWB1-HEADER-40",
+    "WIFI-NWB1-PAYLOAD-586-REJECT",
+    "WIFI-NWB1-PAYLOAD-587-ACCEPT",
+    "WIFI-NWB1-PAYLOAD-1925-ACCEPT",
+    "WIFI-NWB1-PAYLOAD-1926-REJECT",
+    "WIFI-NWB1-TOTAL-626-REJECT",
+    "WIFI-NWB1-TOTAL-627-ACCEPT",
+    "WIFI-NWB1-TOTAL-1965-ACCEPT",
+    "WIFI-NWB1-TOTAL-1966-REJECT",
+    "WIFI-NWB1-CRC32C-INDEPENDENT",
+    "WIFI-NWB1-PARTIAL-HEADER",
+    "WIFI-NWB1-PARTIAL-BODY",
+    "WIFI-NWB1-COALESCED-RECORDS",
+    "WIFI-NWB1-READ-AHEAD-BOUND",
+    "WIFI-NWB1-WRONG-SESSION",
+    "WIFI-NWB1-SEQUENCE-0",
+    "WIFI-NWB1-SEQUENCE-MAX-MINUS-ONE",
+    "WIFI-NWB1-SEQUENCE-UINT32-MAX-REJECT",
+    "WIFI-NWB1-DUPLICATE",
+    "WIFI-NWB1-GAP",
+    "WIFI-NWB1-OUT-OF-ORDER",
+    "WIFI-NWB1-WRAP-REJECT",
+    "WIFI-NWB1-INVALID-NFL1",
+    "WIFI-TLS-SUITE-GROUP-SIGNATURE-EXACT",
+    "WIFI-TLS-X509-ROLE-RUNTIME-ATTACHMENT",
+    "WIFI-TLS-EXPORTER-PEER-CONTEXT-62",
+    "WIFI-TLS-EXPORTER-ATTACHED-CONTEXT-64",
+    "WIFI-TLS-AUTHORITY-ALL-ZERO-GROUP",
+    "WIFI-TLS-AUTHORITY-MIXED-REJECT",
+    "WIFI-TLS-TICKET-0RTT-RENEGOTIATION-FENCE",
+    "WIFI-TLS-REVOCATION-CLOCK-RULES",
+    "WIFI-TLS-R7-OPENSSL-GENERIC-NON-AUTHORITY",
+    "WIFI-TLS-HOST-OPENSSL-PIN-AUTHORITY",
+    "WIFI-TLS-ESP-MBEDTLS-PIN-AUTHORITY",
+    "WIFI-PREATTACH-CARRIER-NOT-NWB1",
+    "WIFI-PREATTACH-PEER-SESSION-ONLY-NO-NWB1",
+    "WIFI-PREATTACH-NWB1-REQUIRES-PA-FULL",
+    "WIFI-RESOURCE-ESP-CAPACITY",
+    "WIFI-RESOURCE-HOST-CAPACITY",
+    "WIFI-RESOURCE-PRIORITY-ISOLATION",
+    "WIFI-RESOURCE-RETAINED-TOKEN-PARTIAL-WRITE",
+    "WIFI-RESOURCE-RELEASE-SEMANTICS",
+    "WIFI-RESOURCE-NO-FALSE-CUSTODY",
+    "WIFI-RESOURCE-STORAGE-ARITHMETIC",
+    "WIFI-ROLE-HOST-POSIX-TCP-TLS",
+    "WIFI-ROLE-ESP32S3-STA-LWIP-MBEDTLS",
+    "WIFI-RACE-DISCONNECT-RECONNECT",
+    "WIFI-RACE-SLEEP-DRAIN",
+    "WIFI-RACE-EVENT-OVERFLOW",
+    "WIFI-BACKOFF-DETERMINISTIC"
+  ],
+  "adr": "docs/adr/0018-wifi-bearer.md",
+  "association_authority_vectors": [
+    {
+      "association_authority_digest_hex": "98cbb22385ccb25777535aaa6e9a8a7c24f7755381f6f5c19b337a838aa0a92b",
+      "association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344550602",
+      "association_epoch": 1,
+      "auth_mode": 2,
+      "availability_epoch_delta": 0,
+      "binding_id_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "bssid_hex": "021122334455",
+      "channel": 6,
+      "id": "WIFI-ASSOC-AUTHORITY-EPOCH-BASELINE",
+      "profile_digest_hex": "0c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46",
+      "profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "profile_revision": 1,
+      "result": "OK_ATTACHED_ELIGIBLE",
+      "session_fence": 0,
+      "ssid_hex": "6e696e6c696c2d6c61622d73736964"
+    },
+    {
+      "availability_epoch_delta": 1,
+      "digests_equal": 0,
+      "id": "WIFI-ASSOC-SAME-SSID-BSSID-CHANGE-FENCE",
+      "new_association_authority_digest_hex": "fe736e23cdb8d1bc4155ab5e494d1f5ea58015ca484c0a14604216a031872bfa",
+      "new_association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf0000000000000001f2afe6c19b8fff124e4daeb0975cfd94561b0851b5733d0a67c8f0564e45d086c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344660602",
+      "new_association_epoch": 1,
+      "new_auth_mode": 2,
+      "new_binding_id_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "new_bssid_hex": "021122334466",
+      "new_channel": 6,
+      "new_profile_digest_hex": "f2afe6c19b8fff124e4daeb0975cfd94561b0851b5733d0a67c8f0564e45d086",
+      "new_profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "new_profile_revision": 1,
+      "nwb1_publish": 0,
+      "old_association_authority_digest_hex": "98cbb22385ccb25777535aaa6e9a8a7c24f7755381f6f5c19b337a838aa0a92b",
+      "old_association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344550602",
+      "old_association_epoch": 1,
+      "old_auth_mode": 2,
+      "old_binding_id_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "old_bssid_hex": "021122334455",
+      "old_channel": 6,
+      "old_profile_digest_hex": "0c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46",
+      "old_profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "old_profile_revision": 1,
+      "result": "FENCED_STALE_SESSION",
+      "session_fence": 1,
+      "ssid_hex": "6e696e6c696c2d6c61622d73736964"
+    },
+    {
+      "availability_epoch_delta": 1,
+      "digests_equal": 0,
+      "id": "WIFI-ASSOC-SAME-SSID-CHANNEL-CHANGE-FENCE",
+      "new_association_authority_digest_hex": "84250272cbfb6b3bb12c99f371edddddd2aaf82ed7e901f6f5d34bff65706926",
+      "new_association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000015e151838476aa310452db6e6c7b8be4921dfce13d5245151224c196bd48e7abac0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344550b02",
+      "new_association_epoch": 1,
+      "new_auth_mode": 2,
+      "new_binding_id_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "new_bssid_hex": "021122334455",
+      "new_channel": 11,
+      "new_profile_digest_hex": "5e151838476aa310452db6e6c7b8be4921dfce13d5245151224c196bd48e7aba",
+      "new_profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "new_profile_revision": 1,
+      "nwb1_publish": 0,
+      "old_association_authority_digest_hex": "98cbb22385ccb25777535aaa6e9a8a7c24f7755381f6f5c19b337a838aa0a92b",
+      "old_association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344550602",
+      "old_association_epoch": 1,
+      "old_auth_mode": 2,
+      "old_binding_id_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "old_bssid_hex": "021122334455",
+      "old_channel": 6,
+      "old_profile_digest_hex": "0c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46",
+      "old_profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "old_profile_revision": 1,
+      "result": "FENCED_STALE_SESSION",
+      "session_fence": 1,
+      "ssid_hex": "6e696e6c696c2d6c61622d73736964"
+    },
+    {
+      "availability_epoch_delta": 1,
+      "id": "WIFI-ASSOC-PROFILE-DIGEST-CHANGE-FENCE",
+      "new_association_authority_digest_hex": "3f4aed66092e93c2f3e6566aa859a8c47c4979816cd786fa5fc20781981b2a85",
+      "new_association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00211223344550602",
+      "new_association_epoch": 2,
+      "new_auth_mode": 2,
+      "new_binding_id_hex": "c1c2c3c4c5c6c7c8c9cacbcccdcecfd0",
+      "new_bssid_hex": "021122334455",
+      "new_channel": 6,
+      "new_profile_digest_hex": "16101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2",
+      "new_profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "new_profile_revision": 2,
+      "new_revision": 2,
+      "old_association_authority_digest_hex": "98cbb22385ccb25777535aaa6e9a8a7c24f7755381f6f5c19b337a838aa0a92b",
+      "old_association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344550602",
+      "old_association_epoch": 1,
+      "old_auth_mode": 2,
+      "old_binding_id_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "old_bssid_hex": "021122334455",
+      "old_channel": 6,
+      "old_profile_digest_hex": "0c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46",
+      "old_profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "old_profile_revision": 1,
+      "old_revision": 1,
+      "result": "FENCED_STALE_SESSION",
+      "session_fence": 1,
+      "ssid_hex": "6e696e6c696c2d6c61622d73736964"
+    },
+    {
+      "association_authority_digest_hex": "98cbb22385ccb25777535aaa6e9a8a7c24f7755381f6f5c19b337a838aa0a92b",
+      "association_authority_input_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344550602",
+      "association_epoch": 1,
+      "auth_mode": 2,
+      "availability_epoch_delta": 0,
+      "binding_id_hex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "bssid_hex": "021122334455",
+      "channel": 6,
+      "id": "WIFI-ASSOC-SAME-TUPLE-NO-EPOCH",
+      "profile_digest_hex": "0c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46",
+      "profile_id_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "profile_revision": 1,
+      "reobserve_same_tuple": 1,
+      "result": "OK_NO_FENCE",
+      "session_fence": 0,
+      "ssid_hex": "6e696e6c696c2d6c61622d73736964"
+    },
+    {
+      "availability_epoch_delta": 1,
+      "double_count_forbidden": 1,
+      "event": "ASSOCIATION_AUTHORITY_DIGEST_CHANGED",
+      "id": "WIFI-ASSOC-SESSION-FENCE-AVAILABILITY-PLUS-ONE",
+      "physical_events_observed": 2,
+      "result": "AVAILABILITY_PLUS_ONE_ONCE",
+      "session_fence_generation": 1
+    }
+  ],
+  "constants": {
+    "attached_context_bytes": 64,
+    "blackhole_detect_ms": 45000,
+    "esp_tls_canary_corruption_is_global_fatal": 1,
+    "esp_tls_contract_null_spill_allowed": 0,
+    "esp_tls_cross_owner_free_allowed": 0,
+    "esp_tls_crypto_dma_bytes": 0,
+    "esp_tls_crypto_global_internal_bytes": 65536,
+    "esp_tls_execution_stack_bytes": 8192,
+    "esp_tls_generic_spill_allowed": 0,
+    "esp_tls_in_buffer_bytes": 16685,
+    "esp_tls_map_observation_slack_bytes": 7985,
+    "esp_tls_map_remainder_observation_bytes": 171825,
+    "esp_tls_ordinary_oom_is_global_fatal": 0,
+    "esp_tls_original_internal_only_requirement_bytes": 327680,
+    "esp_tls_out_buffer_bytes": 4415,
+    "esp_tls_post_admission_internal_floor_bytes": 65536,
+    "esp_tls_psram_exact_live_allocation_required": 1,
+    "esp_tls_psram_free_pointer_allowed": 0,
+    "esp_tls_psram_interior_pointer_allowed": 0,
+    "esp_tls_psram_required": 1,
+    "esp_tls_psram_wrong_size_allowed": 0,
+    "esp_tls_session_internal_bytes": 12288,
+    "esp_tls_session_psram_bytes": 86016,
+    "esp_tls_session_total_bytes": 98304,
+    "esp_tls_two_session_internal_envelope_bytes": 163840,
+    "keepalive_exclusive_deadline_ms": 15000,
+    "keepalive_interval_ms": 15000,
+    "missed_response_threshold": 3,
+    "network_namespace": "ninlil.wifi.network.v1",
+    "nwb1_header_bytes": 40,
+    "nwb1_payload_max": 1925,
+    "nwb1_payload_min": 587,
+    "nwb1_payload_reject_high": 1926,
+    "nwb1_payload_reject_low": 586,
+    "nwb1_total_max": 1965,
+    "nwb1_total_min": 627,
+    "nwb1_total_reject_high": 1966,
+    "nwb1_total_reject_low": 626,
+    "nwd1_committed_cu_bytes": 1280,
+    "nwd1_record_bytes": 160,
+    "nwd1_staging_cu_bytes": 2560,
+    "peer_context_bytes": 62,
+    "record_bytes_fixed": 1965,
+    "session_lifetime_ms": 3600000,
+    "tls_ciphersuite_id": 4865,
+    "tls_group_id": 23,
+    "tls_signature_id": 1027
+  },
+  "endpoint_vectors": [
+    {
+      "address_hex": "c000020a000000000000000000000000",
+      "address_kind": 1,
+      "dns_authority": 0,
+      "id": "WIFI-ENDPOINT-IPV4-SCOPE",
+      "port": 8443,
+      "result": "OK",
+      "unused_tail_must_be_zero": 1
+    },
+    {
+      "address_hex": "20010db8000000000000000000000001",
+      "address_kind": 2,
+      "dns_authority": 0,
+      "id": "WIFI-ENDPOINT-IPV6-SCOPE",
+      "port": 8443,
+      "result": "OK"
+    },
+    {
+      "address_hex": "fe800000000000000000000000000001",
+      "address_kind": 2,
+      "id": "WIFI-ENDPOINT-LINK-LOCAL-SCOPE-ID",
+      "result": "OK_WITH_SCOPE_ID",
+      "scope_id_required": 1,
+      "scope_id_u32": 3,
+      "scope_id_zero_rejected": 1,
+      "scope_id_zero_result": "REJECT"
+    },
+    {
+      "authority_endpoint_change_requires_config_revision": 1,
+      "dns_name": "peer.local",
+      "id": "WIFI-ENDPOINT-DNS-MDNS-NON-AUTHORITY",
+      "last_known_address_authority": 0,
+      "mdns_browse": 1,
+      "result": "AUXILIARY_ONLY"
+    },
+    {
+      "availability_epoch_delta": 1,
+      "event": "IP_EVENT_STA_GOT_IP_CHANGE_OR_LOST",
+      "id": "WIFI-ENDPOINT-ADDRESS-CHANGE-FENCE",
+      "nwb1_publish": 0,
+      "result": "FENCED",
+      "reuse_old_socket_forbidden": 1,
+      "session_fence": 1
+    }
+  ],
+  "generator": "tools/wifi_bearer_spec_vector_gen.py",
+  "liveness_vectors": [
+    {
+      "exclusive_deadline_ms": 15000,
+      "id": "WIFI-LIVENESS-KEEPALIVE-EXCLUSIVE-TIMER",
+      "keepalive_interval_ms": 15000,
+      "result": "OK_EXCLUSIVE",
+      "state": "ATTACHED",
+      "timer_shares_phase_deadline": 0
+    },
+    {
+      "id": "WIFI-LIVENESS-MISSED-RESPONSE-THRESHOLD",
+      "missed_count_at_fail": 3,
+      "missed_count_still_ok": 2,
+      "missed_response_threshold": 3,
+      "result": "FAIL_AT_THRESHOLD"
+    },
+    {
+      "blackhole_detect_ms": 45000,
+      "formula": "keepalive_interval_ms * missed_response_threshold",
+      "id": "WIFI-LIVENESS-BLACKHOLE-DETECTION",
+      "result": "FENCED_ON_BLACKHOLE",
+      "tcp_ack_alone_not_liveness": 1
+    },
+    {
+      "condition": "PEER_SILENT_TCP_STILL_WRITABLE",
+      "id": "WIFI-LIVENESS-TCP-HALF-OPEN",
+      "nwb1_or_probe_response_required": 1,
+      "os_tcp_keepalive_is_authority": 0,
+      "result": "FENCED_HALF_OPEN"
+    },
+    {
+      "id": "WIFI-LIVENESS-AP-DEAD-BACKHAUL",
+      "ip_ready": 1,
+      "nwb1_publish": 0,
+      "peer_probe_ok": 0,
+      "result": "FENCED_DEAD_BACKHAUL",
+      "wifi_associated": 1
+    },
+    {
+      "id": "WIFI-LIVENESS-AVAILABILITY-EPOCH-CHANGE",
+      "on_liveness_fail": {
+        "availability_epoch_delta": 1,
+        "connection_close": 1,
+        "double_add_forbidden": 1,
+        "nwb1_delivery": 0,
+        "session_fence": 1
+      },
+      "result": "AVAILABILITY_PLUS_ONE"
+    }
+  ],
+  "network_credential_rotation_vectors": [
+    {
+      "classification": "OLD",
+      "expected_classification": "OLD",
+      "expected_observed_complete_digests": [
+        "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534"
+      ],
+      "id": "WIFI-NETCRED-FULL-OLD",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "old_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "publish": 0
+    },
+    {
+      "classification": "NEW",
+      "expected_classification": "NEW",
+      "expected_observed_complete_digests": [
+        "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538"
+      ],
+      "id": "WIFI-NETCRED-FULL-NEW",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "old_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "publish": 0,
+      "requires_fresh_association": 1
+    },
+    {
+      "classification": "ABSENT",
+      "create_result": "COMMIT_UNKNOWN_NO_PUBLISH",
+      "expected_classification": "ABSENT",
+      "id": "WIFI-NETCRED-FULL-ABSENT",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [],
+      "old_rows": [],
+      "publish": 0,
+      "result": "ABSENT_RECLASSIFY_ONLY"
+    },
+    {
+      "classification": "BOTH",
+      "expected_classification": "BOTH",
+      "expected_observed_complete_digests": [
+        "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+        "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538"
+      ],
+      "id": "WIFI-NETCRED-FULL-BOTH",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314e455731b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        },
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314e455731b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "old_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "publish": 0,
+      "result": "BOTH_OLD_AND_NEW_PRESENT"
+    },
+    {
+      "classification": "PARTIAL",
+      "expected_classification": "PARTIAL",
+      "id": "WIFI-NETCRED-PARTIAL",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        },
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314e455731b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "old_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        },
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314e455731b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "publish": 0,
+      "result": "CORRUPT_OR_COMMIT_UNKNOWN_NO_PUBLISH"
+    },
+    {
+      "classification": "EXTRA",
+      "expected_classification": "EXTRA",
+      "id": "WIFI-NETCRED-EXTRA",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        },
+        {
+          "auth_digest_hex": "618d902760f481ebddb8f878274c37995f3a42863e7b116751d0bb51aa21c45a",
+          "complete_digest_hex": "0c8520233124629921c45e9e5caf11070c672c97ffb1d3a32979896a1e310301",
+          "header_crc32c": 2738150102,
+          "key_hex": "4e574e3158545241b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000093f810a0072c41ac59c27de17792722f318510e9fdc3be6ecf85c7155c1f3a53beeeff0f1f2f3f4f5f6f7f8f9fafbfcfd0f6e696e6c696c2d6c61622d7373696400000000000000000000000000000000000201000000000000000000f0cbbf508b85a79e827afea7a58e513044058c81d50609bd9189e742604deabb"
+        }
+      ],
+      "old_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "publish": 0
+    },
+    {
+      "classification": "THIRD",
+      "expected_classification": "THIRD",
+      "id": "WIFI-NETCRED-THIRD",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [
+        {
+          "auth_digest_hex": "618d902760f481ebddb8f878274c37995f3a42863e7b116751d0bb51aa21c45a",
+          "complete_digest_hex": "0c8520233124629921c45e9e5caf11070c672c97ffb1d3a32979896a1e310301",
+          "header_crc32c": 2738150102,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000093f810a0072c41ac59c27de17792722f318510e9fdc3be6ecf85c7155c1f3a53beeeff0f1f2f3f4f5f6f7f8f9fafbfcfd0f6e696e6c696c2d6c61622d7373696400000000000000000000000000000000000201000000000000000000f0cbbf508b85a79e827afea7a58e513044058c81d50609bd9189e742604deabb"
+        }
+      ],
+      "old_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "publish": 0
+    },
+    {
+      "classification": "CORRUPT",
+      "duplicate_old_key_classification": "CORRUPT",
+      "expected_classification": "CORRUPT",
+      "expected_duplicate_old_key_classification": "CORRUPT",
+      "id": "WIFI-NETCRED-DUPLICATE-KEY",
+      "new_rows": [
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "observed_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        },
+        {
+          "auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+          "complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+          "header_crc32c": 858858223,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7"
+        }
+      ],
+      "old_rows": [
+        {
+          "auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+          "complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+          "header_crc32c": 764148983,
+          "key_hex": "4e574e314f4c4431b0b1b2b3b4b5b6b7",
+          "value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+        }
+      ],
+      "publish": 0,
+      "result": "CORRUPT_DUPLICATE_KEY"
+    },
+    {
+      "absent_example_classification": "ABSENT",
+      "both_example_classification": "BOTH",
+      "classifications_allowed_on_reopen": [
+        "OLD",
+        "NEW",
+        "BOTH",
+        "ABSENT",
+        "PARTIAL",
+        "EXTRA",
+        "THIRD",
+        "CORRUPT"
+      ],
+      "closed_classification_set": [
+        "OLD",
+        "NEW",
+        "BOTH",
+        "PARTIAL",
+        "EXTRA",
+        "THIRD",
+        "ABSENT",
+        "CORRUPT"
+      ],
+      "id": "WIFI-NETCRED-COMMIT-UNKNOWN-RECOVERY",
+      "power_cut_after": "FULL_STAGE_BEFORE_COMMIT_ACK",
+      "publish_before_reclassify": 0,
+      "result": "RECLASSIFY_ONLY",
+      "silent_fallback_forbidden": 1
+    },
+    {
+      "current_revision": 2,
+      "id": "WIFI-NETCRED-ROLLBACK-REJECT",
+      "observed_auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+      "observed_complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+      "observed_header_crc32c": 764148983,
+      "observed_revision": 1,
+      "observed_value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909",
+      "publish": 0,
+      "result": "FENCED_ROLLBACK"
+    },
+    {
+      "canonical_complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+      "canonical_value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7",
+      "conflicting_complete_digest_hex": "46a58badae8b0362c346a777349e80118deb9ae330a7a4607f55c4fc688d29cd",
+      "conflicting_value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000201dfd310c12914fb55eae3a0cdcbae525bea2a235ddc36ad37d9cbd488aa856bc1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7",
+      "digests_equal": 0,
+      "id": "WIFI-NETCRED-SAME-REVISION-DIGEST-CONFLICT",
+      "publish": 0,
+      "result": "FENCED_DIGEST_CONFLICT",
+      "revision": 2
+    },
+    {
+      "id": "WIFI-NETCRED-NO-PLAINTEXT-SECRET",
+      "new_auth_digest_hex": "32f711b95fb463b4b87726bc6c935c36392e36f59de8387fed01524e0febace9",
+      "new_complete_digest_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+      "new_header_crc32c": 858858223,
+      "new_value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf000000000000000216101d8ae55b71b83faca891e084b85f37a8d771a2948f161d91e4cfd4dff1c2c1c2c3c4c5c6c7c8c9cacbcccdcecfd00f6e696e6c696c2d6c61622d737369640000000000000000000000000000000000020601021122334455000059fbfb9e122380979fdd4f5f3175c7436f7c8428fc272fa1ddf6a0f0e028aaf7",
+      "nwd1_kat_auth_digest_hex": "147db4b100c073732c8a837f88cd9e3b2600f2c1cb5f64b237e91bf234c45f04",
+      "nwd1_kat_complete_digest_hex": "479d037f00eac79ab4c4b14f91d60b7d7b50830e4bfb82c47ed1acad828cb744",
+      "nwd1_kat_header_crc32c": 3785822970,
+      "nwd1_kat_value_hex": "4e57443100010080000000a00102030405060708090a0b0c0d0e0f10000000000000000730303030303030303030303030303030303030303030303030303030303030301112131415161718191a1b1c1d1e1f200e4b41542d4e5744312d4649584544000000000000000000000000000000000000010b01aabbccddeeff00004040404040404040404040404040404040404040404040404040404040404040",
+      "old_auth_digest_hex": "7879eb886d93750e6327e793a9723d6562abb9c78abe4dd445a89db195ede6eb",
+      "old_complete_digest_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+      "old_header_crc32c": 764148983,
+      "old_value_hex": "4e57443100010080000000a0b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0f6e696e6c696c2d6c61622d73736964000000000000000000000000000000000002060102112233445500000c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909",
+      "password_substrings_forbidden": [
+        "hunter2",
+        "p@ssw0rd",
+        "correct-horse-battery"
+      ],
+      "result": "OK_NO_PLAINTEXT",
+      "secret_field": "secret_ref_digest_only",
+      "secret_ref_digest_hex": "0c52852270ddec2b61907d2df67da51d001a951cc22ea738baf9213fd1491909"
+    }
+  ],
+  "nonclaims": [
+    "SPEC_ACCEPTED",
+    "implementation",
+    "HIL",
+    "RELEASE_SUPPORTED",
+    "public_API",
+    "production_support",
+    "target_execution",
+    "P0_closure",
+    "independent_review_GO"
+  ],
+  "nwb1_vectors": [
+    {
+      "classification": "OK",
+      "expected": "OK",
+      "header_length": 40,
+      "id": "WIFI-NWB1-HEADER-40",
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000041e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378"
+    },
+    {
+      "classification": "CORRUPT",
+      "expected": "CORRUPT",
+      "id": "WIFI-NWB1-PAYLOAD-586-REJECT",
+      "payload_length": 586,
+      "record_hex": "4e57423100010028000002720000024a101112131415161718191a1b1c1d1e1f00000000d42589814e464c314445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283848586878889"
+    },
+    {
+      "classification": "OK",
+      "expected": "OK",
+      "id": "WIFI-NWB1-PAYLOAD-587-ACCEPT",
+      "payload_length": 587,
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000041e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "record_sha256_hex": "08880d28df93a1d7b40fa94934dac89d2dad4d67d670b3d956bbf886d6dc1f14",
+      "total_length": 627
+    },
+    {
+      "classification": "OK",
+      "expected": "OK",
+      "id": "WIFI-NWB1-PAYLOAD-1925-ACCEPT",
+      "payload_length": 1925,
+      "record_hex": "4e57423100010028000007ad00000785101112131415161718191a1b1c1d1e1f00000000d43123dc4e464c310001024800000785e1bccb1b0000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f100000000000000001000000000001000100010000053a000000006e73784142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a",
+      "record_sha256_hex": "5895138b0c6568187749a91d0fb5b7fd2851a7526f01707c3a5ed8a2bf380da7",
+      "total_length": 1965
+    },
+    {
+      "classification": "CORRUPT",
+      "expected": "CORRUPT",
+      "id": "WIFI-NWB1-PAYLOAD-1926-REJECT",
+      "payload_length": 1926,
+      "record_hex": "4e57423100010028000007ae00000786101112131415161718191a1b1c1d1e1f000000003e293b694e464c314445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5"
+    },
+    {
+      "classification": "CORRUPT",
+      "expected": "CORRUPT",
+      "id": "WIFI-NWB1-TOTAL-626-REJECT",
+      "record_hex": "4e57423100010028000002720000024a101112131415161718191a1b1c1d1e1f00000000d42589814e464c314445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283848586878889",
+      "total_length": 626
+    },
+    {
+      "classification": "OK",
+      "expected": "OK",
+      "id": "WIFI-NWB1-TOTAL-627-ACCEPT",
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000041e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "total_length": 627
+    },
+    {
+      "classification": "OK",
+      "expected": "OK",
+      "id": "WIFI-NWB1-TOTAL-1965-ACCEPT",
+      "record_hex": "4e57423100010028000007ad00000785101112131415161718191a1b1c1d1e1f00000000d43123dc4e464c310001024800000785e1bccb1b0000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f100000000000000001000000000001000100010000053a000000006e73784142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a",
+      "total_length": 1965
+    },
+    {
+      "classification": "CORRUPT",
+      "expected": "CORRUPT",
+      "id": "WIFI-NWB1-TOTAL-1966-REJECT",
+      "record_hex": "4e57423100010028000007ae00000786101112131415161718191a1b1c1d1e1f000000003e293b694e464c314445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5",
+      "total_length": 1966
+    },
+    {
+      "bad_classification": "CORRUPT",
+      "crc_init": "0xffffffff",
+      "crc_polynomial": "0x82F63B78",
+      "crc_xorout": "0xffffffff",
+      "expected_bad": "CORRUPT",
+      "expected_good": "OK",
+      "good_classification": "OK",
+      "id": "WIFI-NWB1-CRC32C-INDEPENDENT",
+      "mutated_record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000040e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000041e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378"
+    },
+    {
+      "bytes_available": 20,
+      "deliverable": 0,
+      "id": "WIFI-NWB1-PARTIAL-HEADER",
+      "need_bytes": 40,
+      "result": "WANT_READ_NO_DELIVERY",
+      "slice_hex": "4e57423100010028000002730000024b10111213"
+    },
+    {
+      "bytes_available": 100,
+      "deliverable": 0,
+      "id": "WIFI-NWB1-PARTIAL-BODY",
+      "need_bytes": 627,
+      "result": "WANT_READ_NO_DELIVERY",
+      "slice_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000041e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000"
+    },
+    {
+      "expected_first": "OK",
+      "expected_second": "OK",
+      "first_classification": "OK",
+      "first_sequence": 0,
+      "id": "WIFI-NWB1-COALESCED-RECORDS",
+      "record_count": 2,
+      "second_classification": "OK",
+      "second_sequence": 1,
+      "stream_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000041e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e73784e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f00000001e22f71c04e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378"
+    },
+    {
+      "buffer_bytes": 1965,
+      "id": "WIFI-NWB1-READ-AHEAD-BOUND",
+      "max_records_read_ahead": 1,
+      "result": "BOUND_OK",
+      "unlimited_read_ahead_forbidden": 1
+    },
+    {
+      "classification": "WRONG_SESSION",
+      "connection_close": 1,
+      "delivery": 0,
+      "expected": "WRONG_SESSION",
+      "expected_session_hex": "101112131415161718191a1b1c1d1e1f",
+      "id": "WIFI-NWB1-WRONG-SESSION",
+      "record_hex": "4e57423100010028000002730000024b909192939495969798999a9b9c9d9e9f00000000a8fa95b94e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378"
+    },
+    {
+      "classification": "OK",
+      "expected": "OK",
+      "id": "WIFI-NWB1-SEQUENCE-0",
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f0000000041e982ba4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "sequence": 0
+    },
+    {
+      "classification": "OK",
+      "expected": "OK",
+      "id": "WIFI-NWB1-SEQUENCE-MAX-MINUS-ONE",
+      "next_action": "CLEAN_CLOSE_THEN_FRESH_SESSION",
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1ffffffffef612f3524e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "sequence": 4294967294
+    },
+    {
+      "classification": "SEQUENCE_REJECT",
+      "emit_forbidden": 1,
+      "expected": "SEQUENCE_REJECT",
+      "id": "WIFI-NWB1-SEQUENCE-UINT32-MAX-REJECT",
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1fffffffff55d400284e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "sequence": 4294967295
+    },
+    {
+      "connection_close": 1,
+      "delivery": 0,
+      "expected_sequence": 2,
+      "id": "WIFI-NWB1-DUPLICATE",
+      "is_duplicate_of_prior": 1,
+      "prior_delivered_sequence": 1,
+      "received_sequence": 1,
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f00000001e22f71c04e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "result": "CLOSE_NO_DELIVERY"
+    },
+    {
+      "connection_close": 1,
+      "delivery": 0,
+      "expected_sequence": 1,
+      "id": "WIFI-NWB1-GAP",
+      "is_gap": 1,
+      "prior_delivered_sequence": 0,
+      "received_sequence": 2,
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f00000002038812bf4e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "result": "CLOSE_NO_DELIVERY"
+    },
+    {
+      "connection_close": 1,
+      "delivery": 0,
+      "expected_sequence": 2,
+      "id": "WIFI-NWB1-OUT-OF-ORDER",
+      "is_out_of_order": 1,
+      "prior_delivered_sequence": 1,
+      "received_sequence": 1,
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f00000001e22f71c04e464c31000102480000024b78ce94360000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378",
+      "result": "CLOSE_NO_DELIVERY"
+    },
+    {
+      "fresh_session_sequence": 0,
+      "id": "WIFI-NWB1-WRAP-REJECT",
+      "last_sent_sequence": 4294967294,
+      "next_sequence_same_session_forbidden": 0,
+      "result": "CLEAN_CLOSE_FRESH_HANDSHAKE",
+      "wrap_to_zero_same_session_forbidden": 1
+    },
+    {
+      "classification": "INVALID_NFL1",
+      "connection_close": 1,
+      "delivery": 0,
+      "expected": "INVALID_NFL1",
+      "id": "WIFI-NWB1-INVALID-NFL1",
+      "record_hex": "4e57423100010028000002730000024b101112131415161718191a1b1c1d1e1f00000000b9bb7a1242414431000102480000024b7eeb109b0000000100000000101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f00000000000000000000000000000000303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f0000000000000001000000000000000100000007808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecf0000000000000001000000000000000100000007d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000010000000100000000000000010001b7d593d924c8784f3fb122132f0f32c8fe4ff5315b030aeeb7b9cae00b5c26cb00010000000000020001d47a3a218ccc72d39fdab66208061d663c0b440aa68fc54d79f8d35fcbc2b7530000000000000001a1a2a3a4a5a6a7a8a9aaabacadaeafb00000000000030d400000000000001388000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000000000000001000101787bd6ada2c0de31cb608af99b1c7ab94617b53b27c8dd38c17e0c6a6e70090102030405060708090a0b0c0d0e0f1000000000000000010000000000010001000100000000000000006e7378"
+    }
+  ],
+  "pins": {
+    "assoc_authority_a_hex": "98cbb22385ccb25777535aaa6e9a8a7c24f7755381f6f5c19b337a838aa0a92b",
+    "assoc_authority_input_a_hex": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf00000000000000010c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46c0c1c2c3c4c5c6c7c8c9cacbcccdcecf0211223344550602",
+    "assoc_authority_tag_ascii": "NINLIL-WIFI-ASSOC-AUTHORITY-V1",
+    "attached_context_sha256_hex": "a21c1c7ce004ed053a7704e5a54760751ed6e0f78ab8926759df3d0169cee713",
+    "esp_idf_commit": "2c211b236707889e8400c4dc5644dd5c4ee071e0",
+    "esp_mbedtls_commit": "ffb280bb63c78bfec1e1ab55040671768c85c923",
+    "host_openssl_peeled": "8cf17aaeb4599f8af87fefd810b5b5fee90fe69e",
+    "host_openssl_tag": "openssl-3.5.7",
+    "instance_id_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    "network_profile_digest_a_hex": "0c254cf0e7c1b24fa08683881851c7e22448961a2204fd0067f0a9e73d094e46",
+    "nfl1_header_bytes": 584,
+    "nfl1_version": 1,
+    "nwb1_max_record_sha256_hex": "5895138b0c6568187749a91d0fb5b7fd2851a7526f01707c3a5ed8a2bf380da7",
+    "nwb1_min_record_sha256_hex": "08880d28df93a1d7b40fa94934dac89d2dad4d67d670b3d956bbf886d6dc1f14",
+    "nwd1_new_complete_sha256_hex": "f9444115478a7ff5db3fa08132e1b5cf0fc03998976e0bb47449153f23354538",
+    "nwd1_old_complete_sha256_hex": "d911787aa41a5a029686d67dd20fc2d1bded147c51cf579a63ebdc31ac8da534",
+    "peer_context_sha256_hex": "1997f5b4dbdc4ecca9d1ccbff66bff4c6d69594c92b37d8c1855b9cd2e3c86ec",
+    "session_id_hex": "101112131415161718191a1b1c1d1e1f"
+  },
+  "preattachment_boundary_vectors": [
+    {
+      "id": "WIFI-PREATTACH-CARRIER-NOT-NWB1",
+      "m4_carrier_required": 1,
+      "nwb1_as_attachment_carrier": 0,
+      "result": "BOUNDARY_OK"
+    },
+    {
+      "application_publish": 0,
+      "fabric_availability": 0,
+      "id": "WIFI-PREATTACH-PEER-SESSION-ONLY-NO-NWB1",
+      "nwb1_receive": 0,
+      "nwb1_send": 0,
+      "peer_session_id_nonzero": 1,
+      "result": "NO_NWB1",
+      "state": "PEER_SESSION"
+    },
+    {
+      "active_binding_match": 1,
+      "attachment_authority_match": 1,
+      "id": "WIFI-PREATTACH-NWB1-REQUIRES-PA-FULL",
+      "m4_full_durable": 1,
+      "m4_missing_nwb1_allowed": 0,
+      "nwb1_allowed": 1,
+      "result": "OK_POST_ATTACHMENT",
+      "second_exporter_ok": 1,
+      "state": "ATTACHED"
+    }
+  ],
+  "race_backoff_vectors": [
+    {
+      "id": "WIFI-RACE-DISCONNECT-RECONNECT",
+      "order": [
+        "DISCONNECT_EVENT",
+        "FENCE_SESSIONS",
+        "AVAILABILITY_PLUS_ONE",
+        "CLOSE_SOCKETS",
+        "BACKOFF_NOT_BEFORE",
+        "RECONNECT_ATTEMPT"
+      ],
+      "reconnect_before_fence_forbidden": 1,
+      "result": "DETERMINISTIC"
+    },
+    {
+      "availability_epoch_delta_on_sleep": 1,
+      "drain_blocks_new_send_retention": 1,
+      "fake_available_while_asleep": 0,
+      "id": "WIFI-RACE-SLEEP-DRAIN",
+      "result": "DETERMINISTIC",
+      "sleep_marks_unavailable": 1
+    },
+    {
+      "availability": 0,
+      "event_queue_max": 8,
+      "id": "WIFI-RACE-EVENT-OVERFLOW",
+      "overflow_count": 9,
+      "result": "OVERFLOW_FENCE",
+      "result_state": "FENCED",
+      "sockets_closed": 1
+    },
+    {
+      "attached_stable_reset_ms": 60000,
+      "cap_ms": 32000,
+      "entropy_forbidden": 1,
+      "id": "WIFI-BACKOFF-DETERMINISTIC",
+      "instance_id_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "os_random_forbidden": 1,
+      "result": "DETERMINISTIC",
+      "samples": [
+        {
+          "backoff_ms": 1000,
+          "failure_generation": 1,
+          "jitter_ms": 888,
+          "not_before_offset_ms": 1888
+        },
+        {
+          "backoff_ms": 2000,
+          "failure_generation": 2,
+          "jitter_ms": 67,
+          "not_before_offset_ms": 2067
+        },
+        {
+          "backoff_ms": 4000,
+          "failure_generation": 3,
+          "jitter_ms": 554,
+          "not_before_offset_ms": 4554
+        },
+        {
+          "backoff_ms": 32000,
+          "failure_generation": 6,
+          "jitter_ms": 507,
+          "not_before_offset_ms": 32507
+        },
+        {
+          "backoff_ms": 32000,
+          "failure_generation": 7,
+          "jitter_ms": 410,
+          "not_before_offset_ms": 32410
+        }
+      ],
+      "schedule_ms": [
+        1000,
+        2000,
+        4000,
+        8000,
+        16000,
+        32000
+      ]
+    }
+  ],
+  "required_acceptance_ids": [
+    "WIFI-ASSOC-AUTHORITY-EPOCH-BASELINE",
+    "WIFI-ASSOC-SAME-SSID-BSSID-CHANGE-FENCE",
+    "WIFI-ASSOC-SAME-SSID-CHANNEL-CHANGE-FENCE",
+    "WIFI-ASSOC-PROFILE-DIGEST-CHANGE-FENCE",
+    "WIFI-ASSOC-SAME-TUPLE-NO-EPOCH",
+    "WIFI-ASSOC-SESSION-FENCE-AVAILABILITY-PLUS-ONE",
+    "WIFI-LIVENESS-KEEPALIVE-EXCLUSIVE-TIMER",
+    "WIFI-LIVENESS-MISSED-RESPONSE-THRESHOLD",
+    "WIFI-LIVENESS-BLACKHOLE-DETECTION",
+    "WIFI-LIVENESS-TCP-HALF-OPEN",
+    "WIFI-LIVENESS-AP-DEAD-BACKHAUL",
+    "WIFI-LIVENESS-AVAILABILITY-EPOCH-CHANGE",
+    "WIFI-NETCRED-FULL-OLD",
+    "WIFI-NETCRED-FULL-NEW",
+    "WIFI-NETCRED-FULL-ABSENT",
+    "WIFI-NETCRED-FULL-BOTH",
+    "WIFI-NETCRED-PARTIAL",
+    "WIFI-NETCRED-EXTRA",
+    "WIFI-NETCRED-THIRD",
+    "WIFI-NETCRED-DUPLICATE-KEY",
+    "WIFI-NETCRED-COMMIT-UNKNOWN-RECOVERY",
+    "WIFI-NETCRED-ROLLBACK-REJECT",
+    "WIFI-NETCRED-SAME-REVISION-DIGEST-CONFLICT",
+    "WIFI-NETCRED-NO-PLAINTEXT-SECRET",
+    "WIFI-ENDPOINT-IPV4-SCOPE",
+    "WIFI-ENDPOINT-IPV6-SCOPE",
+    "WIFI-ENDPOINT-LINK-LOCAL-SCOPE-ID",
+    "WIFI-ENDPOINT-DNS-MDNS-NON-AUTHORITY",
+    "WIFI-ENDPOINT-ADDRESS-CHANGE-FENCE",
+    "WIFI-NWB1-HEADER-40",
+    "WIFI-NWB1-PAYLOAD-586-REJECT",
+    "WIFI-NWB1-PAYLOAD-587-ACCEPT",
+    "WIFI-NWB1-PAYLOAD-1925-ACCEPT",
+    "WIFI-NWB1-PAYLOAD-1926-REJECT",
+    "WIFI-NWB1-TOTAL-626-REJECT",
+    "WIFI-NWB1-TOTAL-627-ACCEPT",
+    "WIFI-NWB1-TOTAL-1965-ACCEPT",
+    "WIFI-NWB1-TOTAL-1966-REJECT",
+    "WIFI-NWB1-CRC32C-INDEPENDENT",
+    "WIFI-NWB1-PARTIAL-HEADER",
+    "WIFI-NWB1-PARTIAL-BODY",
+    "WIFI-NWB1-COALESCED-RECORDS",
+    "WIFI-NWB1-READ-AHEAD-BOUND",
+    "WIFI-NWB1-WRONG-SESSION",
+    "WIFI-NWB1-SEQUENCE-0",
+    "WIFI-NWB1-SEQUENCE-MAX-MINUS-ONE",
+    "WIFI-NWB1-SEQUENCE-UINT32-MAX-REJECT",
+    "WIFI-NWB1-DUPLICATE",
+    "WIFI-NWB1-GAP",
+    "WIFI-NWB1-OUT-OF-ORDER",
+    "WIFI-NWB1-WRAP-REJECT",
+    "WIFI-NWB1-INVALID-NFL1",
+    "WIFI-TLS-SUITE-GROUP-SIGNATURE-EXACT",
+    "WIFI-TLS-X509-ROLE-RUNTIME-ATTACHMENT",
+    "WIFI-TLS-EXPORTER-PEER-CONTEXT-62",
+    "WIFI-TLS-EXPORTER-ATTACHED-CONTEXT-64",
+    "WIFI-TLS-AUTHORITY-ALL-ZERO-GROUP",
+    "WIFI-TLS-AUTHORITY-MIXED-REJECT",
+    "WIFI-TLS-TICKET-0RTT-RENEGOTIATION-FENCE",
+    "WIFI-TLS-REVOCATION-CLOCK-RULES",
+    "WIFI-TLS-R7-OPENSSL-GENERIC-NON-AUTHORITY",
+    "WIFI-TLS-HOST-OPENSSL-PIN-AUTHORITY",
+    "WIFI-TLS-ESP-MBEDTLS-PIN-AUTHORITY",
+    "WIFI-PREATTACH-CARRIER-NOT-NWB1",
+    "WIFI-PREATTACH-PEER-SESSION-ONLY-NO-NWB1",
+    "WIFI-PREATTACH-NWB1-REQUIRES-PA-FULL",
+    "WIFI-RESOURCE-ESP-CAPACITY",
+    "WIFI-RESOURCE-HOST-CAPACITY",
+    "WIFI-RESOURCE-PRIORITY-ISOLATION",
+    "WIFI-RESOURCE-RETAINED-TOKEN-PARTIAL-WRITE",
+    "WIFI-RESOURCE-RELEASE-SEMANTICS",
+    "WIFI-RESOURCE-NO-FALSE-CUSTODY",
+    "WIFI-RESOURCE-STORAGE-ARITHMETIC",
+    "WIFI-ROLE-HOST-POSIX-TCP-TLS",
+    "WIFI-ROLE-ESP32S3-STA-LWIP-MBEDTLS",
+    "WIFI-RACE-DISCONNECT-RECONNECT",
+    "WIFI-RACE-SLEEP-DRAIN",
+    "WIFI-RACE-EVENT-OVERFLOW",
+    "WIFI-BACKOFF-DETERMINISTIC"
+  ],
+  "resource_queue_vectors": [
+    {
+      "adapter_max": 1,
+      "connect_attempt_max": 1,
+      "event_queue_max": 8,
+      "event_queue_overflow_at": 9,
+      "id": "WIFI-RESOURCE-ESP-CAPACITY",
+      "record_bytes": 1965,
+      "result": "ESP_BOUNDS",
+      "rx_loan_max": 1,
+      "rx_record_max": 8,
+      "session_max": 2,
+      "tx_token_max": 8
+    },
+    {
+      "adapter_max": 64,
+      "connect_attempt_max": 8,
+      "id": "WIFI-RESOURCE-HOST-CAPACITY",
+      "record_bytes": 1965,
+      "result": "HOST_BOUNDS",
+      "rx_record_per_session": 8,
+      "session_max": 64,
+      "tx_token_per_session": 8
+    },
+    {
+      "bulk_may_starve_critical": 0,
+      "id": "WIFI-RESOURCE-PRIORITY-ISOLATION",
+      "queues": [
+        "critical_control",
+        "application_data",
+        "management_bulk"
+      ],
+      "result": "ISOLATED"
+    },
+    {
+      "id": "WIFI-RESOURCE-RETAINED-TOKEN-PARTIAL-WRITE",
+      "partial_tcp_tls_write_outer_would_block": 0,
+      "poll_send_internal": 1,
+      "result": "OK",
+      "start_send_full_copy_own": 1,
+      "token_null_means_retain_0": 1
+    },
+    {
+      "id": "WIFI-RESOURCE-RELEASE-SEMANTICS",
+      "release_before_terminal_forbidden": 1,
+      "release_send_exact_count_after_terminal": 1,
+      "result": "OK"
+    },
+    {
+      "fabric_cap_custody_advertised": 0,
+      "id": "WIFI-RESOURCE-NO-FALSE-CUSTODY",
+      "nwb1_socket_write_is_custody": 0,
+      "peer_kernel_ack_is_custody": 0,
+      "result": "NO_CUSTODY",
+      "tls_record_success_is_custody": 0
+    },
+    {
+      "committed_cu_bytes": 1280,
+      "committed_formula": "keys_max * record_bytes",
+      "esp_nwd1_active_profiles_max": 1,
+      "host_nwd1_active_profiles_max": 8,
+      "id": "WIFI-RESOURCE-STORAGE-ARITHMETIC",
+      "nwd1_keys_max": 8,
+      "nwd1_record_bytes": 160,
+      "plaintext_password_in_storage": 0,
+      "plaintext_password_in_vectors": 0,
+      "result": "ARITHMETIC_OK",
+      "secret_ref_digest_only": 1,
+      "staging_cu_bytes": 2560,
+      "staging_formula": "committed_cu_bytes * 2"
+    }
+  ],
+  "role_responsibility_vectors": [
+    {
+      "adapter_kind": 1,
+      "credential_provider_null_required": 1,
+      "id": "WIFI-ROLE-HOST-POSIX-TCP-TLS",
+      "network_profile_zero_required": 1,
+      "result": "HOST_RESPONSIBILITY",
+      "tls_backend": "PINNED_OPENSSL_3_5_7_STATIC",
+      "transport": "POSIX_TCP",
+      "wifi_driver_owner": 0
+    },
+    {
+      "adapter_kind": 2,
+      "credential_provider_required": 1,
+      "id": "WIFI-ROLE-ESP32S3-STA-LWIP-MBEDTLS",
+      "network_profile_nonzero_required": 1,
+      "result": "ESP_RESPONSIBILITY",
+      "tls_backend": "ESP_IDF_SUPPLIED_MBEDTLS_DIRECT",
+      "transport": "ESP_IDF_WIFI_STA_TCP_LWIP",
+      "wifi_driver_sole_owner": 1,
+      "wifi_storage_ram": 1
+    }
+  ],
+  "schema": "ninlil.wifi.bearer.spec.v1",
+  "source_vector_restoration": {
+    "absent_row_id": "WIFI-NETCRED-FULL-ABSENT",
+    "acceptance_id_count": 79,
+    "adr": "docs/adr/0018-wifi-bearer.md",
+    "c_test": "tests/transport/wifi_bearer_spec_vector_test.c",
+    "commit_unknown_includes_corrupt": 1,
+    "digest_leaf_count": 96,
+    "digest_leaf_paths_sha256_hex": "f874aa983793212f5f0ef07422d0338d558f08e27e13c00262fb1ab89fa05da0",
+    "duplicate_expected_sequence_rule": "prior_delivered + 1",
+    "gate_mjs": "tools/wifi_bearer_spec_gate.mjs",
+    "gate_py": "tools/wifi_bearer_spec_gate.py",
+    "generator": "tools/wifi_bearer_spec_vector_gen.py",
+    "independent_nwd1_kat_auth_digest_hex": "147db4b100c073732c8a837f88cd9e3b2600f2c1cb5f64b237e91bf234c45f04",
+    "independent_nwd1_kat_complete_digest_hex": "479d037f00eac79ab4c4b14f91d60b7d7b50830e4bfb82c47ed1acad828cb744",
+    "independent_nwd1_kat_header_crc32c": 3785822970,
+    "independent_nwd1_kat_value_hex": "4e57443100010080000000a00102030405060708090a0b0c0d0e0f10000000000000000730303030303030303030303030303030303030303030303030303030303030301112131415161718191a1b1c1d1e1f200e4b41542d4e5744312d4649584544000000000000000000000000000000000000010b01aabbccddeeff00004040404040404040404040404040404040404040404040404040404040404040",
+    "integer_leaf_count": 386,
+    "integer_leaf_paths_sha256_hex": "2f3294d2c15bd5f670c4e770dc1b9523974fc27bd462168eb015b399576082bb",
+    "nwb1_max_total": 1965,
+    "nwb1_min_total": 627,
+    "object_path_count": 117,
+    "release_before_terminal_forbidden": 1,
+    "schema": "ninlil.wifi.bearer.spec.v1",
+    "string_leaf_count": 692,
+    "string_leaf_paths_sha256_hex": "7014fc9b3e73e0b74223c85f039f15d27e87e8478d899def03f0830133de1ece",
+    "tool_paths": [
+      "docs/adr/0018-wifi-bearer.md",
+      "tools/wifi_bearer_spec_vector_gen.py",
+      "tools/wifi_bearer_spec_gate.py",
+      "tools/wifi_bearer_spec_gate.mjs",
+      "spec/vectors/wifi-bearer-spec-v1.json",
+      "tests/transport/wifi_bearer_spec_vector_test.c"
+    ],
+    "vector": "spec/vectors/wifi-bearer-spec-v1.json"
+  },
+  "status": "PROPOSED_CANDIDATE_NOT_SPEC_ACCEPTED",
+  "storage_arithmetic": {
+    "committed_cu_bytes": 1280,
+    "committed_formula": "keys_max * record_bytes",
+    "esp_nwd1_active_profiles_max": 1,
+    "host_nwd1_active_profiles_max": 8,
+    "nwd1_keys_max": 8,
+    "nwd1_record_bytes": 160,
+    "plaintext_password_in_storage": 0,
+    "plaintext_password_in_vectors": 0,
+    "secret_ref_digest_only": 1,
+    "staging_cu_bytes": 2560,
+    "staging_formula": "committed_cu_bytes * 2"
+  },
+  "tls_profile_vectors": [
+    {
+      "ciphersuite": "TLS_AES_128_GCM_SHA256",
+      "ciphersuite_id": 4865,
+      "group": "secp256r1",
+      "group_id": 23,
+      "id": "WIFI-TLS-SUITE-GROUP-SIGNATURE-EXACT",
+      "protocol": "TLS1.3",
+      "result": "OK_EXACT",
+      "signature_id": 1027,
+      "signature_scheme": "ecdsa_secp256r1_sha256"
+    },
+    {
+      "binding_length": 82,
+      "client_binding_hex": "01013132333435363738393a3b3c3d3e3f40f62690833a93fd5ddf544831e61572d879d656765537143f3f3e2926f6f0f49cd0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000070000000300000005",
+      "client_role": 1,
+      "id": "WIFI-TLS-X509-ROLE-RUNTIME-ATTACHMENT",
+      "result": "OK",
+      "server_binding_hex": "010232333435363738393a3b3c3d3e3f4041f62690833a93fd5ddf544831e61572d879d656765537143f3f3e2926f6f0f49cd0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000070000000300000005",
+      "server_role": 2,
+      "shared_leaf_forbidden": 1
+    },
+    {
+      "context_hex": "d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000070000000b013132333435363738393a3b3c3d3e3f400232333435363738393a3b3c3d3e3f4041",
+      "context_length": 62,
+      "context_sha256_hex": "1997f5b4dbdc4ecca9d1ccbff66bff4c6d69594c92b37d8c1855b9cd2e3c86ec",
+      "expected_length": 62,
+      "id": "WIFI-TLS-EXPORTER-PEER-CONTEXT-62",
+      "label": "EXPORTER-Ninlil-PeerSession-v1",
+      "result": "OK"
+    },
+    {
+      "context_hex": "ffa4a85199ba62fc6efdb8f9c3d7b568e0e1e2e3e4e5e6e7e8e9eaebecedeeeff62690833a93fd5ddf544831e61572d879d656765537143f3f3e2926f6f0f49c",
+      "context_length": 64,
+      "context_sha256_hex": "a21c1c7ce004ed053a7704e5a54760751ed6e0f78ab8926759df3d0169cee713",
+      "depends_on_m4_full": 1,
+      "expected_length": 64,
+      "id": "WIFI-TLS-EXPORTER-ATTACHED-CONTEXT-64",
+      "label": "EXPORTER-Ninlil-NWB1-Attached-v1",
+      "result": "OK"
+    },
+    {
+      "allowed_only_if_controllerless_profile_explicit": 1,
+      "bound_profile_rejects_all_zero": 1,
+      "context_hex": "00000000000000000000000000000000000000000000000000000000013132333435363738393a3b3c3d3e3f400232333435363738393a3b3c3d3e3f4041",
+      "expected_class": "ALL_ZERO",
+      "group_class": "ALL_ZERO",
+      "id": "WIFI-TLS-AUTHORITY-ALL-ZERO-GROUP",
+      "result": "PROFILE_CONDITIONAL"
+    },
+    {
+      "context_hex": "d0d1d2d3d4d5d6d7d8d9dadbdcdddedf00000000000000000000000b013132333435363738393a3b3c3d3e3f400232333435363738393a3b3c3d3e3f4041",
+      "expected_class": "MIXED",
+      "group_class": "MIXED",
+      "id": "WIFI-TLS-AUTHORITY-MIXED-REJECT",
+      "result": "REJECT",
+      "session_established": 0
+    },
+    {
+      "early_data_bytes_publish": 0,
+      "id": "WIFI-TLS-TICKET-0RTT-RENEGOTIATION-FENCE",
+      "key_update_local_emit": 0,
+      "post_handshake_auth": 0,
+      "renegotiation": 0,
+      "result": "FENCED_IF_OBSERVED",
+      "session_tickets": 0
+    },
+    {
+      "age_300000_ok": 1,
+      "age_300001_reject": 1,
+      "authority_clock_only": 1,
+      "id": "WIFI-TLS-REVOCATION-CLOCK-RULES",
+      "now_equals_valid_until_reject": 1,
+      "os_wall_clock_authority": 0,
+      "result": "OK_RULES",
+      "snapshot_age_max_ms": 300000
+    },
+    {
+      "id": "WIFI-TLS-R7-OPENSSL-GENERIC-NON-AUTHORITY",
+      "may_use_system_openssl_3": 1,
+      "r7_rule": "OpenSSL major version exactly 3 (find_package OpenSSL 3)",
+      "result": "NON_AUTHORITY_FOR_WIFI_PROFILE",
+      "satisfies_wifi_host_pin": 0
+    },
+    {
+      "id": "WIFI-TLS-HOST-OPENSSL-PIN-AUTHORITY",
+      "peeled_commit": "8cf17aaeb4599f8af87fefd810b5b5fee90fe69e",
+      "result": "HOST_WIFI_AUTHORITY",
+      "static_only": 1,
+      "tag": "openssl-3.5.7",
+      "targets": [
+        "0x01 linux-x86_64",
+        "0x02 darwin64-arm64-cc"
+      ]
+    },
+    {
+      "direct_mbedtls_only": 1,
+      "esp_idf_commit": "2c211b236707889e8400c4dc5644dd5c4ee071e0",
+      "esp_tls_public_api_forbidden": 1,
+      "id": "WIFI-TLS-ESP-MBEDTLS-PIN-AUTHORITY",
+      "mbedtls_commit": "ffb280bb63c78bfec1e1ab55040671768c85c923",
+      "result": "ESP_WIFI_AUTHORITY"
+    }
+  ]
+}

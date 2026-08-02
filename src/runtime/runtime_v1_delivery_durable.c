@@ -4,6 +4,8 @@
 #include "runtime_v1_event_ledger_codec.h"
 #include "runtime_v1_event_mgmt.h"
 #include "runtime_v1_family_capability.h"
+#include "runtime_v1_spine_durable.h"
+#include "runtime_v1_target_resolver.h"
 #include "runtime_v1_transaction_codec.h"
 
 #include "domain_store_codec.h"
@@ -258,17 +260,19 @@ static ninlil_rt_service_slot_t *find_receiver_for_txn(
 {
     uint32_t index;
 
+    /*
+     * Route by complete service identity (namespace + service + schema +
+     * revision + digest + family + app instance). Family-only first-match
+     * silently dropped messages for a second service in the same family.
+     */
     for (index = 0u; index < runtime->service_capacity; ++index) {
         ninlil_rt_service_slot_t *slot = &runtime->services[index];
 
         if (slot->in_use == 0u || slot->attached == 0u) {
             continue;
         }
-        if (memcmp(
-                slot->descriptor.local_application_instance_id.bytes,
-                txn->service_app_id.bytes,
-                sizeof(txn->service_app_id.bytes))
-            != 0) {
+        if (!ninlil_rt_service_descriptor_matches_transaction(
+                &slot->descriptor, txn)) {
             continue;
         }
         if (txn->family == NINLIL_FAMILY_EVENT_FACT
@@ -285,6 +289,9 @@ static ninlil_rt_service_slot_t *find_receiver_for_txn(
                 || txn->family == NINLIL_FAMILY_CONFIG_RESERVED)
             && slot->model_service.local_side
                 == NINLIL_MODEL_LOCAL_SUBMISSION_SENDER) {
+            return slot;
+        }
+        if (slot->callbacks.on_delivery != NULL) {
             return slot;
         }
     }
@@ -310,6 +317,53 @@ static ninlil_rt_service_slot_t *find_attached_service_for_txn(
     return NULL;
 }
 
+/*
+ * Durable SERVICE registry identity for origin quota accounting.
+ * Independent of callback attachment: Stage5 restore leaves slots
+ * unattached until re-register, but quota still must track terminal
+ * FULL groups that run on runtime_step before reattach.
+ * Exact uniqueness: 0 matches / 2+ matches are CORRUPT.
+ */
+static ninlil_status_t find_origin_service_for_quota(
+    ninlil_runtime_t *runtime,
+    const ninlil_rt_transaction_slot_t *txn,
+    ninlil_rt_service_slot_t **out_slot)
+{
+    uint32_t index;
+    uint32_t match_count = 0u;
+    ninlil_rt_service_slot_t *found = NULL;
+
+    if (out_slot != NULL) {
+        *out_slot = NULL;
+    }
+    if (runtime == NULL || txn == NULL || out_slot == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    for (index = 0u; index < runtime->service_capacity; ++index) {
+        ninlil_rt_service_slot_t *slot = &runtime->services[index];
+
+        if (slot->in_use == 0u) {
+            continue;
+        }
+        if (!ninlil_rt_service_descriptor_matches_transaction(
+                &slot->descriptor, txn)) {
+            continue;
+        }
+        match_count += 1u;
+        if (match_count == 1u) {
+            found = slot;
+        }
+    }
+    if (match_count == 0u || match_count > 1u || found == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    if (found->quota_inflight == 0u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    *out_slot = found;
+    return NINLIL_OK;
+}
+
 static ninlil_rt_service_slot_t *find_callback_receiver_for_txn(
     ninlil_runtime_t *runtime,
     const ninlil_rt_transaction_slot_t *txn)
@@ -321,11 +375,8 @@ static ninlil_rt_service_slot_t *find_callback_receiver_for_txn(
 
         if (slot->in_use == 0u || slot->attached == 0u
             || slot->callbacks.on_delivery == NULL
-            || slot->descriptor.family != txn->family
-            || memcmp(
-                slot->descriptor.local_application_instance_id.bytes,
-                txn->service_app_id.bytes,
-                sizeof(txn->service_app_id.bytes)) != 0) {
+            || !ninlil_rt_service_descriptor_matches_transaction(
+                &slot->descriptor, txn)) {
             continue;
         }
         return slot;
@@ -484,9 +535,14 @@ static ninlil_status_t commit_transaction_snapshot_internal(
     int starts_inbound_callback;
     int releases_inbound_deferred;
     int releases_inbound_delivery;
+    int stage_origin_quota = 0;
+    uint32_t evidenced_targets_before = 0u;
+    uint32_t evidenced_targets_after = 0u;
+    uint32_t target_index;
+    ninlil_rt_service_slot_t *quota_slot = NULL;
+    ninlil_rt_service_slot_t quota_snapshot;
 
     if (runtime == NULL || transaction == NULL || candidate == NULL
-        || transaction->record_revision == UINT64_MAX
         || memcmp(
             transaction->transaction_id.bytes,
             candidate->transaction_id.bytes,
@@ -501,11 +557,32 @@ static ninlil_status_t commit_transaction_snapshot_internal(
     }
     committed = &runtime->transaction_decode_scratch;
     *committed = *candidate;
-    committed->record_revision = transaction->record_revision + 1u;
+    committed->record_revision =
+        transaction->record_revision == UINT64_MAX
+        ? UINT64_MAX : transaction->record_revision + 1u;
+    for (target_index = 0u;
+         target_index < transaction->bound_target_count;
+         ++target_index) {
+        if (transaction->bound_targets[target_index].in_use != 0u
+            && transaction->bound_targets[target_index]
+                    .evidence_recorded
+                != 0u) {
+            evidenced_targets_before += 1u;
+        }
+    }
+    for (target_index = 0u;
+         target_index < committed->bound_target_count;
+         ++target_index) {
+        if (committed->bound_targets[target_index].in_use != 0u
+            && committed->bound_targets[target_index]
+                    .evidence_recorded
+                != 0u) {
+            evidenced_targets_after += 1u;
+        }
+    }
     commits_first_evidence =
         transaction->origin_admission != 0u
-        && transaction->evidence_recorded == 0u
-        && committed->evidence_recorded != 0u;
+        && evidenced_targets_after == evidenced_targets_before + 1u;
     releases_reservation =
         (committed->terminal != 0u || committed->event_discarded != 0u)
         && transaction->reservation_active != 0u;
@@ -530,6 +607,24 @@ static ninlil_status_t commit_transaction_snapshot_internal(
         && committed->token_state != NINLIL_RT_TOKEN_ACTIVE;
     releases_inbound_delivery =
         transaction->origin_admission == 0u && closes_inflight;
+    /*
+     * Origin terminal / discard must durable-decrement SERVICE quota in the
+     * same FULL storage transaction as the TX + resource ledger (Accepted
+     * docs). Lookup uses durable service identity, not callback attachment
+     * (restart may terminalize before reattach). Missing / duplicate slot
+     * or zero inflight is CORRUPT before begin/commit — never silent skip,
+     * never RAM-only fallback for origin.
+     */
+    if (closes_inflight != 0 && transaction->origin_admission != 0u) {
+        status = find_origin_service_for_quota(
+            runtime, committed, &quota_slot);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        quota_snapshot = *quota_slot;
+        quota_snapshot.quota_inflight -= 1u;
+        stage_origin_quota = 1;
+    }
     ledger_changed = commits_first_evidence || releases_reservation
         || admits_inbound_delivery || starts_inbound_callback
         || releases_inbound_deferred || releases_inbound_delivery;
@@ -664,6 +759,14 @@ static ninlil_status_t commit_transaction_snapshot_internal(
             return status;
         }
     }
+    if (stage_origin_quota != 0) {
+        status = ninlil_rt_v1_spine_service_ledger_stage(
+            runtime, storage_txn, &quota_snapshot, operation);
+        if (status != NINLIL_OK) {
+            (void)storage->rollback(storage->user, storage_txn);
+            return status;
+        }
+    }
     if (ordered_input_commit != 0) {
         status = stage_ordered_input_counter(
             runtime,
@@ -700,7 +803,15 @@ static ninlil_status_t commit_transaction_snapshot_internal(
             }
         }
         *transaction = *committed;
-        if (closes_inflight != 0) {
+        /*
+         * RAM publication only after FULL commit OK. COMMIT_UNKNOWN /
+         * storage failure leaves pre-commit inflight and durable row
+         * dual-truth for restart recovery — no speculative RAM decrement.
+         */
+        if (stage_origin_quota != 0) {
+            quota_slot->quota_inflight = quota_snapshot.quota_inflight;
+        } else if (
+            closes_inflight != 0 && committed->origin_admission == 0u) {
             ninlil_rt_service_slot_t *slot =
                 find_attached_service_for_txn(runtime, committed);
 
@@ -1746,9 +1857,9 @@ static ninlil_status_t dispatch_event_fact_receiver(
         txn->deadline_clock_epoch_id;
     delivery_view.absolute_effect_deadline_ms = txn->effect_deadline_ms;
     delivery_view.evidence_grace_ms = txn->evidence_grace_ms;
-    delivery_view.payload.data = txn->payload_length == 0u
+    delivery_view.payload.data = txn->inline_payload_length == 0u
         ? NULL : txn->owned_payload;
-    delivery_view.payload.length = txn->payload_length;
+    delivery_view.payload.length = txn->inline_payload_length;
 
     (void)memset(&app_result, 0, sizeof(app_result));
     set_header(&app_result.abi_version, &app_result.struct_size, sizeof(app_result));
@@ -1889,6 +2000,7 @@ static int txn_needs_work(
     const ninlil_time_sample_t *clock_sample)
 {
     uint64_t receipt_deadline;
+    uint32_t target_index;
 
     if (txn->in_use == 0u || txn->event_discarded != 0u) {
         return 0;
@@ -1903,6 +2015,38 @@ static int txn_needs_work(
                     clock_sample,
                     &txn->next_retry_clock_epoch_id,
                     txn->next_retry_ms));
+    }
+    if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+        && txn->origin_admission != 0u) {
+        for (target_index = 0u;
+             target_index < txn->bound_target_count;
+             ++target_index) {
+            const ninlil_rt_target_slot_t *target =
+                &txn->bound_targets[target_index];
+
+            if (target->in_use == 0u || target->terminal != 0u) {
+                continue;
+            }
+            if (target->pending_dispatch != 0u
+                && (target->next_retry_ms == 0u
+                    || timer_is_due(
+                        clock_sample,
+                        &target->next_retry_clock_epoch_id,
+                        target->next_retry_ms))) {
+                return 1;
+            }
+            if (target->send_observation_closed != 0u
+                && txn->attempt_receipt_timeout_ms != 0u
+                && target->send_observed_at_ms
+                    <= UINT64_MAX - txn->attempt_receipt_timeout_ms
+                && timer_is_due(
+                    clock_sample,
+                    &target->send_observed_clock_epoch_id,
+                    target->send_observed_at_ms
+                        + txn->attempt_receipt_timeout_ms)) {
+                return 1;
+            }
+        }
     }
     if (txn->receipt_pending != 0u) {
         return 1;
@@ -2013,6 +2157,25 @@ static int endpoint_has_pending_uplink_dispatch(const ninlil_runtime_t *runtime)
         }
     }
     return 0;
+}
+
+/*
+ * MFDT custody keeps only the logical length in NTS3; the bytes themselves
+ * live in NM3S.  Until the Runtime scheduler owns the MFDT worker, this shape
+ * must remain durable pending work and must never be synthesized as an empty
+ * single-frame APPLICATION message.
+ */
+static int transaction_waits_for_mfdt_scheduler(
+    const ninlil_rt_transaction_slot_t *txn)
+{
+    return txn != NULL
+#if defined(NINLIL_MFDT_V1_PRIVATE)
+        && txn->origin_admission != 0u
+#endif
+        && txn->bearer_route
+            == (uint8_t)NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1
+        && txn->payload_length > 0u
+        && txn->inline_payload_length == 0u;
 }
 
 uint32_t ninlil_rt_v1_delivery_collect_work_order(
@@ -2213,18 +2376,83 @@ static ninlil_status_t commit_terminal_outcome(
 {
     ninlil_status_t status;
     ninlil_rt_transaction_slot_t *candidate;
+    ninlil_outcome_t recorded_outcome = outcome;
+    uint32_t target_index = 0u;
+    uint32_t scan;
 
     if (txn->outcome_recorded != 0u) {
         return NINLIL_OK;
     }
     candidate = &runtime->transaction_scratch;
     *candidate = *txn;
-    candidate->outcome = outcome;
-    candidate->reason = reason;
-    candidate->outcome_recorded = 1u;
-    candidate->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
-    candidate->terminal = 1u;
-    candidate->pending_dispatch = 0u;
+    if (candidate->family == NINLIL_FAMILY_DESIRED_STATE
+        && candidate->origin_admission != 0u) {
+        ninlil_rt_target_slot_t *target;
+        int activated = 0;
+
+        if (!ninlil_rt_v1_active_target(candidate, &target_index)) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        target = &candidate->bound_targets[target_index];
+        target->terminal = 1u;
+        target->pending_dispatch = 0u;
+        target->attempt_prepared = 0u;
+        (void)memset(
+            &target->active_attempt_id,
+            0,
+            sizeof(target->active_attempt_id));
+        target->send_observation_closed = 0u;
+        target->send_observed_at_ms = 0u;
+        (void)memset(
+            &target->send_observed_clock_epoch_id,
+            0,
+            sizeof(target->send_observed_clock_epoch_id));
+        target->next_retry_ms = 0u;
+        (void)memset(
+            &target->next_retry_clock_epoch_id,
+            0,
+            sizeof(target->next_retry_clock_epoch_id));
+        target->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
+        target->outcome = outcome;
+        target->reason = reason;
+        if (outcome == NINLIL_OUTCOME_EXPIRED) {
+            target->deadline_verdict = NINLIL_DEADLINE_MISSED;
+        }
+        for (scan = 1u;
+             scan <= candidate->bound_target_count;
+             ++scan) {
+            uint32_t next =
+                (target_index + scan) % candidate->bound_target_count;
+            ninlil_rt_target_slot_t *next_target =
+                &candidate->bound_targets[next];
+
+            if (next_target->in_use != 0u
+                && next_target->terminal == 0u) {
+                ninlil_rt_v1_activate_target(candidate, next);
+                activated = 1;
+                break;
+            }
+        }
+        if (!activated) {
+            candidate->active_target_index =
+                NINLIL_RT_V1_NO_ACTIVE_TARGET;
+            candidate->attempt_prepared = 0u;
+            (void)memset(
+                &candidate->attempt_id,
+                0,
+                sizeof(candidate->attempt_id));
+            candidate->pending_dispatch = 0u;
+        }
+        ninlil_rt_v1_refresh_target_aggregate(candidate);
+        recorded_outcome = candidate->outcome;
+    } else {
+        candidate->outcome = outcome;
+        candidate->reason = reason;
+        candidate->outcome_recorded = 1u;
+        candidate->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
+        candidate->terminal = 1u;
+        candidate->pending_dispatch = 0u;
+    }
     status = ninlil_rt_v1_commit_transaction_snapshot(
         runtime,
         txn,
@@ -2234,14 +2462,20 @@ static ninlil_status_t commit_terminal_outcome(
     if (status != NINLIL_OK) {
         return status;
     }
-    if (runtime->nonterminal_transaction_count > 0u) {
-        runtime->nonterminal_transaction_count -= 1u;
-    }
     out_result->transitions_consumed += 1u;
-    note_terminal_outcome(runtime, outcome, out_result);
-    status = ninlil_rt_v1_release_transaction_reservation(runtime, txn);
-    if (status != NINLIL_OK) {
-        return status;
+    if (candidate->terminal != 0u) {
+        if (runtime->nonterminal_transaction_count > 0u) {
+            runtime->nonterminal_transaction_count -= 1u;
+        }
+        note_terminal_outcome(runtime, recorded_outcome, out_result);
+        status = ninlil_rt_v1_release_transaction_reservation(
+            runtime, txn);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+    } else {
+        out_result->work_remaining = 1u;
+        runtime->pending_work = 1u;
     }
     return NINLIL_OK;
 }
@@ -2296,10 +2530,15 @@ static ninlil_status_t prepare_application_attempt(
     ninlil_port_status_t entropy_status;
     ninlil_status_t status;
     uint32_t draw;
+    uint32_t target_index = 0u;
     int found = 0;
 
     if (txn->attempt_prepared != 0u) {
         return NINLIL_OK;
+    }
+    if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+        && !ninlil_rt_v1_active_target(txn, &target_index)) {
+        return NINLIL_E_STORAGE_CORRUPT;
     }
     if (txn->cumulative_attempts == UINT64_MAX
         || (txn->family == NINLIL_FAMILY_EVENT_FACT
@@ -2351,6 +2590,8 @@ static ninlil_status_t prepare_application_attempt(
     candidate->attempt_id = attempt_id;
     candidate->attempt_prepared = 1u;
     candidate->attempt_ids[candidate->attempt_count] = attempt_id;
+    candidate->attempt_target_indices[candidate->attempt_count] =
+        (uint8_t)target_index;
     candidate->attempt_count += 1u;
     candidate->cumulative_attempts += 1u;
     if (candidate->family == NINLIL_FAMILY_EVENT_FACT) {
@@ -2363,6 +2604,26 @@ static ninlil_status_t prepare_application_attempt(
         &candidate->send_observed_clock_epoch_id,
         0,
         sizeof(candidate->send_observed_clock_epoch_id));
+    if (candidate->origin_admission != 0u
+        && candidate->family == NINLIL_FAMILY_DESIRED_STATE
+        && target_index < candidate->bound_target_count) {
+        ninlil_rt_target_slot_t *target =
+            &candidate->bound_targets[target_index];
+
+        target->active_attempt_id = attempt_id;
+        target->attempt_prepared = 1u;
+        target->retry_budget -= 1u;
+        target->attempt_in_cycle += 1u;
+        target->cumulative_attempts += 1u;
+        target->send_observation_closed = 0u;
+        target->send_observed_at_ms = 0u;
+        (void)memset(
+            &target->send_observed_clock_epoch_id,
+            0,
+            sizeof(target->send_observed_clock_epoch_id));
+        target->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
+        target->pending_dispatch = 1u;
+    }
     status = ninlil_rt_v1_commit_transaction_snapshot(
         runtime,
         txn,
@@ -2384,6 +2645,7 @@ static ninlil_status_t handle_bearer_receipt_timeout(
 {
     ninlil_status_t status;
     uint64_t receipt_deadline_ms;
+    uint32_t target_index = 0u;
 
     if (runtime->config.role != NINLIL_ROLE_CONTROLLER
         || !ninlil_rt_v1_family_is_downlink(txn->family)
@@ -2392,6 +2654,11 @@ static ninlil_status_t handle_bearer_receipt_timeout(
         || txn->pending_dispatch != 0u
         || txn->send_observation_closed == 0u) {
         return NINLIL_OK;
+    }
+    if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+        && txn->origin_admission != 0u
+        && !ninlil_rt_v1_active_target(txn, &target_index)) {
+        return NINLIL_E_STORAGE_CORRUPT;
     }
     if (!checked_receipt_deadline(txn, &receipt_deadline_ms)) {
         runtime->health = NINLIL_HEALTH_DEGRADED;
@@ -2408,7 +2675,7 @@ static ninlil_status_t handle_bearer_receipt_timeout(
         return commit_terminal_outcome(
             runtime,
             txn,
-            NINLIL_OUTCOME_EXPIRED,
+            NINLIL_OUTCOME_FAILED_DEFINITIVE,
             NINLIL_REASON_RETRY_BUDGET_EXHAUSTED_NO_EFFECT,
             out_result);
     }
@@ -2431,6 +2698,47 @@ static ninlil_status_t handle_bearer_receipt_timeout(
         candidate->next_retry_ms = clock_sample->now_ms;
         candidate->next_retry_clock_epoch_id =
             clock_sample->clock_epoch_id;
+        if (candidate->family == NINLIL_FAMILY_DESIRED_STATE
+            && candidate->origin_admission != 0u) {
+            ninlil_rt_target_slot_t *target =
+                &candidate->bound_targets[target_index];
+            uint32_t scan;
+
+            target->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
+            target->pending_dispatch = 1u;
+            target->attempt_prepared = 0u;
+            (void)memset(
+                &target->active_attempt_id,
+                0,
+                sizeof(target->active_attempt_id));
+            target->send_observation_closed = 0u;
+            target->send_observed_at_ms = 0u;
+            (void)memset(
+                &target->send_observed_clock_epoch_id,
+                0,
+                sizeof(target->send_observed_clock_epoch_id));
+            target->next_retry_ms = clock_sample->now_ms;
+            target->next_retry_clock_epoch_id =
+                clock_sample->clock_epoch_id;
+            target->reason = NINLIL_REASON_TRANSPORT_RETRY;
+            for (scan = 1u;
+                 scan <= candidate->bound_target_count;
+                 ++scan) {
+                uint32_t next =
+                    (target_index + scan)
+                    % candidate->bound_target_count;
+                ninlil_rt_target_slot_t *next_target =
+                    &candidate->bound_targets[next];
+
+                if (next_target->in_use != 0u
+                    && next_target->terminal == 0u) {
+                    ninlil_rt_v1_activate_target(
+                        candidate, next);
+                    break;
+                }
+            }
+            ninlil_rt_v1_refresh_target_aggregate(candidate);
+        }
         status = ninlil_rt_v1_commit_transaction_snapshot(
             runtime,
             txn,
@@ -2601,6 +2909,74 @@ ninlil_status_t ninlil_rt_v1_targeted_management_catch_up(
     return NINLIL_OK;
 }
 
+static ninlil_status_t expire_unfinished_desired_targets(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    ninlil_rt_v1_step_delivery_result_t *out_result)
+{
+    ninlil_rt_transaction_slot_t *candidate =
+        &runtime->transaction_scratch;
+    ninlil_status_t status;
+    uint32_t index;
+
+    *candidate = *txn;
+    for (index = 0u; index < candidate->bound_target_count; ++index) {
+        ninlil_rt_target_slot_t *target =
+            &candidate->bound_targets[index];
+
+        if (target->in_use == 0u || target->terminal != 0u) {
+            continue;
+        }
+        target->terminal = 1u;
+        target->pending_dispatch = 0u;
+        target->attempt_prepared = 0u;
+        (void)memset(
+            &target->active_attempt_id,
+            0,
+            sizeof(target->active_attempt_id));
+        target->send_observation_closed = 0u;
+        target->send_observed_at_ms = 0u;
+        (void)memset(
+            &target->send_observed_clock_epoch_id,
+            0,
+            sizeof(target->send_observed_clock_epoch_id));
+        target->next_retry_ms = 0u;
+        (void)memset(
+            &target->next_retry_clock_epoch_id,
+            0,
+            sizeof(target->next_retry_clock_epoch_id));
+        target->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
+        target->deadline_verdict = NINLIL_DEADLINE_MISSED;
+        target->outcome = NINLIL_OUTCOME_EXPIRED;
+        target->reason =
+            NINLIL_REASON_DEADLINE_ELAPSED_BEFORE_DISPATCH;
+    }
+    candidate->active_target_index = NINLIL_RT_V1_NO_ACTIVE_TARGET;
+    candidate->attempt_prepared = 0u;
+    (void)memset(
+        &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
+    candidate->deadline_verdict = NINLIL_DEADLINE_MISSED;
+    ninlil_rt_v1_refresh_target_aggregate(candidate);
+    if (candidate->terminal == 0u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    status = ninlil_rt_v1_commit_transaction_snapshot(
+        runtime,
+        txn,
+        candidate,
+        NINLIL_RT_V1_MARKER_OC,
+        NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (runtime->nonterminal_transaction_count > 0u) {
+        runtime->nonterminal_transaction_count -= 1u;
+    }
+    out_result->transitions_consumed += 1u;
+    note_terminal_outcome(runtime, candidate->outcome, out_result);
+    return ninlil_rt_v1_release_transaction_reservation(runtime, txn);
+}
+
 static ninlil_status_t handle_timeout_retry(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *txn,
@@ -2617,6 +2993,11 @@ static ninlil_status_t handle_timeout_retry(
     }
     if (clock_sample->now_ms < txn->effect_deadline_ms) {
         return NINLIL_OK;
+    }
+    if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+        && txn->origin_admission != 0u) {
+        return expire_unfinished_desired_targets(
+            runtime, txn, out_result);
     }
     if ((txn->delivery_phase == NINLIL_RT_DELIVERY_NONE
             || txn->delivery_phase == NINLIL_RT_DELIVERY_QUEUED)
@@ -2761,6 +3142,18 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
                 out_result->work_remaining = 1u;
                 return NINLIL_OK;
             }
+            if (transaction_waits_for_mfdt_scheduler(txn)) {
+                /*
+                 * No timeout, attempt, permit, retry, normal bearer send, or
+                 * terminal transition is consumed while the MFDT scheduler
+                 * seam is unavailable. Preserve ADMITTED_READY/pending across
+                 * steps and restart, and tell the owner loop that work
+                 * remains.
+                 */
+                out_result->work_remaining = 1u;
+                runtime->pending_work = 1u;
+                continue;
+            }
             if (txn->receipt_pending != 0u) {
                 status = ninlil_rt_v1_bearer_reduce_pending_ingress(
                     runtime,
@@ -2774,6 +3167,11 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
                     return status;
                 }
                 continue;
+            }
+            if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+                && txn->origin_admission != 0u) {
+                (void)ninlil_rt_v1_select_dispatch_target(
+                    txn, clock_sample, NULL);
             }
             status = handle_delivery_token_timeout(
                 runtime, txn, clock_sample, out_result);
@@ -3273,7 +3671,25 @@ ninlil_status_t ninlil_rt_v1_delivery_restart_scan(
         return NINLIL_E_INVALID_ARGUMENT;
     }
     storage = runtime->platform->storage;
-    runtime->resource_ledger_restore_mask = 0u;
+    {
+#if defined(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING) \
+    && (NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING != 0)
+        /*
+         * Domain create pre-seeds capacity from accepted limits after T0–T6.
+         * Preserve a complete pre-seed so LAB capacity-marker mismatch cannot
+         * fence Domain publication; still scan TX/delivery markers.
+         */
+        uint32_t domain_capacity_preseeded =
+            (runtime->resource_ledger_restore_mask
+                == ((1u << NINLIL_MODEL_RESOURCE_KIND_COUNT) - 1u))
+            ? 1u
+            : 0u;
+#else
+        uint32_t domain_capacity_preseeded = 0u;
+#endif
+        if (domain_capacity_preseeded == 0u) {
+            runtime->resource_ledger_restore_mask = 0u;
+        }
 
     st = storage->begin(
         storage->user, runtime->storage, NINLIL_STORAGE_READ_ONLY, &txn);
@@ -3288,7 +3704,14 @@ ninlil_status_t ninlil_rt_v1_delivery_restart_scan(
     if (status == NINLIL_OK
         && runtime->resource_ledger_restore_mask
             != ((1u << NINLIL_MODEL_RESOURCE_KIND_COUNT) - 1u)) {
-        status = NINLIL_E_STORAGE_CORRUPT;
+        if (domain_capacity_preseeded != 0u) {
+            /* Keep pre-seeded Domain capacity; ignore partial LAB overlay. */
+            runtime->resource_ledger_restore_mask =
+                (1u << NINLIL_MODEL_RESOURCE_KIND_COUNT) - 1u;
+        } else {
+            status = NINLIL_E_STORAGE_CORRUPT;
+        }
+    }
     }
 
     (void)storage->rollback(storage->user, txn);
@@ -3359,6 +3782,18 @@ ninlil_status_t ninlil_rt_v1_delivery_restart_scan(
                 && slot->pending_dispatch != 0u) {
                 runtime->pending_work = 1u;
             }
+#if defined(NINLIL_MFDT_V1_PRIVATE)
+            /*
+             * The private Runtime owner opens and recovers its derived MFDT
+             * sidecar when explicitly configured.  Foundation restore never
+             * consults the legacy process-global spine or invents custody.
+             */
+            if (slot->terminal == 0u && slot->event_discarded == 0u
+                && slot->bearer_route
+                    == (uint8_t)NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1) {
+                runtime->pending_work = 1u;
+            }
+#endif
         }
         status = ninlil_rt_v1_validate_restored_resource_ledger(runtime);
         if (status == NINLIL_OK) {

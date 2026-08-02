@@ -8,12 +8,14 @@
 #include "ninlil_esp_idf/sx1262_bus.h"
 
 #include "sx1262_esp_gpio_init_logic.h"
+#include "sx1262_rf_bus_capability_logic.h"
 #include "sx1262_spi_pending_logic.h"
 
 #include <string.h>
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "esp_attr.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -21,6 +23,17 @@
 
 /* Busy-wait delays up to this many us (covers NRESET 100us..1ms accurately). */
 enum { DELAY_US_BUSY_WAIT_MAX = 5000u };
+
+_Static_assert(
+    NINLIL_ESP_IDF_SX1262_SPI_SCRATCH_BYTES == NINLIL_SX1262_BUS_RF_SPI_MAX_LEN,
+    "ESP bus scratch must equal RF SPI max len");
+_Static_assert(
+    NINLIL_ESP_IDF_SX1262_BUS_CAP_CONTROL_ONLY
+        == NINLIL_SX1262_BUS_CAP_CONTROL_ONLY,
+    "control-only cap mode pin");
+_Static_assert(
+    NINLIL_ESP_IDF_SX1262_BUS_CAP_RF_SOLE == NINLIL_SX1262_BUS_CAP_RF_SOLE,
+    "rf-sole cap mode pin");
 
 /*
  * Primary compile checks vs real ESP-IDF spi_transaction_t (Xtensa/C11).
@@ -131,15 +144,22 @@ static int bus_spi_transfer(
     esp_err_t err;
 
     if (bus == NULL || tx == NULL || len == 0u || len > sizeof(bus->tx_scratch)
-        || in_isr() || bus->spi_handle == NULL) {
+        || in_isr() || bus->spi_handle == NULL
+        || bus->lifecycle != NINLIL_ESP_IDF_SX1262_BUS_LIFE_ACTIVE
+        || bus->poisoned != 0u) {
         return 1;
     }
     own_from_bus(bus, &own);
     if (!ninlil_sx1262_spi_own_can_transfer(&own)) {
         return 1;
     }
-    if (ninlil_sx1262_cmd_is_rf_banned(tx[0])
-        || !ninlil_sx1262_cmd_is_allowlisted(tx[0])) {
+    /*
+     * CONTROL_ONLY (default): R4 closed allowlist; RF banlist denied.
+     * RF_SOLE (single-shot grant): R4 allowlist + closed R9 physical set.
+     * Pure policy: ninlil_sx1262_bus_spi_xfer_admitted — do not weaken R4.
+     */
+    if (!ninlil_sx1262_bus_spi_xfer_admitted(
+            bus->capability_mode, tx[0], len)) {
         return 1;
     }
     if (ticks_for_bus(bus, &ticks) != 0) {
@@ -294,6 +314,87 @@ static void publish_ops(ninlil_esp_idf_sx1262_bus_t *bus, int with_ant)
     bus->ops.delay_us = bus_delay_us;
     bus->ops.now_ms = bus_now_ms;
     bus->ops.ant_sw_set = with_ant ? bus_ant_sw_set : NULL;
+}
+
+/*
+ * DIO1: GPIO level OR ISR latch. Clears latch on sample (one-shot wake).
+ * Task context only — matches phy poll (not SPI path).
+ */
+int ninlil_esp_idf_sx1262_bus_dio1_is_high(void *ctx, int *out_high)
+{
+    ninlil_esp_idf_sx1262_bus_t *bus = (ninlil_esp_idf_sx1262_bus_t *)ctx;
+    int level;
+    uint32_t latched;
+
+    if (bus == NULL || out_high == NULL || in_isr()
+        || bus->magic != NINLIL_ESP_IDF_SX1262_BUS_MAGIC
+        || bus->lifecycle != NINLIL_ESP_IDF_SX1262_BUS_LIFE_ACTIVE) {
+        return 1;
+    }
+    level = gpio_get_level((gpio_num_t)bus->cfg.pin_dio1) != 0 ? 1 : 0;
+    latched = bus->dio1_irq_latched;
+    if (latched != 0u) {
+        bus->dio1_irq_latched = 0u;
+    }
+    *out_high = (level != 0 || latched != 0u) ? 1 : 0;
+    return 0;
+}
+
+static void IRAM_ATTR dio1_isr_handler(void *arg)
+{
+    ninlil_esp_idf_sx1262_bus_t *bus = (ninlil_esp_idf_sx1262_bus_t *)arg;
+
+    if (bus != NULL) {
+        bus->dio1_irq_latched = 1u;
+    }
+}
+
+int ninlil_esp_idf_sx1262_bus_install_dio1_isr(ninlil_esp_idf_sx1262_bus_t *bus)
+{
+    esp_err_t isr_svc;
+
+    if (bus == NULL || in_isr()
+        || bus->magic != NINLIL_ESP_IDF_SX1262_BUS_MAGIC
+        || bus->lifecycle != NINLIL_ESP_IDF_SX1262_BUS_LIFE_ACTIVE) {
+        return 1;
+    }
+    if (bus->dio1_isr_installed != 0u) {
+        return 0;
+    }
+    if (gpio_set_intr_type(
+            (gpio_num_t)bus->cfg.pin_dio1, GPIO_INTR_POSEDGE)
+        != ESP_OK) {
+        return 1;
+    }
+    /* ESP_ERR_INVALID_STATE = service already installed (ok). */
+    isr_svc = gpio_install_isr_service(0);
+    if (isr_svc != ESP_OK && isr_svc != ESP_ERR_INVALID_STATE) {
+        return 1;
+    }
+    if (gpio_isr_handler_add(
+            (gpio_num_t)bus->cfg.pin_dio1, dio1_isr_handler, bus)
+        != ESP_OK) {
+        return 1;
+    }
+    bus->dio1_irq_latched = 0u;
+    bus->dio1_isr_installed = 1u;
+    return 0;
+}
+
+int ninlil_esp_idf_sx1262_bus_uninstall_dio1_isr(ninlil_esp_idf_sx1262_bus_t *bus)
+{
+    if (bus == NULL || in_isr()
+        || bus->magic != NINLIL_ESP_IDF_SX1262_BUS_MAGIC) {
+        return 1;
+    }
+    if (bus->dio1_isr_installed == 0u) {
+        return 0;
+    }
+    (void)gpio_isr_handler_remove((gpio_num_t)bus->cfg.pin_dio1);
+    (void)gpio_set_intr_type((gpio_num_t)bus->cfg.pin_dio1, GPIO_INTR_DISABLE);
+    bus->dio1_isr_installed = 0u;
+    bus->dio1_irq_latched = 0u;
+    return 0;
 }
 
 static void cleanup_partial(
@@ -494,7 +595,8 @@ int ninlil_esp_idf_sx1262_bus_init(
     bus_cfg.miso_io_num = config->pin_miso;
     bus_cfg.quadwp_io_num = -1;
     bus_cfg.quadhd_io_num = -1;
-    bus_cfg.max_transfer_sz = 32;
+    /* Shared ceiling with phy SPI_CAP / bus RF admit max (WriteBuffer+255). */
+    bus_cfg.max_transfer_sz = (int)NINLIL_ESP_IDF_SX1262_SPI_SCRATCH_BYTES;
 
     (void)memset(&dev_cfg, 0, sizeof(dev_cfg));
     dev_cfg.clock_speed_hz = (int)config->spi_clock_hz;
@@ -524,11 +626,52 @@ int ninlil_esp_idf_sx1262_bus_init(
     bus->cfg = *config;
     bus->spi_handle = handle;
     bus->pending_trans = NULL;
+    bus->capability_mode = NINLIL_ESP_IDF_SX1262_BUS_CAP_CONTROL_ONLY;
+    bus->rf_grant_count = 0u;
+    bus->dio1_irq_latched = 0u;
+    bus->dio1_isr_installed = 0u;
     ninlil_sx1262_spi_own_reset(&own, drain_max);
     own_to_bus(bus, &own);
     publish_ops(bus, with_ant);
     (void)dev_added;
     return 0;
+}
+
+int ninlil_esp_idf_sx1262_bus_grant_rf_sole_capability(
+    ninlil_esp_idf_sx1262_bus_t *bus)
+{
+    if (bus == NULL || in_isr()
+        || bus->magic != NINLIL_ESP_IDF_SX1262_BUS_MAGIC
+        || bus->lifecycle != NINLIL_ESP_IDF_SX1262_BUS_LIFE_ACTIVE
+        || bus->poisoned != 0u) {
+        return 1;
+    }
+    if (ninlil_sx1262_bus_cap_grant_rf_sole(&bus->capability_mode) != 0) {
+        return 1;
+    }
+    if (bus->rf_grant_count < UINT32_MAX) {
+        bus->rf_grant_count += 1u;
+    }
+    return 0;
+}
+
+int ninlil_esp_idf_sx1262_bus_revoke_rf_capability(
+    ninlil_esp_idf_sx1262_bus_t *bus)
+{
+    if (bus == NULL || in_isr()
+        || bus->magic != NINLIL_ESP_IDF_SX1262_BUS_MAGIC) {
+        return 1;
+    }
+    return ninlil_sx1262_bus_cap_revoke_rf(&bus->capability_mode);
+}
+
+uint32_t ninlil_esp_idf_sx1262_bus_capability_mode(
+    const ninlil_esp_idf_sx1262_bus_t *bus)
+{
+    if (bus == NULL || bus->magic != NINLIL_ESP_IDF_SX1262_BUS_MAGIC) {
+        return NINLIL_ESP_IDF_SX1262_BUS_CAP_CONTROL_ONLY;
+    }
+    return bus->capability_mode;
 }
 
 int ninlil_esp_idf_sx1262_bus_shutdown(ninlil_esp_idf_sx1262_bus_t *bus)
@@ -550,6 +693,8 @@ int ninlil_esp_idf_sx1262_bus_shutdown(ninlil_esp_idf_sx1262_bus_t *bus)
     if (bus->lifecycle == NINLIL_ESP_IDF_SX1262_BUS_LIFE_SHUTDOWN) {
         return NINLIL_ESP_IDF_SX1262_BUS_SHUTDOWN_OK;
     }
+
+    (void)ninlil_esp_idf_sx1262_bus_uninstall_dio1_isr(bus);
 
     /* Drain outstanding descriptor before remove_device (ESP_ERR_INVALID_STATE). */
     while (ninlil_sx1262_spi_own_needs_drain(&own)) {

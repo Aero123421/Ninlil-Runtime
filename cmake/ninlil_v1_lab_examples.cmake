@@ -68,6 +68,9 @@ function(ninlil_v1_lab_examples_register)
         examples/v1_lab/cell_custody.c
     )
 
+    # Historical target names (label-only; ADR-0024): both examples submit
+    # EventFact — display snapshot event / leak measurement event. Names do
+    # not enable LATEST_STATE_RESERVED or MEASUREMENT_RESERVED.
     add_executable(ninlil_v1_lab_display_latest_state_example
         examples/v1_lab/display_latest_state.c
         examples/v1_lab/v1_lab_loopback_uplink.c

@@ -2,6 +2,7 @@
 
 #include "domain_store_codec.h"
 #include "runtime_internal.h"
+#include "runtime_v1_capability.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -62,7 +63,7 @@ static void writer_bytes(tx_writer_t *writer, const uint8_t *bytes, uint32_t len
         writer->failed = 1u;
         return;
     }
-    if (length != 0u) {
+    if (length != 0u && writer->bytes != NULL) {
         (void)memcpy(&writer->bytes[writer->position], bytes, length);
     }
     writer->position += length;
@@ -279,6 +280,10 @@ static void writer_target(
     writer_u8(writer, slot->in_use);
     writer_u8(writer, slot->evidence_recorded);
     writer_u8(writer, slot->pending_dispatch);
+    writer_u8(writer, slot->terminal);
+    writer_u8(writer, slot->attempt_prepared);
+    writer_u8(writer, slot->send_observation_closed);
+    writer_u32(writer, (uint32_t)slot->delivery_phase);
     writer_id(writer, &slot->target.target_runtime_id);
     writer_id(writer, &slot->target.target_application_instance_id);
     writer_id(writer, &slot->target.device_id);
@@ -287,8 +292,31 @@ static void writer_target(
     writer_u64(writer, slot->target.binding_epoch);
     writer_u64(writer, slot->target.membership_epoch);
     writer_u32(writer, slot->target.flags);
+    writer_id(writer, &slot->active_attempt_id);
+    writer_u32(writer, slot->latest_evidence);
+    writer_u32(writer, slot->deadline_verdict);
     writer_u32(writer, slot->outcome);
     writer_u32(writer, slot->reason);
+    writer_u32(writer, slot->retry_budget);
+    writer_u32(writer, slot->attempt_in_cycle);
+    writer_u64(writer, slot->retry_cycle_id);
+    writer_u64(writer, slot->cumulative_attempts);
+    writer_u64(writer, slot->next_retry_ms);
+    writer_id(writer, &slot->next_retry_clock_epoch_id);
+    writer_u64(writer, slot->send_observed_at_ms);
+    writer_id(writer, &slot->send_observed_clock_epoch_id);
+    writer_u8(writer, slot->has_late_evidence);
+    writer_u8(writer, slot->evidence_counter_saturated);
+    writer_u8(writer, slot->last_evidence_fingerprint_valid);
+    writer_bytes(
+        writer,
+        slot->last_evidence_material_fingerprint,
+        sizeof(slot->last_evidence_material_fingerprint));
+    writer_u64(writer, slot->latest_evidence_ingress_sequence);
+    writer_u64(writer, slot->valid_evidence_count);
+    writer_u64(writer, slot->duplicate_evidence_count);
+    writer_u64(writer, slot->raw_evidence_overflow_count);
+    writer_u64(writer, slot->late_evidence_count);
 }
 
 static void reader_target(
@@ -298,7 +326,13 @@ static void reader_target(
     slot->in_use = reader_u8(reader);
     slot->evidence_recorded = reader_u8(reader);
     slot->pending_dispatch = reader_u8(reader);
-    slot->reserved_zero = 0u;
+    slot->terminal = reader_u8(reader);
+    slot->attempt_prepared = reader_u8(reader);
+    slot->send_observation_closed = reader_u8(reader);
+    slot->reserved_zero[0] = 0u;
+    slot->reserved_zero[1] = 0u;
+    slot->delivery_phase =
+        (ninlil_rt_delivery_phase_t)reader_u32(reader);
     slot->target.abi_version = NINLIL_ABI_VERSION;
     slot->target.struct_size = (uint16_t)sizeof(slot->target);
     reader_id(reader, &slot->target.target_runtime_id);
@@ -310,8 +344,34 @@ static void reader_target(
     slot->target.membership_epoch = reader_u64(reader);
     slot->target.flags = reader_u32(reader);
     slot->target.reserved_zero = 0u;
+    reader_id(reader, &slot->active_attempt_id);
+    slot->latest_evidence = reader_u32(reader);
+    slot->deadline_verdict = reader_u32(reader);
     slot->outcome = reader_u32(reader);
     slot->reason = reader_u32(reader);
+    slot->retry_budget = reader_u32(reader);
+    slot->attempt_in_cycle = reader_u32(reader);
+    slot->retry_cycle_id = reader_u64(reader);
+    slot->cumulative_attempts = reader_u64(reader);
+    slot->next_retry_ms = reader_u64(reader);
+    reader_id(reader, &slot->next_retry_clock_epoch_id);
+    slot->send_observed_at_ms = reader_u64(reader);
+    reader_id(reader, &slot->send_observed_clock_epoch_id);
+    slot->has_late_evidence = reader_u8(reader);
+    slot->evidence_counter_saturated = reader_u8(reader);
+    slot->last_evidence_fingerprint_valid = reader_u8(reader);
+    slot->reserved_zero[0] = 0u;
+    slot->reserved_zero[1] = 0u;
+    slot->reserved_zero[2] = 0u;
+    reader_bytes(
+        reader,
+        slot->last_evidence_material_fingerprint,
+        sizeof(slot->last_evidence_material_fingerprint));
+    slot->latest_evidence_ingress_sequence = reader_u64(reader);
+    slot->valid_evidence_count = reader_u64(reader);
+    slot->duplicate_evidence_count = reader_u64(reader);
+    slot->raw_evidence_overflow_count = reader_u64(reader);
+    slot->late_evidence_count = reader_u64(reader);
 }
 
 static void writer_retry_summary(
@@ -584,7 +644,38 @@ static int event_park_cause_valid(ninlil_event_park_cause_t value)
 
 static int bearer_route_valid(uint8_t value)
 {
-    return value == 1u || value == 2u;
+    return value == 1u || value == 2u || value == 3u; /* 3 = MFDT_V1 private */
+}
+
+static int bytes_zero(const uint8_t *bytes, uint32_t length)
+{
+    uint32_t index;
+
+    for (index = 0u; index < length; ++index) {
+        if (bytes[index] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int payload_storage_shape_valid(
+    const ninlil_rt_transaction_slot_t *transaction)
+{
+    if (transaction->bearer_route == 3u) {
+        return transaction->payload_length
+                > NINLIL_RT_V1_MAX_OWNED_PAYLOAD_BYTES
+            && transaction->payload_length
+                <= NINLIL_RT_V1_MAX_MFDT_PAYLOAD_BYTES
+            && transaction->inline_payload_length == 0u
+            && bytes_zero(
+                transaction->owned_payload,
+                NINLIL_RT_V1_MAX_OWNED_PAYLOAD_BYTES);
+    }
+    return transaction->payload_length
+            <= NINLIL_RT_V1_MAX_OWNED_PAYLOAD_BYTES
+        && transaction->inline_payload_length
+            == transaction->payload_length;
 }
 
 static int digest_valid(const ninlil_digest256_t *digest)
@@ -989,13 +1080,48 @@ static int attempt_history_valid(
         }
     }
     if (transaction->attempt_prepared != 0u) {
-        return transaction->attempt_count != 0u
+        /*
+         * MFDT admission pre-arms every canonical target before one FULL.
+         * Its history is target order while the scheduler mirror remains
+         * active target zero; the target-local validator below is authoritative.
+         */
+        if (transaction->origin_admission != 0u
+            && transaction->family == NINLIL_FAMILY_DESIRED_STATE
+            && transaction->bearer_route
+                == (uint8_t)NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1
+            && transaction->bound_target_count > 1u
+            && transaction->bound_target_count
+                <= NINLIL_RT_V1_MAX_TARGETS_PER_TXN
+            && transaction->attempt_count
+                == transaction->bound_target_count
+            && transaction->active_target_index == 0u
+            && memcmp(
+                transaction->attempt_id.bytes,
+                transaction->bound_targets[0].active_attempt_id.bytes,
+                sizeof(transaction->attempt_id.bytes)) == 0) {
+            for (left = 0u; left < transaction->bound_target_count; ++left) {
+                if (transaction->attempt_target_indices[left] != left
+                    || transaction->bound_targets[left].attempt_prepared == 0u
+                    || memcmp(
+                        transaction->attempt_ids[left].bytes,
+                        transaction->bound_targets[left]
+                            .active_attempt_id.bytes,
+                        sizeof(transaction->attempt_ids[left].bytes)) != 0) {
+                    return 0;
+                }
+            }
+            return 1;
+        }
+        if (transaction->attempt_count != 0u
             && id_nonzero(&transaction->attempt_id)
             && memcmp(
                 transaction->attempt_id.bytes,
                 transaction->attempt_ids[
                     transaction->attempt_count - 1u].bytes,
-                sizeof(transaction->attempt_id.bytes)) == 0;
+                sizeof(transaction->attempt_id.bytes)) == 0) {
+            return 1;
+        }
+        return 0;
     }
     return !id_nonzero(&transaction->attempt_id);
 }
@@ -1023,10 +1149,52 @@ static int assurance_valid(const ninlil_admission_assurance_t *assurance)
 
 static int target_valid(const ninlil_rt_target_slot_t *slot)
 {
+    int active_attempt_shape =
+        slot->attempt_prepared != 0u
+        ? id_nonzero(&slot->active_attempt_id)
+        : id_zero(&slot->active_attempt_id);
+    int terminal_shape =
+        slot->terminal != 0u
+        ? slot->outcome != NINLIL_OUTCOME_NONE
+            && slot->pending_dispatch == 0u
+            && slot->attempt_prepared == 0u
+            && slot->delivery_phase == NINLIL_RT_DELIVERY_OUTCOME
+        : slot->outcome == NINLIL_OUTCOME_NONE;
+    int retry_timer_shape =
+        slot->next_retry_ms != 0u
+        ? id_nonzero(&slot->next_retry_clock_epoch_id)
+        : id_zero(&slot->next_retry_clock_epoch_id);
+    int send_observation_shape =
+        slot->send_observation_closed != 0u
+        ? slot->attempt_prepared != 0u
+            && id_nonzero(&slot->send_observed_clock_epoch_id)
+        : slot->send_observed_at_ms == 0u
+            && id_zero(&slot->send_observed_clock_epoch_id);
+    int evidence_saturation_shape =
+        slot->evidence_counter_saturated == 0u
+        || slot->valid_evidence_count == UINT64_MAX
+        || slot->duplicate_evidence_count == UINT64_MAX
+        || slot->raw_evidence_overflow_count == UINT64_MAX
+        || slot->late_evidence_count == UINT64_MAX;
+
     return boolean_u32(slot->in_use)
         && boolean_u32(slot->evidence_recorded)
         && boolean_u32(slot->pending_dispatch)
-        && slot->reserved_zero == 0u
+        && boolean_u32(slot->terminal)
+        && boolean_u32(slot->attempt_prepared)
+        && boolean_u32(slot->send_observation_closed)
+        && boolean_u32(slot->has_late_evidence)
+        && boolean_u32(slot->evidence_counter_saturated)
+        && evidence_saturation_shape
+        && boolean_u32(slot->last_evidence_fingerprint_valid)
+        && slot->reserved_zero[0] == 0u
+        && slot->reserved_zero[1] == 0u
+        && slot->reserved_zero[2] == 0u
+        && slot->has_late_evidence
+            == (slot->late_evidence_count != 0u ? 1u : 0u)
+        && (slot->last_evidence_fingerprint_valid != 0u
+            || slot->duplicate_evidence_count == 0u)
+        && delivery_phase_valid(slot->delivery_phase)
         && header_current(
             slot->target.abi_version,
             slot->target.struct_size,
@@ -1041,8 +1209,167 @@ static int target_valid(const ninlil_rt_target_slot_t *slot)
             &slot->target.site_domain_id,
             slot->target.binding_epoch,
             slot->target.membership_epoch)
+        && active_attempt_shape
+        && evidence_valid(slot->latest_evidence)
+        && deadline_verdict_valid(slot->deadline_verdict)
         && outcome_valid(slot->outcome)
-        && reason_valid(slot->reason);
+        && reason_valid(slot->reason)
+        && slot->retry_budget <= NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
+        && slot->attempt_in_cycle <= NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
+        && slot->cumulative_attempts
+            <= NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
+        && active_attempt_shape
+        && terminal_shape
+        && retry_timer_shape
+        && send_observation_shape;
+}
+
+static int target_correlation_valid(
+    const ninlil_rt_transaction_slot_t *transaction)
+{
+    uint32_t index;
+
+    if (transaction->bearer_route
+        != (uint8_t)NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1) {
+        for (index = 0u; index < transaction->bound_target_count; ++index) {
+            const ninlil_rt_target_slot_t *target =
+                &transaction->bound_targets[index];
+
+            if (!bytes_zero(
+                    target->mfdt_transfer_id,
+                    (uint32_t)sizeof(target->mfdt_transfer_id))
+                || target->mfdt_target_ordinal != 0u) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    if (transaction->origin_admission != 0u) {
+        for (index = 0u; index < transaction->bound_target_count; ++index) {
+            const ninlil_rt_target_slot_t *target =
+                &transaction->bound_targets[index];
+
+            if (bytes_zero(
+                    target->mfdt_transfer_id,
+                    (uint32_t)sizeof(target->mfdt_transfer_id))
+                || target->mfdt_target_ordinal != index) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return transaction->bound_target_count == 1u
+        && !bytes_zero(
+            transaction->bound_targets[0].mfdt_transfer_id,
+            (uint32_t)sizeof(
+                transaction->bound_targets[0].mfdt_transfer_id))
+        && transaction->bound_targets[0].mfdt_target_ordinal
+            < NINLIL_RT_V1_MAX_TARGETS_PER_TXN;
+}
+
+static int desired_target_attempt_binding_valid(
+    const ninlil_rt_transaction_slot_t *transaction)
+{
+    uint32_t attempts_per_target[NINLIL_RT_V1_MAX_TARGETS_PER_TXN] = {0u};
+    uint32_t attempt_index;
+    uint32_t target_index;
+
+    if (transaction->family != NINLIL_FAMILY_DESIRED_STATE
+        || transaction->origin_admission == 0u) {
+        return 1;
+    }
+    for (attempt_index = 0u;
+         attempt_index < transaction->attempt_count;
+         ++attempt_index) {
+        target_index =
+            transaction->attempt_target_indices[attempt_index];
+        if (target_index >= transaction->bound_target_count
+            || target_index >= NINLIL_RT_V1_MAX_TARGETS_PER_TXN
+            || attempts_per_target[target_index] == UINT32_MAX) {
+            return 0;
+        }
+        attempts_per_target[target_index] += 1u;
+    }
+    for (target_index = 0u;
+         target_index < transaction->bound_target_count;
+         ++target_index) {
+        const ninlil_rt_target_slot_t *target =
+            &transaction->bound_targets[target_index];
+        uint32_t last_attempt = UINT32_MAX;
+
+        if (target->cumulative_attempts
+                != attempts_per_target[target_index]
+            || target->attempt_in_cycle
+                != attempts_per_target[target_index]) {
+            return 0;
+        }
+        for (attempt_index = 0u;
+             attempt_index < transaction->attempt_count;
+             ++attempt_index) {
+            if (transaction->attempt_target_indices[attempt_index]
+                == target_index) {
+                last_attempt = attempt_index;
+            }
+        }
+        if (target->attempt_prepared != 0u
+            && (last_attempt == UINT32_MAX
+                || memcmp(
+                    target->active_attempt_id.bytes,
+                    transaction->attempt_ids[last_attempt].bytes,
+                    sizeof(target->active_attempt_id.bytes)) != 0)) {
+            return 0;
+        }
+    }
+    if (transaction->terminal != 0u) {
+        return transaction->active_target_index
+                == NINLIL_RT_V1_NO_ACTIVE_TARGET
+            && transaction->attempt_prepared == 0u
+            && id_zero(&transaction->attempt_id);
+    }
+    if (transaction->active_target_index
+        == NINLIL_RT_V1_NO_ACTIVE_TARGET) {
+        return transaction->attempt_prepared == 0u
+            && id_zero(&transaction->attempt_id)
+            && transaction->send_observation_closed == 0u
+            && transaction->send_observed_at_ms == 0u
+            && id_zero(&transaction->send_observed_clock_epoch_id);
+    }
+    if (transaction->active_target_index
+            >= transaction->bound_target_count
+        || transaction->active_target_index
+            >= NINLIL_RT_V1_MAX_TARGETS_PER_TXN) {
+        return 0;
+    }
+    {
+        const ninlil_rt_target_slot_t *active =
+            &transaction->bound_targets[
+                transaction->active_target_index];
+
+        return active->terminal == 0u
+            && transaction->attempt_prepared
+                == active->attempt_prepared
+            && memcmp(
+                transaction->attempt_id.bytes,
+                active->active_attempt_id.bytes,
+                sizeof(transaction->attempt_id.bytes)) == 0
+            && transaction->retry_budget == active->retry_budget
+            && transaction->next_retry_ms == active->next_retry_ms
+            && memcmp(
+                transaction->next_retry_clock_epoch_id.bytes,
+                active->next_retry_clock_epoch_id.bytes,
+                sizeof(transaction->next_retry_clock_epoch_id.bytes)) == 0
+            && transaction->send_observation_closed
+                == active->send_observation_closed
+            && transaction->send_observed_at_ms
+                == active->send_observed_at_ms
+            && memcmp(
+                transaction->send_observed_clock_epoch_id.bytes,
+                active->send_observed_clock_epoch_id.bytes,
+                sizeof(transaction->send_observed_clock_epoch_id.bytes)) == 0
+            && transaction->delivery_phase == active->delivery_phase
+            && transaction->pending_dispatch
+                == active->pending_dispatch;
+    }
 }
 
 static int disposition_tuple_valid(
@@ -1167,10 +1494,29 @@ static int application_result_tuple_valid(
     }
     if (transaction->application_result_kind
         == NINLIL_APP_RESULT_POSITIVE_EVIDENCE) {
+        uint32_t target_index;
+        int partial_exact_roster_evidence = 0;
+
+        if (transaction->origin_admission != 0u
+            && transaction->bound_target_count > 1u
+            && transaction->evidence_recorded == 0u) {
+            for (target_index = 0u;
+                 target_index < transaction->bound_target_count;
+                 ++target_index) {
+                if (transaction->bound_targets[target_index].in_use != 0u
+                    && transaction->bound_targets[target_index]
+                            .evidence_recorded
+                        != 0u) {
+                    partial_exact_roster_evidence = 1;
+                    break;
+                }
+            }
+        }
         return transaction->latest_evidence != NINLIL_EVIDENCE_NONE
             && transaction->latest_evidence
                 >= transaction->required_evidence
-            && transaction->evidence_recorded == 1u
+            && (transaction->evidence_recorded == 1u
+                || partial_exact_roster_evidence != 0)
             && transaction->application_disposition
                 == NINLIL_DISPOSITION_NONE
             && transaction->application_result_reason
@@ -1233,8 +1579,6 @@ static int transaction_valid(const ninlil_rt_transaction_slot_t *transaction)
             > NINLIL_M1A_MAX_EVENT_RESUME_OPERATIONS
         || !boolean_u32(transaction->evidence_recorded)
         || !boolean_u32(transaction->outcome_recorded)
-        || transaction->payload_length
-            > NINLIL_RT_V1_MAX_OWNED_PAYLOAD_BYTES
         || transaction->last_consumed_bearer_availability_epoch
             > transaction->last_bearer_availability_epoch
         || transaction->semantic_priority > 8u
@@ -1253,7 +1597,8 @@ static int transaction_valid(const ninlil_rt_transaction_slot_t *transaction)
         || !family_semantics_valid(transaction)
         || !digest_valid(&transaction->content_digest)
         || !assurance_valid(&transaction->assurance)
-        || !application_result_tuple_valid(transaction)) {
+        || !application_result_tuple_valid(transaction)
+        || !payload_storage_shape_valid(transaction)) {
         return 0;
     }
     if (transaction->terminal != 0u
@@ -1265,9 +1610,30 @@ static int transaction_valid(const ninlil_rt_transaction_slot_t *transaction)
     if (!delivery_token_tuple_valid(transaction)) {
         return 0;
     }
+    if (!target_correlation_valid(transaction)) {
+        return 0;
+    }
     for (index = 0u; index < transaction->bound_target_count; ++index) {
         if (!target_valid(&transaction->bound_targets[index])
             || transaction->bound_targets[index].in_use == 0u) {
+            return 0;
+        }
+    }
+    for (index = 0u; index < transaction->attempt_count; ++index) {
+        if (transaction->attempt_target_indices[index]
+                >= transaction->bound_target_count) {
+            return 0;
+        }
+    }
+    if (!desired_target_attempt_binding_valid(transaction)) {
+        return 0;
+    }
+    if (transaction->idempotency_key_length > NINLIL_MAX_IDEMPOTENCY_BYTES) {
+        return 0;
+    }
+    if (transaction->origin_admission != 0u) {
+        if (transaction->idempotency_key_length < 1u
+            || !digest_valid(&transaction->canonical_submission_digest)) {
             return 0;
         }
     }
@@ -1290,7 +1656,9 @@ static void encode_body(
     writer_u32(writer, transaction->attempt_count);
     for (index = 0u; index < transaction->attempt_count; ++index) {
         writer_id(writer, &transaction->attempt_ids[index]);
+        writer_u8(writer, transaction->attempt_target_indices[index]);
     }
+    writer_u32(writer, transaction->active_target_index);
     writer_id(writer, &transaction->service_app_id);
     writer_id(writer, &transaction->event_id);
     writer_party(writer, &transaction->source);
@@ -1359,6 +1727,7 @@ static void encode_body(
     writer_u32(writer, transaction->evidence_recorded);
     writer_u32(writer, transaction->outcome_recorded);
     writer_u32(writer, transaction->payload_length);
+    writer_u32(writer, transaction->inline_payload_length);
     writer_u8(writer, transaction->semantic_priority);
     writer_u8(writer, transaction->bearer_route);
     writer_u32(writer, transaction->reservation_active);
@@ -1377,12 +1746,32 @@ static void encode_body(
     writer_u32(writer, transaction->ingress_pending);
     writer_u32(writer, transaction->receipt_pending);
     writer_u64(writer, transaction->ordered_input_sequence);
-    writer_bytes(writer, transaction->owned_payload, transaction->payload_length);
+    writer_bytes(
+        writer,
+        transaction->owned_payload,
+        transaction->inline_payload_length);
     writer_assurance(writer, &transaction->assurance);
     writer_u32(writer, transaction->bound_target_count);
     for (index = 0u; index < transaction->bound_target_count; ++index) {
         writer_target(writer, &transaction->bound_targets[index]);
+        if (transaction->bearer_route
+            == (uint8_t)NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1) {
+            writer_bytes(
+                writer,
+                transaction->bound_targets[index].mfdt_transfer_id,
+                (uint32_t)sizeof(
+                    transaction->bound_targets[index].mfdt_transfer_id));
+            writer_u32(
+                writer,
+                transaction->bound_targets[index].mfdt_target_ordinal);
+        }
     }
+    writer_u8(writer, transaction->idempotency_key_length);
+    writer_bytes(
+        writer,
+        transaction->idempotency_key,
+        transaction->idempotency_key_length);
+    writer_digest(writer, &transaction->canonical_submission_digest);
 }
 
 static void decode_body(
@@ -1405,7 +1794,9 @@ static void decode_body(
     }
     for (index = 0u; index < transaction->attempt_count; ++index) {
         reader_id(reader, &transaction->attempt_ids[index]);
+        transaction->attempt_target_indices[index] = reader_u8(reader);
     }
+    transaction->active_target_index = reader_u32(reader);
     reader_id(reader, &transaction->service_app_id);
     reader_id(reader, &transaction->event_id);
     reader_party(reader, &transaction->source);
@@ -1484,7 +1875,10 @@ static void decode_body(
     transaction->evidence_recorded = reader_u32(reader);
     transaction->outcome_recorded = reader_u32(reader);
     transaction->payload_length = reader_u32(reader);
-    if (transaction->payload_length > NINLIL_RT_V1_MAX_OWNED_PAYLOAD_BYTES) {
+    transaction->inline_payload_length = reader_u32(reader);
+    if (transaction->payload_length > NINLIL_RT_V1_MAX_MFDT_PAYLOAD_BYTES
+        || transaction->inline_payload_length
+            > NINLIL_RT_V1_MAX_OWNED_PAYLOAD_BYTES) {
         reader->failed = 1u;
         return;
     }
@@ -1505,7 +1899,10 @@ static void decode_body(
     transaction->ingress_pending = reader_u32(reader);
     transaction->receipt_pending = reader_u32(reader);
     transaction->ordered_input_sequence = reader_u64(reader);
-    reader_bytes(reader, transaction->owned_payload, transaction->payload_length);
+    reader_bytes(
+        reader,
+        transaction->owned_payload,
+        transaction->inline_payload_length);
     reader_assurance(reader, &transaction->assurance);
     transaction->bound_target_count = reader_u32(reader);
     if (transaction->bound_target_count > NINLIL_RT_V1_MAX_TARGETS_PER_TXN) {
@@ -1514,7 +1911,27 @@ static void decode_body(
     }
     for (index = 0u; index < transaction->bound_target_count; ++index) {
         reader_target(reader, &transaction->bound_targets[index]);
+        if (transaction->bearer_route
+            == (uint8_t)NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1) {
+            reader_bytes(
+                reader,
+                transaction->bound_targets[index].mfdt_transfer_id,
+                (uint32_t)sizeof(
+                    transaction->bound_targets[index].mfdt_transfer_id));
+            transaction->bound_targets[index].mfdt_target_ordinal =
+                reader_u32(reader);
+        }
     }
+    transaction->idempotency_key_length = reader_u8(reader);
+    if (transaction->idempotency_key_length > NINLIL_MAX_IDEMPOTENCY_BYTES) {
+        reader->failed = 1u;
+        return;
+    }
+    reader_bytes(
+        reader,
+        transaction->idempotency_key,
+        transaction->idempotency_key_length);
+    reader_digest(reader, &transaction->canonical_submission_digest);
 }
 
 ninlil_status_t ninlil_rt_v1_transaction_record_encode(
@@ -1524,8 +1941,10 @@ ninlil_status_t ninlil_rt_v1_transaction_record_encode(
     uint32_t *out_length)
 {
     tx_writer_t writer;
+    tx_writer_t counter;
     uint32_t body_length;
     uint32_t crc;
+    uint32_t required_length;
 
     if (out_length != NULL) {
         *out_length = 0u;
@@ -1543,6 +1962,21 @@ ninlil_status_t ninlil_rt_v1_transaction_record_encode(
             : NINLIL_E_INVALID_ARGUMENT;
     }
 
+    counter.bytes = NULL;
+    counter.capacity = NINLIL_RT_V1_TRANSACTION_RECORD_MAX_BYTES
+        - NINLIL_RT_V1_TRANSACTION_RECORD_TRAILER_BYTES;
+    counter.position = NINLIL_RT_V1_TRANSACTION_RECORD_HEADER_BYTES;
+    counter.failed = 0u;
+    encode_body(&counter, transaction);
+    if (counter.failed != 0u) {
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+    required_length = counter.position
+        + NINLIL_RT_V1_TRANSACTION_RECORD_TRAILER_BYTES;
+    if (out_capacity < required_length) {
+        return NINLIL_E_BUFFER_TOO_SMALL;
+    }
+
     (void)memset(out_bytes, 0, out_capacity);
     out_bytes[0] = TX_RECORD_MAGIC_0;
     out_bytes[1] = TX_RECORD_MAGIC_1;
@@ -1553,13 +1987,12 @@ ninlil_status_t ninlil_rt_v1_transaction_record_encode(
     encode_u16_be_at(&out_bytes[6],
         NINLIL_RT_V1_TRANSACTION_RECORD_SCHEMA_MINOR);
     writer.bytes = out_bytes;
-    writer.capacity = out_capacity;
+    writer.capacity = out_capacity
+        - NINLIL_RT_V1_TRANSACTION_RECORD_TRAILER_BYTES;
     writer.position = NINLIL_RT_V1_TRANSACTION_RECORD_HEADER_BYTES;
     writer.failed = 0u;
     encode_body(&writer, transaction);
-    if (writer.failed != 0u
-        || writer.position
-            > out_capacity - NINLIL_RT_V1_TRANSACTION_RECORD_TRAILER_BYTES) {
+    if (writer.failed != 0u || writer.position != counter.position) {
         return NINLIL_E_BUFFER_TOO_SMALL;
     }
     body_length =

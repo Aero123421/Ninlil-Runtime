@@ -852,24 +852,32 @@ def build_export_artifact_vectors() -> dict[str, Any]:
 
 
 def bootstrap_fixture() -> dict[str, Any]:
+    """Canonical Controller + TEST fixture for format-1/2 bootstrap.
+
+    Erratum (2026-07-29): previous fixture mixed Controller role with Endpoint
+    event-spool capacity, multi-target, multi-cancel, and result_cache_retention
+    > terminal_retention, which violates docs/12 NINLIL-FOUNDATION-SMALL-1.
+    This fixture is an exact valid Controller profile under that contract.
+    """
+
     return {
         "storage_schema": 1,
-        "role": 1,
-        "environment": 1,
+        "role": 1,  # NINLIL_ROLE_CONTROLLER
+        "environment": 1,  # NINLIL_ENV_TEST
         "runtime_id_hex": "44" * 16,
         "limits": {
             "max_services": 16,
             "max_nonterminal_transactions": 32,
-            "max_targets_per_transaction": 4,
+            "max_targets_per_transaction": 1,
             "max_logical_payload_bytes": 256,
             "max_durable_outbox_payload_bytes": 8192,
             "max_attempts_per_target_per_cycle": 8,
-            "max_cancel_attempts_per_transaction": 4,
+            "max_cancel_attempts_per_transaction": 1,
             "max_evidence_per_target": 3,
             "max_retained_terminal_transactions": 64,
             "max_nonterminal_deliveries": 32,
-            "max_event_spool_count": 32,
-            "max_event_spool_bytes": 8192,
+            "max_event_spool_count": 0,
+            "max_event_spool_bytes": 0,
             "max_result_cache_entries": 32,
             "max_retained_dispositions": 64,
             "max_ingress_per_step": 8,
@@ -878,11 +886,11 @@ def bootstrap_fixture() -> dict[str, Any]:
             "max_bearer_sends_per_step": 8,
             "max_deferred_tokens": 16,
         },
-        "terminal_retention_ms": 1000,
-        "result_cache_retention_ms": 2000,
+        "terminal_retention_ms": 2000,
+        "result_cache_retention_ms": 1000,
         "observation_retention_ms": 3000,
         "identity": {
-            "flags": 7,
+            "flags": 7,  # DEVICE | INSTALLATION | SITE
             "device_id_hex": "55" * 16,
             "installation_id_hex": "66" * 16,
             "site_domain_id_hex": "77" * 16,

@@ -19,6 +19,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -26,7 +27,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 REPO = Path(__file__).resolve().parents[1]
-DEFAULT_JSON = REPO / "spec" / "vectors" / "domain-scan-crossrow-v1.json"
+DEFAULT_JSON = Path(
+    os.environ.get(
+        "NINLIL_D3S3_AUTHORITY_PATH",
+        str(REPO / "spec" / "vectors" / "domain-scan-crossrow-v1.json"),
+    )
+)
 D1_PATH = REPO / "spec" / "vectors" / "domain-store-v1.json"
 D3S1_GEN = REPO / "tools" / "domain_scan_crossrow_vector_gen.py"
 

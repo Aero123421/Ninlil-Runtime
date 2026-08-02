@@ -42,14 +42,18 @@ ctest --test-dir tmp-v1 --output-on-failure
 
 ## Host simulation examples
 
-build tree で 4 本の最小例（いずれも `submit → delivery`）:
+build tree で 4 本の最小例（いずれも `submit → delivery`）。
 
-| Example | 相当ノード | 経路 |
+**M1a 公開 family は DesiredState + EventFact のみ**（[ADR-0024](adr/0024-m1a-public-family-matrix-freeze.md)）。`LATEST_STATE_RESERVED` / `MEASUREMENT_RESERVED` は register = `NINLIL_E_UNSUPPORTED` のまま（first-class public family ではない）。
+
+| Example target（historical name; label-only） | 相当ノード | 経路（family = 公開 enum） |
 | --- | --- | --- |
 | `ninlil_v1_lab_controller_submit_example` | Site Controller | 統合 topology 下行 DesiredState |
 | `ninlil_v1_lab_cell_custody_example` | Cell Agent | 統合 topology（USB custody + radio TX） |
-| `ninlil_v1_lab_display_latest_state_example` | Display | 2-process loopback 上行 LatestState |
-| `ninlil_v1_lab_leak_measurement_example` | Leak | 2-process loopback 上行 MeasurementBatch（submit 受理 + bearer egress; controller 完全 delivery は item 6 family CTest で検証） |
+| `ninlil_v1_lab_display_latest_state_example` | Display | 2-process loopback 上行 — **display snapshot event (EventFact)** |
+| `ninlil_v1_lab_leak_measurement_example` | Leak | 2-process loopback 上行 — **leak measurement event (EventFact)** |
+
+Target / CTest 名に残る `latest_state` / `leak_measurement` は **互換用 historical label のみ**（deprecation 候補; 改名しない）。製品 service_id 文字列（`latest-state` / `leak-measurement`）も label であり、reserved family enum の有効化ではありません。
 
 ```bash
 cd tmp-v1

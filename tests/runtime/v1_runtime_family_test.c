@@ -193,8 +193,10 @@ static int test_target_aggregate(void)
     (void)memset(&txn, 0, sizeof(txn));
     txn.bound_target_count = 2u;
     txn.bound_targets[0].in_use = 1u;
+    txn.bound_targets[0].terminal = 1u;
     txn.bound_targets[0].outcome = NINLIL_OUTCOME_SATISFIED;
     txn.bound_targets[1].in_use = 1u;
+    txn.bound_targets[1].terminal = 1u;
     txn.bound_targets[1].outcome = NINLIL_OUTCOME_SATISFIED;
     ninlil_rt_v1_aggregate_target_outcomes(&txn, &outcome, &reason);
     REQUIRE(outcome == NINLIL_OUTCOME_SATISFIED);
@@ -331,31 +333,6 @@ static void attach_platform(
     platform->origin_authorization = origin;
 }
 
-static ninlil_callback_action_t noop_delivery_cb(
-    void *user,
-    const ninlil_delivery_token_t *token,
-    const ninlil_delivery_view_t *delivery,
-    ninlil_application_result_t *out_sync_result)
-{
-    (void)user;
-    (void)token;
-    (void)delivery;
-    out_sync_result->kind = NINLIL_APP_RESULT_POSITIVE_EVIDENCE;
-    out_sync_result->evidence_stage = NINLIL_EVIDENCE_APPLIED;
-    return NINLIL_CALLBACK_COMPLETE;
-}
-
-static ninlil_reconcile_action_t noop_reconcile_cb(
-    void *user,
-    const ninlil_reconcile_view_t *delivery,
-    ninlil_application_result_t *out_known_result)
-{
-    (void)user;
-    (void)delivery;
-    (void)out_known_result;
-    return NINLIL_RECONCILE_REDELIVER;
-}
-
 static int test_multiple_service_register(void)
 {
     ninlil_test_allocator_t *allocator;
@@ -394,28 +371,60 @@ static int test_multiple_service_register(void)
         bearer_fixture,
         &origin);
     config = family_controller_config(0x70u);
+    /* M1a public registration: only DesiredState/EventFact are supported. */
     desc_a = make_descriptor(
-        NINLIL_FAMILY_LATEST_STATE_RESERVED,
+        NINLIL_FAMILY_DESIRED_STATE,
         NINLIL_ROLE_CONTROLLER,
         0x71u,
-        "latest-state");
+        "desired-state-a");
     desc_b = make_descriptor(
-        NINLIL_FAMILY_TRANSFER_RESERVED,
+        NINLIL_FAMILY_DESIRED_STATE,
         NINLIL_ROLE_CONTROLLER,
         0x72u,
-        "bounded-transfer");
+        "desired-state-b");
     desc_a.target_limit = 1u;
     desc_b.target_limit = 1u;
+    desc_a.direction = NINLIL_DIRECTION_DOWNLINK;
+    desc_a.admission_authority = NINLIL_AUTHORITY_CONTROLLER_ONLY;
+    desc_b.direction = NINLIL_DIRECTION_DOWNLINK;
+    desc_b.admission_authority = NINLIL_AUTHORITY_CONTROLLER_ONLY;
     (void)memset(&callbacks, 0, sizeof(callbacks));
     set_header(&callbacks.abi_version, &callbacks.struct_size, sizeof(callbacks));
-    callbacks.on_delivery = noop_delivery_cb;
-    callbacks.on_reconcile = noop_reconcile_cb;
     REQUIRE(family_runtime_create(&config, &platform, &runtime) == NINLIL_OK);
     REQUIRE(ninlil_service_register(runtime, &desc_a, &callbacks, &svc_a) == NINLIL_OK);
-    (void)memset(&callbacks, 0, sizeof(callbacks));
-    set_header(&callbacks.abi_version, &callbacks.struct_size, sizeof(callbacks));
     REQUIRE(ninlil_service_register(runtime, &desc_b, &callbacks, &svc_b) == NINLIL_OK);
     REQUIRE(svc_a != NULL && svc_b != NULL && svc_a != svc_b);
+    /* Named reserved families must fail closed at registration (ADR-0024). */
+    {
+        static const ninlil_family_t reserved[] = {
+            NINLIL_FAMILY_LATEST_STATE_RESERVED,
+            NINLIL_FAMILY_MEASUREMENT_RESERVED,
+            NINLIL_FAMILY_TRANSFER_RESERVED,
+            NINLIL_FAMILY_CONFIG_RESERVED,
+            NINLIL_FAMILY_NETWORK_CONTROL_RESERVED
+        };
+        static const char *const reserved_names[] = {
+            "latest-state",
+            "measurement-batch",
+            "bounded-transfer",
+            "config-revision",
+            "network-control"
+        };
+        size_t r;
+        for (r = 0u; r < sizeof(reserved) / sizeof(reserved[0]); ++r) {
+            desc_a = make_descriptor(
+                reserved[r],
+                NINLIL_ROLE_CONTROLLER,
+                (uint8_t)(0x73u + r),
+                reserved_names[r]);
+            desc_a.target_limit = 1u;
+            svc_a = (ninlil_service_t *)0x1u;
+            REQUIRE(ninlil_service_register(
+                        runtime, &desc_a, &callbacks, &svc_a)
+                == NINLIL_E_UNSUPPORTED);
+            REQUIRE(svc_a == NULL);
+        }
+    }
     REQUIRE(ninlil_runtime_destroy(runtime) == NINLIL_OK);
     ninlil_test_bearer_destroy(bearer_fixture);
     ninlil_test_storage_destroy(storage_fixture);
@@ -463,6 +472,8 @@ static int test_offer_accept_unsupported(void)
     config = family_controller_config(0x80u);
     set_id(&offer_id, 0x81u);
     REQUIRE(family_runtime_create(&config, &platform, &runtime) == NINLIL_OK);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(&result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_offer_accept(runtime, &offer_id, &result) == NINLIL_E_UNSUPPORTED);
     REQUIRE(ninlil_runtime_destroy(runtime) == NINLIL_OK);
     ninlil_test_bearer_destroy(bearer_fixture);

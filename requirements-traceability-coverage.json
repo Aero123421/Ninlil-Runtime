@@ -1,0 +1,6710 @@
+{
+  "format": "NINLIL_TRACEABILITY_COVERAGE_V2",
+  "schema_version": 2,
+  "normative_sources": [
+    {
+      "path": "docs/12-foundation-abi.md",
+      "sha256": "9dc1450afb347ac25cdc3c39d7bfe21922dbd45673f5d4d58e3e88d4be15a1fd",
+      "heading_units": [
+        {
+          "id": "NIN-PR1-DOC12-001",
+          "level": 2,
+          "path": [
+            "## 1. 目的と優先順位"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "m1a_public_family_docs_gate",
+              "abi_manifest_coverage"
+            ],
+            "all-private": [
+              "m1a_public_family_docs_gate",
+              "abi_manifest_coverage"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-002",
+          "level": 2,
+          "path": [
+            "## 2. M1aで固定する判断"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "m1a_public_family_docs_gate",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "m1a_public_family_docs_gate"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-003",
+          "level": 2,
+          "path": [
+            "## 3. C ABI共通規則"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ],
+            "all-private": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-003-S001",
+          "level": 3,
+          "path": [
+            "## 3. C ABI共通規則",
+            "### 3.1 Headerとprimitive"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ],
+            "all-private": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-003-S002",
+          "level": 3,
+          "path": [
+            "## 3. C ABI共通規則",
+            "### 3.2 API status"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ],
+            "all-private": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-003-S003",
+          "level": 3,
+          "path": [
+            "## 3. C ABI共通規則",
+            "### 3.3 ABI struct validation"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ],
+            "all-private": [
+              "abi_contract_header",
+              "abi_contract_output",
+              "smoke_c11",
+              "smoke_cxx17"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-004",
+          "level": 2,
+          "path": [
+            "## 4. M1a enum domain"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ],
+            "all-private": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-004-S001",
+          "level": 3,
+          "path": [
+            "## 4. M1a enum domain",
+            "### 4.1 Role、environment、family"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ],
+            "all-private": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-004-S002",
+          "level": 3,
+          "path": [
+            "## 4. M1a enum domain",
+            "### 4.2 Service contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ],
+            "all-private": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-004-S003",
+          "level": 3,
+          "path": [
+            "## 4. M1a enum domain",
+            "### 4.3 Evidence、result、state"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ],
+            "all-private": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-004-S004",
+          "level": 3,
+          "path": [
+            "## 4. M1a enum domain",
+            "### 4.4 Reason code"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ],
+            "all-private": [
+              "abi_contract_enum",
+              "reason_registry_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005",
+          "level": 2,
+          "path": [
+            "## 5. Platform Port ABI"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005-S001",
+          "level": 3,
+          "path": [
+            "## 5. Platform Port ABI",
+            "### 5.1 Opaque Port handle"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005-S002",
+          "level": 3,
+          "path": [
+            "## 5. Platform Port ABI",
+            "### 5.2 Allocator、execution、clock、entropy"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005-S003",
+          "level": 3,
+          "path": [
+            "## 5. Platform Port ABI",
+            "### 5.3 Storage Port"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005-S004",
+          "level": 3,
+          "path": [
+            "## 5. Platform Port ABI",
+            "### 5.4 Bearer Port"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005-S005",
+          "level": 3,
+          "path": [
+            "## 5. Platform Port ABI",
+            "### 5.5 TEST Tx Gate"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005-S006",
+          "level": 3,
+          "path": [
+            "## 5. Platform Port ABI",
+            "### 5.6 TEST Origin Authorization / Grant"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-005-S007",
+          "level": 3,
+          "path": [
+            "## 5. Platform Port ABI",
+            "### 5.7 Platform aggregate"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-006",
+          "level": 2,
+          "path": [
+            "## 6. Runtime configとresource profile"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "runtime_lifecycle_model",
+              "resource_ledger_model",
+              "resource_ledger_batch_model"
+            ],
+            "all-private": [
+              "runtime_lifecycle_model",
+              "resource_ledger_model",
+              "resource_ledger_batch_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-006-S001",
+          "level": 3,
+          "path": [
+            "## 6. Runtime configとresource profile",
+            "### 6.1 Runtime create lifecycle"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "runtime_lifecycle_model",
+              "resource_ledger_model",
+              "resource_ledger_batch_model"
+            ],
+            "all-private": [
+              "runtime_lifecycle_model",
+              "resource_ledger_model",
+              "resource_ledger_batch_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-006-S002",
+          "level": 3,
+          "path": [
+            "## 6. Runtime configとresource profile",
+            "### 6.2 Private Runtime Store v1"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "runtime_lifecycle_model",
+              "resource_ledger_model",
+              "resource_ledger_batch_model"
+            ],
+            "all-private": [
+              "runtime_lifecycle_model",
+              "resource_ledger_model",
+              "resource_ledger_batch_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-007",
+          "level": 2,
+          "path": [
+            "## 7. Service Descriptorとcallback"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_delivery"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-007-S001",
+          "level": 3,
+          "path": [
+            "## 7. Service Descriptorとcallback",
+            "### 7.1 Descriptor"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_delivery"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-007-S001-D001",
+          "level": 4,
+          "path": [
+            "## 7. Service Descriptorとcallback",
+            "### 7.1 Descriptor",
+            "#### Admission quota semantics"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_delivery"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-007-S002",
+          "level": 3,
+          "path": [
+            "## 7. Service Descriptorとcallback",
+            "### 7.2 Delivery/Application result"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_delivery"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-008",
+          "level": 2,
+          "path": [
+            "## 8. Submission ABI"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "submission_admission_model",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-009",
+          "level": 2,
+          "path": [
+            "## 9. Transaction、query、list、cancel"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family",
+              "v1_event_mgmt_ledger"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-009-S001",
+          "level": 3,
+          "path": [
+            "## 9. Transaction、query、list、cancel",
+            "### Targeted management linearization"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family",
+              "v1_event_mgmt_ledger"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-009-S002",
+          "level": 3,
+          "path": [
+            "## 9. Transaction、query、list、cancel",
+            "### DesiredState remote cancel"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family",
+              "v1_event_mgmt_ledger"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-010",
+          "level": 2,
+          "path": [
+            "## 10. EventFact park、resume、discard"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_event_mgmt_ledger",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-011",
+          "level": 2,
+          "path": [
+            "## 11. Step、capacity、metrics"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-011-S001",
+          "level": 3,
+          "path": [
+            "## 11. Step、capacity、metrics",
+            "### 11.0 Runtime step scheduler and clock contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-011-S002",
+          "level": 3,
+          "path": [
+            "## 11. Step、capacity、metrics",
+            "### 11.1 Capacity accounting"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-011-S003",
+          "level": 3,
+          "path": [
+            "## 11. Step、capacity、metrics",
+            "### 11.2 Step budget accounting"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-011-S004",
+          "level": 3,
+          "path": [
+            "## 11. Step、capacity、metrics",
+            "### 11.3 Metrics and health"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-012",
+          "level": 2,
+          "path": [
+            "## 12. Public function signature"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "smoke_c11",
+              "smoke_cxx17",
+              "abi_drift_check"
+            ],
+            "all-private": [
+              "smoke_c11",
+              "smoke_cxx17",
+              "abi_drift_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-013",
+          "level": 2,
+          "path": [
+            "## 13. Functionごとのownership、thread、出力"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_output",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "abi_contract_output"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-014",
+          "level": 2,
+          "path": [
+            "## 14. M1a unsupported behavior"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "abi_contract_enum",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "abi_contract_enum"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-015",
+          "level": 2,
+          "path": [
+            "## 15. Canonical Submission Digest v1"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-016",
+          "level": 2,
+          "path": [
+            "## 16. M1a Service fixture requirements"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-016-S001",
+          "level": 3,
+          "path": [
+            "## 16. M1a Service fixture requirements",
+            "### DesiredStateCommand"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-016-S002",
+          "level": 3,
+          "path": [
+            "## 16. M1a Service fixture requirements",
+            "### EventFact"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-017",
+          "level": 2,
+          "path": [
+            "## 17. Named fault hook registry"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "hook_registry_mirror_check",
+              "hook_registry_mirror_negative"
+            ],
+            "all-private": [
+              "hook_registry_mirror_check",
+              "hook_registry_mirror_negative"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC12-018",
+          "level": 2,
+          "path": [
+            "## 18. Conformance minimum"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "in_memory_storage_conformance"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/13-foundation-state-machine.md",
+      "sha256": "5fdb3d349ba1ed1de86a2dd61d383fb0fe5604ba97ca209410fe4091bc5aa7f5",
+      "heading_units": [
+        {
+          "id": "NIN-PR1-DOC13-001",
+          "level": 2,
+          "path": [
+            "## 目的"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-002",
+          "level": 2,
+          "path": [
+            "## 仕様上の位置付け"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "m1a_public_family_docs_gate",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "m1a_public_family_docs_gate"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-003",
+          "level": 2,
+          "path": [
+            "## 規範語"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "m1a_public_family_docs_gate"
+            ],
+            "all-private": [
+              "m1a_public_family_docs_gate"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-004",
+          "level": 2,
+          "path": [
+            "## Foundation public profileの固定scope"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-004-S001",
+          "level": 3,
+          "path": [
+            "## Foundation public profileの固定scope",
+            "### 実装必須"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-004-S002",
+          "level": 3,
+          "path": [
+            "## Foundation public profileの固定scope",
+            "### M1aで未対応"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_capability",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-005",
+          "level": 2,
+          "path": [
+            "## 外部に約束する範囲"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_admission_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-005-S001",
+          "level": 3,
+          "path": [
+            "## 外部に約束する範囲",
+            "### M1aが約束すること"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_admission_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-005-S002",
+          "level": 3,
+          "path": [
+            "## 外部に約束する範囲",
+            "### M1aが約束しないこと"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_admission_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-006",
+          "level": 2,
+          "path": [
+            "## Admission Assurance"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_admission_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-006-S001",
+          "level": 3,
+          "path": [
+            "## Admission Assurance",
+            "### 表現"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_admission_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-006-S002",
+          "level": 3,
+          "path": [
+            "## Admission Assurance",
+            "### Admission result"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_admission_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-007",
+          "level": 2,
+          "path": [
+            "## Local Reservation"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ],
+            "all-private": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-007-S001",
+          "level": 3,
+          "path": [
+            "## Local Reservation",
+            "### Controller admission"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ],
+            "all-private": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-007-S002",
+          "level": 3,
+          "path": [
+            "## Local Reservation",
+            "### Endpoint EventFact admission"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ],
+            "all-private": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-007-S003",
+          "level": 3,
+          "path": [
+            "## Local Reservation",
+            "### Endpoint inbound delivery"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ],
+            "all-private": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-007-S004",
+          "level": 3,
+          "path": [
+            "## Local Reservation",
+            "### Service identityの寿命"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ],
+            "all-private": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-007-S005",
+          "level": 3,
+          "path": [
+            "## Local Reservation",
+            "### Reservationの解放"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ],
+            "all-private": [
+              "resource_ledger_model",
+              "resource_ledger_batch_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-008",
+          "level": 2,
+          "path": [
+            "## Reducer model"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_delivery",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-008-S001",
+          "level": 3,
+          "path": [
+            "## Reducer model",
+            "### 形式"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_delivery",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-008-S002",
+          "level": 3,
+          "path": [
+            "## Reducer model",
+            "### Commit-before-effect"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_delivery",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-008-S003",
+          "level": 3,
+          "path": [
+            "## Reducer model",
+            "### Reducer input identity"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_delivery",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-009",
+          "level": 2,
+          "path": [
+            "## 不変条件"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "required_receipt_transition_model",
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "required_receipt_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010",
+          "level": 2,
+          "path": [
+            "## 時刻と境界"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010-S001",
+          "level": 3,
+          "path": [
+            "## 時刻と境界",
+            "### DesiredStateCommandの基準時刻"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010-S002",
+          "level": 3,
+          "path": [
+            "## 時刻と境界",
+            "### 境界規則"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010-S003",
+          "level": 3,
+          "path": [
+            "## 時刻と境界",
+            "### EventFactのNINLIL_NO_DEADLINE"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010-S004",
+          "level": 3,
+          "path": [
+            "## 時刻と境界",
+            "### 期限内effectの証明"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010-S005",
+          "level": 3,
+          "path": [
+            "## 時刻と境界",
+            "### Effect deadline"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010-S006",
+          "level": 3,
+          "path": [
+            "## 時刻と境界",
+            "### Evidence close"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-010-S007",
+          "level": 3,
+          "path": [
+            "## 時刻と境界",
+            "### Deadline verdict"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_delivery"
+            ],
+            "all-private": [
+              "deadline_projection_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-011",
+          "level": 2,
+          "path": [
+            "## 同一時刻の優先順位"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "scheduler_candidate_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "scheduler_candidate_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012",
+          "level": 2,
+          "path": [
+            "## State definitions"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S001",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### Submission state"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S002",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### Target state"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S003",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### Active"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S004",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### Terminal"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S005",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### Orthogonal fields"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S006",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### Transaction state"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S007",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### Endpoint Delivery state"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-012-S008",
+          "level": 3,
+          "path": [
+            "## State definitions",
+            "### EventFact spool state"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-013",
+          "level": 2,
+          "path": [
+            "## Input catalog"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_delivery",
+              "v1_event_mgmt_ledger"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-014",
+          "level": 2,
+          "path": [
+            "## Durable scheduler ownership"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "scheduler_candidate_model",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "scheduler_candidate_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-015",
+          "level": 2,
+          "path": [
+            "## TEST origin grant guard"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-016",
+          "level": 2,
+          "path": [
+            "## Submission reducer"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "submission_admission_model",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "submission_admission_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-017",
+          "level": 2,
+          "path": [
+            "## Attempt ID allocation"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-018",
+          "level": 2,
+          "path": [
+            "## DesiredStateCommand target reducer"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "required_receipt_transition_model",
+              "desired_deadline_transition_model",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "required_receipt_transition_model",
+              "desired_deadline_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-019",
+          "level": 2,
+          "path": [
+            "## Endpoint Delivery reducer"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-019-S001",
+          "level": 3,
+          "path": [
+            "## Endpoint Delivery reducer",
+            "### Deferred delivery timeout"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-019-S002",
+          "level": 3,
+          "path": [
+            "## Endpoint Delivery reducer",
+            "### on_reconcile reducer"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-020",
+          "level": 2,
+          "path": [
+            "## Receipt reducer"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "required_receipt_transition_model",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "required_receipt_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-020-S001",
+          "level": 3,
+          "path": [
+            "## Receipt reducer",
+            "### Evidence detail上限"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "required_receipt_transition_model",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "required_receipt_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021",
+          "level": 2,
+          "path": [
+            "## Delivery Dispositionとretry"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021-S001",
+          "level": 3,
+          "path": [
+            "## Delivery Dispositionとretry",
+            "### Effect certainty"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021-S002",
+          "level": 3,
+          "path": [
+            "## Delivery Dispositionとretry",
+            "### Exact Disposition matrix"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021-S003",
+          "level": 3,
+          "path": [
+            "## Delivery Dispositionとretry",
+            "### Relative retry delayのnormalize"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021-S004",
+          "level": 3,
+          "path": [
+            "## Delivery Dispositionとretry",
+            "### DesiredStateCommand retry budget"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021-S005",
+          "level": 3,
+          "path": [
+            "## Delivery Dispositionとretry",
+            "### EventFact retry cycle"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021-S006",
+          "level": 3,
+          "path": [
+            "## Delivery Dispositionとretry",
+            "### Fresh Bearer availability epoch"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-021-S007",
+          "level": 3,
+          "path": [
+            "## Delivery Dispositionとretry",
+            "### Operator resume"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_delivery",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-022",
+          "level": 2,
+          "path": [
+            "## Cancel"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-022-S001",
+          "level": 3,
+          "path": [
+            "## Cancel",
+            "### DesiredStateCommand cancel"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-022-S002",
+          "level": 3,
+          "path": [
+            "## Cancel",
+            "### EventFact cancel"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-022-S003",
+          "level": 3,
+          "path": [
+            "## Cancel",
+            "### Explicit discard"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "v1_runtime_family"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-023",
+          "level": 2,
+          "path": [
+            "## EventFact reducer"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_event_mgmt_ledger",
+              "v1_runtime_family",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-023-S001",
+          "level": 3,
+          "path": [
+            "## EventFact reducer",
+            "### Origin admission"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_event_mgmt_ledger",
+              "v1_runtime_family",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-023-S002",
+          "level": 3,
+          "path": [
+            "## EventFact reducer",
+            "### Spool delivery"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_event_mgmt_ledger",
+              "v1_runtime_family",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-023-S003",
+          "level": 3,
+          "path": [
+            "## EventFact reducer",
+            "### Parkと再開"
+          ],
+          "profiles": [
+            "baseline"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_event_mgmt_ledger",
+              "v1_runtime_family",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": []
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-024",
+          "level": 2,
+          "path": [
+            "## Late evidence"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "required_receipt_transition_model",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "required_receipt_transition_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-025",
+          "level": 2,
+          "path": [
+            "## 競合matrix"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "scheduler_candidate_model",
+              "v1_runtime_family"
+            ],
+            "all-private": [
+              "scheduler_candidate_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-026",
+          "level": 2,
+          "path": [
+            "## ALL_TARGETS aggregation for exact DesiredState rosters"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_runtime_capability"
+            ],
+            "all-private": [
+              "submission_preflight_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-026-S001",
+          "level": 3,
+          "path": [
+            "## ALL_TARGETS aggregation for exact DesiredState rosters",
+            "### Supersede forward rule"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_runtime_capability"
+            ],
+            "all-private": [
+              "submission_preflight_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-026-S002",
+          "level": 3,
+          "path": [
+            "## ALL_TARGETS aggregation for exact DesiredState rosters",
+            "### Aggregate progress"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_runtime_capability"
+            ],
+            "all-private": [
+              "submission_preflight_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-026-S003",
+          "level": 3,
+          "path": [
+            "## ALL_TARGETS aggregation for exact DesiredState rosters",
+            "### ALL_TARGETS terminal rule"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_runtime_capability"
+            ],
+            "all-private": [
+              "submission_preflight_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-026-S004",
+          "level": 3,
+          "path": [
+            "## ALL_TARGETS aggregation for exact DesiredState rosters",
+            "### Durable record/version and restart"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_transaction_codec",
+              "v1_runtime_capability"
+            ],
+            "all-private": [
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-027",
+          "level": 2,
+          "path": [
+            "## Runtime step / capacity observability boundary"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-027-S001",
+          "level": 3,
+          "path": [
+            "## Runtime step / capacity observability boundary",
+            "### Step counterとbudget preflight"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-027-S002",
+          "level": 3,
+          "path": [
+            "## Runtime step / capacity observability boundary",
+            "### Metricsとhealth"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_runtime_spine",
+              "resource_ledger_model"
+            ],
+            "all-private": [
+              "resource_ledger_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-028",
+          "level": 2,
+          "path": [
+            "## Storage error"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-028-S001",
+          "level": 3,
+          "path": [
+            "## Storage error",
+            "### Admission中"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-028-S002",
+          "level": 3,
+          "path": [
+            "## Storage error",
+            "### Attempt preparation中"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-028-S003",
+          "level": 3,
+          "path": [
+            "## Storage error",
+            "### Receipt処理中"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-028-S004",
+          "level": 3,
+          "path": [
+            "## Storage error",
+            "### Application result中"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-028-S005",
+          "level": 3,
+          "path": [
+            "## Storage error",
+            "### EventFact discard中"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-028-S006",
+          "level": 3,
+          "path": [
+            "## Storage error",
+            "### Storage full"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e",
+              "v1_runtime_spine"
+            ],
+            "all-private": [
+              "in_memory_storage_boundaries",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-029",
+          "level": 2,
+          "path": [
+            "## Restart and crash recovery"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_posix_platform_restart_e2e",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-029-S001",
+          "level": 3,
+          "path": [
+            "## Restart and crash recovery",
+            "### Named crash registry"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_posix_platform_restart_e2e",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-029-S002",
+          "level": 3,
+          "path": [
+            "## Restart and crash recovery",
+            "### 共通手順"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_posix_platform_restart_e2e",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-029-S003",
+          "level": 3,
+          "path": [
+            "## Restart and crash recovery",
+            "### Attempt"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_posix_platform_restart_e2e",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-029-S004",
+          "level": 3,
+          "path": [
+            "## Restart and crash recovery",
+            "### DesiredStateCommand recovery"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_posix_platform_restart_e2e",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-029-S005",
+          "level": 3,
+          "path": [
+            "## Restart and crash recovery",
+            "### EventFact recovery"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_posix_platform_restart_e2e",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-029-S006",
+          "level": 3,
+          "path": [
+            "## Restart and crash recovery",
+            "### Clock uncertainty"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_posix_platform_restart_e2e",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-030",
+          "level": 2,
+          "path": [
+            "## Reason code"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ],
+            "all-private": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-030-S001",
+          "level": 3,
+          "path": [
+            "## Reason code",
+            "### M1a public-generated admission / runtime reason"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ],
+            "all-private": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-030-S002",
+          "level": 3,
+          "path": [
+            "## Reason code",
+            "### M1a public-generated outcome / operation reason"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ],
+            "all-private": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-030-S003",
+          "level": 3,
+          "path": [
+            "## Reason code",
+            "### M1a public reason generated-zero exact set"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ],
+            "all-private": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-030-S004",
+          "level": 3,
+          "path": [
+            "## Reason code",
+            "### Exact-roster reason"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ],
+            "all-private": [
+              "reason_registry_check",
+              "yaml_reason_parser"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031",
+          "level": 2,
+          "path": [
+            "## Mandatory test vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S001",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Admission"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S002",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Deadline and ordering"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S003",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Cancel, disposition, retry"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S004",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Attempt identity"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S005",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Endpoint and Receipt"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S006",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### EventFact vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S007",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Step and capacity observability"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S008",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Crash recovery vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-031-S009",
+          "level": 3,
+          "path": [
+            "## Mandatory test vectors",
+            "### Exact-roster ALL_TARGETS contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC13-032",
+          "level": 2,
+          "path": [
+            "## M1a completion gate"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "traceability_check"
+            ],
+            "all-private": [
+              "traceability_check"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/14-foundation-ports-and-simulator.md",
+      "sha256": "7f4ded41857f06775a566d9deef3a6a9e3246498f1850812e8dbda3a18c2cf7b",
+      "heading_units": [
+        {
+          "id": "NIN-PR1-DOC14-001",
+          "level": 2,
+          "path": [
+            "## 目的"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "typed_simulated_bearer_fixture"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-002",
+          "level": 2,
+          "path": [
+            "## 正本関係"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "m1a_public_family_docs_gate",
+              "vector_reference_check"
+            ],
+            "all-private": [
+              "m1a_public_family_docs_gate",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-003",
+          "level": 2,
+          "path": [
+            "## Scopeとmilestone applicability"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "esp_idf_component_packaging_gate"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "esp_idf_component_packaging_gate"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-003-S001",
+          "level": 3,
+          "path": [
+            "## Scopeとmilestone applicability",
+            "### M1aで実装必須"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "esp_idf_component_packaging_gate"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "esp_idf_component_packaging_gate"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-003-S002",
+          "level": 3,
+          "path": [
+            "## Scopeとmilestone applicability",
+            "### 後続milestoneへの適用"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "esp_idf_component_packaging_gate"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "esp_idf_component_packaging_gate"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-004",
+          "level": 2,
+          "path": [
+            "## Port共通contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-004-S001",
+          "level": 3,
+          "path": [
+            "## Port共通contract",
+            "### ABIとlifetime"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-004-S002",
+          "level": 3,
+          "path": [
+            "## Port共通contract",
+            "### Runtime storage namespace ownership"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-004-S003",
+          "level": 3,
+          "path": [
+            "## Port共通contract",
+            "### Runtime create lifecycle vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-004-S004",
+          "level": 3,
+          "path": [
+            "## Port共通contract",
+            "### Runtime destroy lifecycle vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-004-S005",
+          "level": 3,
+          "path": [
+            "## Port共通contract",
+            "### Owner contextとblocking"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-004-S006",
+          "level": 3,
+          "path": [
+            "## Port共通contract",
+            "### Port statusとAPI statusの分離"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "v1_posix_provider_conformance"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005",
+          "level": 2,
+          "path": [
+            "## Storage port contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S001",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Capabilityとopen"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S002",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Transaction lifecycle"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S002-D001",
+          "level": 4,
+          "path": [
+            "## Storage port contract",
+            "### Transaction lifecycle",
+            "#### M1a Core planとprovider staging minimum"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S003",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Key、value、prefix iteration"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S004",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Mutable output buffer vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S005",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Handle/capacity output vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S006",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Canonical in-memory Storage fixture"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S007",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### FULL durabilityとatomicity"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S008",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Commit結果不明"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S009",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Runtime Store L2 bootstrap orchestration"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S009-D001",
+          "level": 4,
+          "path": [
+            "## Storage port contract",
+            "### Runtime Store L2 bootstrap orchestration",
+            "#### L2b1 Legacy LAB bootstrap-only Storage orchestrator boundary"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-005-S010",
+          "level": 3,
+          "path": [
+            "## Storage port contract",
+            "### Capacity unitとmapping"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ],
+            "all-private": [
+              "in_memory_storage_conformance",
+              "posix_sqlite_storage",
+              "v1_posix_sqlite_restart_e2e"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006",
+          "level": 2,
+          "path": [
+            "## Typed simulated bearer contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S001",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Public boundary"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S002",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Logical messageとidentity"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S003",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Attempt、duplicate、retry"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S004",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Send result、receive、custody"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S005",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Proposed ADR-0017 Fabric adapter boundary（Foundation ABI不変）"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S006",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Message kind, orientation, and reply-binding vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S007",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Virtual TxPermit"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S008",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Bearer queue accounting"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-006-S009",
+          "level": 3,
+          "path": [
+            "## Typed simulated bearer contract",
+            "### Canonical typed simulated Bearer fixture"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-007",
+          "level": 2,
+          "path": [
+            "## Canonical bounded basic Port fixtures"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-007-S001",
+          "level": 3,
+          "path": [
+            "## Canonical bounded basic Port fixtures",
+            "### Allocator fixture"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-007-S002",
+          "level": 3,
+          "path": [
+            "## Canonical bounded basic Port fixtures",
+            "### Execution fixture"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-007-S003",
+          "level": 3,
+          "path": [
+            "## Canonical bounded basic Port fixtures",
+            "### Clock fixture"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "in_memory_storage_conformance",
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-008",
+          "level": 2,
+          "path": [
+            "## Clock port contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-008-S001",
+          "level": 3,
+          "path": [
+            "## Clock port contract",
+            "### Monotonic time"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-008-S002",
+          "level": 3,
+          "path": [
+            "## Clock port contract",
+            "### Virtual clock"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-008-S003",
+          "level": 3,
+          "path": [
+            "## Clock port contract",
+            "### Receipt evidence-time vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ],
+            "all-private": [
+              "platform_basic_fixtures",
+              "deadline_projection_model"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-009",
+          "level": 2,
+          "path": [
+            "## Entropy port contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-009-S001",
+          "level": 3,
+          "path": [
+            "## Entropy port contract",
+            "### ProductionとTESTの分離"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-009-S002",
+          "level": 3,
+          "path": [
+            "## Entropy port contract",
+            "### Deterministic entropy v1"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-009-S003",
+          "level": 3,
+          "path": [
+            "## Entropy port contract",
+            "### Foundation ID-consumption golden order"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "deterministic_entropy_v1",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-010",
+          "level": 2,
+          "path": [
+            "## Fault hook contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "hook_registry_mirror_check",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "hook_registry_mirror_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-010-S001",
+          "level": 3,
+          "path": [
+            "## Fault hook contract",
+            "### Hook execution"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "hook_registry_mirror_check",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "hook_registry_mirror_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-010-S002",
+          "level": 3,
+          "path": [
+            "## Fault hook contract",
+            "### Closed hook registry mirror"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "hook_registry_mirror_check",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "hook_registry_mirror_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-010-S003",
+          "level": 3,
+          "path": [
+            "## Fault hook contract",
+            "### Specific transition crash coverage"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "hook_registry_mirror_check",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "hook_registry_mirror_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-010-S004",
+          "level": 3,
+          "path": [
+            "## Fault hook contract",
+            "### Fault script schema v1"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "hook_registry_mirror_check",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "hook_registry_mirror_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-010-S005",
+          "level": 3,
+          "path": [
+            "## Fault hook contract",
+            "### Action catalog"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "hook_registry_mirror_check",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "hook_registry_mirror_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011",
+          "level": 2,
+          "path": [
+            "## Deterministic simulator harness"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S001",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Ownership"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S002",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Global event order"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S003",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Event loop"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S004",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Runtime wakeとstep budget"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S005",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Metrics and Runtime health vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S006",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Crashとrestart"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S007",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Bearer availability epoch and Runtime capacity epochs"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S008",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Runtime resource-limit validation vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S009",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Event manual-resume ledger vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S010",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Event discard audit vector"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S011",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Management linearization vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S012",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Deferred delivery lifetime and resource vector"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S013",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Callback registration, initialization, and borrowed lifetime"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S014",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Callback failure, reconcile, and Disposition vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S015",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Attempt timeout and retry vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S016",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Canonical harness trace"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S017",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Same-time durable-ingress boundary"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-011-S018",
+          "level": 3,
+          "path": [
+            "## Deterministic simulator harness",
+            "### Transaction sequence and query/list vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "typed_simulated_bearer_fixture",
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e"
+            ],
+            "all-private": [
+              "typed_simulated_bearer_fixture"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012",
+          "level": 2,
+          "path": [
+            "## Foundation fixture identity and policy"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S001",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Stable identity set"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S002",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Fixture capability"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S003",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Admission quota vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S004",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Role × family and callback-shape vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S005",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Public reason reachability vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S006",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### ABI representability boundary vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S007",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Origin authorization provider contract"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S008",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Canonical TEST Origin Authorization fixture"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S009",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Synthetic origin grant"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-012-S010",
+          "level": 3,
+          "path": [
+            "## Foundation fixture identity and policy",
+            "### Virtual permit fixture"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ],
+            "all-private": [
+              "canonical_origin_authorization_fixture",
+              "platform_basic_fixtures"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013",
+          "level": 2,
+          "path": [
+            "## Canonical Submission Encoding v1"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013-S001",
+          "level": 3,
+          "path": [
+            "## Canonical Submission Encoding v1",
+            "### 目的とscope"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013-S002",
+          "level": 3,
+          "path": [
+            "## Canonical Submission Encoding v1",
+            "### Scalar rule"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013-S003",
+          "level": 3,
+          "path": [
+            "## Canonical Submission Encoding v1",
+            "### Top-level encoding"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013-S004",
+          "level": 3,
+          "path": [
+            "## Canonical Submission Encoding v1",
+            "### Target roster"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013-S005",
+          "level": 3,
+          "path": [
+            "## Canonical Submission Encoding v1",
+            "### Family metadata"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013-S006",
+          "level": 3,
+          "path": [
+            "## Canonical Submission Encoding v1",
+            "### Digest"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-013-S007",
+          "level": 3,
+          "path": [
+            "## Canonical Submission Encoding v1",
+            "### EventFact intrinsic identity"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ],
+            "all-private": [
+              "submission_preflight_model",
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-014",
+          "level": 2,
+          "path": [
+            "## Golden vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-014-S001",
+          "level": 3,
+          "path": [
+            "## Golden vectors",
+            "### Vector C1: Reliable Command"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-014-S002",
+          "level": 3,
+          "path": [
+            "## Golden vectors",
+            "### Vector E1: Durable Event"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-014-S003",
+          "level": 3,
+          "path": [
+            "## Golden vectors",
+            "### Vector E2〜E4: Event intrinsic dedup/conflict"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-014-S005",
+          "level": 3,
+          "path": [
+            "## Golden vectors",
+            "### ADR-0027 exact-roster vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_transaction_codec",
+              "v1_runtime_capability"
+            ],
+            "all-private": [
+              "v1_transaction_codec"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-014-S004",
+          "level": 3,
+          "path": [
+            "## Golden vectors",
+            "### Submission result all-field vectors"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ],
+            "all-private": [
+              "vector_inventory_check",
+              "vector_reference_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-015",
+          "level": 2,
+          "path": [
+            "## Conformance and release gates"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "traceability_check"
+            ],
+            "all-private": [
+              "traceability_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-015-S001",
+          "level": 3,
+          "path": [
+            "## Conformance and release gates",
+            "### M1a mandatory suites"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "traceability_check"
+            ],
+            "all-private": [
+              "traceability_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-015-S002",
+          "level": 3,
+          "path": [
+            "## Conformance and release gates",
+            "### Pull request gate"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "traceability_check"
+            ],
+            "all-private": [
+              "traceability_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-015-S003",
+          "level": 3,
+          "path": [
+            "## Conformance and release gates",
+            "### Nightly gate"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "traceability_check"
+            ],
+            "all-private": [
+              "traceability_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-015-S004",
+          "level": 3,
+          "path": [
+            "## Conformance and release gates",
+            "### M3以降の追加gate"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "traceability_check"
+            ],
+            "all-private": [
+              "traceability_check"
+            ]
+          }
+        },
+        {
+          "id": "NIN-PR1-DOC14-016",
+          "level": 2,
+          "path": [
+            "## Foundation exit condition"
+          ],
+          "profiles": [
+            "baseline",
+            "all-private"
+          ],
+          "tests_by_profile": {
+            "baseline": [
+              "v1_direct_1hop_e2e",
+              "v1_posix_platform_restart_e2e",
+              "traceability_check"
+            ],
+            "all-private": [
+              "traceability_check"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "explicit_requirement_sets": [
+    {
+      "id": "NIN-FND-ABI-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "abi_contract_header",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "abi_contract_header",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-ABI-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "abi_contract_header",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "abi_contract_header",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-ABI-003",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "abi_contract_header",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "abi_contract_header",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-ABI-004",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "abi_contract_header",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "abi_contract_header",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-ADM-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "submission_admission_model",
+          "v1_runtime_spine",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "submission_admission_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-APP-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_runtime_delivery",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-APP-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_runtime_delivery",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-APP-003",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_runtime_delivery",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-AUD-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_event_mgmt_ledger",
+          "v1_runtime_delivery",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-AUTH-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "canonical_origin_authorization_fixture",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "canonical_origin_authorization_fixture",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-BER-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "typed_simulated_bearer_fixture",
+          "v1_direct_1hop_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "typed_simulated_bearer_fixture",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-BER-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "typed_simulated_bearer_fixture",
+          "v1_direct_1hop_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "typed_simulated_bearer_fixture",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-BER-003",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "typed_simulated_bearer_fixture",
+          "v1_direct_1hop_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "typed_simulated_bearer_fixture",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-BER-004",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "typed_simulated_bearer_fixture",
+          "v1_direct_1hop_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "typed_simulated_bearer_fixture",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-CAN-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "submission_preflight_model",
+          "v1_transaction_codec",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "submission_preflight_model",
+          "v1_transaction_codec",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-CAP-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "resource_ledger_model",
+          "resource_ledger_batch_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "resource_ledger_model",
+          "resource_ledger_batch_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-CFG-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "runtime_lifecycle_model",
+          "v1_runtime_spine",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "runtime_lifecycle_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-CLK-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "deadline_projection_model",
+          "platform_basic_fixtures",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "deadline_projection_model",
+          "platform_basic_fixtures",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-CLK-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "deadline_projection_model",
+          "platform_basic_fixtures",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "deadline_projection_model",
+          "platform_basic_fixtures",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-ENT-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "deterministic_entropy_v1",
+          "v1_runtime_spine",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "deterministic_entropy_v1",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-ENT-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "deterministic_entropy_v1",
+          "v1_runtime_spine",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "deterministic_entropy_v1",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-EVT-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_event_mgmt_ledger",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-FLT-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "hook_registry_mirror_check",
+          "hook_registry_mirror_negative",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "hook_registry_mirror_check",
+          "hook_registry_mirror_negative",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-LIF-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "runtime_lifecycle_model",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "runtime_lifecycle_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-LIF-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "runtime_lifecycle_model",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "runtime_lifecycle_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-LIF-003",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "runtime_lifecycle_model",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "runtime_lifecycle_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-MET-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_runtime_spine",
+          "resource_ledger_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "resource_ledger_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-QRY-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_runtime_spine",
+          "v1_runtime_family",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-RET-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_runtime_delivery",
+          "v1_runtime_spine",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-RTY-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_runtime_delivery",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-SCH-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "scheduler_candidate_model",
+          "v1_runtime_spine",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "scheduler_candidate_model",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-SIM-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_direct_1hop_e2e",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-SIM-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_direct_1hop_e2e",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-SIM-003",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_direct_1hop_e2e",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-SIM-004",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_direct_1hop_e2e",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-SIM-005",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "v1_direct_1hop_e2e",
+          "v1_posix_platform_restart_e2e",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-STO-001",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-STO-002",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-STO-003",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    },
+    {
+      "id": "NIN-FND-STO-004",
+      "source": "docs/14-foundation-ports-and-simulator.md",
+      "tests_by_profile": {
+        "baseline": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "in_memory_storage_conformance",
+          "posix_sqlite_storage",
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    }
+  ],
+  "delegated_authorities": [
+    {
+      "id": "NIN-PR1-VECTOR-303",
+      "kind": "foundation-vector-inventory-and-reference",
+      "expected_items": 303,
+      "tests_by_profile": {
+        "baseline": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ],
+        "all-private": [
+          "vector_inventory_check",
+          "vector_reference_check"
+        ]
+      }
+    }
+  ],
+  "invariant_source": {
+    "path": "docs/07-testing-and-quality.md",
+    "heading": "## 常時検査するinvariant",
+    "invariants": [
+      {
+        "id": "NIN-INV-001",
+        "line_sha256": "ad693bf935b00c786fc9dfda88af7aa517029ad2808c55137527d6f6adc08088",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/model/required_receipt_transition_test.c",
+                "anchors": [
+                  "static int test_active_matrix(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "required_receipt_transition_model",
+                    "v1_runtime_family"
+                  ],
+                  "all-private": [
+                    "required_receipt_transition_model"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-002",
+        "line_sha256": "b6246c724e49acfa154b981ec884ddc64cf5e2997568ea4f0b765ef0f03cf02e",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/model/required_receipt_transition_test.c",
+                "anchors": [
+                  "static int test_terminal_is_immutable(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "required_receipt_transition_model",
+                    "v1_runtime_family"
+                  ],
+                  "all-private": [
+                    "required_receipt_transition_model"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-003",
+        "line_sha256": "92b6e62e60d2808fa2419c1a25624dc5fece61730158af898193eb006e6f46ad",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/model/submission_admission_test.c",
+                "anchors": [
+                  "static int test_commit_ok_and_unknown(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "submission_admission_model",
+                    "resource_ledger_batch_model"
+                  ],
+                  "all-private": [
+                    "submission_admission_model",
+                    "resource_ledger_batch_model"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-004",
+        "line_sha256": "cc2b1ff722bd6b165a92d53ce420730c8f2d8cbad79d39d766e5ec623dd5cfa0",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_direct_1hop_e2e_test.c",
+                "anchors": [
+                  "#define SCENARIO_RESTART 5u"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_direct_1hop_e2e",
+                    "v1_runtime_delivery"
+                  ],
+                  "all-private": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-005",
+        "line_sha256": "b73278e2bb11bab03b7a9a6fb1b48abc6bc412f08d41f7c715a286e1efd96b55",
+        "subclaims": [
+          {
+            "id": "transaction-id-stable",
+            "profiles": [
+              "baseline"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_delivery_test.c",
+                "anchors": [
+                  "TRACE-INV005-TXID-STABLE"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_delivery"
+                  ],
+                  "all-private": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "logical-retry-fresh-attempt",
+            "profiles": [
+              "baseline"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_delivery_test.c",
+                "anchors": [
+                  "TRACE-INV005-LOGICAL-RETRY-FRESH-ATTEMPT"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_delivery"
+                  ],
+                  "all-private": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "crash-replay-same-attempt",
+            "profiles": [
+              "baseline"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_delivery_test.c",
+                "anchors": [
+                  "TRACE-INV005-CRASH-REPLAY-SAME-ATTEMPT"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_delivery"
+                  ],
+                  "all-private": []
+                }
+              }
+            ]
+          },
+          {
+            "id": "protected-wire-fresh-nonce",
+            "profiles": [
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/radio/r7_frag/r7_frag_prod_integration_test.c",
+                "anchors": [
+                  "expect_t(\"hop counter strict fresh\"",
+                  "expect_t(\"§8.6 nonces differ c1!=c2\""
+                ],
+                "tests_by_profile": {
+                  "baseline": [],
+                  "all-private": [
+                    "nrw1_frag_prod_integration_private"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-006",
+        "line_sha256": "74e16a9b77b1042865dada0d17e7e2b5fa023357e4ff49917c5f6431c5787e21",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_event_mgmt_ledger_test.c",
+                "anchors": [
+                  "static int test_commit_unknown_hidden_truths(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_event_mgmt_ledger",
+                    "v1_direct_1hop_e2e"
+                  ],
+                  "all-private": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-007",
+        "line_sha256": "e9430cb392473417dd863dac5c8dc0f095c9abdbdf263603867125cc132f54b2",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_event_mgmt_ledger_test.c",
+                "anchors": [
+                  "static int test_catch_up_required_receipt_after_restart(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_event_mgmt_ledger",
+                    "v1_posix_sqlite_restart_e2e"
+                  ],
+                  "all-private": [
+                    "v1_posix_sqlite_restart_e2e"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-008",
+        "line_sha256": "c55efef22d8ae2a7e2bf7ebd4c0c5be1c35abb3a23e1e44c9d561185cf4e1afc",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_delivery_test.c",
+                "anchors": [
+                  "static int test_callback_failure_no_false_success(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_delivery",
+                    "v1_runtime_family"
+                  ],
+                  "all-private": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-009",
+        "line_sha256": "7b643a36f41a31f4c123358b9d4150e272f72389f4cfcef29808f2df0cad6073",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_family_test.c",
+                "anchors": [
+                  "static int test_latest_state_apply_and_stale(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_family",
+                    "v1_runtime_capability"
+                  ],
+                  "all-private": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-010",
+        "line_sha256": "d733f82e322106c5b845eb731b43bf78aaa29be9361c6b2968e34957d9a582eb",
+        "subclaims": [
+          {
+            "id": "queue",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/port/typed_simulated_bearer_test.c",
+                "anchors": [
+                  "TRACE-INV010-QUEUE-BOUNDARY"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "typed_simulated_bearer_fixture"
+                  ],
+                  "all-private": [
+                    "typed_simulated_bearer_fixture",
+                    "wifi_v1_queue_drop_wrap_test"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "id": "retry",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_capability_test.c",
+                "anchors": [
+                  "TRACE-INV010-RETRY-BOUNDARY"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_capability"
+                  ],
+                  "all-private": [
+                    "nrw1_frag_session_private"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "id": "dedup",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_capability_test.c",
+                "anchors": [
+                  "TRACE-INV010-DEDUP-BOUNDARY"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_capability",
+                    "v1_direct_1hop_e2e"
+                  ],
+                  "all-private": [
+                    "nrw1_frag_prod_integration_private"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "id": "reassembly",
+            "profiles": [
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/radio/r7_frag/r7_frag_state_test.c",
+                "anchors": [
+                  "TRACE-INV010-REASSEMBLY-BOUNDARY"
+                ],
+                "tests_by_profile": {
+                  "baseline": [],
+                  "all-private": [
+                    "nrw1_frag_state_private",
+                    "nrw1_frag_prod_integration_private"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "id": "journal",
+            "profiles": [
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/transport/wifi_v1/wifi_v1_journal_test.c",
+                "anchors": [
+                  "TRACE-INV010-JOURNAL-BOUNDARY"
+                ],
+                "tests_by_profile": {
+                  "baseline": [],
+                  "all-private": [
+                    "wifi_v1_journal_test"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-011",
+        "line_sha256": "aae089536c49855cc54f4c4b9a59e4c5b81140582a3cb6902c5bbe29a2e3ce05",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/runtime/v1_runtime_spine_test.c",
+                "anchors": [
+                  "NIN-INV-011: a rejected, otherwise-valid submission remains visible"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "v1_runtime_spine",
+                    "submission_preflight_model"
+                  ],
+                  "all-private": [
+                    "submission_preflight_model"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-012",
+        "line_sha256": "5bdf046a244f65d430b317c917d15e3ecbf4e18abf00d1dcdd73960a77542d63",
+        "subclaims": [
+          {
+            "id": "physical-tx-sole-permit-edge",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/radio/radio_hal_r1_test.c",
+                "anchors": [
+                  "static int test_default_deny(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "radio_hal_r1",
+                    "sx1262_r9",
+                    "sx1262_r9_sole_edge_gate"
+                  ],
+                  "all-private": [
+                    "radio_hal_r1",
+                    "sx1262_r9",
+                    "sx1262_r9_sole_edge_gate"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-013",
+        "line_sha256": "5f1eb440aabd5550905769b7aeb186063aaf06be389be4994511aaf8056bb946",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/radio/c3_lab_secure_wire_test.c",
+                "anchors": [
+                  "static int run_reject_stale_token(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "c3_lab_secure_wire",
+                    "n6_context_store"
+                  ],
+                  "all-private": [
+                    "c3_lab_secure_wire",
+                    "n6_context_store"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "NIN-INV-014",
+        "line_sha256": "5e1873cc057a4308c78514611156e0b9e1caf1c15091dfd8b3e2a9296f671cab",
+        "subclaims": [
+          {
+            "id": "whole",
+            "profiles": [
+              "baseline",
+              "all-private"
+            ],
+            "evidence": [
+              {
+                "source": "tests/model/submission_preflight_test.c",
+                "anchors": [
+                  "static int test_target_identity_validation(void)"
+                ],
+                "tests_by_profile": {
+                  "baseline": [
+                    "submission_preflight_model",
+                    "required_receipt_transition_model"
+                  ],
+                  "all-private": [
+                    "submission_preflight_model",
+                    "required_receipt_transition_model"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

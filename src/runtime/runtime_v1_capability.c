@@ -5,6 +5,7 @@
 #include "runtime_store_codec.h"
 
 #include <string.h>
+#include <stdio.h>
 
 #define NINLIL_RT_V1_U6_MAX_PAYLOAD_BYTES 926u
 #define RESERVATION_MAGIC_0 0x4eu
@@ -16,7 +17,8 @@
 
 static const ninlil_rt_v1_bearer_limit_row_t g_bearer_limit_table[] = {
     {NINLIL_RT_V1_BEARER_ROUTE_SIMULATED, 926u, "SIMULATED/U6"},
-    {NINLIL_RT_V1_BEARER_ROUTE_U6, 926u, "U6"}
+    {NINLIL_RT_V1_BEARER_ROUTE_U6, 926u, "U6"},
+    {NINLIL_RT_V1_BEARER_ROUTE_MFDT_V1, 32768u, "MFDT_V1/NCL1"}
 };
 
 static const uint32_t g_bearer_limit_table_count =
@@ -419,6 +421,51 @@ static void project_capacity_entry(
         entry->counter_exhausted_marker;
 }
 
+ninlil_status_t ninlil_rt_v1_stage_resource_ledger_kind(
+    ninlil_runtime_t *runtime,
+    ninlil_storage_txn_t storage_txn,
+    ninlil_v1_durable_operation_t operation,
+    const ninlil_model_resource_ledger_t *ledger,
+    ninlil_resource_kind_t kind)
+{
+    ninlil_model_runtime_store_key_t key;
+    ninlil_model_runtime_store_capacity_t capacity;
+    uint8_t value[NINLIL_MODEL_RUNTIME_STORE_CAPACITY_VALUE_BYTES];
+    uint32_t value_length = 0u;
+    uint32_t index;
+    ninlil_model_runtime_store_key_id_t key_id;
+    ninlil_status_t status;
+
+    if (runtime == NULL || storage_txn == NULL || ledger == NULL
+        || kind < NINLIL_RESOURCE_SERVICE
+        || kind > NINLIL_RESOURCE_DEFERRED_TOKEN) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    index = (uint32_t)kind - 1u;
+    key_id = capacity_key_id_for_index(index);
+    status = ninlil_model_runtime_store_build_key(key_id, &key);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    project_capacity_entry(&ledger->entries[index], &capacity);
+    status = ninlil_model_runtime_store_encode_capacity(
+        key_id,
+        &capacity,
+        value,
+        (uint32_t)sizeof(value),
+        &value_length);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    return ninlil_v1_durable_storage_put(
+        operation,
+        runtime->platform->storage,
+        storage_txn,
+        (ninlil_bytes_view_t){key.bytes, key.length},
+        (ninlil_bytes_view_t){value, value_length},
+        &runtime->commit_unknown_fence);
+}
+
 ninlil_status_t ninlil_rt_v1_stage_resource_ledger(
     ninlil_runtime_t *runtime,
     ninlil_storage_txn_t storage_txn,
@@ -431,35 +478,12 @@ ninlil_status_t ninlil_rt_v1_stage_resource_ledger(
         return NINLIL_E_INVALID_ARGUMENT;
     }
     for (index = 0u; index < NINLIL_MODEL_RESOURCE_KIND_COUNT; ++index) {
-        ninlil_model_runtime_store_key_t key;
-        ninlil_model_runtime_store_capacity_t capacity;
-        uint8_t value[NINLIL_MODEL_RUNTIME_STORE_CAPACITY_VALUE_BYTES];
-        uint32_t value_length = 0u;
-        ninlil_model_runtime_store_key_id_t key_id =
-            capacity_key_id_for_index(index);
-        ninlil_status_t status;
-
-        status = ninlil_model_runtime_store_build_key(key_id, &key);
-        if (status != NINLIL_OK) {
-            return status;
-        }
-        project_capacity_entry(&ledger->entries[index], &capacity);
-        status = ninlil_model_runtime_store_encode_capacity(
-            key_id,
-            &capacity,
-            value,
-            (uint32_t)sizeof(value),
-            &value_length);
-        if (status != NINLIL_OK) {
-            return status;
-        }
-        status = ninlil_v1_durable_storage_put(
-            operation,
-            runtime->platform->storage,
+        ninlil_status_t status = ninlil_rt_v1_stage_resource_ledger_kind(
+            runtime,
             storage_txn,
-            (ninlil_bytes_view_t){key.bytes, key.length},
-            (ninlil_bytes_view_t){value, value_length},
-            &runtime->commit_unknown_fence);
+            operation,
+            ledger,
+            (ninlil_resource_kind_t)(index + 1u));
         if (status != NINLIL_OK) {
             return status;
         }
@@ -498,17 +522,37 @@ ninlil_status_t ninlil_rt_v1_restore_resource_ledger_row(
     }
     index = (uint32_t)key_id
         - (uint32_t)NINLIL_MODEL_RUNTIME_STORE_KEY_CAPACITY_SERVICE;
-    if ((runtime->resource_ledger_restore_mask & (1u << index)) != 0u) {
-        return NINLIL_E_STORAGE_CORRUPT;
-    }
     (void)memset(&capacity, 0, sizeof(capacity));
     status = ninlil_model_runtime_store_decode_capacity(
         key_id, value, &capacity);
     if (status != NINLIL_OK) {
         return status;
     }
-    if (capacity.kind != (ninlil_resource_kind_t)(index + 1u)
-        || capacity.limit != runtime->capacity_limits.values[index]) {
+    if (capacity.kind != (ninlil_resource_kind_t)(index + 1u)) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    /*
+     * Domain create may pre-seed the full capacity mask after T0–T6. Overlay
+     * durable used/reserved even when create-derived limit projection differs
+     * slightly from the durable capacity limit (Domain T0–T6 is authority).
+     */
+    if ((runtime->resource_ledger_restore_mask & (1u << index)) != 0u) {
+        entry = &runtime->resource_ledger.entries[index];
+        entry->kind = capacity.kind;
+        if (capacity.limit == runtime->capacity_limits.values[index]
+            || capacity.limit == entry->limit) {
+            entry->limit = capacity.limit;
+            entry->used = capacity.used;
+            entry->reserved = capacity.reserved;
+            entry->high_water = capacity.high_water;
+            entry->capacity_epoch = capacity.capacity_epoch;
+            entry->blocked = capacity.blocked;
+            entry->counter_exhausted_marker = capacity.counter_exhausted;
+        }
+        *out_recognized = 1u;
+        return NINLIL_OK;
+    }
+    if (capacity.limit != runtime->capacity_limits.values[index]) {
         return NINLIL_E_STORAGE_CORRUPT;
     }
     entry = &runtime->resource_ledger.entries[index];
@@ -830,12 +874,27 @@ ninlil_status_t ninlil_rt_v1_validate_restored_resource_ledger(
     (void)memset(expected_used, 0, sizeof(expected_used));
     (void)memset(expected_reserved, 0, sizeof(expected_reserved));
 
+    /*
+     * SERVICE capacity is the durable semantic registry count in both the NRS
+     * and Domain backends. V1 TX scan never charges SERVICE, so restored
+     * service slots are the canonical expected used count.
+     */
+    {
+        uint32_t service_index =
+            (uint32_t)NINLIL_RESOURCE_SERVICE - 1u;
+        if (service_index < NINLIL_MODEL_RESOURCE_KIND_COUNT) {
+            expected_used[service_index] = runtime->service_count;
+        }
+    }
+
     for (index = 0u; index < runtime->transaction_capacity; ++index) {
         const ninlil_rt_transaction_slot_t *txn =
             &runtime->transactions[index];
         uint64_t evidence_used;
         uint64_t evidence_reserved;
         uint64_t used_management;
+        uint64_t target_evidence_count = 0u;
+        uint32_t target_index;
 
         if (txn->in_use == 0u) {
             continue;
@@ -890,7 +949,21 @@ ninlil_status_t ninlil_rt_v1_validate_restored_resource_ledger(
                 >= txn->reservation_evidence_units) {
             return NINLIL_E_STORAGE_CORRUPT;
         }
-        evidence_used = 1u + (uint64_t)txn->evidence_recorded;
+        /*
+         * Admission commits one initial evidence row per exact target.
+         * Later receipt/application evidence is counted in
+         * evidence_recorded.  The single-target case remains 1 + recorded.
+         */
+        for (target_index = 0u;
+             target_index < txn->bound_target_count;
+             ++target_index) {
+            if (txn->bound_targets[target_index].in_use != 0u
+                && txn->bound_targets[target_index].evidence_recorded != 0u) {
+                target_evidence_count += 1u;
+            }
+        }
+        evidence_used =
+            (uint64_t)txn->bound_target_count + target_evidence_count;
         evidence_reserved =
             (uint64_t)txn->reservation_evidence_units - evidence_used;
         if (!add_expected_resource(

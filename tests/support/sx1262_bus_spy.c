@@ -189,6 +189,25 @@ static int spy_spi_transfer(
     if (opcode == NINLIL_SX1262_CMD_SET_TX) {
         spy->settx_opcodes_seen =
             ninlil_sx1262_sat_add_u64(spy->settx_opcodes_seen, 1u);
+        /* After SetTx, default to TxDone IRQ for host poll path. */
+        if (spy->irq_status == 0u) {
+            spy->irq_status = 0x0001u;
+        }
+    }
+    if (opcode == NINLIL_SX1262_CMD_SET_RX) {
+        spy->setrx_opcodes_seen =
+            ninlil_sx1262_sat_add_u64(spy->setrx_opcodes_seen, 1u);
+    }
+    if (opcode == NINLIL_SX1262_CMD_SET_CAD) {
+        spy->setcad_opcodes_seen =
+            ninlil_sx1262_sat_add_u64(spy->setcad_opcodes_seen, 1u);
+        if (spy->cad_force_timeout == 0) {
+            /* CadDone=0x0080; CadDetected=0x0100 when force_busy. */
+            spy->irq_status = (uint16_t)0x0080u;
+            if (spy->cad_force_busy != 0) {
+                spy->irq_status = (uint16_t)(0x0080u | 0x0100u);
+            }
+        }
     }
     push_trace(spy, NINLIL_SX1262_SPY_EV_SPI, opcode, (uint32_t)len, tx, len);
 
@@ -229,6 +248,27 @@ static int spy_spi_transfer(
             rx[2] = (uint8_t)((spy->device_errors >> 8) & 0xFFu);
             rx[3] = (uint8_t)(spy->device_errors & 0xFFu);
         }
+        if (opcode == (uint8_t)0x12u && len >= 4u) {
+            /* GetIrqStatus */
+            rx[2] = (uint8_t)((spy->irq_status >> 8) & 0xFFu);
+            rx[3] = (uint8_t)(spy->irq_status & 0xFFu);
+        }
+        if (opcode == (uint8_t)0x13u && len >= 4u) {
+            /* GetRxBufferStatus: payload len + offset */
+            rx[2] = spy->rx_payload_len;
+            rx[3] = 0u;
+        }
+        if (opcode == (uint8_t)0x1Eu && len >= 3u) {
+            /* ReadBuffer: status + NOPs then payload */
+            size_t i;
+            size_t plen = spy->rx_payload_len;
+            if (plen > sizeof(spy->rx_payload)) {
+                plen = sizeof(spy->rx_payload);
+            }
+            for (i = 0u; i < plen && (3u + i) < len; ++i) {
+                rx[3u + i] = spy->rx_payload[i];
+            }
+        }
     }
 
     if (opcode == NINLIL_SX1262_CMD_CALIBRATE
@@ -237,6 +277,10 @@ static int spy_spi_transfer(
     }
     if (opcode == NINLIL_SX1262_CMD_CLR_DEVICE_ERRORS) {
         spy->device_errors = 0u;
+    }
+    if (opcode == (uint8_t)0x02u) {
+        /* ClrIrqStatus */
+        spy->irq_status = 0u;
     }
 
     if (spy->delayed_busy_assert_polls > 0) {

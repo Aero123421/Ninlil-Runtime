@@ -1,0 +1,5724 @@
+{
+  "schema": "ninlil.protocol-magic-registry.v1",
+  "version": 1,
+  "scope": "GLOBAL_PROTOCOL_AND_STORAGE_NAMESPACE",
+  "policy": {
+    "value_bytes_exact": 4,
+    "ascii_uppercase_or_digit": true,
+    "duplicate_value_allowed": false,
+    "transport_or_storage_partition_exempts_collision": false,
+    "duplicate_json_keys_rejected": true,
+    "undeclared_scanned_candidate_rejected": true,
+    "stale_registry_entry_rejected": true,
+    "exact_occurrence_manifest_required": true
+  },
+  "domains": {
+    "owners": [
+      "DOMAIN_STORE",
+      "ESP_STORAGE",
+      "FABRIC",
+      "MFDT",
+      "MULTI_PARENT",
+      "POSIX_BEARER",
+      "PRODUCTION_ATTACHMENT",
+      "RADIO_N6",
+      "RADIO_PCP_LAB",
+      "RADIO_PROFILE",
+      "RADIO_R7_FRAGMENT",
+      "ROUTE_RELAY",
+      "RUNTIME",
+      "TRANSPORT_CONTROL",
+      "WIFI_BEARER"
+    ],
+    "artifacts": [
+      "CARRIER_RECORD",
+      "CONTROL_FRAME",
+      "DURABLE_RECORD",
+      "KEY_PREFIX",
+      "PROFILE_RECORD",
+      "RADIO_FRAGMENT",
+      "SNAPSHOT_RECORD",
+      "STREAM_WRAPPER",
+      "WIRE_RECORD"
+    ],
+    "statuses": [
+      "IMPLEMENTED",
+      "PROPOSED",
+      "SPEC_ACCEPTED"
+    ],
+    "authorities": [
+      "docs/adr/0006-u6-transport-custody.md",
+      "docs/adr/0017-bearer-registry-path-selection.md",
+      "docs/adr/0018-wifi-bearer.md",
+      "docs/adr/0019-route-relay.md",
+      "docs/adr/0020-multi-parent.md",
+      "docs/adr/0021-multi-frame-durable-custody.md",
+      "docs/adr/0022-domain-store-schema1-runtime-binding.md",
+      "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+      "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
+      "src/radio/n6_record_codec.h",
+      "src/radio/pcp_lab_session_ledger.c",
+      "src/radio/profile_loader.h",
+      "src/radio/r7_frag/r7_frag.h",
+      "src/radio/r7_frag/r7_frag_state.h",
+      "src/runtime/runtime_v1_capability.c",
+      "src/runtime/runtime_v1_event_ledger_codec.c",
+      "src/runtime/runtime_v1_event_mgmt.c"
+    ],
+    "exclusion_reasons": [
+      "ABI_OR_ALGORITHM_NAME",
+      "IN_MEMORY_OBJECT_GUARD",
+      "NEGATIVE_TEST_SENTINEL",
+      "NON_MAGIC_ENUM_OR_LABEL",
+      "NON_WIRE_TRANSIENT_VECTOR",
+      "TEST_FIXTURE_FORMAT",
+      "TEST_SUITE_ID"
+    ]
+  },
+  "scan": {
+    "roots": [
+      "cmake",
+      "examples",
+      "include",
+      "ports",
+      "src",
+      "tests",
+      "tools"
+    ],
+    "extensions": [
+      ".c",
+      ".cc",
+      ".cmake",
+      ".cpp",
+      ".h",
+      ".hpp",
+      ".inc",
+      ".js",
+      ".json",
+      ".mjs",
+      ".py"
+    ],
+    "excluded_path_components": [
+      ".git",
+      "__pycache__",
+      "_vendor",
+      "build",
+      "managed_components"
+    ],
+    "excluded_relative_paths": [],
+    "candidate_regex": "C_QUOTED_CHAR_ARRAY_U32_BE_U32_LE_V1"
+  },
+  "entries": [
+    {
+      "magic": "FBA1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 2
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 37
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_vector_matrix_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "FBC1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "magic": "FBM1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_records_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 2
+        },
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 9
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "magic": "FBP1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 17
+        },
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 9
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "magic": "FBR1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_records_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 7
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "magic": "FBT1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 14
+        },
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "FBV1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "FRV1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "GRP1",
+      "owner": "RADIO_PROFILE",
+      "artifact": "PROFILE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/profile_loader.h",
+      "occurrences": [
+        {
+          "path": "src/radio/profile_loader.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/profile_loader.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/profile_r5_golden_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "MFN1",
+      "owner": "MFDT",
+      "artifact": "WIRE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0021-multi-frame-durable-custody.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_session.c",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "N6AL",
+      "owner": "RADIO_N6",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/n6_record_codec.h",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "N6AT",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "DURABLE_RECORD",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "N6CF",
+      "owner": "RADIO_N6",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/n6_record_codec.h",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_BE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "N6HW",
+      "owner": "RADIO_N6",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/n6_record_codec.h",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "N6RT",
+      "owner": "RADIO_N6",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/n6_record_codec.h",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_BE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "N6RX",
+      "owner": "RADIO_N6",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/n6_record_codec.h",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "N6TX",
+      "owner": "RADIO_N6",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/n6_record_codec.h",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NAC1",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "CARRIER_RECORD",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/production_attachment_edhoc_closed_key_schema.json",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_independent_authority.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/protocol_magic_registry_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NAI1",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "CONTROL_FRAME",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "magic": "NAP1",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "CONTROL_FRAME",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "magic": "NAR1",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "RADIO_FRAGMENT",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/production_attachment_edhoc_closed_key_schema.json",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_independent_authority.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/protocol_magic_registry_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NAS1",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "STREAM_WRAPPER",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/production_attachment_edhoc_closed_key_schema.json",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_independent_authority.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/protocol_magic_registry_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NAT1",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "CONTROL_FRAME",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "magic": "NAX1",
+      "owner": "PRODUCTION_ATTACHMENT",
+      "artifact": "CONTROL_FRAME",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "magic": "NCD1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "magic": "NCG1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "CONTROL_FRAME",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "tools/control_frame_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/logical_session_u4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/ncl1_u4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_usb_boundary_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NCH1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "magic": "NCL1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "CONTROL_FRAME",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "tools/logical_session_u4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/ncl1_u4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_usb_boundary_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "magic": "NCP1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "magic": "NCS1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/submission_canonical_v1.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "magic": "NCT0",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "magic": "NCT1",
+      "owner": "TRANSPORT_CONTROL",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0006-u6-transport-custody.md",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "magic": "NEL1",
+      "owner": "RUNTIME",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/runtime/runtime_v1_event_ledger_codec.c",
+      "occurrences": [
+        {
+          "path": "src/runtime/runtime_v1_event_ledger_codec.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/v1_event_ledger_codec_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_schema1_binding_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NEP1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "WIRE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0019-route-relay.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NER1",
+      "owner": "RUNTIME",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/runtime/runtime_v1_event_mgmt.c",
+      "occurrences": [
+        {
+          "path": "tests/runtime/v1_event_ledger_codec_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/v1_transaction_codec_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NEV1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "WIRE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0019-route-relay.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NFL1",
+      "owner": "FABRIC",
+      "artifact": "WIRE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0017-bearer-registry-path-selection.md",
+      "occurrences": [
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/wifi_bearer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/wifi_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NILD",
+      "owner": "ESP_STORAGE",
+      "artifact": "SNAPSHOT_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NILS",
+      "owner": "ESP_STORAGE",
+      "artifact": "SNAPSHOT_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NLBK",
+      "owner": "POSIX_BEARER",
+      "artifact": "WIRE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
+      "occurrences": [
+        {
+          "path": "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NLR1",
+      "owner": "DOMAIN_STORE",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0022-domain-store-schema1-runtime-binding.md",
+      "occurrences": [
+        {
+          "path": "src/model/domain_store_codec.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "src/model/runtime_store_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_composition_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s3_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_crossrow_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 7
+        },
+        {
+          "path": "tools/domain_scan_exact_get_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/domain_scan_profile_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/domain_scan_structural_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/domain_scan_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_schema1_runtime_binding_vector_bridge.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_schema1_binding_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_schema1_binding_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_schema1_binding_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/protocol_magic_registry_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NM30",
+      "owner": "MFDT",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0021-multi-frame-durable-custody.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_engine.c",
+          "representation": "QUOTED",
+          "count": 12
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "CHAR_ARRAY",
+          "count": 2
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_spine.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/model/multi_frame_durable_transfer_c_gate_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_esp_store_cu_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_sqlite_restart_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_mutation_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_kat_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_media_cu_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_request_kat_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 13
+        }
+      ]
+    },
+    {
+      "magic": "NM3R",
+      "owner": "MFDT",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0021-multi-frame-durable-custody.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_engine.c",
+          "representation": "QUOTED",
+          "count": 13
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_record.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_spine.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_e2e_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_esp_store_cu_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_media_cu_test.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_request_kat_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 7
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 13
+        }
+      ]
+    },
+    {
+      "magic": "NM3S",
+      "owner": "MFDT",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0021-multi-frame-durable-custody.md",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/src/mfdt_v1_target_smoke.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_engine.c",
+          "representation": "QUOTED",
+          "count": 15
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_record.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_spine.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_spine.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_esp_store_cu_test.c",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_fault_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_sqlite_restart_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_mutation_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_test.c",
+          "representation": "QUOTED",
+          "count": 8
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_media_cu_test.c",
+          "representation": "QUOTED",
+          "count": 8
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_sidecar_fault_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_transport_sim_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "magic": "NMF1",
+      "owner": "MFDT",
+      "artifact": "KEY_PREFIX",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0021-multi-frame-durable-custody.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_sidecar_fault_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NMS1",
+      "owner": "MFDT",
+      "artifact": "DURABLE_RECORD",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0021-multi-frame-durable-custody.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_owner_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_sidecar_fault_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_sidecar_fault_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "magic": "NOA1",
+      "owner": "MULTI_PARENT",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0020-multi-parent.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/route_relay_v1/rrmp_crash_corrupt_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NPA1",
+      "owner": "MULTI_PARENT",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0020-multi-parent.md",
+      "occurrences": [
+        {
+          "path": "tools/production_attachment_edhoc_closed_key_schema.json",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_independent_authority.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/protocol_magic_registry_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NPH1",
+      "owner": "MULTI_PARENT",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0020-multi-parent.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NPP1",
+      "owner": "MULTI_PARENT",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0020-multi-parent.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NPS1",
+      "owner": "MULTI_PARENT",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0020-multi-parent.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_closed_key_schema.json",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_independent_authority.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/protocol_magic_registry_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NPT1",
+      "owner": "MULTI_PARENT",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0020-multi-parent.md",
+      "occurrences": [
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NQW1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0019-route-relay.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_core.c",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NRC1",
+      "owner": "MFDT",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0021-multi-frame-durable-custody.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_engine.c",
+          "representation": "QUOTED",
+          "count": 13
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_spine.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_e2e_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_esp_store_cu_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_mutation_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_test.c",
+          "representation": "QUOTED",
+          "count": 9
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_kat_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_media_cu_test.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_request_kat_test.c",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "magic": "NRD1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "WIRE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0019-route-relay.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NRM1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "WIRE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0019-route-relay.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NRP1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "WIRE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0019-route-relay.md",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_codec.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NRV1",
+      "owner": "RUNTIME",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/runtime/runtime_v1_capability.c",
+      "occurrences": [
+        {
+          "path": "tests/runtime/v1_transaction_codec_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_schema1_binding_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "magic": "NTS3",
+      "owner": "RUNTIME",
+      "artifact": "SNAPSHOT_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0022-domain-store-schema1-runtime-binding.md",
+      "occurrences": [
+        {
+          "path": "tools/domain_store_schema1_binding_gate.mjs",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/domain_store_schema1_binding_gate.py",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/domain_store_schema1_binding_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "magic": "NWB1",
+      "owner": "WIFI_BEARER",
+      "artifact": "WIRE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0018-wifi-bearer.md",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/wifi_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NWD1",
+      "owner": "WIFI_BEARER",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0018-wifi-bearer.md",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/wifi_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NWN1",
+      "owner": "WIFI_BEARER",
+      "artifact": "KEY_PREFIX",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0018-wifi-bearer.md",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "PRDL",
+      "owner": "RADIO_PCP_LAB",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/pcp_lab_session_ledger.c",
+      "occurrences": [
+        {
+          "path": "src/radio/pcp_lab_session_ledger.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/pcp_lab_session_ledger.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "R7DR",
+      "owner": "RADIO_R7_FRAGMENT",
+      "artifact": "SNAPSHOT_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/r7_frag/r7_frag.h",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_durable.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "R7FP",
+      "owner": "RADIO_R7_FRAGMENT",
+      "artifact": "SNAPSHOT_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/r7_frag/r7_frag_state.h",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_state.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/r7_frag/r7_frag_state.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "R7FS",
+      "owner": "RADIO_R7_FRAGMENT",
+      "artifact": "SNAPSHOT_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/r7_frag/r7_frag.h",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/r7_frag/r7_frag.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "R7SE",
+      "owner": "RADIO_R7_FRAGMENT",
+      "artifact": "SNAPSHOT_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/r7_frag/r7_frag.h",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_session.c",
+          "representation": "U32_BE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "RRM1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0019-route-relay.md",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/src/rrmp_target_smoke.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_core.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/host/host_completion_transport_fixture_e2e.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/route_relay_v1/rrmp_crash_corrupt_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/runtime/route_relay_v1/rrmp_host_lifecycle_fixture.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/route_relay_v1/rrmp_storage_atomicity_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "WHP1",
+      "owner": "RADIO_PROFILE",
+      "artifact": "PROFILE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "src/radio/profile_loader.h",
+      "occurrences": [
+        {
+          "path": "src/radio/profile_loader.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/profile_loader.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/profile_r5_golden_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "explicit_exclusions": [
+    {
+      "token": "AABB",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_scan_crossrow_d3s2_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ABAB",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_scan_crossrow_d3s2_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "ABCD",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/model/runtime_store_codec_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "token": "ACFW",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_fabric_call_authority.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ADR5",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ADR6",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ARW1",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "AUTH",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/traceability_coverage_v2_materialize.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "AUTO",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "cmake/ninlil_posix_sqlite_sqlite3.cmake",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "BAD1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "token": "BAL6",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/radio/c6_lab_enforcement.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/c6_lab_enforcement.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "BBAA",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_scan_crossrow_d3s2_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "BIND",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/pcp_r2_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "BLOB",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/posix/sqlite_storage/ninlil_posix_sqlite_storage.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/ninlil_lab_export.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "token": "BOTH",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/model/multi_frame_durable_transfer_c_authority.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/model/multi_frame_durable_transfer_c_gate_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/wifi_bearer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/wifi_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "token": "BUL4",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/c4_lab_usb_path.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "BULK",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "BUSY",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/domain_store_scanner_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_d3s2_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_d3s3_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_exact_get_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_contract_red_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_composition_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s3_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 13
+        },
+        {
+          "path": "tools/domain_scan_crossrow_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_exact_get_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/ninlil_lab_export.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/u5_u6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "C3SU",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/control_session.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/transport/control_session.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "CMAX",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "CODE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/r7_wire_tests_off_packaging_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "CONT",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "CP5R",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/profile_loader.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "CUEN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/src/esp_idf_usb_cdc.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "D2S1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/model/domain_schema1_runtime_binding.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "D2T7",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/model/domain_schema1_startup_authority.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "DATA",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "token": "DCBA",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/model/runtime_store_codec_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "token": "DDDD",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "DLIN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "DONE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/domain_store_scanner_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_d3s2_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_dsd1_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_exact_get_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_profile_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_structural_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_composition_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s2_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 35
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s3_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 13
+        },
+        {
+          "path": "tools/domain_scan_crossrow_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/domain_scan_d3s2_semantic_oracle.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_dsd1_composition_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_exact_get_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/domain_scan_profile_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_structural_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/domain_scan_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "token": "DSB1",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/model/domain_store_codec_test.c",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 84
+        }
+      ]
+    },
+    {
+      "token": "DSB2",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/model/domain_store_codec_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 103
+        }
+      ]
+    },
+    {
+      "token": "DSB3",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/model/domain_store_codec_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 242
+        }
+      ]
+    },
+    {
+      "token": "DSH2",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "token": "DSK1",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 26
+        }
+      ]
+    },
+    {
+      "token": "DSO2",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "token": "DSV1",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 15
+        }
+      ]
+    },
+    {
+      "token": "DSW1",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tests/support/domain_vector_parse.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 25
+        }
+      ]
+    },
+    {
+      "token": "E2SP",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/include/ninlil_esp_idf/sx1262_bus.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "ports/esp-idf/include/ninlil_esp_idf/sx1262_bus.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "E9R9",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/radio/sx1262_r9_edge.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/sx1262_r9_edge.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "EEEE",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/port/esp_usb_cdc_logic_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ENDP",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ES7R",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_session.c",
+          "representation": "U32_LE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "FAIL",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/radio/r7_frag/r7_radio_wire_v1_fixture_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s3_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/mfdt_freeze_noninterference_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/n6_heap_ban_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/ninlil_hil/model.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/ninlil_hil/runner.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/ninlil_hil/selftest.py",
+          "representation": "QUOTED",
+          "count": 9
+        },
+        {
+          "path": "tools/production_attachment_edhoc_expected_model.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/public_module_manifest_gate.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/sx1262_radio_hil_protocol.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "FAML",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/v1_runtime_family_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "FBPC",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_lifecycle_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "FBZ1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "FC6N",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 2
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_LE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "FULL",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_store_schema1_binding_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "H3MN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "H4FM",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "HEAD",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/public_module_manifest_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/release_archive_payload_gate.py",
+          "representation": "QUOTED",
+          "count": 8
+        },
+        {
+          "path": "tools/release_distribution_authority_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/release_workflow_identity_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "HI24",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "HKDF",
+      "reason": "ABI_OR_ALGORITHM_NAME",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_crypto_openssl3.c",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "I3MN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "I999",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_scan_crossrow_d3s3_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "IDLE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/domain_store_scanner_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_d3s2_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_dsd1_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_exact_get_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_profile_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_structural_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_composition_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s3_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_crossrow_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/domain_scan_exact_get_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_profile_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_structural_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "IFC1",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/support/v1_lab_integration_topology.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "IFIW",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/wifi_v1_runtime_host_e2e.c",
+          "representation": "U32_LE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "INIT",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/radio_hil_app/main/main.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/pcp_r2_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/sx1262_radio_hil_protocol.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "JSON",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/ncl1_u4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "KBLN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "KEY1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/radio/r7_frag/r7_frag_direct_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LA6N",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LAES",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LANG",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/ninlil_hil/runner.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LBTN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_tls_arena.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LDRP",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/pcp_lab_session_ledger.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LEN1",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LH4M",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_attachment_m4.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/wifi_v1/wifi_v1_m4_forge_probe_test.c",
+          "representation": "U32_LE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "LIVE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LLLL",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LMAF",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/v1_runtime_family_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LNIN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/posix/lab_platform/ninlil_posix_lab_platform.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LOOP",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_core.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/n6_frame_stack_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "token": "LP64",
+      "reason": "ABI_OR_ALGORITHM_NAME",
+      "occurrences": [
+        {
+          "path": "tools/abi_manifest_gen.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "LS4U",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/logical_session.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/transport/logical_session.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "M4EV",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/transport/wifi_v1/wifi_v1_m4_forge_probe_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "M4HL",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_attachment_m4.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/transport/wifi_v1/wifi_attachment_m4.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/wifi_v1/wifi_v1_m4_evidence_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/wifi_v1/wifi_v1_m4_forge_probe_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/wifi_v1/wifi_v1_m4_forge_probe_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "META",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "MF4H",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_coordinator.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "MFDT",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/src/mfdt_v1_target_smoke.c",
+          "representation": "U32_BE",
+          "count": 4
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_seam.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_spine.c",
+          "representation": "U32_BE",
+          "count": 4
+        },
+        {
+          "path": "tests/host/host_completion_all_private_coexistence_probe.c",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tests/host/host_completion_transport_fixture_e2e.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_media_cu_test.c",
+          "representation": "U32_BE",
+          "count": 9
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_pipeline_test.c",
+          "representation": "U32_BE",
+          "count": 4
+        },
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "MFST",
+      "reason": "TEST_FIXTURE_FORMAT",
+      "occurrences": [
+        {
+          "path": "tests/support/host_completion_wire.c",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "MRT1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_owner.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "N6ST",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_context_store.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NAB1",
+      "reason": "NON_WIRE_TRANSIENT_VECTOR",
+      "occurrences": [
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NAME",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/traceability_schema.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NB7R",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_prod_orch.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NBS1",
+      "reason": "TEST_SUITE_ID",
+      "occurrences": [
+        {
+          "path": "tools/domain_store_schema1_binding_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NEUC",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/src/esp_idf_usb_cdc.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NEW1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NFL2",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NINL",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/posix/lab_platform/ninlil_posix_lab_platform.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NLEU",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/include/ninlil_esp_idf/entropy.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NM3H",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NM3I",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_host_store.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NODE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NONE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/fabric_private_core.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 23
+        },
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/pcp_r2_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/production_attachment_edhoc_independent_authority.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/public_module_manifest_gate.py",
+          "representation": "QUOTED",
+          "count": 14
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NPUS",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "ports/posix/usb_serial/ninlil_posix_usb_serial.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "ports/posix/usb_serial/ninlil_posix_usb_serial.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NRL1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/runtime/runtime_internal.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NRSV",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/runtime/runtime_public.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NTAR",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_tls_arena.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NTBL",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_tls_arena.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NULL",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_d3s4_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s2_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 16
+        },
+        {
+          "path": "tools/domain_scan_crossrow_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/fabric_v1_selection_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/radio_hal_r1_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "token": "NXX1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/radio_usb_boundary_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ODA5",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/c5_lab_radio_path.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "OFFR",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/v1_runtime_family_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "OKOK",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/port/esp_usb_cdc_logic_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "OLD1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "OPEN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/domain_store_scanner_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_d3s2_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_dsd1_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_exact_get_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_profile_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_structural_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_contract_red_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/domain_scan_composition_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 6
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s3_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 5
+        },
+        {
+          "path": "tools/domain_scan_crossrow_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 7
+        },
+        {
+          "path": "tools/domain_scan_exact_get_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/domain_scan_profile_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/domain_scan_structural_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "token": "P1AW",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_adapter_v1.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PASS",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/storage/hil/host_powercut_runner.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/compatibility_matrix_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/ninlil_hil/cli.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/ninlil_hil/model.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/ninlil_hil/runner.py",
+          "representation": "QUOTED",
+          "count": 7
+        },
+        {
+          "path": "tools/ninlil_hil/selftest.py",
+          "representation": "QUOTED",
+          "count": 11
+        },
+        {
+          "path": "tools/ninlil_hil/selftest_plugin.py",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/production_attachment_edhoc_expected_model.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/public_module_manifest_gate.py",
+          "representation": "QUOTED",
+          "count": 21
+        },
+        {
+          "path": "tools/rrmp_hil_evidence_template.json",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/rrmp_software_manifest_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PATH",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/ninlil_hil/runner.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PCP1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/radio/pcp_authority.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/pcp_authority.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/pcp_r2_authority_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/pcp_r2_docs_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PCP2",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/radio/pcp_authority.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/pcp_authority.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PDNE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PF7R",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_state.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PING",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/radio_hil_app/main/main.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "ports/esp-idf/wifi_hil_app/main/main.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_usb_boundary_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/sx1262_radio_hil_protocol.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PMRR",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_core.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PNS1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/route_relay_v1/rrmp_crash_corrupt_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "POLL",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/radio_hil_app/main/main.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/sx1262_radio_hil_protocol.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "PONG",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/radio_usb_boundary_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "PS2E",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/include/ninlil_esp_idf/sx1262_bus.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "QRST",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "token": "QST4",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "R1H1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/radio/radio_hal.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/radio_hal.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "R5PC",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/radio/profile_loader.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/radio/profile_loader.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "R7BN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_prod_orch.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "R7R1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_esp_tls_allocator.h",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/transport/wifi_v1/wifi_esp_tls_allocator.h",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/r7_wifi_allocator_closure_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "RACE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_host_acceptance_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/fabric_v1/fabric_v1_vector_matrix_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/fabric_v1_exec_catalog_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "RATN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_tls_arena.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "RD7R",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag_durable.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "REV0",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_scan_structural_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "RFFO",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/v1_runtime_family_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "RRMP",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_core.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "src/runtime/route_relay_v1/rrmp_core.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/host/host_completion_all_private_coexistence_probe.c",
+          "representation": "QUOTED",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "token": "RTB2",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/radio_hil_app/main/main.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "SBOM",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/release_workflow_identity_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "SCFW",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_fabric_call_authority.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "SEAL",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "SF7R",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/r7_frag/r7_frag.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "SKIP",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/route_relay_multiparent_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "SLIN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "SUPN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/posix/usb_serial/ninlil_posix_usb_serial.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "TDFM",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/src/mfdt_v1_target_smoke.c",
+          "representation": "U32_LE",
+          "count": 4
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_runtime_seam.c",
+          "representation": "U32_LE",
+          "count": 2
+        },
+        {
+          "path": "src/runtime/mfdt_v1/mfdt_v1_spine.c",
+          "representation": "U32_LE",
+          "count": 4
+        },
+        {
+          "path": "tests/host/host_completion_transport_fixture_e2e.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_media_cu_test.c",
+          "representation": "U32_LE",
+          "count": 9
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_pipeline_test.c",
+          "representation": "U32_LE",
+          "count": 4
+        },
+        {
+          "path": "tests/runtime/v1_runtime_capability_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "TEXT",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/posix/sqlite_storage/ninlil_posix_sqlite_storage.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/ninlil_lab_export.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "THIS",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "token": "TICK",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_independent_authority.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "TMAX",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_store_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "TNOC",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/host/runtime_fabric_actual_e2e_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "TR6N",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 2
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_LE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "TRUE",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/nrw1_t1_ctest_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/r7_t1b_ctest_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/traceability_complete_coverage_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "TS6N",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_context_store.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "TSRQ",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "token": "U4SL",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/logical_session.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "UELN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/include/ninlil_esp_idf/entropy.h",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "US3C",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/transport/control_session.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "UUUU",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "VE4M",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/transport/wifi_v1/wifi_v1_m4_forge_probe_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "VOID",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/domain_store_scanner_composition_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_crossrow_oracle_bridge_test.c",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_composition_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 8
+        },
+        {
+          "path": "tools/domain_scan_crossrow_d3s2_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/domain_scan_crossrow_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "token": "VSRN",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/runtime/runtime_public.c",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WA1P",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_adapter_v1.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WAE1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_adapter_v1_esp.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WEAK",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/esp_idf_private_symbol_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/esp_storage_public_api_gate.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "WEP1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_esp_fabric_link_ops.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WFCA",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_fabric_call_authority.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WFCS",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_fabric_call_authority.h",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WFP1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/wifi_v1/wifi_fabric_link_ops.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WH6N",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "WIFI",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/fabric_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 4
+        },
+        {
+          "path": "tools/fabric_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        },
+        {
+          "path": "tools/fabric_v1_selection_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/wifi_v1_runtime_host_e2e.c",
+          "representation": "U32_BE",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "WRAP",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "cmake/ninlil_posix_sqlite_sqlite3.cmake",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "XR6N",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "XT6N",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "src/radio/n6_record_codec.h",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tests/radio/n6_record_codec_test.c",
+          "representation": "U32_LE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_composition.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_r6_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_verify_oracle.py",
+          "representation": "U32_LE",
+          "count": 1
+        },
+        {
+          "path": "tools/radio_wire_r6_docs_gate.py",
+          "representation": "U32_LE",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "XTRA",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "XWD1",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tools/wifi_bearer_spec_gate.mjs",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/wifi_bearer_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tools/wifi_bearer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "XXXX",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_runtime_sidecar_fault_test.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "ZERO",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/domain_scan_crossrow_d3s4_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 7
+        },
+        {
+          "path": "tools/multi_frame_durable_transfer_spec_vector_gen.py",
+          "representation": "QUOTED",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "token": "ZZZZ",
+      "reason": "NEGATIVE_TEST_SENTINEL",
+      "occurrences": [
+        {
+          "path": "tests/port/in_memory_storage_boundary_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/port/typed_simulated_bearer_test.c",
+          "representation": "U32_BE",
+          "count": 2
+        },
+        {
+          "path": "tests/radio/production_attachment_edhoc_vector_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/domain_store_scanner_composition_oracle_bridge_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/stage5_empty_metadata_test.c",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tests/runtime/v1_runtime_spine_test.c",
+          "representation": "U32_BE",
+          "count": 3
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.mjs",
+          "representation": "U32_BE",
+          "count": 1
+        },
+        {
+          "path": "tools/production_attachment_edhoc_gate.py",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "required_production_attachment": [
+    "NAC1",
+    "NAR1",
+    "NAS1"
+  ],
+  "forbidden_production_attachment": [
+    "NPA1",
+    "NPS1"
+  ]
+}

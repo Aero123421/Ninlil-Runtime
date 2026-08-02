@@ -1,5 +1,12 @@
 /*
- * V1-LAB example: Display node uplink LatestState submit→delivery (loopback).
+ * V1-LAB example: Display node uplink submit→delivery (loopback).
+ *
+ * Product narrative: display snapshot event (EventFact).
+ * M1a public family authority (docs/12 §14 / ADR-0024) is EventFact only —
+ * LATEST_STATE_RESERVED remains service_register UNSUPPORTED (not first-class).
+ *
+ * Historical executable name ninlil_v1_lab_display_latest_state_example is
+ * label-only compatibility; it does not enable the reserved public family.
  */
 
 #include "v1_lab_loopback_uplink.h"
@@ -21,7 +28,7 @@ int main(int argc, char **argv)
         return 1;
     }
     if (!v1_lab_loopback_uplink_run(
-            program_path, NINLIL_FAMILY_LATEST_STATE_RESERVED, 0xB4E2E701ull)) {
+            program_path, NINLIL_FAMILY_EVENT_FACT, 0xB4E2E701ull)) {
         (void)fprintf(stderr, "v1_lab_display_latest_state failed\n");
         return 1;
     }

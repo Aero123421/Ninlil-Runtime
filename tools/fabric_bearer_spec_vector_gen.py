@@ -25,7 +25,7 @@ NFL1_CODEC_CEILING = 2048
 NFL1_STRUCTURAL_MIN = 587
 NFL1_STRUCTURAL_MAX = 1925
 NFL1_SEMANTIC_MAX = 1797
-FABRIC_WORKSPACE_BYTES = 196608
+FABRIC_WORKSPACE_BYTES = 198656
 REGISTRY_MAX = 16
 POLICY_MAX = 64
 AUTHORITY_MAX = 64
@@ -629,9 +629,12 @@ def attempt_record(
     policy_digest: bytes,
     registry_record_digest: bytes,
     state: int = 2,
-    record_revision: int = 2,
+    record_revision: int = 3,
     terminal_revision: int = 0,
     retry_expires_at_ms: int = 200000,
+    permit_generation: int = 0,
+    permit_expires_at_ms: int = 450000,
+    permit_claim_state: int = 1,
 ) -> tuple[bytes, bytes, dict[str, Any]]:
     fields = decode_nfl1_identity(nfl1_packet)
     transaction_id = fields["transaction_id"]
@@ -649,6 +652,9 @@ def attempt_record(
         + u32(slot)
         + message_digest
     )
+    permit_id = sha256(
+        b"NINLIL-FABRIC-PERMIT-V1" + key + u32(permit_generation)
+    )[:16]
     payload = (
         transaction_id
         + attempt_id
@@ -695,12 +701,15 @@ def attempt_record(
         + u64(retry_expires_at_ms)
         + local_dispatch_id(key)
         + u64(terminal_revision)
+        + permit_id
+        + u64(permit_expires_at_ms)
+        + u32(permit_claim_state)
     )
-    assert len(payload) == 660
+    assert len(payload) == 688
     value = record_value(b"FBA1", record_revision, payload)
     return key, value, {
-        "payload_bytes": 660,
-        "value_bytes": 684,
+        "payload_bytes": 688,
+        "value_bytes": 712,
         "message_kind": message_kind,
         "response_slot": slot,
         "state": state,
@@ -716,6 +725,10 @@ def attempt_record(
         "availability_expires_at_ms": 250000,
         "retry_lifetime_clock_epoch_id_hex": deadline_clock_epoch_id.hex(),
         "retry_expires_at_ms": retry_expires_at_ms,
+        "permit_clock_epoch_id_hex": deadline_clock_epoch_id.hex(),
+        "permit_id_hex": permit_id.hex(),
+        "permit_expires_at_ms": permit_expires_at_ms,
+        "permit_claim_state": permit_claim_state,
         "nfl1_encoded_hex": nfl1_packet.hex(),
         "nfl1_length": len(nfl1_packet),
         "nfl1_sha256_hex": sha256(nfl1_packet).hex(),
@@ -987,7 +1000,7 @@ def selection_baseline() -> dict[str, Any]:
         policy_digest, scope_selector=2
     )
     instance_id_hex = pattern(0x61, 16).hex()
-    return {
+    snapshot = {
         "durable_rows": {
             "FBM1": {
                 "key_hex": meta_key.hex(),
@@ -1078,7 +1091,7 @@ def selection_baseline() -> dict[str, Any]:
                 "record_revision": 1,
                 "lifecycle": "ACTIVE",
                 "direction_mask": 3,
-                "link_kind": "WIFI",
+                "link_kind": "LOOPBACK",
                 "capability_flags": 0x0000006F,
                 "maximum_packet_bytes": NFL1_STRUCTURAL_MAX,
                 "maximum_transfer_bytes": NFL1_STRUCTURAL_MAX,
@@ -1126,6 +1139,11 @@ def selection_baseline() -> dict[str, Any]:
         ],
         "active_attempts": [],
     }
+    snapshot["durable_rows"]["FBR1"] = rewrite_selection_registry(
+        snapshot["durable_rows"]["FBR1"],
+        snapshot["registry"][0],
+    )
+    return snapshot
 
 
 def select_candidate(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -1239,10 +1257,15 @@ def select_candidate(snapshot: dict[str, Any]) -> dict[str, Any]:
             )
 
         if registry is not None:
+            # Hard-filter chain (join already done). Order is Normative.
             if registry["lifecycle"] != "ACTIVE":
                 reasons.append("LIFECYCLE_DRAINING")
             if registry["direction_mask"] & 1 == 0:
                 reasons.append("DIRECTION_MISMATCH")
+            if query["packet_bytes"] < NFL1_STRUCTURAL_MIN:
+                reasons.append("STRUCTURAL_LENGTH_FLOOR")
+            if query["packet_bytes"] > NFL1_STRUCTURAL_MAX:
+                reasons.append("STRUCTURAL_LENGTH_CEILING")
             if query["packet_bytes"] < policy["minimum_packet_bytes"]:
                 reasons.append("PACKET_MINIMUM")
             if query["packet_bytes"] > registry["maximum_packet_bytes"]:
@@ -1298,7 +1321,10 @@ def select_candidate(snapshot: dict[str, Any]) -> dict[str, Any]:
                 reasons.append("SECURITY_MISSING")
             if (
                 query["requires_custody"]
-                and registry["capability_flags"] & 0x20 == 0
+                and (
+                    registry["link_kind"] == "WIFI"
+                    or registry["capability_flags"] & 0x20 == 0
+                )
             ):
                 reasons.append("CUSTODY_MISSING")
             if (
@@ -1524,6 +1550,16 @@ def selection_vectors() -> list[dict[str, Any]]:
                 "remove",
                 0,
             ),
+            selection_collection_mutation_vector(
+                "FABRIC-SELECT-AUTHORITY-JOIN-AMBIGUOUS",
+                ["authorities"],
+                "append",
+                {
+                    **copy.deepcopy(baseline["authorities"][0]),
+                    "binding_id_hex": pattern(0xB9, 16).hex(),
+                    "source_record_id": "SYNTHETIC-FBC1-AMBIGUOUS-JOIN",
+                },
+            ),
             selection_mutation_vector(
                 "FABRIC-SELECT-LIFECYCLE-DRAINING",
                 ["registry", 0, "lifecycle"],
@@ -1533,6 +1569,16 @@ def selection_vectors() -> list[dict[str, Any]]:
                 "FABRIC-SELECT-DIRECTION-MISMATCH",
                 ["registry", 0, "direction_mask"],
                 2,
+            ),
+            selection_mutation_vector(
+                "FABRIC-SELECT-STRUCTURAL-LENGTH-FLOOR",
+                ["query", "packet_bytes"],
+                NFL1_STRUCTURAL_MIN - 1,
+            ),
+            selection_mutation_vector(
+                "FABRIC-SELECT-STRUCTURAL-LENGTH-CEILING",
+                ["query", "packet_bytes"],
+                NFL1_STRUCTURAL_MAX + 1,
             ),
             selection_mutation_vector(
                 "FABRIC-SELECT-LATENCY-CLASS",
@@ -1817,6 +1863,16 @@ def selection_vectors() -> list[dict[str, Any]]:
         )
     )
 
+    # Policy minimum is distinct from absolute structural 587 floor.
+    # packet_bytes remains structural-legal (587); policy requires 600.
+    vectors.append(
+        selection_mutation_vector(
+            "FABRIC-SELECT-PACKET-MINIMUM",
+            ["policies", 0, "minimum_packet_bytes"],
+            600,
+        )
+    )
+
     rf_baseline = copy.deepcopy(baseline)
     rf_baseline["registry"][0]["link_kind"] = "RF"
     rf_baseline["registry"][0]["capability_flags"] = 0x0000007F
@@ -1942,11 +1998,15 @@ def selection_vectors() -> list[dict[str, Any]]:
         selection_vector("FABRIC-SELECT-STABLE-ID-TIEBREAK", tied)
     )
 
+    # Multiple concurrent hard failures: primary must be earliest in chain
+    # (lifecycle before direction before structural before policy-min before security).
+    # packet_bytes=586 also fails policy minimum 587 (distinct codes, structural first).
     precedence = copy.deepcopy(baseline)
     precedence["registry"][0]["lifecycle"] = "DRAINING"
+    precedence["registry"][0]["direction_mask"] = 2
     precedence["registry"][0]["maximum_packet_bytes"] = NFL1_STRUCTURAL_MIN
     precedence["registry"][0]["security_capability_flags"] = 0
-    precedence["query"]["packet_bytes"] = NFL1_STRUCTURAL_MIN + 1
+    precedence["query"]["packet_bytes"] = NFL1_STRUCTURAL_MIN - 1
     precedence["durable_rows"]["FBR1"] = rewrite_selection_registry(
         precedence["durable_rows"]["FBR1"],
         precedence["registry"][0],
@@ -1957,6 +2017,33 @@ def selection_vectors() -> list[dict[str, Any]]:
         )
     )
     return vectors
+
+
+def selection_race_vectors() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "FABRIC-SELECT-AVAILABILITY-EPOCH-RACE",
+            "event": "AVAILABILITY_EPOCH_CHANGED_BEFORE_PROVIDER_RETAIN",
+            "admission_epoch": 7,
+            "pre_retain_epoch": 8,
+            "provider_retained": 0,
+            "provider_start_calls": 0,
+            "same_attempt_reselect_calls": 0,
+            "closed_full_replacement": 1,
+            "result": "UNAVAILABLE_NO_RETAIN_NO_SAME_ATTEMPT_RESELECT",
+        },
+        {
+            "id": "FABRIC-SELECT-POST-RETAIN-EPOCH-RACE",
+            "event": "AVAILABILITY_EPOCH_CHANGED_AFTER_PROVIDER_RETAIN",
+            "fabric_retained_epoch": 7,
+            "post_provider_retain_epoch": 8,
+            "provider_retained": 1,
+            "provider_start_calls": 1,
+            "same_attempt_reselect_calls": 0,
+            "track_provider_token_to_terminal": 1,
+            "result": "ACCEPTED_TRACK_PROVIDER_TOKEN_TO_TERMINAL",
+        },
+    ]
 
 
 def observed_rows(rows: list[tuple[bytes, bytes]]) -> list[dict[str, str]]:
@@ -2354,20 +2441,33 @@ def build() -> dict[str, Any]:
         registry_record_digest,
         state=1,
         record_revision=1,
+        permit_claim_state=0,
+    )
+    _, attempt_claimed_prepared_value, _ = attempt_record(
+        attempt_nfl1_packet,
+        policy_digest,
+        registry_record_digest,
+        state=1,
+        record_revision=2,
+        permit_claim_state=1,
     )
     _, attempt_retryable_value, _ = attempt_record(
         attempt_nfl1_packet,
         policy_digest,
         registry_record_digest,
         state=3,
-        record_revision=2,
+        record_revision=3,
+        permit_claim_state=0,
     )
     _, attempt_reprepared_value, _ = attempt_record(
         attempt_nfl1_packet,
         policy_digest,
         registry_record_digest,
         state=1,
-        record_revision=3,
+        record_revision=4,
+        permit_generation=1,
+        permit_expires_at_ms=450001,
+        permit_claim_state=1,
     )
     _, attempt_prestart_closed_value, _ = attempt_record(
         attempt_nfl1_packet,
@@ -2375,20 +2475,23 @@ def build() -> dict[str, Any]:
         registry_record_digest,
         state=4,
         record_revision=2,
+        permit_claim_state=0,
     )
     _, attempt_closed_value, _ = attempt_record(
         attempt_nfl1_packet,
         policy_digest,
         registry_record_digest,
         state=4,
-        record_revision=3,
+        record_revision=4,
+        permit_claim_state=1,
     )
     _, attempt_fenced_value, _ = attempt_record(
         attempt_nfl1_packet,
         policy_digest,
         registry_record_digest,
         state=5,
-        record_revision=3,
+        record_revision=4,
+        permit_claim_state=1,
     )
     _, attempt_prepared_fenced_value, _ = attempt_record(
         attempt_nfl1_packet,
@@ -2396,21 +2499,24 @@ def build() -> dict[str, Any]:
         registry_record_digest,
         state=5,
         record_revision=2,
+        permit_claim_state=0,
     )
     _, attempt_retry_expired_closed_value, _ = attempt_record(
         attempt_nfl1_packet,
         policy_digest,
         registry_record_digest,
         state=4,
-        record_revision=3,
+        record_revision=4,
+        permit_claim_state=0,
     )
     _, attempt_drained_value, _ = attempt_record(
         attempt_nfl1_packet,
         policy_digest,
         registry_record_digest,
         state=6,
-        record_revision=4,
+        record_revision=5,
         terminal_revision=41,
+        permit_claim_state=1,
     )
     receipt1_packet = pinned_packet(2, receipt_stage=1)
     receipt3_packet = pinned_packet(2, receipt_stage=3)
@@ -2798,15 +2904,15 @@ def build() -> dict[str, Any]:
         + REGISTRY_MAX * (20 + 372)
         + POLICY_MAX * (28 + 352)
         + AUTHORITY_MAX * (20 + 512)
-        + ATTEMPT_MAX * (76 + 684)
+        + ATTEMPT_MAX * (76 + 712)
         + TRIGGER_MAX * (40 + 248)
     )
     durable_storage_cu_bytes = (
         durable_key_value_bytes + 16 * durable_entries
     )
     assert durable_entries == 273
-    assert durable_key_value_bytes == 131780
-    assert durable_storage_cu_bytes == 136148
+    assert durable_key_value_bytes == 133572
+    assert durable_storage_cu_bytes == 137940
     next_meta_value = meta_available_value
     _, third_meta_value, _ = meta_record(
         record_revision=3, outer_epoch=3, outer_available=0
@@ -2863,6 +2969,10 @@ def build() -> dict[str, Any]:
             "fabric_storage_schema": 1,
             "fabric_api_candidate_version": 1,
             "fabric_workspace_bytes": FABRIC_WORKSPACE_BYTES,
+            "fabric_attempt_region_bytes": 52224,
+            "fabric_attempt_slot_bytes": 816,
+            "fba1_payload_bytes": 688,
+            "fba1_value_bytes": 712,
             "registry_max": REGISTRY_MAX,
             "policy_max": POLICY_MAX,
             "policy_candidates_max": 8,
@@ -2934,24 +3044,7 @@ def build() -> dict[str, Any]:
             }
             for kind, name in kinds.items()
         ],
-        "selection_vectors": selection_vectors()
-        + [
-            {
-                "id": "FABRIC-SELECT-AVAILABILITY-EPOCH-RACE",
-                "admission_epoch": 7,
-                "pre_retain_epoch": 8,
-                "provider_start_calls": 0,
-                "closed_full_replacement": 1,
-                "result": "UNAVAILABLE_NO_RETAIN_NO_SAME_ATTEMPT_RESELECT",
-            },
-            {
-                "id": "FABRIC-SELECT-POST-RETAIN-EPOCH-RACE",
-                "fabric_retained_epoch": 7,
-                "post_provider_retain_epoch": 8,
-                "provider_start_calls": 1,
-                "result": "ACCEPTED_TRACK_PROVIDER_TOKEN_TO_TERMINAL",
-            },
-        ],
+        "selection_vectors": selection_vectors() + selection_race_vectors(),
         "outer_bearer_vectors": [
             {
                 "id": "FABRIC-OUTER-NO-RETAIN-CAPACITY",
@@ -3021,24 +3114,28 @@ def build() -> dict[str, Any]:
                 "id": "FABRIC-FBA-PREPARED-TO-LINK-RETAINED",
                 "cause": "PROVIDER_RETAINED",
                 "old_rows": observed_rows(
-                    [(attempt_key, attempt_prepared_value)]
+                    [(attempt_key, attempt_claimed_prepared_value)]
                 ),
                 "new_rows": observed_rows(
                     [(attempt_key, attempt_value)]
                 ),
                 "outer_result": "OK_SEND_ACCEPTED",
+                "permit_claim_before": 1,
+                "permit_claim_after": 1,
             },
             {
                 "id": "FABRIC-FBA-PREPARED-TO-RETRYABLE",
                 "cause": "PROVIDER_WOULD_BLOCK",
                 "old_rows": observed_rows(
-                    [(attempt_key, attempt_prepared_value)]
+                    [(attempt_key, attempt_claimed_prepared_value)]
                 ),
                 "new_rows": observed_rows(
                     [(attempt_key, attempt_retryable_value)]
                 ),
                 "release_tentative_resources": 1,
                 "outer_result": "WOULD_BLOCK",
+                "permit_claim_before": 1,
+                "permit_claim_after": 0,
             },
             {
                 "id": "FABRIC-FBA-RETRYABLE-TO-PREPARED",
@@ -3053,6 +3150,9 @@ def build() -> dict[str, Any]:
                 "retry_now_ms": 199999,
                 "retry_expires_at_ms": 200000,
                 "provider_start_calls_after_commit": 1,
+                "permit_claim_before": 0,
+                "permit_claim_after": 1,
+                "fresh_permit_pair": 1,
             },
             {
                 "id": "FABRIC-FBA-PREPARED-TO-CLOSED-HARD-RACE",
@@ -3065,6 +3165,8 @@ def build() -> dict[str, Any]:
                 ),
                 "provider_start_calls": 0,
                 "outer_result": "UNAVAILABLE_OR_DENIED",
+                "permit_claim_before": 0,
+                "permit_claim_after": 0,
             },
             {
                 "id": "FABRIC-FBA-PREPARED-TO-CLOSED-RELEASE",
@@ -3077,6 +3179,8 @@ def build() -> dict[str, Any]:
                 ),
                 "provider_start_calls": 0,
                 "followup_transition": "CLOSED_TO_DRAINED",
+                "permit_claim_before": 0,
+                "permit_claim_after": 0,
             },
             {
                 "id": "FABRIC-FBA-LINK-RETAINED-TO-CLOSED",
@@ -3088,6 +3192,8 @@ def build() -> dict[str, Any]:
                     [(attempt_key, attempt_closed_value)]
                 ),
                 "automatic_duplicate": 0,
+                "permit_claim_before": 1,
+                "permit_claim_after": 1,
             },
             {
                 "id": "FABRIC-FBA-PREPARED-TO-FENCED-RESTART",
@@ -3100,6 +3206,8 @@ def build() -> dict[str, Any]:
                 ),
                 "provider_start_calls": 0,
                 "automatic_duplicate": 0,
+                "permit_claim_before": 0,
+                "permit_claim_after": 0,
             },
             {
                 "id": "FABRIC-FBA-LINK-RETAINED-TO-FENCED-RESTART",
@@ -3112,6 +3220,8 @@ def build() -> dict[str, Any]:
                 ),
                 "provider_start_calls": 0,
                 "automatic_duplicate": 0,
+                "permit_claim_before": 1,
+                "permit_claim_after": 1,
             },
             {
                 "id": "FABRIC-FBA-RETRYABLE-RESTART-BEFORE-EXPIRY",
@@ -3126,6 +3236,8 @@ def build() -> dict[str, Any]:
                 "retry_expires_at_ms": 200000,
                 "storage_mutations": 0,
                 "provider_start_calls": 0,
+                "permit_claim_before": 0,
+                "permit_claim_after": 0,
             },
             {
                 "id": "FABRIC-FBA-RETRYABLE-RESTART-AT-EXPIRY",
@@ -3139,6 +3251,8 @@ def build() -> dict[str, Any]:
                 "retry_now_ms": 200000,
                 "retry_expires_at_ms": 200000,
                 "provider_start_calls": 0,
+                "permit_claim_before": 0,
+                "permit_claim_after": 0,
             },
             {
                 "id": "FABRIC-FBA-CLOSED-TO-DRAINED",
@@ -3150,6 +3264,8 @@ def build() -> dict[str, Any]:
                     [(attempt_key, attempt_drained_value)]
                 ),
                 "runtime_terminal_revision": 41,
+                "permit_claim_before": 1,
+                "permit_claim_after": 1,
             },
             {
                 "id": "FABRIC-FBA-FENCED-TO-DRAINED",
@@ -3161,6 +3277,8 @@ def build() -> dict[str, Any]:
                     [(attempt_key, attempt_drained_value)]
                 ),
                 "runtime_terminal_revision": 41,
+                "permit_claim_before": 1,
+                "permit_claim_after": 1,
             },
         ],
         "fba_commit_unknown_vectors": [
@@ -3404,12 +3522,157 @@ def serialized() -> bytes:
     return (json.dumps(build(), indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
+def _sha256(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def self_test() -> int:
+    """Deterministic generator self-test with adversarial inventory mutations.
+
+    The source-tree vector is read-only. Adversarial candidates are written
+    only below a private temporary directory so concurrent CTest/build trees
+    cannot observe an in-flight mutation. tests-OFF safe (pure Python).
+    """
+    import copy
+    import tempfile
+
+    expected = serialized()
+    expected_hash = _sha256(expected)
+    # Deterministic double serialization.
+    if serialized() != expected or _sha256(serialized()) != expected_hash:
+        print("self-test FAIL: non-deterministic serialization")
+        return 1
+
+    if not OUTPUT.exists():
+        print(f"self-test FAIL: missing {OUTPUT}")
+        return 1
+    before = OUTPUT.read_bytes()
+    before_hash = _sha256(before)
+    if before != expected:
+        print(f"self-test FAIL: stale output before test {OUTPUT}")
+        return 1
+
+    def fail(msg: str) -> int:
+        print(f"self-test FAIL: {msg}")
+        return 1
+
+    # Adversarial semantic source mutation: poison selection baseline packet.
+    real_baseline = selection_baseline
+
+    def poisoned_baseline() -> dict[str, Any]:
+        snapshot = real_baseline()
+        snapshot = copy.deepcopy(snapshot)
+        snapshot["query"]["packet_bytes"] = 9999
+        return snapshot
+
+    globals()["selection_baseline"] = poisoned_baseline  # type: ignore[assignment]
+    try:
+        poisoned = serialized()
+    finally:
+        globals()["selection_baseline"] = real_baseline  # type: ignore[assignment]
+    if poisoned == expected:
+        return fail("semantic source mutation not observed")
+    if serialized() != expected:
+        return fail("baseline not restored after semantic poison")
+
+    # Inventory mutations against on-disk output must diverge from generator.
+    doc = json.loads(before.decode("utf-8"))
+    inventory_cases: list[tuple[str, Any]] = []
+
+    missing = copy.deepcopy(doc)
+    missing["selection_vectors"] = [
+        row
+        for row in missing["selection_vectors"]
+        if row["id"] != "FABRIC-SELECT-LATENCY-CLASS"
+    ]
+    inventory_cases.append(("missing", missing))
+
+    extra = copy.deepcopy(doc)
+    forged = copy.deepcopy(
+        next(
+            row
+            for row in extra["selection_vectors"]
+            if row["id"] == "FABRIC-SELECT-ACTUAL-JOIN-BASELINE"
+        )
+    )
+    forged["id"] = "FABRIC-SELECT-VALID-UNKNOWN-EXTRA"
+    extra["selection_vectors"].append(forged)
+    inventory_cases.append(("extra", extra))
+
+    duplicate = copy.deepcopy(doc)
+    duplicate["selection_vectors"].append(
+        copy.deepcopy(
+            next(
+                row
+                for row in duplicate["selection_vectors"]
+                if row["id"] == "FABRIC-SELECT-PACKET-MINIMUM"
+            )
+        )
+    )
+    inventory_cases.append(("duplicate", duplicate))
+
+    substituted = copy.deepcopy(doc)
+    for index, row in enumerate(substituted["selection_vectors"]):
+        if row["id"] == "FABRIC-SELECT-STRUCTURAL-LENGTH-FLOOR":
+            donor = copy.deepcopy(
+                next(
+                    item
+                    for item in substituted["selection_vectors"]
+                    if item["id"] == "FABRIC-SELECT-ACTUAL-JOIN-BASELINE"
+                )
+            )
+            donor["id"] = "FABRIC-SELECT-STRUCTURAL-LENGTH-FLOOR"
+            substituted["selection_vectors"][index] = donor
+            break
+    inventory_cases.append(("substituted", substituted))
+
+    with tempfile.TemporaryDirectory(
+        prefix="ninlil-fabric-vector-self-test-"
+    ) as temporary_directory:
+        candidate = Path(temporary_directory) / OUTPUT.name
+        for label, mutated in inventory_cases:
+            payload = (
+                json.dumps(mutated, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8")
+            if payload == expected:
+                return fail(f"inventory {label} mutation was invisible")
+            candidate.write_bytes(payload)
+            if candidate.read_bytes() == expected:
+                return fail(f"inventory {label} still matched expected")
+            if candidate.read_bytes() == serialized():
+                return fail(f"inventory {label} matched live generator")
+            # Stale rejection: --check contract.
+            if candidate.read_bytes() == serialized():
+                return fail(f"stale rejection failed for {label}")
+
+    after = OUTPUT.read_bytes()
+    after_hash = _sha256(after)
+    if after != before or after_hash != before_hash:
+        print("self-test FAIL: output not restored to before hash")
+        return 1
+    if after_hash != expected_hash or after != expected:
+        print("self-test FAIL: restoration hash mismatch")
+        return 1
+    # Final live generator still matches restored bytes.
+    if serialized() != after:
+        print("self-test FAIL: restored file drifted from generator")
+        return 1
+    print(
+        "fabric_bearer_spec_vector_gen self-test OK "
+        f"sha256={after_hash}"
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--write", action="store_true")
     action.add_argument("--check", action="store_true")
+    action.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
+    if args.self_test:
+        return self_test()
     expected = serialized()
     if args.write:
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)

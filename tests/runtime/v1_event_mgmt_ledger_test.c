@@ -1,4 +1,5 @@
 #include "deterministic_entropy.h"
+#include "domain_store_codec.h"
 #include "in_memory_storage.h"
 #include "platform_basic_fixtures.h"
 #include "runtime_store_codec.h"
@@ -57,6 +58,7 @@ typedef enum storage_shape_fault {
 } storage_shape_fault_t;
 
 static const ninlil_storage_ops_t *g_shape_delegate;
+static ninlil_storage_ops_t g_shape_original;
 static storage_shape_fault_t g_shape_fault;
 
 static ninlil_storage_status_t shape_fault_begin(
@@ -154,6 +156,22 @@ static void set_digest(ninlil_digest256_t *digest, uint8_t tag)
     for (index = 0u; index < sizeof(digest->bytes); ++index) {
         digest->bytes[index] = (uint8_t)(tag + index);
     }
+}
+
+static int set_payload_content_digest(
+    ninlil_digest256_t *digest,
+    const uint8_t *payload,
+    uint32_t length)
+{
+    ninlil_model_domain_digest_t actual;
+
+    (void)memset(digest, 0, sizeof(*digest));
+    digest->algorithm = NINLIL_DIGEST_SHA256;
+    if (ninlil_model_domain_sha256(payload, length, &actual) != NINLIL_OK) {
+        return 0;
+    }
+    (void)memcpy(digest->bytes, actual.bytes, sizeof(digest->bytes));
+    return 1;
 }
 
 static ninlil_origin_auth_status_t origin_allow(
@@ -410,7 +428,8 @@ static int env_open(event_env_t *env)
     submission.idempotency_key.length = sizeof(IDEMPOTENCY_KEY) - 1u;
     submission.payload.data = PAYLOAD;
     submission.payload.length = sizeof(PAYLOAD);
-    set_digest(&submission.content_digest, 0x77u);
+    REQUIRE(set_payload_content_digest(
+        &submission.content_digest, PAYLOAD, (uint32_t)sizeof(PAYLOAD)));
     (void)memset(&result, 0, sizeof(result));
     set_header(&result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_submit(env->service, &submission, &result)
@@ -456,7 +475,8 @@ static int submit_second_event(
         sizeof(second_idempotency_key) - 1u;
     submission.payload.data = PAYLOAD;
     submission.payload.length = sizeof(PAYLOAD);
-    set_digest(&submission.content_digest, 0x78u);
+    REQUIRE(set_payload_content_digest(
+        &submission.content_digest, PAYLOAD, (uint32_t)sizeof(PAYLOAD)));
     (void)memset(&result, 0, sizeof(result));
     set_header(&result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_submit(env->service, &submission, &result)
@@ -1085,6 +1105,8 @@ static int test_syntax_role_replay_conflict_and_restart(void)
     get_calls = ninlil_test_storage_call_count(
         env.storage, NINLIL_TEST_STORAGE_OP_GET);
     (void)memset(&result, 0xa5, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &changed, &result)
         == NINLIL_E_INVALID_ARGUMENT);
@@ -1096,6 +1118,8 @@ static int test_syntax_role_replay_conflict_and_restart(void)
     saved_role = env.runtime->config.role;
     env.runtime->config.role = NINLIL_ROLE_CONTROLLER;
     (void)memset(&result, 0xa5, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_E_UNSUPPORTED);
@@ -1105,6 +1129,9 @@ static int test_syntax_role_replay_conflict_and_restart(void)
         == get_calls);
     env.runtime->config.role = saved_role;
 
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1123,6 +1150,9 @@ static int test_syntax_role_replay_conflict_and_restart(void)
         == NINLIL_M1A_EVENT_MANAGEMENT_RESERVATION_BYTES - 256u);
 
     clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1134,6 +1164,9 @@ static int test_syntax_role_replay_conflict_and_restart(void)
     changed = request;
     changed.audit_metadata.data = changed_metadata;
     changed.audit_metadata.length = sizeof(changed_metadata) - 1u;
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &changed, &result)
         == NINLIL_OK);
@@ -1147,6 +1180,11 @@ static int test_syntax_role_replay_conflict_and_restart(void)
         0xa0u,
         DISCARD_METADATA,
         sizeof(DISCARD_METADATA) - 1u);
+    (void)memset(&discard_result, 0, sizeof(discard_result));
+    set_header(
+        &discard_result.abi_version,
+        &discard_result.struct_size,
+        sizeof(discard_result));
     REQUIRE(ninlil_event_discard(
                 env.runtime,
                 &env.transaction_id,
@@ -1159,6 +1197,9 @@ static int test_syntax_role_replay_conflict_and_restart(void)
 
     REQUIRE(env_restart(&env) == 0);
     clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1201,6 +1242,9 @@ static int test_eight_resume_limit_and_old_replay(void)
             (uint8_t)(0x30u + index * 0x10u),
             RESUME_METADATA,
             sizeof(RESUME_METADATA) - 1u);
+        (void)memset(&result, 0, sizeof(result));
+        set_header(
+            &result.abi_version, &result.struct_size, sizeof(result));
         REQUIRE(ninlil_event_resume(
                     env.runtime,
                     &env.transaction_id,
@@ -1286,6 +1330,9 @@ static int test_eight_resume_limit_and_old_replay(void)
         RESUME_METADATA,
         sizeof(RESUME_METADATA) - 1u);
     before_revision = transaction->spool_revision;
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1297,6 +1344,9 @@ static int test_eight_resume_limit_and_old_replay(void)
     REQUIRE(transaction->resume_op_count
         == NINLIL_M1A_MAX_EVENT_RESUME_OPERATIONS);
 
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime,
                 &env.transaction_id,
@@ -1335,6 +1385,9 @@ static int test_discard_replay_conflict_and_restart(void)
         0xb0u,
         DISCARD_METADATA,
         sizeof(DISCARD_METADATA) - 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1358,6 +1411,9 @@ static int test_discard_replay_conflict_and_restart(void)
     REQUIRE(capacity_reserved == 0u);
 
     clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1371,6 +1427,9 @@ static int test_discard_replay_conflict_and_restart(void)
     changed = request;
     changed.audit_metadata.data = changed_metadata;
     changed.audit_metadata.length = sizeof(changed_metadata) - 1u;
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &changed, &result)
         == NINLIL_OK);
@@ -1381,6 +1440,9 @@ static int test_discard_replay_conflict_and_restart(void)
 
     REQUIRE(env_restart(&env) == 0);
     clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1425,6 +1487,8 @@ static int run_commit_unknown_case(int committed_truth)
         1,
         committed_truth));
     (void)memset(&result, 0xa5, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_E_STORAGE_COMMIT_UNKNOWN);
@@ -1442,6 +1506,9 @@ static int run_commit_unknown_case(int committed_truth)
 
     get_calls = ninlil_test_storage_call_count(
         env.storage, NINLIL_TEST_STORAGE_OP_GET);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_E_STORAGE_COMMIT_UNKNOWN);
@@ -1453,6 +1520,9 @@ static int run_commit_unknown_case(int committed_truth)
     REQUIRE(env_restart_after_commit_unknown(&env) == 0);
     REQUIRE(env.runtime->last_assigned_ordered_input_sequence
         == (committed_truth != 0 ? 1u : 0u));
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1539,6 +1609,11 @@ static int test_event_mutations_use_one_full_counter_group(void)
         RESUME_METADATA,
         sizeof(RESUME_METADATA) - 1u);
     trace_start = ninlil_test_storage_trace_count(env.storage);
+    (void)memset(&resume_result, 0, sizeof(resume_result));
+    set_header(
+        &resume_result.abi_version,
+        &resume_result.struct_size,
+        sizeof(resume_result));
     REQUIRE(ninlil_event_resume(
                 env.runtime,
                 &env.transaction_id,
@@ -1558,6 +1633,11 @@ static int test_event_mutations_use_one_full_counter_group(void)
         DISCARD_METADATA,
         sizeof(DISCARD_METADATA) - 1u);
     trace_start = ninlil_test_storage_trace_count(env.storage);
+    (void)memset(&discard_result, 0, sizeof(discard_result));
+    set_header(
+        &discard_result.abi_version,
+        &discard_result.struct_size,
+        sizeof(discard_result));
     REQUIRE(ninlil_event_discard(
                 env.runtime,
                 &env.transaction_id,
@@ -1605,6 +1685,9 @@ static int test_ordered_counter_last_value_and_exhaustion(void)
     REQUIRE(env.runtime->last_assigned_ordered_input_sequence
         == UINT64_MAX - 1u);
 
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1638,6 +1721,8 @@ static int test_ordered_counter_last_value_and_exhaustion(void)
     commit_calls = ninlil_test_storage_call_count(
         env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
     (void)memset(&result, 0xa5, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime,
                 &env.transaction_id,
@@ -1656,6 +1741,9 @@ static int test_ordered_counter_last_value_and_exhaustion(void)
     REQUIRE(env.runtime->last_assigned_ordered_input_sequence == UINT64_MAX);
     REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
     clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1693,15 +1781,27 @@ static int run_storage_shape_fault(storage_shape_fault_t fault)
     commit_calls = ninlil_test_storage_call_count(
         env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
 
-    g_shape_delegate = env.platform.storage;
+    /*
+     * Runtime deep-copies storage ops at create into owned storage. Inject
+     * shape faults into the live owned vtable; keep an original snapshot so
+     * fault wrappers call through without recursion.
+     */
+    g_shape_original = *env.runtime->platform->storage;
+    g_shape_delegate = &g_shape_original;
     g_shape_fault = fault;
-    fault_ops = *g_shape_delegate;
+    fault_ops = g_shape_original;
     fault_ops.begin = shape_fault_begin;
     fault_ops.iter_open = shape_fault_iter_open;
     fault_ops.iter_next = shape_fault_iter_next;
-    env.platform.storage = &fault_ops;
+    {
+        ninlil_storage_ops_t *live =
+            (ninlil_storage_ops_t *)(void *)env.runtime->platform->storage;
+        *live = fault_ops;
+    }
 
     (void)memset(&result, 0xa5, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_E_STORAGE_CORRUPT);
@@ -1716,7 +1816,11 @@ static int run_storage_shape_fault(storage_shape_fault_t fault)
     REQUIRE(ninlil_test_storage_live_transactions(env.storage) == 0u);
     REQUIRE(ninlil_test_storage_live_iterators(env.storage) == 0u);
 
-    env.platform.storage = g_shape_delegate;
+    {
+        ninlil_storage_ops_t *live =
+            (ninlil_storage_ops_t *)(void *)env.runtime->platform->storage;
+        *live = g_shape_original;
+    }
     g_shape_delegate = NULL;
     g_shape_fault = STORAGE_SHAPE_NONE;
     env_teardown(&env);
@@ -1772,6 +1876,11 @@ static int run_required_receipt_precedence_case(int use_discard)
     }
     clock_calls = ninlil_test_clock_call_count(env.clock);
     if (use_discard != 0) {
+        (void)memset(&discard_result, 0, sizeof(discard_result));
+        set_header(
+            &discard_result.abi_version,
+            &discard_result.struct_size,
+            sizeof(discard_result));
         REQUIRE(ninlil_event_discard(
                     env.runtime,
                     &env.transaction_id,
@@ -1785,6 +1894,11 @@ static int run_required_receipt_precedence_case(int use_discard)
         REQUIRE(discard_result.spool_released == 0u);
         REQUIRE(id_is_zero(&discard_result.audit_clock_epoch_id));
     } else {
+        (void)memset(&resume_result, 0, sizeof(resume_result));
+        set_header(
+            &resume_result.abi_version,
+            &resume_result.struct_size,
+            sizeof(resume_result));
         REQUIRE(ninlil_event_resume(
                     env.runtime,
                     &env.transaction_id,
@@ -1861,6 +1975,9 @@ static int test_catch_up_same_time_event_timeout_precedes_resume(void)
         RESUME_METADATA,
         sizeof(RESUME_METADATA) - 1u);
     clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -1992,6 +2109,9 @@ static int test_catch_up_required_receipt_after_restart(void)
     REQUIRE(transaction->receipt_pending == 1u);
     REQUIRE(transaction->ordered_input_sequence == 1u);
     REQUIRE(env.runtime->last_assigned_ordered_input_sequence == 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -2038,6 +2158,8 @@ static int run_catch_up_commit_unknown_case(int committed_truth)
         committed_truth));
     clock_calls = ninlil_test_clock_call_count(env.clock);
     (void)memset(&result, 0xa5, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_E_STORAGE_COMMIT_UNKNOWN);
@@ -2052,6 +2174,9 @@ static int run_catch_up_commit_unknown_case(int committed_truth)
     REQUIRE(env.runtime->commit_unknown_fence == 1u);
 
     REQUIRE(env_restart_after_commit_unknown(&env) == 0);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -2160,6 +2285,9 @@ static int run_resume_boot_corruption(resume_boot_corruption_t corruption)
         0xe0u,
         RESUME_METADATA,
         sizeof(RESUME_METADATA) - 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -2232,6 +2360,9 @@ static int test_restart_rejects_discard_flag_ledger_mismatch(void)
         0xd8u,
         DISCARD_METADATA,
         sizeof(DISCARD_METADATA) - 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -2274,6 +2405,9 @@ static int test_restart_rejects_discard_content_mismatch(void)
         0xd9u,
         DISCARD_METADATA,
         sizeof(DISCARD_METADATA) - 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_discard(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -2331,6 +2465,9 @@ static int test_restart_rejects_same_revision_snapshot_conflict(void)
         0x49u,
         RESUME_METADATA,
         sizeof(RESUME_METADATA) - 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);
@@ -2391,6 +2528,9 @@ static int test_restart_rejects_cross_transaction_ordered_sequence_duplicate(
         0x59u,
         RESUME_METADATA,
         sizeof(RESUME_METADATA) - 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(
+        &result.abi_version, &result.struct_size, sizeof(result));
     REQUIRE(ninlil_event_resume(
                 env.runtime, &env.transaction_id, &request, &result)
         == NINLIL_OK);

@@ -22,6 +22,7 @@
 #include "profile_loader.h"
 #include "profile_r5_golden_profiles.h"
 #include "r7_crypto_openssl3.h"
+#include "domain_store_codec.h"
 #include "runtime_v1_capability.h"
 #include "typed_simulated_bearer.h"
 
@@ -194,6 +195,22 @@ static void set_digest(ninlil_digest256_t *digest, uint8_t value)
     (void)memset(digest, 0, sizeof(*digest));
     digest->algorithm = NINLIL_DIGEST_SHA256;
     digest->bytes[sizeof(digest->bytes) - 1u] = value;
+}
+
+static int set_payload_content_digest(
+    ninlil_digest256_t *digest,
+    const uint8_t *payload,
+    uint32_t length)
+{
+    ninlil_model_domain_digest_t actual;
+
+    (void)memset(digest, 0, sizeof(*digest));
+    digest->algorithm = NINLIL_DIGEST_SHA256;
+    if (ninlil_model_domain_sha256(payload, length, &actual) != NINLIL_OK) {
+        return 0;
+    }
+    (void)memcpy(digest->bytes, actual.bytes, sizeof(digest->bytes));
+    return 1;
 }
 
 static void set_header(uint16_t *version, uint16_t *size, size_t value)
@@ -2056,7 +2073,8 @@ static int run_single_scenario(
     submission.idempotency_key.length = sizeof(idem_key) - 1u;
     submission.payload.data = payload;
     submission.payload.length = sizeof(payload);
-    set_digest(&submission.content_digest, 0x55u);
+    SCENARIO_REQUIRE(set_payload_content_digest(
+        &submission.content_digest, payload, (uint32_t)sizeof(payload)));
     (void)memset(&submit_result, 0, sizeof(submit_result));
     set_header(
         &submit_result.abi_version,

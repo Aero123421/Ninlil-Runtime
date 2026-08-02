@@ -1,8 +1,8 @@
 # ADR-0017: Fabric Bearer Registry and Path Selection
 
-状態: **Proposed — docs-only（implementation / acceptance pending）**  
+状態: **SPEC_ACCEPTED (design only) — private reference candidate implemented; software acceptance pending**  
 提案日: 2026-07-28  
-受入日: —（未受入）
+設計受入日: 2026-07-29
 
 ## Context
 
@@ -644,7 +644,7 @@ strict +1、snapshot/poll/restartだけでは増やさない。
 
 `ninlil_fabric_config_v1_t`はexact profile ID、Foundation Storage/Clock/Execution ops pointer、
 dedicated storage namespace `ninlil.fabric.v1`、flags=0を持つfixed structで、全ops structをcreate中に
-copyする。workspaceはcaller所有、profile 1では196,608 bytes、alignmentはC
+copyする。workspaceはcaller所有、profile 1では198,656 bytes、alignmentはC
 `_Alignof(max_align_t)`。create成功からdestroy成功までcallerはworkspaceと、copy済みopsの
 non-NULL user pointee/function codeを変更・解放しない。hidden heap/VLAは使用しない。
 createは`execution.current_context_id`をexactly 1回呼び、non-zero resultをowner contextとして
@@ -684,23 +684,44 @@ Fabric adapterは12/14章のsingle-Bearer contractを変更しない。`send`の
 1. argument/output/header、same-attempt conflict、policy/authority/securityを検証する。
 2. immutable policy revisionを解決し、eligible setとstable sortでselected instanceを決める。
 3. queue slot、1925-byte packet buffer、attempt slot、timer slotを**全部**予約する。
-4. Foundation messageをNFL1へenrich/copyし、FBA1 PREPAREDを`FULL` commitする。
+4. Foundation messageをNFL1へenrich/copyし、call-scoped permitの
+   `{retry_lifetime_clock_epoch_id, permit_id, permit_expires_at_ms,
+   permit_claim_state=CLEAR}`を同居させたFBA1 PREPAREDを`FULL` commitする。
+   `retry_lifetime_clock_epoch_id`はpermit clock authorityも兼ねる。
 5. selected instanceのcurrent lifecycle/availability epoch/expiry/revocation/authority/
    TxPermitを再検証する。不一致ならFBA1をCLOSEDへ`FULL` replacementし、reservation/queue/timerを
    releaseしてからexact failureを返す。CLOSED commitがCOMMIT_UNKNOWNならLOST_UNKNOWN、
    definite failureならCORRUPT/fenceで、PREPAREDを通常return後のactive reservationに残さない。
-6. NFL1全bytesをreserved Fabric queueへtentative copyし、**同じouter send call中**にprovider
-   `start_send`をexactly 1回呼ぶ。packet viewのpermitはouter inputをcall中だけborrowし、
-   Fabricはpointer/valueを後続stepへ保存しない。providerはTx Gateと同じpermit authority backendで
-   transaction/kind/digest/logical bytes/current time/reuseを照合し、全NFL1/retry stateをcopy-ownして
-   permitをatomic consumeした場合だけRETAINED+tokenを返す。
-7. provider RETAINEDではFBA1をLINK_RETAINEDへ`FULL` replacementする。commit OKだけがouter
+6. NFL1全bytesをreserved Fabric queueへtentative copyし、provider call直前に同じFBA1を
+   bit-exact OLD→NEWの`FULL` replacementして`permit_claim_state=CLEAR`から`CLAIMED`へ進める。
+   別key/別recordのpermit ledgerは作らない。claim failure/`COMMIT_UNKNOWN`ではproviderを呼ばず、
+   `LOST_UNKNOWN`へ進む。CU-NEWでCLAIMEDが残った場合もそのcallではprovider start 0で、
+   restart reconcileはFENCED_UNKNOWNにし、same pairを再利用しない。claim OK後、
+   **同じouter send call中**にprovider `start_send`をexactly 1回呼ぶ。packet viewの
+   permitはouter inputをcall中だけborrowし、Fabricはpointer/valueを後続stepへ保存しない。
+   providerはtransaction/kind/digest/logical bytes/current time/reuseを独立に照合し、全NFL1/retry
+   stateをcopy-ownした場合だけRETAINED+tokenを返す。providerがNULL tokenで
+   WOULD_BLOCK/UNAVAILABLE/DENIEDを返した場合だけ、Fabricはstate transitionと
+   `CLAIMED→CLEAR`を**同じFBA1 FULL replacement**で確定してから同名outer statusを返す。
+   CU-NEWはexact intended rowとして扱えるが、OLD/partial/CRC-valid third/definite failureでは
+   `LOST_UNKNOWN`でCLAIMEDをfail-closedに扱う。
+7. provider RETAINEDではCLAIMEDを保持したままFBA1をLINK_RETAINEDへ`FULL` replacementする。
+   commit OKだけがouter
    `OK+SEND_ACCEPTED` pointである。commit failure/COMMIT_UNKNOWNはprovider side effect可能なので
    LOST_UNKNOWN/fence、automatic duplicate 0である。provider WOULD_BLOCKはFBA1を
-   RETRYABLE_NO_ACCEPTへFULL replacementしてtentative copy/reservationをreleaseし、outer
+   RETRYABLE_NO_ACCEPT+CLEARへ前項の単一FULL replacementで進め、tentative copy/reservationをreleaseし、outer
    WOULD_BLOCKとする。同じdispatch exact retryだけがRETRYABLE_NO_ACCEPT→PREPAREDを許す。
    UNAVAILABLE/DENIEDはCLOSED replacement後に同名outer status、LOST_UNKNOWN/CORRUPT/invalid shapeは
-   FENCED_UNKNOWN recoveryとし、permitを後続stepへ持ち越さない。
+   CLAIMEDを保持したFENCED_UNKNOWN recoveryとし、permit pointerを後続stepへ持ち越さない。
+
+private reference candidateでは、durable claim authorityを同じattemptのFBA1だけに置く。
+packet-link providerのbounded LIVE/RETIRED ledgerは同時所有権だけを管理し、terminal
+`release_send`後にslotを回収してよい。TxGate issue contractは同じ
+`(clock_epoch_id, permit_id)`を生涯再発行してはならず、Fabricはopen/reload時にも別FBA1間の
+pair重複をCORRUPT/TX 0とする。providerをFabricのcall-scoped outer authorityなしに直接使う構成は
+`DENIED + TX 0`である。有限provider ringだけをpermanent replay authorityにしてはならない。
+claimはprovider side effectの**前**に同じFBA1へ保存する。provider RETAINED後に初めてclaimを
+書く順序は禁止する。通常のdefinite non-acceptだけがstate+CLEARの同一FULLを許す。
 
 ownership transfer前にqueue/providerが0 byteを保持し、一時capacityだけが理由なら
 `NINLIL_BEARER_WOULD_BLOCK`である。transfer後にprovider未call/WOULD_BLOCKの状態はない。
@@ -715,11 +736,13 @@ outer `send` status precedenceは次で固定する。
 | --- | --- | --- |
 | malformed/unknown/conflicting same attempt、invalid provider shape、storage corrupt | `NINLIL_BEARER_CORRUPT` | transfer 0、TX 0 |
 | PREPARED/CLOSED write `COMMIT_UNKNOWN`または既存fence | `NINLIL_BEARER_LOST_UNKNOWN` | provider start 0、reconcile前reencode/reselect 0 |
-| provider RETAINED後のLINK_RETAINED write failure/`COMMIT_UNKNOWN` | `NINLIL_BEARER_LOST_UNKNOWN` | permit consumed-or-unknown、provider token fence、上位duplicate 0 |
+| pre-provider FBA1 CLEAR→CLAIMED failure/`COMMIT_UNKNOWN` | `NINLIL_BEARER_LOST_UNKNOWN` | provider start 0、CU-NEW claimもsame-call再利用0、上位automatic retry 0 |
+| provider RETAINED後のLINK_RETAINED write failure/`COMMIT_UNKNOWN` | `NINLIL_BEARER_LOST_UNKNOWN` | FBA1 CLAIMED保持、provider token fence、上位duplicate 0 |
+| provider definite non-accept後のstate+CLEAR FULLがOLD/partial/third/failure | `NINLIL_BEARER_LOST_UNKNOWN` | TX accepted 0、claimはfail-closed、同じPermit IDの自動再利用0 |
 | authority/security/compliance/policyのexplicit hard deny、RF TxPermit invalid | `NINLIL_BEARER_DENIED` | transfer 0、TX 0 |
 | policy 0/multiple match、eligible path 0、path/peer/attachment unavailable/expired、MTU unsupported | `NINLIL_BEARER_UNAVAILABLE` | transfer 0、TX 0 |
 | eligibleだがqueue/attempt/timer/workspace/storage logical capacity不足、provider未保持 | `NINLIL_BEARER_WOULD_BLOCK` | transfer 0、permit未消費、TX 0 |
-| same-call provider RETAINED + FBA1 LINK_RETAINED FULL commit OK | `OK + SEND_ACCEPTED` | permit consumed、ownership移転、上位duplicate 0 |
+| same-call FBA1 CLAIMED FULL + provider RETAINED + FBA1 LINK_RETAINED FULL commit OK | `OK + SEND_ACCEPTED` | permit consumed、ownership移転、上位duplicate 0 |
 
 `LOST_UNKNOWN`をWOULD_BLOCKへ、DENIEDをUNAVAILABLEへ、capacityをpath absenceへ変換しない。
 Fabric logical `state.available=1`は「少なくとも1 policyで将来選択可能」ではなく、owner Runtimeに
@@ -730,6 +753,10 @@ strict incrementで、same epoch/different state、wrap、restart rollbackはCOR
 packet-link `start_send`はouter send callごとexact 1回で、borrowed public permitを後続stepへ
 再利用しない。provider WOULD_BLOCK後のsame dispatch reinvokeはFoundationがfresh permitで同じ
 immutable messageを再びouter sendへ渡したときだけで、Fabric自身のstart retry timerは作らない。
+RETRYABLE_NO_ACCEPTの旧FBA1は旧permit pairをCLEARで保持し、exact retryは同じpairを拒否する。
+fresh call-scoped permitの`(clock_epoch_id, permit_id)`が旧pairおよび全FBA1と異なることを確認し、
+RETRYABLE_NO_ACCEPT→PREPARED、fresh permit ID/expiry、CLEAR→CLAIMEDを同じFBA1 FULL replacementで
+確定してからだけproviderを呼ぶ。
 retain前lifetimeは
 `min(message deadline, availability expiry, checked(first_admit_ms + 30000))`である。
 この3値は同じtrusted Clock epochである場合だけ比較し、message deadline、admission sample、
@@ -782,14 +809,36 @@ Fabric attempt admissionは次の順で1回のimmutable FBM1/FBR1/FBP1/FBC1 snap
    ではFBC1 endpointがFoundation target runtime、SOURCE_RUNTIMEではsource runtimeと一致しなければ
    ineligible/CORRUPTであり、targetをsourceとして代用しない。BOUND_REQUIREDではBOUNDだけ、
    ABSENT_ALLOWEDでは明示ABSENTまたはBOUNDだけを許し、record 0件をABSENTへ補わない。
-6. 次の順でhard filterする。FBM1 outer availability、FBR1 lifecycle ACTIVE、send direction、
-   NFL1 structural length、packet MTU、transfer MTU、deadline guard、retry lifetime clock epoch、
-   reservation units/capacity、
-   required generic feature、sleep/energy、security、custody、evidence、peer NFL1/capability、
-   authenticated peer、Attachment authority/binding、attestation clock epoch/expiry、
-   availability clock epoch/state/expiry、FBC1 authority state/clock epoch/lease、
-   RF compliance/TxPermit、accepted compact RF mappingの順である。各clock gateは保存epochと
-   trusted current epochがbit-exactかつ`now_ms < exclusive_expiry`だけを通す。
+6. join ambiguity（FBR1 exact-1、FBC1 exact-1）の後、候補ごとに次の**固定 hard-filter 順**で
+   評価する（順序変更禁止。複数failure同時でもprimary rejectionは先頭1件のみ）:
+   1. FBR1 lifecycle ACTIVE
+   2. send direction mask
+   3. absolute NFL1 structural length `packet_bytes ∈ [587, 1925]`
+      （underflow / overflow。codec KATとは独立のadmission gate）
+   4. policy minimum packet bytes（structural floorとは別。`packet_bytes < policy.minimum`）
+   5. packet MTU（`packet_bytes > registry.maximum_packet_bytes`）
+   6. transfer MTU（`transfer_bytes > registry.maximum_transfer_bytes`）
+   7. policy latency ceiling（`registry.latency_class > policy.maximum_latency_class`）
+   8. policy cost ceiling（`registry.cost_class > policy.maximum_cost_class`）
+   9. deadline guard
+   10. retry lifetime clock epoch
+   11. reservation units/capacity
+   12. required generic feature
+   13. sleep/energy
+   14. security
+   15. custody
+   16. evidence
+   17. peer NFL1/capability
+   18. authenticated peer
+   19. Attachment authority/binding
+   20. attestation clock epoch/expiry
+   21. availability clock epoch/state/expiry
+   22. FBC1 authority state/clock epoch/lease
+   23. RF compliance/TxPermit
+   24. accepted compact RF mapping
+   FBM1 outer availabilityはstep 1のpreconditionであり、本hard-filter chainの外である。
+   各clock gateは保存epochとtrusted current epochがbit-exactかつ
+   `now_ms < exclusive_expiry`だけを通す。
 7. eligible candidateを次のunsigned tupleで昇順sortする。
 
 ```text
@@ -836,7 +885,7 @@ NFL1↔NRW1 mapping未Acceptedのため、RF candidateへNFL1 packetを渡す経
 
 | Resource | Exact limit | Exhaustion |
 | --- | ---: | --- |
-| caller workspace | 196,608 bytes / `max_align_t` | create `CAPACITY`、partial handle 0 |
+| caller workspace | 198,656 bytes / `max_align_t` | create `CAPACITY`、partial handle 0 |
 | registered instances | 16（same kind可） | 17件目`CAPACITY` |
 | policies / candidates per policy | 64 / 8 | mutation 0で`CAPACITY` |
 | authority bindings | 64 | 65件目またはambiguous lookupを`CAPACITY/CORRUPT` |
@@ -848,26 +897,37 @@ NFL1↔NRW1 mapping未Acceptedのため、RF candidateへNFL1 packetを渡す経
 | live timers | 64 | ownership前WOULD_BLOCK |
 | start calls | 1 / outer send invocation | provider no-retainはsame callでexact status、internal delayed start 0 |
 | step work | callerの`1..64`、1 vtable/storage/timer transition=1 | budget到達でreturn、same tick spin 0 |
-| durable committed logical | 273 entries / 136,148 Storage CU bytes | evictionせずnew admission 0 |
-| provider FULL staging reservation | 546 entries / 272,296 Storage CU bytes（committedの2倍） | create/open拒否、best effort開始0 |
+| durable committed logical | 273 entries / 137,940 Storage CU bytes | evictionせずnew admission 0 |
+| provider FULL staging reservation | 546 entries / 275,880 Storage CU bytes（committedの2倍） | create/open拒否、best effort開始0 |
 
 active/retained attempt、DRAINING instance、参照中policy/trigger contextを容量確保のためevictしない。
-terminal attempt/triggerは、対応private `dispatch_release`/`trigger_release`がnon-zero
-Runtime terminal revisionをFULL保存してDRAINEDにした後、record内retention clock epochと
-current trusted epochが一致し`now_ms >= retention_until_ms`になったものだけ、明示GC stepが
-`(retention_until_ms, transaction_id, attempt_id, message_kind, response_slot,
-foundation_message_digest)`昇順で削除できる。GCも1 erase=1 workである。
-clock不明/epoch不一致では保持する。metrics/diagnosticsはinstanceごと固定1 slotで上書きし、
+terminal attempt/triggerは、対応private releaseがnon-zeroのRuntime terminal release tokenを
+FULL保存した後だけGC対象になれる。FBA1はDRAINEDかつprovider token 0を必須とし、record内
+retention clock epochと、permit clock authorityを再利用する`retry_lifetime_clock_epoch_id`を
+照合する。trusted current clockを取得でき、permit epochがcurrentと異なる場合、またはpermit
+epochとretention epochがともにcurrentと一致して
+`now_ms >= max(retention_until_ms, permit_expires_at_ms)`の場合だけ削除できる。FBT1はterminal
+release tokenがnon-zero、trusted current clockとretention epochが一致し、
+`now_ms >= retention_until_ms`の場合だけ削除できる。clock不明、必要なepoch不一致、期限前では
+保持し、policy/authority参照もdurable eraseの確定までは解除しない。GCはFBA1/FBT1それぞれの
+固定64-slot round-robin cursorとinstance-localなkind選択を使い、片方をstarveさせず、1回の
+step invocationにつき両kind合計で最大1 erase、1 attempted erase=1 workである。CU-NEWは
+削除済みとしてslotを解放し、CU-OLDは保持、partial/third/errorはfail-closedでsurfacingする。
+既存field/parameter名`runtime_terminal_revision`はlegacy nameであり、Composition Profile 1では
+ADR-0032のterminal release tokenを保存する。Runtimeのmutable `record_revision`または
+EventFact `spool_revision`を意味しない。
+metrics/diagnosticsはinstanceごと固定1 slotで上書きし、
 payload/secret/socket/OS error textを保持しない。provider自身のsocket/TLS/RF resource上限は
 descriptor外のport profileにexact記載し、unknown/unbounded providerをregisterしない。
 
-196,608-byte workspace partitionは
-`NFL1 queue 61,600 + codec scratch 4,096 + registry 6,144 + policy index 8,192 +
-authority index 10,240 + attempt slots 49,152 + trigger slots 16,384 + queue descriptors 4,096 +
-timers 2,048 + registration/metrics 8,192 + control/scan/storage work 26,464`でexactである。
+198,656-byte workspace partitionは
+`NFL1 queue 61,952 + codec scratch 4,096 + registry objects 11,136 +
+policy slots 8,704 + authority slots 20,480 + attempt slots 52,224
+(64 × 816) + trigger slots 15,360 + receive queue 24,064 + timers 128 +
+registration/metrics 128 + control 384`でexactである。
 regionを相互貸与せず、unused regionを別limit超過の救済に使わない。
 policy/authority regionはfull durable valueの複製ではなく、fixed key/revision/digest/lookup indexだけを
-保持する。selection/snapshotはcontrol/scan/storage work内の684-byte value scratchへexact 1 recordずつ
+保持する。selection/snapshotはworkspace内の712-byte value ceilingでexact 1 recordずつ
 copyしてCRC/canonical digestを再検証し、attemptに必要なimmutable fieldだけをFBA1 slotへcopy-ownする。
 Storage iterator/value pointerをreturn後または別Port callまでborrowせず、同時に2 full valueを要求しない。
 
@@ -878,7 +938,8 @@ Storage iterator/value pointerをreturn後または別Port callまでborrowせ�
 FabricはFoundation Runtime store、30章radio-security storeと別のexact namespace
 `ninlil.fabric.v1`を同じStorage Port contractでexclusive openする。Foundation schema 1、
 ESP physical format 4、30章recordを再解釈・共有しない。socket、pointer、fd、TLS object、
-volatile metric、TxPermit bytesは保存しない。
+volatile metric、TxPermit pointer/raw host structは保存しない。call-scoped permitのcanonical
+ID/expiry/claimと、そのclock authorityを兼ねるretry lifetime epochだけをFBA1へ保存する。
 Accepted 30章が記録する現ESP port `max_namespaces=2`へ3個目を暗黙追加せず、既存2 namespaceの
 どちらにもFabric recordを混在させない。そのprofileではFabric featureをUNSUPPORTEDのままにし、
 ESPで有効化するにはnamespace capacity/profileを別reviewで増やしたtarget evidenceが必要である。
@@ -903,19 +964,19 @@ keyは次のexact bytesで、host struct/padding/NULを含めない。
 | registry | ASCII `FBR1` + instance ID[16] | 20 | 372 | 16 |
 | policy revision | ASCII `FBP1` + policy ID[16] + revision u64 | 28 | 352 | 64 |
 | authority binding | ASCII `FBC1` + binding ID[16] | 20 | 512 | 64 |
-| attempt | ASCII `FBA1` + transaction ID[16] + attempt ID[16] + message kind u32 + response slot u32 + Foundation message digest[32] | 76 | 684 | 64 |
+| attempt | ASCII `FBA1` + transaction ID[16] + attempt ID[16] + message kind u32 + response slot u32 + Foundation message digest[32] | 76 | 712 | 64 |
 | ingress trigger | ASCII `FBT1` + transaction ID[16] + triggering attempt ID[16] + kind u32 | 40 | 248 | 64 |
 
 Foundation Storage CUは1 recordごとに`16 + key bytes + value bytes`である。したがってmaximumは
 `1+16+64+64+64+64=273 entries`、
-`Σ(key+value)=131,780 bytes`、overhead `273×16=4,368`、
-合計`136,148 bytes`である。FULL stagingはこのexact 2倍の546 entries / 272,296 bytesを
+`Σ(key+value)=133,572 bytes`、overhead `273×16=4,368`、
+合計`137,940 bytes`である。FULL stagingはこのexact 2倍の546 entries / 275,880 bytesを
 create時に同一namespace capacity snapshotで要求する。
 
 maximum countはactiveだけでなくretained/old revisionを含むnamespace内の総record数である。openは
 fresh READ_ONLY snapshotをkey unsigned-lexicographic順に全scanする。受理する形は
 **全record 0のfresh candidate**または**FBM1 exact 1を含む完全なexisting snapshot**だけである。
-existingでは各prefix count、key/value identity一致、duplicate/out-of-order、value ceiling 684を
+existingでは各prefix count、key/value identity一致、duplicate/out-of-order、value ceiling 712を
 検証してrollback OK後だけregistryをpublishする。65件目等をtruncate/evictしない。
 
 全record 0の場合はREAD_ONLYをrollback OKで閉じ、fresh READ_WRITE transactionを開始して
@@ -1006,7 +1067,7 @@ target runtimeと一致し、どちらでもoffset 76はconcrete target runtime�
 selectorが選ぶendpointとの不一致、service/family/direction/traffic mismatchはCRCを再計算した
 single-field durable mutationでもCORRUPT/TX 0とする。
 
-### FBA1 attempt payload（660 bytes）
+### FBA1 attempt payload（688 bytes）
 
 offset 44のFoundation message digestは、生成済みNFL1のcopyを作り、CRC offset 12..15、
 authority group offset 272..299、Fabric route enrichment offset 484..569をzeroにしたexact
@@ -1032,20 +1093,28 @@ messageをpath/authority enrichmentと独立に比較する。host struct/pointe
 | 572 / 588 | 16 / 8 | retention clock epoch / exclusive retention-until ms |
 | 596 / 612 | 16 / 8 | retry lifetime clock epoch / exclusive retry-expires-at ms |
 | 620 / 652 | 32 / 8 | local dispatch ID / Runtime terminal revision（release前0、release後non-zero） |
+| 660 / 676 / 684 | 16 / 8 / 4 | permit ID / exclusive permit-expires-at ms / permit claim state（CLEAR=0、CLAIMED=1） |
 
 state catalogは`PREPARED=1, LINK_RETAINED=2, RETRYABLE_NO_ACCEPT=3, CLOSED=4,
 FENCED_UNKNOWN=5, DRAINED=6`だけ。transitionは値replacementのrecord revision strict +1で、
-identity/policy/path/message/encoded digest snapshotを変更しない。same
-exact FBA1 keyでstate/common record revision/terminal revision以外のimmutable snapshot差は
-CORRUPT/TX 0である。keyのtransaction/attempt/kind/response slot/digestは
+identity/policy/path/message/encoded digest snapshotを変更しない。
+`retry_lifetime_clock_epoch_id`はpermitのclock authorityでもあり、non-zero必須である。
+permit ID/expiryもnon-zero、claim stateはclosed set 0/1だけである。LINK_RETAINEDはCLAIMED、
+RETRYABLE_NO_ACCEPTはCLEARを必須とし、一度CLAIMEDになったrowはuncertain/FENCED/DRAINEDで
+消去しない。
+same exact FBA1 keyでstate/common record revision/terminal revision/claim state以外の差は
+CORRUPT/TX 0である。ただしRETRYABLE_NO_ACCEPTからのexact retryだけは、fresh
+`(clock_epoch_id, permit_id)`とexpiryへの置換、state PREPARED、claim CLAIMEDを同じFULLで行う。
+keyのtransaction/attempt/kind/response slot/digestは
 payloadとbit-exact一致し、offset 620はtagged local-dispatch digestと一致する。APPLICATION/
 CANCEL_REQUESTの同じ`{transaction,attempt,kind}`に2 message digestを見た場合はCORRUPTだが、
 Foundation規則でvalidな別reverse kind/progressive Receiptは別keyとして共存できる。
 PREPARED後のpre-start hard race/denyはprovider call 0のままCLOSED、provider WOULD_BLOCKは
-RETRYABLE_NO_ACCEPTへ1 FULL replacementし、そのcommit OK後だけreservation/tentative queue/timerを
+CLAIMEDからRETRYABLE_NO_ACCEPT+CLEARへ1 FULL replacementし、そのcommit OKまたはCU-NEW分類後だけ
+reservation/tentative queue/timerを
 releaseする。release replacementのdefinite failureはinstance/dispatch CORRUPT fence、
 COMMIT_UNKNOWNはfresh read-classifyしてouter LOST_UNKNOWNとする。LINK_RETAINED後はprovider terminalで
-CLOSEDへ進む。RETRYABLE_NO_ACCEPTのexact retryは保存clock epoch一致かつexclusive expiry前、
+CLOSEDへ進みCLAIMEDを保持する。RETRYABLE_NO_ACCEPTのexact retryは保存clock epoch一致かつexclusive expiry前、
 同じcaller message、FBC1 lookup、policy/path snapshotがbit-exactの場合だけPREPAREDへ進め、
 期限到達はCLOSED、clock不明/epoch不一致はFENCED_UNKNOWNへ進む。
 private dispatch_releaseがPREPAREDを観測した場合もprovider start 0でまずCLOSEDへFULL replacementし、
@@ -1057,6 +1126,22 @@ process restartでPREPAREDまたはLINK_RETAINEDを読んだ場合は、volatile
 expiry前保持またはexpiry時CLOSEDに分類できる。全transitionはactual old/new bytesをKATにし、
 CLOSED replacementとrestart fence replacementのCOMMIT_UNKNOWNはOLD/NEW/CRC-valid thirdを
 別vectorで固定する。
+
+FBA1のregistry revision/full digestはselection時点のhistorical FBR1 snapshotであり、
+FBA1 state transition、Runtime release、または後続availability更新で書き換えない。
+schema 1はinstance IDごとにcurrent FBR1を1行だけ保持するため、restart joinでは次の2形だけを
+canonicalとする。current FBR1 record revisionがFBA1 pinと同じ場合は従来どおりfull digestを
+bit-exact一致させる。current revisionがpinより新しい場合は、descriptor digestとavailability
+clock epochがbit-exact一致し、current availability epochもpinより新しく、かつ
+`current_record_revision - pinned_record_revision ==
+current_availability_epoch - pinned_availability_epoch`であるstrict availability successorだけを
+候補とする。そのcurrent FBR1のimmutable fieldsと、FBA1に保存した旧availability
+epoch/clock epoch/state/expiryおよびselection時のlifecycle ACTIVEから旧FBR1 valueを再構成し、
+FBA1のhistorical full digestとbit-exact一致した場合だけsuccessorとして許す。
+revision/availabilityのrollback、片方だけのadvance、同revisionでのdigest不一致、旧value再構成の
+digest不一致、descriptor digest不一致はCORRUPTである。このsuccessor規則は過去のselection
+authorityをcurrent availabilityへ読み替えず、retained FBA1のretry/reselect/provider replayを
+許可しない。
 
 ### FBT1 triggerとFBM1 migration payload
 
@@ -1096,6 +1181,13 @@ upperがLOST_UNKNOWNを既に観測したattemptを再送しない。次のnew a
 ただしintended NEW自体がCLOSEDまたはFENCED_UNKNOWNという安全終端replacementなら、NEW分類後に
 そのexact stateを保持し、追加のstate書換えを要求しない。PREPARED/LINK_RETAINEDをpublishし得る
 NEWだけはfresh reconcileでFENCED_UNKNOWNへ進める。
+
+permit claim replacementも同じactual OLD/NEW bytesで分類する。CLEAR→CLAIMEDのCUは分類にかかわらず
+provider start 0でLOST_UNKNOWNとし、NEWならCLAIMEDを保持する。provider definite non-accept後の
+`{state, claim=CLEAR}` replacementはNEWだけがexact intended resultで、元の
+WOULD_BLOCK/UNAVAILABLE/DENIEDへ進める。OLD、value prefixなどpartial、CRC-valid thirdは
+CLAIMEDを消去したと推測せずLOST_UNKNOWN/fenceとする。RETAINED、provider shape不明、
+provider side effectがuncertainな経路でCLEARへ進めない。
 
 registry+meta、policy+meta、authority+meta、attempt+triggerなど複数keyを同じFULL transactionで変える場合は
 all-old/all-newだけを受理する。証拠なしにselection/availability/owner binding成功を生成しない。
@@ -1159,6 +1251,12 @@ target対応、production supportを意味しない。
 9. Runtime ABI golden manifest不変、既存v1 consumer compile/link、raw struct fallback 0
 10. resource profile、compatibility、requirements traceability、独立reviewでP0/P1 0
 
+2026-07-29、machine authorityの再現確認と独立review
+（[review record](../reviews/2026-07-29-fabric-bearer-spec-accepted.md)）で
+**P0=0 / P1=0 / P2=0**を確認し、本設計gateを閉じた。これはprivate/default-OFF
+実装開始を許可するだけで、C codec、Host/ESP実装、public API、HIL、release supportの
+受入ではない。
+
 ### RELEASE_SUPPORTED（100%完成を許可するrelease gate）
 
 SPEC_ACCEPTED後の実装について、次をすべて満たす。
@@ -1194,7 +1292,8 @@ SPEC_ACCEPTED後の実装について、次をすべて満たす。
 
 ## 非主張
 
-本ADRはProposed docs-onlyであり、Fabric API/NFL1採番、実装、POSIX移行、Wi-Fi、LoRa mapping、
+本ADRは設計のみ`SPEC_ACCEPTED`である。private/default-OFF API/NFL1予約値の
+実装開始は許可するが、実装完了、installed/public ABI、POSIX移行、Wi-Fi、LoRa mapping、
 Relay、Multi-parent、HIL、legal、production supportを主張しない。
 
 ## Related

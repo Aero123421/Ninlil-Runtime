@@ -92,13 +92,12 @@ jobs:
           persist-credentials: false
       - name: Verify version, platform, evidence, and HIL claims
         run: |
-          python3 tools/compatibility_matrix_gate.py check
-          python3 tools/compatibility_matrix_gate.py self-test
-          python3 tools/third_party_notice_gate.py check
-          python3 tools/third_party_notice_gate.py self-test
-          python3 tools/release_workflow_identity_gate.py check
-          python3 tools/release_workflow_identity_gate.py self-test
-          python3 tools/spdx_release_sbom.py self-test
+          # Fail-closed ordered distribution authority (includes vocabulary,
+          # archive payload/self-test/git two-run, tests-OFF surface, matrix,
+          # Markdown links, notice, version, workflow identity, SPDX, public
+          # boundary, docs).
+          python3 tools/release_distribution_authority_gate.py check
+          python3 tools/release_distribution_authority_gate.py self-test
 
   cmake-floor-package:
     name: CMake 3.20 package floor
@@ -261,8 +260,20 @@ jobs:
           -DNINLIL_SQLITE_LINKAGE=SHARED
       - name: Build
         run: cmake --build build/ci-ubuntu-dyn --parallel 2
+      - name: Verify and run active public module authority gates
+        run: |
+          python3 tools/public_module_manifest_gate.py verify-ctest-registration \
+            --build-dir build/ci-ubuntu-dyn
+          ctest --test-dir build/ci-ubuntu-dyn \
+            --output-on-failure --no-tests=error \
+            -R '^public_module_manifest_gate(_self_test)?$'
       - name: Test full matrix
         run: ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
+      - name: Traceability complete coverage V2 (baseline)
+        run: |
+          python3 tools/traceability_complete_coverage_gate.py --self-test
+          python3 tools/traceability_complete_coverage_gate.py --check \
+            --profile baseline=build/ci-ubuntu-dyn
       - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
@@ -909,6 +920,874 @@ jobs:
           grep -E 'NINLIL_ENABLE_SANITIZERS:BOOL=ON' \
             build/ci-clang-sanitize/CMakeCache.txt
 
+  # ADR-0021 private MFDT: default-OFF residual + feature-ON private suite.
+  # Actual ESP compile/link/map is tools/esp_idf_ci_docker_run.sh (official amd64).
+  # Does not promote SPEC_ACCEPTED. Physical HIL remains NOT_RUN via runner.
+  mfdt-v1-private:
+    name: MFDT V1 private (OFF residual + ON normal + ASan + host suite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install build deps
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build
+      - name: Default-OFF residual (no MFDT private targets required)
+        run: |
+          cmake -S . -B build/mfdt-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=OFF
+          cmake --build build/mfdt-off --parallel 2 --target ninlil_runtime
+          # Private MFDT tests must not be registered when OFF.
+          if ctest --test-dir build/mfdt-off -N | grep -E 'mfdt_v1_'; then
+            echo "false-green: mfdt_v1 tests registered with MFDT OFF" >&2
+            exit 1
+          fi
+      - name: tests-OFF install surface
+        run: |
+          cmake -S . -B build/mfdt-tests-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNINLIL_BUILD_TESTS=OFF \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=OFF
+          cmake --build build/mfdt-tests-off --parallel 2
+          cmake --install build/mfdt-tests-off --prefix build/mfdt-tests-off/install
+          if find build/mfdt-tests-off/install -iname '*mfdt*' | grep -q .; then
+            echo "false-green: mfdt path in tests-OFF install" >&2
+            find build/mfdt-tests-off/install -iname '*mfdt*'
+            exit 1
+          fi
+      - name: Feature-ON tests-OFF named private archive (fail-closed)
+        run: |
+          set -euo pipefail
+          # MFDT feature ON + BUILD_TESTS=OFF:
+          #   - private archive is EXCLUDE_FROM_ALL (named build only)
+          #   - default "all" must not depend on it
+          #   - CTest count for mfdt must be 0
+          #   - install must not ship MFDT paths/symbols
+          #   - public runtime archive must leak 0 MFDT symbols
+          cmake -S . -B build/mfdt-on-tests-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNINLIL_BUILD_TESTS=OFF \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON
+          # Default all: must succeed without requiring private archive.
+          cmake --build build/mfdt-on-tests-off --parallel 2
+          # Named private archive only (not default all dependency).
+          ninja -C build/mfdt-on-tests-off -t targets \
+            | grep -E '^ninlil_runtime_private:' \
+            || { echo "false-green: missing ninlil_runtime_private target" >&2; exit 1; }
+          cmake --build build/mfdt-on-tests-off --parallel 2 \
+            --target ninlil_runtime_private
+          test -f build/mfdt-on-tests-off/libninlil_runtime_private.a
+          # CTest must register zero MFDT tests under BUILD_TESTS=OFF.
+          if ctest --test-dir build/mfdt-on-tests-off -N | grep -E 'mfdt_v1_'; then
+            echo "false-green: mfdt_v1 tests registered with BUILD_TESTS=OFF" >&2
+            ctest --test-dir build/mfdt-on-tests-off -N | grep -E 'mfdt_v1_' || true
+            exit 1
+          fi
+          listed_off="$(ctest --test-dir build/mfdt-on-tests-off -N -R 'mfdt_v1_' | tail -n 1 || true)"
+          echo "${listed_off}" | grep -E 'Total Tests: 0' \
+            || test -z "$(ctest --test-dir build/mfdt-on-tests-off -N -R 'mfdt_v1_' | grep -E 'Test #')"
+          cmake --install build/mfdt-on-tests-off --prefix build/mfdt-on-tests-off/install
+          if find build/mfdt-on-tests-off/install -iname '*mfdt*' | grep -q .; then
+            echo "false-green: mfdt path in feature-ON tests-OFF install" >&2
+            find build/mfdt-on-tests-off/install -iname '*mfdt*'
+            exit 1
+          fi
+          if find build/mfdt-on-tests-off/install -name 'libninlil_runtime_private.a' | grep -q .; then
+            echo "false-green: private archive installed under tests-OFF" >&2
+            exit 1
+          fi
+          # Public symbol leak = 0 (installed runtime or build-tree public .a).
+          RT_A="build/mfdt-on-tests-off/install/lib/libninlil_runtime.a"
+          if [[ ! -f "${RT_A}" ]]; then
+            RT_A="build/mfdt-on-tests-off/libninlil_runtime.a"
+          fi
+          test -f "${RT_A}"
+          if nm -g "${RT_A}" 2>/dev/null \
+              | grep -E 'ninlil_mfdt_v1_' | grep -q .; then
+            echo "false-green: mfdt symbols leaked into public runtime archive" >&2
+            nm -g "${RT_A}" | grep 'ninlil_mfdt_v1_' | head
+            exit 1
+          fi
+          # Private archive must carry MFDT when feature ON (named build only).
+          if ! nm -g build/mfdt-on-tests-off/libninlil_runtime_private.a 2>/dev/null \
+              | grep -E 'T _?ninlil_mfdt_v1_(spine_arm_sender|hil_full_promotion_enabled|ncl1_encode)' \
+              | grep -q .; then
+            echo "false-green: MFDT ON but named private archive missing MFDT symbols" >&2
+            exit 1
+          fi
+      - name: Feature-ON normal private suite (introspected targets)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/mfdt-on -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON
+          # Fail-closed: every expected private target/test must exist.
+          # lifecycle_test is mandatory (not optional soft membership).
+          expected_tgts=(
+            ninlil_mfdt_v1_unit_test ninlil_mfdt_v1_kat_test
+            ninlil_mfdt_v1_fault_test ninlil_mfdt_v1_e2e_test
+            ninlil_mfdt_v1_pipeline_test ninlil_mfdt_v1_media_cu_test
+            ninlil_mfdt_v1_lifecycle_test ninlil_mfdt_v1_transport_sim_test
+            ninlil_mfdt_v1_esp_store_cu_test
+          )
+          for t in "${expected_tgts[@]}"; do
+            ninja -C build/mfdt-on -t targets | grep -E "^${t}:" \
+              || { echo "false-green: missing MFDT target ${t}" >&2; exit 1; }
+          done
+          # Explicit lifecycle registration (CTest name + executable).
+          ctest --test-dir build/mfdt-on -N \
+            | grep -F 'mfdt_v1_lifecycle_private' \
+            || { echo "false-green: mfdt_v1_lifecycle_private not registered" >&2; exit 1; }
+          cmake --build build/mfdt-on --parallel 2 --target "${expected_tgts[@]}"
+          listed="$(ctest --test-dir build/mfdt-on -N -R 'mfdt_v1_' | tail -n 1)"
+          test "${listed}" != "Total Tests: 0"
+          ctest --test-dir build/mfdt-on --output-on-failure --no-tests=error \
+            -R 'mfdt_v1_'
+      - name: Feature-ON ASan/UBSan private suite
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/mfdt-asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DNINLIL_ENABLE_SANITIZERS=ON \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON
+          # lifecycle_test is required in ASan targets (fail-closed).
+          asan_tgts=(
+            ninlil_mfdt_v1_unit_test ninlil_mfdt_v1_kat_test
+            ninlil_mfdt_v1_fault_test ninlil_mfdt_v1_e2e_test
+            ninlil_mfdt_v1_pipeline_test ninlil_mfdt_v1_media_cu_test
+            ninlil_mfdt_v1_lifecycle_test
+            ninlil_mfdt_v1_transport_sim_test ninlil_mfdt_v1_esp_store_cu_test
+          )
+          printf '%s\n' "${asan_tgts[@]}" | grep -Fx 'ninlil_mfdt_v1_lifecycle_test' \
+            || { echo "false-green: lifecycle_test absent from ASan target list" >&2; exit 1; }
+          for t in "${asan_tgts[@]}"; do
+            ninja -C build/mfdt-asan -t targets | grep -E "^${t}:" \
+              || { echo "false-green: missing MFDT ASan target ${t}" >&2; exit 1; }
+          done
+          cmake --build build/mfdt-asan --parallel 2 --target "${asan_tgts[@]}"
+          # Regex must include lifecycle (mandatory; not soft).
+          ASAN_CTEST_RE='mfdt_v1_(unit|kat|fault|e2e|pipeline|media_cu|lifecycle|transport_sim|esp_store_cu|hil|esp|dram)_'
+          echo "${ASAN_CTEST_RE}" | grep -F 'lifecycle' \
+            || { echo "false-green: ASan ctest regex missing lifecycle" >&2; exit 1; }
+          ctest --test-dir build/mfdt-asan -N -R "${ASAN_CTEST_RE}" \
+            | grep -F 'mfdt_v1_lifecycle_private' \
+            || { echo "false-green: ASan suite does not select lifecycle_private" >&2; exit 1; }
+          ctest --test-dir build/mfdt-asan --output-on-failure --no-tests=error \
+            -R "${ASAN_CTEST_RE}"
+      - name: ESP map proof contract (dry-run host) + authority pointer
+        run: |
+          # Host-side contract only. Actual linux/amd64 compile/link/map is
+          # tools/esp_idf_ci_docker_run.sh (sole immutable ESP-IDF launcher).
+          NINLIL_ESP_CI_DRY_RUN=1 tools/mfdt_v1_esp_idf_map_proof.sh
+          grep -F 'sdkconfig.defaults.mfdt_on' tools/esp_idf_ci_docker_run.sh
+      - name: HIL runner NOT_RUN evidence
+        run: |
+          python3 tools/ninlil_hil/mfdt_v1_hil_runner.py \
+            --out build/mfdt_v1_hil_not_run.json
+          grep -F '"status": "NOT_RUN"' build/mfdt_v1_hil_not_run.json
+          grep -F '"full_esp_hil_attested": false' build/mfdt_v1_hil_not_run.json
+
+  # ADR-0018 private Wi-Fi v1: default-OFF residual + feature-ON unit/e2e/ASan.
+  # Actual ESP wifi_hil compile/link/map: tools/esp_idf_ci_docker_run.sh.
+  # ADR/vectors remain Proposed. Physical AP HIL = NOT_RUN (executable runner).
+  # Host OpenSSL 3.5.7 pin may be absent on runner → ALLOW_UNPINNED for LAB only.
+  wifi-v1-private:
+    name: Wi-Fi V1 private (OFF residual + ON normal + ASan + gates)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install build deps
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build
+      - name: Default-OFF residual (no wifi_v1 private tests)
+        run: |
+          cmake -S . -B build/wifi-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=OFF \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=OFF
+          cmake --build build/wifi-off --parallel 2 --target ninlil_runtime
+          if ctest --test-dir build/wifi-off -N | grep -E 'wifi_v1_'; then
+            echo "false-green: wifi_v1 tests registered with WIFI OFF" >&2
+            exit 1
+          fi
+      - name: tests-OFF install surface (default WIFI OFF — no wifi private install)
+        run: |
+          cmake -S . -B build/wifi-tests-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNINLIL_BUILD_TESTS=OFF \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=OFF
+          cmake --build build/wifi-tests-off --parallel 2
+          cmake --install build/wifi-tests-off --prefix build/wifi-tests-off/install
+          if find build/wifi-tests-off/install -iname '*wifi_v1*' | grep -q .; then
+            echo "false-green: wifi_v1 path in tests-OFF install" >&2
+            find build/wifi-tests-off/install -iname '*wifi_v1*'
+            exit 1
+          fi
+      - name: Feature-ON tests-OFF install non-exposure (private EXCLUDE_FROM_ALL)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/wifi-on-tests-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNINLIL_BUILD_TESTS=OFF \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          # Private archive builds only when named; default all must not require it.
+          cmake --build build/wifi-on-tests-off --parallel 2
+          cmake --build build/wifi-on-tests-off --parallel 2 --target ninlil_wifi_v1_private
+          cmake --install build/wifi-on-tests-off --prefix build/wifi-on-tests-off/install
+          if find build/wifi-on-tests-off/install -iname '*wifi*' | grep -q .; then
+            echo "false-green: wifi path in feature-ON tests-OFF install" >&2
+            find build/wifi-on-tests-off/install -iname '*wifi*'
+            exit 1
+          fi
+          if ctest --test-dir build/wifi-on-tests-off -N | grep -E 'wifi_v1_'; then
+            echo "false-green: wifi_v1 tests registered with BUILD_TESTS=OFF" >&2
+            exit 1
+          fi
+      - name: Spec gate + vector generator (Proposed; no promotion)
+        run: |
+          python3 tools/wifi_bearer_spec_vector_gen.py --check
+          python3 tools/wifi_bearer_spec_gate.py --check
+      - name: Feature-ON normal private suite + host e2e
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/wifi-on -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          wifi_tgts=(
+            ninlil_wifi_v1_private
+            wifi_v1_nwb1_test wifi_v1_credentials_test wifi_v1_leaf_binding_test
+            wifi_v1_journal_test wifi_v1_storage_commit_unknown_test
+            wifi_v1_reconnect_test wifi_v1_exporter_kat_test
+            wifi_v1_attachment_gate_test wifi_v1_esp_owner_test
+            wifi_v1_esp_owner_sm_test wifi_v1_m4_evidence_test
+            wifi_v1_m4_forge_probe_test wifi_v1_m4_owner_concurrency_test
+            wifi_v1_m4_stale_load_barrier_test wifi_v1_queue_drop_wrap_test
+            wifi_v1_tls_storage_align_test wifi_v1_fabric_link_test
+            wifi_v1_adapter_lifecycle_test wifi_v1_esp_adapter_e2e_test
+            wifi_v1_actual_adapter_fabric_e2e_test
+            wifi_v1_host_e2e_driver
+          )
+          for t in "${wifi_tgts[@]}"; do
+            ninja -C build/wifi-on -t targets | grep -E "^${t}:" \
+              || { echo "false-green: missing wifi target ${t}" >&2; exit 1; }
+          done
+          cmake --build build/wifi-on --parallel 2 --target "${wifi_tgts[@]}"
+          listed="$(ctest --test-dir build/wifi-on -N -R 'wifi_v1_' | tail -n 1)"
+          test "${listed}" != "Total Tests: 0"
+          # wifi_v1_host_e2e is fixed to FRAMES=200 by its CTest property.
+          # The pinned-authority job owns the sole full 10k release evidence.
+          ctest --test-dir build/wifi-on --output-on-failure --no-tests=error \
+            -R 'wifi_v1_'
+          python3 tools/wifi_v1_openssl_pin_provenance.py --report-only \
+            | tee build/wifi-on/openssl_pin_provenance.json
+          # ADR-0018 not promoted: authority_claim_allowed must not be assumed.
+          grep -F '"authority_claim_allowed": false' build/wifi-on/openssl_pin_provenance.json \
+            || grep -F '"authority_claim_allowed": true' build/wifi-on/openssl_pin_provenance.json
+      - name: Feature-ON ASan/UBSan private suite
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          # CTest fixes the host E2E at FRAMES=200 for every standard matrix.
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/wifi-asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DNINLIL_ENABLE_SANITIZERS=ON \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          wifi_tgts=(
+            ninlil_wifi_v1_private
+            wifi_v1_nwb1_test wifi_v1_credentials_test wifi_v1_leaf_binding_test
+            wifi_v1_journal_test wifi_v1_storage_commit_unknown_test
+            wifi_v1_reconnect_test wifi_v1_exporter_kat_test
+            wifi_v1_attachment_gate_test wifi_v1_esp_owner_test
+            wifi_v1_esp_owner_sm_test wifi_v1_m4_evidence_test
+            wifi_v1_m4_forge_probe_test wifi_v1_m4_owner_concurrency_test
+            wifi_v1_m4_stale_load_barrier_test wifi_v1_queue_drop_wrap_test
+            wifi_v1_tls_storage_align_test wifi_v1_fabric_link_test
+            wifi_v1_adapter_lifecycle_test wifi_v1_esp_adapter_e2e_test
+            wifi_v1_actual_adapter_fabric_e2e_test
+            wifi_v1_host_e2e_driver
+          )
+          for t in "${wifi_tgts[@]}"; do
+            ninja -C build/wifi-asan -t targets | grep -E "^${t}:" \
+              || { echo "false-green: missing wifi ASan target ${t}" >&2; exit 1; }
+          done
+          cmake --build build/wifi-asan --parallel 2 --target "${wifi_tgts[@]}"
+          ctest --test-dir build/wifi-asan --output-on-failure --no-tests=error \
+            -R 'wifi_v1_'
+      - name: Feature-ON TSan (library body + concurrency + stale-load)
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          set -euo pipefail
+          # Instruments ninlil_wifi_v1_private via NINLIL_ENABLE_TSAN (non-Apple).
+          cmake -S . -B build/wifi-tsan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DNINLIL_ENABLE_TSAN=ON \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          wifi_tgts=(
+            ninlil_wifi_v1_private
+            ninlil_wifi_v1_m4_hooks
+            wifi_v1_m4_owner_concurrency_test
+            wifi_v1_m4_owner_concurrency_tsan_test
+            wifi_v1_m4_stale_load_barrier_test
+            wifi_v1_m4_stale_load_barrier_tsan_test
+            wifi_v1_m4_evidence_test
+            wifi_v1_m4_forge_probe_test
+          )
+          for t in "${wifi_tgts[@]}"; do
+            ninja -C build/wifi-tsan -t targets | grep -E "^${t}:" \
+              || { echo "false-green: missing wifi TSan target ${t}" >&2; exit 1; }
+          done
+          cmake --build build/wifi-tsan --parallel 2 --target "${wifi_tgts[@]}"
+          ctest --test-dir build/wifi-tsan --output-on-failure --no-tests=error \
+            -R 'wifi_v1_m4_'
+      - name: ESP map proof contract (dry-run host) + authority pointer
+        run: |
+          # Host contract only. Actual wifi_hil esp32s3 build is in
+          # tools/esp_idf_ci_docker_run.sh (immutable linux/amd64 image).
+          NINLIL_ESP_CI_DRY_RUN=1 tools/wifi_v1_esp_idf_map_proof.sh
+          grep -F 'wifi_hil_app' tools/esp_idf_ci_docker_run.sh
+      - name: Physical AP HIL runner NOT_RUN evidence
+        run: |
+          python3 tools/ninlil_hil/wifi_v1_hil_runner.py \
+            --out build/wifi_v1_hil_not_run.json
+          grep -F '"status": "NOT_RUN"' build/wifi_v1_hil_not_run.json
+          grep -F '"full_esp_hil_attested": false' build/wifi_v1_hil_not_run.json
+          grep -F '"physical_ap_hil": "NOT_RUN"' build/wifi_v1_hil_not_run.json
+
+  # Host authority is deliberately separate from the system-OpenSSL LAB job.
+  # Both supported Host OS families build the exact official 3.5.7 archive,
+  # link static libssl/libcrypto, exercise real TLS/TCP, and fail closed unless
+  # the final binary + provenance gate prove the complete authority chain.
+  wifi-v1-openssl-authority:
+    name: Wi-Fi pinned OpenSSL authority (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install Host build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev ninja-build perl make
+      - name: Install Host build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - name: Build exact static OpenSSL 3.5.7
+        env:
+          NINLIL_OPENSSL_BUILD_ROOT: ${{ runner.temp }}/ninlil-openssl-3.5.7
+          NINLIL_OPENSSL_DOWNLOAD_ROOT: ${{ runner.temp }}/ninlil-openssl-downloads
+          NINLIL_OPENSSL_BUILD_JOBS: "2"
+        run: |
+          tools/wifi_v1_build_pinned_openssl.sh
+          test -f "${NINLIL_OPENSSL_BUILD_ROOT}/install/lib/libssl.a"
+          test -f "${NINLIL_OPENSSL_BUILD_ROOT}/install/lib/libcrypto.a"
+      - name: Configure and build pinned static authority
+        env:
+          PIN_ROOT: ${{ runner.temp }}/ninlil-openssl-3.5.7/install
+        run: |
+          cmake -S . -B build/wifi-authority -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_WIFI_OPENSSL_AUTHORITY=ON \
+            "-DNINLIL_WIFI_OPENSSL_AUTHORITY_ROOT=${PIN_ROOT}"
+          cmake --build build/wifi-authority --parallel 2
+      - name: Wi-Fi private suite and real TLS/TCP authority E2E
+        env:
+          NINLIL_WIFI_REQUIRE_AUTHORITY: "1"
+          FRAMES: "10000"
+        run: |
+          # Exclude the registered bounded sample, then run the exact full 10k
+          # path once as pinned-authority release evidence.
+          ctest --test-dir build/wifi-authority \
+            --output-on-failure --no-tests=error \
+            -R 'wifi_v1_' -E '^wifi_v1_host_e2e$'
+          tools/wifi_v1_run_host_e2e.sh \
+            build/wifi-authority/wifi_v1_host_e2e_driver
+      - name: Final binary static-link and provenance authority
+        env:
+          PIN_ROOT: ${{ runner.temp }}/ninlil-openssl-3.5.7/install
+          PIN_SOURCE: ${{ runner.temp }}/ninlil-openssl-downloads/openssl-3.5.7.tar.gz
+        run: |
+          ninja -C build/wifi-authority -t commands \
+            wifi_v1_host_e2e_driver \
+            | tee build/wifi-authority/wifi_v1_host_e2e_driver.link.txt
+          python3 tools/wifi_v1_openssl_pin_provenance.py \
+            --root "${PIN_ROOT}" \
+            --source-archive "${PIN_SOURCE}" \
+            --cmake-cache build/wifi-authority/CMakeCache.txt \
+            --link-evidence \
+              build/wifi-authority/wifi_v1_host_e2e_driver.link.txt \
+            --binary build/wifi-authority/wifi_v1_host_e2e_driver \
+            | tee build/wifi-authority/openssl_pin_provenance.json
+          grep -F '"authority_claim_allowed": true' \
+            build/wifi-authority/openssl_pin_provenance.json
+          grep -F '"provenance_status": "OK"' \
+            build/wifi-authority/openssl_pin_provenance.json
+
+  # ADR-0022 Domain schema1: feature ON + default OFF, normal + ASan/UBSan,
+  # tests-OFF install consumer / symbol boundary. No status promotion.
+  domain-schema1-runtime:
+    name: Domain schema1 (OFF residual + ON normal + ASan + tests-OFF)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install build deps
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build binutils
+      - name: Domain schema1 full host matrix
+        run: bash tools/ci_completion_feature_host_matrix.sh domain_schema1 all_profiles
+      - name: ESP domain map contract dry-run pointer
+        run: |
+          # Actual feature-ON ESP build lives in tools/esp_idf_ci_docker_run.sh.
+          test -f ports/esp-idf/smoke_app/sdkconfig.defaults.domain_schema1_on
+          grep -F 'sdkconfig.defaults.domain_schema1_on' tools/esp_idf_ci_docker_run.sh
+          python3 tools/domain_schema1_memory_gate.py self-test
+
+  # ADR-0017 private Fabric: ON/OFF, direct normal/ASan, ILP32 evidence,
+  # tests-OFF non-installed boundary. Not public ABI.
+  fabric-v1-private:
+    name: Fabric V1 private (OFF residual + ON normal + ASan + ILP32)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install build deps (+ arm-none-eabi for ILP32)
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build binutils
+          gcc-arm-none-eabi
+      - name: Fabric V1 full host matrix
+        run: bash tools/ci_completion_feature_host_matrix.sh fabric_v1 all_profiles
+
+  # Private NRW1 LINK/FRAG: ON/OFF, focused normal/ASan/UBSan,
+  # installed/tests-OFF boundary. ESP compile/link/map/stack in esp-idf job.
+  r7-frag-private:
+    name: R7 FRAG private (OFF residual + ON normal + ASan + boundary)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install build deps
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build binutils
+      - name: R7 FRAG full host matrix
+        run: bash tools/ci_completion_feature_host_matrix.sh r7_frag all_profiles
+      - name: ESP FRAG map/stack authority pointer
+        run: |
+          # Actual FRAG-ON ESP32-S3 compile/link/map/stack is in
+          # tools/esp_idf_ci_docker_run.sh (not dry-run substitution).
+          test -f ports/esp-idf/smoke_app/sdkconfig.defaults.r7_frag_on
+          grep -F 'sdkconfig.defaults.r7_frag_on' tools/esp_idf_ci_docker_run.sh
+          grep -F 'r7_frag_stack_gate.py' tools/esp_idf_ci_docker_run.sh
+          python3 tools/esp_idf_r7_frag_packaging_gate.py check
+
+  # ADR-0019/0020 private route-relay/multi-parent: ON/OFF, normal/ASan/UBSan,
+  # installed/tests-OFF boundary. ESP map/stack in esp-idf job. Physical NOT_RUN.
+  rrmp-v1-private:
+    name: RRMP V1 private (OFF residual + ON normal + ASan + boundary)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install build deps
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build binutils
+      - name: RRMP full host matrix
+        run: bash tools/ci_completion_feature_host_matrix.sh rrmp all_profiles
+      - name: ESP RRMP map authority pointer + physical NOT_RUN
+        run: |
+          test -f ports/esp-idf/smoke_app/sdkconfig.defaults.rrmp_on
+          grep -F 'sdkconfig.defaults.rrmp_on' tools/esp_idf_ci_docker_run.sh
+          NINLIL_ESP_CI_DRY_RUN=1 tools/rrmp_esp_idf_map_proof.sh
+          grep -F '"status": "NOT_RUN"' tools/rrmp_hil_evidence_template.json
+
+  # Host all-private coexistence + canonical actual-path evidence.
+  # The six-call probe proves coexistence, not cross-feature E2E. The
+  # host_completion_wire scenario is a test-only transport fixture. Canonical
+  # Foundation owner-plane -> NFL1 E2Es run in an explicit Domain-OFF companion
+  # profile until Domain public Runtime readiness is promoted.
+  host-completion-integrated-e2e:
+    name: Host all-private coexistence + canonical actual E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install build deps
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build binutils clang
+      - name: Configure and build (all private features simultaneous ON)
+        run: |
+          set -euo pipefail
+          # Simultaneous ON: domain + fabric + wifi + r7 frag + rrmp + mfdt.
+          # Partial feature-ON trees (mfdt-only / wifi-only) are not substitutes.
+          cmake -S . -B build/host-completion-allfeat -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          # Configure/registration alone is not build evidence.
+          cmake --build build/host-completion-allfeat \
+            --target host_completion_all_private_build
+          test -x build/host-completion-allfeat/ninlil_host_completion_all_private_coexistence_probe
+          test -x build/host-completion-allfeat/ninlil_host_completion_transport_fixture_e2e
+          # Aggregate also compile/links the canonical actual-path executable.
+          # It cannot run in this exact tree while Domain public Runtime
+          # readiness is false; the companion profile below owns execution.
+          test -x build/host-completion-allfeat/ninlil_runtime_fabric_actual_e2e_test
+          ctest --test-dir build/host-completion-allfeat -N \
+            | grep -F 'host_completion_all_private_coexistence_probe' \
+            || { echo "false-green: all-private coexistence probe not registered" >&2; exit 1; }
+          ctest --test-dir build/host-completion-allfeat -N \
+            | grep -F 'host_completion_transport_fixture_e2e' \
+            || { echo "false-green: transport fixture not registered under all-features-ON" >&2; exit 1; }
+          ctest --test-dir build/host-completion-allfeat -N \
+            | grep -F 'traceability_complete_coverage_v2_check' \
+            || { echo "false-green: all-private traceability gate not registered" >&2; exit 1; }
+          ctest --test-dir build/host-completion-allfeat \
+            --show-only=json-v1 \
+            -R '^(runtime_fabric_actual_e2e|multi_service_node_host_actual_e2e|mfdt_v1_fabric_actual_e2e)$' \
+            > build/host-completion-allfeat/actual-e2e-registry.json
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(
+              "build/host-completion-allfeat/actual-e2e-registry.json")
+          tests = {
+              row["name"]: row
+              for row in json.loads(path.read_text(encoding="utf-8"))["tests"]
+          }
+          expected = {
+              "runtime_fabric_actual_e2e",
+              "multi_service_node_host_actual_e2e",
+              "mfdt_v1_fabric_actual_e2e",
+          }
+          if set(tests) != expected:
+              print(
+                  f"false-green: all-private actual E2E inventory={set(tests)!r}",
+                  file=sys.stderr)
+              raise SystemExit(1)
+          for name, row in tests.items():
+              disabled = any(
+                  prop.get("name") == "DISABLED" and prop.get("value") is True
+                  for prop in row.get("properties", []))
+              if not disabled:
+                  print(
+                      "false-claim: Domain-ON actual E2E unexpectedly enabled "
+                      f"before public Runtime readiness: {name}",
+                      file=sys.stderr)
+                  raise SystemExit(1)
+          print("all-private actual E2E boundary: compile/link only, Domain readiness disabled")
+          PY
+          # Default-OFF must not register this test.
+          cmake -S . -B build/host-completion-off -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_BUILD_TESTS=ON
+          if ctest --test-dir build/host-completion-off -N \
+            | grep -E 'host_completion_(all_private|transport)'; then
+            echo "false-green: host_completion registered with features OFF" >&2
+            exit 1
+          fi
+          # Single-feature MFDT-only tree must not be treated as all-features.
+          cmake -S . -B build/host-completion-mfdt-only -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON
+          if ctest --test-dir build/host-completion-mfdt-only -N \
+            | grep -E 'host_completion_(all_private|transport)'; then
+            echo "false-green: host_completion registered under MFDT-only (not all-features)" >&2
+            exit 1
+          fi
+          # Profile-classifier mutation: Domain ON with one private feature
+          # missing is neither baseline nor all-private.  Registering the
+          # coverage check here would let a partial tree masquerade as a
+          # complete profile.
+          cmake -S . -B build/traceability-not-all-private -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=OFF \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          if ctest --test-dir build/traceability-not-all-private -N \
+            | grep -F 'traceability_complete_coverage_v2_check'; then
+            echo "false-green: partial private tree received a complete profile" >&2
+            exit 1
+          fi
+          if ctest --test-dir build/traceability-not-all-private -N \
+            | grep -E 'host_completion_(all_private|transport)'; then
+            echo "false-green: partial private tree registered all-private Host tests" >&2
+            exit 1
+          fi
+      - name: Traceability complete coverage V2 (all-private)
+        run: |
+          set -euo pipefail
+          python3 tools/traceability_complete_coverage_gate.py --self-test
+          python3 tools/traceability_complete_coverage_gate.py --check \
+            --profile all-private=build/host-completion-allfeat
+      - name: Canonical Foundation/Fabric/MFDT actual E2E (normal companion)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          # Domain OFF is explicit: Domain public Runtime readiness is not yet
+          # promoted. Wi-Fi/R7 FRAG/RRMP are enabled but not connected by these
+          # actual E2Es; only Foundation owner-plane -> Fabric -> canonical
+          # NFL1 and the MFDT carrier path are claimed here.
+          cmake -S . -B build/host-completion-canonical-actual -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=OFF \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          cmake --build build/host-completion-canonical-actual \
+            --target ninlil_runtime_fabric_actual_e2e_test
+          ctest --test-dir build/host-completion-canonical-actual \
+            --show-only=json-v1 \
+            -R '^(runtime_fabric_actual_e2e|multi_service_node_host_actual_e2e|mfdt_v1_fabric_actual_e2e)$' \
+            > build/host-completion-canonical-actual/actual-e2e-registry.json
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(
+              "build/host-completion-canonical-actual/actual-e2e-registry.json")
+          tests = {
+              row["name"]: row
+              for row in json.loads(path.read_text(encoding="utf-8"))["tests"]
+          }
+          expected = {
+              "runtime_fabric_actual_e2e",
+              "multi_service_node_host_actual_e2e",
+              "mfdt_v1_fabric_actual_e2e",
+          }
+          if set(tests) != expected:
+              print(
+                  f"false-green: canonical actual inventory={set(tests)!r}",
+                  file=sys.stderr)
+              raise SystemExit(1)
+          for name, row in tests.items():
+              if any(
+                  prop.get("name") == "DISABLED" and prop.get("value") is True
+                  for prop in row.get("properties", [])):
+                  print(
+                      f"false-green: canonical actual test disabled: {name}",
+                      file=sys.stderr)
+                  raise SystemExit(1)
+          print("canonical actual E2E registry: enabled 3/3")
+          PY
+          ctest --test-dir build/host-completion-canonical-actual \
+            --output-on-failure --no-tests=error \
+            -R '^(runtime_fabric_actual_e2e|multi_service_node_host_actual_e2e|mfdt_v1_fabric_actual_e2e)$'
+      - name: Host all-private coexistence + transport fixture (normal)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          # One-process six-feature coexistence proof plus test-only transport
+          # fixture and its fail-closed negative self-test.
+          ctest --test-dir build/host-completion-allfeat --output-on-failure \
+            --no-tests=error \
+            -R '^host_completion_(all_private_coexistence_probe|transport_fixture_e2e.*)$'
+      - name: Host ASan/UBSan coexistence + actual E2E
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          # Sanitizer-enabled simultaneous all-features tree.
+          cmake -S . -B build/host-completion-allfeat-asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DNINLIL_ENABLE_SANITIZERS=ON \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          # Compile/link the same aggregate under ASan/UBSan before execution.
+          cmake --build build/host-completion-allfeat-asan \
+            --target host_completion_all_private_build
+          test -x build/host-completion-allfeat-asan/ninlil_host_completion_all_private_coexistence_probe
+          test -x build/host-completion-allfeat-asan/ninlil_host_completion_transport_fixture_e2e
+          test -x build/host-completion-allfeat-asan/ninlil_runtime_fabric_actual_e2e_test
+          ctest --test-dir build/host-completion-allfeat-asan -N \
+            | grep -F 'host_completion_all_private_coexistence_probe' \
+            || { echo "false-green: all-private ASan coexistence probe missing" >&2; exit 1; }
+          ctest --test-dir build/host-completion-allfeat-asan -N \
+            | grep -F 'host_completion_transport_fixture_e2e' \
+            || { echo "false-green: transport fixture missing under allfeat ASan" >&2; exit 1; }
+          ctest --test-dir build/host-completion-allfeat-asan \
+            --output-on-failure --no-tests=error \
+            -R '^host_completion_(all_private_coexistence_probe|transport_fixture_e2e.*)$'
+
+          # Canonical actual paths execute under the same sanitizer flags in a
+          # Domain-OFF companion tree. Domain/Wi-Fi/R7 FRAG/RRMP cross-feature
+          # connectivity remains explicitly unclaimed.
+          cmake -S . -B build/host-completion-canonical-actual-asan -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DNINLIL_ENABLE_SANITIZERS=ON \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=OFF \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          cmake --build build/host-completion-canonical-actual-asan \
+            --target ninlil_runtime_fabric_actual_e2e_test
+          ctest --test-dir build/host-completion-canonical-actual-asan \
+            --show-only=json-v1 \
+            -R '^(runtime_fabric_actual_e2e|multi_service_node_host_actual_e2e|mfdt_v1_fabric_actual_e2e)$' \
+            > build/host-completion-canonical-actual-asan/actual-e2e-registry.json
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(
+              "build/host-completion-canonical-actual-asan/"
+              "actual-e2e-registry.json")
+          tests = {
+              row["name"]: row
+              for row in json.loads(path.read_text(encoding="utf-8"))["tests"]
+          }
+          expected = {
+              "runtime_fabric_actual_e2e",
+              "multi_service_node_host_actual_e2e",
+              "mfdt_v1_fabric_actual_e2e",
+          }
+          if set(tests) != expected:
+              print(
+                  f"false-green: ASan canonical actual inventory={set(tests)!r}",
+                  file=sys.stderr)
+              raise SystemExit(1)
+          for name, row in tests.items():
+              if any(
+                  prop.get("name") == "DISABLED" and prop.get("value") is True
+                  for prop in row.get("properties", [])):
+                  print(
+                      f"false-green: ASan canonical actual disabled: {name}",
+                      file=sys.stderr)
+                  raise SystemExit(1)
+          print("ASan canonical actual E2E registry: enabled 3/3")
+          PY
+          ctest --test-dir build/host-completion-canonical-actual-asan \
+            --output-on-failure --no-tests=error \
+            -R '^(runtime_fabric_actual_e2e|multi_service_node_host_actual_e2e|mfdt_v1_fabric_actual_e2e)$'
   clang-non-sanitizer-hygiene:
     name: Ubuntu Clang non-sanitizer archive hygiene
     runs-on: ubuntu-24.04
@@ -997,6 +1876,86 @@ jobs:
           done
           rm -rf "$tmp"
 
+  ubuntu-release-archive-cleanroom:
+    name: Ubuntu from-release-archive clean-room
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Install clean-room build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libssl-dev libsqlite3-dev ninja-build
+      - name: From-git archive two-run + clean-room build/test/package
+        run: |
+          python3 tools/release_forbidden_vocabulary_gate.py check
+          python3 tools/release_archive_payload_gate.py build-from-git \
+            --two-run \
+            --source git \
+            --treeish HEAD \
+            --prefix ninlil-runtime-ci-cleanroom \
+            --out-dir "${RUNNER_TEMP}/ninlil-ci-arch"
+          python3 tools/release_archive_payload_gate.py check \
+            --tar "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.tar.gz" \
+            --zip "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.zip" \
+            --prefix ninlil-runtime-ci-cleanroom
+          python3 tools/release_archive_payload_gate.py cleanroom \
+            --tar "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.tar.gz" \
+            --zip "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.zip" \
+            --prefix ninlil-runtime-ci-cleanroom \
+            --profile host \
+            --out-dir "${RUNNER_TEMP}/ninlil-ci-cleanroom"
+          python3 tools/posix_lab_tests_off_surface_gate.py check
+
+  macos-release-archive-cleanroom:
+    name: macOS from-release-archive clean-room
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - name: Assert supported macOS arm64 runner
+        run: test "$(uname -m)" = "arm64"
+      - name: Install OpenSSL 3 (Homebrew)
+        run: |
+          set -euo pipefail
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          echo "OPENSSL_ROOT=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+      - name: From-git archive two-run + clean-room build/test/package
+        run: |
+          set -euo pipefail
+          test -n "${OPENSSL_ROOT:-}"
+          export OPENSSL_ROOT_DIR="$OPENSSL_ROOT"
+          python3 tools/release_forbidden_vocabulary_gate.py check
+          python3 tools/release_archive_payload_gate.py build-from-git \
+            --two-run \
+            --source git \
+            --treeish HEAD \
+            --prefix ninlil-runtime-ci-cleanroom \
+            --out-dir "${RUNNER_TEMP}/ninlil-ci-arch"
+          python3 tools/release_archive_payload_gate.py check \
+            --tar "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.tar.gz" \
+            --zip "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.zip" \
+            --prefix ninlil-runtime-ci-cleanroom
+          python3 tools/release_archive_payload_gate.py cleanroom \
+            --tar "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.tar.gz" \
+            --zip "${RUNNER_TEMP}/ninlil-ci-arch/run1/ninlil-runtime-ci-cleanroom.zip" \
+            --prefix ninlil-runtime-ci-cleanroom \
+            --profile host \
+            --out-dir "${RUNNER_TEMP}/ninlil-ci-cleanroom"
+          python3 tools/posix_lab_tests_off_surface_gate.py check
+
   macos-dynamic:
     name: macOS dynamic SQLite full
     runs-on: macos-15
@@ -1030,6 +1989,13 @@ jobs:
             -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT"
       - name: Build
         run: cmake --build build/ci-macos --parallel 2
+      - name: Verify and run active public module authority gates
+        run: |
+          python3 tools/public_module_manifest_gate.py verify-ctest-registration \
+            --build-dir build/ci-macos
+          ctest --test-dir build/ci-macos \
+            --output-on-failure --no-tests=error \
+            -R '^public_module_manifest_gate(_self_test)?$'
       - name: Test full matrix
         run: ctest --test-dir build/ci-macos --output-on-failure
       - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)

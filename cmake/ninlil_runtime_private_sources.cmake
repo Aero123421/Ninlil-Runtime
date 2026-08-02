@@ -23,8 +23,10 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/domain_store_d3s1.c
     src/runtime/domain_store_d3s2.c
     src/runtime/domain_store_d3s3.c
+    src/runtime/domain_store_d3s4.c
     src/runtime/domain_store_scanner.c
     src/runtime/runtime_public.c
+    src/runtime/runtime_terminal_owner_projection.c
     src/runtime/runtime_store_orchestrator.c
     src/runtime/runtime_store_stage5_seam.c
     src/runtime/runtime_v1_spine_durable.c
@@ -47,6 +49,17 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/radio/pcp_authority.c
     src/radio/profile_loader.c
     src/transport/logical_session.c
+)
+
+# Host always packages session ledger (unit tests). ESP release HIL must not:
+# session fallback is diagnostic-only (see CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG).
+set(NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES
+    src/radio/pcp_lab_session_ledger.c
+)
+
+# R9 edge is optional on ESP (Kconfig); host always appends below.
+set(NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES
+    src/radio/sx1262_r9_edge.c
 )
 
 # Exact N6 production private set — single authority (define once).
@@ -78,6 +91,7 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/runtime/domain_store_d3s1.c
     src/runtime/domain_store_d3s2.c
     src/runtime/domain_store_d3s3.c
+    src/runtime/domain_store_d3s4.c
     src/runtime/runtime_store_stage5_seam.c
     src/runtime/stage5_empty_metadata.c
     src/runtime/runtime_store_orchestrator.c
@@ -88,8 +102,13 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/radio/pcp_authority.c
     src/radio/profile_loader.c
     src/transport/logical_session.c
+    ${NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES}
+    ${NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES}
     ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}
     ${NINLIL_R7_CRYPTO_PORTABLE_RELATIVE_SOURCES}
     ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}
     ${NINLIL_R7_WIRE_PORTABLE_RELATIVE_SOURCES}
 )
+
+# Host CMakeLists appends NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES to the private
+# archive. ESP packages R9 edge only when CONFIG_NINLIL_ENABLE_SX1262_R9=y.

@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ninlil.dev/schema/hil/ninlil-hil-manifest-v1.schema.json",
+  "title": "Ninlil HIL manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "campaign_id",
+    "run_id",
+    "profile",
+    "source",
+    "resources",
+    "cases",
+    "attestation"
+  ],
+  "properties": {
+    "schema": {"const": "ninlil-hil-manifest-v1"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "profile": {
+      "enum": [
+        "esp-storage-atomic-v1",
+        "esp-storage-namespace-v1",
+        "generic-hil-v1"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_commit",
+        "tree_state",
+        "firmware_sha256",
+        "firmware_build_id",
+        "idf_version"
+      ],
+      "properties": {
+        "repository_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "tree_state": {"enum": ["clean", "dirty"]},
+        "firmware_sha256": {"$ref": "#/$defs/sha256"},
+        "firmware_build_id": {"$ref": "#/$defs/text"},
+        "idf_version": {"$ref": "#/$defs/text"}
+      }
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {"$ref": "#/$defs/resource"}
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {"$ref": "#/$defs/case"}
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "evidence_origin"],
+      "properties": {
+        "requested": {
+          "enum": ["EVIDENCE_ONLY", "FULL_CANDIDATE_REVIEW"]
+        },
+        "evidence_origin": {
+          "const": "LOCAL_PLUGIN_OUTPUT_UNVERIFIED"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "jsonValue": {
+      "anyOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {"type": "integer"},
+        {"type": "number"},
+        {"type": "string", "maxLength": 4096},
+        {
+          "type": "array",
+          "maxItems": 256,
+          "items": {"$ref": "#/$defs/jsonValue"}
+        },
+        {
+          "type": "object",
+          "maxProperties": 256,
+          "additionalProperties": {"$ref": "#/$defs/jsonValue"}
+        }
+      ]
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id",
+        "kind",
+        "identity",
+        "verification",
+        "attributes"
+      ],
+      "properties": {
+        "resource_id": {"$ref": "#/$defs/id"},
+        "kind": {
+          "enum": [
+            "target_board",
+            "storage_media",
+            "power_fixture",
+            "serial_link",
+            "firmware",
+            "host",
+            "other"
+          ]
+        },
+        "identity": {"$ref": "#/$defs/text"},
+        "verification": {"const": "UNVERIFIED_DECLARATION"},
+        "attributes": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": {"$ref": "#/$defs/jsonValue"}
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "phase", "expected", "allowed"],
+      "properties": {
+        "case_id": {"$ref": "#/$defs/id"},
+        "phase": {"$ref": "#/$defs/id"},
+        "expected": {
+          "type": "object",
+          "maxProperties": 128,
+          "additionalProperties": {"$ref": "#/$defs/jsonValue"}
+        },
+        "allowed": {
+          "type": "object",
+          "maxProperties": 128,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "items": {"$ref": "#/$defs/jsonValue"}
+          }
+        }
+      }
+    }
+  }
+}

@@ -548,11 +548,18 @@ static int test_attempt_prepare_is_writer_and_recovery_allowlisted(void)
     transaction.service.schema_major = 1u;
     transaction.service.family = NINLIL_FAMILY_DESIRED_STATE;
     set_digest(&transaction.content_digest, 0x42u);
+    transaction.idempotency_key_length = 3u;
+    transaction.idempotency_key[0] = (uint8_t)'a';
+    transaction.idempotency_key[1] = (uint8_t)'b';
+    transaction.idempotency_key[2] = (uint8_t)'c';
+    set_digest(&transaction.canonical_submission_digest, 0x43u);
     transaction.effect_deadline_ms = 1000u;
     transaction.generation = 1u;
     set_id(&transaction.deadline_clock_epoch_id, 0x43u);
     transaction.bound_target_count = 1u;
     transaction.bound_targets[0].in_use = 1u;
+    transaction.bound_targets[0].delivery_phase =
+        NINLIL_RT_DELIVERY_QUEUED;
     set_header(
         &transaction.bound_targets[0].target.abi_version,
         &transaction.bound_targets[0].target.struct_size,
@@ -594,7 +601,7 @@ static int test_attempt_prepare_is_writer_and_recovery_allowlisted(void)
 
 static int test_allowlist_table_closed(void)
 {
-    REQUIRE(NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT == 34u);
+    REQUIRE(NINLIL_V1_DURABLE_ALLOWLIST_RECORD_KIND_COUNT == 41u);
     REQUIRE(NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT == 19u);
     REQUIRE(g_ninlil_v1_durable_allowlist_table[0].kind
         == NINLIL_V1_DURABLE_KIND_RS_BINDING);

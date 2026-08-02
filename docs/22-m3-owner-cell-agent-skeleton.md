@@ -117,12 +117,15 @@ deny-by-default。`logical_bytes==0` DENIED。shutdown は live>0 で fail。
 ## 7. HIL
 
 ```sh
-# compile only (not HIL PASS):
+# compile only (not HIL PASS / not release support):
+# human pin v5.5.3 + immutable linux/amd64 OCI digest
 DOCKER_HOST=unix:///Users/dt/.colima/default/docker.sock \
-  docker run --rm -v "$PWD:/project" -w /project espressif/idf:v5.5.3 \
+  docker run --rm --platform linux/amd64 \
+  -v "$PWD:/project" -w /project \
+  docker.io/espressif/idf@sha256:3e77b709e0ba7f0e9a711039231103be822736b4105790b8e33339a3bf4e47fb \
   bash -lc '. $IDF_PATH/export.sh && idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build'
 
-# device HIL:
+# device HIL (separate; not claimed by compile/link):
 idf.py -C ports/esp-idf/smoke_app -p PORT flash monitor
 ```
 

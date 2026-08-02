@@ -1,5 +1,9 @@
 /*
- * M4 LAB install token mint + T1c consume surface (mint only; consume stub for item 8).
+ * M4 LAB install-token mint plus the single-use T1c consume adapter.
+ *
+ * The durable T1c owner remains responsible for validating and committing the
+ * returned claim. This adapter performs the token's local live/stale checks,
+ * copy-out, and irreversible in-memory consumption.
  */
 
 #include "m4_lab_install_token.h"

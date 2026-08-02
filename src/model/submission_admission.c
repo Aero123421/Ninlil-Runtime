@@ -642,6 +642,9 @@ static int plan_uplink_identity_is_valid(const ninlil_model_admission_plan_t *pl
 static int plan_is_valid(const ninlil_model_admission_plan_t *plan)
 {
     ninlil_model_capacity_snapshot_view_t snapshot;
+    uint32_t effective_target_count =
+        plan->target_count == 0u ? 1u : plan->target_count;
+    uint32_t target_index;
 
     if ((plan->family != NINLIL_FAMILY_DESIRED_STATE
             && plan->family != NINLIL_FAMILY_EVENT_FACT
@@ -653,6 +656,7 @@ static int plan_is_valid(const ninlil_model_admission_plan_t *plan)
         || !registered_service_is_valid(&plan->registered_service)
         || !party_is_valid(&plan->source)
         || !target_is_valid(&plan->target)
+        || effective_target_count > NINLIL_FOUNDATION_MAX_EXACT_TARGETS
         || !service_identity_is_valid(&plan->service)
         || !party_equal(&plan->source, &plan->registered_service.source)
         || !service_identity_equal(
@@ -663,7 +667,10 @@ static int plan_is_valid(const ninlil_model_admission_plan_t *plan)
         || !key_is_valid(&plan->idempotency_key)
         || !digest_is_valid(&plan->content_digest)
         || !digest_is_valid(&plan->canonical_submission_digest)
-        || plan->payload_length > NINLIL_MODEL_ADMISSION_MAX_PAYLOAD_BYTES
+        /* Logical ApplicationData may exceed owned admission buffer (MFDT
+         * multi-frame up to 32768): buffer holds at most MAX_PAYLOAD_BYTES;
+         * length+digest alone may describe larger content. */
+        || plan->payload_length > 32768u
         || plan->payload_length > plan->registered_service.logical_payload_limit
         || plan->required_evidence < NINLIL_EVIDENCE_RECEIVED
         || plan->required_evidence > NINLIL_EVIDENCE_VERIFIED
@@ -676,6 +683,18 @@ static int plan_is_valid(const ninlil_model_admission_plan_t *plan)
                &plan->resources.committed_ledger, &snapshot)
             != NINLIL_OK) {
         return 0;
+    }
+    for (target_index = 0u;
+         target_index < effective_target_count;
+         ++target_index) {
+        const ninlil_concrete_target_t *target =
+            &plan->targets[target_index];
+        if (effective_target_count == 1u && !target_is_valid(target)) {
+            target = &plan->target;
+        }
+        if (!target_is_valid(target)) {
+            return 0;
+        }
     }
     if (plan->family == NINLIL_FAMILY_DESIRED_STATE
         || plan->family == NINLIL_FAMILY_TRANSFER_RESERVED
@@ -712,16 +731,19 @@ static int payload_is_valid(
     const ninlil_model_admission_plan_t *plan)
 {
     size_t index;
+    size_t zero_from;
 
     if (payload->length != plan->payload_length
-        || payload->length > sizeof(payload->bytes)
+        || payload->length > 32768u
         || payload->content_verified != 1u
         || !digest_is_valid(&payload->verified_content_digest)
         || !digest_equal(
             &payload->verified_content_digest, &plan->content_digest)) {
         return 0;
     }
-    for (index = payload->length; index < sizeof(payload->bytes); ++index) {
+    zero_from = payload->length <= sizeof(payload->bytes)
+        ? payload->length : 0u;
+    for (index = zero_from; index < sizeof(payload->bytes); ++index) {
         if (payload->bytes[index] != 0u) {
             return 0;
         }
@@ -733,7 +755,10 @@ static int descriptor_contract_is_valid(
     const ninlil_model_descriptor_contract_extension_t *contract,
     ninlil_family_t family)
 {
-    if (contract->target_limit != 1u
+    if (contract->target_limit == 0u
+        || contract->target_limit > NINLIL_FOUNDATION_MAX_EXACT_TARGETS
+        || (family == NINLIL_FAMILY_EVENT_FACT
+            && contract->target_limit != 1u)
         || contract->max_attempts_per_target_per_cycle == 0u
         || contract->max_attempts_per_target_per_cycle
             > NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE
@@ -1135,8 +1160,11 @@ static int resource_plan_matches_admission(
     uint64_t commit_event_count;
     uint64_t commit_event_bytes;
     uint64_t commit_evidence;
+    uint64_t target_count = plan->target_count == 0u
+        ? 1u : plan->target_count;
     uint64_t evidence_total =
-        (uint64_t)plan->registered_service.max_evidence_per_target + 1u;
+        ((uint64_t)plan->registered_service.max_evidence_per_target + 1u)
+        * target_count;
     uint32_t index;
     ninlil_model_capacity_batch_input_t transition;
     ninlil_model_capacity_batch_result_t transition_result;
@@ -1229,11 +1257,11 @@ static int resource_plan_matches_admission(
             NINLIL_RESOURCE_EVIDENCE,
             &commit_evidence)
         || reserve_transaction != 1u
-        || reserve_target != 1u
+        || reserve_target != target_count
         || reserve_evidence != evidence_total
         || commit_transaction != 1u
-        || commit_target != 1u
-        || commit_evidence != 1u) {
+        || commit_target != target_count
+        || commit_evidence != target_count) {
         return 0;
     }
 

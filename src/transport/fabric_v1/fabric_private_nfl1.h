@@ -1,0 +1,28 @@
+/*
+ * Compatibility shim: canonical NFL1 authority is nfl1_codec.h/.c.
+ * Do not reintroduce a second encode/decode implementation here.
+ */
+#ifndef NINLIL_TRANSPORT_FABRIC_V1_FABRIC_PRIVATE_NFL1_H
+#define NINLIL_TRANSPORT_FABRIC_V1_FABRIC_PRIVATE_NFL1_H
+
+#include "nfl1_codec.h"
+
+/* Historical size macro names used by registry/selection/core. */
+#ifndef NINLIL_FABRIC_NFL1_HEADER_BYTES
+#define NINLIL_FABRIC_NFL1_HEADER_BYTES NINLIL_FABRIC_PRIVATE_NFL1_HEADER_BYTES
+#define NINLIL_FABRIC_NFL1_CODEC_CEILING NINLIL_FABRIC_PRIVATE_NFL1_CODEC_CEILING
+#define NINLIL_FABRIC_NFL1_STRUCTURAL_MIN NINLIL_FABRIC_PRIVATE_NFL1_STRUCTURAL_MIN
+#define NINLIL_FABRIC_NFL1_STRUCTURAL_MAX NINLIL_FABRIC_PRIVATE_NFL1_STRUCTURAL_MAX
+#define NINLIL_FABRIC_NFL1_SEMANTIC_MAX NINLIL_FABRIC_PRIVATE_NFL1_SEMANTIC_MAX
+#define NINLIL_FABRIC_NFL1_PAYLOAD_MAX NINLIL_FABRIC_PRIVATE_NFL1_PAYLOAD_MAX
+#define NINLIL_FABRIC_NFL1_EVIDENCE_MAX NINLIL_FABRIC_PRIVATE_NFL1_EVIDENCE_MAX
+#define NINLIL_FABRIC_NFL1_TEXT_ID_MAX NINLIL_FABRIC_PRIVATE_NFL1_TEXT_ID_MAX
+#define NINLIL_FABRIC_NFL1_VERSION NINLIL_FABRIC_PRIVATE_NFL1_VERSION
+#endif
+
+typedef ninlil_id128_t ninlil_fabric_private_nfl1_id_view_t;
+typedef ninlil_digest256_t ninlil_fabric_private_nfl1_digest_view_t;
+typedef ninlil_fabric_private_nfl1_bytes_view_t
+    ninlil_fabric_private_nfl1_var_view_t;
+
+#endif /* NINLIL_TRANSPORT_FABRIC_V1_FABRIC_PRIVATE_NFL1_H */

@@ -18,6 +18,7 @@
 #include "n6_context_store.h"
 
 #include "ninlil/version.h"
+#include "tx_exclusive_tranche.h"
 
 #include <string.h>
 
@@ -3610,13 +3611,30 @@ static ninlil_n6_status_t n6_derive_lane_keys(
     return NINLIL_N6_INVALID_ARGUMENT;
 }
 
-static void n6_nonce_apply_counter(uint8_t iv12[12], uint64_t counter)
+/*
+ * docs/30 §8.6 reference: nonce = static_iv XOR (0||counter_be).
+ * Lease/ticket.iv12 is static only; r7 wire/frag call
+ * ninlil_r7_crypto_nonce_from_counter. This helper is not used on burn/precheck
+ * (pre-applying here caused double-XOR nonce reuse).
+ */
+#if defined(NINLIL_N6_TEST_BUILD)
+void ninlil_n6_test_nonce_from_static_and_counter(
+    const uint8_t static_iv12[12], uint64_t counter, uint8_t out_nonce12[12])
 {
     int i;
+    if (static_iv12 == NULL || out_nonce12 == NULL) {
+        return;
+    }
+    for (i = 0; i < 4; ++i) {
+        out_nonce12[i] = static_iv12[i];
+    }
     for (i = 0; i < 8; ++i) {
-        iv12[4 + i] ^= (uint8_t)((counter >> (56 - 8 * i)) & 0xffu);
+        out_nonce12[4 + i] = (uint8_t)(
+            static_iv12[4 + i]
+            ^ (uint8_t)((counter >> (56 - 8 * i)) & 0xffu));
     }
 }
+#endif
 
 static int n6_capsule_ok(const ninlil_n6_install_capsule_t *c)
 {
@@ -4177,7 +4195,7 @@ ninlil_n6_status_t ninlil_n6_tx_burn(
         uint8_t key[48], val[68], oldbuf[68];
         size_t klen=0, vlen=0;
         ninlil_bytes_view_t kb, vb;
-        uint64_t c0, c1, room, grow;
+        uint64_t c0, c1;
         ninlil_n6_status_t cst;
         /* exclusive end may be UINT64_MAX so last counter is MAX-1 */
         const uint64_t max_ex = UINT64_MAX;
@@ -4212,9 +4230,12 @@ ninlil_n6_status_t ninlil_n6_tx_burn(
                 pst = n6_prov_fail(n6, &w, NINLIL_N6_CAPACITY, 1);
                 n6_leave(n6); return pst;
             }
-            room = max_ex - c0;
-            grow = (room < NINLIL_N6_TX_BLOCK_SIZE) ? room : NINLIL_N6_TX_BLOCK_SIZE;
-            c1 = c0 + grow;
+            /* docs/30 §9.2 checked final partial tranche (shared helper). */
+            if (!ninlil_tx_exclusive_grow(
+                    c0, NINLIL_N6_TX_BLOCK_SIZE, &c1)) {
+                pst = n6_prov_fail(n6, &w, NINLIL_N6_CAPACITY, 1);
+                n6_leave(n6); return pst;
+            }
             tv.reserved_exclusive = c1;
             if (ninlil_n6_encode_n6tx_value(&tv, val, sizeof(val), &vlen) != NINLIL_N6_CODEC_OK) {
                 pst = n6_prov_fail(n6, &w, NINLIL_N6_CORRUPT, 1);
@@ -4268,7 +4289,13 @@ ninlil_n6_status_t ninlil_n6_tx_burn(
             ninlil_n6_secure_zero(L, sizeof(*L));
             n6_leave(n6); return NINLIL_N6_CRYPTO;
         }
-        n6_nonce_apply_counter(L->iv12, c);
+        /*
+         * iv12 is the lane static_iv12 only (docs/30 §8.6).
+         * Callers (r7 wire/frag codec) apply counter via
+         * ninlil_r7_crypto_nonce_from_counter(static_iv, counter, nonce).
+         * Applying counter here would double-XOR with the codec and collapse
+         * every counter to the same AEAD nonce (release-blocker P0).
+         */
         slot->tx_ram_next[idx] = c + 1u;
         *out_lease = *L;
     }
@@ -4387,22 +4414,32 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
         ninlil_n6_secure_zero(out_ticket, sizeof(*out_ticket));
     }
     if (!out_ticket || !counter || counter == UINT64_MAX) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_DOMAIN,
+            "rx_precheck_arg");
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
     if (n6->state != NINLIL_N6_STATE_READY) {
+        n6_set_err(n6, NINLIL_N6_INVALID_STATE, NINLIL_N6_REASON_STATE,
+            "rx_precheck_state");
         n6_leave(n6); return NINLIL_N6_INVALID_STATE;
     }
     {
         int corrupt = 0;
         slot = n6_find_handle(n6, handle, &corrupt);
         if (corrupt != 0) {
+            n6_set_err(n6, NINLIL_N6_CORRUPT, NINLIL_N6_REASON_CORRUPT,
+                "rx_precheck_corrupt");
             n6_leave(n6); return NINLIL_N6_CORRUPT;
         }
     }
     if (!slot || slot->fenced || slot->alloc_side != NINLIL_N6_ALLOC_INBOUND_RX) {
+        n6_set_err(n6, NINLIL_N6_NOT_FOUND, NINLIL_N6_REASON_NOT_FOUND,
+            "rx_precheck_handle");
         n6_leave(n6); return NINLIL_N6_NOT_FOUND;
     }
     if (!n6_lane_ok_for_slot(slot, lane_kind)) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_DOMAIN,
+            "rx_precheck_lane_kind");
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
     idx = n6_lane_idx(lane_kind);
@@ -4411,10 +4448,18 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
      * INVALID_ARGUMENT with zero mutation (out_ticket already zeroed; no
      * internal ticket allocated). Also silences GCC -Warray-bounds at O2. */
     if (!n6_lane_idx_in_range(idx)) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_DOMAIN,
+            "rx_precheck_lane");
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
+    /*
+     * Typed REPLAY: counter already admitted / below boot floor / OOR.
+     * Distinct from live-ticket collision (TICKET) and ticket CAPACITY.
+     */
     if (!n6_rx_precheck_window(slot, idx, counter)) {
-        n6_leave(n6); return NINLIL_N6_TICKET;
+        n6_set_err(n6, NINLIL_N6_REPLAY, NINLIL_N6_REASON_REPLAY,
+            "rx_precheck_replay");
+        n6_leave(n6); return NINLIL_N6_REPLAY;
     }
     /* no live ticket for same handle/lane/counter */
     for (ti = 0; ti < (int)NINLIL_N6_MAX_LIVE_TICKETS; ++ti) {
@@ -4422,12 +4467,16 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
             && n6->tickets[ti].handle == handle
             && n6->tickets[ti].lane_kind == lane_kind
             && n6->tickets[ti].counter == counter) {
+            n6_set_err(n6, NINLIL_N6_TICKET, NINLIL_N6_REASON_TICKET,
+                "rx_precheck_live_ticket");
             n6_leave(n6); return NINLIL_N6_TICKET;
         }
     }
     for (ti = 0; ti < (int)NINLIL_N6_MAX_LIVE_TICKETS; ++ti)
         if (!n6->tickets[ti].live) break;
     if (ti >= (int)NINLIL_N6_MAX_LIVE_TICKETS) {
+        n6_set_err(n6, NINLIL_N6_CAPACITY, NINLIL_N6_REASON_CAPACITY,
+            "rx_precheck_ticket_pool");
         n6_leave(n6); return NINLIL_N6_CAPACITY;
     }
     {
@@ -4450,7 +4499,10 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
             ninlil_n6_secure_zero(T, sizeof(*T));
             n6_leave(n6); return NINLIL_N6_CRYPTO;
         }
-        n6_nonce_apply_counter(T->iv12, counter);
+        /*
+         * iv12 = static_iv12 only. Wire/frag Open applies counter once.
+         * Do not pre-XOR here (double-XOR ⇒ nonce reuse across counters).
+         */
         /* public copy for AEAD open; admit ignores caller fields */
         out_ticket->ticket_id = T->ticket_id;
         out_ticket->handle = T->handle;
@@ -5198,6 +5250,95 @@ int ninlil_n6_test_rx_window_snapshot(
     *out_boot_floor = boot[idx];
     *out_ram_highest = high[idx];
     *out_bitmap = bm[idx];
+    return 1;
+}
+
+/*
+ * Seed durable + RAM TX exclusive window for §9.2 boundary tests.
+ * Sets reserved_exclusive = exclusive and empty RAM window (next==limit==exclusive)
+ * so the next tx_burn grows from that exclusive (partial final tranche near MAX).
+ * exclusive domain: 1..UINT64_MAX (UINT64_MAX = terminal / exhausted).
+ * Returns 1 on success, 0 on refuse.
+ */
+int ninlil_n6_test_seed_tx_exclusive(
+    ninlil_n6_t *n6,
+    ninlil_n6_handle_t handle,
+    uint8_t lane_kind,
+    uint64_t exclusive)
+{
+    n6_slot_t *slot;
+    int idx;
+    int corrupt = 0;
+    ninlil_n6_lane_key_t lk;
+    ninlil_n6_tx_value_t tv;
+    uint8_t key[48], val[68], oldbuf[68];
+    size_t klen = 0u, vlen = 0u;
+    ninlil_bytes_view_t kb, vb;
+    n6_txn_t w;
+    uint32_t olen = 0u;
+    ninlil_n6_status_t pst;
+
+    if (n6 == NULL || handle == 0u || exclusive == 0u) {
+        return 0;
+    }
+    if (n6->state != NINLIL_N6_STATE_READY) {
+        return 0;
+    }
+    slot = n6_find_handle(n6, handle, &corrupt);
+    if (corrupt != 0 || slot == NULL || slot->fenced
+        || slot->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX) {
+        return 0;
+    }
+    if (!n6_lane_ok_for_slot(slot, lane_kind)) {
+        return 0;
+    }
+    idx = n6_lane_idx(lane_kind);
+    if (!n6_lane_idx_in_range(idx)) {
+        return 0;
+    }
+    n6_make_lane_key(slot, lane_kind, &lk);
+    if (ninlil_n6_encode_lane_key(&lk, key, sizeof(key), &klen)
+        != NINLIL_N6_CODEC_OK) {
+        return 0;
+    }
+    if (n6_need_storage(n6) != NINLIL_N6_OK) {
+        return 0;
+    }
+    pst = n6_prov_begin(n6, NINLIL_STORAGE_READ_WRITE, &w);
+    if (pst != NINLIL_N6_OK) {
+        return 0;
+    }
+    kb.data = key;
+    kb.length = (uint32_t)klen;
+    pst = n6_prov_get(n6, &w, kb, oldbuf, (uint32_t)sizeof(oldbuf), &olen,
+        N6_GET_REQUIRE_PRESENT);
+    if (pst != NINLIL_N6_OK) {
+        (void)n6_prov_fail(n6, &w, pst, 1);
+        return 0;
+    }
+    if (ninlil_n6_decode_n6tx_value(oldbuf, olen, &tv) != NINLIL_N6_CODEC_OK) {
+        (void)n6_prov_fail(n6, &w, NINLIL_N6_CORRUPT, 1);
+        return 0;
+    }
+    tv.reserved_exclusive = exclusive;
+    if (ninlil_n6_encode_n6tx_value(&tv, val, sizeof(val), &vlen)
+        != NINLIL_N6_CODEC_OK) {
+        (void)n6_prov_fail(n6, &w, NINLIL_N6_CORRUPT, 1);
+        return 0;
+    }
+    vb.data = val;
+    vb.length = (uint32_t)vlen;
+    pst = n6_prov_put(n6, &w, kb, vb);
+    if (pst != NINLIL_N6_OK) {
+        (void)n6_prov_fail(n6, &w, pst, 1);
+        return 0;
+    }
+    pst = n6_prov_commit(n6, &w);
+    if (pst != NINLIL_N6_OK) {
+        return 0;
+    }
+    slot->tx_ram_next[idx] = exclusive;
+    slot->tx_ram_limit[idx] = exclusive;
     return 1;
 }
 #endif /* NINLIL_N6_TEST_BUILD */

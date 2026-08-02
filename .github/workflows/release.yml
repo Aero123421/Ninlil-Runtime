@@ -111,15 +111,13 @@ jobs:
           sudo apt-get update && sudo apt-get install -y
           gcc-13 g++-13 ninja-build libssl-dev libsqlite3-dev
 
-      - name: Verify release compatibility authority
+      - name: Verify release distribution authority (fail-closed order)
         run: |
-          python3 tools/compatibility_matrix_gate.py check
-          python3 tools/compatibility_matrix_gate.py self-test
-          python3 tools/third_party_notice_gate.py check
-          python3 tools/third_party_notice_gate.py self-test
-          python3 tools/release_workflow_identity_gate.py check
-          python3 tools/release_workflow_identity_gate.py self-test
-          python3 tools/spdx_release_sbom.py self-test
+          # Ordered: vocabulary → archive (self+two-run+git) → tests-OFF
+          # surface → Markdown links → matrix/notice/version/workflow/SBOM/
+          # public boundary/docs.
+          python3 tools/release_distribution_authority_gate.py check
+          python3 tools/release_distribution_authority_gate.py self-test
 
       - name: Configure strict Release build
         run: >-
@@ -194,26 +192,41 @@ jobs:
           test "${commit}" = "${VERIFIED_COMMIT}"
           test "${ACTUAL_WORKFLOW_COMMIT}" = "${WORKFLOW_COMMIT}"
 
+          # Fail-closed version identity: tag core == CMake/matrix/inventory/ESP.
+          # Optional -prerelease / +build are tag suffixes only; package core is
+          # the canonical CMake VERSION (no leading zeros in core components).
+          python3 tools/release_version_identity.py self-test
+          identity_json="$(python3 tools/release_version_identity.py enforce \
+            --event-name "${EVENT_NAME}" \
+            --ref-name "${REF_NAME}" \
+            --ref-type "${REF_TYPE}" \
+            --commit "${commit}")"
+          core="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["core"])')"
+          base="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["base"])')"
+          source_version="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["source_version"])')"
+          tag="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+          test -n "${core}"
+          test -n "${base}"
+          test -n "${source_version}"
+          test "${core}" = "$(python3 tools/release_version_identity.py print-core)"
+
           if [[ "${EVENT_NAME}" == "push" ]]; then
             test "${REF_TYPE}" = "tag"
-            tag="${REF_NAME}"
-            if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
-              echo "release tag must be SemVer with a leading v: ${tag}" >&2
-              exit 1
-            fi
+            test "${tag}" = "${REF_NAME}"
             if [[ "$(git cat-file -t "refs/tags/${tag}")" != "tag" ]]; then
               echo "release tag must be annotated: ${tag}" >&2
               exit 1
             fi
             tagged_commit="$(git rev-parse "${tag}^{commit}")"
             test "${tagged_commit}" = "${commit}"
-            suffix="${tag}"
+            test "${base}" = "ninlil-runtime-${tag}"
+            test "${source_version}" = "${tag}"
           else
-            tag=""
-            suffix="dry-run-${commit:0:12}"
+            test "${tag}" = ""
+            test "${base}" = "ninlil-runtime-dry-run-${commit:0:12}"
+            test "${source_version}" = "${commit}"
           fi
 
-          base="ninlil-runtime-${suffix}"
           artifact_name="${base}-release-files-${RUN_ID}-${RUN_ATTEMPT}"
           {
             echo "artifact-name=${artifact_name}"
@@ -221,6 +234,9 @@ jobs:
             echo "commit=${commit}"
             echo "workflow-commit=${WORKFLOW_COMMIT}"
             echo "tag=${tag}"
+            echo "core-version=${core}"
+            echo "project-version=${core}"
+            echo "source-version=${source_version}"
           } >> "${GITHUB_OUTPUT}"
 
       # anchore/sbom-action/download-syft v0.24.0; Syft is separately pinned.
@@ -234,17 +250,26 @@ jobs:
         env:
           RAW_SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.syft.raw.spdx.json
           SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.spdx.json
-          SOURCE_VERSION: ${{ steps.metadata.outputs.tag || steps.metadata.outputs.commit }}
+          PROJECT_VERSION: ${{ steps.metadata.outputs.project-version }}
+          SOURCE_VERSION: ${{ steps.metadata.outputs.source-version }}
           SYFT_CMD: ${{ steps.syft.outputs.cmd }}
         run: |
           test -x "${SYFT_CMD}"
+          test -n "${PROJECT_VERSION}"
+          test -n "${SOURCE_VERSION}"
           "${SYFT_CMD}" scan dir:. \
             --source-name ninlil-runtime \
             --source-version "${SOURCE_VERSION}" \
             --output "spdx-json=${RAW_SBOM}"
           test -s "${RAW_SBOM}"
-          python3 tools/spdx_release_sbom.py enrich "${RAW_SBOM}" "${SBOM}"
-          python3 tools/spdx_release_sbom.py check "${SBOM}"
+          python3 tools/spdx_release_sbom.py enrich \
+            "${RAW_SBOM}" "${SBOM}" \
+            --project-version "${PROJECT_VERSION}" \
+            --source-version "${SOURCE_VERSION}"
+          python3 tools/spdx_release_sbom.py check \
+            "${SBOM}" \
+            --project-version "${PROJECT_VERSION}" \
+            --source-version "${SOURCE_VERSION}"
           python3 tools/spdx_release_sbom.py self-test
           test -s "${SBOM}"
 
@@ -252,66 +277,103 @@ jobs:
         env:
           BASE: ${{ steps.metadata.outputs.base }}
           SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.spdx.json
+          BUILD_METADATA: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.build-metadata.json
           SOURCE_COMMIT: ${{ steps.metadata.outputs.commit }}
           WORKFLOW_COMMIT: ${{ steps.metadata.outputs.workflow-commit }}
           EVENT_NAME: ${{ github.event_name }}
           TAG: ${{ steps.metadata.outputs.tag }}
+          PROJECT_VERSION: ${{ steps.metadata.outputs.project-version }}
+          SOURCE_VERSION: ${{ steps.metadata.outputs.source-version }}
         run: |
-          rm -rf dist
-          mkdir -p dist
           test -s "${SBOM}"
-          mv "${SBOM}" "dist/${BASE}.spdx.json"
 
           python3 - "${BASE}" "${SOURCE_COMMIT}" "${WORKFLOW_COMMIT}" \
-            "${EVENT_NAME}" "${TAG}" <<'PY'
+            "${EVENT_NAME}" "${TAG}" "${PROJECT_VERSION}" "${SOURCE_VERSION}" \
+            "${BUILD_METADATA}" <<'PY'
           import json
           import pathlib
           import sys
 
-          base, source_commit, workflow_commit, event_name, tag = sys.argv[1:]
+          (
+              base,
+              source_commit,
+              workflow_commit,
+              event_name,
+              tag,
+              project_version,
+              source_version,
+              build_metadata_path,
+          ) = sys.argv[1:]
           if len(source_commit) != 40 or len(workflow_commit) != 40:
               raise SystemExit("source/workflow commit must be a full SHA")
+          if not project_version:
+              raise SystemExit("project_version required")
+          if not source_version:
+              raise SystemExit("source_version required")
+          if event_name == "push":
+              if not tag.startswith("v" + project_version):
+                  raise SystemExit(
+                      f"tag {tag!r} must start with v{project_version}"
+                  )
+              if base != f"ninlil-runtime-{tag}":
+                  raise SystemExit(
+                      f"artifact base {base!r} must equal ninlil-runtime-{tag}"
+                  )
+              if source_version != tag:
+                  raise SystemExit(
+                      f"source_version {source_version!r} must equal tag {tag!r}"
+                  )
           payload = {
               "schema": "ninlil-release-build-metadata-v1",
               "source_commit": source_commit,
               "workflow_definition_commit": workflow_commit,
               "event_name": event_name,
               "tag": tag or None,
+              "project_version": project_version,
+              "source_version": source_version,
+              "artifact_base": base,
           }
-          pathlib.Path(f"dist/{base}.build-metadata.json").write_text(
+          pathlib.Path(build_metadata_path).write_text(
               json.dumps(payload, indent=2, sort_keys=True) + "\n",
               encoding="utf-8",
           )
           PY
+          test -s "${BUILD_METADATA}"
 
-          git archive --format=tar --prefix="${BASE}/" HEAD \
-            | gzip -n -9 > "dist/${BASE}.tar.gz"
-          git archive --format=zip --prefix="${BASE}/" \
-            --output="dist/${BASE}.zip" HEAD
-          tar -tzf "dist/${BASE}.tar.gz" \
-            | grep -Fx "${BASE}/compatibility-matrix.json"
-          tar -tzf "dist/${BASE}.tar.gz" \
-            | grep -Fx "${BASE}/dependency-inventory.json"
-          python3 - "${BASE}" <<'PY'
-          import sys
-          import zipfile
+          # Deterministic git-tree packing (fixed uid/gid/mode/mtime/order),
+          # then fail-closed payload + vocabulary scan of generated archives.
+          rm -rf "${RUNNER_TEMP}/ninlil-release-arch"
+          python3 tools/release_archive_payload_gate.py build-from-git \
+            --two-run \
+            --source git \
+            --require-clean-worktree \
+            --no-force-release-gates \
+            --treeish HEAD \
+            --prefix "${BASE}" \
+            --out-dir "${RUNNER_TEMP}/ninlil-release-arch"
 
-          base = sys.argv[1]
-          expected = f"{base}/compatibility-matrix.json"
-          dependency_inventory = f"{base}/dependency-inventory.json"
-          with zipfile.ZipFile(f"dist/{base}.zip", "r") as archive:
-              names = archive.namelist()
-          if names.count(expected) != 1:
-              raise SystemExit(
-                  f"{expected}: expected exactly once in source zip, "
-                  f"got {names.count(expected)}"
-              )
-          if names.count(dependency_inventory) != 1:
-              raise SystemExit(
-                  f"{dependency_inventory}: expected exactly once in source zip, "
-                  f"got {names.count(dependency_inventory)}"
-              )
-          PY
+          # Only create repository-local release output after the immutable
+          # git-tree builder has proved the checkout clean. SBOM and metadata
+          # are staged in RUNNER_TEMP so --require-clean-worktree is meaningful.
+          rm -rf dist
+          mkdir -p dist
+          mv "${SBOM}" "dist/${BASE}.spdx.json"
+          mv "${BUILD_METADATA}" "dist/${BASE}.build-metadata.json"
+          cp "${RUNNER_TEMP}/ninlil-release-arch/run1/${BASE}.tar.gz" "dist/${BASE}.tar.gz"
+          cp "${RUNNER_TEMP}/ninlil-release-arch/run1/${BASE}.zip" "dist/${BASE}.zip"
+          # Re-validate the shipped copies (not only the temp builder outputs).
+          python3 tools/release_archive_payload_gate.py check \
+            --tar "dist/${BASE}.tar.gz" \
+            --zip "dist/${BASE}.zip" \
+            --prefix "${BASE}"
+          python3 tools/release_forbidden_vocabulary_gate.py check
+          # From-archive clean-room: unpack shipped tar → build/test/package.
+          python3 tools/release_archive_payload_gate.py cleanroom \
+            --tar "dist/${BASE}.tar.gz" \
+            --zip "dist/${BASE}.zip" \
+            --prefix "${BASE}" \
+            --profile host \
+            --out-dir "${RUNNER_TEMP}/ninlil-release-cleanroom"
 
           (
             cd dist
@@ -323,6 +385,11 @@ jobs:
               > "${BASE}.SHA256SUMS"
             sha256sum --check "${BASE}.SHA256SUMS"
           )
+          # two-run builder outputs must match shipped digests exactly
+          test "$(sha256sum "dist/${BASE}.tar.gz" | awk '{print $1}')" = \
+            "$(sha256sum "${RUNNER_TEMP}/ninlil-release-arch/run2/${BASE}.tar.gz" | awk '{print $1}')"
+          test "$(sha256sum "dist/${BASE}.zip" | awk '{print $1}')" = \
+            "$(sha256sum "${RUNNER_TEMP}/ninlil-release-arch/run2/${BASE}.zip" | awk '{print $1}')"
 
           test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "5"
 

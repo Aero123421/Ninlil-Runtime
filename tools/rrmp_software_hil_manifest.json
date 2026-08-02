@@ -1,0 +1,108 @@
+{
+  "id": "rrmp-software-hil-manifest-v1",
+  "date": "2026-07-30",
+  "software_acceptance": "GO_PRIVATE_SOFTWARE_CANDIDATE",
+  "claims": {
+    "spec_accepted": 1,
+    "physical_2hop_hil": 0,
+    "physical_3hop_hil": 0,
+    "physical_multiparent_hil": 0,
+    "host_software_hil": 1,
+    "implementation_candidate": 1,
+    "esp_idf_map_proof": 1,
+    "physical_rf_powercut_hil": 0
+  },
+  "nonclaims": [
+    "production implementation acceptance from a private/default-OFF candidate",
+    "physical RF multi-hop",
+    "physical multiparent air diversity",
+    "NOR/NVS powercut on hardware",
+    "security audit complete",
+    "release-supported or public installed ABI for ninlil_route_/ninlil_parent_"
+  ],
+  "open_p1_repairs": [],
+  "authority": {
+    "adr": ["docs/adr/0019-route-relay.md", "docs/adr/0020-multi-parent.md"],
+    "vector": "spec/vectors/route-relay-multiparent-spec-v1.json",
+    "private_api_catalog": "spec/vectors/route-relay-multiparent-private-api-catalog-v1.json",
+    "status": "SPEC_ACCEPTED"
+  },
+  "namespace_keys": {
+    "parent": "NPH1x1 + NPP1x5 + NPA1x8 + NPT1x8 = 22",
+    "route": "NRD1x1 + NRP1x16 + NEP1x4 = 21",
+    "scope_capacity": 64,
+    "queue_entries": 64,
+    "queue_bytes": 16320,
+    "workspace_budget_bytes": 393216,
+    "workspace_measured_host_bytes": 388048,
+    "storage_export_max_bytes": 307200,
+    "storage_piece_scratch_bytes": 61440,
+    "target_smoke_store_bytes": 307456,
+    "worst_case_live_dynamic_bytes": 1064144,
+    "worst_case_live_dynamic_kib": 1039.203125
+  },
+  "plugins": [
+    {
+      "id": "host-core-sm",
+      "kind": "host_driver",
+      "entry": "src/runtime/route_relay_v1/rrmp_core.c",
+      "proves": [
+        "workspace_388048_under_384kib",
+        "bounded_RRM1_manifest_plus_five_chunks_each_value_at_most_61440",
+        "route_install_activate_drain_retire_atomic_full",
+        "life_slot_state_map_expired4_retired5",
+        "forward_admit_durable_before_queue",
+        "forward_complete_opaque_ownership",
+        "e2e_materialize_rewrap_txpermit_link_ack",
+        "queue_fairness_byte_quota",
+        "parent_path_policy_select_not_mod_count",
+        "authority_global_split_brain_fence_blocks_every_scope",
+        "old_owner_seal_zero_after_retire",
+        "global_durable_token_replay_ledger_256_boundary",
+        "same_cross_scope_cold_restart_token_reuse_rejected",
+        "sha256_nist_kat_empty_abc",
+        "multi_owner_A_B_C_host_byte_continuity",
+        "fault_inject_cu_old_recover_independent_nodes",
+        "fabric_seam_relay_cycle"
+      ]
+    },
+    {
+      "id": "esp-map-proof",
+      "kind": "esp_idf_final_elf_map",
+      "entry": "tools/rrmp_esp_idf_map_proof.sh",
+      "proves": [
+        "compile_link_rrmp_on_esp32s3",
+        "final_elf_symbols_present",
+        "sim_tu_absent",
+        "dram_budget_gate"
+      ]
+    }
+  ],
+  "host_tests": [
+    "ninlil_rrmp_codec_test",
+    "ninlil_rrmp_sm_test",
+    "ninlil_rrmp_crash_corrupt_test",
+    "ninlil_rrmp_token_ledger_test",
+    "ninlil_rrmp_sim_lifecycle_test",
+    "rrmp_private_feature_symbol_archive"
+  ],
+  "feature_off": {
+    "must_not_compile_impl_as_evidence": true,
+    "probe_archive_only_when_on": true,
+    "prod_off_proxy_zero_rrmp_symbols": true,
+    "cmake_default": "OFF"
+  },
+  "physical_hil": {
+    "status": "NOT_RUN",
+    "schema": "spec/hil/ninlil-hil-rrmp-multiparent-v1.schema.json",
+    "template": "tools/rrmp_hil_evidence_template.json",
+    "allowed_not_run_when": "executable tooling and evidence schema complete"
+  },
+  "residuals": [
+    "physical RF 2-hop/3-hop multi-node HIL",
+    "physical multi-parent uplink diversity on air",
+    "power-cut HIL on real NOR/NVS dual-slot",
+    "physical ESP runtime PSRAM/free-memory measurement",
+    "production RF carrier and durable flash integration"
+  ]
+}

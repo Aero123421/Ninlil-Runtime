@@ -25,6 +25,24 @@
       "relationship": "DIRECT"
     }
   ],
+  "vendored_dependencies": [
+    {
+      "id": "pyyaml",
+      "name": "PyYAML",
+      "version": "6.0.2",
+      "spdx_license": "MIT",
+      "relationship": "DIRECT",
+      "source_path": "tools/_vendor",
+      "download_location": "https://pypi.org/project/PyYAML/6.0.2/",
+      "component_hash": "00e9d5acfbcd65db22fb7ebc0637cd5920cf7ef43d512d059168026f72cc693a",
+      "supplier": "Organization: PyYAML project",
+      "syft_names": ["PyYAML", "pyyaml", "yaml"],
+      "comment": "Vendored pure-Python PyYAML for release workflow YAML semantic gates (tools/_vendor)."
+    }
+  ],
+  "syft_reconciliation": {
+    "justified_exclusions": []
+  },
   "esp_idf": {
     "container": {
       "repository": "docker.io/espressif/idf",

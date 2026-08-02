@@ -5,6 +5,7 @@
 
 #include "ninlil_esp_idf/sx1262_bus.h"
 #include "ninlil_sx1262_backend.h"
+#include "ninlil_sx1262_board_profiles.h"
 #include "sx1262_bus_spy.h"
 #include "sx1262_esp_gpio_init_logic.h"
 #include "sx1262_spi_pending_logic.h"
@@ -1789,6 +1790,172 @@ static int test_primary_opcode_pin(void)
     return 0;
 }
 
+/* XIAO ESP32-S3 + Wio-SX1262: exact DIO2 / DIO3@3.0V / CAL_ALL order+encoding. */
+static int test_xiao_wio_board_profile_bus_spy(void)
+{
+    ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
+    ninlil_sx1262_backend_t *be = NULL;
+    ninlil_sx1262_bus_spy_t spy;
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+    const ninlil_sx1262_board_config_t *prof;
+    uint8_t ops[3];
+    size_t n = 0u;
+    size_t i;
+    int saw_dio2 = 0;
+    int saw_dio3 = 0;
+    int saw_cal = 0;
+    int dio2_idx = -1;
+    int dio3_idx = -1;
+    int cal_idx = -1;
+
+    prof = ninlil_sx1262_board_profile_xiao_wio_sx1262_v1();
+    REQUIRE(prof != NULL);
+    REQUIRE(ninlil_sx1262_board_profile_copy_xiao_wio_sx1262_v1(&cfg) == 0);
+    REQUIRE(ninlil_sx1262_board_profile_xiao_wio_features_match(&cfg) == 1);
+    REQUIRE(
+        ninlil_sx1262_board_profile_xiao_wio_tcxo_opcodes(ops, sizeof(ops), &n)
+        == 0);
+    REQUIRE(n == 3u);
+    REQUIRE(ops[0] == (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_SET_DIO2);
+    REQUIRE(ops[1] == (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_SET_DIO3);
+    REQUIRE(ops[2] == (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_CALIBRATE);
+    REQUIRE(cfg.tcxo_voltage == NINLIL_SX1262_TCXO_3_0V);
+    REQUIRE(cfg.tcxo_delay_rtc_steps == 5000u);
+    REQUIRE(
+        (cfg.feature_flags & NINLIL_SX1262_FEATURE_TCXO_PRESENT) != 0u);
+    REQUIRE(
+        (cfg.feature_flags & NINLIL_SX1262_FEATURE_DIO2_RF_SWITCH) != 0u);
+    REQUIRE(
+        (cfg.feature_flags & NINLIL_SX1262_FEATURE_ANT_SW_PRESENT) != 0u);
+
+    ninlil_sx1262_bus_spy_init(&spy);
+    REQUIRE(
+        ninlil_sx1262_init(
+            &obj,
+            &cfg,
+            ninlil_sx1262_bus_spy_ops_with_ant_sw(),
+            &spy,
+            &be,
+            &err)
+        == NINLIL_SX1262_OK);
+
+    for (i = 0u; i < spy.trace_len; ++i) {
+        if (spy.trace[i].event != NINLIL_SX1262_SPY_EV_SPI) {
+            continue;
+        }
+        if (spy.trace[i].opcode
+            == (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_SET_DIO2) {
+            REQUIRE(spy.trace[i].sample_len >= 2u);
+            REQUIRE(
+                spy.trace[i].sample[1]
+                == (uint8_t)NINLIL_SX1262_XIAO_WIO_DIO2_ENABLE);
+            saw_dio2 = 1;
+            dio2_idx = (int)i;
+        }
+        if (spy.trace[i].opcode
+            == (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_SET_DIO3) {
+            REQUIRE(spy.trace[i].sample_len >= 5u);
+            REQUIRE(spy.trace[i].sample[1] == NINLIL_SX1262_TCXO_3_0V);
+            /* delay 5000 = 0x001388 big-endian 24-bit */
+            REQUIRE(spy.trace[i].sample[2] == 0x00u);
+            REQUIRE(spy.trace[i].sample[3] == 0x13u);
+            REQUIRE(spy.trace[i].sample[4] == 0x88u);
+            saw_dio3 = 1;
+            dio3_idx = (int)i;
+        }
+        if (spy.trace[i].opcode
+            == (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_CALIBRATE) {
+            REQUIRE(spy.trace[i].sample_len >= 2u);
+            REQUIRE(spy.trace[i].sample[1] == NINLIL_SX1262_CAL_ALL);
+            saw_cal = 1;
+            cal_idx = (int)i;
+        }
+    }
+    REQUIRE(saw_dio2 == 1);
+    REQUIRE(saw_dio3 == 1);
+    REQUIRE(saw_cal == 1);
+    REQUIRE(dio2_idx >= 0 && dio3_idx > dio2_idx && cal_idx > dio3_idx);
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_SET_DIO2)
+        == 1u);
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_SET_DIO3)
+        == 1u);
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)NINLIL_SX1262_XIAO_WIO_OPCODE_CALIBRATE)
+        == 1u);
+    (void)prof;
+    return 0;
+}
+
+/* Negative: ANT_SW-only (old radio_hil bug) must NOT emit Dio2/Dio3/CAL. */
+static int test_negative_ant_only_no_tcxo_path(void)
+{
+    ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
+    ninlil_sx1262_backend_t *be = NULL;
+    ninlil_sx1262_bus_spy_t spy;
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+
+    ninlil_sx1262_bus_spy_init(&spy);
+    fill_valid_board(&cfg);
+    cfg.pin_ant_sw = 1038u;
+    cfg.feature_flags = NINLIL_SX1262_FEATURE_ANT_SW_PRESENT;
+    cfg.ant_sw_active_high = 1u;
+    REQUIRE(
+        ninlil_sx1262_init(
+            &obj,
+            &cfg,
+            ninlil_sx1262_bus_spy_ops_with_ant_sw(),
+            &spy,
+            &be,
+            &err)
+        == NINLIL_SX1262_OK);
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)SX126X_GOLDEN_SET_DIO2_RF_SWITCH)
+        == 0u);
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)SX126X_GOLDEN_SET_DIO3_TCXO)
+        == 0u);
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)SX126X_GOLDEN_CALIBRATE)
+        == 0u);
+    return 0;
+}
+
+/* Negative: TCXO present but wrong 3.3V vs low VDD fails closed. */
+static int test_negative_tcxo_vdd_margin(void)
+{
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+
+    REQUIRE(ninlil_sx1262_board_profile_copy_xiao_wio_sx1262_v1(&cfg) == 0);
+    cfg.vdd_op_mv = 3100u; /* 3000 + 200 margin not satisfied */
+    REQUIRE(
+        ninlil_sx1262_validate_board_config(
+            &cfg, ninlil_sx1262_bus_spy_ops_with_ant_sw(), &err)
+        == NINLIL_SX1262_INVALID_ARGUMENT);
+    REQUIRE(err.reason == NINLIL_SX1262_REASON_TCXO_VDD);
+    return 0;
+}
+
+/* Negative: contradictory features without delay. */
+static int test_negative_tcxo_zero_delay(void)
+{
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+
+    REQUIRE(ninlil_sx1262_board_profile_copy_xiao_wio_sx1262_v1(&cfg) == 0);
+    cfg.tcxo_delay_rtc_steps = 0u;
+    REQUIRE(
+        ninlil_sx1262_validate_board_config(
+            &cfg, ninlil_sx1262_bus_spy_ops_with_ant_sw(), &err)
+        == NINLIL_SX1262_INVALID_ARGUMENT);
+    REQUIRE(err.reason == NINLIL_SX1262_REASON_TCXO_DELAY);
+    return 0;
+}
+
 /* E: ESP GPIO safe-init SM + polarity */
 static int test_esp_gpio_safe_init_sm(void)
 {
@@ -1852,6 +2019,10 @@ int main(void)
         || test_mid_status_closed_set_after_busy() != 0
         || test_cmd_frame_schema() != 0
         || test_primary_opcode_pin() != 0
+        || test_xiao_wio_board_profile_bus_spy() != 0
+        || test_negative_ant_only_no_tcxo_path() != 0
+        || test_negative_tcxo_vdd_margin() != 0
+        || test_negative_tcxo_zero_delay() != 0
         || test_esp_gpio_safe_init_sm() != 0) {
         return 1;
     }

@@ -60,9 +60,9 @@ requirements:
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
-    status: partial
-    tests: [abi_contract_output]
-    gap: "The bounded output initialization helper is tested but is not integrated into public runtime APIs."
+    status: verified
+    tests: [abi_contract_output, v1_runtime_spine]
+    gap: ""
   - id: NIN-PR1-STRUCT-001
     title: "Small and future public struct_size behavior"
     source: docs/12-foundation-abi.md
@@ -70,9 +70,9 @@ requirements:
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
-    status: partial
-    tests: [abi_contract_header]
-    gap: "The common ABI header helper is tested but is not integrated into public runtime APIs."
+    status: verified
+    tests: [abi_contract_header, v1_runtime_spine]
+    gap: ""
   - id: NIN-PR1-UNSUPPORTED-001
     title: "Unsupported feature rejection behavior"
     source: docs/12-foundation-abi.md
@@ -80,9 +80,9 @@ requirements:
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
-    status: partial
-    tests: [abi_contract_enum]
-    gap: "The enum classification helper is tested but public runtime rejection paths are not implemented."
+    status: verified
+    tests: [abi_contract_enum, v1_runtime_spine]
+    gap: ""
   - id: NIN-PR1-OPERATOR-001
     title: "Operator Model projection linkage"
     source: docs/11-operator-model.md
@@ -92,4 +92,14 @@ requirements:
     gate: PR1
     status: verified
     tests: [operator_projection_check, operator_projection_negative]
+    gap: ""
+  - id: NIN-PR1-TRACE-COVERAGE-001
+    title: "Complete normative requirement and invariant coverage"
+    source: docs/07-testing-and-quality.md
+    heading: "## Quality model"
+    owner: PR1
+    profile: FOUNDATION_M1A_TEST
+    gate: PR1
+    status: verified
+    tests: [traceability_check, traceability_complete_coverage_v2_check, traceability_complete_coverage_v2_self_test]
     gap: ""

@@ -977,7 +977,9 @@ static ninlil_bearer_status_t fixture_open(
     }
     *out_handle = NULL;
     if (id_is_zero(runtime_id)
-        || (role != NINLIL_ROLE_CONTROLLER && role != NINLIL_ROLE_ENDPOINT)) {
+        || (role != NINLIL_ROLE_CONTROLLER
+            && role != NINLIL_ROLE_ENDPOINT
+            && role != NINLIL_ROLE_CELL_AGENT)) {
         record_trace(bearer, NINLIL_TEST_BEARER_OP_OPEN,
             NINLIL_BEARER_DENIED, 0u, NULL, NULL, NULL,
             0u, 2u, 0u, 0u);

@@ -335,11 +335,17 @@ static void pcp_set_fence_corrupt(ninlil_pcp_t *pcp)
     pcp_sat_inc(&pcp->stats.fence_set);
 }
 
+static uint8_t pcp_sticky_clock_fence_best_effort(
+    ninlil_pcp_t *pcp,
+    ninlil_pcp_fence_code_t code);
+
 static void pcp_set_fence_clock(ninlil_pcp_t *pcp, ninlil_pcp_fence_code_t code)
 {
     pcp->fence_bits |= NINLIL_PCP_FENCE_BIT_CLOCK;
     pcp->fence_code = code;
     pcp_sat_inc(&pcp->stats.fence_set);
+    /* Durable CLOCK fence across restart (not RAM-only). */
+    (void)pcp_sticky_clock_fence_best_effort(pcp, code);
 }
 
 /* ---- Meta / issued decode structs ---- */
@@ -1242,6 +1248,109 @@ static ninlil_pcp_status_t pcp_commit_full(
 }
 
 /*
+ * Best-effort durable CLOCK fence sticky (CLOCK_FAULT across restart).
+ * Max one attempt; retains RAM F_c on secondary fail. No live txn left.
+ * Returns closed durable outcome for §11.2.3 three-axis sample mapping.
+ */
+static uint8_t pcp_sticky_clock_fence_best_effort(
+    ninlil_pcp_t *pcp,
+    ninlil_pcp_fence_code_t code)
+{
+    ninlil_storage_txn_t tf = NULL;
+    ninlil_storage_status_t st;
+    pcp_meta_t meta;
+    ninlil_pcp_status_t pst;
+
+    if (pcp == NULL || pcp->storage_bound == 0u || pcp->published == 0u) {
+        if (pcp != NULL) {
+            pcp->fence_bits |= NINLIL_PCP_FENCE_BIT_CLOCK;
+            if (code != NINLIL_PCP_FC_NONE) {
+                pcp->fence_code = code;
+            }
+        }
+        return NINLIL_R2_FC_DURABLE_UNPUBLISHED;
+    }
+    pcp->fence_bits |= NINLIL_PCP_FENCE_BIT_CLOCK;
+    if (code != NINLIL_PCP_FC_NONE) {
+        pcp->fence_code = code;
+    } else if ((pcp->fence_bits & NINLIL_PCP_FENCE_BIT_CORRUPT) == 0u) {
+        pcp->fence_code = NINLIL_PCP_FC_CLOCK_PERM;
+    }
+    pcp_clear_ram_validate(pcp);
+
+    if (pcp->storage_handle_live == 0u) {
+        return NINLIL_R2_FC_DURABLE_DEFINITE_FAIL;
+    }
+    pst = pcp_begin(
+        pcp, NINLIL_STORAGE_READ_WRITE, &tf, NINLIL_PCP_STAGE_ISSUE, NULL, 0);
+    if (pst != NINLIL_PCP_OK || tf == NULL) {
+        if (pst == NINLIL_PCP_COMMIT_UNKNOWN) {
+            return NINLIL_R2_FC_DURABLE_COMMIT_UNKNOWN;
+        }
+        return NINLIL_R2_FC_DURABLE_DEFINITE_FAIL;
+    }
+    {
+        pcp_scan_t scan_c;
+
+        pst = pcp_rw_scan_check(
+            pcp, tf, &scan_c, NINLIL_PCP_STAGE_ISSUE, NULL, 0);
+        if (pst != NINLIL_PCP_OK) {
+            (void)pcp_rollback_map(
+                pcp, tf, NINLIL_PCP_STAGE_ISSUE, NULL, 0);
+            if (pst == NINLIL_PCP_COMMIT_UNKNOWN) {
+                return NINLIL_R2_FC_DURABLE_COMMIT_UNKNOWN;
+            }
+            return NINLIL_R2_FC_DURABLE_DEFINITE_FAIL;
+        }
+        meta = scan_c.meta;
+    }
+    meta.fence_bits =
+        (uint8_t)(meta.fence_bits | (uint8_t)NINLIL_PCP_FENCE_BIT_CLOCK);
+    if (code != NINLIL_PCP_FC_NONE) {
+        meta.fence_code = (uint32_t)code;
+    } else if ((meta.fence_bits & (uint8_t)NINLIL_PCP_FENCE_BIT_CORRUPT) == 0u) {
+        meta.fence_code = NINLIL_PCP_FC_CLOCK_PERM;
+    }
+    pst = pcp_txn_put_meta(
+        pcp, tf, &meta, NINLIL_PCP_STAGE_ISSUE, NULL, 0);
+    if (pst != NINLIL_PCP_OK) {
+        (void)pcp_rollback_map(
+            pcp, tf, NINLIL_PCP_STAGE_ISSUE, NULL, 0);
+        if (pst == NINLIL_PCP_COMMIT_UNKNOWN) {
+            return NINLIL_R2_FC_DURABLE_COMMIT_UNKNOWN;
+        }
+        return NINLIL_R2_FC_DURABLE_DEFINITE_FAIL;
+    }
+    st = pcp->storage_ops.commit(
+        pcp->storage_ops.user, tf, NINLIL_DURABILITY_FULL);
+    if (st == NINLIL_STORAGE_COMMIT_UNKNOWN) {
+        return NINLIL_R2_FC_DURABLE_COMMIT_UNKNOWN;
+    }
+    if (st != NINLIL_STORAGE_OK) {
+        return NINLIL_R2_FC_DURABLE_DEFINITE_FAIL;
+    }
+    return NINLIL_R2_FC_DURABLE_FULL_OK;
+}
+
+uint8_t ninlil_r2_private_commit_clock_fault_fence(
+    ninlil_pcp_t *pcp,
+    ninlil_pcp_fence_code_t code)
+{
+    /*
+     * docs/30 §11.2.3 common helper: FULL-commit CLOCK+F_c on existing meta
+     * before returning CLOCK_FAULT. MUST NOT create first meta.
+     */
+    if (pcp == NULL) {
+        return NINLIL_R2_FC_DURABLE_UNPUBLISHED;
+    }
+    if (pcp->published == 0u) {
+        return NINLIL_R2_FC_DURABLE_UNPUBLISHED;
+    }
+    pcp_sat_inc(&pcp->stats.fence_set);
+    return pcp_sticky_clock_fence_best_effort(pcp, code);
+}
+
+/*
  * Best-effort durable STORAGE fence sticky (consume/issue UNKNOWN convergence).
  * Max one attempt; retains RAM F_s on secondary UNKNOWN/fail. No live txn left.
  */
@@ -1347,7 +1456,7 @@ static ninlil_radio_hal_status_t pcp_consume_fail_after_put_intent(
         pcp_set_hal_error(
             out_error, out_safe, NINLIL_RADIO_HAL_CONSUME_DENIED,
             NINLIL_RADIO_HAL_STAGE_PERMIT_CONSUME,
-            NINLIL_RADIO_HAL_REASON_CONSUME_UNCONSUMED, "pcp_retry");
+            NINLIL_RADIO_HAL_REASON_CONSUME_BUSY, "pcp_busy");
         return NINLIL_RADIO_HAL_CONSUME_DENIED;
     }
     pcp_sat_inc(&pcp->stats.consume_error);
@@ -4002,6 +4111,182 @@ static ninlil_pcp_status_t pcp_algorithm_e_body(
     return NINLIL_PCP_OK;
 }
 
+void ninlil_pcp_issue_sample_clear(ninlil_pcp_t *pcp)
+{
+    if (pcp == NULL) {
+        return;
+    }
+    pcp->issue_sample_sticky_live = 0u;
+    pcp->issue_sample_sticky_klass = 0u;
+    (void)memset(&pcp->issue_sample_sticky, 0, sizeof(pcp->issue_sample_sticky));
+    /* Release pin→issue critical section if held. */
+    if (pcp->issue_cs_held != 0u) {
+        pcp->issue_cs_held = 0u;
+        pcp->in_api = 0u;
+    }
+}
+
+ninlil_pcp_status_t ninlil_pcp_issue_sample_pin(
+    ninlil_pcp_t *pcp,
+    ninlil_time_sample_t *out_sample,
+    ninlil_pcp_error_t *out_error)
+{
+    int out_safe = 1;
+    pcp_clk_result_t clk;
+
+    if (out_sample != NULL) {
+        (void)memset(out_sample, 0, sizeof(*out_sample));
+    }
+    /* Drop any prior unused pin so a new path cannot double-use stale S. */
+    ninlil_pcp_issue_sample_clear(pcp);
+
+    if (!pcp_guard_active(pcp, out_error, &out_safe, NINLIL_PCP_STAGE_ISSUE)) {
+        return pcp != NULL ? pcp->last_error.status : NINLIL_PCP_INVALID_ARGUMENT;
+    }
+    if (pcp->clock_bound == 0u) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_UNBOUND_CLOCK,
+            NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_UNBOUND_CLOCK, "clock");
+        return NINLIL_PCP_UNBOUND_CLOCK;
+    }
+    if ((pcp->fence_bits
+            & (NINLIL_PCP_FENCE_BIT_STORAGE | NINLIL_PCP_FENCE_BIT_CLOCK
+                | NINLIL_PCP_FENCE_BIT_CORRUPT))
+        != 0u) {
+        ninlil_pcp_status_t fs = NINLIL_PCP_STORAGE_FENCE;
+        ninlil_pcp_reason_t fr = NINLIL_PCP_REASON_STORAGE_FENCE;
+        if ((pcp->fence_bits & NINLIL_PCP_FENCE_BIT_CORRUPT) != 0u) {
+            fs = NINLIL_PCP_CORRUPT_FENCE;
+            fr = NINLIL_PCP_REASON_CORRUPT_FENCE;
+        } else if ((pcp->fence_bits & NINLIL_PCP_FENCE_BIT_CLOCK) != 0u) {
+            fs = NINLIL_PCP_CLOCK_FAULT;
+            fr = NINLIL_PCP_REASON_CLOCK_FAULT;
+        }
+        pcp_set_error(
+            pcp, out_error, out_safe, fs, NINLIL_PCP_STAGE_ISSUE, fr, "fence");
+        return fs;
+    }
+
+    /*
+     * Hold issue CS (in_api) for pin→validation→issue so no concurrent
+     * issue/pin can overwrite sticky S (docs/30 same-S TOCTOU closed).
+     */
+    pcp->in_api = 1u;
+    pcp->issue_cs_held = 1u;
+
+    clk = pcp_sample_clock(pcp);
+    if (clk.klass == PCP_CLK_TEMP || clk.klass == PCP_CLK_OK_UNCERTAIN) {
+        /* No RW; drop CS. Uncertain not pinned for issue consume. */
+        ninlil_pcp_issue_sample_clear(pcp);
+        if (out_sample != NULL) {
+            *out_sample = clk.sample;
+        }
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_CLOCK_UNCERTAIN,
+            NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_CLOCK_UNCERTAIN,
+            "uncertain");
+        return NINLIL_PCP_CLOCK_UNCERTAIN;
+    }
+    if (clk.klass != PCP_CLK_OK_TRUSTED) {
+        /* Durable F_c helper — not RAM-only fence claim. */
+        (void)ninlil_r2_private_commit_clock_fault_fence(
+            pcp, NINLIL_PCP_FC_CLOCK_PERM);
+        ninlil_pcp_issue_sample_clear(pcp);
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_CLOCK_FAULT,
+            NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_CLOCK_FAULT, "fault");
+        return NINLIL_PCP_CLOCK_FAULT;
+    }
+
+    pcp->issue_sample_sticky_live = 1u;
+    pcp->issue_sample_sticky_klass = (uint32_t)clk.klass;
+    pcp->issue_sample_sticky = clk.sample;
+    if (out_sample != NULL) {
+        *out_sample = clk.sample;
+    }
+    if (out_error != NULL) {
+        (void)memset(out_error, 0, sizeof(*out_error));
+        out_error->status = NINLIL_PCP_OK;
+        out_error->stage = NINLIL_PCP_STAGE_ISSUE;
+    }
+    /* CS remains held (in_api=1, issue_cs_held=1) until issue or clear. */
+    return NINLIL_PCP_OK;
+}
+
+ninlil_pcp_status_t ninlil_pcp_issue_sample_pin_accepted(
+    ninlil_pcp_t *pcp,
+    const ninlil_time_sample_t *accepted,
+    ninlil_pcp_error_t *out_error)
+{
+    int out_safe = 1;
+    size_t i;
+    int epoch_nonzero = 0;
+
+    ninlil_pcp_issue_sample_clear(pcp);
+
+    if (!pcp_guard_active(pcp, out_error, &out_safe, NINLIL_PCP_STAGE_ISSUE)) {
+        return pcp != NULL ? pcp->last_error.status : NINLIL_PCP_INVALID_ARGUMENT;
+    }
+    if (accepted == NULL) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_INVALID_ARGUMENT,
+            NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_NULL_ARG, "accepted");
+        return NINLIL_PCP_INVALID_ARGUMENT;
+    }
+    if (accepted->trust != NINLIL_CLOCK_TRUSTED
+        || accepted->abi_version != NINLIL_ABI_VERSION
+        || accepted->struct_size < (uint16_t)sizeof(ninlil_time_sample_t)
+        || accepted->reserved_zero != 0u) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_STRUCT,
+            NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_STRUCT_INVALID,
+            "accepted");
+        return NINLIL_PCP_STRUCT;
+    }
+    for (i = 0u; i < 16u; i++) {
+        if (accepted->clock_epoch_id.bytes[i] != 0u) {
+            epoch_nonzero = 1;
+            break;
+        }
+    }
+    if (epoch_nonzero == 0) {
+        pcp_set_error(
+            pcp, out_error, out_safe, NINLIL_PCP_STRUCT,
+            NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_STRUCT_INVALID,
+            "epoch");
+        return NINLIL_PCP_STRUCT;
+    }
+    if ((pcp->fence_bits
+            & (NINLIL_PCP_FENCE_BIT_STORAGE | NINLIL_PCP_FENCE_BIT_CLOCK
+                | NINLIL_PCP_FENCE_BIT_CORRUPT))
+        != 0u) {
+        ninlil_pcp_status_t fs = NINLIL_PCP_STORAGE_FENCE;
+        ninlil_pcp_reason_t fr = NINLIL_PCP_REASON_STORAGE_FENCE;
+        if ((pcp->fence_bits & NINLIL_PCP_FENCE_BIT_CORRUPT) != 0u) {
+            fs = NINLIL_PCP_CORRUPT_FENCE;
+            fr = NINLIL_PCP_REASON_CORRUPT_FENCE;
+        } else if ((pcp->fence_bits & NINLIL_PCP_FENCE_BIT_CLOCK) != 0u) {
+            fs = NINLIL_PCP_CLOCK_FAULT;
+            fr = NINLIL_PCP_REASON_CLOCK_FAULT;
+        }
+        pcp_set_error(
+            pcp, out_error, out_safe, fs, NINLIL_PCP_STAGE_ISSUE, fr, "fence");
+        return fs;
+    }
+
+    pcp->in_api = 1u;
+    pcp->issue_cs_held = 1u;
+    pcp->issue_sample_sticky_live = 1u;
+    pcp->issue_sample_sticky_klass = (uint32_t)PCP_CLK_OK_TRUSTED;
+    pcp->issue_sample_sticky = *accepted;
+    if (out_error != NULL) {
+        (void)memset(out_error, 0, sizeof(*out_error));
+        out_error->status = NINLIL_PCP_OK;
+        out_error->stage = NINLIL_PCP_STAGE_ISSUE;
+    }
+    return NINLIL_PCP_OK;
+}
+
 ninlil_pcp_status_t ninlil_pcp_issue(
     ninlil_pcp_t *pcp,
     const ninlil_pcp_issue_request_t *request,
@@ -4022,16 +4307,43 @@ ninlil_pcp_status_t ninlil_pcp_issue(
     if (out_snapshot != NULL) {
         (void)memset(out_snapshot, 0, sizeof(*out_snapshot));
     }
-    if (!pcp_guard_active(pcp, out_error, &out_safe, NINLIL_PCP_STAGE_ISSUE)) {
+    /*
+     * Same-S critical section: if R2 already holds pin (issue_cs_held + sticky),
+     * continue without reentry reject so validation→issue uses the same S.
+     * Direct issue callers still enter via pcp_guard_active.
+     */
+    if (pcp != NULL && pcp->issue_cs_held != 0u
+        && pcp->issue_sample_sticky_live != 0u && pcp->in_api != 0u) {
+        out_safe = 1;
+        if (out_error != NULL
+            && pcp_ranges_overlap(
+                pcp, sizeof(*pcp), out_error, sizeof(*out_error))) {
+            out_safe = 0;
+            pcp_sat_inc(&pcp->stats.alias_reject);
+            ninlil_pcp_issue_sample_clear(pcp);
+            return NINLIL_PCP_ALIAS;
+        }
+        if (pcp->magic != NINLIL_PCP_MAGIC_VALUE
+            || pcp->lifecycle != NINLIL_PCP_LC_ACTIVE) {
+            ninlil_pcp_issue_sample_clear(pcp);
+            pcp_set_error(
+                pcp, out_error, out_safe, NINLIL_PCP_SHUTDOWN,
+                NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_SHUTDOWN, "shutdown");
+            return NINLIL_PCP_SHUTDOWN;
+        }
+    } else if (!pcp_guard_active(
+                   pcp, out_error, &out_safe, NINLIL_PCP_STAGE_ISSUE)) {
         return pcp != NULL ? pcp->last_error.status : NINLIL_PCP_INVALID_ARGUMENT;
     }
     if (request == NULL || out_snapshot == NULL) {
+        ninlil_pcp_issue_sample_clear(pcp);
         pcp_set_error(
             pcp, out_error, out_safe, NINLIL_PCP_INVALID_ARGUMENT,
             NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_NULL_ARG, "null");
         return NINLIL_PCP_INVALID_ARGUMENT;
     }
     if (pcp->storage_bound == 0u) {
+        ninlil_pcp_issue_sample_clear(pcp);
         pcp_set_error(
             pcp, out_error, out_safe, NINLIL_PCP_UNBOUND_STORAGE,
             NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_UNBOUND_STORAGE,
@@ -4039,12 +4351,14 @@ ninlil_pcp_status_t ninlil_pcp_issue(
         return NINLIL_PCP_UNBOUND_STORAGE;
     }
     if (pcp->clock_bound == 0u) {
+        ninlil_pcp_issue_sample_clear(pcp);
         pcp_set_error(
             pcp, out_error, out_safe, NINLIL_PCP_UNBOUND_CLOCK,
             NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_UNBOUND_CLOCK, "clock");
         return NINLIL_PCP_UNBOUND_CLOCK;
     }
     if (pcp->live_bound == 0u || pcp->published == 0u) {
+        ninlil_pcp_issue_sample_clear(pcp);
         pcp_set_error(
             pcp, out_error, out_safe, NINLIL_PCP_UNBOUND_ASSIGNMENT,
             NINLIL_PCP_STAGE_ISSUE, NINLIL_PCP_REASON_UNBOUND_ASSIGNMENT,
@@ -4064,6 +4378,7 @@ ninlil_pcp_status_t ninlil_pcp_issue(
             fs = NINLIL_PCP_CLOCK_FAULT;
             fr = NINLIL_PCP_REASON_CLOCK_FAULT;
         }
+        ninlil_pcp_issue_sample_clear(pcp);
         pcp_sat_inc(&pcp->stats.issue_deny);
         pcp_set_error(
             pcp, out_error, out_safe, fs, NINLIL_PCP_STAGE_ISSUE, fr, "fence");
@@ -4071,6 +4386,8 @@ ninlil_pcp_status_t ninlil_pcp_issue(
     }
 
     pcp->in_api = 1u;
+    /* CS held flag cleared when sticky is consumed below (or clear on exit). */
+    pcp->issue_cs_held = 0u;
     st = pcp_ensure_open(pcp, NINLIL_PCP_STAGE_ISSUE, out_error, out_safe);
     if (st != NINLIL_PCP_OK) {
         pcp_sat_inc(&pcp->stats.issue_deny);
@@ -4078,8 +4395,16 @@ ninlil_pcp_status_t ninlil_pcp_issue(
         return st;
     }
 
-    /* I1 sample once */
-    clk = pcp_sample_clock(pcp);
+    /* I1 sample once — consume sticky pin if R2 already sampled (docs/30 §15.3.1). */
+    if (pcp->issue_sample_sticky_live != 0u) {
+        clk.klass = (pcp_clk_class_t)pcp->issue_sample_sticky_klass;
+        clk.sample = pcp->issue_sample_sticky;
+        pcp->issue_sample_sticky_live = 0u;
+        pcp->issue_sample_sticky_klass = 0u;
+        (void)memset(&pcp->issue_sample_sticky, 0, sizeof(pcp->issue_sample_sticky));
+    } else {
+        clk = pcp_sample_clock(pcp);
+    }
     if (clk.klass == PCP_CLK_TEMP || clk.klass == PCP_CLK_OK_UNCERTAIN) {
         pcp_sat_inc(&pcp->stats.issue_deny);
         pcp->in_api = 0u;
@@ -4675,16 +5000,18 @@ ninlil_radio_hal_status_t ninlil_pcp_consume(
 
     clk = pcp_sample_clock(pcp);
     if (clk.klass == PCP_CLK_TEMP || clk.klass == PCP_CLK_OK_UNCERTAIN) {
+        /* HAL44: consume entered; typed clock-uncertain (docs/30 §15.3.4). */
         pcp_sat_inc(&pcp->stats.consume_denied);
         pcp->in_api = 0u;
         pcp_set_hal_error(
             out_error, out_safe, NINLIL_RADIO_HAL_CONSUME_DENIED,
             NINLIL_RADIO_HAL_STAGE_PERMIT_CONSUME,
-            NINLIL_RADIO_HAL_REASON_CONSUME_UNCONSUMED, "pcp_retry");
+            NINLIL_RADIO_HAL_REASON_CONSUME_CLOCK_UNCERTAIN, "pcp_clock_unc");
         return NINLIL_RADIO_HAL_CONSUME_DENIED;
     }
     if (clk.klass != PCP_CLK_OK_TRUSTED) {
-        pcp_apply_clock_fault_fence(pcp, clk.klass);
+        (void)ninlil_r2_private_commit_clock_fault_fence(
+            pcp, NINLIL_PCP_FC_CLOCK_PERM);
         pcp_sat_inc(&pcp->stats.consume_fenced);
         pcp->in_api = 0u;
         pcp_set_hal_error(
@@ -4720,12 +5047,13 @@ ninlil_radio_hal_status_t ninlil_pcp_consume(
         0);
     if (st != NINLIL_PCP_OK) {
         if (st == NINLIL_PCP_BUSY) {
+            /* HAL45: CONSUME_BUSY — same-Permit retry gate (docs/30). */
             pcp_sat_inc(&pcp->stats.consume_denied);
             pcp->in_api = 0u;
             pcp_set_hal_error(
                 out_error, out_safe, NINLIL_RADIO_HAL_CONSUME_DENIED,
                 NINLIL_RADIO_HAL_STAGE_PERMIT_CONSUME,
-                NINLIL_RADIO_HAL_REASON_CONSUME_UNCONSUMED, "pcp_retry");
+                NINLIL_RADIO_HAL_REASON_CONSUME_BUSY, "pcp_busy");
             return NINLIL_RADIO_HAL_CONSUME_DENIED;
         }
         pcp_sat_inc(&pcp->stats.consume_error);
@@ -4836,10 +5164,11 @@ ninlil_radio_hal_status_t ninlil_pcp_consume(
             pcp_sat_inc(&pcp->stats.consume_denied);
             pcp_sat_inc(&pcp->stats.fifo_out_of_order);
             pcp->in_api = 0u;
+            /* HAL43: FIFO_OUT_OF_ORDER — drain; no same-Permit retry. */
             pcp_set_hal_error(
                 out_error, out_safe, NINLIL_RADIO_HAL_CONSUME_DENIED,
                 NINLIL_RADIO_HAL_STAGE_PERMIT_CONSUME,
-                NINLIL_RADIO_HAL_REASON_CONSUME_UNCONSUMED, "pcp_ooo");
+                NINLIL_RADIO_HAL_REASON_FIFO_OUT_OF_ORDER, "pcp_ooo");
             return NINLIL_RADIO_HAL_CONSUME_DENIED;
         }
         (void)pcp_rollback_map(
@@ -4876,10 +5205,11 @@ ninlil_radio_hal_status_t ninlil_pcp_consume(
             pcp, txn, NINLIL_PCP_STAGE_CONSUME, NULL, 0);
         pcp_sat_inc(&pcp->stats.consume_denied);
         pcp->in_api = 0u;
+        /* consume HAL16: NOT_BEFORE at PERMIT_CONSUME (retryable gate). */
         pcp_set_hal_error(
             out_error, out_safe, NINLIL_RADIO_HAL_CONSUME_DENIED,
             NINLIL_RADIO_HAL_STAGE_PERMIT_CONSUME,
-            NINLIL_RADIO_HAL_REASON_CONSUME_UNCONSUMED, "pcp_retry");
+            NINLIL_RADIO_HAL_REASON_NOT_BEFORE, "pcp_not_before");
         return NINLIL_RADIO_HAL_CONSUME_DENIED;
     }
     if (pcp_expired_time(&clk.sample, &iss)) {

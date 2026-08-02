@@ -1,0 +1,46 @@
+{
+  "schema": "r7-checked-issue-closed-v1",
+  "docs": "docs/30-r6-secure-radio-wire.md §15.3.1–15.3.2",
+  "sole_path": [
+    "L1",
+    "ninlil_r5_private_issue_checked_with_owner_epoch",
+    "ninlil_r2_private_issue_checked_owner_epoch",
+    "ninlil_pcp_issue_sample_pin",
+    "ninlil_pcp_issue"
+  ],
+  "forbidden": [
+    "direct_ninlil_pcp_issue_from_prod_orch",
+    "validation_cb_clock_sample",
+    "R5_clock_sample",
+    "L1_class_d_sample_inject",
+    "double_sample_TOCTOU",
+    "raw_caller_times_as_S"
+  ],
+  "sample_policy": {
+    "R5": "static_preflight_only",
+    "R2": "sample_once_via_pcp_issue_sample_pin",
+    "pcp_issue": "consumes_sticky_pin_no_resample"
+  },
+  "validation_cb_closed": {
+    "VAL_OK": { "proceed": true },
+    "VAL_TERMINAL": { "pcp": "STRUCT", "l1": "TERMINAL_UNISSUED" },
+    "VAL_RETRYABLE": { "pcp": "CAPACITY", "l1": "RETRYABLE_UNISSUED" },
+    "VAL_AUTHORITY": { "pcp": "PROFILE_MISMATCH", "l1": "AUTHORITY_DIVERGENCE" },
+    "VAL_RECONCILE": { "pcp": "INVALID_STATE", "reason": "CONTRACT", "l1": "RECONCILE_REQUIRED" }
+  },
+  "axes_ok_issued": {
+    "business_mutation": "ISSUED_FULL",
+    "clock_fence_mutation": "META_ZERO",
+    "txn_provenance": "ISSUED_COMMITTED",
+    "l1_class": "OK_ISSUED"
+  },
+  "registry_cap": 8,
+  "issue_retry_max": 8,
+  "link_ack_closed_loop": {
+    "note_only_after_e2e_admit": true,
+    "prepare_before_tx": true,
+    "arbitrary_tx_admission": true,
+    "issue_calls_max": 8,
+    "no_zero_context_bypass": true
+  }
+}

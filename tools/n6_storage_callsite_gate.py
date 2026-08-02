@@ -33,11 +33,11 @@ from typing import Mapping, Sequence
 ACCEPTED_SOURCE_MANIFEST: tuple[tuple[str, str], ...] = (
     (
         "src/radio/n6_context_store.c",
-        "bc8633657a1033fb16cc473794ad8cfab54b17ec00a741814682194d5c7789f6",
+        "0a0aa4ad7d3ccca6c305fb1444451478673c468774fbaa6cde3e15f6557910d7",
     ),
     (
         "src/radio/n6_context_store.h",
-        "1901a595b29e91af938cfa1f9acc0cc7eaf8151698eb44885c08b8d38833844c",
+        "982cafd862fdbc143ea01c96412b1c0df2410c7b3a00fe49a9954e1872b0bcc5",
     ),
     (
         "src/radio/n6_crypto_host.c",

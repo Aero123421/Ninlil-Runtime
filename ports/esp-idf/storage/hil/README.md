@@ -110,3 +110,17 @@ erase/reset only the HIL test partition and leave the flashed firmware usable.
 Until all hardware evidence is green and separately accepted, policy remains
 `ESP_UNPROVEN`, `commit(FULL)` must not return `STORAGE_OK`, and field readiness
 is not claimed.
+
+## Unified machine-readable evidence
+
+The repository-level [`ninlil_hil` evidence guide](../../../../docs/hil-evidence.md)
+defines the versioned manifest/events/resources/faults/verdict schemas, bounded
+argv-plugin runner, SHA-256 inventory, redaction, and offline mutation tests.
+Pass `--evidence-case-id` to `host_powercut_runner.py` when invoking it as a
+unified runner plugin. The emitted record explicitly keeps physical power
+interruption unverified and cannot promote `FULL_ESP_UNPROVEN`.
+
+The unified `esp-storage-namespace-v1` profile also validates the ordered AB/BA
+HIL-NS campaign and cross-boot index/content invariants. Actual execution still
+requires a dedicated fixture/firmware protocol that reports the private
+directory index; this atomic firmware does not provide that protocol.

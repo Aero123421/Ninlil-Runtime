@@ -20,7 +20,7 @@
 - cancel、Receipt、Delivery Disposition、retry exhaustion、storage error
 - late evidence
 - crash recovery
-- M1bで追加するALL_TARGETS集約の不変条件
+- ADR-0027 exact roster profileのtarget-local retryとALL_TARGETS集約
 
 Security envelope、wire、radio MAC、real route、production identity、法規profileの正しさは本章の対象外です。
 
@@ -41,11 +41,17 @@ Security envelope、wire、radio MAC、real route、production identity、法規
 
 状態名とreason codeは英大文字を規範表記とします。日本語は説明であり、operator向け表示文言ではありません。
 
-## M1aの固定scope
+## Foundation public profileの固定scope
+
+本章のsingle-target M1a基礎契約に、
+[ADR-0027](adr/0027-public-runtime-profiles-and-exact-target-rosters.md)
+のexact roster profileを加えます。以後、特に「legacy M1a single-target」と
+断らないDesiredState規則は1〜4件のexact targetに適用します。EventFactは
+authorization grantとの1対1 bindingを保つためexactly 1件です。
 
 ### 実装必須
 
-- concrete target 1件だけのDesiredStateCommand
+- concrete target 1〜4件のDesiredStateCommand（`ALL_TARGETS`のみ）
 - Controllerをconcrete target 1件とするEventFact
 - CONTROLLER、ENDPOINT
 - durable admission
@@ -66,18 +72,20 @@ Security envelope、wire、radio MAC、real route、production identity、法規
 ### M1aで未対応
 
 - target selector、caller scheduled / not-before field。ABI 0.1 known structにfield自体がなく、future tailはignoreするためM1a reducer inputとして検出不能
-- target_countが1以外のSubmission
-- group transactionとALL_TARGETSの実装
+- selector、named group、`ANY_TARGET`、quorum、best-effort broadcast
 - counter-offerとoffer_accept
 - automatic supersede
 - real Attachment、Route Lease、Traffic Grant
-- Cell Agent、real bearer、radio、airtime reservation
+- Cell Agent上のapplication service、real radio、airtime reservation
 - physical TX compliance
 - remote capacityの同期予約
 
 未対応機能は対応済みのように見せてはなりません。
 
-- target_countが1以外のSubmissionはREJECTED、reasonはNINLIL_REASON_TARGET_COUNT_UNSUPPORTEDです。
+- DesiredStateのtarget_count 0、5以上、Runtime/Service bound超過、duplicate
+  exact targetはREJECTED、reasonは
+  NINLIL_REASON_TARGET_COUNT_UNSUPPORTEDです。
+- EventFactのtarget_countは1以外を同じreasonでREJECTEDします。
 - M1a Submissionにはcounter-offer / modification-required guard自体がなく、COUNTER_OFFEREDと対応reasonを生成しません。
 - ninlil_offer_acceptはM1a buildではNINLIL_E_UNSUPPORTEDです。
 
@@ -156,7 +164,7 @@ M1aは次だけを返します。
 | REJECTED | Ninlilは所有しない |
 | IDEMPOTENCY_CONFLICT | Ninlilは新しい要求を所有しない |
 
-ADMITTED_SCHEDULED、COUNTER_OFFERED、NINLIL_REASON_UNSUPPORTED_SELECTORは後続ABI / release用の予約値です。M1a reducer / fixture / public resultが生成してはなりません。M1a Submissionにselectorもcaller指定scheduled / not-beforeもなく、larger future `struct_size` tailはignoreするため「selectorあり」と推測してREJECTEDを返しません。M1aでreachableな複数target guardは`target_count == 1`だけです。
+ADMITTED_SCHEDULED、COUNTER_OFFERED、NINLIL_REASON_UNSUPPORTED_SELECTORは後続ABI / release用の予約値です。Foundation reducer / fixture / public resultが生成してはなりません。Submissionにselectorもcaller指定scheduled / not-beforeもなく、larger future `struct_size` tailはignoreするため「selectorあり」と推測してREJECTEDを返しません。DesiredStateでreachableなexact roster guardは`1 <= target_count <= min(4, Runtime limit, Service limit)`、EventFactは`target_count == 1`です。
 
 Storage commitの成否を確定できない場合、REJECTEDを返してはなりません。API invocationをNINLIL_E_STORAGE_COMMIT_UNKNOWNとして失敗させ、callerは同じidempotency keyでqueryまたは再提出します。
 
@@ -492,7 +500,29 @@ M1aはtarget 1件ですが、後続group対応のためtarget stateをtransactio
 
 ### Transaction state
 
-M1aのtarget_countは常に1なので、transaction Outcomeはtarget Outcomeと同じです。Active stateはtarget stateを次へ射影します。WAITING_WINDOWはM1aでreachableなactive public stateであり、future reserved valueとして扱ってはなりません。
+EventFactはtarget_countが常に1なので、transaction Outcomeはtarget Outcomeと
+同じです。DesiredState exact rosterではtransaction state / Outcomeを後述の
+`ALL_TARGETS` reducerで射影し、一部targetの成功をtransaction成功へ格上げ
+してはなりません。WAITING_WINDOWはreachableなactive public stateであり、
+future reserved valueとして扱ってはなりません。
+
+DesiredStateの各targetは次をtransaction-global fieldと独立してdurable保持
+します。
+
+- terminal / pending_dispatch / delivery phase
+- retry budget、attempt-in-window、cumulative attempts
+- active attempt IDとprepared flag
+- retry-not-beforeのclock epoch + logical time
+- send observationのclock epoch + logical time + closed flag
+- highest/latest evidence stageとdeadline verdict
+- terminal Outcome / reason
+
+各attempt history entryはcanonical target indexを同じNTS3 record内へbinding
+します。Receiptは`attempt ID + reverse source exact target`が同じtarget slotに
+一致する場合だけそのtargetへ適用します。IDだけ、sourceだけ、または別target
+の組合せではevidence/outcome/counterを変更しません。Target Aがretry wait中
+でもtarget Bはdispatch可能で、Aのtimeout、retry exhaustion、Tx Gate denial、
+Bearer availability failureはBのbudget/timer/attemptを変更しません。
 
 Transaction recordはstate / Outcomeと直交するimmutable `transaction_sequence`を持ちます。これはmutation sequenceやjournal sequenceではなく、1 logical transactionに1度だけadmission FULL commitで付与します。`ALREADY_ADMITTED`、retry、Receipt、cancel、resume / discard、terminal transitionでnew sequenceを割り当ててはなりません。Query/list cursorの挙動はstate reducerではなく12章ABI contractの正本に従います。
 
@@ -658,7 +688,8 @@ ADMITTED後にgrant expiryへ達しても、既存EventFactのstateを変更す�
 
 | Current | Input / Guard | Next | Public result | Reason |
 | --- | --- | --- | --- | --- |
-| PRESENTED | target_count != 1 | REJECTED | REJECTED | NINLIL_REASON_TARGET_COUNT_UNSUPPORTED |
+| PRESENTED | DesiredState target_countが0、profile/Runtime/Service上限超過、またはduplicate | REJECTED | REJECTED | NINLIL_REASON_TARGET_COUNT_UNSUPPORTED |
+| PRESENTED | EventFact target_count != 1 | REJECTED | REJECTED | NINLIL_REASON_TARGET_COUNT_UNSUPPORTED |
 | PRESENTED | schema不正 | REJECTED | REJECTED | NINLIL_REASON_INVALID_SCHEMA |
 | PRESENTED | payload length不正 | REJECTED | REJECTED | NINLIL_REASON_INVALID_PAYLOAD_LENGTH |
 | PRESENTED | caller payload SHA-256 / content_digest mismatch | PRESENTED | NINLIL_E_INVALID_ARGUMENT | NINLIL_REASON_NONE |
@@ -1227,9 +1258,11 @@ Snapshotは最低限、terminal Outcome、deadline_verdict、latest_evidence_sta
 | PARKED_RETRY required Receipt | operator resume | Receiptを先にcommitしSATISFIED + RELEASED。resumeはNINLIL_EVENT_RESUME_ALREADY_RELEASED |
 | PARKED_RETRY required Receipt | fresh Bearer availability epoch + `available=1` | Receiptを先にcommitしSATISFIED + RELEASED。epochはlast-seenだけ更新可能でnew cycle 0 |
 
-## ALL_TARGETS aggregation for M1b
+## ALL_TARGETS aggregation for exact DesiredState rosters
 
-本節はM1b以降のnormative forward contractです。M1aの実装必須ではありません。M1aはtarget_count=1を強制します。
+本節はADR-0027 public exact roster profileのnormative contractです。
+DesiredState target_count 1〜4で実装必須、EventFactには適用せずexactly 1を
+維持します。
 
 ### Supersede forward rule
 
@@ -1240,7 +1273,8 @@ Snapshotは最低限、terminal Outcome、deadline_verdict、latest_evidence_sta
 
 ### Aggregate progress
 
-Group transactionはOutcomeと別に次のcountを返します。
+現行public ABIは専用のprogress-count structを返しません。Callerは
+`ninlil_transaction_query()`のexact target rosterから次のcountを導出できます。
 
 - total_targets
 - satisfied_targets
@@ -1250,22 +1284,92 @@ Group transactionはOutcomeと別に次のcountを返します。
 - superseded_targets
 - definitive_failed_targets
 - unknown_targets
-- late_evidence_targets
+
+`late_evidence_targets`は各`ninlil_target_snapshot_t.has_late_evidence`の和です。
+各targetはvalid / duplicate / raw-overflow / late evidenceのsaturating counterと
+counter-saturated flagも公開します。これらはtarget-local durable summaryの
+projectionであり、別targetまたはtransaction aggregateから補完してはなりません。
 
 一部成功をSATISFIEDと表示してはなりません。
 
 ### ALL_TARGETS terminal rule
 
-1. 全targetがSATISFIEDならtransactionはSATISFIED。
-2. 1件でもactiveならtransactionはterminalにしない。ただし全体deadline/evidence close規則を適用する。
-3. 全targetがterminalで1件でもOUTCOME_UNKNOWNならtransactionはOUTCOME_UNKNOWN。
-4. unknownがなく1件でもFAILED_DEFINITIVEならtransactionはFAILED_DEFINITIVE。
-5. unknown/definitive failureがなく1件でもEXPIREDならtransactionはEXPIRED。
-6. 全targetがCANCELLED_BEFORE_EFFECTならtransactionはCANCELLED_BEFORE_EFFECT。
-7. 全targetがSUPERSEDED_BEFORE_DISPATCHならtransactionはSUPERSEDED_BEFORE_DISPATCH。
-8. SATISFIEDとcancel/supersede等が混在しALL_TARGETSを満たさない場合、transactionはFAILED_DEFINITIVE、reasonはNINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT。
+Reducerはcanonical target orderを変更せず、次の優先順をexactに適用します。
 
-Late evidenceでこのaggregate terminal Outcomeを反転しません。target別latest evidenceとaggregate countだけを更新します。
+1. 1件でもactiveならtransactionをterminalにせず、Outcome/reasonはNONE。
+   既にterminalのtargetを再dispatchせず、他targetは継続します。
+2. 全targetがSATISFIEDならtransactionはSATISFIED /
+   NINLIL_REASON_REQUIRED_EVIDENCE_MET。
+3. 全target terminalで1件でもOUTCOME_UNKNOWNならtransactionは
+   OUTCOME_UNKNOWN / NINLIL_REASON_OUTCOME_UNKNOWN。
+4. unknownがなく1件でもFAILED_DEFINITIVEならtransactionは
+   FAILED_DEFINITIVE。SATISFIED/CANCELLED/SUPERSEDED/EXPIREDとの混在時reasonは
+   NINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT、FAILEDだけの場合は
+   canonical orderで最初のFAILED targetのreasonです。
+5. unknown/definitive failureがなく1件でもEXPIREDならtransactionはEXPIRED。
+   SATISFIED/CANCELLED/SUPERSEDEDとの混在時reasonは
+   NINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT、EXPIREDだけの場合は
+   canonical orderで最初のEXPIRED targetのreasonです。
+6. 全targetがCANCELLED_BEFORE_EFFECTならtransactionは
+   CANCELLED_BEFORE_EFFECT / canonical first target reason。
+7. 全targetがSUPERSEDED_BEFORE_DISPATCHならtransactionは
+   SUPERSEDED_BEFORE_DISPATCH / NINLIL_REASON_M1B_SUPERSEDED_BY_NEW_GENERATION。
+8. 上記以外の全terminal混在（SATISFIED + cancel/supersede等）は
+   FAILED_DEFINITIVE /
+   NINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT。
+
+Late evidenceでこのaggregate terminal Outcomeを反転しません。Matched targetの
+latest evidence、late flag/counter、valid/duplicate/overflow counterと
+transaction-level `has_late_evidence`だけを規則どおり更新します。
+
+Transaction-level `latest_evidence`はtarget-local latestの最大値であり、
+未完targetへコピーする値ではありません。Queryは各targetのdurable state、
+Outcome/reason/latest evidence/attempt countersをそのまま返し、aggregateの
+fallbackで補完しません。Callerのtarget array capacity不足時はrequired
+`target_count`だけを返し、caller target arrayはbyte-for-byte不変です。
+
+### Durable record/version and restart
+
+Exact roster target-local stateとMFDT target correlationを保存するprivate NTS3 schemaは
+`1.2`です。旧`1.0` / `1.1` rowを新layoutとして解釈しません。Pre-release LAB namespaceには
+migrationを提供せず、open/restart時に`NINLIL_E_UNSUPPORTED`でfail closed
+します。Schema 1.2 encoderはtarget最大4、transaction attempt history最大32
+（8 attempts × 4 targets）、single-frame inline payload最大926 bytesのworst
+caseは4,031 bytesです。MFDT routeは各canonical target末尾に
+`mfdt_transfer_id[16] || mfdt_target_ordinal_u32_be`を20 bytes exactで付加し、
+4-target worst caseは3,185 bytesです。Non-MFDT routeはsuffixをencodeせず、
+in-memory correlationもzero/zeroだけを許可します。NTS3は
+`logical_payload_length`と`inline_payload_length`を別fieldとして保存します。
+Single-frame routeはlogical=inlineかつ0..926、MFDT routeはlogical
+927..32768かつinline=0であり、MFDT content bytesはNM3S custodyだけを正本に
+します。Logical lengthをinline bufferのcopy/read lengthに使用してはなりません。
+Capacity testは最大single-frame record 4,031 bytesと最大4-target MFDT record
+3,185 bytesを実encodeし、それぞれ1 byte不足でBUFFER_TOO_SMALLかつ
+output不変を証明します。MFDT logical maximumもinline 0で
+round-tripし、route/length不整合をcorruptionとしてfail closedします。
+
+MFDT workerがpublic Runtime scheduler / Bearer ingressへ接続されるまでは、
+上記MFDT shapeのtransactionを通常`APPLICATION` / U6送信へfallbackしては
+なりません。`ninlil_runtime_step()`はAPI status `NINLIL_OK`、
+`more_work=1`を返し、transaction/targetをdurable
+`ADMITTED_READY + pending_dispatch`のまま保持します。この待機ではattempt IDを
+prepareせず、attempt/retry counter、Tx permit、Bearer send、record revision、
+Outcome、deadline verdictを消費・変更しません。特にinline length 0をlogical
+empty payloadと解釈したsingle-frame送信は禁止です。Cold restart後も同じ
+fail-closed待機へ復元します。この防護はMFDT scheduler完成の代替ではなく、
+public long-ApplicationDataは別の統合受入がgreenになるまでrelease blockerです。
+
+NTS3のtarget-local summary/counter/fingerprintはrestart-safe public projectionと
+直近materialのexact duplicate判定を担いますが、上記「Evidence detail上限」の
+raw `L`件とsummaryを物理保存する`EVIDENCE_CELL`を置換しません。Full Foundation
+promotionではadmission時materialization、raw detail、overflow summary、
+replacement headroom、ordered-ingressとの同一FULL reductionを17章どおり別途
+証明必須です。NTS3 summaryだけを根拠にraw-detail契約を完成扱いしません。
+
+Cold restartは、例としてtarget A=SATISFIED、target B=retry wait/attempt 1済み
+を同じtarget-local値で復元します。Restartだけでbudget、cumulative attempts、
+active attempt binding、timer、latest evidence、terminal targetを巻き戻したり
+別targetへ移してはなりません。
 
 ## Runtime step / capacity observability boundary
 
@@ -1526,12 +1630,16 @@ NINLIL_REASON_GRANT_PROVIDER_UNAVAILABLEはこの一覧中で唯一Submission / 
 
 ADMITTED_SCHEDULED、COUNTER_OFFEREDとcaller schedule / selector fieldもM1a generated 0ですが、public reasonの9-symbol setには含めません。ABI 0.1 known Submissionで表現できず、future tailはignoreします。
 
-### M1b forward-only reason
+### Exact-roster reason
 
 - NINLIL_REASON_M1B_SUPERSEDED_BY_NEW_GENERATION
 - NINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT
 
-M1b reasonをM1a reducer、M1a fixture、M1a public resultで生成してはなりません。NINLIL_E_STORAGE_COMMIT_UNKNOWN、NINLIL_E_INVALID_STATE、NINLIL_E_CONFLICT、NINLIL_E_DEGRADEDはAPI statusであり、reasonと混同しません。
+ADR-0027 profileでは`NINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT`
+だけがmixed terminal aggregateからreachableです。Supersedeは引き続き
+未実装のため`NINLIL_REASON_M1B_SUPERSEDED_BY_NEW_GENERATION`生成0です。
+NINLIL_E_STORAGE_COMMIT_UNKNOWN、NINLIL_E_INVALID_STATE、
+NINLIL_E_CONFLICT、NINLIL_E_DEGRADEDはAPI statusであり、reasonと混同しません。
 
 reason textはCoreに保存しません。product adapterが12章のstable reason codeをoperator表示とrunbookへ写像します。
 
@@ -1541,8 +1649,8 @@ reason textはCoreに保存しません。product adapterが12章のstable reaso
 
 ### Admission
 
-- M1A-ADM-001: valid single-target Commandはlocal assuranceだけtrueでADMITTED_READY。
-- M1A-ADM-002: target_count=2はNINLIL_REASON_TARGET_COUNT_UNSUPPORTEDでREJECTED、record 0。
+- M1A-ADM-001: valid 1〜4 exact-target Commandはlocal assuranceだけtrueでADMITTED_READY。
+- M1A-ADM-002: DesiredState target_count=0/5、Runtime/Service上限超過、duplicate、またはEventFact target_count!=1はNINLIL_REASON_TARGET_COUNT_UNSUPPORTEDでREJECTED、record 0。
 - M1A-ADM-003: DesiredStateのsame key / same digestは同じtransaction IDでALREADY_ADMITTED。
 - M1A-ADM-004: same key / different digestはIDEMPOTENCY_CONFLICT / NINLIL_REASON_IDEMPOTENCY_CONFLICT。
 - M1A-ADM-005: reservation不足はNINLIL_REASON_CAPACITY_EXHAUSTED、payload ownershipはcaller。
@@ -1574,7 +1682,7 @@ reason textはCoreに保存しません。product adapterが12章のstable reaso
 - M1A-ADM-032: sequence counter increment、transaction_sequence、transaction / target / mapping / reservationの各write point crash後は全てrollbackまたは全てcommit。orphan sequence allocation 0。
 - M1A-ADM-033: trusted pre-commit admission reference sampleのadmitted_at / epochとderived deadlineがadmission FULL commitに含まれ、commit後clock sampleで上書き0。
 - M1A-ADM-034: pre-commit now=100、deadline=10、admission commit観測now=111でもADMITTED_READY + ownershipは成立。post-commit send 0でEXPIRED / NINLIL_REASON_DEADLINE_ELAPSED_BEFORE_DISPATCHを先にdurable commit。
-- M1A-ADM-035: known ABI 0.1 Submissionはtarget_count=0または2以上だけをNINLIL_REASON_TARGET_COUNT_UNSUPPORTEDにする。Unknown future tailの変化からselector / scheduleを推測せず、UNSUPPORTED_SELECTOR / ADMITTED_SCHEDULED生成0。
+- M1A-ADM-035: known ABI 0.1 Submissionは上記family別exact roster guardだけでNINLIL_REASON_TARGET_COUNT_UNSUPPORTEDにする。Unknown future tailの変化からselector / scheduleを推測せず、UNSUPPORTED_SELECTOR / ADMITTED_SCHEDULED生成0。
 - M1A-ADM-036: transaction ID drawは明示TRANSACTION_ID_DRAW_RESULTを最大4件reduceする。Zero/collision/partial/Port failureの後の4th validだけをadmission commitへ含め、4件全invalidならNINLIL_E_ENTROPY + SUBMISSION_INVALID、ownership/reservation/storage/sequence mutation 0、health DEGRADED。
 - M1A-ADM-037: per-service origin quotaはinflight/window count/payload bytesをadmissionとatomic incrementし、terminalとatomic inflight decrementする。Inclusive boundary、exact delay、identity rotation/restart、ALREADY/conflict/COMMIT_UNKNOWNで二重加算/早期解放0。
 - M1A-ADM-038: new admissionはmapping lookup→clock→transaction counter→scheduler owner counter→Event provider→quota/resource→entropy→FULL commit。Counter exhaustionはprovider/entropy/reservation0。
@@ -1755,13 +1863,24 @@ reason textはCoreに保存しません。product adapterが12章のstable reaso
 - M1A-REC-011: 08 / 12 registryの全named FULL boundaryでbefore/after crashをinjectし、old stateまたはnew stateの一方へ収束。未登録の独自hook / iterator-state hook 0。
 - M1A-REC-012: namespace profile/capacity/4 counters initial commit、owner/input attachment、cursor-containing groupは各specific hook/COMMIT_UNKNOWNでall-or-none。Partial owner/index/counter0。
 
-### M1b ALL_TARGETS forward contract
+### Exact-roster ALL_TARGETS contract
 
 - M1B-GRP-001: 2/2 SATISFIEDだけaggregate SATISFIED。
 - M1B-GRP-002: 1 SATISFIED + 1 activeはnon-terminalかつpartial progress。
 - M1B-GRP-003: 全terminalで1 OUTCOME_UNKNOWNならaggregate OUTCOME_UNKNOWN。
 - M1B-GRP-004: 1 SATISFIED + 1 CANCELLEDはFAILED_DEFINITIVE / NINLIL_REASON_M1B_ALL_TARGETS_NOT_MET_PARTIAL_EFFECT。
 - M1B-GRP-005: late Receiptでaggregate terminal Outcomeを反転しない。
+- M1B-GRP-006: A成功、B timeout→retryの途中でrestartし、Aを再送せずBだけ同じbudget/counter/timerから再開して成功する。
+- M1B-GRP-007: Aがretry exhaustionでterminalになってもBをdispatch/完了し、全target terminal後だけmixed aggregateを確定する。
+- M1B-GRP-008: Aのattempt ID + Bのsource、Bのattempt ID + Aのsource、stale/duplicate receiptはいずれもtarget横断mutation 0。
+- M1B-GRP-009: queryはtargetごとのstate/outcome/reason/latest evidence/attempt countersを返し、capacity不足時target array不変。
+- M1B-GRP-010: callerの4-target rosterをadmission直後に変更してもdurable canonical roster不変、restart後も同値。
+- M1B-GRP-011: 4-target admissionはTARGET 4、EVIDENCE total 36（max evidence per target 8 profile）をatomic reserve/commitし、terminal release/restart/queryでunderflow・二重解放0。
+- M1B-GRP-012: NTS3 1.2のnon-MFDT最大4,031 bytes、MFDT 4-target最大3,185 bytesをround-tripし、それぞれ1 byte不足はoutput不変のBUFFER_TOO_SMALL。1.0/1.1/unknown minor、target binding/correlation corruption、CRC corruptionはfail closed。
+- M1B-GRP-013: Aのhighest-stage new material後にBのlower-stage new materialを受理してもA/B双方のtarget-local latest、counter、fingerprintを独立保存し、top-level latestを巻き戻さない。
+- M1B-GRP-014: terminal targetへknown past attemptで届くvalid new materialはtarget-local late flag/countを更新してOutcome/reasonを反転せず、同じexact tupleのduplicateはduplicate countだけをsaturating更新する。Cold restart後も同じ分類になる。
+- M1B-GRP-015: wrong-target source/attempt crossing、activeでない最初のtarget、別targetのlower-stage materialはmatched target以外のattempt/timer/evidence/outcomeを変更しない。
+- M1B-GRP-016: MFDT logical 927..32768 / inline 0のtransactionはscheduler未接続中に通常APPLICATIONを送信せず、effect deadlineを超えるclock advance後もTx Gate/Bearer/attempt/retry/revision/terminal mutation 0、`ADMITTED_READY + pending`、step `more_work=1`を通常起動とcold restartで維持する。Single-frame logical=inline payloadは同じguardでblockされず通常経路へ進む。
 
 ## M1a completion gate
 
@@ -1773,7 +1892,8 @@ M1a reducerは次をすべて満たした場合だけimplementation-readyです�
 - admission assuranceのfalse fieldを成功表示から省略しない。
 - EventFact resume / discard API、operation idempotency、audit recordをpublic API referenceへ明記する。
 - EventFactのNINLIL_NO_DEADLINEと8-attempt retry cycleをpublic typeとfixtureで固定する。
-- target_count=1がAPI validationとtestで固定されている。
+- DesiredState 1〜4 / EventFact exactly 1のfamily別guard、target-local
+  retry/binding、ALL_TARGETSがAPI validationとtestで固定されている。
 - late evidence、Outcome、spool stateを同じenumへ混ぜていない。
 
 M1aの完了は、real radio、reference application実機、remote capacity、期限内配送SLO、production durabilityを証明しません。

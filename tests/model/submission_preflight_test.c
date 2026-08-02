@@ -372,7 +372,8 @@ static int test_validation_and_direction_precedence(void)
         0u));
 
     input = make_input(NINLIL_FAMILY_DESIRED_STATE);
-    input.submission.target_count = 2u;
+    input.submission.target_count =
+        NINLIL_FOUNDATION_MAX_EXACT_TARGETS + 1u;
     input.submission.target.abi_version = 0u;
     (void)memset(
         &input.submission.canonical_submission_digest,

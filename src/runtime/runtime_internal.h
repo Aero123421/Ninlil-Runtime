@@ -9,6 +9,11 @@
 #include "resource_ledger.h"
 #include "runtime_store_stage5_seam.h"
 #include "stage5_empty_metadata.h"
+#if defined(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING) \
+    && (NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING != 0)
+#include "domain_schema1_startup_owner.h"
+#include "domain_schema1_kind1_register.h"
+#endif
 #include "submission_preflight.h"
 #include "v1_durable_allowlist.h"
 #include "runtime_v1_transaction_codec.h"
@@ -20,6 +25,10 @@ extern "C" {
 #endif
 
 #define NINLIL_RT_MAGIC ((uint32_t)0x4e524c31u)
+
+#if defined(NINLIL_MFDT_V1_PRIVATE)
+struct ninlil_rt_mfdt_v1_runtime_owner;
+#endif
 
 typedef enum ninlil_rt_lifecycle {
     NINLIL_RT_LIFECYCLE_CREATING = 1,
@@ -50,6 +59,13 @@ typedef struct ninlil_rt_service_slot {
     ninlil_service_descriptor_t descriptor;
     ninlil_service_callbacks_t callbacks;
     ninlil_model_submission_service_t model_service;
+    /*
+     * Owned text for durable SERVICE registry / restart restore.  Descriptor
+     * bytes_view fields always point into these buffers while in_use != 0.
+     */
+    uint8_t owned_namespace[NINLIL_MAX_TEXT_ID_BYTES];
+    uint8_t owned_service_id[NINLIL_MAX_TEXT_ID_BYTES];
+    uint8_t owned_schema_id[NINLIL_MAX_TEXT_ID_BYTES];
     uint64_t quota_inflight;
     uint64_t quota_admissions;
     uint64_t quota_payload_bytes;
@@ -75,18 +91,49 @@ typedef enum ninlil_rt_token_state {
     NINLIL_RT_TOKEN_RECOVERY_REQUIRED = 4
 } ninlil_rt_token_state_t;
 
-#define NINLIL_RT_V1_MAX_TARGETS_PER_TXN 4u
+#define NINLIL_RT_V1_MAX_TARGETS_PER_TXN NINLIL_FOUNDATION_MAX_EXACT_TARGETS
+/* Single-frame U6 slot; multi-frame content is NM3S, not this buffer. */
 #define NINLIL_RT_V1_MAX_OWNED_PAYLOAD_BYTES 926u
-#define NINLIL_RT_V1_MAX_ATTEMPTS_PER_TXN 8u
+#define NINLIL_RT_V1_MAX_MFDT_PAYLOAD_BYTES 32768u
+#define NINLIL_RT_V1_MAX_ATTEMPTS_PER_TXN \
+    (NINLIL_FOUNDATION_MAX_EXACT_TARGETS \
+        * NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE)
+#define NINLIL_RT_V1_NO_ACTIVE_TARGET ((uint32_t)UINT32_MAX)
 
 typedef struct ninlil_rt_target_slot {
     uint8_t in_use;
     uint8_t evidence_recorded;
     uint8_t pending_dispatch;
-    uint8_t reserved_zero;
+    uint8_t terminal;
+    uint8_t attempt_prepared;
+    uint8_t send_observation_closed;
+    uint8_t has_late_evidence;
+    uint8_t evidence_counter_saturated;
+    uint8_t last_evidence_fingerprint_valid;
+    uint8_t reserved_zero[3];
+    uint8_t mfdt_transfer_id[16];
+    uint32_t mfdt_target_ordinal;
+    ninlil_rt_delivery_phase_t delivery_phase;
     ninlil_concrete_target_t target;
+    ninlil_id128_t active_attempt_id;
+    ninlil_evidence_stage_t latest_evidence;
+    ninlil_deadline_verdict_t deadline_verdict;
     ninlil_outcome_t outcome;
     ninlil_reason_t reason;
+    uint32_t retry_budget;
+    uint32_t attempt_in_cycle;
+    uint64_t retry_cycle_id;
+    uint64_t cumulative_attempts;
+    uint64_t next_retry_ms;
+    ninlil_id128_t next_retry_clock_epoch_id;
+    uint64_t send_observed_at_ms;
+    ninlil_id128_t send_observed_clock_epoch_id;
+    uint8_t last_evidence_material_fingerprint[32];
+    uint64_t latest_evidence_ingress_sequence;
+    uint64_t valid_evidence_count;
+    uint64_t duplicate_evidence_count;
+    uint64_t raw_evidence_overflow_count;
+    uint64_t late_evidence_count;
 } ninlil_rt_target_slot_t;
 
 #define NINLIL_RT_V1_FAMILY_SCOPE_CAPACITY 8u
@@ -183,11 +230,20 @@ typedef struct ninlil_rt_transaction_slot {
     uint32_t attempt_prepared;
     uint32_t attempt_count;
     ninlil_id128_t attempt_ids[NINLIL_RT_V1_MAX_ATTEMPTS_PER_TXN];
+    uint8_t attempt_target_indices[NINLIL_RT_V1_MAX_ATTEMPTS_PER_TXN];
+    uint32_t active_target_index;
     ninlil_id128_t service_app_id;
     ninlil_id128_t event_id;
     ninlil_party_t source;
     ninlil_service_identity_t service;
     ninlil_digest256_t content_digest;
+    /*
+     * Durable idempotency / EventFact triple truth carried on the origin
+     * transaction record (scope: app instance + namespace + service ID).
+     */
+    uint8_t idempotency_key_length;
+    uint8_t idempotency_key[NINLIL_MAX_IDEMPOTENCY_BYTES];
+    ninlil_digest256_t canonical_submission_digest;
     ninlil_family_t family;
     ninlil_evidence_stage_t required_evidence;
     ninlil_evidence_stage_t latest_evidence;
@@ -242,7 +298,9 @@ typedef struct ninlil_rt_transaction_slot {
     ninlil_id128_t last_resume_operation_id;
     uint32_t evidence_recorded;
     uint32_t outcome_recorded;
+    /* Logical application bytes; MFDT custody may keep zero bytes inline. */
     uint32_t payload_length;
+    uint32_t inline_payload_length;
     uint8_t semantic_priority;
     uint8_t bearer_route;
     uint32_t reservation_active;
@@ -269,6 +327,23 @@ struct ninlil_runtime {
     uint32_t magic;
     ninlil_rt_lifecycle_t lifecycle;
     uint64_t owner_context_id;
+    /*
+     * Platform Port lifetime (docs/12 §5.5): Runtime copies validated outer
+     * platform ops and all eight sub-vtables into Runtime-owned storage.
+     * `platform` always points at `owned_platform` after create succeeds past
+     * Stage-1 validation; caller stack/vtable addresses are not retained.
+     * Port `user` values and Port-owned resources remain caller-managed until
+     * runtime_destroy completes.
+     */
+    ninlil_platform_ops_t owned_platform;
+    ninlil_allocator_ops_t owned_allocator;
+    ninlil_execution_ops_t owned_execution;
+    ninlil_clock_ops_t owned_clock;
+    ninlil_entropy_ops_t owned_entropy;
+    ninlil_storage_ops_t owned_storage;
+    ninlil_bearer_ops_t owned_bearer;
+    ninlil_tx_gate_ops_t owned_tx_gate;
+    ninlil_origin_authorization_ops_t owned_origin_authorization;
     const ninlil_platform_ops_t *platform;
     ninlil_model_runtime_config_projection_t config;
     ninlil_model_capacity_limits_t capacity_limits;
@@ -313,6 +388,17 @@ struct ninlil_runtime {
     uint64_t step_bearer_availability_epoch;
     ninlil_runtime_store_stage5_workspace_t stage5_ws;
     ninlil_stage5_empty_metadata_workspace_t empty_ws;
+#if defined(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING) \
+    && (NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING != 0)
+    /*
+     * Domain schema1 startup workspace is a transient arena allocation owned
+     * by the Runtime candidate until T7. Keeping only the pointer in the live
+     * Runtime lets the bounded 16-service recovery workspace grow without
+     * permanently consuming ESP DRAM after create.
+     */
+    ninlil_domain_schema1_owner_workspace_t *domain_schema1_ws;
+    ninlil_domain_schema1_owner_result_t domain_schema1_storage_result;
+#endif
     ninlil_rt_v1_family_workspace_t family_workspace;
     /*
      * Owner-thread-only durable transaction workspaces. Keeping these on the
@@ -328,6 +414,13 @@ struct ninlil_runtime {
     uint8_t callback_evidence_scratch[NINLIL_MAX_EVIDENCE_BYTES];
     ninlil_rt_transaction_slot_t transaction_decode_scratch;
     ninlil_rt_transaction_slot_t transaction_scratch;
+#if defined(NINLIL_MFDT_V1_PRIVATE)
+    /*
+     * Private/default-OFF ADR-0021 owner. One pointer per Runtime instance;
+     * never aliases the process-global legacy spine.
+     */
+    struct ninlil_rt_mfdt_v1_runtime_owner *mfdt_v1_owner;
+#endif
 };
 
 ninlil_status_t ninlil_rt_validate_live_runtime(

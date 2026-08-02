@@ -2230,16 +2230,38 @@ ninlil_status_t ninlil_rt_v1_event_discard(
     candidate->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
     candidate->event_park_cause = NINLIL_EVENT_PARK_CAUSE_NONE;
     candidate->payload_length = 0u;
+    candidate->inline_payload_length = 0u;
     (void)memset(
         candidate->owned_payload, 0, sizeof(candidate->owned_payload));
     candidate->token_state = NINLIL_RT_TOKEN_NONE;
     candidate->deferred_wait = 0u;
     candidate->pending_dispatch = 0u;
     for (index = 0u; index < candidate->bound_target_count; ++index) {
-        candidate->bound_targets[index].pending_dispatch = 0u;
-        candidate->bound_targets[index].outcome =
+        ninlil_rt_target_slot_t *target =
+            &candidate->bound_targets[index];
+
+        target->terminal = 1u;
+        target->pending_dispatch = 0u;
+        target->attempt_prepared = 0u;
+        (void)memset(
+            &target->active_attempt_id,
+            0,
+            sizeof(target->active_attempt_id));
+        target->send_observation_closed = 0u;
+        target->send_observed_at_ms = 0u;
+        (void)memset(
+            &target->send_observed_clock_epoch_id,
+            0,
+            sizeof(target->send_observed_clock_epoch_id));
+        target->next_retry_ms = 0u;
+        (void)memset(
+            &target->next_retry_clock_epoch_id,
+            0,
+            sizeof(target->next_retry_clock_epoch_id));
+        target->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
+        target->outcome =
             NINLIL_OUTCOME_FAILED_DEFINITIVE;
-        candidate->bound_targets[index].reason =
+        target->reason =
             NINLIL_REASON_OPERATOR_DISCARDED_WITHOUT_REQUIRED_RECEIPT;
     }
     status = commit_event_mgmt_transition(

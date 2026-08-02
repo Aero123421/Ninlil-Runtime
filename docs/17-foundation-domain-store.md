@@ -429,7 +429,7 @@ Same-record closed snapshot matrixは次の3 legal shapeだけです。表外の
 - `generation`は`service.family==EventFact`ならexact 0、`DesiredState`なら1以上です（service自己申告とのsame-record結合。live owner family一致はD3）。
 - evidence time triple（`evidence_clock_epoch` / `evidence_at_ms` / `evidence_trust`）は**issuer `evidence_time`だけ**です。epoch non-zero、`evidence_trust`は1 TRUSTEDまたは2 UNCERTAIN、`evidence_at_ms==0`はvalid monotonic sampleとして許します。Controller durable ingress timeはEVIDENCE_CELLへ保存せず、§8.3 ORDERED_INGRESSの`controller_ingress_*`だけがreduction完了までのdurable sourceです。
 - `evidence_length`は0..128、`[length,128)`はzero、`evidence_digest = SHA-256(evidence_bytes[0,length))`です。length 0でもempty hash（nonzero）であり、zero digestと同一視しません。
-- 4 countersはSUMMARYだけが保持します。`raw_overflow_count <= valid_material_count`、`late_evidence_count <= valid_material_count`、`exact_duplicate_count > 0`なら`valid_material_count >= 1`です。`counter_saturated`はu32 exact 0/1で、0なら4 countersすべて`< UINT64_MAX`、1なら少なくとも1つが`UINT64_MAX`です。
+- 4 countersはSUMMARYだけが保持します。`raw_overflow_count <= valid_material_count`、`late_evidence_count <= valid_material_count`、`exact_duplicate_count > 0`なら`valid_material_count >= 1`です。`counter_saturated`はu32 exact 0/1で、transition semanticsの単一正本は12章public snapshot projectionです。Snapshotではflag 0かつcounter MAXを許容し、flag 1なら少なくとも1 counterがMAXでなければなりません。すなわちMAX到達commit（MAX-1→MAX）はflag 0、MAXからさらにincrementを要求されたcommitで初めてsticky flag 1です。D1 same-record validationは過去にincrement要求があったかを推測しません。
 
 **RAW UNUSED**（shape 2）はidentity以外zeroです（SUMMARY emptyと同じempty material encoding。4 countersと`counter_saturated`もzero）。
 
@@ -5466,6 +5466,21 @@ exact_get(peer_key[0..L)):
 ```
 
 `expected_primary_raw2_len=0` / `expected_primary_aux_len=0` means the applicable normalized component is absent; a role requiring that component may not use zero to skip it. `expected_primary_raw_len` is always non-zero for this path. The normalized tuple must prove the table's exact raw bijection, including dual RAW16 IDEMPOTENCY scope+key, fixed auxiliary identity, BLOB manifest owner raw, and BLOB chunk `blob_id_digest` where applicable; hash/truncated identity substitution is forbidden.
+
+IDEMPOTENCY_MAP の fixed-context 配置は **`expected_primary_raw=scope_raw`（1..255）、
+`expected_primary_raw2=idempotency_key`（1..64）、`expected_primary_aux=transaction_id`
+（exact 16）** とする。TRANSACTION_ANCHOR complete key は `aux` の transaction ID から
+forward rebuild し、返却 ANCHOR body は同じ `(scope,key,transaction)` 順へ normalize して
+3要素・全lengthを比較する。`raw=transaction_id, raw2=scope, aux=key` への入替は、
+255/64/16 の固定容量を逆転させるため禁止する。
+
+ここで255は RAW16 と `expected_primary_raw` の**形式上限**であり、255-byte scope の
+D1-valid live rowが存在するという意味ではない。D1の scope identity は
+`application_instance_id[16] || namespace TEXT_ID || service TEXT_ID`、各 TEXT_ID payload
+上限は63なので、構成可能な live scope 最大は `16+(1+63)+(1+63)=144` bytes である。
+145..255 は固定bufferには表現可能でもD1 live pathでは構成不能、256はbuffer/formal
+precheckで拒否する。IDEMPOTENCY key は64-byte positive / 65-byte reject、
+transaction ID は16-byte exact（15/17 reject）を authority が独立検証する。
 
 **Lifetime of primary pins:** `expected_primary_pvd`, `peer_key`, raw/raw2/aux, lengths, role and owner-kind alias are set together at substep 1 and cleared together only after substep 2 closes（member i）。next i may overwrite。
 

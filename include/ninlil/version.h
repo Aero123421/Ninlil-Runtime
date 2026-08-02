@@ -30,6 +30,7 @@ extern "C" {
 #define NINLIL_M1A_EVENT_DISCARD_OPERATION_SLOT_BYTES ((uint64_t)512u)
 #define NINLIL_M1A_EVENT_MANAGEMENT_RESERVATION_BYTES ((uint64_t)2560u)
 #define NINLIL_M1A_MAX_RETENTION_MS          ((uint64_t)604800000u)
+#define NINLIL_FOUNDATION_MAX_EXACT_TARGETS  ((uint32_t)4u)
 
 #define NINLIL_STRUCT_HEADER \
     uint16_t abi_version;   \
@@ -139,12 +140,18 @@ typedef struct ninlil_local_identity {
 
 #define NINLIL_ROLE_CONTROLLER             ((ninlil_role_t)1u)
 #define NINLIL_ROLE_ENDPOINT               ((ninlil_role_t)2u)
-#define NINLIL_ROLE_CELL_AGENT_RESERVED    ((ninlil_role_t)3u)
+#define NINLIL_ROLE_CELL_AGENT             ((ninlil_role_t)3u)
+/* Source compatibility for pre-ADR-0027 callers. */
+#define NINLIL_ROLE_CELL_AGENT_RESERVED    NINLIL_ROLE_CELL_AGENT
 
 #define NINLIL_ENV_TEST                    ((ninlil_environment_t)1u)
-#define NINLIL_ENV_LAB_RESERVED            ((ninlil_environment_t)2u)
-#define NINLIL_ENV_FIELD_RESERVED          ((ninlil_environment_t)3u)
-#define NINLIL_ENV_PRODUCTION_RESERVED     ((ninlil_environment_t)4u)
+#define NINLIL_ENV_LAB                     ((ninlil_environment_t)2u)
+#define NINLIL_ENV_FIELD                   ((ninlil_environment_t)3u)
+#define NINLIL_ENV_PRODUCTION              ((ninlil_environment_t)4u)
+/* Source compatibility for pre-ADR-0027 callers. */
+#define NINLIL_ENV_LAB_RESERVED            NINLIL_ENV_LAB
+#define NINLIL_ENV_FIELD_RESERVED          NINLIL_ENV_FIELD
+#define NINLIL_ENV_PRODUCTION_RESERVED     NINLIL_ENV_PRODUCTION
 
 #define NINLIL_FAMILY_EVENT_FACT           ((ninlil_family_t)1u)
 #define NINLIL_FAMILY_DESIRED_STATE        ((ninlil_family_t)2u)

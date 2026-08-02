@@ -1,9 +1,16 @@
 # ADR-0018: Wi-Fi Packet Link for the Fabric Bearer
 
-状態: **Proposed — docs-only（SPEC_ACCEPTED / implementation / RELEASE_SUPPORTED pending）**  
+状態: **Proposed**
+状態補足: Normative decisionはdocs-only。unaccepted private Host candidateあり、ESP adapter/HILは未完了（formal acceptance / release support pending）
 提案日: 2026-07-28  
 SPEC_ACCEPTED日: —（未受入）  
 RELEASE_SUPPORTED日: —（未達）
+
+実装証拠の最新点は
+[2026-07-29 Wi-Fi / Fabric durable 10k close](../work/2026-07-29-wifi-fabric-durable-10k-close.md)
+である。Host LABの10,000件、midpoint crash/reopen、双方向liveness応答は
+software evidenceであり、本ADRの`SPEC_ACCEPTED`、physical ESP/AP HIL、
+1-hour/24h soak、`RELEASE_SUPPORTED`を意味しない。
 
 ## Context
 
@@ -60,12 +67,15 @@ Fabric Bearerへpacket-linkとして接続する必要がある。
 
    payloadはexact 1個のNFL1 packetとする。NWB1構造codecの`payload_length`受理範囲は
    **587..1925**、`total_length = 40 + payload_length`の受理範囲は**627..1965**である。
+   境界KATはpayload **586 reject / 587 accept / 1925 accept / 1926 reject**、total
+   **626 reject / 627 accept / 1965 accept / 1966 reject**を必須とする。
    1925 bytesはNFL1の構造ceilingであり、6-kind意味論positiveの最大は1797 bytes、
    したがってdelivery可能なNWB1 record最大は1837 bytesである。1925-byte NFL1のように
    構造は正しいが6-kind matrixに違反するpayloadは、NWB1 framing成功後のNFL1 decodeで
    delivery 0 + connection closeとする。CRC32Cはreflected Castagnoli polynomial
    `0x82F63B78`、initial `0xffffffff`、final XOR `0xffffffff`を用い、offset 36..39を0として
-   record全体を計算する。
+   record全体を計算する。独立oracleが同一generatorのhash再比較だけでCRCを「通した」ことに
+   してはならない。
 7. TLS exporter identityを**pre-attachment peer session**と**post-attachment NWB1 session**へ
    分離する。
 
@@ -113,6 +123,12 @@ Fabric Bearerへpacket-linkとして接続する必要がある。
    socket writeを0にする。`RETAINED + non-NULL token`後のpartial TCP/TLS write、
    `WANT_READ/WANT_WRITE`、backpressureはprovider内部の`poll_send`進捗であり、outer
    `WOULD_BLOCK`へ戻さない。terminal後もFabricの`release_send` exact 1回までslot/tokenを保持する。
+   Wi-Fi packet-linkのprovider送信権限は、ADR-0017 Fabricがその`start_send` callだけに付与する
+   call-scoped authorityである。adapter作成やops取得だけでは権限を持たず、Fabric未登録、
+   別Fabric/cookie、unregister後、provider opsへの直接callは`DENIED + TX 0`である。
+   providerはauthorityを保存・再利用せず、同じcall中のpermit再検証とcopy-own完了後だけ
+   socket/TLSへ進める。このprivate authorityの追加はinstalled/public ABI、NWB1/NFL1 wireを
+   変更しない。
 10. NWB1 recordのsocket write完了、peer kernel ACK、TLS record成功はcustodyではない。
     **NWB1はNFL1-onlyであり、NCG1/NCL1 control-v2のU6 wireを運ばない。** 本reference
     Wi-Fi packet-linkは`NINLIL_FABRIC_CAP_CUSTODY`を広告してはならず、NFL1
@@ -121,6 +137,15 @@ Fabric Bearerへpacket-linkとして接続する必要がある。
     Acceptedにし、両端実装とcrash/restart KATが揃った後だけ別security profile revisionで
     capabilityを有効化する。現profileでcustody-required policyはineligibleである。
     multi-frameはADR-0021の新versionを要する。
+    この禁止はdescriptor生成側だけの期待値にしない。generic Fabric registrationは
+    `link_kind=WIFI`かつ`capability_flags`に`NINLIL_FABRIC_CAP_CUSTODY`を含むdescriptorを、
+    provider `open`、durable registry mutation、availability publishの前にfail-closed rejectする。
+    Wi-Fi adapterも同じdescriptorをpublish/registration prepareしてはならない。さらにselectionは
+    corrupted/legacy snapshotがこの不正bitを保持していても、`requires_custody != 0`のqueryに
+    Wi-Fi rowを選ばず`CUSTODY_MISSING`とする。つまり生成、登録、選択の三境界すべてで
+    custody capabilityをWi-Fiから導出しない。`required_evidence != NONE`はevidence capability
+    だけを要求し、それ単独からtransport custody要求を導出しない。custodyとevidenceは
+    独立hard-filterであり、明示的custody要求だけが`requires_custody`を立てる。
 11. path selectionはADR-0017のdescriptor/security/availability/admission snapshotに従う。
     unknown/unattested profile、peer/Attachment binding不一致はineligibleである。Wi-Fi断時、
     LoRa/local pathがsecurity、payload/fragment、
@@ -260,6 +285,10 @@ wifi_destroy_v1(adapter)
 
 descriptor/opsはadapter-owned immutable viewでdestroyまで有効、Fabric registrationはそれらを
 ADR-0017規則でcopyする。`step`だけがprogressし、`state`/`drain_poll`はprogressしない。
+packet-link ops単体は送信能力を持たず、Fabric registrationで得たcall-scoped authorityを
+Fabric→outer bearer send→providerの同じcall chainで検証できた場合だけ`start_send`を受理する。
+authority cookieはadapter公開API、installed header、wireへ露出させず、registration解消時に
+失効する。
 owner threadはsuccessful createのthreadで固定し、別threadはWRONG_THREAD、callback/vtable内再入は
 REENTRANTでside effect 0である。`drain_begin`はOPENでOK、DRAININGでidempotent OK、
 CLOSEDでCLOSED。`drain_poll done=1`だけがCLOSEDをpublishし、destroy前にFabric側の
@@ -357,6 +386,231 @@ count/byte reservationをsession admission前に行う。ESPのdriver/LwIP/netif
 pool/heap値は§14.5 RELEASE gateでtarget measurementにより固定するまで
 `TARGET_CANDIDATE`へ進めない。workspace不足、event/token/record/session満杯でheap fallback、
 既存reservation横取り、unbounded queueを行わない。
+
+## Machine-verifiable real-path authority candidate（Proposed）
+
+本節は独立auditが指摘した**false-green / 曖昧境界**を閉じるためのProposed candidateである。
+Normative状態は引き続き**Proposed docs-only**である。private Host implementation evidenceは
+存在するが、`SPEC_ACCEPTED`、accepted implementation、HIL、`RELEASE_SUPPORTED`、public APIを
+主張しない。機械正本候補は
+
+- `spec/vectors/wifi-bearer-spec-v1.json`
+- `tools/wifi_bearer_spec_vector_gen.py`（`--write` / `--check` / `--self-test`）
+- `tools/wifi_bearer_spec_gate.py`（独立Python、generator非import）
+- `tools/wifi_bearer_spec_gate.mjs`（独立Node、generator/Python非import）
+- `tests/transport/wifi_bearer_spec_vector_test.c`（独立C11 semantic gate）
+
+である。どのoracleも同一generatorのhash出力を再比較するだけにしてはならない。required
+acceptance ID inventoryはmissing / extra / duplicate / substitutedをrejectする。self-testは
+CRC/digestを修復してからsemantic mutationを注入し、restoration hashを証明する。
+
+### A. Association / BSSID / channel / network-profile authority epoch
+
+SSID bytesが同一でも、次のtupleのいずれかが変われば**association authority**が変わる。
+
+```text
+assoc_canonical =
+  network_profile_id[16] || revision_u64_be || profile_digest[32] ||
+  credential_binding_id[16] || bssid[6] || channel_u8 || auth_mode_u8
+association_authority_digest =
+  SHA-256(ASCII("NINLIL-WIFI-ASSOC-AUTHORITY-V1") || assoc_canonical)
+```
+
+| Event | session fence | NWB1 publish | availability epoch |
+| --- | ---: | ---: | ---: |
+| same SSID + same assoc digest re-observe | 0 | keep | +0 |
+| same SSID + BSSID change | 1 | 0 | exact +1 once / fence generation |
+| same SSID + channel change | 1 | 0 | exact +1 once / fence generation |
+| profile digest / revision / binding change | 1 | 0 | exact +1 once / fence generation |
+
+同一physical eventを複数ESP eventで観測しても、session fence generationごとにavailabilityは
+1回だけ進める。stale `peer_session_id` / post-attachment `session_id`を新assoc digestへ
+再利用しない。
+
+### B. Post-ATTACHED liveness
+
+`ATTACHED`後のlivenessはOS TCP keepaliveをauthorityにしない。exact値は次とする。
+
+| Parameter | Exact value |
+| --- | ---: |
+| keepalive interval | 15,000 ms |
+| exclusive probe deadline | 15,000 ms（他phase deadlineと共有しない） |
+| missed response threshold | 3 |
+| blackhole detect | 45,000 ms = interval × threshold |
+
+| Condition | Result |
+| --- | --- |
+| missed responses < 3 | continue |
+| missed responses ≥ 3 または blackhole | FENCED、delivery 0、close、availability exact +1 once |
+| TCP half-open（writableだがprobe/NWB1応答0） | 同上。kernel ACK単独はliveness証拠にしない |
+| ASSOCIATED+IP_READYだがbackhaul死（probe失敗） | 同上。Wi-Fi association成功をpeer livenessにしない |
+
+### C. Network credential rotation durable authority（plaintext secret禁止）
+
+association secretのplaintext passwordはvector、log、durable value、diagnosticへ置かない。
+durable正本候補はnamespace `ninlil.wifi.network.v1`、record magic `NWD1` version 1、
+record 160 bytes（header 128 + `secret_ref_digest[32]`）である。password bytesは入力せず、
+provider-owned secretへのopaque `secret_ref_digest`だけを持つ。
+
+FULL commit groupの再open分類はclosed set:
+
+`OLD | NEW | BOTH | PARTIAL | EXTRA | THIRD | ABSENT | CORRUPT`
+
+duplicate key in old/new/observed any side is **CORRUPT**（Python/Node/C independent
+classifier same rule）。ABSENT is a first-class executable acceptance row
+(`WIFI-NETCRED-FULL-ABSENT`)。**BOTH** is first-class (`WIFI-NETCRED-FULL-BOTH`):
+observed contains the full OLD image and full NEW image with **disjoint keys**
+(old≠new)。same-key old/new conflict cannot be BOTH。
+
+| Classification | Publish / associate |
+| --- | --- |
+| OLD or NEW only after reclassify | それぞれ旧/新profileへだけ。silent mix 0 |
+| BOTH (old∪new, disjoint keys, both FULL) | publish 0 until operator resolves to single FULL |
+| PARTIAL / EXTRA / THIRD / CORRUPT | publish 0、automatic associate 0 |
+| ABSENT on intended fresh install | COMMIT_UNKNOWN path。create publish 0 |
+| revision rollback（new→old revision） | FENCED |
+| same revision + different complete digest | FENCED |
+
+COMMIT_UNKNOWN reopen allowed set is the full closed set including **BOTH** and
+**CORRUPT**。NWD1 values require framing + independent header CRC32C + auth digest +
+complete digest recompute before equality classification。
+
+power-cut / `STORAGE_COMMIT_UNKNOWN`後はreclassifyだけを行い、commit前publishや旧secret推測を
+禁止する。storage算術（role共有schema）:
+
+| Item | Exact |
+| --- | ---: |
+| NWD1 record | 160 bytes |
+| keys max | 8 |
+| committed CU | 1,280 bytes |
+| staging CU | 2,560 bytes |
+| ESP active profiles | 1 |
+| Host active profiles | 8 |
+
+### D. Endpoint scope
+
+| Kind | Rule |
+| --- | --- |
+| IPv4=1 | address[0..3]使用、unused tail 12 bytes exact 0、port non-zero |
+| IPv6=2 | address[16]全体、port non-zero |
+| IPv6 link-local (`fe80::/10`) | non-zero `scope_id_u32`必須。0はreject |
+| LOCAL_ANY=3 | server bindのみ。client LOCAL_ANY reject |
+| DNS / mDNS / DHCP option / last-known | 補助候補のみ。authority endpoint変更はconfiguration revision+1の新config installだけ |
+
+`IP_EVENT_STA_GOT_IP`の`ip_change=true`、`LOST_IP`、address tuple変更はsession FENCED、
+availability exact +1、旧socket再利用0。
+
+### E. NWB1 framing / sequence（boundary KAT必須）
+
+40-byte header、CRC32C reflected Castagnoli `0x82F63B78`、init/xorout `0xffffffff`、
+CRC fieldを0にしてrecord全体を計算。payloadはexact 1 NFL1。
+
+| Quantity | reject | accept | accept | reject |
+| --- | ---: | ---: | ---: | ---: |
+| payload_length | 586 | 587 | 1925 | 1926 |
+| total_length (=40+payload) | 626 | 627 | 1965 | 1966 |
+
+| Failure | delivery | connection |
+| --- | ---: | --- |
+| partial header (<40) / partial body | 0 | keep（WANT_READ） |
+| CRC / length / header_length / zero session | 0 | close |
+| wrong session_id | 0 | close |
+| gap / duplicate / out-of-order | 0 | close |
+| duplicate after prior delivered N | received N while expected next is **N+1** | close / delivery 0 |
+| sequence `UINT32_MAX` emit or accept | 0 | close / emit禁止 |
+| after `UINT32_MAX-1` | — | clean close → fresh handshake/session/seq 0。wrap禁止 |
+| invalid NFL1 magic/structural after framing OK | 0 | close |
+| coalesced multi-record stream | per-record | 1-record read-ahead bound、buffer 1965 fixed |
+
+### F. TLS profileとR7 generic OpenSSLの分離
+
+成功suite/group/signatureは`TLS_AES_128_GCM_SHA256` (`0x1301`) /
+`secp256r1` (`0x0017`) / `ecdsa_secp256r1_sha256` (`0x0403`) / TLS 1.3 only。
+X.509 leaf binding 82 bytes（role/runtime/authorized Attachment candidate/authority/term/
+credential_generation/revocation_generation）。exporter:
+
+```text
+peer_context exact 62 =
+  authority_id[16] || term_u64 || epoch_u32 ||
+  0x01 || client_runtime[16] || 0x02 || server_runtime[16]
+attached_context exact 64 =
+  peer_session_id[16] || attachment_authority_id[16] || active_binding[32]
+```
+
+authority groupはALL_NONZERO（BOUND）または明示controllerlessのALL_ZEROだけ。MIXEDは
+session不成立。ticket / 0-RTT publish / renegotiation / local KeyUpdate emitは0。
+revocation/clockはauthority snapshotのみ（OS wall clock非authority）、age ≤300000 ms、
+`now == valid_until` reject。
+
+**Host dependency分離（false-green防止）:**
+
+| Track | Rule |
+| --- | --- |
+| R7 generic Host crypto | `find_package(OpenSSL 3)` major exactly 3。Wi-Fi profile pinを満たさない |
+| Wi-Fi Host profile | pinned static `openssl-3.5.7` peeled `8cf17aae…`、target 0x01/0x02 only |
+| ESP Wi-Fi profile | ESP-IDF `v5.5.3` commit `2c211b23…` + mbedTLS gitlink `ffb280bb…` direct。ESP-TLS public API禁止 |
+
+同一processでR7を併用する場合でもWi-Fi channelはpinned static buildとisolated
+`OSSL_LIB_CTX`を要し、system/generic OpenSSL 3.xをWi-Fi authorityに流用しない。
+
+### G. Pre-attachment carrier vs post-attachment NWB1
+
+| State | NWB1 | Fabric availability / app publish |
+| --- | ---: | ---: |
+| PEER_SESSION only（exporter1成功） | 0 | 0 |
+| ATTACHMENT_NEGOTIATING | 0 | 0 |
+| ATTACHED（M4 FULL + exporter2 non-zero） | allowed | policy通り |
+
+NWB1をM4 Attachment carrierへ流用しない。M4 carrier未Accepted/未実装なら`PEER_SESSION`から
+先へ進まない。
+
+### H. Queues / RETAINED / custody
+
+priority queueは`critical_control` / `application_data` / `management_bulk`を分離し、bulkが
+criticalをstarveしてはならない。`start_send`はfull NFL1+NWB1 retry state copy-own後だけ
+`RETAINED+token`。slot不足は`WOULD_BLOCK+token NULL`でretain/sequence/socket write 0。
+partial TCP/TLS writeは`poll_send`内部でありouter `WOULD_BLOCK`へ戻さない。terminal後
+`release_send` exact 1。**terminal前の`release_send`はforbidden**（
+`release_before_terminal_forbidden=1`）。NWB1 socket write / peer kernel ACK / TLS record成功は
+custodyではない。本profileは`NINLIL_FABRIC_CAP_CUSTODY`広告0。
+
+### I. Role-specific responsibilities
+
+| Role | Ownership |
+| --- | --- |
+| Host POSIX (`adapter_kind=1`) | TCP socket、pinned OpenSSL channel。network profile ID/revision/digest all-zero、credential provider NULL |
+| ESP32-S3 STA (`adapter_kind=2`) | sole `esp_wifi_*` owner、`WIFI_STORAGE_RAM`、LwIP netif/DHCP、direct mbedTLS。network profile non-zero + provider必須 |
+
+### J. Disconnect / reconnect / sleep / drain / overflow
+
+| Race | Deterministic rule |
+| --- | --- |
+| disconnect/reconnect | fence → availability +1 → close → backoff `not_before` → reconnect。fence前reconnect 0 |
+| sleep | unavailable、availability +1。起床予定をavailable偽装0。drain中new retain 0 |
+| event queue overflow (8→9) | FENCED、availability 0、全socket close |
+| backoff | `1000,2000,4000,8000,16000,32000` ms cap、`jitter=first_u16_be(SHA-256(instance_id\|\|gen_u64)) mod 1000`。entropy/OS random/wall clock 0。ATTACHED 60,000 ms安定後だけgenerationを1へreset |
+
+### Acceptance ID inventory（exact 79）
+
+機械正本の`required_acceptance_ids`が唯一のclosed inventoryである。Python/Node gateは
+**ID→semantic contract**をhard-codeし、mutable vectorのresult/class/expectedを唯一authorityに
+しない。各IDはdistinct executable assertionの後だけledger markする。same-ID full-row donor
+substitutionは全79 IDでreject必須。概要family:
+
+1. `WIFI-ASSOC-*`（6; input schema bind: profile_id/epoch/digest/binding/bssid/channel/auth）
+2. `WIFI-LIVENESS-*`（6）
+3. `WIFI-NETCRED-*`（12; FULL-ABSENT + FULL-BOTH + DUPLICATE-KEY）
+4. `WIFI-ENDPOINT-*`（5）
+5. `WIFI-NWB1-*`（23）
+6. `WIFI-TLS-*`（11）
+7. `WIFI-PREATTACH-*`（3）
+8. `WIFI-RESOURCE-*`（7）
+9. `WIFI-ROLE-*`（2）
+10. `WIFI-RACE-*` / `WIFI-BACKOFF-*`（4）
+
+各IDはpositiveまたはnegativeの実vectorを持ち、mark-only counterを禁止する。
+本候補は**Proposed repair candidate**であり、independent re-review GO /
+`SPEC_ACCEPTED` / P0=0 closure claimではない。
 
 ## NINLIL-WIFI-TLS13-P256-V1 exact profile
 
@@ -537,12 +791,70 @@ reportへ固定する。R7 portable wrapperはbackend callerではなくprivate 
 自体のallocationは別resource domainであり、このTLS budgetへ混ぜない。closure内のdynamic
 allocationは`mbedtls_calloc/mbedtls_free`からprofile callbackへ到達する経路だけを許す。
 profile callback object 1個だけがoverflow検査後の
-`heap_caps_calloc(..., MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)`と`heap_caps_free()`を呼べる。
-owner、requested/actual size、alignment、canary、intrusive owner-list linkは各allocation前置headerへ
-置き、別ledger heapを作らない。header/paddingを含む実確保byteをowner budgetへchargeし、
-counter/list rootはfixed static storage、callback中のrecursive mbedTLS/PSA callは禁止する。
+`heap_caps_calloc(..., MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)`、
+`heap_caps_calloc(..., MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)`、および各arenaを解放する
+`heap_caps_free()`を呼べる。これはheapへのallocation単位のfallbackを許す意味ではない。
+callbackはadmission前に実予約したfixed arenaだけをsuballocateし、generic/default heapへspillしない。
+owner、tier、requested/actual size、alignment、canary、arena block linkはarena内のallocation前置headerへ
+置き、別ledger heapを作らない。header/paddingを含む実確保byteをowner/tier budgetへchargeし、
+counter/arena rootはfixed static storage、callback中のrecursive mbedTLS/PSA callは禁止する。
 `malloc/calloc/realloc/free`、
 別`heap_caps_*`、`esp_mbedtls_mem_*`へのdirect callはcallback objectを含め0とする。
+
+ESP32-S3 target software candidateのtierは次で固定する。これはtarget traceを代替せず、
+`C7/C8`や`RELEASE_SUPPORTED`をgreenにしない。
+
+| Reservation / classification | Exact bytes | Capability / rule |
+| --- | ---: | --- |
+| `CRYPTO_GLOBAL` arena | 65536 | `MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT`。最初のmbedTLS/PSA/crypto APIより前に実予約する |
+| `TLS_SESSION` secret-critical arena / session | 12288 | `MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT`。unclassified allocation、secret context、key、DRBG、X.509、handshake stateはこのtierだけ |
+| `TLS_SESSION` classified I/O arena / session | 86016 | `MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT`。pinned `mbedtls_ssl_setup()`内のexact I/O buffersだけ |
+| TLS session total / session | 98304 | 12288 + 86016。値自体を縮小しない |
+| 2-session PSRAM reservation | 172032 | 2 × 86016。各session admissionで既存sessionから奪わず実予約する |
+| post-admission internal floor | 65536 | session internal arena実予約後も`heap_caps_get_free_size(INTERNAL\|8BIT)`が以上 |
+
+元の保守的なinternal-only release feasibility条件
+`2 × 98304 session + 65536 CRYPTO_GLOBAL + 65536 floor = 327680 bytes`
+は、physical target traceなしに引き下げない。以下の163840-byte tiered internal envelopeは
+PSRAM分類を検証する**target software candidate**であり、327680-byte条件を置換・緩和する
+Accepted amendmentではない。physical C7/C8 traceと独立reviewを経てNormative変更が受入されるまで、
+release判定では327680-byte internal-only条件を保持する。
+
+pinned ESP-IDF v5.5.3 / mbedTLS profileでは
+`MBEDTLS_SSL_IN_BUFFER_LEN == 16685`、`MBEDTLS_SSL_OUT_BUFFER_LEN == 4415`である。
+allocatorをI/O分類modeへ入れるのは`mbedtls_ssl_setup()`の同期call中だけとし、各exact sizeを
+exact 1 allocationだけPSRAMへ置く。call後に両pointerがexternal RAMにあり、allocation countが
+各1であることに加え、各pointerがPSRAM arena内の**生存allocation payload先頭**と一致し、
+headerのoriginal requested sizeがexact値、stateがUSED、tail canaryが正しいことを検査する。
+arena領域内にあるだけのinterior pointer、free-area pointer、wrong-size pointerは成功にしない。
+size/count/version drift、同sizeのextra allocation、mode外PSRAM allocation、
+PSRAM無効、PSRAM free不足、largest-free不足、arena fragmentation、または86,016 bytes超過は
+接続不可とし、`CHANNEL_AUTHENTICATED`、NWB1/Fabric publish、custody成功を0にする。
+残りのallocationをsize推測でPSRAMへ移さず、12,288-byte internal arenaを超えた場合も同様に
+fail-closedとする。
+
+allocator callbackのfree候補はcurrent ownerだけに限定する。`CRYPTO_GLOBAL` ownerはglobal arenaだけ、
+`TLS_SESSION(i)`は当該sessionのinternal/PSRAM arena pairだけを検索し、別session/globalのpointerを
+渡したcross-owner freeはcontract violationとしてfatal fenceする。ordinary arena OOMは当該sessionを
+publishせず解放するlocal failureとし、owner欠落、callback再入、classifier duplicate/reject、
+metadata/canary破損と同じ扱いに曖昧化しない。
+
+session arenaはWi-Fi driver/LwIP初期化後、TLS session admission時に両tierを実予約する。
+internal/PSRAMともfree総量とlargest-freeを先に検査し、exact capabilityで確保したpointerを
+`esp_ptr_internal()` / `esp_ptr_external_ram()`で再検査する。internal arena確保後のfree量が
+65,536 bytes未満ならPSRAM arenaを含めてzeroize/releaseし、sessionをpublishしない。
+close、reconnect、init failureの全pathでmbedTLS objectを先に解放し、両arenaのoutstanding exact 0を
+確認して全arenaをzeroize/releaseする。破損、foreign/double free、outstanding非0ではunsafeな
+fallback解放をせずallocatorをfatal fenceする。
+
+2026-07-29のfinal-ELF/map観測はlink-time static消費後のDIRAM remainder 171825 bytesである。
+software candidateの同時算術は
+`65536 global + 2 * 12288 session-internal + 65536 floor + 8192 TLS execution stack + 0 TLS-crypto DMA = 163840`、
+観測差分7985 bytesである。static 169935 bytesはmapで既控除、
+TLS crypto DMAは§14.1でhardware crypto/DS/ATECC/TEEを全無効にするため0とする。
+ただし171825/7985は実行時保証ではない。Wi-Fi driver/LwIP/socket/netif/DHCP/PBUFのtask、
+DMA、pool、dynamic allocationは別resource domainの未閉鎖項目であり、この差分を成立証拠へ
+流用しない。
 
 machine-readable `CLOSURE_ROOTS_V1`はWi-Fi client/serverそれぞれの
 `init/handshake/read/write/close` root、Accepted R7 ESP provider factory、R7
@@ -1803,13 +2115,16 @@ SHA-256/HKDFとX.509 pathをprewarmし、provider/config/property setをsession 
 以後のsession call中に生じたallocationを事後にglobalへ付け替えず、その`TLS_SESSION`へchargeする。
 lazy global cacheがsession ownerに残るbuildはsession owner-zero gateを満たさないため不適合とする。
 
-session admission時にNWB1 fixed buffersとTLS session budgetを先にreserveする。reserve不能、
-single allocation/累計/process budget超過、record/flight/certificate上限超過、allocator OOMでは
+session admission時にNWB1 fixed buffersと§14.1.1のTLS session internal/PSRAM arenaを先に
+actual reserveする。PSRAM無効、各tierのfree総量/最大連続block不足、予約後internal free
+`<65536`、reserve不能、
+single allocation/累計/process/tier budget超過、record/flight/certificate上限超過、allocator OOMでは
 新sessionをfail-closedで閉じ、`CHANNEL_AUTHENTICATED`、NWB1 delivery、custody成功を0とする。
 既存sessionのreservationを奪わない。全close pathで当該`TLS_SESSION` ownerのoutstandingが0、
 last-session close後に`CRYPTO_GLOBAL`がstartup baselineへ戻ることを検査する。orderly backend
 shutdown後は全owner outstandingを0にする。current/peak、minimum free heap、stack watermark、
-reject reasonをbounded diagnosticsへ残す。
+tier別reservation/current/peak、reject reasonをbounded diagnosticsへ残す。PSRAM classified
+I/O以外のallocationを許可せず、generic/default allocatorへのspillをfallbackにしない。
 adapter transportは最初のTLS record byteからlocal Finished検証完了まで、5-byte record headerを
 含むread/write wire byteを方向別に数え、32768 bytesを超える前にcloseする。record headerの
 declared lengthが16640 bytesを超える場合もbackendへ渡す前にcloseする。この観測と遮断を
@@ -2034,9 +2349,10 @@ C1〜C10をすべて閉じた時だけ`RELEASE_SUPPORTED`へ遷移できる。
 
 ## 非主張
 
-本ADRはProposed docs-onlyであり、NWB1/NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1 reserved採番、
-Wi-Fi/TCP/TLS/credential-store実装、ESP target execution、HIL、implementation security review、
-production supportを主張しない。
+本ADRのNormative状態はProposed docs-onlyである。NWB1/TCP/TLSのprivate Host candidateは
+存在するが、NWB1/NRV1/NCM1/NWS1/NWA1/NWC1/NWP1/NWM1のaccepted採番、
+accepted Wi-Fi/TCP/TLS/credential-store implementation、ESP target execution、HIL、
+implementation security review、production supportを主張しない。
 将来の`SPEC_ACCEPTED`もexact design、KAT、reserved採番だけを主張し、実装済みや
 `RELEASE_SUPPORTED`を意味しない。
 

@@ -5,6 +5,7 @@
 
 #include "v1_lab_loopback_uplink.h"
 
+#include "domain_store_codec.h"
 #include "ninlil_posix_lab_platform.h"
 #include "ninlil_posix_lab_platform_test.h"
 #include "ninlil_posix_loopback_bearer.h"
@@ -89,6 +90,22 @@ static void set_digest(ninlil_digest256_t *digest, uint8_t value)
     (void)memset(digest, 0, sizeof(*digest));
     digest->algorithm = NINLIL_DIGEST_SHA256;
     digest->bytes[sizeof(digest->bytes) - 1u] = value;
+}
+
+static int set_payload_content_digest(
+    ninlil_digest256_t *digest,
+    const uint8_t *payload,
+    uint32_t length)
+{
+    ninlil_model_domain_digest_t actual;
+
+    (void)memset(digest, 0, sizeof(*digest));
+    digest->algorithm = NINLIL_DIGEST_SHA256;
+    if (ninlil_model_domain_sha256(payload, length, &actual) != NINLIL_OK) {
+        return 0;
+    }
+    (void)memcpy(digest->bytes, actual.bytes, sizeof(digest->bytes));
+    return 1;
 }
 
 static void set_header(uint16_t *version, uint16_t *size, size_t value)
@@ -245,15 +262,26 @@ static int read_byte(int fd, char *out)
 
 static uint32_t family_to_scenario(ninlil_family_t family)
 {
-    if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
-        return UPLINK_SCENARIO_MEASUREMENT;
-    }
+    (void)family;
+    /* M1a public uplink is EventFact only (ADR-0024). */
     return UPLINK_SCENARIO_LATEST;
 }
 
-static const char *family_service_id(ninlil_family_t family)
+static const char *family_service_id(ninlil_family_t family, uint64_t seed)
 {
-    if (family == NINLIL_FAMILY_MEASUREMENT_RESERVED) {
+    /*
+     * Service id is product labeling only (latest-state / leak-measurement).
+     * Public family must be EventFact — display snapshot event / leak
+     * measurement event (ADR-0024). Reserved MEASUREMENT/LATEST_STATE enums
+     * stay service_register UNSUPPORTED (not first-class public families).
+     */
+    (void)family;
+    /*
+     * Seeds are fixed product labels from display (0xB4E2E701) and
+     * leak (0xB4E2E801). Both end in 0x01; distinguish on the penultimate
+     * seed byte (0xE7 vs 0xE8).
+     */
+    if (((seed >> 8) & 0xffu) == 0xe8u) {
         return "leak-measurement";
     }
     return "latest-state";
@@ -330,7 +358,8 @@ static int run_endpoint_child(
         (void)write_byte(result_fd, 'F');
         return 4;
     }
-    descriptor = uplink_descriptor(family, 0x81u, family_service_id(family));
+    descriptor = uplink_descriptor(
+        family, 0x81u, family_service_id(family, seed));
     (void)memset(&callbacks, 0, sizeof(callbacks));
     set_header(&callbacks.abi_version, &callbacks.struct_size, sizeof(callbacks));
     if (ninlil_service_register(runtime, &descriptor, &callbacks, &service)
@@ -362,12 +391,20 @@ static int run_endpoint_child(
     submission.required_evidence = NINLIL_EVIDENCE_APPLIED;
     submission.effect_deadline_ms = NINLIL_NO_DEADLINE;
     submission.evidence_grace_ms = 0u;
-    submission.generation = 9u;
+    /* M1a EventFact only (ADR-0024): event_id non-zero, generation 0. */
+    set_id(&submission.event_id, 0xE7u);
+    submission.generation = 0u;
     submission.idempotency_key.data = idem_key;
     submission.idempotency_key.length = sizeof(idem_key) - 1u;
     submission.payload.data = payload;
     submission.payload.length = sizeof(payload);
-    set_digest(&submission.content_digest, 0x39u);
+    if (!set_payload_content_digest(
+            &submission.content_digest, payload, (uint32_t)sizeof(payload))) {
+        (void)ninlil_runtime_destroy(runtime);
+        ninlil_posix_lab_platform_destroy(platform);
+        (void)write_byte(result_fd, 'F');
+        return 6;
+    }
     (void)memset(&submit_result, 0, sizeof(submit_result));
     set_header(
         &submit_result.abi_version,
@@ -490,7 +527,8 @@ static int run_controller_child(
         (void)write_byte(result_fd, 'F');
         return 4;
     }
-    descriptor = uplink_descriptor(family, 0x70u, family_service_id(family));
+    descriptor = uplink_descriptor(
+        family, 0x70u, family_service_id(family, seed));
     (void)memset(&callbacks, 0, sizeof(callbacks));
     set_header(&callbacks.abi_version, &callbacks.struct_size, sizeof(callbacks));
     callbacks.on_delivery = endpoint_delivery_cb;
@@ -872,6 +910,10 @@ int v1_lab_loopback_uplink_run(
 {
     uint32_t attempt;
     if (program_path == NULL) {
+        return 0;
+    }
+    /* Public M1a uplink path is EventFact only (docs/12 §14 / ADR-0024). */
+    if (family != NINLIL_FAMILY_EVENT_FACT) {
         return 0;
     }
     g_program_path = program_path;

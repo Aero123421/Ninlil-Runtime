@@ -8,7 +8,10 @@
 #   - the archive contains the real public Runtime and Host crypto symbols;
 #   - private/test symbols, private archives, test objects, and absolute build
 #     paths do not leak;
-#   - an independent public-API-only consumer can create -> step -> destroy.
+#   - an independent public-API-only consumer exercises the 3-role x
+#     4-environment create matrix, Cell Agent fail-closed service authority,
+#     2/4-target DesiredState deep-copy/query/list/retry/restart, and four
+#     application Services without a private helper.
 
 if(NOT DEFINED NINLIL_SOURCE_DIR
    OR NOT DEFINED NINLIL_PARENT_BUILD_DIR
@@ -18,17 +21,145 @@ if(NOT DEFINED NINLIL_SOURCE_DIR
         "installed Host Runtime smoke requires source/build/generator/ctest")
 endif()
 
+# A command-line caller may pass a build directory relative to the repository.
+# The installed consumer is configured from its own build directory, where a
+# relative CMAKE_PREFIX_PATH would resolve to the wrong location.  Normalize
+# the parent once before deriving producer, install, and consumer paths.
+get_filename_component(
+    NINLIL_PARENT_BUILD_DIR
+    "${NINLIL_PARENT_BUILD_DIR}"
+    ABSOLUTE
+    BASE_DIR "${NINLIL_SOURCE_DIR}")
+
 if(NOT DEFINED NINLIL_SMOKE_WITH_SQLITE)
     set(NINLIL_SMOKE_WITH_SQLITE OFF)
 endif()
+if(NOT DEFINED NINLIL_SMOKE_DOMAIN_SCHEMA1)
+    set(NINLIL_SMOKE_DOMAIN_SCHEMA1 OFF)
+endif()
+if(NOT DEFINED NINLIL_SMOKE_ENABLE_SANITIZERS)
+    set(NINLIL_SMOKE_ENABLE_SANITIZERS OFF)
+endif()
+
+set(_consumer_source_path
+    "${NINLIL_SOURCE_DIR}/tests/cmake/installed_host_runtime_consumer/consumer.c")
+file(READ "${_consumer_source_path}" _consumer_source_text)
+
+function(_ninlil_installed_consumer_source_contract source_text out_ok)
+    set(_ok TRUE)
+    foreach(_required_token
+            "CONSUMER_SERVICE_COUNT = 4"
+            "CONSUMER_TRANSACTION_COUNT = 3"
+            "CONSUMER_PROFILE_COUNT"
+            "CONSUMER_EXACT_MAX_TARGETS"
+            "NINLIL_ROLE_CELL_AGENT"
+            "NINLIL_ENV_PRODUCTION"
+            "NINLIL_E_BUFFER_TOO_SMALL"
+            "NINLIL_TX_GATE_TEMPORARY"
+            "ninlil_service_register("
+            "ninlil_submit("
+            "ninlil_transaction_query("
+            "ninlil_transaction_list("
+            "ninlil_capacity_snapshot("
+            "ninlil_metrics_snapshot("
+            "ninlil_runtime_step("
+            "ninlil_runtime_destroy("
+            "exercise_after_restart("
+            "exercise_public_profile_case("
+            "exercise_unknown_profile_rejection("
+            "exercise_exact_targets_before_restart("
+            "exercise_exact_targets_after_restart("
+            "establish_one_isolated_retry_attempt("
+            "verify_query_buffer_too_small("
+            "verify_four_services_were_restored("
+            "create_sqlite_storage(database_path);"
+            "status == NINLIL_E_CONFLICT"
+            "repeated.kind != NINLIL_SUBMISSION_ALREADY_ADMITTED"
+            "conflict.kind != NINLIL_SUBMISSION_IDEMPOTENCY_CONFLICT"
+            "after_dedupe.record_revision != before_dedupe.record_revision"
+            "snapshot.record_revision == saved->record_revision"
+            "used != CONSUMER_SERVICE_COUNT"
+            "used != evidence->transaction_capacity_used"
+            "CONSUMER_REQUIRE(")
+        string(FIND "${source_text}" "${_required_token}" _required_hit)
+        if(_required_hit EQUAL -1)
+            set(_ok FALSE)
+        endif()
+    endforeach()
+    foreach(_forbidden_token
+            "runtime_internal.h"
+            "tests/support"
+            "examples/multi_service_node"
+            "ninlil_runtime_private"
+            "ninlil_test_")
+        string(FIND "${source_text}" "${_forbidden_token}" _forbidden_hit)
+        if(NOT _forbidden_hit EQUAL -1)
+            set(_ok FALSE)
+        endif()
+    endforeach()
+    set(${out_ok} ${_ok} PARENT_SCOPE)
+endfunction()
+
+_ninlil_installed_consumer_source_contract(
+    "${_consumer_source_text}" _consumer_contract_ok)
+if(NOT _consumer_contract_ok)
+    message(FATAL_ERROR
+        "installed consumer source contract is incomplete or uses a "
+        "private/test/example helper")
+endif()
+foreach(_mutation_token
+        "ninlil_service_register("
+        "ninlil_submit("
+        "ninlil_transaction_query("
+        "ninlil_transaction_list("
+        "ninlil_capacity_snapshot("
+        "ninlil_metrics_snapshot("
+        "ninlil_runtime_step("
+        "exercise_after_restart("
+        "exercise_public_profile_case("
+        "exercise_unknown_profile_rejection("
+        "exercise_exact_targets_before_restart("
+        "exercise_exact_targets_after_restart("
+        "establish_one_isolated_retry_attempt("
+        "verify_query_buffer_too_small("
+        "verify_four_services_were_restored("
+        "create_sqlite_storage(database_path);"
+        "status == NINLIL_E_CONFLICT"
+        "repeated.kind != NINLIL_SUBMISSION_ALREADY_ADMITTED"
+        "conflict.kind != NINLIL_SUBMISSION_IDEMPOTENCY_CONFLICT"
+        "after_dedupe.record_revision != before_dedupe.record_revision"
+        "snapshot.record_revision == saved->record_revision"
+        "used != CONSUMER_SERVICE_COUNT"
+        "used != evidence->transaction_capacity_used"
+        "CONSUMER_REQUIRE(")
+    string(REPLACE "${_mutation_token}" ""
+        _consumer_mutant "${_consumer_source_text}")
+    _ninlil_installed_consumer_source_contract(
+        "${_consumer_mutant}" _consumer_mutant_ok)
+    if(_consumer_mutant_ok)
+        message(FATAL_ERROR
+            "installed consumer source contract failed to reject removal of "
+            "'${_mutation_token}'")
+    endif()
+endforeach()
 if(NINLIL_SMOKE_WITH_SQLITE)
     set(_sqlite_mode "sqlite-on")
 else()
     set(_sqlite_mode "sqlite-off")
 endif()
+if(NINLIL_SMOKE_DOMAIN_SCHEMA1)
+    set(_domain_mode "domain-on")
+else()
+    set(_domain_mode "domain-off")
+endif()
+if(NINLIL_SMOKE_ENABLE_SANITIZERS)
+    set(_sanitizer_mode "sanitizers-on")
+else()
+    set(_sanitizer_mode "sanitizers-off")
+endif()
 
 set(_work
-    "${NINLIL_PARENT_BUILD_DIR}/installed-host-runtime-tests-off-${_sqlite_mode}")
+    "${NINLIL_PARENT_BUILD_DIR}/installed-host-runtime-tests-off-${_sqlite_mode}-${_domain_mode}-${_sanitizer_mode}")
 set(_producer_build "${_work}/producer")
 set(_prefix "${_work}/prefix")
 set(_consumer_build "${_work}/consumer")
@@ -43,8 +174,9 @@ execute_process(
         -DNINLIL_BUILD_TESTS=OFF
         -DNINLIL_BUILD_HOST_RUNTIME=ON
         -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=${NINLIL_SMOKE_WITH_SQLITE}
+        -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=${NINLIL_SMOKE_DOMAIN_SCHEMA1}
         -DNINLIL_ENABLE_STRICT_WARNINGS=ON
-        -DNINLIL_ENABLE_SANITIZERS=OFF
+        -DNINLIL_ENABLE_SANITIZERS=${NINLIL_SMOKE_ENABLE_SANITIZERS}
     RESULT_VARIABLE _configure_rc
     OUTPUT_VARIABLE _configure_out
     ERROR_VARIABLE _configure_err)
@@ -199,6 +331,34 @@ foreach(_required_symbol
             "public Runtime archive lacks '${_required_symbol}'")
     endif()
 endforeach()
+# Domain schema1: when producer enabled the feature, installed public archive
+# must expose the same Domain-backed symbols as the private gate target.
+# Default-OFF producers must keep Domain symbols absent.
+if(DEFINED NINLIL_SMOKE_DOMAIN_SCHEMA1 AND NINLIL_SMOKE_DOMAIN_SCHEMA1)
+    foreach(_domain_symbol
+            ninlil_domain_schema1_service_register
+            ninlil_domain_schema1_service_registry_restore
+            ninlil_domain_schema1_owner_run_storage_recovery
+            ninlil_domain_schema1_owner_t7_publication_gate)
+        if(NOT _nm_out MATCHES "[ \t]_?${_domain_symbol}([\r\n]|$)")
+            message(FATAL_ERROR
+                "Domain-ON public Runtime archive lacks '${_domain_symbol}'")
+        endif()
+    endforeach()
+    message(STATUS
+        "installed Domain-ON public Runtime nm evidence: Domain symbols present")
+else()
+    foreach(_domain_symbol
+            ninlil_domain_schema1_service_register
+            ninlil_domain_schema1_service_registry_restore
+            ninlil_domain_schema1_owner_run_storage_recovery)
+        if(_nm_out MATCHES "[ \t]_?${_domain_symbol}([\r\n]|$)")
+            message(FATAL_ERROR
+                "Domain-OFF public Runtime archive must not expose "
+                "'${_domain_symbol}'")
+        endif()
+    endforeach()
+endif()
 foreach(_banned_symbol
         ninlil_domain_scan_begin
         ninlil_r7_crypto_test_spans_forbidden
@@ -217,26 +377,32 @@ if(_nm_out MATCHES
         "public Runtime archive exposes a test-only symbol:\n${_nm_out}")
 endif()
 
-find_program(_strings NAMES strings REQUIRED)
-execute_process(
-    COMMAND "${_strings}" "${_runtime_archive}"
-    RESULT_VARIABLE _strings_rc
-    OUTPUT_VARIABLE _strings_out
-    ERROR_VARIABLE _strings_err)
-if(NOT _strings_rc EQUAL 0)
-    message(FATAL_ERROR "strings failed on public Runtime: ${_strings_err}")
-endif()
-foreach(_needle
-        "${NINLIL_SOURCE_DIR}/"
-        "${_producer_build}/"
-        "${NINLIL_SOURCE_DIR}"
-        "${_producer_build}")
-    string(FIND "${_strings_out}" "${_needle}" _needle_hit)
-    if(NOT _needle_hit EQUAL -1)
-        message(FATAL_ERROR
-            "public Runtime archive embeds producer path '${_needle}'")
+# ASan global descriptors deliberately carry translation-unit paths. Keep
+# exact archive path-hygiene enforcement on every normal shipping build, and
+# skip only this non-ship binary-content check for an explicitly instrumented
+# evidence build. Package metadata/source-graph leak checks remain mandatory.
+if(NOT NINLIL_SMOKE_ENABLE_SANITIZERS)
+    find_program(_strings NAMES strings REQUIRED)
+    execute_process(
+        COMMAND "${_strings}" "${_runtime_archive}"
+        RESULT_VARIABLE _strings_rc
+        OUTPUT_VARIABLE _strings_out
+        ERROR_VARIABLE _strings_err)
+    if(NOT _strings_rc EQUAL 0)
+        message(FATAL_ERROR "strings failed on public Runtime: ${_strings_err}")
     endif()
-endforeach()
+    foreach(_needle
+            "${NINLIL_SOURCE_DIR}/"
+            "${_producer_build}/"
+            "${NINLIL_SOURCE_DIR}"
+            "${_producer_build}")
+        string(FIND "${_strings_out}" "${_needle}" _needle_hit)
+        if(NOT _needle_hit EQUAL -1)
+            message(FATAL_ERROR
+                "public Runtime archive embeds producer path '${_needle}'")
+        endif()
+    endforeach()
+endif()
 
 set(_consumer_args
     -S "${NINLIL_SOURCE_DIR}/tests/cmake/installed_host_runtime_consumer"
@@ -244,7 +410,10 @@ set(_consumer_args
     -G "${NINLIL_GENERATOR}"
     "-DCMAKE_PREFIX_PATH=${_prefix}"
     -DCMAKE_MAP_IMPORTED_CONFIG_DEBUG=DEBUG
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DNINLIL_CONSUMER_EXPECT_SQLITE=${NINLIL_SMOKE_WITH_SQLITE}
+    -DNINLIL_CONSUMER_EXPECT_DOMAIN_NOT_READY=${NINLIL_SMOKE_DOMAIN_SCHEMA1}
+    -DNINLIL_CONSUMER_ENABLE_SANITIZERS=${NINLIL_SMOKE_ENABLE_SANITIZERS}
 )
 if(NOT NINLIL_SMOKE_WITH_SQLITE)
     list(APPEND _consumer_args
@@ -278,20 +447,80 @@ if(NOT _consumer_build_rc EQUAL 0)
         "installed consumer build failed:\n"
         "${_consumer_build_out}${_consumer_build_err}")
 endif()
+
+set(_consumer_compile_commands
+    "${_consumer_build}/compile_commands.json")
+if(NOT EXISTS "${_consumer_compile_commands}")
+    message(FATAL_ERROR
+        "installed consumer did not emit compile_commands.json")
+endif()
+file(READ "${_consumer_compile_commands}" _consumer_compile_text)
+foreach(_forbidden_compile_path
+        "${NINLIL_SOURCE_DIR}/include"
+        "${NINLIL_SOURCE_DIR}/src"
+        "${NINLIL_SOURCE_DIR}/examples"
+        "${NINLIL_SOURCE_DIR}/tests/support"
+        "${_producer_build}")
+    string(FIND
+        "${_consumer_compile_text}" "${_forbidden_compile_path}"
+        _forbidden_compile_hit)
+    if(NOT _forbidden_compile_hit EQUAL -1)
+        message(FATAL_ERROR
+            "installed consumer compile graph leaks producer/source path "
+            "'${_forbidden_compile_path}'")
+    endif()
+endforeach()
+if(EXISTS "${_consumer_build}/build.ninja")
+    file(READ "${_consumer_build}/build.ninja" _consumer_link_graph)
+    foreach(_forbidden_link_token
+            "ninlil_runtime_private"
+            "runtime_internal"
+            "tests/support"
+            "examples/multi_service_node")
+        string(FIND
+            "${_consumer_link_graph}" "${_forbidden_link_token}"
+            _forbidden_link_hit)
+        if(NOT _forbidden_link_hit EQUAL -1)
+            message(FATAL_ERROR
+                "installed consumer link graph contains forbidden dependency "
+                "'${_forbidden_link_token}'")
+        endif()
+    endforeach()
+endif()
+set(_consumer_test_command
+    "${NINLIL_CTEST_COMMAND}" --test-dir "${_consumer_build}"
+    -C "${_consumer_config}" --output-on-failure)
+if(NINLIL_SMOKE_ENABLE_SANITIZERS)
+    set(_asan_options "halt_on_error=1")
+    if(CMAKE_HOST_APPLE)
+        string(APPEND _asan_options ":detect_leaks=0")
+    endif()
+    set(_consumer_test_command
+        "${CMAKE_COMMAND}" -E env
+        "ASAN_OPTIONS=${_asan_options}"
+        "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
+        ${_consumer_test_command})
+endif()
 execute_process(
-    COMMAND "${NINLIL_CTEST_COMMAND}" --test-dir "${_consumer_build}"
-        -C "${_consumer_config}" --output-on-failure
+    COMMAND ${_consumer_test_command}
     RESULT_VARIABLE _consumer_test_rc
     OUTPUT_VARIABLE _consumer_test_out
     ERROR_VARIABLE _consumer_test_err)
 if(NOT _consumer_test_rc EQUAL 0)
     message(FATAL_ERROR
-        "installed consumer create/step/destroy failed:\n"
+        "installed consumer lifecycle/fail-closed check failed:\n"
         "${_consumer_test_out}${_consumer_test_err}")
 endif()
 
 file(REMOVE_RECURSE "${_work}")
+if(NINLIL_SMOKE_DOMAIN_SCHEMA1)
+    set(_lifecycle_claim "external create fail-closed NINLIL_E_UNSUPPORTED")
+else()
+    set(_lifecycle_claim
+        "external four-Service durable lifecycle + restart/dedupe/query/list")
+endif()
 message(STATUS
     "installed Host Runtime tests-OFF smoke: OK "
-    "(${_sqlite_mode}; export + symbols/leaks + "
-    "external create/step/destroy)")
+    "(${_sqlite_mode}; ${_domain_mode}; ${_sanitizer_mode}; "
+    "export + symbols/leaks + "
+    "${_lifecycle_claim})")

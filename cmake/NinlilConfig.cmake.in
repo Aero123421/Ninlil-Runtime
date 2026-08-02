@@ -2,6 +2,24 @@
 
 include(CMakeFindDependencyMacro)
 
+if(@NINLIL_CONFIG_HAS_POSIX_TLS_V1@)
+    find_dependency(OpenSSL 3 COMPONENTS SSL Crypto)
+    if(NOT DEFINED OPENSSL_VERSION OR OPENSSL_VERSION STREQUAL ""
+       OR OPENSSL_VERSION VERSION_LESS "3"
+       OR NOT OPENSSL_VERSION VERSION_LESS "4")
+        set(Ninlil_FOUND FALSE)
+        set(Ninlil_NOT_FOUND_MESSAGE
+            "Ninlil::posix_tls_v1 requires OpenSSL >=3,<4 "
+            "(found '${OPENSSL_VERSION}')")
+        return()
+    endif()
+endif()
+
+if(@NINLIL_CONFIG_HAS_POSIX_TLS_V1@
+   OR @NINLIL_CONFIG_HAS_POSIX_USB_SERIAL_V1@)
+    find_dependency(Threads)
+endif()
+
 if(@NINLIL_CONFIG_HAS_HOST_RUNTIME@)
     find_dependency(OpenSSL 3 COMPONENTS Crypto)
     if(NOT DEFINED OPENSSL_VERSION OR OPENSSL_VERSION STREQUAL ""
@@ -145,6 +163,9 @@ include("${CMAKE_CURRENT_LIST_DIR}/NinlilTargets.cmake")
 # SQLite3::SQLite3.
 foreach(_ninlil_imported_target
         Ninlil::runtime
+        Ninlil::fabric_v1
+        Ninlil::posix_tls_v1
+        Ninlil::posix_usb_serial_v1
         Ninlil::ninlil_posix_sqlite_storage)
 if(TARGET ${_ninlil_imported_target})
     get_target_property(_ninlil_imported_configs

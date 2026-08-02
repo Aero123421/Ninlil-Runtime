@@ -1,9 +1,10 @@
 # ADR-0022: Domain Store schema 1 Runtime binding and LAB separation
 
-状態: **Proposed — docs-only（implementation / acceptance pending）**
+状態: **SPEC_ACCEPTED (design only) — implementation incomplete / under independent repair**
 提案日: 2026-07-28
-受入日: —（未受入）
-非主張: D3 complete、D4 writer、Stage 5 complete、public `runtime_create()` publish、
+設計受入日: 2026-07-29
+実装完了日: —
+非主張: 実装完了、D3 complete、D4 writer、Stage 5 complete、public `runtime_create()` publish、
 automatic migration、public ABI change、ESP-IDF/HIL/production support
 
 ## Context
@@ -82,6 +83,7 @@ private実装結果だけでAccepted contractのstatus、wire、Storage ABI、pu
 | D22-06 | T2、T3、T4、T5、T6、T7を別のfail-closed stage/KATにする | aggregate success bitによる段階skipを防ぐ |
 | D22-07 | malformed current framingとframing-valid future versionを別statusにする | corruptionは`STORAGE_CORRUPT`、互換性不足は`UNSUPPORTED`として[12章]へ一致させる |
 | D22-08 | first kind-1 SERVICE_REGISTERをM=5の単一FULL groupとexplicit reattachに限定 | callbackを永続化せず、COMMIT_UNKNOWN後のdurable truthとvolatile handleを混同しない |
+| D22-09 | feature-ON private symbol inventory は exact closed set（`CMakeLists.txt` `_ninlil_d22_required_syms`） | public `include/ninlil/*` には出さない。`validate_binding` / `classify_existing_namespace_adopt` / `export_magic_match` / `is_lab_operational_key` / `quota_stage` は production multi-TU call-graph の一部であり、gate の期待値水増しではない |
 
 ### 1. 0-row snapshotだけをinitial adoption authorityにする
 
@@ -570,11 +572,11 @@ Private seamの`storage_recovery_complete`、LAB restart、codec単体、metadat
 | Gate | 本ADRの根拠 | 状態 |
 | --- | --- | --- |
 | S1 Scope/decision | Context、Scope/owner/failure domain/dependency、D22-01..08、Rejected alternatives | 記述済み |
-| S2 Allocation | §1.1 format 2 exact bytes/profile/revision/generation/epoch/schema、§3、§4 export | 記述済み（採番はProposed） |
+| S2 Allocation | §1.1 format 2 exact bytes/profile/revision/generation/epoch/schema、§3、§4 export | 記述済み（SPEC_ACCEPTEDでreserved） |
 | S3 Normative form | §1–§6のT0–T7、FULL ordering、classifier precedence、bounded artifact/kind-1 contract | 記述済み |
 | S4 KAT/oracle | machine JSON、generator、Python/Node independent gate、13 closed-status KAT、13 startup KAT、各self-test | docs evidence記述済み |
 | S5 Compatibility/nonclaim | §4、Compatibility and non-claims、format 1/2 downgrade、explicit re-bootstrap | 記述済み |
-| S6 Review | 本traceとD22 decision registerをreview入力とし、独立reviewでP0/P1=0、ADR index/参照整合を確認 | **OPEN — Acceptedにしない** |
+| S6 Review | 本traceとD22 decision register、focused 6/6、JSON `4724531f…`、4-file manifest `729133ce…`を独立reviewし、P0=P1=P2=0を確認 | **CLOSED — 2026-07-29 SPEC_ACCEPTED** |
 
 Normative requirement traceは、`D22-02`→Acceptance 1、
 `D22-03`→Acceptance 2、`D22-01`→Acceptance 3、
@@ -583,16 +585,44 @@ Normative requirement traceは、`D22-02`→Acceptance 1、
 public ABI非変更→Acceptance 9、`D22-07`→Acceptance 10である。Machine authorityは
 `spec/vectors/domain-store-schema1-runtime-binding-v1.json`、freshness authorityは
 generator `--check`、独立意味検査はPython/Node gate `--check`、false-green検査は各
-`--self-test`である。S6がOPENの間は本ADRをAcceptedまたはimplementation-readyと表示しない。
+`--self-test`である。SPEC_ACCEPTEDは設計受入とprivate/feature-gated実装開始の許可だけであり、
+実装完了、production support、target/HIL完了を意味しない。
 
 ## Compatibility and non-claims
 
 - Public `NINLIL_ABI_VERSION=0x0001`、public struct/offset、single Bearer contractは不変。
-- Private binding format 2、classifier、export、kind-1 builderは未実装である。Docs-onlyの
-  独立vector generator/KATはproduction supportまたはRuntime実装の証拠ではない。
+- Machine vector status remains **`PROPOSED_DOCS_ONLY`** until independent review
+  promotes implementation evidence. Design S6 closed status does **not** mean
+  implementation CLOSED or production-ready.
+- **Private feature-gated implementation scaffold (default OFF):** format 2 binding +
+  T0/T1a authority (`domain_schema1_runtime_binding.*`)、T1b–T7 pure stage
+  authority (`domain_schema1_startup_authority.*`)、and **real `ninlil_storage_ops`
+  private owner scaffold** (`domain_schema1_startup_owner.*`) are compiled when
+  `NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=ON` (host + ESP Kconfig default
+  OFF). `NINLIL_DOMAIN_SCHEMA1_PUBLIC_RUNTIME_READY=0u` is an implementation
+  gate: a valid public `ninlil_runtime_create()` returns
+  `NINLIL_E_UNSUPPORTED` immediately after pure config validation and before
+  allocator/execution/clock/entropy/Storage/Bearer/authorization calls.
+  `domain_schema1_publication_not_ready` proves NULL public handle and zero Port
+  calls; normal/ASan private owner/authority tests remain active.
+  **Not HIL. Not production Domain Store complete.**
+- **Honest gaps (not claimed complete):** full D3-S4..S12 scanner integration,
+  D4 multi-mutation recovery planner, canonical Domain operational writers
+  beyond kind-1, Linux/macOS CI matrix beyond local host, physical power-cut
+  HIL.
+- **Read-only cutover evidence tool (2026-07-29):**
+  `tools/ninlil_lab_export.py` implements the exact `NLEXP001` artifact for the
+  POSIX SQLite provider. It acquires the provider-compatible offline authority
+  lock, validates and emits from one READ_ONLY transaction, refuses overwrite,
+  performs post-install verification, and matches all 20 exact export vectors.
+  It is not an importer and does not reduce the D3/D4/operational-writer gaps.
+- **Vector erratum (2026-07-29):** bootstrap fixture was repaired to an exact
+  valid Controller profile (targets=1, cancel=1, event spool 0/0,
+  result_cache_retention ≤ terminal_retention). Prior mixed Controller+Endpoint
+  capacity fields violated docs/12 and must not be treated as accepted semantics.
+- Public ABI / application-specific vocabulary / Fabric-FRAG-WiFi paths are unchanged.
 - Format 1 LAB namespaceのread-write open、automatic conversion、ID/callback/custody/effectの
   preservation、archive/delete tool、production supportを約束しない。
-- 本ADRは**Proposed**であり、Accepted/D3/D4/Stage 5/public Runtime completion evidenceではない。
 
 ## Acceptance tests for a future implementation
 

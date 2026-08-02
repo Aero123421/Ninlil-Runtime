@@ -18,11 +18,27 @@
 #include "ninlil_esp_idf/usb_cdc.h"
 #include "ninlil_port/esp_storage.h"
 #include "ninlil_port/esp_storage_flash.h"
+#include "multi_service_node_profile.h"
 
 /* R7 production-private link probe; not a public component include. */
 #include "r7_crypto_mbedtls.h"
 #include "r7_context_binding.h"
 #include "r7_wire_codec.h"
+#include "sdkconfig.h"
+#if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
+    && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
+#include "mfdt_v1.h"
+#include "mfdt_v1_target_smoke.h"
+#endif
+
+#if defined(CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE) \
+    && CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE
+#include "r7_frag_target_smoke.h"
+#endif
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+#include "rrmp_target_smoke.h"
+#endif
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -30,6 +46,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
+#include <stdint.h>
 #include <string.h>
 
 static const char *TAG = "ninlil_m3_owner_qa";
@@ -73,6 +90,22 @@ static uint32_t s_prod_full;
  * dependencies must resolve into the final ESP32-S3 ELF.
  */
 static ninlil_r7_crypto_provider s_r7_crypto_provider;
+static ninlil_multi_service_node_profile_t s_multi_service_profile;
+static ninlil_multi_service_node_state_t s_multi_service_state;
+
+
+#if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
+    && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
+/* Bind MFDT durable adapter to real component storage_ops after flash open. */
+static int smoke_mfdt_bind_storage(const ninlil_storage_ops_t *ops,
+                                   ninlil_storage_handle_t handle)
+{
+    if (ops == NULL) {
+        return -1;
+    }
+    return ninlil_mfdt_v1_esp_store_bind(ops, handle);
+}
+#endif
 
 static int smoke_r7_crypto_link(void)
 {
@@ -98,6 +131,100 @@ static int smoke_r7_crypto_link(void)
     ESP_LOGI(TAG,
         "R7 mbedTLS provider initialized; compile/link evidence only; "
         "device KAT/HIL pending");
+    return 0;
+}
+
+/*
+ * Compile, link, and execute the same role-neutral four-Service application
+ * profile/state machine used by the Host actual E2E.  This is a target smoke:
+ * it proves the application module is portable to ESP32-S3, not that RF or
+ * physical-device HIL has run.
+ */
+static int smoke_multi_service_node(void)
+{
+    uint64_t query_correlation = 0u;
+
+    if (ninlil_multi_service_node_profile_init(
+            &s_multi_service_profile, 0x80u)
+            != NINLIL_OK
+        || ninlil_multi_service_node_profile_validate(
+               &s_multi_service_profile)
+            != NINLIL_OK
+        || s_multi_service_profile.manifest.runtime_role_constraint
+            != NINLIL_MULTI_SERVICE_NODE_ROLE_NEUTRAL
+        || s_multi_service_profile.manifest.service_count
+            != NINLIL_MULTI_SERVICE_NODE_SERVICE_COUNT
+        || s_multi_service_profile.manifest.service_mask
+            != NINLIL_MULTI_SERVICE_NODE_ALL_SERVICES_MASK
+        || s_multi_service_profile.manifest.receive_service_mask
+            != NINLIL_MULTI_SERVICE_NODE_RECEIVE_MASK
+        || s_multi_service_profile.manifest.originate_service_mask
+            != NINLIL_MULTI_SERVICE_NODE_ORIGINATE_MASK
+        || s_multi_service_profile
+               .services[NINLIL_MULTI_SERVICE_NODE_DISPLAY_COMMAND]
+               .family
+            != NINLIL_FAMILY_DESIRED_STATE
+        || s_multi_service_profile
+               .services[NINLIL_MULTI_SERVICE_NODE_ACCESS_EVENT]
+               .family
+            != NINLIL_FAMILY_EVENT_FACT
+        || s_multi_service_profile
+               .services[NINLIL_MULTI_SERVICE_NODE_TEMPERATURE_TELEMETRY]
+               .family
+            != NINLIL_FAMILY_EVENT_FACT
+        || s_multi_service_profile
+               .services[NINLIL_MULTI_SERVICE_NODE_TEMPERATURE_QUERY]
+               .family
+            != NINLIL_FAMILY_DESIRED_STATE
+        || ninlil_multi_service_node_state_init(&s_multi_service_state)
+            != NINLIL_OK
+        || ninlil_multi_service_node_note_delivery(
+               &s_multi_service_state,
+               NINLIL_MULTI_SERVICE_NODE_DISPLAY_COMMAND,
+               0u)
+            != NINLIL_OK
+        || ninlil_multi_service_node_note_originated(
+               &s_multi_service_state,
+               NINLIL_MULTI_SERVICE_NODE_ACCESS_EVENT)
+            != NINLIL_OK
+        || ninlil_multi_service_node_note_originated(
+               &s_multi_service_state,
+               NINLIL_MULTI_SERVICE_NODE_TEMPERATURE_TELEMETRY)
+            != NINLIL_OK
+        || ninlil_multi_service_node_note_delivery(
+               &s_multi_service_state,
+               NINLIL_MULTI_SERVICE_NODE_TEMPERATURE_QUERY,
+               42u)
+            != NINLIL_OK
+        || ninlil_multi_service_node_temperature_response_pending(
+               &s_multi_service_state)
+            != 1u
+        || ninlil_multi_service_node_temperature_response_begin(
+               &s_multi_service_state, &query_correlation)
+            != NINLIL_OK
+        || query_correlation != 42u
+        || ninlil_multi_service_node_temperature_response_finish(
+               &s_multi_service_state, 0u)
+            != NINLIL_OK
+        || ninlil_multi_service_node_temperature_response_pending(
+               &s_multi_service_state)
+            != 1u
+        || ninlil_multi_service_node_temperature_response_begin(
+               &s_multi_service_state, &query_correlation)
+            != NINLIL_OK
+        || query_correlation != 42u
+        || ninlil_multi_service_node_temperature_response_finish(
+               &s_multi_service_state, 1u)
+            != NINLIL_OK
+        || ninlil_multi_service_node_acceptance_complete(
+               &s_multi_service_state)
+            != NINLIL_OK) {
+        ESP_LOGE(TAG, "role-neutral multi-Service target smoke failed");
+        return -1;
+    }
+    ESP_LOGI(TAG,
+        "role-neutral four-Service profile/state machine target smoke OK; "
+        "same module as Host actual E2E; not physical HIL");
     return 0;
 }
 
@@ -542,13 +669,42 @@ static int smoke_storage_commit_unknown(void)
                ns_view,
                NINLIL_STORAGE_SCHEMA_M1A,
                &handle)
-            != NINLIL_STORAGE_OK
-        || ops->begin(
-               ops->user, handle, NINLIL_STORAGE_READ_WRITE, &txn)
+            != NINLIL_STORAGE_OK) {
+        ESP_LOGE(TAG, "storage open failed");
+        goto unbind;
+    }
+#if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
+    && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
+    /*
+     * Retain storage handle for MFDT adapter lifetime (no bind-then-close).
+     * Then execute real two-endpoint MFDT callpath under that bind (session /
+     * ncl1_encode / spine_arm / outbound / receiver ingress / pump). No dummy
+     * symbol pins — map-proof symbols are live from app_main.
+     */
+    if (smoke_mfdt_bind_storage(ops, handle) != 0) {
+        ESP_LOGE(TAG, "mfdt storage bind failed");
+        goto unbind;
+    }
+    ESP_LOGI(TAG, "mfdt storage adapter bound to retained handle");
+    {
+        int32_t mfdt_st = ninlil_mfdt_v1_target_smoke_run();
+        if (mfdt_st != 0) {
+            ESP_LOGE(TAG,
+                "MFDT target smoke FAIL code=%d (raw NEW + gate OFF required; "
+                "map-only / CU residual is not a pass)",
+                (int)mfdt_st);
+            goto unbind;
+        }
+        ESP_LOGI(TAG,
+            "MFDT smoke OK: raw NEW classification + release NOT_PROMOTED "
+            "(HIL gate OFF; not power-cut HIL / not engine CU promotion)");
+    }
+#endif
+    if (ops->begin(ops->user, handle, NINLIL_STORAGE_READ_WRITE, &txn)
             != NINLIL_STORAGE_OK
         || ops->put(ops->user, txn, key_view, value_view)
             != NINLIL_STORAGE_OK) {
-        ESP_LOGE(TAG, "storage open/begin/put failed");
+        ESP_LOGE(TAG, "storage begin/put failed");
         goto unbind;
     }
     commit_status =
@@ -567,6 +723,10 @@ unbind:
     if (txn != NULL) {
         (void)ops->rollback(ops->user, txn);
     }
+#if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
+    && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
+    ninlil_mfdt_v1_esp_store_unbind();
+#endif
     if (handle != NULL) {
         ops->close(ops->user, handle);
     }
@@ -1046,7 +1206,13 @@ void app_main(void)
     }
     smoke_cleanup_basic();
 
-    /* Owner/cell first, then storage, U2 CDC, and R7 crypto/T1b/wire probes. */
+    /*
+     * Owner/cell first, then the shared application module, storage, U2 CDC,
+     * and R7 crypto/T1b/wire probes.
+     */
+    if (smoke_multi_service_node() != 0) {
+        fail = 1;
+    }
     if (smoke_storage_commit_unknown() != 0) {
         fail = 1;
     }
@@ -1063,13 +1229,45 @@ void app_main(void)
     if (smoke_r7_wire_link() != 0) {
         fail = 1;
     }
+#if defined(CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE) \
+    && CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE
+    /* Private FRAG deterministic smoke (LINK_ACK / multi-frag / reorder /
+     * restart / hop-retry). Compile+link+execute on target when Kconfig ON.
+     * Not RF/HIL. Default builds leave this path out (symbol absence). */
+    {
+        int32_t frag_st =
+            ninlil_r7_frag_target_smoke_run(&s_r7_crypto_provider);
+        if (frag_st != 0) {
+            ESP_LOGE(TAG, "R7 FRAG target smoke FAIL code=%d", (int)frag_st);
+            fail = 1;
+        } else {
+            ESP_LOGI(TAG,
+                "R7 FRAG private target smoke OK (not RF/HIL/public ABI)");
+        }
+    }
+#endif
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+    {
+        int32_t rrmp_st = ninlil_rrmp_target_smoke_run();
+        if (rrmp_st != 0) {
+            ESP_LOGE(TAG, "RRMP target smoke FAIL code=%d", (int)rrmp_st);
+            fail = 1;
+        } else {
+            ESP_LOGI(TAG,
+                "RRMP private target smoke OK ws=%u (not RF HIL/public ABI)",
+                (unsigned)ninlil_rrmp_target_smoke_workspace_bytes());
+        }
+    }
+#endif
 
     if (fail != 0) {
         ESP_LOGE(TAG, "SELFTEST FAIL (device HIL required for runtime verdict)");
     } else {
         ESP_LOGI(TAG,
-            "SELFTEST owner/cell + storage + U2 CDC + R7 crypto/T1b/wire link "
-            "exercised; compile!=HIL; U2/R7 Required HIL pending; "
-            "not device KAT/RF/FIELD/R7 complete; flash monitor for runtime");
+            "SELFTEST owner/cell + role-neutral four-Service app + storage + "
+            "U2 CDC + R7 crypto/T1b/wire link exercised; compile!=HIL; "
+            "U2/R7 Required HIL pending; not device KAT/RF/FIELD/R7 complete; "
+            "flash monitor for runtime");
     }
 }

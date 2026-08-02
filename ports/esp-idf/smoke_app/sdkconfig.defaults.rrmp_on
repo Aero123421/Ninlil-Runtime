@@ -1,0 +1,8 @@
+# Private route-relay / multi-parent ON for ESP map proof.
+# Not public ABI. Workspace is Runtime-arena owned (not app_main stack).
+CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=y
+CONFIG_NINLIL_RRMP_ROLE_ENDPOINT=y
+CONFIG_NINLIL_RRMP_ROLE_RELAY=y
+CONFIG_NINLIL_RRMP_ROLE_PARENT=y
+# Frame/stack gates: owner workspace is BSS/heap, not task stack.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
