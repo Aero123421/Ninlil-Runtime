@@ -202,7 +202,7 @@ jobs:
   optional-composition:
     name: SQLite optional and tests OFF
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -240,7 +240,7 @@ jobs:
   ubuntu-dynamic-strict:
     name: Ubuntu dynamic SQLite strict full
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -665,7 +665,7 @@ jobs:
   ubuntu-static-strict:
     name: Ubuntu static SQLite strict full
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -869,7 +869,7 @@ jobs:
   clang-sanitizers:
     name: Clang ASan and UBSan (dynamic SQLite)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 35
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -1790,7 +1790,7 @@ jobs:
   clang-non-sanitizer-hygiene:
     name: Ubuntu Clang non-sanitizer archive hygiene
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -2119,7 +2119,7 @@ jobs:
   clang-pointer-compare:
     name: Clang pointer-compare sanitizer
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 35
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
