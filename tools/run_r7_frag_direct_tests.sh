@@ -87,6 +87,7 @@ SESS_SRC=(
 COMP_SRC=(
   "${FRAG_CORE[@]}"
   src/radio/r7_frag/r7_frag_prod_orch.c
+  src/radio/airtime_calculator.c
   src/radio/r7_crypto_portable.c
   src/radio/r7_crypto_nonce.c
   src/radio/r7_crypto_openssl3.c
@@ -117,6 +118,7 @@ SMOKE_SRC=(
 PROD_SRC=(
   "${FRAG_CORE[@]}"
   src/radio/r7_frag/r7_frag_prod_orch.c
+  src/radio/airtime_calculator.c
   src/radio/r7_crypto_portable.c
   src/radio/r7_crypto_nonce.c
   src/radio/r7_crypto_openssl3.c

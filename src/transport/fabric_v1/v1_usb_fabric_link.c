@@ -10,6 +10,13 @@
 
 #define USB_FABRIC_TX_TOKEN_TAG ((uintptr_t)0x6du)
 #define USB_FABRIC_RX_TOKEN_TAG ((uintptr_t)0x79u)
+#if UINTPTR_MAX <= UINT32_MAX
+#define USB_FABRIC_TX_GENERATION_MAX ((uint32_t)(UINTPTR_MAX >> 16u))
+#define USB_FABRIC_RX_GENERATION_MAX ((uint32_t)(UINTPTR_MAX >> 8u))
+#else
+#define USB_FABRIC_TX_GENERATION_MAX (UINT32_MAX - UINT32_C(1))
+#define USB_FABRIC_RX_GENERATION_MAX (UINT32_MAX - UINT32_C(1))
+#endif
 
 static void clear_bytes(void *pointer, size_t length)
 {
@@ -411,8 +418,7 @@ static ninlil_fabric_link_status_t usb_start_send(
         }
     }
     if (slot >= NINLIL_V1_USB_FABRIC_LINK_TX_MAX
-        || link->next_tx_generation == UINT32_MAX
-        || (uintptr_t)link->next_tx_generation > (UINTPTR_MAX >> 16u)) {
+        || link->next_tx_generation > USB_FABRIC_TX_GENERATION_MAX) {
         clear_bytes(&now, sizeof(now));
         return NINLIL_FABRIC_LINK_WOULD_BLOCK;
     }
@@ -1024,8 +1030,7 @@ uint32_t ninlil_v1_usb_fabric_link_handoff(
         return NINLIL_NVB1_STATUS_REJECTED;
     }
     if (port->open == 0u || port->rx.active != 0u
-        || link->next_rx_generation == UINT32_MAX
-        || (uintptr_t)link->next_rx_generation > (UINTPTR_MAX >> 8u)) {
+        || link->next_rx_generation > USB_FABRIC_RX_GENERATION_MAX) {
         clear_bytes(&workspace, sizeof(workspace));
         clear_bytes(&envelope, sizeof(envelope));
         return NINLIL_NVB1_STATUS_BUSY;
