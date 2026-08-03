@@ -433,7 +433,7 @@ static int test_rx_ticket_admit_and_duplicate(void)
     REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &ticket) == NINLIL_N6_OK);
     REQUIRE(ticket.live == 0u);
     REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 1u, &ticket)
-        == NINLIL_N6_TICKET);
+        == NINLIL_N6_REPLAY);
 
     /* abort path */
     REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 2u, &ticket)
@@ -555,7 +555,7 @@ static int test_cu_rx_all_proposed_accept_through(void)
     REQUIRE(err.last_cu_class == NINLIL_N6_CU_ALL_PROPOSED);
     /* same counter must be rejected after ALL_PROPOSED RAM sync */
     REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 3u, &ticket)
-        == NINLIL_N6_TICKET);
+        == NINLIL_N6_REPLAY);
     REQUIRE(ninlil_n6_shutdown(n6) == NINLIL_N6_OK);
     return 0;
 }
@@ -883,9 +883,9 @@ static int test_rx_sliding64_ooo_and_ticket_tamper(void)
     REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 1u, &t2)
         == NINLIL_N6_OK);
     REQUIRE(ninlil_n6_rx_admit_after_aead(n6, &t2) == NINLIL_N6_OK);
-    /* duplicate 3 rejected */
+    /* duplicate 3 rejected (typed REPLAY) */
     REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 3u, &t3)
-        == NINLIL_N6_TICKET);
+        == NINLIL_N6_REPLAY);
 
     /* double live ticket same counter */
     REQUIRE(ninlil_n6_rx_precheck(n6, h, NINLIL_N6_LANE_HOP_DATA, 5u, &t1)

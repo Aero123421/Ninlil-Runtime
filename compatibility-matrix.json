@@ -1,0 +1,308 @@
+{
+  "schema": "ninlil-compatibility-matrix-v1",
+  "runtime_release": "0.1.0",
+  "completion_states": [
+    "UNALLOCATED",
+    "PROPOSED",
+    "SPEC_ACCEPTED",
+    "HOST_CANDIDATE",
+    "TARGET_CANDIDATE",
+    "HIL_VERIFIED",
+    "RELEASE_SUPPORTED"
+  ],
+  "allowed_transitions": {
+    "UNALLOCATED": ["PROPOSED"],
+    "PROPOSED": ["SPEC_ACCEPTED"],
+    "SPEC_ACCEPTED": ["HOST_CANDIDATE", "TARGET_CANDIDATE"],
+    "HOST_CANDIDATE": ["TARGET_CANDIDATE", "HIL_VERIFIED", "RELEASE_SUPPORTED"],
+    "TARGET_CANDIDATE": ["HIL_VERIFIED"],
+    "HIL_VERIFIED": ["RELEASE_SUPPORTED"],
+    "RELEASE_SUPPORTED": []
+  },
+  "module_api_domain": {
+    "manifest_path": "public-module-manifest.json",
+    "schema_path": "spec/public-module-manifest-v1.schema.json",
+    "schema": "ninlil-public-module-manifest-v1",
+    "schema_version": 1,
+    "completion_mapping_path": "public-module-manifest.json",
+    "completion_mapping_pointer": "/module_api_completion_mapping",
+    "identity_attachment_precondition_path": "public-module-manifest.json",
+    "identity_attachment_precondition_pointer": "/identity_attachment_precondition_contract",
+    "fabric_selection_port_path": "public-module-manifest.json",
+    "fabric_selection_port_pointer": "/fabric_selection_port_contract",
+    "acceptance_evidence_contract_path": "public-module-manifest.json",
+    "acceptance_evidence_contract_pointer": "/acceptance_evidence_contract",
+    "independent_review_contract_path": "public-module-manifest.json",
+    "independent_review_contract_pointer": "/independent_review_contract",
+    "module_promotion_authority_pointer": "/modules/*/promotion_authority",
+    "states": [
+      "PRIVATE_CANDIDATE",
+      "PUBLIC_API_SPEC_ACCEPTED",
+      "PACKAGE_EXPERIMENTAL",
+      "RELEASE_SUPPORTED"
+    ],
+    "allowed_transitions": {
+      "PRIVATE_CANDIDATE": ["PUBLIC_API_SPEC_ACCEPTED"],
+      "PUBLIC_API_SPEC_ACCEPTED": ["PACKAGE_EXPERIMENTAL"],
+      "PACKAGE_EXPERIMENTAL": ["RELEASE_SUPPORTED"],
+      "RELEASE_SUPPORTED": []
+    },
+    "supplemental_completion_features": [
+      {
+        "id": "nfl1-r7-nrw1-rf-mapping",
+        "state": "PROPOSED",
+        "state_ceiling": "HIL_VERIFIED",
+        "depends_on": [
+          "fabric-bearer-nfl1-path-registry",
+          "nrw1-link-frag-reassembly",
+          "identity-attachment-session-install"
+        ],
+        "authority": "docs/adr/0035-v1-compact-radio-mapping.md"
+      }
+    ]
+  },
+  "version_domains": {
+    "public_c_abi": {
+      "minimum": 1,
+      "maximum": 1,
+      "stability": "experimental"
+    },
+    "foundation_storage_schema": {
+      "minimum": 1,
+      "maximum": 1,
+      "stability": "experimental"
+    },
+    "public_application_data_wire": {
+      "status": "UNALLOCATED",
+      "versions": []
+    },
+    "ncl1_envelope": {
+      "status": "SPEC_ACCEPTED",
+      "logical_versions": [1]
+    },
+    "private_control_protocol": {
+      "status": "HOST_CANDIDATE",
+      "supported_versions": [1, 2],
+      "proposed_versions": []
+    },
+    "private_mfdt_protocol": {
+      "status": "SPEC_ACCEPTED",
+      "versions": [1],
+      "bound_base_control_versions": [1, 2]
+    },
+    "secure_compact_radio_wire": {
+      "status": "SPEC_ACCEPTED",
+      "wire_profile_ids": [17]
+    },
+    "canonical_domain_binding": {
+      "status": "SPEC_ACCEPTED",
+      "read_only_quarantine_formats": [1],
+      "reserved_read_write_formats": [2]
+    }
+  },
+  "platforms": [
+    {
+      "id": "linux-x86_64",
+      "os": "Linux",
+      "architecture": "x86_64",
+      "state": "HOST_CANDIDATE",
+      "state_ceiling": "HOST_CANDIDATE",
+      "ci_workflow": ".github/workflows/ci.yml",
+      "ci_runner": "ubuntu-24.04",
+      "required_hil": false,
+      "evidence": [
+        {
+          "class": "ci-workflow",
+          "path": ".github/workflows/ci.yml",
+          "contains": "runs-on: ubuntu-24.04"
+        }
+      ]
+    },
+    {
+      "id": "macos-arm64",
+      "os": "macOS",
+      "architecture": "arm64",
+      "state": "HOST_CANDIDATE",
+      "state_ceiling": "HOST_CANDIDATE",
+      "ci_workflow": ".github/workflows/ci.yml",
+      "ci_runner": "macos-15",
+      "required_hil": false,
+      "evidence": [
+        {
+          "class": "ci-workflow",
+          "path": ".github/workflows/ci.yml",
+          "contains": "test \"$(uname -m)\" = \"arm64\""
+        }
+      ]
+    },
+    {
+      "id": "esp32s3-esp-idf",
+      "os": "ESP-IDF",
+      "architecture": "xtensa-esp32s3",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "TARGET_CANDIDATE",
+      "toolchain_version": "v5.5.3",
+      "ci_workflow": ".github/workflows/esp-idf.yml",
+      "ci_runner": "ubuntu-24.04",
+      "required_hil": true,
+      "hil_verified": false,
+      "evidence": [
+        {
+          "class": "target-ci-workflow",
+          "path": ".github/workflows/esp-idf.yml",
+          "contains": "sha256:3e77b709e0ba7f0e9a711039231103be822736b4105790b8e33339a3bf4e47fb"
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": "portable-core-host-runtime",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "HOST_CANDIDATE",
+      "required_hil": false,
+      "depends_on": [],
+      "evidence": [
+        {"class": "status", "path": "README.md", "contains": "SPEC_ACCEPTED"},
+        {"class": "sdk-guide", "path": "docs/host-runtime-sdk.md", "contains": "Host Runtime"},
+        {"class": "ci-workflow", "path": ".github/workflows/ci.yml", "contains": "name: CI"}
+      ]
+    },
+    {
+      "id": "canonical-domain-store",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "SPEC_ACCEPTED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["portable-core-host-runtime"],
+      "evidence": [
+        {"class": "accepted-adr", "path": "docs/adr/0022-domain-store-schema1-runtime-binding.md", "contains": "SPEC_ACCEPTED"},
+        {"class": "independent-review", "path": "docs/reviews/2026-07-29-domain-store-schema1-spec-accepted.md", "contains": "P0=0 / P1=0 / P2=0"}
+      ]
+    },
+    {
+      "id": "identity-attachment-session-install",
+      "state": "PROPOSED",
+      "state_ceiling": "PROPOSED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["portable-core-host-runtime", "canonical-domain-store"],
+      "evidence": [
+        {"class": "normative-spec", "path": "docs/03-identity-and-join.md", "contains": "Identity"},
+        {"class": "roadmap", "path": "docs/09-roadmap.md", "contains": "Roadmap"},
+        {"class": "normative-spec", "path": "docs/30-r6-secure-radio-wire.md", "contains": "Secure"}
+      ]
+    },
+    {
+      "id": "fabric-bearer-nfl1-path-registry",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "SPEC_ACCEPTED",
+      "required_hil": false,
+      "depends_on": ["portable-core-host-runtime", "canonical-domain-store", "identity-attachment-session-install"],
+      "evidence": [
+        {"class": "accepted-adr", "path": "docs/adr/0017-bearer-registry-path-selection.md", "contains": "SPEC_ACCEPTED"},
+        {"class": "independent-review", "path": "docs/reviews/2026-07-29-fabric-bearer-spec-accepted.md", "contains": "P0=0 / P1=0 / P2=0"}
+      ]
+    },
+    {
+      "id": "posix-tcp-tls-wifi-reference",
+      "state": "PROPOSED",
+      "state_ceiling": "PROPOSED",
+      "required_hil": false,
+      "depends_on": ["fabric-bearer-nfl1-path-registry", "identity-attachment-session-install"],
+      "evidence": [
+        {"class": "proposed-adr", "path": "docs/adr/0018-wifi-bearer.md", "contains": "Proposed"}
+      ]
+    },
+    {
+      "id": "esp32s3-wifi-sta-tcp-tls",
+      "state": "PROPOSED",
+      "state_ceiling": "PROPOSED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["posix-tcp-tls-wifi-reference", "fabric-bearer-nfl1-path-registry", "identity-attachment-session-install"],
+      "evidence": [
+        {"class": "proposed-adr", "path": "docs/adr/0018-wifi-bearer.md", "contains": "Proposed"}
+      ]
+    },
+    {
+      "id": "nrw1-link-frag-reassembly",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "SPEC_ACCEPTED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["canonical-domain-store", "identity-attachment-session-install"],
+      "evidence": [
+        {"class": "normative-spec", "path": "docs/30-r6-secure-radio-wire.md", "contains": "Secure"},
+        {"class": "accepted-adr", "path": "docs/adr/0010-r6-secure-radio-wire.md", "contains": "Accepted"}
+      ]
+    },
+    {
+      "id": "relay",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "SPEC_ACCEPTED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["fabric-bearer-nfl1-path-registry", "nrw1-link-frag-reassembly", "identity-attachment-session-install"],
+      "evidence": [
+        {"class": "accepted-adr", "path": "docs/adr/0019-route-relay.md", "contains": "Accepted / SPEC_ACCEPTED"},
+        {"class": "work-record", "path": "docs/work/2026-07-30-rrmp-spec-accepted-promotion.md", "contains": "P0=0 / P1=0"}
+      ]
+    },
+    {
+      "id": "multi-parent-multi-controller",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "SPEC_ACCEPTED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["relay", "identity-attachment-session-install"],
+      "evidence": [
+        {"class": "accepted-adr", "path": "docs/adr/0020-multi-parent.md", "contains": "Accepted / SPEC_ACCEPTED"},
+        {"class": "work-record", "path": "docs/work/2026-07-30-rrmp-spec-accepted-promotion.md", "contains": "P0=0 / P1=0"}
+      ]
+    },
+    {
+      "id": "multi-frame-durable-transfer",
+      "state": "SPEC_ACCEPTED",
+      "state_ceiling": "SPEC_ACCEPTED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["portable-core-host-runtime", "canonical-domain-store", "identity-attachment-session-install"],
+      "evidence": [
+        {"class": "accepted-adr", "path": "docs/adr/0021-multi-frame-durable-custody.md", "contains": "Accepted baseline / Application-handoff amendment SPEC_ACCEPTED"},
+        {"class": "work-record", "path": "docs/work/2026-08-01-mfdt-spec-accepted-promotion.md", "contains": "P0=0 / P1=0 / P2=0"}
+      ]
+    },
+    {
+      "id": "v1-functional-lab-vertical-slice",
+      "state": "PROPOSED",
+      "state_ceiling": "HIL_VERIFIED",
+      "required_hil": true,
+      "hil_verified": false,
+      "depends_on": ["portable-core-host-runtime", "fabric-bearer-nfl1-path-registry"],
+      "evidence": [
+        {"class": "accepted-adr", "path": "docs/adr/0034-v1-functional-lab-scope.md", "contains": "ACCEPTED"},
+        {"class": "independent-review", "path": "docs/reviews/2026-08-03-v1-functional-lab-scope-review.md", "contains": "P0=0 / P1=0 / P2=0"}
+      ]
+    },
+    {
+      "id": "oss-package-docs-release-ci",
+      "state": "HOST_CANDIDATE",
+      "state_ceiling": "HOST_CANDIDATE",
+      "required_hil": false,
+      "depends_on": [],
+      "evidence": [
+        {"class": "license", "path": "LICENSE", "contains": "Apache License"},
+        {"class": "notice", "path": "NOTICE", "contains": "Ninlil"},
+        {"class": "dependency-inventory", "path": "dependency-inventory.json", "contains": "ninlil-dependency-inventory-v1"},
+        {"class": "work-record", "path": "docs/work/2026-07-28-oss-compatibility-authority.md", "contains": "compatibility"},
+        {"class": "release-guide", "path": "docs/releasing.md", "contains": "Release Guide"},
+        {"class": "release-workflow", "path": ".github/workflows/release.yml", "contains": "name: Release"}
+      ]
+    }
+  ],
+  "legacy_adapters": {
+    "legacy_linkos_lab_wire_1": "unsupported"
+  },
+  "hardware_regulatory_claim": "LAB_ONLY"
+}

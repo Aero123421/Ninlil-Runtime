@@ -85,6 +85,8 @@ typedef struct ninlil_model_semantic_submission {
     uint16_t schema_minor;
     uint32_t target_count;
     ninlil_concrete_target_t target;
+    ninlil_concrete_target_t
+        targets[NINLIL_FOUNDATION_MAX_EXACT_TARGETS];
     ninlil_evidence_stage_t required_evidence;
     uint32_t payload_length;
     uint32_t content_digest_matches;
@@ -183,6 +185,9 @@ typedef struct ninlil_model_admission_plan {
     ninlil_model_submission_service_t registered_service;
     ninlil_party_t source;
     ninlil_concrete_target_t target;
+    uint32_t target_count;
+    ninlil_concrete_target_t
+        targets[NINLIL_FOUNDATION_MAX_EXACT_TARGETS];
     ninlil_service_identity_t service;
     ninlil_model_idempotency_key_t idempotency_key;
     ninlil_digest256_t content_digest;

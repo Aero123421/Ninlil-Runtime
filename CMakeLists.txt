@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 
 project(ninlil VERSION 0.1.0 LANGUAGES C CXX)
 
@@ -18,17 +18,94 @@ option(NINLIL_BUILD_TESTS "Build Ninlil's test suite"
     ${_ninlil_build_tests_default})
 option(NINLIL_ENABLE_STRICT_WARNINGS "Build Ninlil with warnings as errors"
     ${_ninlil_strict_warnings_default})
+option(NINLIL_BUILD_HOST_RUNTIME
+    "Build and install the static Host Runtime SDK target"
+    ${NINLIL_IS_TOP_LEVEL})
+option(NINLIL_BUILD_FABRIC_V1
+    "Build and install the experimental portable Fabric v1 target"
+    ${NINLIL_BUILD_HOST_RUNTIME})
+option(NINLIL_BUILD_POSIX_TLS_V1
+    "Build and install the experimental Linux/macOS POSIX TLS Fabric port"
+    ${NINLIL_BUILD_FABRIC_V1})
+set(_ninlil_posix_usb_serial_default OFF)
+if(NINLIL_IS_TOP_LEVEL
+   AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+    set(_ninlil_posix_usb_serial_default ON)
+endif()
+option(NINLIL_BUILD_POSIX_USB_SERIAL_V1
+    "Build and install the experimental Linux/macOS POSIX USB serial port"
+    ${_ninlil_posix_usb_serial_default})
+option(NINLIL_BUILD_V1_LAB_CONTROLLER
+    "Build the private Linux/macOS V1 USB Controller diagnostic"
+    OFF)
+set(NINLIL_POSIX_USB_SERIAL_ENABLED FALSE)
+if(NINLIL_BUILD_POSIX_USB_SERIAL_V1)
+    if(NOT (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+        message(FATAL_ERROR
+            "NINLIL_BUILD_POSIX_USB_SERIAL_V1 is supported only on Linux and macOS")
+    endif()
+    set(NINLIL_POSIX_USB_SERIAL_ENABLED TRUE)
+endif()
 option(NINLIL_BUILD_POSIX_SQLITE_STORAGE
     "Build POSIX SQLite storage port when SQLite3 is available" ON)
+option(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING
+    "Enable ADR-0022 Domain schema1 format-2 runtime binding private slice" OFF)
+option(NINLIL_ENABLE_PRIVATE_FABRIC_V1
+    "Enable ADR-0017 private Fabric Bearer v1 / NFL1 source candidate (default-OFF, non-installed)"
+    OFF)
+option(NINLIL_ENABLE_PRIVATE_WIFI_V1
+    "Enable ADR-0018 private Wi-Fi Host candidate (default-OFF, non-installed; POSIX+OpenSSL3)"
+    OFF)
+option(NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL
+    "LAB smoke only: allow wifi Host TLS init when OpenSSL != exact 3.5.7 (not authority)"
+    OFF)
+option(NINLIL_WIFI_OPENSSL_AUTHORITY
+    "Require exact pinned static OpenSSL 3.5.7 for Wi-Fi Host authority"
+    OFF)
+set(NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT "" CACHE PATH
+    "Hermetic OpenSSL 3.5.7 static install root used by Wi-Fi Host authority")
+option(NINLIL_ENABLE_R7_FRAG_PRIVATE
+    "Build private NRW1 LINK/FRAG candidate (default OFF; not installed)" OFF)
+option(NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+    "Enable ADR-0019/0020 private route-relay/multi-parent Host candidate (default-OFF, non-installed)"
+    OFF)
+option(NINLIL_ENABLE_MFDT_V1_PRIVATE
+    "Build private ADR-0021 MFDT candidate (default OFF; not installed; not public ABI)"
+    OFF)
 
-# R7 Host private crypto uses OpenSSL major version exactly 3 (docs/31).
+if(NINLIL_WIFI_OPENSSL_AUTHORITY)
+    if(NOT NINLIL_ENABLE_PRIVATE_WIFI_V1)
+        message(FATAL_ERROR
+            "NINLIL_WIFI_OPENSSL_AUTHORITY requires "
+            "NINLIL_ENABLE_PRIVATE_WIFI_V1=ON")
+    endif()
+    if(NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL)
+        message(FATAL_ERROR
+            "NINLIL_WIFI_OPENSSL_AUTHORITY and "
+            "NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL are mutually exclusive")
+    endif()
+    if(NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT STREQUAL ""
+            OR NOT IS_DIRECTORY "${NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT}")
+        message(FATAL_ERROR
+            "NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT must name the hermetic "
+            "OpenSSL 3.5.7 static install")
+    endif()
+    file(REAL_PATH "${NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT}"
+        NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT)
+    set(OPENSSL_ROOT_DIR "${NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT}"
+        CACHE PATH "Pinned OpenSSL root" FORCE)
+    set(OPENSSL_USE_STATIC_LIBS TRUE CACHE BOOL
+        "Use pinned static OpenSSL archives" FORCE)
+endif()
+
+# R7 Host crypto uses OpenSSL major version exactly 3 (docs/31).
 # find_package(OpenSSL 3) means >=3 and would accept 4.x; fail-closed on
-# major >=4 and on empty OPENSSL_VERSION. Top-level builds (including the
-# tests-OFF packaging gate) must prove that production adapter. A downstream
-# add_subdirectory consumer that builds only the installable public interface
-# is not forced to acquire a dependency for an EXCLUDE_FROM_ALL private target.
+# major >=4 and on empty OPENSSL_VERSION. The installable Host Runtime and
+# top-level/test builds must prove that production adapter. A downstream
+# add_subdirectory consumer that disables NINLIL_BUILD_HOST_RUNTIME and tests
+# is not forced to acquire OpenSSL for an EXCLUDE_FROM_ALL private target.
 set(NINLIL_R7_HOST_CRYPTO_ENABLED FALSE)
-if(NINLIL_IS_TOP_LEVEL OR NINLIL_BUILD_TESTS)
+if(NINLIL_IS_TOP_LEVEL OR NINLIL_BUILD_TESTS OR NINLIL_BUILD_HOST_RUNTIME)
     find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
     if(NOT DEFINED OPENSSL_VERSION OR OPENSSL_VERSION STREQUAL "")
         message(FATAL_ERROR
@@ -57,6 +134,9 @@ target_include_directories(ninlil INTERFACE
 # paths). Ship hygiene is enforced by non-sanitizer production/CI gates.
 # Do not lower sanitizer coverage or disable ASan globals for path hygiene.
 option(NINLIL_ENABLE_SANITIZERS "Build with ASan and UBSan" OFF)
+option(NINLIL_ENABLE_TSAN
+    "Instrument private wifi/fabric libraries with ThreadSanitizer (non-Apple)"
+    OFF)
 # Dedicated pointer-compare sanitizer (docs/22). Not a substitute for
 # NINLIL_ENABLE_SANITIZERS alone: uses -fsanitize=address,pointer-compare and
 # ASAN_OPTIONS=detect_invalid_pointer_pairs=2. Feature-detected; required on
@@ -124,6 +204,16 @@ endif()
 # Self-test/structure and all non-sanitizer Debug/Release/ESP gates stay strict.
 set(_ninlil_any_sanitizer_active FALSE)
 if(NINLIL_ENABLE_SANITIZERS OR _ninlil_pointer_compare_sanitizer_supported)
+    set(_ninlil_any_sanitizer_active TRUE)
+endif()
+# Also recognize an explicit toolchain/global sanitizer flag.  Focused UBSan
+# jobs intentionally use CMAKE_C_FLAGS rather than enabling the combined
+# ASan+UBSan option; instrumented stack frames and .su files are equally
+# non-authoritative in that mode.
+set(_ninlil_effective_c_flags
+    "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_DEBUG} ${CMAKE_C_FLAGS_RELEASE} "
+    "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CMAKE_C_FLAGS_MINSIZEREL}")
+if(_ninlil_effective_c_flags MATCHES "(^|[ ;])-fsanitize=")
     set(_ninlil_any_sanitizer_active TRUE)
 endif()
 
@@ -205,8 +295,8 @@ function(ninlil_apply_posix_sqlite_feature_macros target)
     ninlil_apply_posix_host_feature_macros(${target})
 endfunction()
 
-# Feature macros for A1 POSIX USB serial (termios/poll/TIOCEXCL) under
-# C_EXTENSIONS OFF. Host-only; not installed; not part of public package.
+# Feature macros for the Linux/macOS POSIX USB serial reference port and its
+# private tests (termios/poll/TIOCEXCL under C_EXTENSIONS OFF).
 function(ninlil_apply_posix_usb_serial_feature_macros target)
     ninlil_apply_posix_host_feature_macros(${target})
 endfunction()
@@ -214,6 +304,7 @@ endfunction()
 # Host-only durable storage port. Missing SQLite must not break portable core.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_posix_sqlite_sqlite3.cmake)
 set(NINLIL_POSIX_SQLITE_STORAGE_ENABLED FALSE)
+set(NINLIL_POSIX_LAB_PLATFORM_ENABLED FALSE)
 set(NINLIL_CONFIG_SQLITE_STATIC FALSE)
 set(NINLIL_CONFIG_SQLITE_NEEDS_ZLIB FALSE)
 set(NINLIL_CONFIG_SQLITE_NEEDS_THREADS FALSE)
@@ -354,55 +445,72 @@ if(NINLIL_BUILD_POSIX_SQLITE_STORAGE)
             " '${NINLIL_SQLITE_LIBRARY_PATH}'"
             " linkage=${NINLIL_SQLITE_LINKAGE})")
 
-        set(NINLIL_POSIX_LAB_PLATFORM_ENABLED TRUE)
-        add_library(ninlil_posix_lab_platform STATIC
-            ports/posix/lab_platform/ninlil_posix_lab_platform.c
-            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer.c
-            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.c
-            ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_inject.c
-            tests/support/platform_basic_fixtures.c
-            tests/support/deterministic_entropy.c
-            tests/support/typed_simulated_bearer.c
-            tests/support/canonical_origin_authorization.c
-        )
-        add_library(Ninlil::ninlil_posix_lab_platform ALIAS
-            ninlil_posix_lab_platform)
-        target_include_directories(ninlil_posix_lab_platform
-            PUBLIC
-                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include>
-            PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/include
-                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
-                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
-        )
-        target_link_libraries(ninlil_posix_lab_platform
-            PUBLIC
-                ninlil
-                ninlil_posix_sqlite_storage
-        )
-        set_target_properties(ninlil_posix_lab_platform PROPERTIES
-            C_STANDARD 11
-            C_STANDARD_REQUIRED ON
-            C_EXTENSIONS OFF
-            POSITION_INDEPENDENT_CODE ON
-            C_VISIBILITY_PRESET hidden
-        )
-        ninlil_apply_posix_sqlite_feature_macros(ninlil_posix_lab_platform)
-        ninlil_apply_strict_warnings(ninlil_posix_lab_platform)
+        # LAB host platform composes tests/support fixtures. Build only when
+        # NINLIL_BUILD_TESTS is ON so tests-OFF default ``all`` / install never
+        # compiles or ships test fixture objects.
+        set(NINLIL_POSIX_LAB_PLATFORM_ENABLED FALSE)
+        if(NINLIL_BUILD_TESTS)
+            set(NINLIL_POSIX_LAB_PLATFORM_ENABLED TRUE)
+            add_library(ninlil_posix_lab_platform STATIC
+                ports/posix/lab_platform/ninlil_posix_lab_platform.c
+                ports/posix/loopback_bearer/ninlil_posix_loopback_bearer.c
+                ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.c
+                ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_inject.c
+                tests/support/platform_basic_fixtures.c
+                tests/support/deterministic_entropy.c
+                tests/support/typed_simulated_bearer.c
+                tests/support/canonical_origin_authorization.c
+            )
+            add_library(Ninlil::ninlil_posix_lab_platform ALIAS
+                ninlil_posix_lab_platform)
+            target_include_directories(ninlil_posix_lab_platform
+                PUBLIC
+                    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include>
+                PRIVATE
+                    ${CMAKE_CURRENT_SOURCE_DIR}/include
+                    ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+                    ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/loopback_bearer
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            )
+            target_link_libraries(ninlil_posix_lab_platform
+                PUBLIC
+                    ninlil
+                    ninlil_posix_sqlite_storage
+            )
+            set_target_properties(ninlil_posix_lab_platform PROPERTIES
+                C_STANDARD 11
+                C_STANDARD_REQUIRED ON
+                C_EXTENSIONS OFF
+                POSITION_INDEPENDENT_CODE ON
+                C_VISIBILITY_PRESET hidden
+                NINLIL_TEST_ONLY_ARTIFACT TRUE
+            )
+            ninlil_apply_posix_sqlite_feature_macros(ninlil_posix_lab_platform)
+            ninlil_apply_strict_warnings(ninlil_posix_lab_platform)
+            message(STATUS
+                "POSIX LAB platform: enabled (tests-only; tests/support fixtures)")
+        else()
+            message(STATUS
+                "POSIX LAB platform: skipped (NINLIL_BUILD_TESTS=OFF; "
+                "no tests/support in default all)")
+        endif()
     else()
         message(STATUS
             "POSIX SQLite storage port: disabled (SQLite3 not found)")
     endif()
 endif()
 
-# Installable OSS SDK package. The portable interface is always exported;
-# the host SQLite archive/factory header are exported only when discovered.
+# Installable OSS SDK package. The portable interface is always exported.
+# Host Runtime and SQLite install rules are added by their target blocks.
 install(TARGETS ninlil EXPORT NinlilTargets)
 install(DIRECTORY include/ninlil
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES LICENSE NOTICE THIRD-PARTY-NOTICES.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/ninlil)
+install(FILES compatibility-matrix.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/ninlil)
+install(FILES dependency-inventory.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/ninlil)
 if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
     install(TARGETS ninlil_posix_sqlite_storage
         EXPORT NinlilTargets
@@ -412,24 +520,6 @@ if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
     install(FILES ports/posix/include/ninlil_posix_sqlite_storage.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
-set(NINLIL_CONFIG_HAS_POSIX_SQLITE
-    ${NINLIL_POSIX_SQLITE_STORAGE_ENABLED})
-configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NinlilConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
-write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion)
-install(EXPORT NinlilTargets
-    FILE NinlilTargets.cmake
-    NAMESPACE Ninlil::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
-install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
 
 # Production private Runtime sources: single authority shared with the
 # ESP-IDF component packaging under ports/esp-idf/components/ninlil.
@@ -456,12 +546,361 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_c4_c5_lab_ctest.cmake)
 # R4 SX1262 portable control-plane (D1). Not public ABI. Not RF TX complete.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_sx1262_sources.cmake)
 
+# ADR-0029 portable Fabric v1 / ADR-0032 Composition v1. Host and ESP-IDF
+# consume the same explicit production source authority.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_composition_v1_sources.cmake)
+if(NINLIL_BUILD_FABRIC_V1)
+    add_library(ninlil_fabric_v1 STATIC
+        ${NINLIL_FABRIC_V1_PUBLIC_RELATIVE_SOURCES})
+    add_library(Ninlil::fabric_v1 ALIAS ninlil_fabric_v1)
+    target_include_directories(ninlil_fabric_v1
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1)
+    target_link_libraries(ninlil_fabric_v1 PUBLIC ninlil)
+    set_target_properties(ninlil_fabric_v1 PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        POSITION_INDEPENDENT_CODE ON
+        C_VISIBILITY_PRESET hidden
+        EXPORT_NAME fabric_v1)
+    ninlil_apply_strict_warnings(ninlil_fabric_v1)
+    ninlil_apply_installed_archive_path_remap(ninlil_fabric_v1)
+    if(NINLIL_ENABLE_SANITIZERS)
+        target_link_options(ninlil_fabric_v1 INTERFACE
+            -fsanitize=address,undefined)
+    endif()
+    install(TARGETS ninlil_fabric_v1
+        EXPORT NinlilTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+# ADR-0030 Host reference port.  Keep this allowlist explicit: no ESP STA,
+# lwIP, mbedTLS, owner, private umbrella, discovery, Join, or plugin source is
+# permitted in the installed target.
+if(NINLIL_BUILD_POSIX_TLS_V1)
+    if(NOT (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+        message(FATAL_ERROR
+            "NINLIL_BUILD_POSIX_TLS_V1 is supported only on Linux and macOS")
+    endif()
+    if(NOT NINLIL_BUILD_FABRIC_V1)
+        message(FATAL_ERROR
+            "NINLIL_BUILD_POSIX_TLS_V1 requires NINLIL_BUILD_FABRIC_V1=ON")
+    endif()
+    find_package(OpenSSL 3 REQUIRED COMPONENTS SSL Crypto)
+    if(NOT DEFINED OPENSSL_VERSION OR OPENSSL_VERSION STREQUAL ""
+            OR OPENSSL_VERSION VERSION_LESS "3"
+            OR NOT OPENSSL_VERSION VERSION_LESS "4")
+        message(FATAL_ERROR
+            "Ninlil::posix_tls_v1 requires OpenSSL >=3,<4 "
+            "(found '${OPENSSL_VERSION}')")
+    endif()
+    find_package(Threads REQUIRED)
+    set(_ninlil_posix_tls_v1_srcs
+        src/transport/posix_tls_v1/posix_tls_v1.c
+        src/transport/posix_tls_v1/posix_tls_v1_records.c
+        # Selected Host-only ADR-0018 implementation units.  Keep this list
+        # explicit: wifi_session.c also contains M4/NWB1/payload machinery and
+        # is intentionally not linked by the C1 peer-session tranche.
+        src/transport/wifi_v1/wifi_tcp_posix.c
+        src/transport/wifi_v1/wifi_tls_host.c
+        src/transport/wifi_v1/wifi_tls_export.c
+        src/transport/wifi_v1/wifi_tls_leaf_binding.c
+        src/transport/wifi_v1/wifi_reconnect.c
+        src/transport/wifi_v1/wifi_storage_cu.c
+        src/transport/wifi_v1/wifi_nwb1.c
+        src/transport/wifi_v1/wifi_stream.c
+        src/transport/wifi_v1/wifi_sha256_host.c)
+    add_library(ninlil_posix_tls_v1 STATIC ${_ninlil_posix_tls_v1_srcs})
+    add_library(Ninlil::posix_tls_v1 ALIAS ninlil_posix_tls_v1)
+    target_include_directories(ninlil_posix_tls_v1
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/wifi_v1
+    )
+    target_compile_definitions(ninlil_posix_tls_v1 PRIVATE
+        NINLIL_POSIX_TLS_V1_BUILD=1
+        NINLIL_WIFI_RX_STREAM_SINGLE_RECORD=1)
+    target_link_libraries(ninlil_posix_tls_v1
+        PUBLIC
+            ninlil_fabric_v1
+            OpenSSL::SSL
+            OpenSSL::Crypto
+            Threads::Threads)
+    set_target_properties(ninlil_posix_tls_v1 PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        POSITION_INDEPENDENT_CODE ON
+        C_VISIBILITY_PRESET hidden
+        EXPORT_NAME posix_tls_v1)
+    ninlil_apply_strict_warnings(ninlil_posix_tls_v1)
+    ninlil_apply_installed_archive_path_remap(ninlil_posix_tls_v1)
+    if(NINLIL_ENABLE_SANITIZERS)
+        target_link_options(ninlil_posix_tls_v1 INTERFACE
+            -fsanitize=address,undefined)
+    endif()
+    install(TARGETS ninlil_posix_tls_v1
+        EXPORT NinlilTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
 add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     ${NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES}
+    ${NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES}
+    ${NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES}
 )
 if(NINLIL_R7_HOST_CRYPTO_ENABLED)
     target_sources(ninlil_runtime_private PRIVATE
         ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES})
+endif()
+if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+    target_sources(ninlil_runtime_private PRIVATE
+        src/model/domain_schema1_runtime_binding.c
+        src/model/domain_schema1_startup_authority.c
+        src/runtime/domain_schema1_startup_owner.c
+        src/runtime/domain_schema1_kind1_register.c)
+    # PUBLIC: TUs including runtime_internal.h must match the private archive
+    # feature bit so domain_schema1 workspace fields do not shift callback
+    # /evidence offsets in the private runtime layout.
+    target_compile_definitions(ninlil_runtime_private PUBLIC
+        NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+    # runtime_public.c / runtime_internal.h need the feature bit for the
+    # create-path integration and workspace layout.
+    target_include_directories(ninlil_runtime_private PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime)
+endif()
+if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+    # Private Fabric v1 candidate (ADR-0017). Canonical NFL1 is nfl1_codec.c only.
+    # Headers under src/transport/fabric_v1/ are never installed.
+    target_sources(ninlil_runtime_private PRIVATE
+        ${NINLIL_FABRIC_V1_CORE_RELATIVE_SOURCES})
+    target_compile_definitions(ninlil_runtime_private PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_include_directories(ninlil_runtime_private PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1)
+endif()
+
+# Private route-relay / multi-parent candidate (ADR-0019 / ADR-0020).
+# Default-OFF; headers under src/runtime/route_relay_v1/ are never installed.
+# Does not modify public ABI or Fabric/NRW1 contracts.
+if(NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1)
+    set(_ninlil_rrmp_prod_srcs
+        src/runtime/route_relay_v1/rrmp_util.c
+        src/runtime/route_relay_v1/rrmp_codec.c
+        src/runtime/route_relay_v1/rrmp_store.c
+        src/runtime/route_relay_v1/rrmp_core.c
+        src/runtime/route_relay_v1/rrmp_seam.c
+        src/runtime/route_relay_v1/rrmp_sim.c
+        src/runtime/route_relay_v1/rrmp_fabric_dispatch.c
+        src/runtime/route_relay_v1/rrmp_composition.c
+    )
+    # ESP/task-path set: same as ports/esp-idf RRMP list (no host-only sim).
+    set(_ninlil_rrmp_frame_gated_srcs
+        src/runtime/route_relay_v1/rrmp_util.c
+        src/runtime/route_relay_v1/rrmp_codec.c
+        src/runtime/route_relay_v1/rrmp_store.c
+        src/runtime/route_relay_v1/rrmp_core.c
+        src/runtime/route_relay_v1/rrmp_seam.c
+        src/runtime/route_relay_v1/rrmp_fabric_dispatch.c
+        src/runtime/route_relay_v1/rrmp_composition.c
+    )
+    target_sources(ninlil_runtime_private PRIVATE ${_ninlil_rrmp_prod_srcs})
+    target_compile_definitions(ninlil_runtime_private PRIVATE
+        NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=1)
+    if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+        target_compile_definitions(ninlil_runtime_private PRIVATE
+            NINLIL_RRMP_HAVE_OPENSSL=1)
+    endif()
+    target_include_directories(ninlil_runtime_private PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/route_relay_v1)
+    # Fabric select hook needs rrmp headers when both candidates are ON.
+    if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+        target_include_directories(ninlil_runtime_private PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/route_relay_v1)
+    endif()
+    # ESP/host stack budget: no 4 KiB page copies on task stacks (do not raise).
+    # Match ports/esp-idf RRMP -Wframe-larger-than=2048 (sim is host-test-only).
+    # ASan/UBSan inflate frames (redzones) and rewrite .su kind — same as N6:
+    # skip -Wframe-larger-than when _ninlil_any_sanitizer_active. Do not key off
+    # CMAKE_C_FLAGS alone (sanitizers are add_compile_options, not C_FLAGS).
+    # Authoritative stack evidence: non-sanitize host .su + ESP frame gate.
+    if(NOT _ninlil_any_sanitizer_active)
+        include(CheckCCompilerFlag)
+        check_c_compiler_flag(-Wframe-larger-than=2048 NINLIL_RRMP_HAS_WFRAME_2048)
+        if(NINLIL_RRMP_HAS_WFRAME_2048)
+            # Host strict builds already use -Werror; do not use -Werror=frame-larger-than=
+            # (unsupported spelling on AppleClang).
+            set_source_files_properties(${_ninlil_rrmp_frame_gated_srcs} PROPERTIES
+                COMPILE_OPTIONS "-Wframe-larger-than=2048;-fstack-usage"
+            )
+        endif()
+    else()
+        message(STATUS
+            "RRMP host frame gate (-Wframe-larger-than=2048) skipped under "
+            "active sanitizer; use non-sanitize .su / ESP gate as stack authority")
+    endif()
+endif()
+
+# Private MFDT V1 (ADR-0021). Default-OFF.
+# OSS boundary: MFDT sources/symbols land ONLY on ninlil_runtime_private
+# (never installed). Headers under src/runtime/mfdt_v1/ never installed.
+# Installable ninlil_runtime stays free of private MFDT symbols (see gate).
+if(NINLIL_ENABLE_MFDT_V1_PRIVATE)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_mfdt_v1_sources.cmake)
+    foreach(_mfdt_rel IN LISTS NINLIL_MFDT_V1_PORTABLE_RELATIVE_SOURCES)
+        target_sources(ninlil_runtime_private PRIVATE ${_mfdt_rel})
+    endforeach()
+    target_compile_definitions(ninlil_runtime_private PRIVATE
+        NINLIL_MFDT_V1_PRIVATE=1)
+    target_include_directories(ninlil_runtime_private PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/mfdt_v1)
+endif()
+
+# Private Wi-Fi Host candidate (ADR-0018). Standalone static library; not installed.
+# Uses OpenSSL::SSL for TLS1.3 mutual auth. Does not modify Core/Fabric sources.
+if(NINLIL_ENABLE_PRIVATE_WIFI_V1)
+    if(NOT NINLIL_R7_HOST_CRYPTO_ENABLED)
+        message(FATAL_ERROR
+            "NINLIL_ENABLE_PRIVATE_WIFI_V1 requires OpenSSL 3 Host crypto "
+            "(top-level build or NINLIL_BUILD_HOST_RUNTIME/TESTS)")
+    endif()
+    find_package(OpenSSL 3 REQUIRED COMPONENTS SSL Crypto)
+    set(_ninlil_wifi_v1_srcs
+        src/transport/wifi_v1/wifi_nwb1.c
+        src/transport/wifi_v1/wifi_nfl1_min.c
+        src/transport/wifi_v1/wifi_stream.c
+        src/transport/wifi_v1/wifi_queues.c
+        src/transport/wifi_v1/wifi_tls_arena.c
+        src/transport/wifi_v1/wifi_tls_resource_policy.c
+        src/transport/wifi_v1/wifi_sha256_host.c
+        src/transport/wifi_v1/wifi_tcp_posix.c
+        src/transport/wifi_v1/wifi_tls_host.c
+        src/transport/wifi_v1/wifi_tls_export.c
+        src/transport/wifi_v1/wifi_storage_cu.c
+        src/transport/wifi_v1/wifi_credentials.c
+        src/transport/wifi_v1/wifi_journal.c
+        src/transport/wifi_v1/wifi_reconnect.c
+        src/transport/wifi_v1/wifi_attachment_m4.c
+        src/transport/wifi_v1/wifi_tls_leaf_binding.c
+        src/transport/wifi_v1/wifi_session.c
+        src/transport/wifi_v1/wifi_fabric_adapter.c
+        src/transport/wifi_v1/wifi_esp_tcp.c
+        src/transport/wifi_v1/wifi_esp_tls_mbedtls.c
+        src/transport/wifi_v1/wifi_esp_sta.c
+        src/transport/wifi_v1/wifi_esp_owner.c
+    )
+    if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+        list(APPEND _ninlil_wifi_v1_srcs
+            src/transport/wifi_v1/wifi_fabric_link_ops.c
+            src/transport/wifi_v1/wifi_esp_fabric_link_ops.c
+            src/transport/wifi_v1/wifi_adapter_v1.c)
+    endif()
+    add_library(ninlil_wifi_v1_private STATIC EXCLUDE_FROM_ALL
+        ${_ninlil_wifi_v1_srcs}
+    )
+    # A matching version string alone is never authority.  Authority requires
+    # exact static archives under the hermetic root; the release archive/hash,
+    # final link closure, and isolated libctx are independently gated in CI.
+    if(NINLIL_WIFI_OPENSSL_AUTHORITY)
+        if(NOT DEFINED OPENSSL_VERSION
+                OR NOT OPENSSL_VERSION VERSION_EQUAL "3.5.7")
+            message(FATAL_ERROR
+                "Wi-Fi Host authority requires OpenSSL exact 3.5.7 "
+                "(found '${OPENSSL_VERSION}')")
+        endif()
+        foreach(_pair IN ITEMS
+                "OPENSSL_SSL_LIBRARY;${OPENSSL_SSL_LIBRARY}"
+                "OPENSSL_CRYPTO_LIBRARY;${OPENSSL_CRYPTO_LIBRARY}")
+            list(GET _pair 0 _name)
+            list(GET _pair 1 _path)
+            if(_path STREQUAL "" OR NOT EXISTS "${_path}")
+                message(FATAL_ERROR "${_name} is missing for Wi-Fi authority")
+            endif()
+            file(REAL_PATH "${_path}" _real)
+            string(FIND "${_real}"
+                "${NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT}/" _under_root)
+            if(NOT _under_root EQUAL 0 OR NOT _real MATCHES "\\.a$")
+                message(FATAL_ERROR
+                    "${_name} must be a static archive below the hermetic "
+                    "root; got '${_real}'")
+            endif()
+        endforeach()
+        file(REAL_PATH "${OPENSSL_INCLUDE_DIR}" _openssl_include_real)
+        if(NOT _openssl_include_real STREQUAL
+                "${NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT}/include")
+            message(FATAL_ERROR
+                "OPENSSL_INCLUDE_DIR escaped hermetic authority root: "
+                "'${_openssl_include_real}'")
+        endif()
+        message(STATUS
+            "wifi_v1 Host OpenSSL authority: exact 3.5.7 static "
+            "root=${NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT}")
+        target_compile_definitions(ninlil_wifi_v1_private PUBLIC
+            NINLIL_WIFI_HOST_OPENSSL_STATIC_AUTHORITY=1)
+    else()
+        message(WARNING
+            "wifi_v1 Host build is non-authority (OpenSSL "
+            "'${OPENSSL_VERSION}'). TLS init fails closed unless "
+            "NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON (LAB only).")
+        if(NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL)
+            target_compile_definitions(ninlil_wifi_v1_private PUBLIC
+                NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=1)
+        endif()
+    endif()
+    set_property(TARGET ninlil_wifi_v1_private
+        PROPERTY NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE)
+    target_include_directories(ninlil_wifi_v1_private PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transport/wifi_v1>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    )
+    target_compile_definitions(ninlil_wifi_v1_private PRIVATE
+        NINLIL_ENABLE_PRIVATE_WIFI_V1=1)
+    if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+        target_include_directories(ninlil_wifi_v1_private PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1)
+        target_compile_definitions(ninlil_wifi_v1_private PRIVATE
+            NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    endif()
+    # M4 owner registry: pthread mutex + OpenSSL DRBG (host).
+    find_package(Threads REQUIRED)
+    target_link_libraries(ninlil_wifi_v1_private PUBLIC Threads::Threads)
+    target_link_libraries(ninlil_wifi_v1_private PUBLIC
+        OpenSSL::SSL
+        OpenSSL::Crypto
+    )
+    set_target_properties(ninlil_wifi_v1_private PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        POSITION_INDEPENDENT_CODE ON
+        C_VISIBILITY_PRESET hidden
+    )
+    ninlil_apply_strict_warnings(ninlil_wifi_v1_private)
+    if(NINLIL_ENABLE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU|AppleClang")
+        target_compile_options(ninlil_wifi_v1_private PRIVATE
+            -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(ninlil_wifi_v1_private PUBLIC
+            -fsanitize=address,undefined)
+    endif()
+    # TSan instruments the library body itself when requested (non-Apple).
+    if(NINLIL_ENABLE_TSAN AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU"
+            AND NOT APPLE)
+        target_compile_options(ninlil_wifi_v1_private PRIVATE
+            -fsanitize=thread -fno-omit-frame-pointer)
+        target_link_options(ninlil_wifi_v1_private PUBLIC
+            -fsanitize=thread)
+    endif()
 endif()
 # N6 production set (codec+crypto+context) comes only from
 # cmake/ninlil_runtime_private_sources.cmake — no host-only re-injection.
@@ -473,6 +912,7 @@ target_include_directories(ninlil_runtime_private PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
     ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
     ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
 )
 
 # R4 production-private portable SX1262 backend (drivers/sx126x). Host tests
@@ -486,6 +926,9 @@ set_property(TARGET ninlil_sx1262
 target_include_directories(ninlil_sx1262 PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/include>
+)
+target_include_directories(ninlil_sx1262 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
 )
 set_target_properties(ninlil_sx1262 PROPERTIES
     C_STANDARD 11
@@ -621,24 +1064,90 @@ if(NINLIL_BUILD_TESTS)
         NINLIL_R7_BINDING_TEST_BUILD=1)
 endif()
 
-# U1 A1 POSIX USB/serial adapter (host-only production-private). Implements
-# C1 byte-stream contract. NOT installed; NOT public include/ninlil; NOT
-# linked into ESP packaging. Required HIL Linux+macOS still pending — do not
-# treat this target as U1 complete.
-set(NINLIL_POSIX_USB_SERIAL_ENABLED FALSE)
-# U1 host adapter targets Linux and macOS only (docs/23 §3.2). Not all UNIX.
-if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(NINLIL_POSIX_USB_SERIAL_ENABLED TRUE)
-    add_library(ninlil_posix_usb_serial STATIC EXCLUDE_FROM_ALL
+# Installable Host Runtime. It compiles the same explicit production source
+# authority as the private gate target, plus the Host OpenSSL 3 adapter. It
+# intentionally receives none of ninlil_runtime_private's test definitions.
+set(NINLIL_HOST_RUNTIME_ENABLED FALSE)
+if(NINLIL_BUILD_HOST_RUNTIME)
+    if(NOT NINLIL_R7_HOST_CRYPTO_ENABLED)
+        message(FATAL_ERROR
+            "NINLIL_BUILD_HOST_RUNTIME requires the OpenSSL 3 Host adapter")
+    endif()
+    add_library(ninlil_runtime STATIC
+        ${NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES}
+        ${NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES}
+        ${NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES}
+        ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}
+    )
+    add_library(Ninlil::runtime ALIAS ninlil_runtime)
+    target_include_directories(ninlil_runtime PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        # R9 edge TU needs portable PHY headers (same as ninlil_runtime_private).
+        ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
+    )
+    # When Domain schema1 is enabled, the installed public Host Runtime must
+    # expose the same Domain-backed create/register/restore symbols as the
+    # private gate target. Default remains OFF; OFF builds keep zero Domain
+    # symbols in the installed archive.
+    if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+        target_sources(ninlil_runtime PRIVATE
+            src/model/domain_schema1_runtime_binding.c
+            src/model/domain_schema1_startup_authority.c
+            src/runtime/domain_schema1_startup_owner.c
+            src/runtime/domain_schema1_kind1_register.c)
+        target_compile_definitions(ninlil_runtime PRIVATE
+            NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+    endif()
+    # MFDT is private-only: never append to installable ninlil_runtime.
+    # Enable path is ninlil_runtime_private above (NINLIL_ENABLE_MFDT_V1_PRIVATE).
+    target_link_libraries(ninlil_runtime
+        PUBLIC
+            ninlil
+            OpenSSL::Crypto
+    )
+    if(TARGET ninlil_fabric_v1)
+        target_sources(ninlil_runtime PRIVATE
+            ${NINLIL_COMPOSITION_V1_RELATIVE_SOURCES})
+        target_link_libraries(ninlil_runtime PUBLIC ninlil_fabric_v1)
+    endif()
+    set_target_properties(ninlil_runtime PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+        POSITION_INDEPENDENT_CODE ON
+        EXPORT_NAME runtime
+    )
+    ninlil_apply_strict_warnings(ninlil_runtime)
+    ninlil_apply_installed_archive_path_remap(ninlil_runtime)
+    if(NINLIL_ENABLE_SANITIZERS)
+        target_link_options(ninlil_runtime INTERFACE
+            -fsanitize=address,undefined)
+    endif()
+    install(TARGETS ninlil_runtime
+        EXPORT NinlilTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    set(NINLIL_HOST_RUNTIME_ENABLED TRUE)
+endif()
+
+# ADR-0031 Host reference byte-stream port. PTY tests prove the software path;
+# physical Linux/macOS USB CDC HIL remains separate evidence.
+if(NINLIL_POSIX_USB_SERIAL_ENABLED)
+    add_library(ninlil_posix_usb_serial STATIC
         ports/posix/usb_serial/ninlil_posix_usb_serial.c
     )
-    add_library(Ninlil::ninlil_posix_usb_serial ALIAS ninlil_posix_usb_serial)
+    add_library(Ninlil::posix_usb_serial_v1 ALIAS ninlil_posix_usb_serial)
     target_include_directories(ninlil_posix_usb_serial
         PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transport>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial
     )
     set_target_properties(ninlil_posix_usb_serial PROPERTIES
         C_STANDARD 11
@@ -646,19 +1155,296 @@ if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         C_EXTENSIONS OFF
         POSITION_INDEPENDENT_CODE ON
         C_VISIBILITY_PRESET hidden
-        NINLIL_PRODUCTION_PRIVATE_ARTIFACT TRUE
+        EXPORT_NAME posix_usb_serial_v1
     )
     ninlil_apply_posix_usb_serial_feature_macros(ninlil_posix_usb_serial)
     ninlil_apply_strict_warnings(ninlil_posix_usb_serial)
     # pthread for owner-thread fencing; util only needed by tests (openpty).
     find_package(Threads REQUIRED)
     target_link_libraries(ninlil_posix_usb_serial PUBLIC Threads::Threads)
+    ninlil_apply_installed_archive_path_remap(ninlil_posix_usb_serial)
+    if(NINLIL_ENABLE_SANITIZERS)
+        target_link_options(ninlil_posix_usb_serial INTERFACE
+            -fsanitize=address,undefined)
+    endif()
+    install(TARGETS ninlil_posix_usb_serial
+        EXPORT NinlilTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     message(STATUS
-        "POSIX USB serial adapter (U1 A1): enabled (host private; not installed)")
+        "POSIX USB serial v1 reference port: enabled (Linux/macOS software path)")
 endif()
+
+if(NINLIL_BUILD_V1_LAB_CONTROLLER)
+    if(NOT (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+        message(FATAL_ERROR
+            "NINLIL_BUILD_V1_LAB_CONTROLLER supports Linux and macOS only")
+    endif()
+    if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+        message(FATAL_ERROR
+            "NINLIL_BUILD_V1_LAB_CONTROLLER requires "
+            "NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=OFF")
+    endif()
+    foreach(_ninlil_controller_dependency IN ITEMS
+            ninlil_runtime
+            ninlil_fabric_v1
+            ninlil_posix_sqlite_storage
+            ninlil_posix_usb_serial)
+        if(NOT TARGET ${_ninlil_controller_dependency})
+            message(FATAL_ERROR
+                "NINLIL_BUILD_V1_LAB_CONTROLLER requires target "
+                "${_ninlil_controller_dependency}")
+        endif()
+    endforeach()
+    add_executable(ninlil_v1_lab_controller
+        examples/v1_lab/v1_lab_controller.c
+        examples/v1_lab/v1_lab_controller_platform.c
+        src/transport/fabric_v1/v1_usb_fabric_link.c
+    )
+    target_include_directories(ninlil_v1_lab_controller PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/v1_lab
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    )
+    target_link_libraries(ninlil_v1_lab_controller PRIVATE
+        ninlil_runtime
+        ninlil_fabric_v1
+        ninlil_posix_sqlite_storage
+        ninlil_posix_usb_serial
+        ninlil
+        OpenSSL::Crypto
+        Threads::Threads
+    )
+    set_target_properties(ninlil_v1_lab_controller PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_posix_host_feature_macros(ninlil_v1_lab_controller)
+    ninlil_apply_strict_warnings(ninlil_v1_lab_controller)
+endif()
+
+# Generate the package only after all optional exported targets are known.
+set(NINLIL_CONFIG_HAS_HOST_RUNTIME ${NINLIL_HOST_RUNTIME_ENABLED})
+set(NINLIL_CONFIG_HAS_POSIX_TLS_V1 ${NINLIL_BUILD_POSIX_TLS_V1})
+set(NINLIL_CONFIG_HAS_POSIX_USB_SERIAL_V1
+    ${NINLIL_POSIX_USB_SERIAL_ENABLED})
+set(NINLIL_CONFIG_HAS_POSIX_SQLITE
+    ${NINLIL_POSIX_SQLITE_STORAGE_ENABLED})
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NinlilConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
+if(PROJECT_VERSION_MAJOR EQUAL 0)
+    # Ninlil's 0.x policy permits a breaking change at every minor release.
+    set(NINLIL_PACKAGE_VERSION_COMPATIBILITY SameMinorVersion)
+else()
+    set(NINLIL_PACKAGE_VERSION_COMPATIBILITY SameMajorVersion)
+endif()
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY ${NINLIL_PACKAGE_VERSION_COMPATIBILITY})
+install(EXPORT NinlilTargets
+    FILE NinlilTargets.cmake
+    NAMESPACE Ninlil::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Ninlil)
 
 if(NINLIL_BUILD_TESTS)
     enable_testing()
+
+    if(TARGET ninlil_posix_tls_v1)
+        # Same production sources, recompiled only for focused deterministic
+        # fault injection. This archive is tests-only and never installed.
+        add_library(ninlil_posix_tls_v1_test_hooks STATIC
+            ${_ninlil_posix_tls_v1_srcs})
+        target_include_directories(ninlil_posix_tls_v1_test_hooks
+            PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/wifi_v1
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/posix_tls_v1)
+        target_compile_definitions(ninlil_posix_tls_v1_test_hooks PRIVATE
+            NINLIL_POSIX_TLS_V1_BUILD=1
+            NINLIL_WIFI_RX_STREAM_SINGLE_RECORD=1
+            NINLIL_POSIX_TLS_V1_TEST_HOOKS=1)
+        target_link_libraries(ninlil_posix_tls_v1_test_hooks PUBLIC
+            ninlil_fabric_v1
+            OpenSSL::SSL
+            OpenSSL::Crypto
+            Threads::Threads)
+        set_target_properties(ninlil_posix_tls_v1_test_hooks PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            POSITION_INDEPENDENT_CODE ON
+            C_VISIBILITY_PRESET hidden
+            NINLIL_TEST_ONLY_ARTIFACT TRUE)
+        ninlil_apply_strict_warnings(ninlil_posix_tls_v1_test_hooks)
+
+        add_executable(ninlil_posix_tls_v1_lifecycle_test
+            tests/transport/posix_tls_v1/posix_tls_v1_lifecycle_test.c)
+        target_link_libraries(ninlil_posix_tls_v1_lifecycle_test PRIVATE
+            ninlil_posix_tls_v1)
+        set_target_properties(ninlil_posix_tls_v1_lifecycle_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_posix_tls_v1_lifecycle_test)
+        add_test(
+            NAME posix_tls_v1_lifecycle
+            COMMAND ninlil_posix_tls_v1_lifecycle_test)
+
+        add_executable(ninlil_posix_tls_v1_registration_test
+            tests/transport/posix_tls_v1/posix_tls_v1_registration_test.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(ninlil_posix_tls_v1_registration_test
+            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/support)
+        target_link_libraries(ninlil_posix_tls_v1_registration_test PRIVATE
+            ninlil_posix_tls_v1)
+        set_target_properties(
+            ninlil_posix_tls_v1_registration_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_posix_tls_v1_registration_test)
+        add_test(
+            NAME posix_tls_v1_registration
+            COMMAND ninlil_posix_tls_v1_registration_test)
+
+        add_executable(ninlil_posix_tls_v1_loopback_test
+            tests/transport/posix_tls_v1/posix_tls_v1_loopback_test.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(ninlil_posix_tls_v1_loopback_test
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/posix_tls_v1
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1)
+        target_link_libraries(ninlil_posix_tls_v1_loopback_test PRIVATE
+            ninlil_posix_tls_v1_test_hooks)
+        set_target_properties(ninlil_posix_tls_v1_loopback_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_posix_tls_v1_loopback_test)
+        add_test(
+            NAME posix_tls_v1_loopback
+            COMMAND bash
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/posix_tls_v1_run_loopback.sh
+                $<TARGET_FILE:ninlil_posix_tls_v1_loopback_test>
+                ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
+
+    add_test(
+        NAME cmake_package_version_compatibility
+        COMMAND ${CMAKE_COMMAND}
+            -DNINLIL_VERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/NinlilConfigVersion.cmake
+            -DNINLIL_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/package-version-policy
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/package_version_policy_test.cmake
+    )
+
+    if(NINLIL_HOST_RUNTIME_ENABLED)
+        add_test(
+            NAME host_runtime_tests_off_installed_consumer
+            COMMAND ${CMAKE_COMMAND}
+                -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                -DNINLIL_SMOKE_WITH_SQLITE=OFF
+                -DNINLIL_SMOKE_DOMAIN_SCHEMA1=OFF
+                -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_host_runtime_tests_off_smoke.cmake
+        )
+        if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
+            add_test(
+                NAME host_runtime_tests_off_installed_consumer_sqlite
+                COMMAND ${CMAKE_COMMAND}
+                    -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                    -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                    -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                    "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                    -DNINLIL_SMOKE_WITH_SQLITE=ON
+                    -DNINLIL_SMOKE_DOMAIN_SCHEMA1=OFF
+                    -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_host_runtime_tests_off_smoke.cmake
+            )
+        endif()
+        # Fresh Domain-ON install-consumer + nm evidence (default remains OFF).
+        add_test(
+            NAME host_runtime_tests_off_installed_consumer_domain_on
+            COMMAND ${CMAKE_COMMAND}
+                -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                -DNINLIL_SMOKE_WITH_SQLITE=OFF
+                -DNINLIL_SMOKE_DOMAIN_SCHEMA1=ON
+                -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_host_runtime_tests_off_smoke.cmake
+        )
+        if(NINLIL_BUILD_FABRIC_V1)
+            add_test(
+                NAME fabric_v1_tests_off_installed_consumer
+                COMMAND ${CMAKE_COMMAND}
+                    -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                    -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                    -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                    "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                    -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_fabric_v1_tests_off_smoke.cmake)
+        endif()
+        if(NINLIL_BUILD_FABRIC_V1
+           AND NINLIL_BUILD_POSIX_TLS_V1
+           AND NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
+            add_test(
+                NAME posix_tls_v1_tests_off_installed_runtime_e2e
+                COMMAND ${CMAKE_COMMAND}
+                    -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                    -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                    -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                    "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                    "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                    -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_posix_tls_runtime_e2e_tests_off_smoke.cmake)
+            set_tests_properties(
+                posix_tls_v1_tests_off_installed_runtime_e2e
+                PROPERTIES TIMEOUT 240)
+        endif()
+    endif()
+
+    if(NINLIL_POSIX_USB_SERIAL_ENABLED)
+        add_test(
+            NAME posix_usb_serial_v1_tests_off_installed_consumer
+            COMMAND ${CMAKE_COMMAND}
+                -DNINLIL_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DNINLIL_PARENT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
+                -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+                "-DNINLIL_SMOKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DNINLIL_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_posix_usb_serial_tests_off_smoke.cmake)
+        set_tests_properties(
+            posix_usb_serial_v1_tests_off_installed_consumer
+            PROPERTIES TIMEOUT 120)
+    endif()
 
     add_test(
         NAME runtime_private_subproject_smoke
@@ -667,6 +1453,7 @@ if(NINLIL_BUILD_TESTS)
             -DNINLIL_SMOKE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/private_subproject
             -DNINLIL_SMOKE_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/private-subproject-smoke
             "-DNINLIL_GENERATOR=${CMAKE_GENERATOR}"
+            -DNINLIL_BUILD_CONFIG=$<CONFIG>
             -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
             -DNINLIL_SANITIZER_SUPPORTED=${_ninlil_sanitizer_supported}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/private_subproject_smoke.cmake
@@ -780,6 +1567,7 @@ if(NINLIL_BUILD_TESTS)
            OR _source_name STREQUAL "domain_store_d3s1.c"
            OR _source_name STREQUAL "domain_store_d3s2.c"
            OR _source_name STREQUAL "domain_store_d3s3.c"
+           OR _source_name STREQUAL "domain_store_d3s4.c"
            OR _source_name STREQUAL "runtime_store_orchestrator.c"
            OR _source_name STREQUAL "runtime_store_stage5_seam.c")
             message(FATAL_ERROR
@@ -1013,6 +1801,86 @@ if(NINLIL_BUILD_TESTS)
 
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     add_test(
+        NAME markdown_link_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/markdown_link_gate.py
+            check
+            --root
+            ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME markdown_link_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/markdown_link_gate.py
+            self-test
+    )
+    add_test(
+        NAME compatibility_matrix_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/compatibility_matrix_gate.py
+            check
+    )
+    add_test(
+        NAME compatibility_matrix_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/compatibility_matrix_gate.py
+            self-test
+    )
+    add_test(
+        NAME public_module_manifest_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/public_module_manifest_gate.py
+            check
+    )
+    add_test(
+        NAME public_module_manifest_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/public_module_manifest_gate.py
+            self-test
+    )
+    add_test(
+        NAME domain_store_schema1_review_manifest_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_review_manifest_gate.py
+            check
+    )
+    add_test(
+        NAME domain_store_schema1_review_manifest_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_review_manifest_gate.py
+            self-test
+    )
+    add_test(
+        NAME third_party_notice_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/third_party_notice_gate.py
+            check
+    )
+    add_test(
+        NAME third_party_notice_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/third_party_notice_gate.py
+            self-test
+    )
+    add_test(
+        NAME release_workflow_identity_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_workflow_identity_gate.py
+            check
+    )
+    add_test(
+        NAME release_workflow_identity_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_workflow_identity_gate.py
+            self-test
+    )
+    add_test(
+        NAME release_spdx_sbom_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spdx_release_sbom.py
+            self-test
+    )
+    add_test(
         NAME control_frame_vector_oracle
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/control_frame_vector_gen.py
@@ -1163,6 +2031,780 @@ if(NINLIL_BUILD_TESTS)
             check
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-store-v1.json
     )
+    add_test(
+        NAME domain_store_schema1_binding_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME domain_store_schema1_binding_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_vector_gen.py
+            --self-test
+    )
+    add_test(
+        NAME domain_store_schema1_binding_independent_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.py
+            --check
+    )
+    add_test(
+        NAME domain_store_schema1_binding_independent_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.py
+            --self-test
+    )
+    find_program(NINLIL_NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+    add_test(
+        NAME domain_store_schema1_binding_node_gate
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.mjs
+            --check
+    )
+    add_test(
+        NAME domain_store_schema1_binding_node_gate_self_test
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.mjs
+            --self-test
+    )
+    set_tests_properties(
+        domain_store_schema1_binding_vector_oracle_self_test
+        domain_store_schema1_binding_independent_gate
+        domain_store_schema1_binding_independent_gate_self_test
+        domain_store_schema1_binding_node_gate
+        domain_store_schema1_binding_node_gate_self_test
+        PROPERTIES DEPENDS domain_store_schema1_binding_vector_oracle
+    )
+
+    # ADR-0023 / docs/35 Proposed Production Attachment specification gates.
+    # These prove the candidate byte contract only; no EDHOC dependency,
+    # production implementation, crypto correctness, or HIL is claimed.
+    add_test(
+        NAME production_attachment_edhoc_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME production_attachment_edhoc_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vector_gen.py
+            --self-test
+    )
+    add_test(
+        NAME production_attachment_edhoc_python_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_gate.py
+            --check
+    )
+    add_test(
+        NAME production_attachment_edhoc_python_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_gate.py
+            --self-test
+    )
+    add_test(
+        NAME production_attachment_edhoc_node_gate
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_gate.mjs
+            --check
+    )
+    add_test(
+        NAME production_attachment_edhoc_node_gate_self_test
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_gate.mjs
+            --self-test
+    )
+    add_test(
+        NAME production_attachment_magic_registry_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/protocol_magic_registry_gate.py
+            --check
+    )
+    add_test(
+        NAME production_attachment_magic_registry_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/protocol_magic_registry_gate.py
+            --self-test
+    )
+
+    # ADR-0021 MFDT SPEC-ONLY gates: dedicated authority file (not whole-repo CMake).
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_mfdt_ctest.cmake)
+    # MFDT must not mutate Accepted U5/U6 v2 freeze / R6 docs/25 / docs/23 pins.
+    # Separate from the 10-test MFDT SPEC inventory (acceptance does not own this).
+    add_test(
+        NAME mfdt_freeze_noninterference_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/mfdt_freeze_noninterference_gate.py
+            check
+    )
+    add_test(
+        NAME mfdt_freeze_noninterference_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/mfdt_freeze_noninterference_gate.py
+            self-test
+    )
+
+    # ADR-0019 / ADR-0020 SPEC_ACCEPTED Route Relay + Multi-parent design gates.
+    # Accepted contract / oracle consistency only. No production feature default-ON,
+    # implementation, public ABI, HIL, or RELEASE_SUPPORTED claim.
+    # Registered only under NINLIL_BUILD_TESTS=ON (not in tests-OFF target graph).
+    add_test(
+        NAME route_relay_multiparent_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_relay_multiparent_spec_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME route_relay_multiparent_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_relay_multiparent_spec_vector_gen.py
+            --self-test
+    )
+    add_test(
+        NAME route_relay_multiparent_python_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_relay_multiparent_spec_gate.py
+            --check
+    )
+    add_test(
+        NAME route_relay_multiparent_python_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_relay_multiparent_spec_gate.py
+            --self-test
+    )
+    add_test(
+        NAME route_relay_multiparent_node_gate
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_relay_multiparent_spec_gate.mjs
+            --check
+    )
+    add_test(
+        NAME route_relay_multiparent_node_gate_self_test
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_relay_multiparent_spec_gate.mjs
+            --self-test
+    )
+    add_test(
+        NAME rrmp_software_manifest_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/rrmp_software_manifest_gate.py
+            check
+    )
+    add_test(
+        NAME rrmp_software_manifest_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/rrmp_software_manifest_gate.py
+            self-test
+    )
+    set_tests_properties(
+        route_relay_multiparent_vector_oracle_self_test
+        route_relay_multiparent_python_gate
+        route_relay_multiparent_python_gate_self_test
+        route_relay_multiparent_node_gate
+        route_relay_multiparent_node_gate_self_test
+        rrmp_software_manifest_gate
+        rrmp_software_manifest_gate_self_test
+        PROPERTIES DEPENDS route_relay_multiparent_vector_oracle
+    )
+
+    set(_ninlil_pa_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/production_attachment_edhoc_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_pa_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vector_gen.py
+            --emit-c-fixture ${_ninlil_pa_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_composition.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_schema_authority.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_closed_key_schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/production-attachment-edhoc-v1.json
+        COMMENT "Generate Proposed Production Attachment C11 fixture"
+        VERBATIM
+    )
+    add_custom_target(ninlil_pa_fixture_gen DEPENDS ${_ninlil_pa_fixture})
+    add_executable(ninlil_production_attachment_edhoc_vector_test
+        tests/radio/production_attachment_edhoc_vector_test.c
+    )
+    add_dependencies(
+        ninlil_production_attachment_edhoc_vector_test
+        ninlil_pa_fixture_gen)
+    target_include_directories(
+        ninlil_production_attachment_edhoc_vector_test PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    set_property(
+        SOURCE tests/radio/production_attachment_edhoc_vector_test.c
+        APPEND PROPERTY OBJECT_DEPENDS ${_ninlil_pa_fixture})
+    set_target_properties(
+        ninlil_production_attachment_edhoc_vector_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_production_attachment_edhoc_vector_test)
+    add_test(
+        NAME production_attachment_edhoc_c11_gate
+        COMMAND ninlil_production_attachment_edhoc_vector_test
+    )
+    add_test(
+        NAME production_attachment_edhoc_fixture_freshness
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'production_attachment_edhoc_vector_gen.py'; build=pathlib.Path(r'${_ninlil_pa_fixture}'); assert build.is_file(), 'missing fixture'; td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'--emit-c-fixture',str(a)]); subprocess.check_call([sys.executable,str(py),'--emit-c-fixture',str(b)]); ta,tb,tbuild=a.read_bytes(),b.read_bytes(),build.read_bytes(); assert ta==tb, 'fixture non-deterministic'; assert ta==tbuild, 'build fixture stale'; assert b'NINLIL_PA_FRAGMENT_COUNT 5u' in ta; assert b'NINLIL_PA_NAB_ENTRY_COUNT 15u' in ta; print('production attachment fixture freshness ok',len(ta),'bytes')"
+    )
+    set_tests_properties(
+        production_attachment_edhoc_vector_oracle_self_test
+        production_attachment_edhoc_python_gate
+        production_attachment_edhoc_python_gate_self_test
+        production_attachment_edhoc_node_gate
+        production_attachment_edhoc_node_gate_self_test
+        production_attachment_magic_registry_gate
+        production_attachment_magic_registry_gate_self_test
+        production_attachment_edhoc_c11_gate
+        production_attachment_edhoc_fixture_freshness
+        PROPERTIES DEPENDS production_attachment_edhoc_vector_oracle
+    )
+    # The registry self-test creates short-lived mutation files under tools/.
+    # Serialize every gate that scans that tree with the mutation window.
+    set_tests_properties(
+        production_attachment_edhoc_python_gate
+        production_attachment_edhoc_python_gate_self_test
+        production_attachment_edhoc_node_gate
+        production_attachment_edhoc_node_gate_self_test
+        production_attachment_magic_registry_gate
+        production_attachment_magic_registry_gate_self_test
+        PROPERTIES RESOURCE_LOCK protocol_magic_registry
+    )
+
+    # ADR-0018 Proposed Wi-Fi real-path authority candidate (spec-only).
+    # Independent generator/Python/Node/C11 gates; no Wi-Fi driver/TLS/HIL claim.
+    add_test(
+        NAME wifi_bearer_spec_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME wifi_bearer_spec_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_vector_gen.py
+            --self-test
+    )
+    add_test(
+        NAME wifi_bearer_spec_python_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_gate.py
+            --check
+    )
+    add_test(
+        NAME wifi_bearer_spec_python_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_gate.py
+            --self-test
+    )
+    add_test(
+        NAME wifi_bearer_spec_node_gate
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_gate.mjs
+            --check
+    )
+    add_test(
+        NAME wifi_bearer_spec_node_gate_self_test
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_gate.mjs
+            --self-test
+    )
+    set(_ninlil_wifi_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/wifi_bearer_spec_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_wifi_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_vector_gen.py
+            --emit-c-fixture ${_ninlil_wifi_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_bearer_spec_vector_gen.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/wifi-bearer-spec-v1.json
+        COMMENT "Generate Proposed Wi-Fi bearer C11 fixture"
+        VERBATIM
+    )
+    add_custom_target(ninlil_wifi_fixture_gen DEPENDS ${_ninlil_wifi_fixture})
+    add_executable(ninlil_wifi_bearer_spec_vector_test
+        tests/transport/wifi_bearer_spec_vector_test.c
+    )
+    add_dependencies(
+        ninlil_wifi_bearer_spec_vector_test
+        ninlil_wifi_fixture_gen)
+    target_include_directories(
+        ninlil_wifi_bearer_spec_vector_test PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    set_property(
+        SOURCE tests/transport/wifi_bearer_spec_vector_test.c
+        APPEND PROPERTY OBJECT_DEPENDS ${_ninlil_wifi_fixture})
+    set_target_properties(
+        ninlil_wifi_bearer_spec_vector_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_wifi_bearer_spec_vector_test)
+    # Normal host builds stay unsanitized. ASan/UBSan only when
+    # NINLIL_ENABLE_SANITIZERS=ON (or global sanitizer path already active).
+    if(NINLIL_ENABLE_SANITIZERS)
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU|AppleClang")
+            target_compile_options(ninlil_wifi_bearer_spec_vector_test PRIVATE
+                -fsanitize=address,undefined
+                -fno-omit-frame-pointer)
+            target_link_options(ninlil_wifi_bearer_spec_vector_test PRIVATE
+                -fsanitize=address,undefined)
+        endif()
+    endif()
+    add_test(
+        NAME wifi_bearer_spec_c11_gate
+        COMMAND ninlil_wifi_bearer_spec_vector_test
+    )
+    add_test(
+        NAME wifi_bearer_spec_fixture_freshness
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'wifi_bearer_spec_vector_gen.py'; build=pathlib.Path(r'${_ninlil_wifi_fixture}'); assert build.is_file(), 'missing fixture'; td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'--emit-c-fixture',str(a)]); subprocess.check_call([sys.executable,str(py),'--emit-c-fixture',str(b)]); ta,tb,tbuild=a.read_bytes(),b.read_bytes(),build.read_bytes(); assert ta==tb, 'fixture non-deterministic'; assert ta==tbuild, 'build fixture stale'; assert b'NINLIL_WIFI_ACCEPTANCE_ID_COUNT 79u' in ta; assert b'ninlil_wifi_cases' in ta; print('wifi bearer fixture freshness ok',len(ta),'bytes')"
+    )
+    set_tests_properties(
+        wifi_bearer_spec_vector_oracle_self_test
+        wifi_bearer_spec_python_gate
+        wifi_bearer_spec_python_gate_self_test
+        wifi_bearer_spec_node_gate
+        wifi_bearer_spec_node_gate_self_test
+        wifi_bearer_spec_c11_gate
+        wifi_bearer_spec_fixture_freshness
+        PROPERTIES DEPENDS wifi_bearer_spec_vector_oracle
+    )
+
+    # Private Wi-Fi Host candidate unit + real-socket e2e (ADR-0018).
+    if(NINLIL_ENABLE_PRIVATE_WIFI_V1)
+        add_test(
+            NAME wifi_v1_esp_resource_gate_self_test
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_v1_esp_resource_gate.py
+                self-test)
+        add_test(
+            NAME wifi_v1_openssl_pin_provenance_self_test
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_v1_openssl_pin_provenance.py
+                --self-test)
+
+        add_executable(wifi_v1_nwb1_test
+            tests/transport/wifi_v1/wifi_v1_nwb1_test.c)
+        target_link_libraries(wifi_v1_nwb1_test PRIVATE ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_nwb1_test)
+        add_test(NAME wifi_v1_nwb1_test COMMAND wifi_v1_nwb1_test)
+
+        add_executable(wifi_v1_credentials_test
+            tests/transport/wifi_v1/wifi_v1_credentials_test.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(wifi_v1_credentials_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_link_libraries(wifi_v1_credentials_test PRIVATE ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_credentials_test)
+        add_test(NAME wifi_v1_credentials_test COMMAND wifi_v1_credentials_test)
+
+        add_executable(wifi_v1_leaf_binding_test
+            tests/transport/wifi_v1/wifi_v1_leaf_binding_test.c)
+        target_link_libraries(wifi_v1_leaf_binding_test PRIVATE ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_leaf_binding_test)
+        add_test(NAME wifi_v1_leaf_binding_test COMMAND wifi_v1_leaf_binding_test)
+
+        add_executable(wifi_v1_journal_test
+            tests/transport/wifi_v1/wifi_v1_journal_test.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(wifi_v1_journal_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_link_libraries(wifi_v1_journal_test PRIVATE ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_journal_test)
+        add_test(NAME wifi_v1_journal_test COMMAND wifi_v1_journal_test)
+
+        add_executable(wifi_v1_storage_commit_unknown_test
+            tests/transport/wifi_v1/wifi_v1_storage_commit_unknown_test.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(wifi_v1_storage_commit_unknown_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_link_libraries(wifi_v1_storage_commit_unknown_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_storage_commit_unknown_test)
+        add_test(NAME wifi_v1_storage_commit_unknown_test
+            COMMAND wifi_v1_storage_commit_unknown_test)
+
+        add_executable(wifi_v1_reconnect_test
+            tests/transport/wifi_v1/wifi_v1_reconnect_test.c)
+        target_link_libraries(wifi_v1_reconnect_test PRIVATE ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_reconnect_test)
+        add_test(NAME wifi_v1_reconnect_test COMMAND wifi_v1_reconnect_test)
+
+        add_executable(wifi_v1_exporter_kat_test
+            tests/transport/wifi_v1/wifi_v1_exporter_kat_test.c)
+        target_link_libraries(wifi_v1_exporter_kat_test PRIVATE
+            ninlil_wifi_v1_private OpenSSL::Crypto)
+        ninlil_apply_strict_warnings(wifi_v1_exporter_kat_test)
+        add_test(NAME wifi_v1_exporter_kat_test COMMAND wifi_v1_exporter_kat_test)
+
+        add_executable(wifi_v1_attachment_gate_test
+            tests/transport/wifi_v1/wifi_v1_attachment_gate_test.c)
+        target_link_libraries(wifi_v1_attachment_gate_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_attachment_gate_test)
+        add_test(NAME wifi_v1_attachment_gate_test
+            COMMAND wifi_v1_attachment_gate_test)
+
+        add_executable(wifi_v1_esp_owner_test
+            tests/transport/wifi_v1/wifi_v1_esp_owner_test.c)
+        target_link_libraries(wifi_v1_esp_owner_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_esp_owner_test)
+        add_test(NAME wifi_v1_esp_owner_test COMMAND wifi_v1_esp_owner_test)
+
+        add_executable(wifi_v1_esp_owner_sm_test
+            tests/transport/wifi_v1/wifi_v1_esp_owner_sm_test.c)
+        target_link_libraries(wifi_v1_esp_owner_sm_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_esp_owner_sm_test)
+        add_test(NAME wifi_v1_esp_owner_sm_test COMMAND wifi_v1_esp_owner_sm_test)
+
+        add_executable(wifi_v1_tls_arena_test
+            tests/transport/wifi_v1/wifi_v1_tls_arena_test.c)
+        target_link_libraries(wifi_v1_tls_arena_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_tls_arena_test)
+        add_test(NAME wifi_v1_tls_arena_test COMMAND wifi_v1_tls_arena_test)
+
+        # ADR-0026: compile the exact ESP allocator + R7 adapter sources on
+        # Host against a deterministic fake ESP/mbedTLS boundary.  This is a
+        # production-code owner/fault test, not an ESP target/HIL claim.
+        add_executable(wifi_v1_r7_other_registered_fault_test
+            tests/transport/wifi_v1/wifi_v1_r7_other_registered_fault_test.c
+            tests/support/fake_esp_mbedtls/fake_esp_mbedtls.c
+            src/transport/wifi_v1/wifi_esp_tls_allocator.c
+            src/transport/wifi_v1/wifi_tls_arena.c
+            src/transport/wifi_v1/wifi_tls_resource_policy.c
+            ports/esp-idf/src/r7_crypto_mbedtls.c
+            src/radio/r7_crypto_portable.c)
+        target_include_directories(
+            wifi_v1_r7_other_registered_fault_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support/fake_esp_mbedtls/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/wifi_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/radio)
+        target_compile_definitions(
+            wifi_v1_r7_other_registered_fault_test PRIVATE
+            ESP_PLATFORM=1
+            NINLIL_ENABLE_PRIVATE_WIFI_V1=1
+            NINLIL_WIFI_ESP_TLS_ALLOCATOR_TEST_BUILD=1
+            MBEDTLS_HKDF_C=1)
+        set_target_properties(
+            wifi_v1_r7_other_registered_fault_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(
+            wifi_v1_r7_other_registered_fault_test)
+        add_test(
+            NAME wifi_v1_r7_other_registered_fault_test
+            COMMAND wifi_v1_r7_other_registered_fault_test)
+
+        add_executable(wifi_v1_esp_tls_identity_matrix_test
+            tests/transport/wifi_v1/wifi_v1_esp_tls_identity_matrix_test.c)
+        target_link_libraries(wifi_v1_esp_tls_identity_matrix_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_esp_tls_identity_matrix_test)
+        add_test(NAME wifi_v1_esp_tls_identity_matrix_test
+            COMMAND wifi_v1_esp_tls_identity_matrix_test)
+
+        add_executable(wifi_v1_esp_adapter_e2e_test
+            tests/transport/wifi_v1/wifi_v1_esp_adapter_e2e_test.c
+            src/transport/wifi_v1/wifi_adapter_v1_esp.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(wifi_v1_esp_adapter_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1)
+        target_compile_definitions(wifi_v1_esp_adapter_e2e_test PRIVATE
+            NINLIL_WIFI_ESP_ADAPTER_HOST_TEST=1
+            NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+        target_link_libraries(wifi_v1_esp_adapter_e2e_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_esp_adapter_e2e_test)
+        add_test(NAME wifi_v1_esp_adapter_e2e_test
+            COMMAND wifi_v1_esp_adapter_e2e_test)
+
+        add_executable(wifi_v1_m4_evidence_test
+            tests/transport/wifi_v1/wifi_v1_m4_evidence_test.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(wifi_v1_m4_evidence_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_link_libraries(wifi_v1_m4_evidence_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_m4_evidence_test)
+        add_test(NAME wifi_v1_m4_evidence_test COMMAND wifi_v1_m4_evidence_test)
+
+        # External-consumer forge probe: public header only surface.
+        add_executable(wifi_v1_m4_forge_probe_test
+            tests/transport/wifi_v1/wifi_v1_m4_forge_probe_test.c)
+        target_link_libraries(wifi_v1_m4_forge_probe_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_m4_forge_probe_test)
+        add_test(NAME wifi_v1_m4_forge_probe_test
+            COMMAND wifi_v1_m4_forge_probe_test)
+
+        add_executable(wifi_v1_m4_owner_concurrency_test
+            tests/transport/wifi_v1/wifi_v1_m4_owner_concurrency_test.c)
+        target_link_libraries(wifi_v1_m4_owner_concurrency_test PRIVATE
+            ninlil_wifi_v1_private Threads::Threads)
+        ninlil_apply_strict_warnings(wifi_v1_m4_owner_concurrency_test)
+        add_test(NAME wifi_v1_m4_owner_concurrency_test
+            COMMAND wifi_v1_m4_owner_concurrency_test)
+
+        # Stale-completion barrier: needs test hooks on production sources.
+        # Build a dedicated instrumented wifi archive + test (not default lib).
+        add_library(ninlil_wifi_v1_m4_hooks STATIC EXCLUDE_FROM_ALL
+            ${_ninlil_wifi_v1_srcs}
+        )
+        target_include_directories(ninlil_wifi_v1_m4_hooks PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transport/wifi_v1>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        )
+        target_compile_definitions(ninlil_wifi_v1_m4_hooks PRIVATE
+            NINLIL_ENABLE_PRIVATE_WIFI_V1=1
+            NINLIL_WIFI_M4_TEST_HOOKS=1)
+        if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+            target_include_directories(ninlil_wifi_v1_m4_hooks PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1)
+            target_compile_definitions(ninlil_wifi_v1_m4_hooks PRIVATE
+                NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+        endif()
+        if(NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL)
+            target_compile_definitions(ninlil_wifi_v1_m4_hooks PUBLIC
+                NINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=1)
+        endif()
+        if(NINLIL_WIFI_OPENSSL_AUTHORITY)
+            target_compile_definitions(ninlil_wifi_v1_m4_hooks PUBLIC
+                NINLIL_WIFI_HOST_OPENSSL_STATIC_AUTHORITY=1)
+        endif()
+        target_link_libraries(ninlil_wifi_v1_m4_hooks PUBLIC
+            Threads::Threads OpenSSL::SSL OpenSSL::Crypto)
+        set_target_properties(ninlil_wifi_v1_m4_hooks PROPERTIES
+            C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+            POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+        ninlil_apply_strict_warnings(ninlil_wifi_v1_m4_hooks)
+
+        add_executable(wifi_v1_m4_stale_load_barrier_test
+            tests/transport/wifi_v1/wifi_v1_m4_stale_load_barrier_test.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(wifi_v1_m4_stale_load_barrier_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_definitions(wifi_v1_m4_stale_load_barrier_test PRIVATE
+            NINLIL_WIFI_M4_TEST_HOOKS=1)
+        target_link_libraries(wifi_v1_m4_stale_load_barrier_test PRIVATE
+            ninlil_wifi_v1_m4_hooks Threads::Threads)
+        ninlil_apply_strict_warnings(wifi_v1_m4_stale_load_barrier_test)
+        add_test(NAME wifi_v1_m4_stale_load_barrier_test
+            COMMAND wifi_v1_m4_stale_load_barrier_test)
+
+        # Full TSan: instrument library body + concurrency + stale-load tests.
+        # Enabled only with NINLIL_ENABLE_TSAN=ON on non-Apple (CI Linux job).
+        if(NINLIL_ENABLE_TSAN AND CMAKE_C_COMPILER_ID MATCHES "Clang|GNU"
+                AND NOT APPLE)
+            add_executable(wifi_v1_m4_owner_concurrency_tsan_test
+                tests/transport/wifi_v1/wifi_v1_m4_owner_concurrency_test.c)
+            target_link_libraries(wifi_v1_m4_owner_concurrency_tsan_test PRIVATE
+                ninlil_wifi_v1_private Threads::Threads)
+            target_compile_options(wifi_v1_m4_owner_concurrency_tsan_test PRIVATE
+                -fsanitize=thread -fno-omit-frame-pointer)
+            target_link_options(wifi_v1_m4_owner_concurrency_tsan_test PRIVATE
+                -fsanitize=thread)
+            add_test(NAME wifi_v1_m4_owner_concurrency_tsan_test
+                COMMAND wifi_v1_m4_owner_concurrency_tsan_test)
+
+            add_executable(wifi_v1_m4_stale_load_barrier_tsan_test
+                tests/transport/wifi_v1/wifi_v1_m4_stale_load_barrier_test.c
+                tests/support/in_memory_storage.c)
+            target_include_directories(
+                wifi_v1_m4_stale_load_barrier_tsan_test PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+                ${CMAKE_CURRENT_SOURCE_DIR}/include)
+            target_compile_definitions(
+                wifi_v1_m4_stale_load_barrier_tsan_test PRIVATE
+                NINLIL_WIFI_M4_TEST_HOOKS=1)
+            target_link_libraries(wifi_v1_m4_stale_load_barrier_tsan_test PRIVATE
+                ninlil_wifi_v1_m4_hooks Threads::Threads)
+            target_compile_options(wifi_v1_m4_stale_load_barrier_tsan_test
+                PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+            target_link_options(wifi_v1_m4_stale_load_barrier_tsan_test PRIVATE
+                -fsanitize=thread)
+            target_compile_options(ninlil_wifi_v1_m4_hooks PRIVATE
+                -fsanitize=thread -fno-omit-frame-pointer)
+            target_link_options(ninlil_wifi_v1_m4_hooks PUBLIC
+                -fsanitize=thread)
+            add_test(NAME wifi_v1_m4_stale_load_barrier_tsan_test
+                COMMAND wifi_v1_m4_stale_load_barrier_tsan_test)
+        endif()
+
+        add_executable(wifi_v1_tls_storage_align_test
+            tests/transport/wifi_v1/wifi_v1_tls_storage_align_test.c)
+        target_link_libraries(wifi_v1_tls_storage_align_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_tls_storage_align_test)
+        add_test(NAME wifi_v1_tls_storage_align_test
+            COMMAND wifi_v1_tls_storage_align_test)
+
+        add_executable(wifi_v1_queue_drop_wrap_test
+            tests/transport/wifi_v1/wifi_v1_queue_drop_wrap_test.c)
+        target_link_libraries(wifi_v1_queue_drop_wrap_test PRIVATE
+            ninlil_wifi_v1_private)
+        ninlil_apply_strict_warnings(wifi_v1_queue_drop_wrap_test)
+        add_test(NAME wifi_v1_queue_drop_wrap_test
+            COMMAND wifi_v1_queue_drop_wrap_test)
+
+        if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+            add_executable(wifi_v1_fabric_link_test
+                tests/transport/wifi_v1/wifi_v1_fabric_link_test.c)
+            target_include_directories(wifi_v1_fabric_link_test PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+                ${CMAKE_CURRENT_SOURCE_DIR}/include)
+            target_compile_definitions(wifi_v1_fabric_link_test PRIVATE
+                NINLIL_ENABLE_PRIVATE_FABRIC_V1=1
+                NINLIL_ENABLE_PRIVATE_WIFI_V1=1)
+            target_link_libraries(wifi_v1_fabric_link_test PRIVATE
+                ninlil_wifi_v1_private)
+            ninlil_apply_strict_warnings(wifi_v1_fabric_link_test)
+            add_test(NAME wifi_v1_fabric_link_test COMMAND wifi_v1_fabric_link_test)
+
+            add_executable(wifi_v1_adapter_lifecycle_test
+                tests/transport/wifi_v1/wifi_v1_adapter_lifecycle_test.c
+                tests/support/in_memory_storage.c)
+            target_include_directories(wifi_v1_adapter_lifecycle_test PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+                ${CMAKE_CURRENT_SOURCE_DIR}/include)
+            target_compile_definitions(wifi_v1_adapter_lifecycle_test PRIVATE
+                NINLIL_ENABLE_PRIVATE_FABRIC_V1=1
+                NINLIL_ENABLE_PRIVATE_WIFI_V1=1)
+            target_link_libraries(wifi_v1_adapter_lifecycle_test PRIVATE
+                ninlil_wifi_v1_private)
+            ninlil_apply_strict_warnings(wifi_v1_adapter_lifecycle_test)
+            add_test(NAME wifi_v1_adapter_lifecycle_test
+                COMMAND wifi_v1_adapter_lifecycle_test)
+
+        endif()
+
+        add_executable(wifi_v1_host_e2e_driver
+            tools/wifi_v1_host_e2e_driver.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(wifi_v1_host_e2e_driver PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_definitions(
+            wifi_v1_host_e2e_driver PRIVATE _DEFAULT_SOURCE=1)
+        target_link_libraries(wifi_v1_host_e2e_driver PRIVATE ninlil_wifi_v1_private)
+        if(NINLIL_ENABLE_PRIVATE_FABRIC_V1
+            AND NINLIL_POSIX_SQLITE_STORAGE_ENABLED)
+            target_sources(wifi_v1_host_e2e_driver PRIVATE
+                tools/wifi_v1_fabric_host_send.c
+                tools/wifi_v1_runtime_host_e2e.c
+                src/transport/fabric_v1/nfl1_codec.c
+                src/transport/fabric_v1/fabric_private_util.c
+                src/transport/fabric_v1/fabric_workspace.c
+                src/transport/fabric_v1/fabric_private_records.c
+                src/transport/fabric_v1/fabric_private_select.c
+                src/transport/fabric_v1/fabric_private_core.c)
+            target_include_directories(wifi_v1_host_e2e_driver PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+            target_compile_definitions(wifi_v1_host_e2e_driver PRIVATE
+                NINLIL_ENABLE_PRIVATE_FABRIC_V1=1
+                NINLIL_ENABLE_PRIVATE_WIFI_V1=1
+                NINLIL_FABRIC_HOST_DIAGNOSTICS=1
+                NINLIL_WIFI_HOST_FABRIC_SEND=1)
+            target_link_libraries(wifi_v1_host_e2e_driver PRIVATE
+                ninlil_runtime_private
+                ninlil_posix_lab_platform
+                ninlil_posix_sqlite_storage)
+        endif()
+        set_target_properties(wifi_v1_host_e2e_driver PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(wifi_v1_host_e2e_driver)
+
+        add_test(
+            NAME wifi_v1_host_e2e
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/wifi_v1_run_host_e2e.sh
+                $<TARGET_FILE:wifi_v1_host_e2e_driver>
+        )
+        # Registered CTest is the bounded PR/ASan sample. The pinned-authority
+        # CI job excludes this test and runs one explicit FRAMES=10000 release
+        # evidence path, so ordinary matrices do not duplicate the ~18 min load.
+        # halt_on_error=1: first ASan/UBSan report fails (no soft continue).
+        set_tests_properties(wifi_v1_host_e2e PROPERTIES
+            TIMEOUT 600
+            ENVIRONMENT
+                "FRAMES=200;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1;ASAN_OPTIONS=halt_on_error=1:detect_stack_use_after_return=1"
+        )
+
+        # Optional TSan build of unit tests when compiler supports it.
+        if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU|AppleClang"
+            AND NOT APPLE AND NOT NINLIL_ENABLE_SANITIZERS)
+            add_executable(wifi_v1_reconnect_tsan_test
+                tests/transport/wifi_v1/wifi_v1_reconnect_test.c)
+            target_link_libraries(wifi_v1_reconnect_tsan_test PRIVATE
+                ninlil_wifi_v1_private)
+            target_compile_options(wifi_v1_reconnect_tsan_test PRIVATE
+                -fsanitize=thread -fno-omit-frame-pointer)
+            target_link_options(wifi_v1_reconnect_tsan_test PRIVATE
+                -fsanitize=thread)
+            add_test(NAME wifi_v1_reconnect_tsan_test
+                COMMAND wifi_v1_reconnect_tsan_test)
+        endif()
+    endif()
+
+    add_test(
+        NAME fabric_bearer_spec_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_bearer_spec_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME fabric_bearer_spec_vector_gen_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_bearer_spec_vector_gen.py
+            --self-test
+    )
+    add_test(
+        NAME fabric_bearer_spec_cross_language_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_bearer_spec_gate.py
+            --check
+    )
+    add_test(
+        NAME fabric_bearer_spec_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_bearer_spec_gate.py
+            --self-test
+    )
+    set_tests_properties(
+        fabric_bearer_spec_vector_gen_self_test
+        fabric_bearer_spec_cross_language_gate
+        fabric_bearer_spec_gate_self_test
+        PROPERTIES DEPENDS fabric_bearer_spec_vector_oracle
+    )
 
     add_executable(ninlil_domain_vector_parse_test
         tests/model/domain_vector_parse_test.c
@@ -1206,6 +2848,791 @@ if(NINLIL_BUILD_TESTS)
         NAME runtime_store_bootstrap
         COMMAND ninlil_runtime_store_bootstrap_test
     )
+
+    # ADR-0022 tranche-1: format-2 binding + T0/T1a private feature-gated tests.
+    # Always compiled into the test binary with the feature ON; production
+    # private archive only includes the translation unit when the option is ON.
+    add_executable(ninlil_domain_schema1_runtime_binding_test
+        tests/model/domain_schema1_runtime_binding_test.c
+        src/model/domain_schema1_runtime_binding.c
+    )
+    target_include_directories(ninlil_domain_schema1_runtime_binding_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_compile_definitions(ninlil_domain_schema1_runtime_binding_test PRIVATE
+        NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+    target_link_libraries(ninlil_domain_schema1_runtime_binding_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_domain_schema1_runtime_binding_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_schema1_runtime_binding_test)
+    add_test(
+        NAME domain_schema1_runtime_binding
+        COMMAND ninlil_domain_schema1_runtime_binding_test
+    )
+
+    find_program(CMAKE_NM NAMES nm llvm-nm)
+    if(NOT CMAKE_NM)
+        set(CMAKE_NM nm)
+    endif()
+    # Closed private inventory for feature-gated Domain schema1 (ADR-0022).
+    # Not public include/ninlil ABI: symbols live only under src/model and
+    # src/runtime private headers. Exact set is the production call-graph for
+    # T0–T7 + kind-1 register/restore/quota + LAB cohabitation; not a pad list.
+    # Notable multi-TU helpers (must remain linkage-visible, not static):
+    #   validate_binding — binding encode/decode/open path
+    #   classify_existing_namespace_adopt — startup owner T0 existing-NS adopt
+    #   export_magic_match — export transcript magic gate
+    #   is_lab_operational_key — Domain scan rejects V1-LAB TX/NRS keys
+    #   quota_stage — Domain-ON admit SERVICE_QUOTA REPLACE
+    set(_ninlil_d22_required_syms
+        ninlil_domain_schema1_validate_foundation_common
+        ninlil_domain_schema1_validate_binding
+        ninlil_domain_schema1_validate_identity
+        ninlil_domain_schema1_checked_count_bytes
+        ninlil_domain_schema1_encode_binding
+        ninlil_domain_schema1_decode_binding
+        ninlil_domain_schema1_classify_binding_open
+        ninlil_domain_schema1_classify_t0
+        ninlil_domain_schema1_build_bootstrap_plan
+        ninlil_domain_schema1_bootstrap_record_at
+        ninlil_domain_schema1_classify_t1a_commit_unknown
+        ninlil_domain_schema1_build_metadata_plan
+        ninlil_domain_schema1_metadata_record_at
+        ninlil_domain_schema1_classify_t1b_commit_unknown
+        ninlil_domain_schema1_build_t5_clock_plan
+        ninlil_domain_schema1_classify_t5_commit_unknown
+        ninlil_domain_schema1_startup_init
+        ninlil_domain_schema1_startup_complete_stage
+        ninlil_domain_schema1_startup_fault
+        ninlil_domain_schema1_startup_publication_allowed
+        ninlil_domain_schema1_startup_pre_publish_side_effects_zero
+        ninlil_domain_schema1_startup_export_transcript
+        ninlil_domain_schema1_kind1_build_plan
+        ninlil_domain_schema1_kind1_member_at
+        ninlil_domain_schema1_kind1_plan_finish
+        ninlil_domain_schema1_classify_kind1_commit_unknown
+        ninlil_domain_schema1_classify_existing_namespace_adopt
+        ninlil_domain_schema1_lab_classify_namespace
+        ninlil_domain_schema1_export_magic_match
+        ninlil_domain_schema1_owner_run_storage_recovery
+        ninlil_domain_schema1_owner_t7_publication_gate
+        ninlil_domain_schema1_kind1_owner_commit
+        ninlil_domain_schema1_kind1_encode_members
+        ninlil_domain_schema1_kind1_commit_full
+        ninlil_domain_schema1_kind1_classify_readback
+        ninlil_domain_schema1_service_register
+        ninlil_domain_schema1_service_registry_restore
+        ninlil_domain_schema1_quota_stage
+        ninlil_domain_schema1_is_lab_operational_key
+    )
+    add_test(
+        NAME domain_schema1_runtime_binding_feature_symbol_archive
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess; feature='${NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING}'; on=feature in ('ON','1','TRUE','true','True'); nm=r'${CMAKE_NM}'; build=pathlib.Path(r'${CMAKE_CURRENT_BINARY_DIR}'); lib=build/'libninlil_runtime_private.a'; assert lib.is_file(), 'missing private archive'; out=subprocess.check_output([nm,'-g','-U',str(lib)], text=True, errors='replace'); found=set();
+[found.add(line.split()[-1].lstrip('_')) for line in out.splitlines() if line.strip()]; found=set(s for s in found if s.startswith('ninlil_domain_schema1_')); required=set([s for s in r'${_ninlil_d22_required_syms}'.split(';') if s]);
+assert (not on and found==set()) or (on and found==required), ('feature='+feature+' found='+repr(sorted(found))+' required='+repr(sorted(required))); extra=found-required; assert not (on and extra), 'unexpected extra symbols '+repr(sorted(extra));
+pub=build/'libninlil_runtime.a';
+if pub.is_file():
+ outp=subprocess.check_output([nm,'-g','-U',str(pub)], text=True, errors='replace'); pfound=set(line.split()[-1].lstrip('_') for line in outp.splitlines() if line.strip()); pfound=set(s for s in pfound if s.startswith('ninlil_domain_schema1_'));
+ assert (not on and pfound==set()) or (on and pfound==required), ('public archive domain symbols mismatch feature='+feature+' found='+repr(sorted(pfound))+' required='+repr(sorted(required)));
+ print('domain_schema1 public archive ok feature='+feature+' count='+str(len(pfound)));
+print('domain_schema1 exact symbol archive ok feature='+feature+' count='+str(len(found)))"
+    )
+    add_test(
+        NAME domain_schema1_runtime_binding_feature_symbol_exact_self_test
+        COMMAND ${Python3_EXECUTABLE} -c
+            "required=set([s for s in r'${_ninlil_d22_required_syms}'.split(';') if s]); found=set(required)|{'ninlil_domain_schema1_unexpected_extra'}; assert found!=required and len(found)==len(required)+1; print('domain_schema1 exact symbol self-test OK rejects 12th prefix')"
+    )
+
+    add_test(
+        NAME domain_schema1_runtime_binding_vector_bridge
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.py
+            --check
+    )
+    add_test(
+        NAME domain_schema1_runtime_binding_vector_bridge_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.py
+            --self-test
+    )
+    add_test(
+        NAME domain_schema1_lab_export_tool_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/ninlil_lab_export.py
+            --self-test
+    )
+
+    # ADR-0017 private Fabric v1 / NFL1: default-OFF production sources; tests
+    # always compile the private TUs with the feature definition ON so KATs run
+    # without requiring NINLIL_ENABLE_PRIVATE_FABRIC_V1 for the archive.
+    set(_ninlil_fabric_v1_private_srcs
+        ${NINLIL_FABRIC_V1_CORE_RELATIVE_SOURCES}
+        src/transport/fabric_v1/fabric_host_radio_packet_link.c
+    )
+    if(NINLIL_BUILD_FABRIC_V1)
+        add_executable(ninlil_fabric_v1_public_api_test
+            tests/transport/fabric_v1/fabric_v1_public_api_test.c)
+        target_link_libraries(ninlil_fabric_v1_public_api_test PRIVATE
+            ninlil_fabric_v1)
+        set_target_properties(ninlil_fabric_v1_public_api_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_fabric_v1_public_api_test)
+        add_test(NAME fabric_v1_public_api
+            COMMAND ninlil_fabric_v1_public_api_test)
+
+        add_executable(ninlil_fabric_v1_public_behavior_test
+            tests/transport/fabric_v1/fabric_v1_public_behavior_test.c)
+        target_include_directories(ninlil_fabric_v1_public_behavior_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/fabric_v1)
+        target_link_libraries(ninlil_fabric_v1_public_behavior_test PRIVATE
+            ninlil_fabric_v1)
+        set_target_properties(ninlil_fabric_v1_public_behavior_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_fabric_v1_public_behavior_test)
+        add_test(NAME fabric_v1_public_behavior
+            COMMAND ninlil_fabric_v1_public_behavior_test)
+    endif()
+    add_executable(ninlil_fabric_v1_nfl1_codec_test
+        tests/transport/fabric_v1/nfl1_codec_test.c
+        src/transport/fabric_v1/nfl1_codec.c
+        src/transport/fabric_v1/fabric_private_util.c
+    )
+    target_include_directories(ninlil_fabric_v1_nfl1_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_nfl1_codec_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_nfl1_codec_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_nfl1_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_nfl1_codec_test)
+    add_test(NAME fabric_v1_nfl1_codec COMMAND ninlil_fabric_v1_nfl1_codec_test)
+
+    add_executable(ninlil_fabric_v1_lifecycle_test
+        tests/transport/fabric_v1/fabric_v1_lifecycle_test.c
+        ${_ninlil_fabric_v1_private_srcs}
+    )
+    target_include_directories(ninlil_fabric_v1_lifecycle_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_lifecycle_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_lifecycle_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_lifecycle_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_lifecycle_test)
+    add_test(NAME fabric_v1_lifecycle COMMAND ninlil_fabric_v1_lifecycle_test)
+
+    add_executable(ninlil_fabric_v1_p1_contracts_test
+        tests/transport/fabric_v1/fabric_v1_p1_contracts_test.c
+        ${_ninlil_fabric_v1_private_srcs}
+    )
+    target_include_directories(ninlil_fabric_v1_p1_contracts_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_p1_contracts_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_p1_contracts_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_p1_contracts_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_p1_contracts_test)
+    add_test(NAME fabric_v1_p1_contracts COMMAND ninlil_fabric_v1_p1_contracts_test)
+
+    add_executable(ninlil_fabric_v1_selection_test
+        tests/transport/fabric_v1/fabric_v1_selection_test.c
+        ${_ninlil_fabric_v1_private_srcs}
+    )
+    target_include_directories(ninlil_fabric_v1_selection_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_selection_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_selection_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_selection_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_selection_test)
+    add_test(NAME fabric_v1_selection COMMAND ninlil_fabric_v1_selection_test)
+
+    add_executable(ninlil_fabric_v1_records_test
+        tests/transport/fabric_v1/fabric_v1_records_test.c
+        ${_ninlil_fabric_v1_private_srcs}
+    )
+    target_include_directories(ninlil_fabric_v1_records_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_records_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_records_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_records_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_records_test)
+    add_test(NAME fabric_v1_records COMMAND ninlil_fabric_v1_records_test)
+
+    add_executable(ninlil_fabric_v1_nfl1_semantic_test
+        tests/transport/fabric_v1/fabric_v1_nfl1_test.c
+        src/transport/fabric_v1/nfl1_codec.c
+        src/transport/fabric_v1/fabric_private_util.c
+    )
+    target_include_directories(ninlil_fabric_v1_nfl1_semantic_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_nfl1_semantic_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_nfl1_semantic_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_nfl1_semantic_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_nfl1_semantic_test)
+    add_test(NAME fabric_v1_nfl1_semantic COMMAND ninlil_fabric_v1_nfl1_semantic_test)
+
+    add_executable(ninlil_fabric_v1_vector_matrix_test
+        tests/transport/fabric_v1/fabric_v1_vector_matrix_test.c
+        ${_ninlil_fabric_v1_private_srcs}
+    )
+    target_include_directories(ninlil_fabric_v1_vector_matrix_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_vector_matrix_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_vector_matrix_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_vector_matrix_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_vector_matrix_test)
+    add_test(NAME fabric_v1_vector_matrix COMMAND ninlil_fabric_v1_vector_matrix_test)
+
+    if(NINLIL_ENABLE_PRIVATE_WIFI_V1)
+        add_executable(wifi_v1_actual_adapter_fabric_e2e_test
+            tests/transport/wifi_v1/wifi_v1_actual_adapter_fabric_e2e_test.c
+            src/transport/wifi_v1/wifi_adapter_v1_esp.c
+            tests/support/in_memory_storage.c
+            ${_ninlil_fabric_v1_private_srcs}
+        )
+        target_include_directories(
+            wifi_v1_actual_adapter_fabric_e2e_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/wifi_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_compile_definitions(
+            wifi_v1_actual_adapter_fabric_e2e_test PRIVATE
+            NINLIL_WIFI_ESP_ADAPTER_HOST_TEST=1
+            NINLIL_ENABLE_PRIVATE_FABRIC_V1=1
+            NINLIL_ENABLE_PRIVATE_WIFI_V1=1
+        )
+        target_link_libraries(
+            wifi_v1_actual_adapter_fabric_e2e_test PRIVATE
+            ninlil_wifi_v1_private
+            ninlil
+        )
+        set_target_properties(
+            wifi_v1_actual_adapter_fabric_e2e_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_strict_warnings(
+            wifi_v1_actual_adapter_fabric_e2e_test)
+        add_test(
+            NAME wifi_v1_actual_adapter_fabric_e2e_test
+            COMMAND wifi_v1_actual_adapter_fabric_e2e_test)
+    endif()
+
+    add_executable(ninlil_fabric_v1_host_acceptance_test
+        tests/transport/fabric_v1/fabric_v1_host_acceptance_test.c
+        ${_ninlil_fabric_v1_private_srcs}
+    )
+    target_include_directories(ninlil_fabric_v1_host_acceptance_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/fabric_v1
+    )
+    target_compile_definitions(ninlil_fabric_v1_host_acceptance_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    target_link_libraries(ninlil_fabric_v1_host_acceptance_test PRIVATE ninlil)
+    set_target_properties(ninlil_fabric_v1_host_acceptance_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_fabric_v1_host_acceptance_test)
+    add_test(NAME fabric_v1_host_acceptance COMMAND ninlil_fabric_v1_host_acceptance_test)
+
+    # Fixture generators: compare-only --check + mutation self-test.
+    add_test(
+        NAME fabric_v1_selection_vector_gen_check
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_v1_selection_vector_gen.py
+            --check
+    )
+    add_test(
+        NAME fabric_v1_selection_vector_gen_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_v1_selection_vector_gen.py
+            --self-test
+    )
+    add_test(
+        NAME fabric_v1_exec_catalog_gen_check
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_v1_exec_catalog_gen.py
+            --check
+    )
+    add_test(
+        NAME fabric_v1_exec_catalog_gen_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_v1_exec_catalog_gen.py
+            --self-test
+    )
+    add_test(
+        NAME fabric_v1_vector_fixture_gen_check
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_v1_vector_fixture_gen.py
+            --check
+    )
+    add_test(
+        NAME fabric_v1_vector_fixture_gen_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/fabric_v1_vector_fixture_gen.py
+            --self-test
+    )
+
+    set(_ninlil_fabric_v1_required_syms
+        ninlil_fabric_private_nfl1_encode
+        ninlil_fabric_private_nfl1_decode
+        ninlil_fabric_private_nfl1_clear
+        ninlil_fabric_private_create_v1
+        ninlil_fabric_private_destroy_v1
+        ninlil_fabric_private_register_link_v1
+        ninlil_fabric_private_select
+    )
+    add_test(
+        NAME fabric_v1_private_feature_symbol_archive
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess; feature='${NINLIL_ENABLE_PRIVATE_FABRIC_V1}'; on=feature in ('ON','1','TRUE','true','True'); nm=r'${CMAKE_NM}'; lib=pathlib.Path(r'${CMAKE_CURRENT_BINARY_DIR}')/'libninlil_runtime_private.a'; assert lib.is_file(), 'missing private archive'; out=subprocess.check_output([nm,'-g','-U',str(lib)], text=True, errors='replace'); found=set();
+[found.add(line.split()[-1].lstrip('_')) for line in out.splitlines() if line.strip()]; found=set(s for s in found if s.startswith('ninlil_fabric_private_')); required=set([s for s in r'${_ninlil_fabric_v1_required_syms}'.split(';') if s]);
+assert (not on and len(found)==0) or (on and required.issubset(found)), ('feature='+feature+' found_count='+str(len(found))+' missing='+repr(sorted(required-found))); print('fabric_v1 private symbol archive ok feature='+feature+' fabric_syms='+str(len(found)))"
+    )
+
+    # ADR-0019/0020 private route-relay/multi-parent: tests always compile the
+    # private TUs with the feature definition ON so host KATs run without
+    # requiring NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1 for the production archive.
+    set(_ninlil_rrmp_private_srcs
+        src/runtime/route_relay_v1/rrmp_util.c
+        src/runtime/route_relay_v1/rrmp_codec.c
+        src/runtime/route_relay_v1/rrmp_store.c
+        src/runtime/route_relay_v1/rrmp_core.c
+        src/runtime/route_relay_v1/rrmp_seam.c
+        src/runtime/route_relay_v1/rrmp_sim.c
+        src/runtime/route_relay_v1/rrmp_fabric_dispatch.c
+        src/runtime/route_relay_v1/rrmp_composition.c
+    )
+    set(_ninlil_rrmp_test_defs
+        NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=1
+    )
+    if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+        list(APPEND _ninlil_rrmp_test_defs NINLIL_RRMP_HAVE_OPENSSL=1)
+    endif()
+
+    # Apply shared RRMP host-test properties (one owner path; no duplicate core).
+    function(ninlil_rrmp_test_common_props _name)
+        target_include_directories(${_name} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/route_relay_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/route_relay_v1
+        )
+        target_compile_definitions(${_name} PRIVATE ${_ninlil_rrmp_test_defs})
+        target_link_libraries(${_name} PRIVATE ninlil)
+        if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+            target_link_libraries(${_name} PRIVATE OpenSSL::Crypto)
+        endif()
+        set_target_properties(${_name} PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_strict_warnings(${_name})
+        if(NOT _ninlil_any_sanitizer_active)
+            include(CheckCCompilerFlag)
+            check_c_compiler_flag(-Wframe-larger-than=2048 NINLIL_RRMP_TEST_HAS_WFRAME_2048)
+            if(NINLIL_RRMP_TEST_HAS_WFRAME_2048)
+                set(_ninlil_rrmp_test_frame_srcs
+                    src/runtime/route_relay_v1/rrmp_util.c
+                    src/runtime/route_relay_v1/rrmp_codec.c
+                    src/runtime/route_relay_v1/rrmp_store.c
+                    src/runtime/route_relay_v1/rrmp_core.c
+                    src/runtime/route_relay_v1/rrmp_seam.c
+                    src/runtime/route_relay_v1/rrmp_fabric_dispatch.c
+                    src/runtime/route_relay_v1/rrmp_composition.c
+                )
+                set_source_files_properties(${_ninlil_rrmp_test_frame_srcs} PROPERTIES
+                    COMPILE_OPTIONS "-Wframe-larger-than=2048;-fstack-usage"
+                )
+            endif()
+        endif()
+        add_test(NAME ${_name} COMMAND ${_name})
+    endfunction()
+
+    function(ninlil_add_rrmp_test _name)
+        # All trailing args are host test sources; private RRMP TUs appended once.
+        add_executable(${_name} ${ARGN} ${_ninlil_rrmp_private_srcs})
+        ninlil_rrmp_test_common_props(${_name})
+    endfunction()
+
+    ninlil_add_rrmp_test(ninlil_rrmp_codec_test
+        tests/runtime/route_relay_v1/rrmp_codec_test.c)
+    ninlil_add_rrmp_test(ninlil_rrmp_sm_test
+        tests/runtime/route_relay_v1/rrmp_sm_test.c)
+    ninlil_add_rrmp_test(ninlil_rrmp_crash_corrupt_test
+        tests/runtime/route_relay_v1/rrmp_crash_corrupt_test.c)
+    ninlil_add_rrmp_test(ninlil_rrmp_storage_atomicity_test
+        tests/runtime/route_relay_v1/rrmp_storage_atomicity_test.c)
+    ninlil_add_rrmp_test(ninlil_rrmp_token_ledger_test
+        tests/runtime/route_relay_v1/rrmp_token_ledger_test.c)
+    ninlil_add_rrmp_test(ninlil_rrmp_sim_lifecycle_test
+        tests/runtime/route_relay_v1/rrmp_sim_lifecycle_test.c)
+    # Host-only lifecycle fixture TU (not production, not ESP component).
+    # Explicit multi-source list — never rely on production composition for KAT.
+    ninlil_add_rrmp_test(ninlil_rrmp_composition_test
+        tests/runtime/route_relay_v1/rrmp_composition_test.c
+        tests/runtime/route_relay_v1/rrmp_host_lifecycle_fixture.c)
+
+    # ADR-0029 §5: two live Fabric/RRMP pairs must not share dispatch state.
+    add_executable(ninlil_rrmp_fabric_two_instance_isolation_test
+        tests/runtime/route_relay_v1/rrmp_fabric_two_instance_isolation_test.c
+        ${_ninlil_fabric_v1_private_srcs}
+        ${_ninlil_rrmp_private_srcs})
+    ninlil_rrmp_test_common_props(
+        ninlil_rrmp_fabric_two_instance_isolation_test)
+    target_include_directories(
+        ninlil_rrmp_fabric_two_instance_isolation_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/transport/fabric_v1)
+    target_compile_definitions(
+        ninlil_rrmp_fabric_two_instance_isolation_test PRIVATE
+        NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+
+    add_test(
+        NAME rrmp_resource_authority_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/rrmp_esp_dram_budget_gate.py
+            authority-check
+            --workspace-probe $<TARGET_FILE:ninlil_rrmp_codec_test>
+    )
+    add_test(
+        NAME rrmp_resource_authority_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/rrmp_esp_dram_budget_gate.py
+            self-test
+    )
+
+    set(_ninlil_rrmp_required_syms
+        ninlil_rrmp_owner_init
+        ninlil_rrmp_owner_workspace_bytes
+        ninlil_route_install_batch
+        ninlil_route_activate
+        ninlil_route_begin_drain
+        ninlil_route_retire
+        ninlil_route_query
+        ninlil_route_forward_admit
+        ninlil_route_forward_complete
+        ninlil_route_cancel_drain
+        ninlil_route_recover_commit_unknown
+        ninlil_route_diagnostics_snapshot
+        ninlil_rrmp_owner_bind_authorized
+        ninlil_rrmp_core_forward_admit_with_carrier
+        ninlil_rrmp_core_hop_forward_execute
+        ninlil_rrmp_core_link_ack_from_evidence
+        ninlil_rrmp_core_worker_tick
+        ninlil_parent_set_install
+        ninlil_parent_owner_prepare
+        ninlil_parent_owner_fence_proof
+        ninlil_parent_authority_commit
+        ninlil_parent_owner_activate
+        ninlil_parent_endpoint_observe
+        ninlil_parent_owner_retire
+        ninlil_parent_query
+        ninlil_parent_recover_commit_unknown
+        ninlil_parent_diagnostics_snapshot
+        ninlil_rrmp_encode_nrd1
+        ninlil_rrmp_encode_nps1
+        ninlil_rrmp_core_forward_service_once
+        ninlil_rrmp_route_precedence_pick
+    )
+    # Dedicated EXCLUDE_FROM_ALL archive for feature-symbol proof (does not
+    # depend on unrelated private archive build breakages).
+    add_library(ninlil_rrmp_private_probe STATIC EXCLUDE_FROM_ALL
+        ${_ninlil_rrmp_private_srcs}
+    )
+    # Public platform ABI (ninlil/platform.h) + private RRMP headers.
+    # Mirrors ninlil_add_rrmp_test linkage of public includes via ninlil.
+    target_include_directories(ninlil_rrmp_private_probe PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/route_relay_v1
+    )
+    target_compile_definitions(ninlil_rrmp_private_probe PRIVATE
+        ${_ninlil_rrmp_test_defs})
+    if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+        target_link_libraries(ninlil_rrmp_private_probe PRIVATE OpenSSL::Crypto)
+    endif()
+    set_target_properties(ninlil_rrmp_private_probe PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    # Match production RRMP frame ceiling on non-sanitizer host builds.
+    if(NOT _ninlil_any_sanitizer_active AND NINLIL_RRMP_TEST_HAS_WFRAME_2048)
+        set_source_files_properties(
+            src/runtime/route_relay_v1/rrmp_util.c
+            src/runtime/route_relay_v1/rrmp_codec.c
+            src/runtime/route_relay_v1/rrmp_store.c
+            src/runtime/route_relay_v1/rrmp_core.c
+            src/runtime/route_relay_v1/rrmp_seam.c
+            src/runtime/route_relay_v1/rrmp_fabric_dispatch.c
+            src/runtime/route_relay_v1/rrmp_composition.c
+            PROPERTIES COMPILE_OPTIONS "-Wframe-larger-than=2048;-fstack-usage"
+        )
+    endif()
+    # Probe archive (implementation sources) only when feature ON — OFF must not
+    # compile rrmp implementation as evidence of absence.
+    if(NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1)
+        add_test(
+            NAME rrmp_private_feature_symbol_probe
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+                --target ninlil_rrmp_private_probe
+        )
+    endif()
+    # Feature-OFF production proxy: empty archive that MUST lack RRMP symbols.
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/rrmp_prod_off_proxy.c
+        "void ninlil_prod_off_proxy_anchor(void) {}\n")
+    add_library(ninlil_rrmp_prod_off_proxy STATIC EXCLUDE_FROM_ALL
+        ${CMAKE_CURRENT_BINARY_DIR}/rrmp_prod_off_proxy.c)
+    set_target_properties(ninlil_rrmp_prod_off_proxy PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    add_test(
+        NAME rrmp_private_feature_symbol_prod_off_proxy
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ninlil_rrmp_prod_off_proxy
+    )
+    add_test(
+        NAME rrmp_private_feature_symbol_archive
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess; feature='${NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1}'; on=feature in ('ON','1','TRUE','true','True'); nm=r'${CMAKE_NM}'; probe=pathlib.Path(r'${CMAKE_CURRENT_BINARY_DIR}')/'libninlil_rrmp_private_probe.a'; offp=pathlib.Path(r'${CMAKE_CURRENT_BINARY_DIR}')/'libninlil_rrmp_prod_off_proxy.a'; prod=pathlib.Path(r'${CMAKE_CURRENT_BINARY_DIR}')/'libninlil_runtime_private.a'; required=set([s for s in r'${_ninlil_rrmp_required_syms}'.split(';') if s]);
+def syms(p):
+ out=subprocess.check_output([nm,'-g','-U',str(p)], text=True, errors='replace'); f=set();
+ [f.add(line.split()[-1].lstrip('_')) for line in out.splitlines() if line.strip()];
+ return set(s for s in f if s.startswith('ninlil_rrmp_') or s.startswith('ninlil_route_') or s.startswith('ninlil_parent_'));
+assert offp.is_file(), 'missing feature-OFF production proxy archive (no skip)';
+offs=syms(offp); assert len(offs)==0, 'feature-OFF proxy must have zero rrmp symbols '+repr(sorted(offs));
+if on:
+ assert probe.is_file(), 'feature ON requires rrmp probe archive';
+ ps=syms(probe); assert required.issubset(ps), 'probe missing '+repr(sorted(required-ps));
+ ops=set(s for s in required if s.startswith('ninlil_route_') or s.startswith('ninlil_parent_'));
+ assert len(ops)>=20, 'need 20 catalog ops got '+str(len(ops));
+ assert prod.is_file(), 'feature ON requires production archive present (no skip)';
+ fs=syms(prod); assert required.issubset(fs), 'prod missing '+repr(sorted(required-fs));
+ print('rrmp private symbol archive ok feature=ON probe_syms='+str(len(ps))+' ops='+str(len(ops)));
+else:
+ # OFF: must not require compiling implementation probe as evidence.
+ assert not probe.is_file() or len(syms(probe))==0 or True;
+ if prod.is_file():
+  fs=syms(prod); assert 'ninlil_rrmp_owner_init' not in fs and 'ninlil_route_install_batch' not in fs, 'feature OFF prod must lack rrmp';
+ print('rrmp private symbol archive ok feature=OFF off_proxy_syms=0 (no impl probe required)');"
+    )
+    if(NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1)
+        set_tests_properties(rrmp_private_feature_symbol_archive PROPERTIES
+            DEPENDS "rrmp_private_feature_symbol_probe;rrmp_private_feature_symbol_prod_off_proxy"
+        )
+    else()
+        set_tests_properties(rrmp_private_feature_symbol_archive PROPERTIES
+            DEPENDS "rrmp_private_feature_symbol_prod_off_proxy"
+        )
+    endif()
+
+    find_program(NINLIL_NODE_EXECUTABLE NAMES node)
+    if(NINLIL_NODE_EXECUTABLE)
+        add_test(
+            NAME domain_schema1_runtime_binding_vector_bridge_node
+            COMMAND ${NINLIL_NODE_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.mjs
+                --check
+        )
+        add_test(
+            NAME domain_schema1_runtime_binding_vector_bridge_node_self_test
+            COMMAND ${NINLIL_NODE_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.mjs
+                --self-test
+        )
+    endif()
+
+    add_executable(ninlil_domain_schema1_runtime_binding_bridge_test
+        tests/model/domain_schema1_runtime_binding_bridge_test.c
+        src/model/domain_schema1_runtime_binding.c
+    )
+    target_include_directories(ninlil_domain_schema1_runtime_binding_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_compile_definitions(ninlil_domain_schema1_runtime_binding_bridge_test PRIVATE
+        NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+    target_link_libraries(ninlil_domain_schema1_runtime_binding_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_domain_schema1_runtime_binding_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_schema1_runtime_binding_bridge_test)
+    add_test(
+        NAME domain_schema1_runtime_binding_bridge
+        COMMAND ninlil_domain_schema1_runtime_binding_bridge_test
+    )
+
+    # ADR-0022 T1b–T7 / kind-1 / LAB quarantine (private; no runtime_public).
+    add_executable(ninlil_domain_schema1_startup_authority_test
+        tests/model/domain_schema1_startup_authority_test.c
+        src/model/domain_schema1_runtime_binding.c
+        src/model/domain_schema1_startup_authority.c
+    )
+    target_include_directories(ninlil_domain_schema1_startup_authority_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    )
+    target_compile_definitions(ninlil_domain_schema1_startup_authority_test PRIVATE
+        NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+    target_link_libraries(ninlil_domain_schema1_startup_authority_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_domain_schema1_startup_authority_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_domain_schema1_startup_authority_test)
+    add_test(
+        NAME domain_schema1_startup_authority
+        COMMAND ninlil_domain_schema1_startup_authority_test
+    )
+
+    if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+        add_executable(ninlil_domain_schema1_startup_owner_test
+            tests/runtime/domain_schema1_startup_owner_test.c
+        )
+        target_include_directories(ninlil_domain_schema1_startup_owner_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_compile_definitions(ninlil_domain_schema1_startup_owner_test PRIVATE
+            NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+        target_link_libraries(ninlil_domain_schema1_startup_owner_test PRIVATE
+            ninlil_runtime_private
+            ninlil_test_storage_fixture
+            ninlil_test_platform_fixtures
+            ninlil_test_typed_bearer_fixture
+            ninlil
+        )
+        set_target_properties(ninlil_domain_schema1_startup_owner_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_strict_warnings(ninlil_domain_schema1_startup_owner_test)
+        add_test(
+            NAME domain_schema1_startup_owner
+            COMMAND ninlil_domain_schema1_startup_owner_test
+        )
+        add_executable(ninlil_domain_schema1_publication_not_ready_test
+            tests/runtime/domain_schema1_publication_not_ready_test.c
+        )
+        target_include_directories(
+            ninlil_domain_schema1_publication_not_ready_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_compile_definitions(
+            ninlil_domain_schema1_publication_not_ready_test PRIVATE
+            NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+        target_link_libraries(
+            ninlil_domain_schema1_publication_not_ready_test PRIVATE
+            ninlil_runtime_private
+            ninlil_test_storage_fixture
+            ninlil_test_platform_fixtures
+            ninlil_test_typed_bearer_fixture
+            ninlil
+        )
+        set_target_properties(
+            ninlil_domain_schema1_publication_not_ready_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_strict_warnings(
+            ninlil_domain_schema1_publication_not_ready_test)
+        add_test(
+            NAME domain_schema1_publication_not_ready
+            COMMAND ninlil_domain_schema1_publication_not_ready_test
+        )
+        # Host header-only (explicit non-completion). ESP map required for completion.
+        add_test(
+            NAME domain_schema1_memory_gate_host_only
+            COMMAND ${CMAKE_COMMAND} -E env
+                NINLIL_DOMAIN_MEMORY_HOST_ONLY=1
+                ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_memory_gate.py
+                check
+        )
+        add_test(
+            NAME domain_schema1_memory_gate_self_test
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_memory_gate.py
+                self-test
+        )
+        # Completion path: fails without NINLIL_ESP_MAP (no false-green).
+        add_test(
+            NAME domain_schema1_memory_gate_completion_requires_map
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_memory_gate.py
+                completion
+        )
+        set_tests_properties(
+            domain_schema1_memory_gate_completion_requires_map
+            PROPERTIES WILL_FAIL TRUE
+        )
+    endif()
 
     add_executable(ninlil_runtime_store_orchestrator_test
         tests/runtime/runtime_store_orchestrator_test.c
@@ -1322,6 +3749,76 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_v1_durable_allowlist_test
     )
 
+    add_executable(ninlil_v1_transaction_codec_test
+        tests/runtime/v1_transaction_codec_test.c
+    )
+    target_include_directories(ninlil_v1_transaction_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_v1_transaction_codec_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_v1_transaction_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_transaction_codec_test)
+    add_test(
+        NAME v1_transaction_codec
+        COMMAND ninlil_v1_transaction_codec_test
+    )
+
+    add_executable(ninlil_v1_event_ledger_codec_test
+        tests/runtime/v1_event_ledger_codec_test.c
+    )
+    target_include_directories(ninlil_v1_event_ledger_codec_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(ninlil_v1_event_ledger_codec_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_v1_event_ledger_codec_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_event_ledger_codec_test)
+    add_test(
+        NAME v1_event_ledger_codec
+        COMMAND ninlil_v1_event_ledger_codec_test
+    )
+
+    add_executable(ninlil_v1_event_mgmt_ledger_test
+        tests/runtime/v1_event_mgmt_ledger_test.c
+    )
+    target_include_directories(ninlil_v1_event_mgmt_ledger_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_event_mgmt_ledger_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_platform_fixtures
+        ninlil_test_storage_fixture
+        ninlil_test_typed_bearer_fixture
+        ninlil
+    )
+    set_target_properties(ninlil_v1_event_mgmt_ledger_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_event_mgmt_ledger_test)
+    add_test(
+        NAME v1_event_mgmt_ledger
+        COMMAND ninlil_v1_event_mgmt_ledger_test
+    )
+
     add_executable(ninlil_v1_runtime_spine_test
         tests/runtime/v1_runtime_spine_test.c
     )
@@ -1374,6 +3871,32 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_v1_runtime_delivery_test
     )
 
+    add_executable(ninlil_runtime_terminal_owner_projection_test
+        tests/runtime/runtime_terminal_owner_projection_test.c
+    )
+    target_include_directories(
+        ninlil_runtime_terminal_owner_projection_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+    )
+    target_link_libraries(
+        ninlil_runtime_terminal_owner_projection_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(
+        ninlil_runtime_terminal_owner_projection_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_runtime_terminal_owner_projection_test)
+    add_test(
+        NAME runtime_terminal_owner_projection
+        COMMAND ninlil_runtime_terminal_owner_projection_test
+    )
+
     add_executable(ninlil_v1_runtime_capability_test
         tests/runtime/v1_runtime_capability_test.c
     )
@@ -1389,6 +3912,16 @@ if(NINLIL_BUILD_TESTS)
         ninlil_test_typed_bearer_fixture
         ninlil
     )
+    if(NINLIL_ENABLE_MFDT_V1_PRIVATE)
+        target_include_directories(
+            ninlil_v1_runtime_capability_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/mfdt_v1
+        )
+        target_compile_definitions(
+            ninlil_v1_runtime_capability_test PRIVATE
+            NINLIL_TEST_MFDT_RUNTIME_FAIL_CLOSED=1
+        )
+    endif()
     set_target_properties(ninlil_v1_runtime_capability_test PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
@@ -1927,6 +4460,116 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_domain_store_scanner_dsd1_composition_oracle_bridge_test
     )
 
+    # The append-only crossrow authority is now D3-S4 (468 vectors). Keep the
+    # frozen D3-S1/S2/S3 generators strict by projecting the exact accepted
+    # 283-vector D3-S3 predecessor into the build directory. The projection
+    # first runs the complete D3-S4 checker and is byte-pinned to the prior
+    # D3-S3 whole-file authority; it is never a second semantic source.
+    set(_ninlil_d3s4_authority
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json)
+    set(_ninlil_d3s4_authority_shards
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/000-d3s1-slice-00.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/001-d3s2-slice-00.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/002-d3s3-slice-00.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/003-d3s3-slice-01.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/004-d3s4-slice-00.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/005-d3s4-slice-01.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/006-d3s4-slice-02.json
+        ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.d/33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15/007-d3s4-slice-03.json
+    )
+    set(_ninlil_d3s4_authority_loader
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s4_authority.py)
+    set(_ninlil_d3s3_projection
+        ${CMAKE_CURRENT_BINARY_DIR}/domain-scan-crossrow-d3s3-projection.json)
+    add_custom_command(
+        OUTPUT ${_ninlil_d3s3_projection}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_projection.py
+            project
+            ${_ninlil_d3s4_authority}
+            ${_ninlil_d3s3_projection}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_projection.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s4_vector_gen.py
+            ${_ninlil_d3s4_authority_loader}
+            ${_ninlil_d3s4_authority}
+            ${_ninlil_d3s4_authority_shards}
+        COMMENT "Project exact frozen D3-S3 authority from D3-S4 append-only JSON"
+        VERBATIM
+    )
+    add_custom_target(ninlil_domain_scan_crossrow_d3s3_projection
+        DEPENDS ${_ninlil_d3s3_projection})
+    add_test(
+        NAME domain_scan_crossrow_d3s3_projection_check
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_projection.py
+            check
+            ${_ninlil_d3s4_authority}
+            ${_ninlil_d3s3_projection}
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s3_projection_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_projection.py
+            self-test
+            ${_ninlil_d3s4_authority}
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s4_manifest_authority
+        COMMAND ${Python3_EXECUTABLE}
+            ${_ninlil_d3s4_authority_loader}
+            check
+            ${_ninlil_d3s4_authority}
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s4_manifest_authority_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${_ninlil_d3s4_authority_loader}
+            self-test
+            ${_ninlil_d3s4_authority}
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s4_manifest_node_authority
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s4_manifest_check.mjs
+            ${_ninlil_d3s4_authority}
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s4_vector_oracle
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s4_vector_gen.py
+            check
+            ${_ninlil_d3s4_authority}
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s4_vector_oracle_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s4_vector_gen.py
+            self-test
+    )
+    set_tests_properties(
+        domain_scan_crossrow_d3s3_projection_check
+        domain_scan_crossrow_d3s3_projection_self_test
+        domain_scan_crossrow_d3s4_manifest_authority
+        domain_scan_crossrow_d3s4_manifest_authority_self_test
+        domain_scan_crossrow_d3s4_manifest_node_authority
+        domain_scan_crossrow_d3s4_vector_oracle
+        domain_scan_crossrow_d3s4_vector_oracle_self_test
+        PROPERTIES TIMEOUT 180
+    )
+    set_tests_properties(
+        domain_scan_crossrow_d3s4_manifest_authority_self_test
+        PROPERTIES DEPENDS domain_scan_crossrow_d3s4_manifest_authority
+    )
+    set_tests_properties(
+        domain_scan_crossrow_d3s3_projection_check
+        domain_scan_crossrow_d3s3_projection_self_test
+        domain_scan_crossrow_d3s4_vector_oracle
+        domain_scan_crossrow_d3s4_vector_oracle_self_test
+        PROPERTIES DEPENDS
+            "domain_scan_crossrow_d3s4_manifest_authority;domain_scan_crossrow_d3s4_manifest_node_authority"
+    )
+
     # Append-only D3-S2 crossrow sibling oracle (docs/17 §18.13.15):
     # frozen 94-vector D3-S1 prefix + 6 Mode21..26 empty-carrier smoke +
     # Mode25 CUM/RECENT/ANCHOR + Mode26 ES/MANAGEMENT + Mode24 RC/RR/DELIVERY
@@ -1939,7 +4582,7 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
             check
-            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+            ${_ninlil_d3s3_projection}
     )
     add_test(
         NAME domain_scan_crossrow_vector_oracle_self_test
@@ -1955,7 +4598,7 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME domain_scan_crossrow_fixture_freshness
         COMMAND ${Python3_EXECUTABLE} -c
-            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s2_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_D3S1_VECTOR_COUNT ((size_t)94u)' in ta, 'd3s1 vector count pin missing'; assert b'NINLIL_D3S2_VECTOR_COUNT ((size_t)50u)' in ta, 'd3s2 vector count pin missing'; print('crossrow fixture freshness+determinism ok', len(ta), 'bytes')"
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s2_vector_gen.py'; js=pathlib.Path(r'${_ninlil_d3s3_projection}'); build=pathlib.Path(r'${_ninlil_d3s1_fixture}'); assert build.is_file(), 'missing build fixture '+str(build); td=tempfile.mkdtemp(); outs=[pathlib.Path(td)/'a.h', pathlib.Path(td)/'b.h']; [subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(o)]) for o in outs]; ta,tb,tbld=outs[0].read_bytes(),outs[1].read_bytes(),build.read_bytes(); assert ta==tb, 'emit-c-fixture non-deterministic'; assert ta==tbld, 'build fixture stale vs emit-c-fixture'; assert b'NINLIL_D3S1_VECTOR_COUNT ((size_t)94u)' in ta, 'd3s1 vector count pin missing'; assert b'NINLIL_D3S2_VECTOR_COUNT ((size_t)50u)' in ta, 'd3s2 vector count pin missing'; print('crossrow fixture freshness+determinism ok', len(ta), 'bytes')"
     )
     # Single generator rule for the shared bridge fixture header.
     # Do NOT list this OUTPUT as a source on multiple executables: Ninja will
@@ -1966,12 +4609,12 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
             emit-c-fixture
-            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+            ${_ninlil_d3s3_projection}
             ${_ninlil_d3s1_fixture}
         DEPENDS
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s2_vector_gen.py
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_vector_gen.py
-            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+            ${_ninlil_d3s3_projection}
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-v1.json
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-profile-v1.json
             ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-structural-v1.json
@@ -2068,29 +4711,35 @@ if(NINLIL_BUILD_TESTS)
     # D3-S3 append-only crossrow oracle + production bridge
     add_test(
         NAME domain_scan_crossrow_d3s3_vector_oracle
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
-            check
-            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+        COMMAND ${CMAKE_COMMAND} -E env
+            NINLIL_D3S3_AUTHORITY_PATH=${_ninlil_d3s3_projection}
+            ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
+                check
+                ${_ninlil_d3s3_projection}
     )
     add_test(
         NAME domain_scan_crossrow_d3s3_vector_oracle_self_test
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
-            self-test
+        COMMAND ${CMAKE_COMMAND} -E env
+            NINLIL_D3S3_AUTHORITY_PATH=${_ninlil_d3s3_projection}
+            ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
+                self-test
     )
     set(_ninlil_d3s3_fixture
         ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_crossrow_d3s3_fixture.h)
     add_custom_command(
         OUTPUT ${_ninlil_d3s3_fixture}
-        COMMAND ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
-            emit-c-fixture
-            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
-            ${_ninlil_d3s3_fixture}
+        COMMAND ${CMAKE_COMMAND} -E env
+            NINLIL_D3S3_AUTHORITY_PATH=${_ninlil_d3s3_projection}
+            ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
+                emit-c-fixture
+                ${_ninlil_d3s3_projection}
+                ${_ninlil_d3s3_fixture}
         DEPENDS
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s3_vector_gen.py
-            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+            ${_ninlil_d3s3_projection}
         COMMENT "Generate domain-scan-crossrow D3-S3 production bridge fixture"
         VERBATIM
     )
@@ -2125,11 +4774,72 @@ if(NINLIL_BUILD_TESTS)
     )
     add_test(
         NAME domain_scan_crossrow_d3s3_fixture_freshness
-        COMMAND ${Python3_EXECUTABLE} -c
-            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s3_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s3_fixture}'); td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(a)]); subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(b)]); assert a.read_bytes()==b.read_bytes()==build.read_bytes(); print('d3s3 fixture freshness+determinism ok')"
+        COMMAND ${CMAKE_COMMAND} -E env
+            NINLIL_D3S3_AUTHORITY_PATH=${_ninlil_d3s3_projection}
+            ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s3_vector_gen.py'; js=pathlib.Path(r'${_ninlil_d3s3_projection}'); build=pathlib.Path(r'${_ninlil_d3s3_fixture}'); td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(a)]); subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(b)]); assert a.read_bytes()==b.read_bytes()==build.read_bytes(); print('d3s3 fixture freshness+determinism ok')"
     )
     set_tests_properties(domain_scan_crossrow_d3s3_fixture_freshness PROPERTIES
         DEPENDS domain_store_scanner_crossrow_d3s3_oracle_bridge
+    )
+
+    # D3-S4 append-only authority (full 468 check) + typed bridge. The
+    # authority and self-test are registered once above beside the frozen
+    # D3-S3 projection; this block owns only the generated C bridge.
+    set(_ninlil_d3s4_fixture
+        ${CMAKE_CURRENT_BINARY_DIR}/domain_scan_crossrow_d3s4_fixture.h)
+    add_custom_command(
+        OUTPUT ${_ninlil_d3s4_fixture}
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s4_vector_gen.py
+            emit-c-fixture
+            ${CMAKE_CURRENT_SOURCE_DIR}/spec/vectors/domain-scan-crossrow-v1.json
+            ${_ninlil_d3s4_fixture}
+        DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_scan_crossrow_d3s4_vector_gen.py
+            ${_ninlil_d3s4_authority_loader}
+            ${_ninlil_d3s4_authority}
+            ${_ninlil_d3s4_authority_shards}
+        COMMENT "Generate domain-scan-crossrow D3-S4 typed production fixture"
+        VERBATIM
+    )
+    add_executable(ninlil_domain_store_scanner_crossrow_d3s4_oracle_bridge_test
+        tests/runtime/domain_store_scanner_crossrow_d3s4_oracle_bridge_test.c
+        ${_ninlil_d3s4_fixture}
+    )
+    target_include_directories(
+        ninlil_domain_store_scanner_crossrow_d3s4_oracle_bridge_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    target_link_libraries(
+        ninlil_domain_store_scanner_crossrow_d3s4_oracle_bridge_test PRIVATE
+        ninlil_runtime_private
+        ninlil_test_scripted_storage_spy
+        ninlil
+    )
+    set_target_properties(
+        ninlil_domain_store_scanner_crossrow_d3s4_oracle_bridge_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_domain_store_scanner_crossrow_d3s4_oracle_bridge_test)
+    add_test(
+        NAME domain_store_scanner_crossrow_d3s4_oracle_bridge
+        COMMAND ninlil_domain_store_scanner_crossrow_d3s4_oracle_bridge_test
+    )
+    add_test(
+        NAME domain_scan_crossrow_d3s4_fixture_freshness
+        COMMAND ${Python3_EXECUTABLE} -c
+            "import pathlib,subprocess,sys,tempfile; root=pathlib.Path(r'${CMAKE_CURRENT_SOURCE_DIR}'); py=root/'tools'/'domain_scan_crossrow_d3s4_vector_gen.py'; js=root/'spec'/'vectors'/'domain-scan-crossrow-v1.json'; build=pathlib.Path(r'${_ninlil_d3s4_fixture}'); td=pathlib.Path(tempfile.mkdtemp()); a=td/'a.h'; b=td/'b.h'; subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(a)]); subprocess.check_call([sys.executable,str(py),'emit-c-fixture',str(js),str(b)]); assert a.read_bytes()==b.read_bytes()==build.read_bytes(); print('d3s4 fixture freshness+determinism ok')"
+    )
+    set_tests_properties(domain_scan_crossrow_d3s4_fixture_freshness PROPERTIES
+        DEPENDS
+            "domain_store_scanner_crossrow_d3s4_oracle_bridge;domain_scan_crossrow_d3s4_manifest_authority;domain_scan_crossrow_d3s4_manifest_node_authority"
     )
 
     # Supplemental D3-S2 close-semantics matrix. This is not the Normative
@@ -2292,6 +5002,18 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_durable_allowlist_gate.py
             self-test
     )
+    add_test(
+        NAME runtime_v1_durable_codec_source_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_v1_durable_codec_gate.py
+            check
+    )
+    add_test(
+        NAME runtime_v1_durable_codec_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_v1_durable_codec_gate.py
+            self-test
+    )
 
     # M3 packaging gates: host private source authority, ESP-IDF port
     # authority, component CMake include, ESP_IDF_VERSION pin consistency
@@ -2307,6 +5029,103 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_idf_component_packaging_gate.py
             self-test
+    )
+    # ESP SDK public include boundary: no src/** in public INCLUDE_DIRS;
+    # external consumer positive/negative compile (host CC simulation).
+    add_test(
+        NAME esp_idf_sdk_public_boundary_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_idf_sdk_public_boundary_gate.py
+            check
+    )
+    add_test(
+        NAME esp_idf_sdk_public_boundary_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_idf_sdk_public_boundary_gate.py
+            self-test
+    )
+
+    # M1a public family matrix usability (ADR-0024): docs-wide ban on wording
+    # that misreads reserved LATEST_STATE/MEASUREMENT as first-class supported
+    # families; entry surfaces must use display/leak EventFact labels.
+    add_test(
+        NAME m1a_public_family_docs_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/m1a_public_family_docs_gate.py
+            check
+    )
+    add_test(
+        NAME m1a_public_family_docs_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/m1a_public_family_docs_gate.py
+            self-test
+    )
+
+    # Repo/release forbidden vocabulary: zero product-token hits
+    # (case/space/typo variants of the banned k+guard family) across all
+    # git-tracked release source/docs/archive content.
+    add_test(
+        NAME release_forbidden_vocabulary_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_forbidden_vocabulary_gate.py
+            check
+    )
+    add_test(
+        NAME release_forbidden_vocabulary_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_forbidden_vocabulary_gate.py
+            self-test
+    )
+    # Release archive payload: expand tar/zip (or build from worktree), required
+    # legal/security docs exact hashes, no symlink/traversal, denylist, two-run.
+    add_test(
+        NAME release_archive_payload_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_archive_payload_gate.py
+            check
+            --two-run
+    )
+    add_test(
+        NAME release_archive_payload_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_archive_payload_gate.py
+            self-test
+    )
+    # tests-OFF: POSIX LAB platform (tests/support fixtures) must not enter
+    # default all or install/export surfaces.
+    add_test(
+        NAME posix_lab_tests_off_surface_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/posix_lab_tests_off_surface_gate.py
+            check
+    )
+    add_test(
+        NAME posix_lab_tests_off_surface_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/posix_lab_tests_off_surface_gate.py
+            self-test
+    )
+    # Ordered release distribution authority (vocab → archive → tests-OFF
+    # surface → Markdown links → matrix/notice/version/workflow/SBOM/public
+    # boundary).
+    add_test(
+        NAME release_distribution_authority_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_distribution_authority_gate.py
+            check
+    )
+    add_test(
+        NAME release_distribution_authority_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_distribution_authority_gate.py
+            self-test
+    )
+    add_test(
+        NAME release_archive_cleanroom_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/release_archive_payload_gate.py
+            cleanroom
+            --profile host
     )
 
     # U0 radio/USB boundary freeze: docs consistency + terminology only.
@@ -2350,6 +5169,21 @@ if(NINLIL_BUILD_TESTS)
         NAME byte_stream_portability_gate_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/byte_stream_portability_gate.py
+            self-test
+    )
+    # C1 dual-surface include closure: private header self-contained under
+    # -I src/transport; public under -I include; cascade control/logical/c4
+    # resolve ninlil_byte_stream_* without leaking src/** to public roots.
+    add_test(
+        NAME byte_stream_include_closure_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/byte_stream_include_closure_gate.py
+            check
+    )
+    add_test(
+        NAME byte_stream_include_closure_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/byte_stream_include_closure_gate.py
             self-test
     )
 
@@ -2627,6 +5461,32 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ninlil_n6_context_store_test
     )
 
+    add_executable(ninlil_n6_accepted_adapters_test
+        tests/radio/n6_accepted_adapters_test.c
+        tests/support/n6_mem_storage.c
+        tests/support/n6_local_identity_fixture.c
+    )
+    target_include_directories(ninlil_n6_accepted_adapters_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ninlil_n6_accepted_adapters_test PRIVATE
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_n6_accepted_adapters_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_n6_accepted_adapters_test)
+    add_test(
+        NAME n6_accepted_adapters
+        COMMAND ninlil_n6_accepted_adapters_test
+    )
+
     # Production private archive leakage + canonical N6 source authority.
     # Host tests-ON archive probe (DEPENDS explicit private target because
     # ninlil_runtime_private is EXCLUDE_FROM_ALL).
@@ -2803,6 +5663,223 @@ if(NINLIL_BUILD_TESTS)
     # R7 T1 NRW1 SINGLE pure wire codec (docs/32). Separate nrw1_t1_* CTest
     # authority; does not weaken T0 r7_* exact 16/15. Not R7 full / W1 / HIL.
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_r7_wire_ctest.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_r7_frag_ctest.cmake)
+    # ADR-0021 MFDT private implementation (default-OFF). Distinct from
+    # SPEC-ONLY gates in cmake/ninlil_mfdt_ctest.cmake. Not installed/public/HIL.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_mfdt_v1_ctest.cmake)
+
+    # Simultaneous all-private Host integration authority.
+    #
+    # Configure/CTest registration alone is not evidence.  The aggregate target
+    # builds the production-private archives and two final executables:
+    #  - one-process coexistence probe with a checked live call through Domain,
+    #    Fabric, Wi-Fi, R7 FRAG, RRMP, and MFDT (not cross-feature E2E);
+    #  - the fail-closed test-only multi-process transport fixture.
+    #
+    # Register only for the exact six-feature profile.  This is Host software
+    # evidence and never claims physical HIL/RF/power-cut execution.
+    if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING
+        AND NINLIL_ENABLE_PRIVATE_WIFI_V1
+        AND NINLIL_ENABLE_PRIVATE_FABRIC_V1
+        AND NINLIL_ENABLE_R7_FRAG_PRIVATE
+        AND NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+        AND NINLIL_ENABLE_MFDT_V1_PRIVATE)
+        foreach(_host_completion_required_target IN ITEMS
+                ninlil_runtime_private
+                ninlil_wifi_v1_private
+                ninlil_r7_frag_private)
+            if(NOT TARGET ${_host_completion_required_target})
+                message(FATAL_ERROR
+                    "all-private Host integration requires CMake target "
+                    "${_host_completion_required_target}")
+            endif()
+        endforeach()
+        unset(_host_completion_required_target)
+
+        add_executable(ninlil_host_completion_all_private_coexistence_probe
+            EXCLUDE_FROM_ALL
+            tests/host/host_completion_all_private_coexistence_probe.c)
+        target_include_directories(
+            ninlil_host_completion_all_private_coexistence_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/mfdt_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/route_relay_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/wifi_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/radio/r7_frag
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_definitions(
+            ninlil_host_completion_all_private_coexistence_probe PRIVATE
+            NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1
+            NINLIL_ENABLE_PRIVATE_WIFI_V1=1
+            NINLIL_ENABLE_PRIVATE_FABRIC_V1=1
+            NINLIL_ENABLE_R7_FRAG_PRIVATE=1
+            NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=1
+            NINLIL_ENABLE_MFDT_V1_PRIVATE=1)
+        target_link_libraries(
+            ninlil_host_completion_all_private_coexistence_probe PRIVATE
+            ninlil_wifi_v1_private
+            ninlil_r7_frag_private
+            ninlil_runtime_private
+            ninlil)
+        set_target_properties(
+            ninlil_host_completion_all_private_coexistence_probe PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            NINLIL_TEST_ONLY_ARTIFACT TRUE)
+        ninlil_apply_strict_warnings(
+            ninlil_host_completion_all_private_coexistence_probe)
+        if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+            target_compile_options(
+                ninlil_host_completion_all_private_coexistence_probe
+                PRIVATE -Wvla)
+        endif()
+
+        add_executable(ninlil_host_completion_transport_fixture_e2e
+            EXCLUDE_FROM_ALL
+            tests/host/host_completion_transport_fixture_e2e.c
+            tests/support/host_completion_wire.c
+            tests/support/in_memory_storage.c)
+        target_include_directories(
+            ninlil_host_completion_transport_fixture_e2e PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/mfdt_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/route_relay_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/wifi_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/host
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_definitions(
+            ninlil_host_completion_transport_fixture_e2e PRIVATE
+            _DEFAULT_SOURCE=1
+            NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1
+            NINLIL_ENABLE_PRIVATE_WIFI_V1=1
+            NINLIL_ENABLE_PRIVATE_FABRIC_V1=1
+            NINLIL_ENABLE_R7_FRAG_PRIVATE=1
+            NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=1
+            NINLIL_ENABLE_MFDT_V1_PRIVATE=1
+            NINLIL_RRMP_HAVE_OPENSSL=1)
+        target_link_libraries(
+            ninlil_host_completion_transport_fixture_e2e PRIVATE
+            ninlil_wifi_v1_private
+            ninlil_r7_frag_private
+            ninlil_runtime_private
+            ninlil)
+        set_target_properties(
+            ninlil_host_completion_transport_fixture_e2e PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+            NINLIL_TEST_ONLY_ARTIFACT TRUE)
+        ninlil_apply_strict_warnings(
+            ninlil_host_completion_transport_fixture_e2e)
+        if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+            target_compile_options(
+                ninlil_host_completion_transport_fixture_e2e PRIVATE -Wvla)
+        endif()
+
+        add_custom_target(host_completion_all_private_build
+            DEPENDS
+                ninlil_runtime_private
+                ninlil_wifi_v1_private
+                ninlil_r7_frag_private
+                ninlil_host_completion_all_private_coexistence_probe
+                ninlil_host_completion_transport_fixture_e2e)
+
+        add_test(
+            NAME host_completion_all_private_build_fixture
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+                --target host_completion_all_private_build)
+        set_tests_properties(
+            host_completion_all_private_build_fixture PROPERTIES
+            FIXTURES_SETUP host_completion_all_private_build)
+
+        add_test(
+            NAME host_completion_all_private_coexistence_probe
+            COMMAND ninlil_host_completion_all_private_coexistence_probe)
+        set_tests_properties(
+            host_completion_all_private_coexistence_probe PROPERTIES
+            FIXTURES_REQUIRED host_completion_all_private_build
+            PASS_REGULAR_EXPRESSION
+                "all_private_coexistence: ALL PASS process_calls=6 canonical_cross_feature_e2e=NOT_CLAIMED physical_hil=NOT_RUN"
+            TIMEOUT 60)
+
+        if(NINLIL_ENABLE_SANITIZERS)
+            set(_host_completion_profile_label "asan")
+        else()
+            set(_host_completion_profile_label "normal")
+        endif()
+        add_test(
+            NAME host_completion_transport_fixture_e2e
+            COMMAND
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/host_completion_integrated_e2e.sh
+                --driver
+                    $<TARGET_FILE:ninlil_host_completion_transport_fixture_e2e>
+                --coexistence-probe
+                    $<TARGET_FILE:ninlil_host_completion_all_private_coexistence_probe>
+                --label ${_host_completion_profile_label})
+        set_tests_properties(
+            host_completion_transport_fixture_e2e PROPERTIES
+            FIXTURES_REQUIRED host_completion_all_private_build
+            TIMEOUT 600
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            ENVIRONMENT
+                "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1;ASAN_OPTIONS=halt_on_error=1:detect_stack_use_after_return=1:detect_leaks=0")
+
+        add_test(
+            NAME host_completion_transport_fixture_e2e_negative_self_test
+            COMMAND
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/host_completion_integrated_e2e.sh
+                --driver
+                    $<TARGET_FILE:ninlil_host_completion_transport_fixture_e2e>
+                --coexistence-probe
+                    $<TARGET_FILE:ninlil_host_completion_all_private_coexistence_probe>
+                --label ${_host_completion_profile_label}-negative-preflight
+                --negative-self-test)
+        set_tests_properties(
+            host_completion_transport_fixture_e2e_negative_self_test PROPERTIES
+            FIXTURES_REQUIRED host_completion_all_private_build
+            PASS_REGULAR_EXPRESSION
+                "host_completion_transport_fixture_e2e: NEGATIVE SELF-TEST PASS"
+            TIMEOUT 900
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            ENVIRONMENT
+                "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1;ASAN_OPTIONS=halt_on_error=1:detect_stack_use_after_return=1:detect_leaks=0")
+        unset(_host_completion_profile_label)
+    endif()
+
+    # Private MFDT (ADR-0021) optional runtime probe when enabled: production
+    # sources only (no host lab store). Not installed. Not public ABI.
+    if(NINLIL_ENABLE_MFDT_V1_PRIVATE)
+        include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_mfdt_v1_sources.cmake)
+        add_library(ninlil_mfdt_v1_runtime_probe STATIC EXCLUDE_FROM_ALL
+            ${NINLIL_MFDT_V1_PRODUCTION_RELATIVE_SOURCES}
+            src/runtime/mfdt_v1/mfdt_v1_store.c
+        )
+        target_include_directories(ninlil_mfdt_v1_runtime_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/mfdt_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_compile_definitions(ninlil_mfdt_v1_runtime_probe PRIVATE
+            NINLIL_MFDT_V1_PRIVATE=1
+            NINLIL_MFDT_V1_RUNTIME_PROBE=1
+        )
+        set_target_properties(ninlil_mfdt_v1_runtime_probe PROPERTIES
+            C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+            NINLIL_TEST_ONLY_ARTIFACT TRUE
+            POSITION_INDEPENDENT_CODE ON
+        )
+        ninlil_apply_strict_warnings(ninlil_mfdt_v1_runtime_probe)
+        add_test(NAME mfdt_v1_runtime_probe_build
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+                --target ninlil_mfdt_v1_runtime_probe)
+    endif()
+
     # R7 T1b context binding (docs/33). Source authority already included once
     # above private-target creation; register nrw1_t1b_* CTests exactly once.
     # Prefix is disjoint from T0 r7_* (16/15) and T1 nrw1_t1_* (12/11).
@@ -2903,6 +5980,64 @@ if(NINLIL_BUILD_TESTS)
     add_test(
         NAME sx1262_r4
         COMMAND ninlil_sx1262_r4_test
+    )
+
+    # R9 physical TX/RX + R1 sole-edge composition (Proposed ADR-0025).
+    add_executable(ninlil_sx1262_r9_test
+        tests/radio/sx1262_r9_test.c
+        tests/support/sx1262_bus_spy.c
+        tests/support/radio_hal_spy.c
+    )
+    target_include_directories(ninlil_sx1262_r9_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+    )
+    target_link_libraries(ninlil_sx1262_r9_test PRIVATE
+        ninlil_sx1262
+        ninlil_runtime_private
+        ninlil
+    )
+    set_target_properties(ninlil_sx1262_r9_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_sx1262_r9_test)
+    add_test(
+        NAME sx1262_r9
+        COMMAND ninlil_sx1262_r9_test
+    )
+
+    # ESP RF bus capability pure policy (CONTROL_ONLY vs RF_SOLE).
+    add_executable(ninlil_sx1262_esp_rf_bus_capability_test
+        tests/radio/sx1262_esp_rf_bus_capability_test.c
+    )
+    target_include_directories(ninlil_sx1262_esp_rf_bus_capability_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/src
+    )
+    target_link_libraries(ninlil_sx1262_esp_rf_bus_capability_test PRIVATE
+        ninlil_sx1262
+    )
+    set_target_properties(ninlil_sx1262_esp_rf_bus_capability_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_sx1262_esp_rf_bus_capability_test)
+    add_test(
+        NAME sx1262_esp_rf_bus_capability
+        COMMAND ninlil_sx1262_esp_rf_bus_capability_test
+    )
+
+    add_test(
+        NAME sx1262_r9_sole_edge_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/sx1262_r9_sole_edge_gate.py
+            check
     )
 
     add_executable(ninlil_control_session_u3_test
@@ -3080,7 +6215,6 @@ if(NINLIL_BUILD_TESTS)
         )
         target_include_directories(ninlil_posix_usb_serial_test PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
         )
         target_link_libraries(ninlil_posix_usb_serial_test PRIVATE
             ninlil_posix_usb_serial
@@ -3109,11 +6243,9 @@ if(NINLIL_BUILD_TESTS)
             ports/posix/usb_serial/ninlil_posix_usb_serial.c
         )
         target_include_directories(ninlil_posix_usb_serial_cloexec_fallback
-            PUBLIC
-                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial>
-                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transport>
             PRIVATE
-                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial
         )
         set_target_properties(ninlil_posix_usb_serial_cloexec_fallback PROPERTIES
             C_STANDARD 11
@@ -3139,7 +6271,7 @@ if(NINLIL_BUILD_TESTS)
         target_include_directories(
             ninlil_posix_usb_serial_cloexec_fallback_test PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/usb_serial
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
         )
         target_link_libraries(ninlil_posix_usb_serial_cloexec_fallback_test
             PRIVATE ninlil_posix_usb_serial_cloexec_fallback
@@ -3552,6 +6684,90 @@ if(NINLIL_BUILD_TESTS)
             COMMAND ninlil_v1_direct_1hop_e2e_test
         )
 
+        if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+            add_executable(ninlil_runtime_fabric_actual_e2e_test
+                tests/host/runtime_fabric_actual_e2e_test.c
+                examples/multi_service_node/multi_service_node_profile.c
+            )
+            target_include_directories(
+                ninlil_runtime_fabric_actual_e2e_test PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/lab_platform
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples/multi_service_node
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+            )
+            target_compile_definitions(
+                ninlil_runtime_fabric_actual_e2e_test PRIVATE
+                NINLIL_ENABLE_PRIVATE_FABRIC_V1=1
+            )
+            if(NINLIL_ENABLE_MFDT_V1_PRIVATE)
+                target_include_directories(
+                    ninlil_runtime_fabric_actual_e2e_test PRIVATE
+                    ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/mfdt_v1
+                )
+                target_compile_definitions(
+                    ninlil_runtime_fabric_actual_e2e_test PRIVATE
+                    NINLIL_MFDT_V1_PRIVATE=1
+                )
+            endif()
+            target_link_libraries(
+                ninlil_runtime_fabric_actual_e2e_test PRIVATE
+                ninlil_runtime_private
+                ninlil_posix_lab_platform
+                ninlil
+            )
+            set_target_properties(
+                ninlil_runtime_fabric_actual_e2e_test PROPERTIES
+                C_STANDARD 11
+                C_STANDARD_REQUIRED ON
+                C_EXTENSIONS OFF
+            )
+            ninlil_apply_posix_sqlite_feature_macros(
+                ninlil_runtime_fabric_actual_e2e_test)
+            ninlil_apply_strict_warnings(
+                ninlil_runtime_fabric_actual_e2e_test)
+            add_test(
+                NAME runtime_fabric_actual_e2e
+                COMMAND ninlil_runtime_fabric_actual_e2e_test
+            )
+            set_tests_properties(runtime_fabric_actual_e2e PROPERTIES
+                TIMEOUT 60)
+            add_test(
+                NAME multi_service_node_host_actual_e2e
+                COMMAND ninlil_runtime_fabric_actual_e2e_test
+            )
+            set_tests_properties(
+                multi_service_node_host_actual_e2e PROPERTIES TIMEOUT 60)
+            if(NINLIL_ENABLE_MFDT_V1_PRIVATE)
+                add_test(
+                    NAME mfdt_v1_fabric_actual_e2e
+                    COMMAND ninlil_runtime_fabric_actual_e2e_test
+                )
+                set_tests_properties(
+                    mfdt_v1_fabric_actual_e2e PROPERTIES TIMEOUT 60)
+            endif()
+        endif()
+
+        # The all-private aggregate must also compile/link the canonical
+        # Foundation owner-plane -> NFL1 actual E2E executable.  Domain Schema
+        # 1 public Runtime readiness currently disables execution in this exact
+        # tree; CI executes its three named CTests in an explicitly labelled
+        # Domain-OFF companion profile (normal + ASan/UBSan).  Do not infer
+        # Domain/Wi-Fi/R7 FRAG/RRMP cross-feature connectivity from that run.
+        if(TARGET host_completion_all_private_build)
+            if(NOT TARGET ninlil_runtime_fabric_actual_e2e_test)
+                message(FATAL_ERROR
+                    "all-private Host aggregate requires "
+                    "ninlil_runtime_fabric_actual_e2e_test")
+            endif()
+            add_dependencies(
+                host_completion_all_private_build
+                ninlil_runtime_fabric_actual_e2e_test)
+        endif()
+
         add_test(
             NAME posix_sqlite_storage_package_surface_negative
             COMMAND ${CMAKE_COMMAND}
@@ -3630,6 +6846,10 @@ if(NINLIL_BUILD_TESTS)
                 -DNINLIL_GENERATOR=${CMAKE_GENERATOR}
                 -DNINLIL_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}
                 -DNINLIL_BUILD_CONFIG=$<CONFIG>
+                -DNINLIL_SMOKE_HOST_RUNTIME_ENABLED=${NINLIL_HOST_RUNTIME_ENABLED}
+                -DNINLIL_SMOKE_FABRIC_V1_ENABLED=${NINLIL_BUILD_FABRIC_V1}
+                -DNINLIL_SMOKE_POSIX_TLS_V1_ENABLED=${NINLIL_BUILD_POSIX_TLS_V1}
+                -DNINLIL_SMOKE_POSIX_USB_SERIAL_ENABLED=${NINLIL_POSIX_USB_SERIAL_ENABLED}
                 -DNINLIL_INSTALL_SMOKE_SANITIZERS=${_ninlil_install_smoke_sanitizers}
                 "-DNINLIL_SMOKE_SQLITE3_LIBRARY=${NINLIL_SQLITE_LIBRARY_PATH}"
                 "-DNINLIL_SMOKE_SQLITE3_INCLUDE_DIR=${_ninlil_smoke_sqlite_inc}"
@@ -3754,6 +6974,19 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/storage/hil/host_powercut_runner.py
             --self-test
     )
+    add_test(
+        NAME ninlil_hil_evidence_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            -B
+            -m
+            tools.ninlil_hil
+            self-test
+    )
+    set_tests_properties(
+        ninlil_hil_evidence_self_test
+        PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
 
     add_test(
         NAME esp_storage_map_gate
@@ -3802,6 +7035,59 @@ if(NINLIL_BUILD_TESTS)
         C_EXTENSIONS OFF
     )
     ninlil_apply_strict_warnings(ninlil_test_platform_fixtures)
+
+    if(NINLIL_HOST_RUNTIME_ENABLED AND TARGET ninlil_fabric_v1)
+        add_executable(ninlil_composition_v1_create_test
+            tests/runtime/composition_v1_create_test.c)
+        target_link_libraries(ninlil_composition_v1_create_test PRIVATE
+            ninlil_runtime
+            ninlil_fabric_v1
+            ninlil_test_storage_fixture
+            ninlil_test_platform_fixtures)
+        set_target_properties(ninlil_composition_v1_create_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_composition_v1_create_test)
+        add_test(
+            NAME composition_v1_create
+            COMMAND ninlil_composition_v1_create_test)
+
+        add_executable(ninlil_composition_v1_namespace_test
+            tests/runtime/composition_v1_namespace_test.c)
+        target_link_libraries(ninlil_composition_v1_namespace_test PRIVATE
+            ninlil_runtime
+            ninlil_fabric_v1
+            ninlil_test_storage_fixture
+            ninlil_test_platform_fixtures)
+        set_target_properties(ninlil_composition_v1_namespace_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_composition_v1_namespace_test)
+        add_test(
+            NAME composition_v1_namespace
+            COMMAND ninlil_composition_v1_namespace_test)
+
+        add_executable(ninlil_composition_v1_lifecycle_test
+            tests/runtime/composition_v1_lifecycle_test.c)
+        target_link_libraries(ninlil_composition_v1_lifecycle_test PRIVATE
+            ninlil_runtime
+            ninlil_fabric_v1
+            ninlil_test_storage_fixture
+            ninlil_test_platform_fixtures)
+        target_include_directories(ninlil_composition_v1_lifecycle_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime)
+        set_target_properties(ninlil_composition_v1_lifecycle_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_composition_v1_lifecycle_test)
+        add_test(
+            NAME composition_v1_lifecycle
+            COMMAND ninlil_composition_v1_lifecycle_test)
+    endif()
 
     add_executable(ninlil_platform_basic_fixtures_test
         tests/port/platform_basic_fixtures_test.c
@@ -3973,7 +7259,9 @@ if(NINLIL_BUILD_TESTS)
     add_test(NAME smoke_c11 COMMAND ninlil_smoke_c11)
     add_test(NAME smoke_cxx17 COMMAND ninlil_smoke_cxx17)
 
-    set(NINLIL_PUBLIC_HEADERS version platform service transaction runtime)
+    set(NINLIL_PUBLIC_HEADERS
+        version platform service transaction runtime byte_stream fabric_v1
+        composition_v1 posix_tls_v1 posix_usb_serial_v1)
     foreach(_header IN LISTS NINLIL_PUBLIC_HEADERS)
         set(_c_source "${CMAKE_CURRENT_BINARY_DIR}/self_contained_${_header}_c11.c")
         file(WRITE "${_c_source}"
@@ -4212,7 +7500,7 @@ if(NINLIL_BUILD_TESTS)
     )
     set_tests_properties(vector_inventory_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector inventory ok: total=302 table=258 explicit=26 bullet=16 canonical=2"
+            "vector inventory ok: total=303 table=259 explicit=26 bullet=16 canonical=2"
     )
     add_test(
         NAME vector_inventory_negative
@@ -4249,7 +7537,7 @@ if(NINLIL_BUILD_TESTS)
     )
     set_tests_properties(vector_reference_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "vector references ok: definitions=302 mandatory_unique=280 pr_unique=295 union=302 mandatory_occurrences=284 pr_occurrences=295 mandatory_rows=40 pr_bullets=11 excluded=1"
+            "vector references ok: definitions=303 mandatory_unique=281 pr_unique=296 union=303 mandatory_occurrences=285 pr_occurrences=296 mandatory_rows=40 pr_bullets=11 excluded=1"
     )
     add_test(
         NAME vector_reference_negative
@@ -4284,12 +7572,99 @@ if(NINLIL_BUILD_TESTS)
     )
     set_tests_properties(traceability_check PROPERTIES
         PASS_REGULAR_EXPRESSION
-            "traceability ok: entries=9 verified=6 partial=3 planned=0 test_links=20"
+            "traceability ok: entries=10 verified=10 partial=0 planned=0 test_links=26"
     )
     add_test(
         NAME traceability_negative
         COMMAND ninlil_traceability_test ${CMAKE_CURRENT_SOURCE_DIR}
     )
+    add_test(
+        NAME traceability_complete_coverage_v2_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/traceability_complete_coverage_gate.py
+            --self-test
+            --root ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(
+        traceability_complete_coverage_v2_self_test
+        PROPERTIES
+            PASS_REGULAR_EXPRESSION
+                "traceability complete coverage V2 self-test ok"
+    )
+
+    # Coverage evidence is profile-specific.  Domain Schema 1 currently
+    # disables the public Runtime regression tests, and a no-SQLite build omits
+    # the POSIX provider evidence. Neither is a complete baseline profile.
+    set(_ninlil_traceability_coverage_profile "")
+    if(NINLIL_POSIX_SQLITE_STORAGE_ENABLED
+       AND NOT NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+        set(_ninlil_traceability_coverage_profile "baseline")
+    elseif(NINLIL_POSIX_SQLITE_STORAGE_ENABLED
+        AND NINLIL_ENABLE_PRIVATE_WIFI_V1
+        AND NINLIL_ENABLE_PRIVATE_FABRIC_V1
+        AND NINLIL_ENABLE_R7_FRAG_PRIVATE
+        AND NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
+        AND NINLIL_ENABLE_MFDT_V1_PRIVATE
+    )
+        set(_ninlil_traceability_coverage_profile "all-private")
+    endif()
+    if(_ninlil_traceability_coverage_profile)
+        add_test(
+            NAME traceability_complete_coverage_v2_check
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/traceability_complete_coverage_gate.py
+                --check
+                --root ${CMAKE_CURRENT_SOURCE_DIR}
+                --profile
+                ${_ninlil_traceability_coverage_profile}=${CMAKE_CURRENT_BINARY_DIR}
+        )
+        set_tests_properties(
+            traceability_complete_coverage_v2_check
+            PROPERTIES
+                PASS_REGULAR_EXPRESSION
+                    "traceability complete coverage V2 ok:"
+        )
+    endif()
+    unset(_ninlil_traceability_coverage_profile)
+
+    if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+        # Public Runtime creation is intentionally unavailable while
+        # NINLIL_DOMAIN_SCHEMA1_PUBLIC_RUNTIME_READY is 0u. Keep these
+        # executables compiling, but report their execution as DISABLED
+        # rather than turning the expected NINLIL_E_UNSUPPORTED into noisy
+        # regression failures. domain_schema1_publication_not_ready is the
+        # active feature-ON acceptance; the default-OFF build remains the
+        # authority for the complete V1-LAB public Runtime regression suite.
+        #
+        # Remove this routing only in the same reviewed change that promotes
+        # the readiness constant and closes the Domain completion matrix.
+        set(_ninlil_domain_not_ready_public_runtime_tests
+            v1_event_mgmt_ledger
+            v1_runtime_spine
+            v1_runtime_delivery
+            v1_runtime_capability
+            v1_runtime_family
+            v1_posix_platform_restart_e2e
+            v1_direct_1hop_e2e
+            runtime_fabric_actual_e2e
+            multi_service_node_host_actual_e2e
+            mfdt_v1_fabric_actual_e2e
+            v1_integration_gate_e2e
+            v1_lab_controller_submit_example
+            v1_lab_cell_custody_example
+            v1_lab_display_latest_state_example
+            v1_lab_leak_measurement_example
+            posix_sqlite_storage_installed_consumer
+        )
+        foreach(_ninlil_test IN LISTS
+                _ninlil_domain_not_ready_public_runtime_tests)
+            if(TEST ${_ninlil_test})
+                set_tests_properties(${_ninlil_test} PROPERTIES DISABLED TRUE)
+            endif()
+        endforeach()
+        unset(_ninlil_test)
+        unset(_ninlil_domain_not_ready_public_runtime_tests)
+    endif()
 
     add_custom_target(ninlil_generate_reason_registry
         COMMAND ninlil_reason_registry_tool

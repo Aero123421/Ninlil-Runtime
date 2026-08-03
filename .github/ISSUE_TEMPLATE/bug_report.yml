@@ -1,0 +1,62 @@
+name: Bug report
+description: 再現可能な不具合を報告する
+title: "[Bug] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。秘密情報、個人情報、未修正の脆弱性は記載せず、SECURITY.mdの非公開手順を使用してください。
+  - type: input
+    id: version
+    attributes:
+      label: Release / commit
+      description: Release tagまたは完全なcommit SHA
+      placeholder: v0.1.0 or 0123456789abcdef...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS、toolchain、CMake/ESP-IDF、port、hardware、build option
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Repository rootから再現できる最小の手順またはtest
+      placeholder: |
+        1. Configure ...
+        2. Build ...
+        3. Run ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Error、失敗したassertion、redact済みlogを含めてください
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: 回避策、発生頻度、最初に確認したversionなど
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: SUPPORT.mdと既知の制限を確認しました
+          required: true
+        - label: この報告に秘密情報、個人情報、未修正の脆弱性を含めていません
+          required: true

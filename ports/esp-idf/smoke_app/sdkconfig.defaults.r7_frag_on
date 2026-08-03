@@ -1,0 +1,3 @@
+# Overlay for optional private NRW1 LINK/FRAG target enable proof only.
+# Default sdkconfig.defaults must NOT set this. Not RF/HIL.
+CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE=y

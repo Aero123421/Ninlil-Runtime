@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "enabled": true,
+  "role": "client",
+  "wifi": {
+    "auth": "wpa3_sae",
+    "pmf_required": true,
+    "channel": 0,
+    "profile_revision": 1,
+    "profile_id_hex": "replace-with-32-hex-digits",
+    "credential_binding_id_hex": "replace-with-32-hex-digits",
+    "ssid_file": "/absolute/private/path/wifi-ssid.bin",
+    "psk_file": "/absolute/private/path/wifi-psk.bin"
+  },
+  "endpoint": {
+    "address": "192.0.2.10",
+    "port": 7443
+  },
+  "session": {
+    "configuration_revision": 1,
+    "assignment_epoch": 1,
+    "instance_id_hex": "replace-with-32-hex-digits",
+    "local_leaf_hex": "replace-with-164-hex-digits-from-the-local-leaf-certificate",
+    "peer_leaf_hex": "replace-with-164-hex-digits-from-the-peer-leaf-certificate",
+    "fabric_descriptor_digest_hex": "replace-with-64-hex-digits",
+    "registry_epoch_id_hex": "replace-with-32-hex-digits",
+    "credential_candidate_digest_hex": "replace-with-64-hex-digits",
+    "ca_pem_file": "/absolute/private/path/ca.pem",
+    "cert_pem_file": "/absolute/private/path/local-cert.pem",
+    "key_pem_file": "/absolute/private/path/local-key.pem"
+  }
+}

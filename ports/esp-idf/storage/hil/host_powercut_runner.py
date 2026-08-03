@@ -30,6 +30,7 @@ SCENARIO_EVENTS = {
 SNAPSHOT_DOMAIN = b"NINLIL-HIL-SNAPSHOT-V1"
 DIRECTORY_DOMAIN = b"NINLIL-HIL-DIRECTORY-V1"
 HEX256_RE = re.compile(r"^[0-9a-f]{64}$")
+EVIDENCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 READY_RE = re.compile(
     r"^HIL_READY format=4 policy=ESP_UNPROVEN protocol=3 "
     r"boot_nonce=([0-9a-fA-F]{16}) reset_reason=([0-9]+)$"
@@ -206,6 +207,41 @@ def parse_result(
     return state, digest
 
 
+def evidence_event(
+    case_id: str,
+    scenario: str,
+    expected_event: str,
+    delay_ms: float,
+    state: str,
+    digest: str,
+) -> dict[str, object]:
+    """Return a unified-runner event without claiming physical attestation."""
+    if EVIDENCE_ID_RE.fullmatch(case_id) is None:
+        raise ValueError("evidence case ID must be a safe identifier")
+    if SCENARIO_EVENTS.get(scenario) != expected_event:
+        raise ValueError("evidence event scenario/event mismatch")
+    if digest != expected_digest(scenario, state):
+        raise ValueError("evidence event digest mismatch")
+    checked_float("delay-ms", delay_ms, MAX_DELAY_MS)
+    return {
+        "event_id": f"{case_id}.result",
+        "case_id": case_id,
+        "outcome": "PASS",
+        "observed": {
+            "scenario": scenario,
+            "event": expected_event,
+            "delay_ms": delay_ms,
+            "boot_nonce_changed": True,
+            "power_command_succeeded": True,
+            # A changed boot nonce and successful relay command do not prove
+            # that flash power was physically interrupted.
+            "physical_power_interruption_verified": False,
+            "state": state,
+            "digest": digest,
+        },
+    }
+
+
 def self_test() -> None:
     assert parse_argv('["relay", "off"]') == ["relay", "off"]
     for bad in ("[]", '"relay off"', '["relay", ""]'):
@@ -264,6 +300,29 @@ def self_test() -> None:
         "S1",
         "DATA_BEFORE_WRITE",
     ) == ("NEW", new_digest)
+    unified = evidence_event(
+        "HIL-S1-001",
+        "S1",
+        "DATA_BEFORE_WRITE",
+        1.5,
+        "OLD",
+        old_digest,
+    )
+    assert unified["outcome"] == "PASS"
+    assert unified["observed"]["physical_power_interruption_verified"] is False
+    try:
+        evidence_event(
+            "../escape",
+            "S1",
+            "DATA_BEFORE_WRITE",
+            1.5,
+            "OLD",
+            old_digest,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("accepted unsafe evidence case ID")
 
     bad_boundaries = (
         "HIL_BOUNDARY S2 DATA_BEFORE_WRITE",
@@ -354,6 +413,13 @@ def main() -> None:
     )
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--boot-seconds", type=float, default=3.0)
+    parser.add_argument(
+        "--evidence-case-id",
+        help=(
+            "emit one NINLIL_HIL_EVENT_V1 record for the unified runner; "
+            "the record remains local unverified evidence"
+        ),
+    )
     args = parser.parse_args()
 
     try:
@@ -454,6 +520,22 @@ def main() -> None:
             f"HIL PASS scenario={args.scenario} event={expected_event} "
             f"delay_ms={args.delay_ms} state={state} digest={digest}"
         )
+        if args.evidence_case_id is not None:
+            try:
+                event = evidence_event(
+                    args.evidence_case_id,
+                    args.scenario,
+                    expected_event,
+                    args.delay_ms,
+                    state,
+                    digest,
+                )
+            except ValueError as error:
+                parser.error(str(error))
+            print(
+                "NINLIL_HIL_EVENT_V1 "
+                + json.dumps(event, sort_keys=True, separators=(",", ":"))
+            )
 
 
 if __name__ == "__main__":

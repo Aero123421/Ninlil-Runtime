@@ -33,6 +33,14 @@
         }                                                                      \
     } while (0)
 
+/*
+ * Bounded test fixture storage (file BSS), not function stack.
+ * scripted spy ≈ 1.4 MiB (128×4KiB rows + 1024 traces); ASan default
+ * stack cannot hold it. Production scanners bind workspace by pointer
+ * (≤ NINLIL_DOMAIN_SCANNER_WORKSPACE_CEILING_BYTES = 8192); spy is test-only.
+ */
+static ninlil_scripted_storage_spy_t g_d3s3_spy_fx;
+
 static void set_id(ninlil_id128_t *id, uint8_t first)
 {
     uint8_t i;
@@ -179,7 +187,6 @@ static int test_d3s3_context_size_and_masks(void)
 
 static int test_d3s3_begin_prevalidation(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -190,9 +197,9 @@ static int test_d3s3_begin_prevalidation(void)
     uint8_t session_canary[sizeof(session)];
     uint8_t context_canary[sizeof(context)];
 
-    ninlil_spy_init(&spy);
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0xA5u, sizeof(context));
@@ -228,7 +235,6 @@ static int test_d3s3_valid_begin_four_modes(void)
 {
     uint8_t mode;
     for (mode = 27u; mode <= 30u; mode += 1u) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -238,10 +244,10 @@ static int test_d3s3_valid_begin_four_modes(void)
         ninlil_status_t st;
         ninlil_domain_scan_result_t result;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0x3Cu, sizeof(workspace));
         (void)memset(&context, 0xAAu, sizeof(context));
@@ -277,8 +283,8 @@ static int test_d3s3_valid_begin_four_modes(void)
         st = ninlil_domain_scan_finalize(&session, &result);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(result.adopted == 1u);
-        REQUIRE(spy.mutation_calls == 0u);
-        REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+        REQUIRE(g_d3s3_spy_fx.mutation_calls == 0u);
+        REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
         /* handle closed by finalize/abort */
     }
     return 0;
@@ -304,7 +310,6 @@ static int test_d3s3_no_key_digest_reverse_api(void)
 static int test_d3s3_four_session_product_not_one_baseline(void)
 {
     /* Each mode requires its own begin_profiled_d3s3; dual bind forbidden. */
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t c27;
@@ -314,10 +319,10 @@ static int test_d3s3_four_session_product_not_one_baseline(void)
     const ninlil_storage_ops_t *ops;
     ninlil_status_t st;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&c27, 0, sizeof(c27));
@@ -373,7 +378,6 @@ static int test_d3s3_digest_pin_offsets(void)
 
 static int test_d3s3_drive_budget_zero(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -384,10 +388,10 @@ static int test_d3s3_drive_budget_zero(void)
     uint8_t session_canary[sizeof(session)];
     uint8_t context_canary[sizeof(context)];
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -863,7 +867,6 @@ static int arm_focus_scan_context(
  */
 static int test_d3s3_r12_mode27_owner_raw_mismatch_exact_abort(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -920,10 +923,10 @@ static int test_d3s3_r12_mode27_owner_raw_mismatch_exact_abort(void)
             &extra_val_len));
     }
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -932,9 +935,9 @@ static int test_d3s3_r12_mode27_owner_raw_mismatch_exact_abort(void)
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
     /* Install dig-match fixtures after BASELINE so D1 man does not disrupt B0. */
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     REQUIRE(ninlil_spy_add_row(
-        &spy, extra_key, extra_key_len, extra_val, extra_val_len));
+        &g_d3s3_spy_fx, extra_key, extra_key_len, extra_val, extra_val_len));
     REQUIRE(arm_focus_scan_context(
         &context, 27u, man_dig, carrier_tx, NULL));
 
@@ -946,12 +949,12 @@ static int test_d3s3_r12_mode27_owner_raw_mismatch_exact_abort(void)
 
     /* Schedule NATURAL IO_ERROR on the iter_next after the mismatch row.
      * Abort must prevent that call so CORRUPT is not overwritten. */
-    next_calls_before = spy.iter_next_calls;
+    next_calls_before = g_d3s3_spy_fx.iter_next_calls;
     {
         /* FOCUS reopens from zero; man is after 17 profile rows (18th OK).
          * Fault the residual next after man (19th of this walk). */
-        uint32_t planned = spy.iter_next_calls + 19u;
-        REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_ITER_NEXT, planned,
+        uint32_t planned = g_d3s3_spy_fx.iter_next_calls + 19u;
+        REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_ITER_NEXT, planned,
             NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
     }
 
@@ -962,16 +965,16 @@ static int test_d3s3_r12_mode27_owner_raw_mismatch_exact_abort(void)
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
     REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S3_FLAG_MATCH_INSTALLED)
         == 0u);
-    next_calls_after = spy.iter_next_calls;
+    next_calls_after = g_d3s3_spy_fx.iter_next_calls;
     /* No residual next after mismatch: fault must remain unused. */
-    REQUIRE(spy.faults[0].used == 0u);
+    REQUIRE(g_d3s3_spy_fx.faults[0].used == 0u);
     /* Visited at most through the mismatch man row (+ NOT_FOUND forbidden). */
     REQUIRE(next_calls_after > next_calls_before);
     /* Extra man must not have been returned after sticky. */
-    for (i = 0u; i < spy.trace_count; i += 1u) {
-        if (spy.trace[i].op == NINLIL_SPY_OP_ITER_NEXT
-            && spy.trace[i].key_bytes_length == extra_key_len
-            && memcmp(spy.trace[i].key_bytes, extra_key, extra_key_len) == 0) {
+    for (i = 0u; i < g_d3s3_spy_fx.trace_count; i += 1u) {
+        if (g_d3s3_spy_fx.trace[i].op == NINLIL_SPY_OP_ITER_NEXT
+            && g_d3s3_spy_fx.trace[i].key_bytes_length == extra_key_len
+            && memcmp(g_d3s3_spy_fx.trace[i].key_bytes, extra_key, extra_key_len) == 0) {
             (void)fprintf(stderr, "residual iter_next after owner_raw mismatch\n");
             return 1;
         }
@@ -995,7 +998,7 @@ static int test_d3s3_r12_mode27_owner_raw_mismatch_exact_abort(void)
     REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(result.adopted == 0u);
     REQUIRE(result.status == NINLIL_E_STORAGE_CORRUPT);
-    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     return 0;
 }
 
@@ -1006,7 +1009,6 @@ static int test_d3s3_r12_mode27_owner_raw_mismatch_exact_abort(void)
  */
 static int test_d3s3_bind_man_natural_get_fault_visit_commit(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1040,10 +1042,10 @@ static int test_d3s3_bind_man_natural_get_fault_visit_commit(void)
         1u, pvd, man_key, (uint32_t)sizeof(man_key), &man_key_len, man_val,
         (uint32_t)sizeof(man_val), &man_val_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1051,7 +1053,7 @@ static int test_d3s3_bind_man_natural_get_fault_visit_commit(void)
         &session, ops, &handle, &workspace, &candidate, 27u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     context.phase = NINLIL_DOMAIN_SCAN_D3S3_PHASE_BIND_MANIFEST;
     context.pass_kind = NINLIL_DOMAIN_SCAN_D3S3_PASS_INTERNAL;
     context.flags = (uint8_t)(NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
@@ -1063,10 +1065,10 @@ static int test_d3s3_bind_man_natural_get_fault_visit_commit(void)
     domain_keys_before = session.current_domain_key_count;
     family14_before = session.family14_row_count;
     family14_mask_before = session.family14_iter_seen_mask;
-    gets_before = spy.get_calls;
-    next_before = spy.iter_next_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
+    next_before = g_d3s3_spy_fx.iter_next_calls;
     /* Next product GET is BIND_MAN owner reverse; natural Port IO_ERROR. */
-    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, gets_before + 1u,
+    REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_GET, gets_before + 1u,
         NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
 
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
@@ -1075,10 +1077,10 @@ static int test_d3s3_bind_man_natural_get_fault_visit_commit(void)
     REQUIRE(session.sticky_primary == NINLIL_E_STORAGE);
     REQUIRE(session.sticky_primary != NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-    REQUIRE(spy.get_calls == gets_before + 1u);
-    REQUIRE(spy.faults[0].used == 1u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u);
+    REQUIRE(g_d3s3_spy_fx.faults[0].used == 1u);
     /* No residual iter_next after the failing get. */
-    REQUIRE(spy.iter_next_calls > next_before);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls > next_before);
     /* Visit commit of the eligible man OK iter_next retained. */
     REQUIRE(session.has_previous == 1u);
     REQUIRE(session.previous_key_length == man_key_len);
@@ -1093,14 +1095,13 @@ static int test_d3s3_bind_man_natural_get_fault_visit_commit(void)
     REQUIRE(st == NINLIL_E_STORAGE);
     REQUIRE(result.adopted == 0u);
     REQUIRE(result.status == NINLIL_E_STORAGE);
-    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     return 0;
 }
 
 /* Mode29 R12: dig-match man.owner_raw ≠ focus_raw80 → CORRUPT before install. */
 static int test_d3s3_r12_mode29_owner_raw_mismatch(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1157,10 +1158,10 @@ static int test_d3s3_r12_mode29_owner_raw_mismatch(void)
         man_val, (uint32_t)sizeof(man_val), &man_val_len));
     REQUIRE(compute_key_digest(man_key, man_key_len, man_dig));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1168,7 +1169,7 @@ static int test_d3s3_r12_mode29_owner_raw_mismatch(void)
         &session, ops, &handle, &workspace, &candidate, 29u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     REQUIRE(arm_focus_scan_context(
         &context, 29u, man_dig, NULL, carrier_raw));
 
@@ -1188,7 +1189,6 @@ static int test_d3s3_r12_mode29_owner_raw_mismatch(void)
 /* Mode30 R12: dig-match man raw ≠ RR focus_raw80 → immediate CORRUPT. */
 static int test_d3s3_r12_mode30_owner_raw_mismatch(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1248,10 +1248,10 @@ static int test_d3s3_r12_mode30_owner_raw_mismatch(void)
             extra_val, (uint32_t)sizeof(extra_val), &extra_val_len));
     }
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1259,16 +1259,16 @@ static int test_d3s3_r12_mode30_owner_raw_mismatch(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     REQUIRE(ninlil_spy_add_row(
-        &spy, extra_key, extra_key_len, extra_val, extra_val_len));
+        &g_d3s3_spy_fx, extra_key, extra_key_len, extra_val, extra_val_len));
     REQUIRE(arm_focus_scan_context(
         &context, 30u, man_dig, NULL, carrier_raw));
     context.reply_kind = (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT;
 
-    next_before = spy.iter_next_calls;
+    next_before = g_d3s3_spy_fx.iter_next_calls;
     /* Residual after mismatch must not run (natural fault stays unused). */
-    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_ITER_NEXT,
+    REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_ITER_NEXT,
         next_before + 19u, NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL,
         0u, 0u));
 
@@ -1277,12 +1277,12 @@ static int test_d3s3_r12_mode30_owner_raw_mismatch(void)
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
     REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S3_FLAG_MATCH_INSTALLED)
         == 0u);
-    REQUIRE(spy.faults[0].used == 0u);
-    REQUIRE(spy.iter_next_calls > next_before);
-    for (i = 0u; i < spy.trace_count; i += 1u) {
-        if (spy.trace[i].op == NINLIL_SPY_OP_ITER_NEXT
-            && spy.trace[i].key_bytes_length == extra_key_len
-            && memcmp(spy.trace[i].key_bytes, extra_key, extra_key_len)
+    REQUIRE(g_d3s3_spy_fx.faults[0].used == 0u);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls > next_before);
+    for (i = 0u; i < g_d3s3_spy_fx.trace_count; i += 1u) {
+        if (g_d3s3_spy_fx.trace[i].op == NINLIL_SPY_OP_ITER_NEXT
+            && g_d3s3_spy_fx.trace[i].key_bytes_length == extra_key_len
+            && memcmp(g_d3s3_spy_fx.trace[i].key_bytes, extra_key, extra_key_len)
                 == 0) {
             residual_seen = 1u;
             break;
@@ -1365,7 +1365,6 @@ static int m30_focus_trace_saw_key(
  */
 static int test_d3s3_mode30_focus_h14_wrong_kind_defers_to_exhaustion(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1403,10 +1402,10 @@ static int test_d3s3_mode30_focus_h14_wrong_kind_defers_to_exhaustion(void)
         (uint32_t)sizeof(extra_key), &extra_key_len, extra_val,
         (uint32_t)sizeof(extra_val), &extra_val_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1414,15 +1413,15 @@ static int test_d3s3_mode30_focus_h14_wrong_kind_defers_to_exhaustion(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     REQUIRE(ninlil_spy_add_row(
-        &spy, extra_key, extra_key_len, extra_val, extra_val_len));
+        &g_d3s3_spy_fx, extra_key, extra_key_len, extra_val, extra_val_len));
     REQUIRE(arm_focus_scan_context(
         &context, 30u, man_dig, NULL, carrier_raw));
     context.reply_kind = (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT;
 
-    next_before = spy.iter_next_calls;
-    gets_before = spy.get_calls;
+    next_before = g_d3s3_spy_fx.iter_next_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(session.has_sticky_primary == 1u);
@@ -1436,10 +1435,10 @@ static int test_d3s3_mode30_focus_h14_wrong_kind_defers_to_exhaustion(void)
     REQUIRE(context.blob_kind
         == (uint8_t)NINLIL_MODEL_DOMAIN_BLOB_KIND_COMMAND_PAYLOAD);
     /* Pure W continued past dig-match: residual man visited. */
-    REQUIRE(m30_focus_trace_saw_key(&spy, extra_key, extra_key_len) != 0);
-    REQUIRE(spy.iter_next_calls > next_before + 18u);
+    REQUIRE(m30_focus_trace_saw_key(&g_d3s3_spy_fx, extra_key, extra_key_len) != 0);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls > next_before + 18u);
     /* No G units (OWNER/CHUNKS) in the same FOCUS W drive. */
-    REQUIRE(spy.get_calls == gets_before);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before);
     (void)memset(&result, 0, sizeof(result));
     st = ninlil_domain_scan_finalize(&session, &result);
     REQUIRE(result.adopted == 0u);
@@ -1453,7 +1452,6 @@ static int test_d3s3_mode30_focus_h14_wrong_kind_defers_to_exhaustion(void)
  */
 static int test_d3s3_mode30_focus_h15_nonreceipt_nonempty_defers(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1489,10 +1487,10 @@ static int test_d3s3_mode30_focus_h15_nonreceipt_nonempty_defers(void)
         (uint32_t)sizeof(extra_key), &extra_key_len, extra_val,
         (uint32_t)sizeof(extra_val), &extra_val_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1500,22 +1498,22 @@ static int test_d3s3_mode30_focus_h15_nonreceipt_nonempty_defers(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     REQUIRE(ninlil_spy_add_row(
-        &spy, extra_key, extra_key_len, extra_val, extra_val_len));
+        &g_d3s3_spy_fx, extra_key, extra_key_len, extra_val, extra_val_len));
     REQUIRE(arm_focus_scan_context(
         &context, 30u, man_dig, NULL, carrier_raw));
     context.reply_kind = (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_DISPOSITION;
 
-    next_before = spy.iter_next_calls;
+    next_before = g_d3s3_spy_fx.iter_next_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
     REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S3_FLAG_MATCH_INSTALLED)
         != 0u);
     REQUIRE(context.blob_kind == (uint8_t)NINLIL_MODEL_DOMAIN_BLOB_KIND_REPLY);
-    REQUIRE(m30_focus_trace_saw_key(&spy, extra_key, extra_key_len) != 0);
-    REQUIRE(spy.iter_next_calls > next_before + 18u);
+    REQUIRE(m30_focus_trace_saw_key(&g_d3s3_spy_fx, extra_key, extra_key_len) != 0);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls > next_before + 18u);
     (void)memset(&result, 0, sizeof(result));
     st = ninlil_domain_scan_finalize(&session, &result);
     REQUIRE(result.adopted == 0u);
@@ -1530,7 +1528,6 @@ static int test_d3s3_mode30_focus_h15_nonreceipt_nonempty_defers(void)
  */
 static int test_d3s3_mode30_focus_deferred_invalid_then_port_fault(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1566,10 +1563,10 @@ static int test_d3s3_mode30_focus_deferred_invalid_then_port_fault(void)
         (uint32_t)sizeof(extra_key), &extra_key_len, extra_val,
         (uint32_t)sizeof(extra_val), &extra_val_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1577,16 +1574,16 @@ static int test_d3s3_mode30_focus_deferred_invalid_then_port_fault(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     REQUIRE(ninlil_spy_add_row(
-        &spy, extra_key, extra_key_len, extra_val, extra_val_len));
+        &g_d3s3_spy_fx, extra_key, extra_key_len, extra_val, extra_val_len));
     REQUIRE(arm_focus_scan_context(
         &context, 30u, man_dig, NULL, carrier_raw));
     context.reply_kind = (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT;
 
-    next_before = spy.iter_next_calls;
+    next_before = g_d3s3_spy_fx.iter_next_calls;
     /* Fault residual after dig-match man (19th iter_next of this FOCUS W). */
-    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_ITER_NEXT,
+    REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_ITER_NEXT,
         next_before + 19u, NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL,
         0u, 0u));
 
@@ -1597,7 +1594,7 @@ static int test_d3s3_mode30_focus_deferred_invalid_then_port_fault(void)
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
     REQUIRE((context.flags & NINLIL_DOMAIN_SCAN_D3S3_FLAG_MATCH_INSTALLED)
         != 0u);
-    REQUIRE(spy.faults[0].used == 1u);
+    REQUIRE(g_d3s3_spy_fx.faults[0].used == 1u);
     /* Port first-fault: not reclassified to CORRUPT by deferred H14. */
     REQUIRE(session.sticky_primary != NINLIL_E_STORAGE_CORRUPT);
     (void)memset(&result, 0, sizeof(result));
@@ -1613,7 +1610,6 @@ static int test_d3s3_mode30_focus_deferred_invalid_then_port_fault(void)
  */
 static int test_d3s3_mode30_focus_valid_reply_to_chunks(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1651,10 +1647,10 @@ static int test_d3s3_mode30_focus_valid_reply_to_chunks(void)
         (uint32_t)sizeof(extra_val), &extra_val_len));
     REQUIRE(ninlil_model_domain_sha256(NULL, 0u, &empty) == NINLIL_OK);
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1662,15 +1658,15 @@ static int test_d3s3_mode30_focus_valid_reply_to_chunks(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     REQUIRE(ninlil_spy_add_row(
-        &spy, extra_key, extra_key_len, extra_val, extra_val_len));
+        &g_d3s3_spy_fx, extra_key, extra_key_len, extra_val, extra_val_len));
     REQUIRE(arm_focus_scan_context(
         &context, 30u, man_dig, NULL, carrier_raw));
     context.reply_kind = (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT;
 
-    next_before = spy.iter_next_calls;
-    gets_before = spy.get_calls;
+    next_before = g_d3s3_spy_fx.iter_next_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(session.has_sticky_primary == 0u);
@@ -1681,9 +1677,9 @@ static int test_d3s3_mode30_focus_valid_reply_to_chunks(void)
         == (uint8_t)NINLIL_MODEL_DOMAIN_BLOB_OWNER_DELIVERY);
     REQUIRE(context.blob_kind == (uint8_t)NINLIL_MODEL_DOMAIN_BLOB_KIND_REPLY);
     REQUIRE(memcmp(context.content_digest, empty.bytes, 32u) == 0);
-    REQUIRE(m30_focus_trace_saw_key(&spy, extra_key, extra_key_len) != 0);
-    REQUIRE(spy.iter_next_calls > next_before + 18u);
-    REQUIRE(spy.get_calls == gets_before);
+    REQUIRE(m30_focus_trace_saw_key(&g_d3s3_spy_fx, extra_key, extra_key_len) != 0);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls > next_before + 18u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before);
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
     return 0;
 }
@@ -1729,7 +1725,6 @@ static int test_d3s3_bind_man_closed_eligibility_no_get(void)
     size_t ci;
 
     for (ci = 0u; ci < sizeof(cases) / sizeof(cases[0]); ci += 1u) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -1772,10 +1767,10 @@ static int test_d3s3_bind_man_closed_eligibility_no_get(void)
             (uint32_t)sizeof(man_key), &man_key_len, man_val,
             (uint32_t)sizeof(man_val), &man_val_len));
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -1784,16 +1779,16 @@ static int test_d3s3_bind_man_closed_eligibility_no_get(void)
         REQUIRE(st == NINLIL_OK);
         REQUIRE(drive_baseline_to_internal(&session, &context));
         REQUIRE(ninlil_spy_add_row(
-            &spy, man_key, man_key_len, man_val, man_val_len));
+            &g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
         context.phase = NINLIL_DOMAIN_SCAN_D3S3_PHASE_BIND_MANIFEST;
         context.pass_kind = NINLIL_DOMAIN_SCAN_D3S3_PASS_INTERNAL;
         context.flags = (uint8_t)(NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
             | NINLIL_DOMAIN_SCAN_D3S3_FLAG_NEED_REOPEN);
         context.semantic_pass = 0u;
         context.last_carrier_key_len = 0u;
-        gets_before = spy.get_calls;
+        gets_before = g_d3s3_spy_fx.get_calls;
         st = ninlil_domain_scan_d3s3_drive(&session, 64u);
-        gets_after = spy.get_calls;
+        gets_after = g_d3s3_spy_fx.get_calls;
         /* Non-eligible: no owner reverse GET. */
         REQUIRE(gets_after == gets_before);
         (void)ninlil_domain_scan_abort(
@@ -1810,7 +1805,6 @@ static int test_d3s3_bind_man_closed_eligibility_no_get(void)
  */
 static int test_d3s3_mode28_bind_referrer_payload_not_evidence(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -1911,10 +1905,10 @@ static int test_d3s3_mode28_bind_referrer_payload_not_evidence(void)
         }
     }
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -1922,8 +1916,8 @@ static int test_d3s3_mode28_bind_referrer_payload_not_evidence(void)
         &session, ops, &handle, &workspace, &candidate, 28u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(ninlil_spy_add_row(&spy, ing_key, ing_key_len, ing_val, ing_val_len));
-    REQUIRE(ninlil_spy_add_row(&spy, man_key, man_key_len, man_val, man_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, ing_key, ing_key_len, ing_val, ing_val_len));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
     context.phase = NINLIL_DOMAIN_SCAN_D3S3_PHASE_BIND_MANIFEST;
     context.pass_kind = NINLIL_DOMAIN_SCAN_D3S3_PASS_INTERNAL;
     context.flags = (uint8_t)(NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
@@ -1936,7 +1930,7 @@ static int test_d3s3_mode28_bind_referrer_payload_not_evidence(void)
     REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
     /* GET happened (eligible) but referrer wrong-side rejected. */
-    REQUIRE(spy.get_calls >= 1u);
+    REQUIRE(g_d3s3_spy_fx.get_calls >= 1u);
     (void)memset(&result, 0, sizeof(result));
     st = ninlil_domain_scan_finalize(&session, &result);
     REQUIRE(result.adopted == 0u);
@@ -2027,7 +2021,6 @@ static int test_d3s3_mode28_select_za_zb_transitions(void)
     int ci;
 
     for (ci = 0; ci < 3; ci += 1) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -2074,12 +2067,12 @@ static int test_d3s3_mode28_select_za_zb_transitions(void)
             ing_val_len = (uint32_t)patched_len;
         }
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
         REQUIRE(ninlil_spy_add_row(
-            &spy, ing_key, ing_key_len, ing_val, ing_val_len));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+            &g_d3s3_spy_fx, ing_key, ing_key_len, ing_val, ing_val_len));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -2180,7 +2173,6 @@ static int test_d3s3_mode28_focus_id16_packed_totals_after_man(void)
     REQUIRE(compute_key_digest(man_b_key, man_b_key_len, dig_b));
 
     for (pass = 0; pass < 2; pass += 1) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -2189,17 +2181,17 @@ static int test_d3s3_mode28_focus_id16_packed_totals_after_man(void)
         const ninlil_storage_ops_t *ops;
         ninlil_status_t st;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
         if (pass == 0) {
             REQUIRE(ninlil_spy_add_row(
-                &spy, man_a_key, man_a_key_len, man_a_val, man_a_val_len));
+                &g_d3s3_spy_fx, man_a_key, man_a_key_len, man_a_val, man_a_val_len));
         } else {
             REQUIRE(ninlil_spy_add_row(
-                &spy, man_b_key, man_b_key_len, man_b_val, man_b_val_len));
+                &g_d3s3_spy_fx, man_b_key, man_b_key_len, man_b_val, man_b_val_len));
         }
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -2253,7 +2245,6 @@ static int test_d3s3_mode28_focus_id16_packed_totals_after_man(void)
  */
 static int test_d3s3_mode29_focus_id16_stays_zero(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -2266,13 +2257,13 @@ static int test_d3s3_mode29_focus_id16_stays_zero(void)
 
     (void)memset(zero16, 0, sizeof(zero16));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB3_DLV_APP_DS_TYPED_KEY,
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB3_DLV_APP_DS_TYPED_KEY,
         (uint32_t)DSB3_DLV_APP_DS_TYPED_KEY_LEN, DSB3_DLV_APP_DS_TYPED_VALUE,
         (uint32_t)DSB3_DLV_APP_DS_TYPED_VALUE_LEN));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -2455,7 +2446,6 @@ static int test_d3s3_mode28_semantic_schedule_za_zb(void)
     int ci;
 
     for (ci = 0; ci < 4; ci += 1) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -2548,12 +2538,12 @@ static int test_d3s3_mode28_semantic_schedule_za_zb(void)
         REQUIRE(patched > 0);
         ing_val_len = (uint32_t)patched;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
         REQUIRE(ninlil_spy_add_row(
-            &spy, ing_key, ing_key_len, ing_val, ing_val_len));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+            &g_d3s3_spy_fx, ing_key, ing_key_len, ing_val, ing_val_len));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -2565,21 +2555,21 @@ static int test_d3s3_mode28_semantic_schedule_za_zb(void)
         /* Install only the mans needed before each RESCAN (spy is insert-order). */
         if (ci == ZA0 || ci == BOTH) {
             REQUIRE(ninlil_spy_add_row(
-                &spy, man_a_key, man_a_key_len, man_a_val, man_a_val_len));
+                &g_d3s3_spy_fx, man_a_key, man_a_key_len, man_a_val, man_a_val_len));
         }
         if (ci == ZB0) {
             REQUIRE(ninlil_spy_add_row(
-                &spy, man_b_key, man_b_key_len, man_b_val, man_b_val_len));
+                &g_d3s3_spy_fx, man_b_key, man_b_key_len, man_b_val, man_b_val_len));
         }
 
         REQUIRE(arm_mode28_prefix_entry(&context, ing_key, (uint8_t)ing_key_len,
             (ci == ZA0 || ci == BOTH) ? dig_a : NULL,
             (ci == ZB0 || ci == BOTH) ? dig_b : NULL, 0u, 0u));
 
-        gets_before = spy.get_calls;
+        gets_before = g_d3s3_spy_fx.get_calls;
         st = ninlil_domain_scan_d3s3_drive(&session, 0u); /* PREFIX G */
         REQUIRE(st == NINLIL_OK);
-        REQUIRE(spy.get_calls == gets_before + 1u); /* exactly one PREFIX get */
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u); /* exactly one PREFIX get */
         REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
         (void)memcpy(sha_after_prefix, context.sha_state, 32u);
 
@@ -2678,18 +2668,18 @@ static int test_d3s3_mode28_semantic_schedule_za_zb(void)
             {
                 size_t ri;
                 int replaced = 0;
-                for (ri = 0u; ri < spy.row_count; ri += 1u) {
-                    if (spy.rows[ri].key_length == man_a_key_len
-                        && memcmp(spy.rows[ri].key, man_a_key, man_a_key_len)
+                for (ri = 0u; ri < g_d3s3_spy_fx.row_count; ri += 1u) {
+                    if (g_d3s3_spy_fx.rows[ri].key_length == man_a_key_len
+                        && memcmp(g_d3s3_spy_fx.rows[ri].key, man_a_key, man_a_key_len)
                             == 0) {
-                        REQUIRE(man_b_key_len <= sizeof(spy.rows[ri].key));
-                        REQUIRE(man_b_val_len <= sizeof(spy.rows[ri].value));
+                        REQUIRE(man_b_key_len <= sizeof(g_d3s3_spy_fx.rows[ri].key));
+                        REQUIRE(man_b_val_len <= sizeof(g_d3s3_spy_fx.rows[ri].value));
                         (void)memcpy(
-                            spy.rows[ri].key, man_b_key, man_b_key_len);
-                        spy.rows[ri].key_length = man_b_key_len;
+                            g_d3s3_spy_fx.rows[ri].key, man_b_key, man_b_key_len);
+                        g_d3s3_spy_fx.rows[ri].key_length = man_b_key_len;
                         (void)memcpy(
-                            spy.rows[ri].value, man_b_val, man_b_val_len);
-                        spy.rows[ri].value_length = man_b_val_len;
+                            g_d3s3_spy_fx.rows[ri].value, man_b_val, man_b_val_len);
+                        g_d3s3_spy_fx.rows[ri].value_length = man_b_val_len;
                         replaced = 1;
                         break;
                     }
@@ -2718,7 +2708,6 @@ static int test_d3s3_mode28_semantic_schedule_za_zb(void)
 /* u32 overflow on either pin: no Port event, sticky CORRUPT, phase14. */
 static int test_d3s3_mode28_prefix_u32_overflow_no_port(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -2730,10 +2719,10 @@ static int test_d3s3_mode28_prefix_u32_overflow_no_port(void)
     uint32_t next_before;
     uint32_t open_before;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -2753,17 +2742,17 @@ static int test_d3s3_mode28_prefix_u32_overflow_no_port(void)
     put_u64_be(&context.focus_id16[0], (uint64_t)UINT32_MAX + 1u);
     put_u64_be(&context.focus_id16[8], 0u);
 
-    gets_before = spy.get_calls;
-    next_before = spy.iter_next_calls;
-    open_before = spy.iter_open_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
+    next_before = g_d3s3_spy_fx.iter_next_calls;
+    open_before = g_d3s3_spy_fx.iter_open_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(session.has_sticky_primary == 1u);
     REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-    REQUIRE(spy.get_calls == gets_before);
-    REQUIRE(spy.iter_next_calls == next_before);
-    REQUIRE(spy.iter_open_calls == open_before);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_before);
+    REQUIRE(g_d3s3_spy_fx.iter_open_calls == open_before);
 
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
     return 0;
@@ -2775,7 +2764,6 @@ static int test_d3s3_mode28_prefix_u32_overflow_no_port(void)
  */
 static int test_d3s3_mode28_semantic_digest_mismatch(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -2828,14 +2816,14 @@ static int test_d3s3_mode28_semantic_digest_mismatch(void)
     REQUIRE(patched > 0);
     ing_val_len = (uint32_t)patched;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
     REQUIRE(ninlil_spy_add_row(
-        &spy, ing_key, ing_key_len, ing_val, ing_val_len));
+        &g_d3s3_spy_fx, ing_key, ing_key_len, ing_val, ing_val_len));
     REQUIRE(ninlil_spy_add_row(
-        &spy, man_a_key, man_a_key_len, man_a_val, man_a_val_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+        &g_d3s3_spy_fx, man_a_key, man_a_key_len, man_a_val, man_a_val_len));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -2862,7 +2850,6 @@ static int test_d3s3_mode28_semantic_digest_mismatch(void)
 /* PREFIX natural GET fault: last event, phase14, sticky mapped. */
 static int test_d3s3_mode28_prefix_get_fault(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -2878,13 +2865,13 @@ static int test_d3s3_mode28_prefix_get_fault(void)
         DSB3_ING_APP_DS_TYPED_KEY_LEN);
     ing_key_len = (uint32_t)DSB3_ING_APP_DS_TYPED_KEY_LEN;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    REQUIRE(ninlil_spy_add_row(&spy, ing_key, ing_key_len,
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, ing_key, ing_key_len,
         DSB3_ING_APP_DS_TYPED_VALUE,
         (uint32_t)DSB3_ING_APP_DS_TYPED_VALUE_LEN));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -2894,15 +2881,15 @@ static int test_d3s3_mode28_prefix_get_fault(void)
     REQUIRE(drive_baseline_to_internal(&session, &context));
     REQUIRE(arm_mode28_prefix_entry(
         &context, ing_key, (uint8_t)ing_key_len, NULL, NULL, 0u, 0u));
-    gets_before = spy.get_calls;
-    REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, gets_before + 1u,
+    gets_before = g_d3s3_spy_fx.get_calls;
+    REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_GET, gets_before + 1u,
         NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_E_STORAGE);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-    REQUIRE(spy.get_calls == gets_before + 1u);
-    REQUIRE(spy.faults[0].used == 1u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u);
+    REQUIRE(g_d3s3_spy_fx.faults[0].used == 1u);
 
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
     return 0;
@@ -2914,7 +2901,6 @@ static int test_d3s3_mode28_rescan_missing_man_fault(void)
     int which;
 
     for (which = 0; which < 2; which += 1) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -2927,10 +2913,10 @@ static int test_d3s3_mode28_rescan_missing_man_fault(void)
         (void)memset(dig, 0xABu, sizeof(dig));
         dig[0] = (uint8_t)(0x90u + which);
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -2977,7 +2963,6 @@ static int test_d3s3_mode28_rescan_missing_man_fault(void)
  */
 static int test_d3s3_mode28_a_only_nonempty_payload_stream(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -3062,12 +3047,12 @@ static int test_d3s3_mode28_a_only_nonempty_payload_stream(void)
     REQUIRE(patched > 0);
     ing_val_len = (uint32_t)patched;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
     REQUIRE(ninlil_spy_add_row(
-        &spy, ing_key, ing_key_len, ing_val, ing_val_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+        &g_d3s3_spy_fx, ing_key, ing_key_len, ing_val, ing_val_len));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -3083,15 +3068,15 @@ static int test_d3s3_mode28_a_only_nonempty_payload_stream(void)
      * exact_get of rebuilt chunk keys; RESCAN only needs the man row.
      */
     REQUIRE(ninlil_spy_add_row(
-        &spy, man_key, man_key_len, man_val, man_val_len));
+        &g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
 
     REQUIRE(arm_mode28_prefix_entry(&context, ing_key, (uint8_t)ing_key_len,
         dig_a, NULL, (uint64_t)sizeof(stream), 0u));
 
-    gets_before = spy.get_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 0u); /* PREFIX G */
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_before + 1u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u);
     REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
     REQUIRE(context.phase
         == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FOCUS_MANIFEST_SCAN);
@@ -3112,7 +3097,7 @@ static int test_d3s3_mode28_a_only_nonempty_payload_stream(void)
         (void)memset(zero32, 0, sizeof(zero32));
         REQUIRE(memcmp(sha_after_prefix, zero32, 32u) != 0);
     }
-    gets_after_prefix = spy.get_calls;
+    gets_after_prefix = g_d3s3_spy_fx.get_calls;
 
     st = ninlil_domain_scan_d3s3_drive(&session, 64u); /* RESCAN_A W */
     REQUIRE(st == NINLIL_OK);
@@ -3123,14 +3108,14 @@ static int test_d3s3_mode28_a_only_nonempty_payload_stream(void)
     REQUIRE(context.flags
         == (uint8_t)(NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
             | NINLIL_DOMAIN_SCAN_D3S3_FLAG_FOCUS_LIVE));
-    REQUIRE(spy.get_calls == gets_after_prefix);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_prefix);
     /* Semantic bit still off until VIEW streams bytes into persistent SHA. */
     REQUIRE((context.count_complete_mask
                 & NINLIL_DOMAIN_SCAN_D3S3_MASK_COUNT_SEMANTIC)
         == 0u);
 
     REQUIRE(ninlil_spy_add_row(
-        &spy, chunk_key, chunk_key_len, chunk_val, chunk_val_len));
+        &g_d3s3_spy_fx, chunk_key, chunk_key_len, chunk_val, chunk_val_len));
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u); /* VIEW_A G */
     REQUIRE(st == NINLIL_OK);
@@ -3145,7 +3130,7 @@ static int test_d3s3_mode28_a_only_nonempty_payload_stream(void)
         == (uint8_t)(NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
             | NINLIL_DOMAIN_SCAN_D3S3_FLAG_NEED_REOPEN));
     /* PREFIX (1) + VIEW chunk (1) exact GETs. */
-    REQUIRE(spy.get_calls == gets_before + 2u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 2u);
     REQUIRE(memcmp(context.expected_semantic_digest, sem_dig, 32u) == 0);
 
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
@@ -3159,7 +3144,6 @@ static int test_d3s3_mode28_a_only_nonempty_payload_stream(void)
  */
 static int test_d3s3_mode28_b_only_nonempty_evidence_stream(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -3241,12 +3225,12 @@ static int test_d3s3_mode28_b_only_nonempty_evidence_stream(void)
     REQUIRE(patched > 0);
     ing_val_len = (uint32_t)patched;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
     REQUIRE(ninlil_spy_add_row(
-        &spy, ing_key, ing_key_len, ing_val, ing_val_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+        &g_d3s3_spy_fx, ing_key, ing_key_len, ing_val, ing_val_len));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -3257,15 +3241,15 @@ static int test_d3s3_mode28_b_only_nonempty_evidence_stream(void)
     REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
 
     REQUIRE(ninlil_spy_add_row(
-        &spy, man_key, man_key_len, man_val, man_val_len));
+        &g_d3s3_spy_fx, man_key, man_key_len, man_val, man_val_len));
 
     REQUIRE(arm_mode28_prefix_entry(&context, ing_key, (uint8_t)ing_key_len,
         NULL, dig_b, 0u, (uint64_t)sizeof(stream)));
 
-    gets_before = spy.get_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 0u); /* PREFIX G */
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_before + 1u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u);
     REQUIRE(session.state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED);
     REQUIRE(context.phase
         == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FOCUS_MANIFEST_SCAN_B);
@@ -3286,7 +3270,7 @@ static int test_d3s3_mode28_b_only_nonempty_evidence_stream(void)
         (void)memset(zero32, 0, sizeof(zero32));
         REQUIRE(memcmp(sha_after_prefix, zero32, 32u) != 0);
     }
-    gets_after_prefix = spy.get_calls;
+    gets_after_prefix = g_d3s3_spy_fx.get_calls;
 
     st = ninlil_domain_scan_d3s3_drive(&session, 64u); /* RESCAN_B W */
     REQUIRE(st == NINLIL_OK);
@@ -3297,13 +3281,13 @@ static int test_d3s3_mode28_b_only_nonempty_evidence_stream(void)
     REQUIRE(context.flags
         == (uint8_t)(NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
             | NINLIL_DOMAIN_SCAN_D3S3_FLAG_FOCUS_LIVE));
-    REQUIRE(spy.get_calls == gets_after_prefix);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_prefix);
     REQUIRE((context.count_complete_mask
                 & NINLIL_DOMAIN_SCAN_D3S3_MASK_COUNT_SEMANTIC)
         == 0u);
 
     REQUIRE(ninlil_spy_add_row(
-        &spy, chunk_key, chunk_key_len, chunk_val, chunk_val_len));
+        &g_d3s3_spy_fx, chunk_key, chunk_key_len, chunk_val, chunk_val_len));
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u); /* VIEW_B G */
     REQUIRE(st == NINLIL_OK);
@@ -3317,7 +3301,7 @@ static int test_d3s3_mode28_b_only_nonempty_evidence_stream(void)
     REQUIRE(context.flags
         == (uint8_t)(NINLIL_DOMAIN_SCAN_D3S3_FLAG_BASELINE_DONE
             | NINLIL_DOMAIN_SCAN_D3S3_FLAG_NEED_REOPEN));
-    REQUIRE(spy.get_calls == gets_before + 2u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 2u);
     REQUIRE(memcmp(context.expected_semantic_digest, sem_dig, 32u) == 0);
 
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
@@ -3330,7 +3314,6 @@ static int test_d3s3_mode28_view_chunk_get_fault(void)
     int which;
 
     for (which = 0; which < 2; which += 1) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -3344,10 +3327,10 @@ static int test_d3s3_mode28_view_chunk_get_fault(void)
         (void)memset(bid, 0xCCu, sizeof(bid));
         bid[0] = 0x71u;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -3375,15 +3358,15 @@ static int test_d3s3_mode28_view_chunk_get_fault(void)
         /* Seed non-zero expected so final path is not vacuous if fault skips. */
         (void)memset(context.expected_semantic_digest, 0x5Au, 32u);
 
-        gets_before = spy.get_calls;
-        REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET, gets_before + 1u,
+        gets_before = g_d3s3_spy_fx.get_calls;
+        REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_GET, gets_before + 1u,
             NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
 
         st = ninlil_domain_scan_d3s3_drive(&session, 0u);
         REQUIRE(st == NINLIL_E_STORAGE);
         REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-        REQUIRE(spy.get_calls == gets_before + 1u);
-        REQUIRE(spy.faults[0].used == 1u);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u);
+        REQUIRE(g_d3s3_spy_fx.faults[0].used == 1u);
         (void)ninlil_domain_scan_abort(
             &session, &(ninlil_domain_scan_result_t){0});
     }
@@ -4179,7 +4162,6 @@ static int test_d3s3_mode30_semantic_two_g_all_kinds(void)
     size_t ki;
 
     for (ki = 0u; ki < sizeof(kinds); ki += 1u) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -4195,10 +4177,10 @@ static int test_d3s3_mode30_semantic_two_g_all_kinds(void)
         uint32_t budget;
 
         REQUIRE(m30_build_kind(kinds[ki], NULL, 0u, &rows));
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -4206,20 +4188,20 @@ static int test_d3s3_mode30_semantic_two_g_all_kinds(void)
             &session, ops, &handle, &workspace, &candidate, 30u, &context);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(drive_baseline_to_internal(&session, &context));
-        REQUIRE(m30_install_rows(&spy, &rows));
+        REQUIRE(m30_install_rows(&g_d3s3_spy_fx, &rows));
         REQUIRE(m30_arm_prefix(&context, &rows));
 
-        gets_before = spy.get_calls;
-        open_before = spy.iter_open_calls;
-        next_before = spy.iter_next_calls;
+        gets_before = g_d3s3_spy_fx.get_calls;
+        open_before = g_d3s3_spy_fx.iter_open_calls;
+        next_before = g_d3s3_spy_fx.iter_next_calls;
         budget = m30_prefix_budget(kinds[ki]);
 
         st = ninlil_domain_scan_d3s3_drive(&session, 0u); /* PREFIX G */
         REQUIRE(st == NINLIL_OK);
         REQUIRE(m30_expect_prefix_ok(&session, &context));
-        REQUIRE(spy.get_calls == gets_before + budget);
-        REQUIRE(spy.iter_open_calls == open_before);
-        REQUIRE(spy.iter_next_calls == next_before);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + budget);
+        REQUIRE(g_d3s3_spy_fx.iter_open_calls == open_before);
+        REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_before);
         REQUIRE(memcmp(context.expected_semantic_digest, rows.sem_dig, 32u)
             == 0);
         (void)memcpy(sha_after_prefix, context.sha_state, 32u);
@@ -4233,9 +4215,9 @@ static int test_d3s3_mode30_semantic_two_g_all_kinds(void)
         REQUIRE(st == NINLIL_OK);
         REQUIRE(m30_expect_sem_ok(&session, &context));
         /* non-RECEIPT zero chunk GET; empty RECEIPT zero chunk GET. */
-        REQUIRE(spy.get_calls == gets_before + budget);
-        REQUIRE(spy.iter_open_calls == open_before);
-        REQUIRE(spy.iter_next_calls == next_before);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + budget);
+        REQUIRE(g_d3s3_spy_fx.iter_open_calls == open_before);
+        REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_before);
         REQUIRE(memcmp(context.expected_semantic_digest, rows.sem_dig, 32u)
             == 0);
 
@@ -4255,7 +4237,6 @@ static int test_d3s3_mode30_receipt_empty_1_128(void)
     size_t ci;
 
     for (ci = 0u; ci < 3u; ci += 1u) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -4271,10 +4252,10 @@ static int test_d3s3_mode30_receipt_empty_1_128(void)
         (void)memset(evi, cases[ci].fill, sizeof(evi));
         REQUIRE(m30_build_kind((uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT,
             cases[ci].len == 0u ? NULL : evi, cases[ci].len, &rows));
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -4282,14 +4263,14 @@ static int test_d3s3_mode30_receipt_empty_1_128(void)
             &session, ops, &handle, &workspace, &candidate, 30u, &context);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(drive_baseline_to_internal(&session, &context));
-        REQUIRE(m30_install_rows(&spy, &rows));
+        REQUIRE(m30_install_rows(&g_d3s3_spy_fx, &rows));
         REQUIRE(m30_arm_prefix(&context, &rows));
 
-        gets_before = spy.get_calls;
+        gets_before = g_d3s3_spy_fx.get_calls;
         st = ninlil_domain_scan_d3s3_drive(&session, 0u);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(m30_expect_prefix_ok(&session, &context));
-        REQUIRE(spy.get_calls == gets_before + budget);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + budget);
         REQUIRE(context.receipt_evidence_len == (uint8_t)cases[ci].len);
         if (cases[ci].len != 0u) {
             REQUIRE(memcmp(context.receipt_evidence_bytes, evi, cases[ci].len)
@@ -4299,7 +4280,7 @@ static int test_d3s3_mode30_receipt_empty_1_128(void)
         st = ninlil_domain_scan_d3s3_drive(&session, 0u);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(m30_expect_sem_ok(&session, &context));
-        REQUIRE(spy.get_calls
+        REQUIRE(g_d3s3_spy_fx.get_calls
             == gets_before + budget
                 + (cases[ci].len == 0u ? 0u : 1u));
         REQUIRE(memcmp(context.expected_semantic_digest, rows.sem_dig, 32u)
@@ -4314,7 +4295,6 @@ static int test_d3s3_mode30_receipt_empty_1_128(void)
 /* Persistent SHA across PREFIX→SEM_CHUNK: wrong pin fails finalize. */
 static int test_d3s3_mode30_semantic_digest_mismatch(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -4332,10 +4312,10 @@ static int test_d3s3_mode30_semantic_digest_mismatch(void)
     REQUIRE(m30_build_rr((uint32_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_CUSTODY, bad,
         rows.rr_key, &rows.rr_key_len, rows.rr_val, &rows.rr_val_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -4343,7 +4323,7 @@ static int test_d3s3_mode30_semantic_digest_mismatch(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(m30_install_rows(&spy, &rows));
+    REQUIRE(m30_install_rows(&g_d3s3_spy_fx, &rows));
     REQUIRE(m30_arm_prefix(&context, &rows));
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
@@ -4366,7 +4346,6 @@ static int test_d3s3_mode30_prefix_companion_get_faults(void)
     uint32_t which;
 
     for (which = 1u; which <= 4u; which += 1u) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -4381,10 +4360,10 @@ static int test_d3s3_mode30_prefix_companion_get_faults(void)
 
         REQUIRE(m30_build_kind(
             (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT, NULL, 0u, &rows));
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -4392,23 +4371,23 @@ static int test_d3s3_mode30_prefix_companion_get_faults(void)
             &session, ops, &handle, &workspace, &candidate, 30u, &context);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(drive_baseline_to_internal(&session, &context));
-        REQUIRE(m30_install_rows(&spy, &rows));
+        REQUIRE(m30_install_rows(&g_d3s3_spy_fx, &rows));
         REQUIRE(m30_arm_prefix(&context, &rows));
 
-        gets_before = spy.get_calls;
-        next_before = spy.iter_next_calls;
-        open_before = spy.iter_open_calls;
-        REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET,
+        gets_before = g_d3s3_spy_fx.get_calls;
+        next_before = g_d3s3_spy_fx.iter_next_calls;
+        open_before = g_d3s3_spy_fx.iter_open_calls;
+        REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_GET,
             gets_before + which, NINLIL_STORAGE_IO_ERROR,
             NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
 
         st = ninlil_domain_scan_d3s3_drive(&session, 0u);
         REQUIRE(st == NINLIL_E_STORAGE);
         REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-        REQUIRE(spy.get_calls == gets_before + which);
-        REQUIRE(spy.iter_next_calls == next_before);
-        REQUIRE(spy.iter_open_calls == open_before);
-        REQUIRE(spy.faults[0].used == 1u);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + which);
+        REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_before);
+        REQUIRE(g_d3s3_spy_fx.iter_open_calls == open_before);
+        REQUIRE(g_d3s3_spy_fx.faults[0].used == 1u);
 
         (void)ninlil_domain_scan_abort(
             &session, &(ninlil_domain_scan_result_t){0});
@@ -4424,7 +4403,6 @@ static int test_d3s3_mode30_sem_chunk_faults(void)
     uint8_t evi[1] = {0xABu};
 
     for (fi = 0; fi < 5; fi += 1) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -4543,10 +4521,10 @@ static int test_d3s3_mode30_sem_chunk_faults(void)
                 &rows));
         }
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -4556,20 +4534,20 @@ static int test_d3s3_mode30_sem_chunk_faults(void)
         REQUIRE(drive_baseline_to_internal(&session, &context));
         /* Install PREFIX companions always; control SEM_CHUNK rows per case. */
         REQUIRE(ninlil_spy_add_row(
-            &spy, rows.rr_key, rows.rr_key_len, rows.rr_val, rows.rr_val_len));
-        REQUIRE(ninlil_spy_add_row(&spy, rows.dlv_key, rows.dlv_key_len,
+            &g_d3s3_spy_fx, rows.rr_key, rows.rr_key_len, rows.rr_val, rows.rr_val_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, rows.dlv_key, rows.dlv_key_len,
             rows.dlv_val, rows.dlv_val_len));
         REQUIRE(ninlil_spy_add_row(
-            &spy, rows.rc_key, rows.rc_key_len, rows.rc_val, rows.rc_val_len));
-        REQUIRE(ninlil_spy_add_row(&spy, rows.cell_key, rows.cell_key_len,
+            &g_d3s3_spy_fx, rows.rc_key, rows.rc_key_len, rows.rc_val, rows.rc_val_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, rows.cell_key, rows.cell_key_len,
             rows.cell_val, rows.cell_val_len));
         if (fi != F_MISS && fi != F_TYPED) {
-            REQUIRE(ninlil_spy_add_row(&spy, rows.chunk_key, rows.chunk_key_len,
+            REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, rows.chunk_key, rows.chunk_key_len,
                 rows.chunk_val, rows.chunk_val_len));
         }
         if (fi == F_TYPED) {
             /* Wrong type at chunk key: install RESULT value under chunk key. */
-            REQUIRE(ninlil_spy_add_row(&spy, rows.chunk_key, rows.chunk_key_len,
+            REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, rows.chunk_key, rows.chunk_key_len,
                 rows.rc_val, rows.rc_val_len));
         }
         REQUIRE(m30_arm_prefix(&context, &rows));
@@ -4578,9 +4556,9 @@ static int test_d3s3_mode30_sem_chunk_faults(void)
         REQUIRE(st == NINLIL_OK);
         REQUIRE(m30_expect_prefix_ok(&session, &context));
 
-        gets_before = spy.get_calls;
+        gets_before = g_d3s3_spy_fx.get_calls;
         if (fi == F_GET) {
-            REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET,
+            REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_GET,
                 gets_before + 1u, NINLIL_STORAGE_IO_ERROR,
                 NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
         }
@@ -4590,11 +4568,11 @@ static int test_d3s3_mode30_sem_chunk_faults(void)
         REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
         if (fi == F_GET) {
             REQUIRE(st == NINLIL_E_STORAGE);
-            REQUIRE(spy.get_calls == gets_before + 1u);
-            REQUIRE(spy.faults[0].used == 1u);
+            REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u);
+            REQUIRE(g_d3s3_spy_fx.faults[0].used == 1u);
         } else {
             REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
-            REQUIRE(spy.get_calls == gets_before + 1u);
+            REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 1u);
         }
 
         (void)ninlil_domain_scan_abort(
@@ -4606,7 +4584,6 @@ static int test_d3s3_mode30_sem_chunk_faults(void)
 /* non-RECEIPT: PREFIX rejects illegal nonempty blob pins; SEM zero chunk GET. */
 static int test_d3s3_mode30_nonreceipt_empty_and_nonempty_reject(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -4620,10 +4597,10 @@ static int test_d3s3_mode30_nonreceipt_empty_and_nonempty_reject(void)
     /* Happy: disposition empty blob, 3 PREFIX gets, 0 SEM gets. */
     REQUIRE(m30_build_kind(
         (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_DISPOSITION, NULL, 0u, &rows));
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -4631,23 +4608,23 @@ static int test_d3s3_mode30_nonreceipt_empty_and_nonempty_reject(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(m30_install_rows(&spy, &rows));
+    REQUIRE(m30_install_rows(&g_d3s3_spy_fx, &rows));
     REQUIRE(m30_arm_prefix(&context, &rows));
-    gets_before = spy.get_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_before + 3u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 3u);
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_before + 3u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before + 3u);
     REQUIRE(m30_expect_sem_ok(&session, &context));
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
 
     /* Illegal nonempty pin on CUSTODY PREFIX: no Port. */
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -4660,11 +4637,11 @@ static int test_d3s3_mode30_nonreceipt_empty_and_nonempty_reject(void)
     REQUIRE(m30_arm_prefix(&context, &rows));
     put_u64_be(context.total_length, 1u);
     put_u32_be(context.chunk_count, 1u);
-    gets_before = spy.get_calls;
+    gets_before = g_d3s3_spy_fx.get_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-    REQUIRE(spy.get_calls == gets_before);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_before);
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
     return 0;
 }
@@ -4672,7 +4649,6 @@ static int test_d3s3_mode30_nonreceipt_empty_and_nonempty_reject(void)
 /* No reopen/advance in PREFIX or SEM_CHUNK (pure G). */
 static int test_d3s3_mode30_no_reopen_advance_both_g(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -4687,10 +4663,10 @@ static int test_d3s3_mode30_no_reopen_advance_both_g(void)
 
     REQUIRE(m30_build_kind(
         (uint8_t)NINLIL_MODEL_DOMAIN_REPLY_KIND_RECEIPT, NULL, 0u, &rows));
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -4698,22 +4674,22 @@ static int test_d3s3_mode30_no_reopen_advance_both_g(void)
         &session, ops, &handle, &workspace, &candidate, 30u, &context);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
-    REQUIRE(m30_install_rows(&spy, &rows));
+    REQUIRE(m30_install_rows(&g_d3s3_spy_fx, &rows));
     REQUIRE(m30_arm_prefix(&context, &rows));
 
-    open0 = spy.iter_open_calls;
-    next0 = spy.iter_next_calls;
-    close0 = spy.iter_close_calls;
+    open0 = g_d3s3_spy_fx.iter_open_calls;
+    next0 = g_d3s3_spy_fx.iter_next_calls;
+    close0 = g_d3s3_spy_fx.iter_close_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.iter_open_calls == open0);
-    REQUIRE(spy.iter_next_calls == next0);
-    REQUIRE(spy.iter_close_calls == close0);
+    REQUIRE(g_d3s3_spy_fx.iter_open_calls == open0);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls == next0);
+    REQUIRE(g_d3s3_spy_fx.iter_close_calls == close0);
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.iter_open_calls == open0);
-    REQUIRE(spy.iter_next_calls == next0);
-    REQUIRE(spy.iter_close_calls == close0);
+    REQUIRE(g_d3s3_spy_fx.iter_open_calls == open0);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls == next0);
+    REQUIRE(g_d3s3_spy_fx.iter_close_calls == close0);
     REQUIRE(m30_expect_sem_ok(&session, &context));
 
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
@@ -4945,7 +4921,6 @@ static int m30_key_cmp(
 /* BIND-entry: exact zero set; preserve focus_id16 and prior RR carrier cleared. */
 static int test_d3s3_mode30_bind_entry_exact_zero_preserve(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -4965,10 +4940,10 @@ static int test_d3s3_mode30_bind_entry_exact_zero_preserve(void)
     (void)memset(z80, 0, sizeof(z80));
     (void)memset(z32, 0, sizeof(z32));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -5027,7 +5002,6 @@ static int test_d3s3_mode30_bind_entry_exact_zero_preserve(void)
 /* Outer no candidate → phase12, BIND_MAN bit, GET0. */
 static int test_d3s3_mode30_bind_outer_no_candidate_phase12(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -5039,10 +5013,10 @@ static int test_d3s3_mode30_bind_outer_no_candidate_phase12(void)
     uint64_t ok0;
     uint64_t cdk0;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -5053,7 +5027,7 @@ static int test_d3s3_mode30_bind_outer_no_candidate_phase12(void)
     m30_arm_bind_outer(&context, 0x07u);
     context.last_carrier_key_len = 0u;
 
-    gets0 = spy.get_calls;
+    gets0 = g_d3s3_spy_fx.get_calls;
     ok0 = session.ok_row_count;
     cdk0 = session.current_domain_key_count;
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
@@ -5067,7 +5041,7 @@ static int test_d3s3_mode30_bind_outer_no_candidate_phase12(void)
     REQUIRE(context.binding_complete_mask
         == NINLIL_DOMAIN_SCAN_D3S3_MASK_BIND_MANIFEST);
     REQUIRE(context.peer_key_len == 0u);
-    REQUIRE(spy.get_calls == gets0);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
     REQUIRE(session.ok_row_count == ok0);
     REQUIRE(session.current_domain_key_count == cdk0);
 
@@ -5078,7 +5052,6 @@ static int test_d3s3_mode30_bind_outer_no_candidate_phase12(void)
 /* Single + multi eligible: strict lex first > frontier; at most one; no advance. */
 static int test_d3s3_mode30_bind_outer_select_lex_first_gt_frontier(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -5126,10 +5099,10 @@ static int test_d3s3_mode30_bind_outer_select_lex_first_gt_frontier(void)
     }
 
     /* --- single eligible --- */
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -5138,13 +5111,13 @@ static int test_d3s3_mode30_bind_outer_select_lex_first_gt_frontier(void)
     REQUIRE(st == NINLIL_OK);
     REQUIRE(drive_baseline_to_internal(&session, &context));
     if (first_key == k1) {
-        REQUIRE(ninlil_spy_add_row(&spy, first_key, first_len, v1, v1_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, first_key, first_len, v1, v1_len));
     } else {
-        REQUIRE(ninlil_spy_add_row(&spy, first_key, first_len, v2, v2_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, first_key, first_len, v2, v2_len));
     }
     m30_arm_bind_outer(&context, 0x07u);
     context.last_carrier_key_len = 0u;
-    gets0 = spy.get_calls;
+    gets0 = g_d3s3_spy_fx.get_calls;
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_BIND_MANIFEST);
@@ -5162,14 +5135,14 @@ static int test_d3s3_mode30_bind_outer_select_lex_first_gt_frontier(void)
     REQUIRE(context.blob_kind == (uint8_t)NINLIL_MODEL_DOMAIN_BLOB_KIND_REPLY);
     REQUIRE(context.observed_live == 0u);
     REQUIRE(context.last_carrier_key_len == 0u); /* frontier not advanced */
-    REQUIRE(spy.get_calls == gets0);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
 
     /* --- multi eligible: choose strict lex first; at most one --- */
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -5179,11 +5152,11 @@ static int test_d3s3_mode30_bind_outer_select_lex_first_gt_frontier(void)
     REQUIRE(drive_baseline_to_internal(&session, &context));
     /* Spy walks insertion order; must insert in complete-key lex order. */
     if (m30_key_cmp(k1, k1_len, k2, k2_len) < 0) {
-        REQUIRE(ninlil_spy_add_row(&spy, k1, k1_len, v1, v1_len));
-        REQUIRE(ninlil_spy_add_row(&spy, k2, k2_len, v2, v2_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, k1, k1_len, v1, v1_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, k2, k2_len, v2, v2_len));
     } else {
-        REQUIRE(ninlil_spy_add_row(&spy, k2, k2_len, v2, v2_len));
-        REQUIRE(ninlil_spy_add_row(&spy, k1, k1_len, v1, v1_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, k2, k2_len, v2, v2_len));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, k1, k1_len, v1, v1_len));
     }
     m30_arm_bind_outer(&context, 0x07u);
     context.last_carrier_key_len = 0u;
@@ -5252,7 +5225,6 @@ static int test_d3s3_mode30_bind_rr_qualification_fields(void)
         raw, stream, 1u, man_key, &man_key_len, man_val, &man_val_len, man_dig));
 
     for (ci = 0u; ci < sizeof(cases) / sizeof(cases[0]); ci += 1u) {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -5285,10 +5257,10 @@ static int test_d3s3_mode30_bind_rr_qualification_fields(void)
         REQUIRE(m30_bind_build_rr(use_raw, use_dig, use_ss, 1u, rr_key,
             &rr_key_len, rr_val, &rr_val_len));
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -5297,7 +5269,7 @@ static int test_d3s3_mode30_bind_rr_qualification_fields(void)
         REQUIRE(st == NINLIL_OK);
         REQUIRE(drive_baseline_to_internal(&session, &context));
         REQUIRE(ninlil_spy_add_row(
-            &spy, rr_key, rr_key_len, rr_val, rr_val_len));
+            &g_d3s3_spy_fx, rr_key, rr_key_len, rr_val, rr_val_len));
 
         context.focus_mode = NINLIL_DOMAIN_SCAN_D3S3_MODE_REPLY_BLOB;
         context.pass_kind = NINLIL_DOMAIN_SCAN_D3S3_PASS_INTERNAL;
@@ -5348,7 +5320,6 @@ static int test_d3s3_mode30_bind_rr_qualification_fields(void)
 /* Duplicate / multiple qualifying RRs keep latch exactly 1. */
 static int test_d3s3_mode30_bind_rr_duplicate_latch_one(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -5383,10 +5354,10 @@ static int test_d3s3_mode30_bind_rr_duplicate_latch_one(void)
         NINLIL_MODEL_DOMAIN_REPLY_SEND_CLOSED_DENIED, 3u, rr2_key, &rr2_key_len,
         rr2_val, &rr2_val_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -5396,14 +5367,14 @@ static int test_d3s3_mode30_bind_rr_duplicate_latch_one(void)
     REQUIRE(drive_baseline_to_internal(&session, &context));
     if (m30_key_cmp(rr1_key, rr1_key_len, rr2_key, rr2_key_len) < 0) {
         REQUIRE(ninlil_spy_add_row(
-            &spy, rr1_key, rr1_key_len, rr1_val, rr1_val_len));
+            &g_d3s3_spy_fx, rr1_key, rr1_key_len, rr1_val, rr1_val_len));
         REQUIRE(ninlil_spy_add_row(
-            &spy, rr2_key, rr2_key_len, rr2_val, rr2_val_len));
+            &g_d3s3_spy_fx, rr2_key, rr2_key_len, rr2_val, rr2_val_len));
     } else {
         REQUIRE(ninlil_spy_add_row(
-            &spy, rr2_key, rr2_key_len, rr2_val, rr2_val_len));
+            &g_d3s3_spy_fx, rr2_key, rr2_key_len, rr2_val, rr2_val_len));
         REQUIRE(ninlil_spy_add_row(
-            &spy, rr1_key, rr1_key_len, rr1_val, rr1_val_len));
+            &g_d3s3_spy_fx, rr1_key, rr1_key_len, rr1_val, rr1_val_len));
     }
 
     context.focus_mode = NINLIL_DOMAIN_SCAN_D3S3_MODE_REPLY_BLOB;
@@ -5441,7 +5412,6 @@ static int test_d3s3_mode30_bind_rr_duplicate_latch_one(void)
  */
 static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -5514,10 +5484,10 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
         NINLIL_MODEL_DOMAIN_REPLY_SEND_PENDING, 2u, rr2_key, &rr2_key_len,
         rr2_val, &rr2_val_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -5573,7 +5543,7 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
             }
         }
         for (a = 0u; a < n; a += 1u) {
-            REQUIRE(ninlil_spy_add_row(&spy, rows[a].key, rows[a].key_len,
+            REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, rows[a].key, rows[a].key_len,
                 rows[a].val, rows[a].val_len));
         }
     }
@@ -5581,7 +5551,7 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
     context.last_carrier_key_len = 0u;
     (void)memcpy(context.focus_id16, focus_id, 16u);
     context.reply_kind = 3u;
-    gets0 = spy.get_calls;
+    gets0 = g_d3s3_spy_fx.get_calls;
 
     /* Outer1: select first man */
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
@@ -5589,7 +5559,7 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
     REQUIRE(context.semantic_pass == 5u);
     REQUIRE(memcmp(context.peer_key, first_key, first_len) == 0);
     REQUIRE(context.last_carrier_key_len == 0u);
-    REQUIRE(spy.get_calls == gets0);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
 
     /* RR1: promote first */
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
@@ -5611,7 +5581,7 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
     REQUIRE(context.reply_kind == 3u);
     REQUIRE(context.count_complete_mask == 0x07u);
     REQUIRE(context.binding_complete_mask == 0u);
-    REQUIRE(spy.get_calls == gets0);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
 
     /* Outer2: select second only (strict > frontier) */
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
@@ -5620,7 +5590,7 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
     REQUIRE(context.peer_key_len == (uint8_t)second_len);
     REQUIRE(memcmp(context.peer_key, second_key, second_len) == 0);
     REQUIRE(context.last_carrier_key_len == (uint8_t)first_len);
-    REQUIRE(spy.get_calls == gets0);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
 
     /* RR2: promote second */
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
@@ -5630,7 +5600,7 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
     REQUIRE(memcmp(context.last_carrier_key, second_key, second_len) == 0);
     REQUIRE(context.peer_key_len == 0u);
     REQUIRE(memcmp(context.focus_id16, focus_id, 16u) == 0);
-    REQUIRE(spy.get_calls == gets0);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
 
     /* Outer3: no further candidate → BIND_CHUNK */
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
@@ -5642,7 +5612,7 @@ static int test_d3s3_mode30_bind_two_man_progress_then_finish(void)
         == NINLIL_DOMAIN_SCAN_D3S3_MASK_BIND_MANIFEST);
     REQUIRE(context.count_complete_mask == 0x07u);
     REQUIRE(context.last_carrier_key_len == (uint8_t)second_len);
-    REQUIRE(spy.get_calls == gets0);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
 
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
     return 0;
@@ -5665,7 +5635,6 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
 
     /* Zero qualifying: empty store under RR → CORRUPT, GET0 */
     {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -5676,10 +5645,10 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
         uint32_t gets0;
         uint64_t ok0;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -5700,12 +5669,12 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
         context.focus_raw_len = 80u;
         context.observed_live = 0u;
         context.last_carrier_key_len = 0u;
-        gets0 = spy.get_calls;
+        gets0 = g_d3s3_spy_fx.get_calls;
         ok0 = session.ok_row_count;
         st = ninlil_domain_scan_d3s3_drive(&session, 64u);
         REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
         REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-        REQUIRE(spy.get_calls == gets0);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
         REQUIRE(session.ok_row_count == ok0);
         REQUIRE(context.last_carrier_key_len == 0u);
         (void)ninlil_domain_scan_abort(
@@ -5714,7 +5683,6 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
 
     /* Natural iter_next fault last event; GET0; counters frozen */
     {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -5727,10 +5695,10 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
         uint64_t ok0;
         uint64_t cdk0;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -5740,17 +5708,17 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
         REQUIRE(drive_baseline_to_internal(&session, &context));
         m30_arm_bind_outer(&context, 0x07u);
         context.last_carrier_key_len = 0u;
-        gets0 = spy.get_calls;
-        next0 = spy.iter_next_calls;
+        gets0 = g_d3s3_spy_fx.get_calls;
+        next0 = g_d3s3_spy_fx.iter_next_calls;
         ok0 = session.ok_row_count;
         cdk0 = session.current_domain_key_count;
-        REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_ITER_NEXT, next0 + 1u,
+        REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_ITER_NEXT, next0 + 1u,
             NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
         st = ninlil_domain_scan_d3s3_drive(&session, 64u);
         REQUIRE(st == NINLIL_E_STORAGE);
         REQUIRE(session.sticky_primary == NINLIL_E_STORAGE);
         REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-        REQUIRE(spy.get_calls == gets0);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
         REQUIRE(session.ok_row_count == ok0);
         REQUIRE(session.current_domain_key_count == cdk0);
         (void)ninlil_domain_scan_abort(
@@ -5759,7 +5727,6 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
 
     /* Natural iter_open fault on NEED_REOPEN reopen; GET0 */
     {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -5770,10 +5737,10 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
         uint32_t gets0;
         uint32_t open0;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -5783,15 +5750,15 @@ static int test_d3s3_mode30_bind_rr_zero_and_natural_faults(void)
         REQUIRE(drive_baseline_to_internal(&session, &context));
         m30_arm_bind_outer(&context, 0x07u);
         context.last_carrier_key_len = 0u;
-        gets0 = spy.get_calls;
-        open0 = spy.iter_open_calls;
-        REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_ITER_OPEN, open0 + 1u,
+        gets0 = g_d3s3_spy_fx.get_calls;
+        open0 = g_d3s3_spy_fx.iter_open_calls;
+        REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_ITER_OPEN, open0 + 1u,
             NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
         st = ninlil_domain_scan_d3s3_drive(&session, 64u);
         REQUIRE(st == NINLIL_E_STORAGE);
         REQUIRE(session.sticky_primary == NINLIL_E_STORAGE);
         REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
-        REQUIRE(spy.get_calls == gets0);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets0);
         (void)ninlil_domain_scan_abort(
             &session, &(ninlil_domain_scan_result_t){0});
     }
@@ -6055,7 +6022,6 @@ static int m27_crossrow_patch_spool(
  */
 static int test_d3s3_mode27_eventfact_missing_spool_corrupt(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -6074,20 +6040,20 @@ static int test_d3s3_mode27_eventfact_missing_spool_corrupt(void)
     uint8_t state_val[512];
     uint32_t state_len = 0u;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
     /* D1-legal EF STATE: nonterminal + NA deadline + es counters. */
     REQUIRE(m27_encode_tx_state(NINLIL_TXN_READY, NINLIL_OUTCOME_NONE,
         NINLIL_DEADLINE_NOT_APPLICABLE, NINLIL_REASON_NONE,
         NINLIL_EVENT_PARK_CAUSE_NONE, 1u, 0u, 1u, 0u, state_val,
         (uint32_t)sizeof(state_val), &state_len));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_EF_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_EF_TYPED_KEY,
         (uint32_t)DSB2_ANCHOR_EF_TYPED_KEY_LEN, DSB2_ANCHOR_EF_TYPED_VALUE,
         (uint32_t)DSB2_ANCHOR_EF_TYPED_VALUE_LEN));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
         (uint32_t)DSB2_STATE_TYPED_KEY_LEN, state_val, state_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -6101,7 +6067,7 @@ static int test_d3s3_mode27_eventfact_missing_spool_corrupt(void)
     REQUIRE(st == NINLIL_OK);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_SELECT_CARRIER);
     REQUIRE(context.semantic_pass == 6u);
-    gets_after_select = spy.get_calls;
+    gets_after_select = g_d3s3_spy_fx.get_calls;
 
     /* SELECT_SETUP G: STATE PRESENT + EVENT_SPOOL ABSENT → CORRUPT. */
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
@@ -6110,12 +6076,12 @@ static int test_d3s3_mode27_eventfact_missing_spool_corrupt(void)
     REQUIRE(session.sticky_primary == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(context.phase == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FAILED);
     REQUIRE(context.semantic_pass == 6u);
-    gets_after_setup = spy.get_calls;
-    next_after_setup = spy.iter_next_calls;
-    open_after_setup = spy.iter_open_calls;
-    rb_after_setup = spy.rollback_calls;
-    close_after_setup = spy.close_calls;
-    trace_after_setup = spy.trace_count;
+    gets_after_setup = g_d3s3_spy_fx.get_calls;
+    next_after_setup = g_d3s3_spy_fx.iter_next_calls;
+    open_after_setup = g_d3s3_spy_fx.iter_open_calls;
+    rb_after_setup = g_d3s3_spy_fx.rollback_calls;
+    close_after_setup = g_d3s3_spy_fx.close_calls;
+    trace_after_setup = g_d3s3_spy_fx.trace_count;
     /* Exact GET burst: STATE + EVENT_SPOOL only (+2). */
     REQUIRE(gets_after_setup == gets_after_select + 2u);
 
@@ -6124,21 +6090,20 @@ static int test_d3s3_mode27_eventfact_missing_spool_corrupt(void)
     st = ninlil_domain_scan_finalize(&session, &result);
     REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
     REQUIRE(result.adopted == 0u);
-    REQUIRE(spy.get_calls == gets_after_setup);
-    REQUIRE(spy.iter_next_calls == next_after_setup);
-    REQUIRE(spy.iter_open_calls == open_after_setup);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_setup);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_after_setup);
+    REQUIRE(g_d3s3_spy_fx.iter_open_calls == open_after_setup);
     /* Cleanup may rollback/close; get/next must not advance. */
     (void)rb_after_setup;
     (void)close_after_setup;
     (void)trace_after_setup;
-    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     return 0;
 }
 
 /* (1) DS active + nonzero dig → LIVE; STATE GET +1 only. */
 static int test_d3s3_mode27_desiredstate_active_live(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -6152,20 +6117,20 @@ static int test_d3s3_mode27_desiredstate_active_live(void)
     uint8_t state_cr[512];
     uint32_t state_cr_len = 0u;
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
     /* Fixture DS READY+PENDING+discard0 is D1-legal DesiredState. */
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_TYPED_KEY,
         (uint32_t)DSB2_ANCHOR_TYPED_KEY_LEN, DSB2_ANCHOR_TYPED_VALUE,
         (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN));
     REQUIRE(m27_crossrow_patch_state(DSB2_ANCHOR_TYPED_VALUE,
         (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN, DSB2_STATE_TYPED_VALUE,
         (uint32_t)DSB2_STATE_TYPED_VALUE_LEN, state_cr,
         (uint32_t)sizeof(state_cr), &state_cr_len));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
         (uint32_t)DSB2_STATE_TYPED_KEY_LEN, state_cr, state_cr_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -6177,15 +6142,15 @@ static int test_d3s3_mode27_desiredstate_active_live(void)
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(context.semantic_pass == 6u);
-    gets_after_select = spy.get_calls;
-    next_after_setup = spy.iter_next_calls;
-    open_after_setup = spy.iter_open_calls;
+    gets_after_select = g_d3s3_spy_fx.get_calls;
+    next_after_setup = g_d3s3_spy_fx.iter_next_calls;
+    open_after_setup = g_d3s3_spy_fx.iter_open_calls;
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_after_select + 1u);
-    REQUIRE(spy.iter_next_calls == next_after_setup);
-    REQUIRE(spy.iter_open_calls == open_after_setup);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_select + 1u);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_after_setup);
+    REQUIRE(g_d3s3_spy_fx.iter_open_calls == open_after_setup);
     REQUIRE(context.lifecycle_class
         == NINLIL_DOMAIN_SCAN_D3S3_LIFE_LIVE_REQUIRED);
     /* After setup, enter_focus zeros walk-local expected_live (reconstruct later). */
@@ -6194,7 +6159,7 @@ static int test_d3s3_mode27_desiredstate_active_live(void)
         == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FOCUS_MANIFEST_SCAN);
     REQUIRE(context.semantic_pass == 0u);
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
-    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     return 0;
 }
 
@@ -6204,7 +6169,6 @@ static int test_d3s3_mode27_desiredstate_active_live(void)
  */
 static int test_d3s3_mode27_desiredstate_terminal_historical(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -6224,18 +6188,18 @@ static int test_d3s3_mode27_desiredstate_terminal_historical(void)
         NINLIL_EVENT_PARK_CAUSE_NONE, 0u, 0u, 0u, 0u, state_val,
         (uint32_t)sizeof(state_val), &state_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_TYPED_KEY,
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_TYPED_KEY,
         (uint32_t)DSB2_ANCHOR_TYPED_KEY_LEN, DSB2_ANCHOR_TYPED_VALUE,
         (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN));
     REQUIRE(m27_crossrow_patch_state(DSB2_ANCHOR_TYPED_VALUE,
         (uint32_t)DSB2_ANCHOR_TYPED_VALUE_LEN, state_val, state_len, state_cr,
         (uint32_t)sizeof(state_cr), &state_cr_len));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
         (uint32_t)DSB2_STATE_TYPED_KEY_LEN, state_cr, state_cr_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -6247,13 +6211,13 @@ static int test_d3s3_mode27_desiredstate_terminal_historical(void)
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(context.semantic_pass == 6u);
-    gets_after_select = spy.get_calls;
-    next_after_setup = spy.iter_next_calls;
+    gets_after_select = g_d3s3_spy_fx.get_calls;
+    next_after_setup = g_d3s3_spy_fx.iter_next_calls;
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_after_select + 1u);
-    REQUIRE(spy.iter_next_calls == next_after_setup);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_select + 1u);
+    REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_after_setup);
     REQUIRE(context.lifecycle_class
         == NINLIL_DOMAIN_SCAN_D3S3_LIFE_HISTORICAL_ABSENT);
     REQUIRE(context.expected_live == 0u);
@@ -6261,14 +6225,13 @@ static int test_d3s3_mode27_desiredstate_terminal_historical(void)
         == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FOCUS_MANIFEST_SCAN);
     REQUIRE(context.semantic_pass == 0u);
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
-    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     return 0;
 }
 
 /* (3) EventFact active + ACTIVE/PARKED spool → LIVE; STATE+SPOOL GETs. */
 static int test_d3s3_mode27_eventfact_spool_active_live(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -6318,17 +6281,17 @@ static int test_d3s3_mode27_eventfact_spool_active_live(void)
             spool_val, spool_len, spool_cr, (uint32_t)sizeof(spool_cr),
             &spool_cr_len));
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_EF_TYPED_KEY,
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_EF_TYPED_KEY,
             (uint32_t)DSB2_ANCHOR_EF_TYPED_KEY_LEN, DSB2_ANCHOR_EF_TYPED_VALUE,
             (uint32_t)DSB2_ANCHOR_EF_TYPED_VALUE_LEN));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
             (uint32_t)DSB2_STATE_TYPED_KEY_LEN, state_cr, state_cr_len));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB3_ES_ACTIVE_TYPED_KEY,
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB3_ES_ACTIVE_TYPED_KEY,
             (uint32_t)DSB3_ES_ACTIVE_TYPED_KEY_LEN, spool_cr, spool_cr_len));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -6340,13 +6303,13 @@ static int test_d3s3_mode27_eventfact_spool_active_live(void)
         st = ninlil_domain_scan_d3s3_drive(&session, 64u);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(context.semantic_pass == 6u);
-        gets_after_select = spy.get_calls;
-        next_after_setup = spy.iter_next_calls;
+        gets_after_select = g_d3s3_spy_fx.get_calls;
+        next_after_setup = g_d3s3_spy_fx.iter_next_calls;
 
         st = ninlil_domain_scan_d3s3_drive(&session, 0u);
         REQUIRE(st == NINLIL_OK);
-        REQUIRE(spy.get_calls == gets_after_select + 2u);
-        REQUIRE(spy.iter_next_calls == next_after_setup);
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_select + 2u);
+        REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_after_setup);
         REQUIRE(context.lifecycle_class
             == NINLIL_DOMAIN_SCAN_D3S3_LIFE_LIVE_REQUIRED);
         REQUIRE(context.expected_live == 0u);
@@ -6355,7 +6318,7 @@ static int test_d3s3_mode27_eventfact_spool_active_live(void)
         REQUIRE(context.semantic_pass == 0u);
         (void)ninlil_domain_scan_abort(
             &session, &(ninlil_domain_scan_result_t){0});
-        REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+        REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     }
     return 0;
 }
@@ -6363,7 +6326,6 @@ static int test_d3s3_mode27_eventfact_spool_active_live(void)
 /* (4) EventFact terminal + RELEASED spool → HISTORICAL. */
 static int test_d3s3_mode27_eventfact_released_historical(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -6396,17 +6358,17 @@ static int test_d3s3_mode27_eventfact_released_historical(void)
         spool_val, spool_len, spool_cr, (uint32_t)sizeof(spool_cr),
         &spool_cr_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_EF_TYPED_KEY,
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_EF_TYPED_KEY,
         (uint32_t)DSB2_ANCHOR_EF_TYPED_KEY_LEN, DSB2_ANCHOR_EF_TYPED_VALUE,
         (uint32_t)DSB2_ANCHOR_EF_TYPED_VALUE_LEN));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
         (uint32_t)DSB2_STATE_TYPED_KEY_LEN, state_cr, state_cr_len));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB3_ES_ACTIVE_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB3_ES_ACTIVE_TYPED_KEY,
         (uint32_t)DSB3_ES_ACTIVE_TYPED_KEY_LEN, spool_cr, spool_cr_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -6418,11 +6380,11 @@ static int test_d3s3_mode27_eventfact_released_historical(void)
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(context.semantic_pass == 6u);
-    gets_after_select = spy.get_calls;
+    gets_after_select = g_d3s3_spy_fx.get_calls;
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_after_select + 2u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_select + 2u);
     REQUIRE(context.lifecycle_class
         == NINLIL_DOMAIN_SCAN_D3S3_LIFE_HISTORICAL_ABSENT);
     REQUIRE(context.expected_live == 0u);
@@ -6430,14 +6392,13 @@ static int test_d3s3_mode27_eventfact_released_historical(void)
         == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FOCUS_MANIFEST_SCAN);
     REQUIRE(context.semantic_pass == 0u);
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
-    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     return 0;
 }
 
 /* (5) EventFact audited discard + DISCARDED spool → HISTORICAL. */
 static int test_d3s3_mode27_eventfact_discard_historical(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -6471,17 +6432,17 @@ static int test_d3s3_mode27_eventfact_discard_historical(void)
         spool_val, spool_len, spool_cr, (uint32_t)sizeof(spool_cr),
         &spool_cr_len));
 
-    ninlil_spy_init(&spy);
-    REQUIRE(install_profile_rows(&spy, &candidate));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_EF_TYPED_KEY,
+    ninlil_spy_init(&g_d3s3_spy_fx);
+    REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_EF_TYPED_KEY,
         (uint32_t)DSB2_ANCHOR_EF_TYPED_KEY_LEN, DSB2_ANCHOR_EF_TYPED_VALUE,
         (uint32_t)DSB2_ANCHOR_EF_TYPED_VALUE_LEN));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
         (uint32_t)DSB2_STATE_TYPED_KEY_LEN, state_cr, state_cr_len));
-    REQUIRE(ninlil_spy_add_row(&spy, DSB3_ES_ACTIVE_TYPED_KEY,
+    REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB3_ES_ACTIVE_TYPED_KEY,
         (uint32_t)DSB3_ES_ACTIVE_TYPED_KEY_LEN, spool_cr, spool_cr_len));
-    ops = ninlil_spy_ops(&spy);
-    handle = ninlil_spy_open_handle(&spy);
+    ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+    handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
     ninlil_domain_scan_session_init(&session);
     (void)memset(&workspace, 0, sizeof(workspace));
     (void)memset(&context, 0, sizeof(context));
@@ -6493,11 +6454,11 @@ static int test_d3s3_mode27_eventfact_discard_historical(void)
     st = ninlil_domain_scan_d3s3_drive(&session, 64u);
     REQUIRE(st == NINLIL_OK);
     REQUIRE(context.semantic_pass == 6u);
-    gets_after_select = spy.get_calls;
+    gets_after_select = g_d3s3_spy_fx.get_calls;
 
     st = ninlil_domain_scan_d3s3_drive(&session, 0u);
     REQUIRE(st == NINLIL_OK);
-    REQUIRE(spy.get_calls == gets_after_select + 2u);
+    REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_select + 2u);
     REQUIRE(context.lifecycle_class
         == NINLIL_DOMAIN_SCAN_D3S3_LIFE_HISTORICAL_ABSENT);
     REQUIRE(context.expected_live == 0u);
@@ -6505,7 +6466,7 @@ static int test_d3s3_mode27_eventfact_discard_historical(void)
         == NINLIL_DOMAIN_SCAN_D3S3_PHASE_FOCUS_MANIFEST_SCAN);
     REQUIRE(context.semantic_pass == 0u);
     (void)ninlil_domain_scan_abort(&session, &(ninlil_domain_scan_result_t){0});
-    REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+    REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     return 0;
 }
 
@@ -6516,7 +6477,6 @@ static int test_d3s3_mode27_eventfact_discard_historical(void)
  */
 static int test_d3s3_mode27_eventfact_state_spool_mismatch_corrupt(void)
 {
-    ninlil_scripted_storage_spy_t spy;
     ninlil_domain_scan_session_t session;
     ninlil_domain_scan_workspace_t workspace;
     ninlil_domain_scan_d3s3_context_t context;
@@ -6576,17 +6536,17 @@ static int test_d3s3_mode27_eventfact_state_spool_mismatch_corrupt(void)
             spool_val, spool_len, spool_cr, (uint32_t)sizeof(spool_cr),
             &spool_cr_len));
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_EF_TYPED_KEY,
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_EF_TYPED_KEY,
             (uint32_t)DSB2_ANCHOR_EF_TYPED_KEY_LEN, DSB2_ANCHOR_EF_TYPED_VALUE,
             (uint32_t)DSB2_ANCHOR_EF_TYPED_VALUE_LEN));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
             (uint32_t)DSB2_STATE_TYPED_KEY_LEN, state_cr, state_cr_len));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB3_ES_ACTIVE_TYPED_KEY,
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB3_ES_ACTIVE_TYPED_KEY,
             (uint32_t)DSB3_ES_ACTIVE_TYPED_KEY_LEN, spool_cr, spool_cr_len));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -6598,8 +6558,8 @@ static int test_d3s3_mode27_eventfact_state_spool_mismatch_corrupt(void)
         st = ninlil_domain_scan_d3s3_drive(&session, 64u);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(context.semantic_pass == 6u);
-        gets_after_select = spy.get_calls;
-        next_after_setup = spy.iter_next_calls;
+        gets_after_select = g_d3s3_spy_fx.get_calls;
+        next_after_setup = g_d3s3_spy_fx.iter_next_calls;
 
         st = ninlil_domain_scan_d3s3_drive(&session, 0u);
         REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
@@ -6609,16 +6569,16 @@ static int test_d3s3_mode27_eventfact_state_spool_mismatch_corrupt(void)
         /* R27 contract: cross-row/closed-product CORRUPT keeps lifecycle NONE. */
         REQUIRE(context.lifecycle_class
             == NINLIL_DOMAIN_SCAN_D3S3_LIFE_NONE);
-        gets_after_setup = spy.get_calls;
+        gets_after_setup = g_d3s3_spy_fx.get_calls;
         REQUIRE(gets_after_setup == gets_after_select + 2u);
-        REQUIRE(spy.iter_next_calls == next_after_setup);
+        REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_after_setup);
 
         (void)memset(&result, 0, sizeof(result));
         st = ninlil_domain_scan_finalize(&session, &result);
         REQUIRE(st == NINLIL_E_STORAGE_CORRUPT);
-        REQUIRE(spy.get_calls == gets_after_setup);
-        REQUIRE(spy.iter_next_calls == next_after_setup);
-        REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+        REQUIRE(g_d3s3_spy_fx.get_calls == gets_after_setup);
+        REQUIRE(g_d3s3_spy_fx.iter_next_calls == next_after_setup);
+        REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     }
     return 0;
 }
@@ -6633,7 +6593,6 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
 {
     /* --- clean finalize: caller retains H1 --- */
     {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -6644,10 +6603,10 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
         ninlil_status_t st;
         uint32_t guard = 0u;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -6671,15 +6630,14 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
         REQUIRE(st == NINLIL_OK);
         REQUIRE(result.adopted == 1u);
         REQUIRE(handle != NULL);
-        REQUIRE(handle == (ninlil_storage_handle_t)&spy.handle_token);
+        REQUIRE(handle == (ninlil_storage_handle_t)&g_d3s3_spy_fx.handle_token);
         REQUIRE(session.txn == NULL);
         REQUIRE(session.iter == NULL);
-        REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+        REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     }
 
     /* --- rollback fault finalize: caller H/T/I null; historical value kept --- */
     {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -6690,12 +6648,12 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
         ninlil_status_t st;
         uint32_t guard = 0u;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_ROLLBACK, 1u,
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_ROLLBACK, 1u,
             NINLIL_STORAGE_IO_ERROR, NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -6716,14 +6674,13 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
         REQUIRE(session.iter == NULL);
         /* Production keeps original identity for exact-once close bookkeeping. */
         REQUIRE(session.bound_handle_value
-            == (ninlil_storage_handle_t)&spy.handle_token);
+            == (ninlil_storage_handle_t)&g_d3s3_spy_fx.handle_token);
         (void)st;
-        REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+        REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     }
 
     /* --- pre-finalize CU on mid-session GET: fence_pending, caller H1 --- */
     {
-        ninlil_scripted_storage_spy_t spy;
         ninlil_domain_scan_session_t session;
         ninlil_domain_scan_workspace_t workspace;
         ninlil_domain_scan_d3s3_context_t context;
@@ -6733,19 +6690,19 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
         ninlil_status_t st;
         uint32_t gets_after_select;
 
-        ninlil_spy_init(&spy);
-        REQUIRE(install_profile_rows(&spy, &candidate));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB2_ANCHOR_EF_TYPED_KEY,
+        ninlil_spy_init(&g_d3s3_spy_fx);
+        REQUIRE(install_profile_rows(&g_d3s3_spy_fx, &candidate));
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_ANCHOR_EF_TYPED_KEY,
             (uint32_t)DSB2_ANCHOR_EF_TYPED_KEY_LEN, DSB2_ANCHOR_EF_TYPED_VALUE,
             (uint32_t)DSB2_ANCHOR_EF_TYPED_VALUE_LEN));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB2_STATE_TYPED_KEY,
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB2_STATE_TYPED_KEY,
             (uint32_t)DSB2_STATE_TYPED_KEY_LEN, DSB2_STATE_TYPED_VALUE,
             (uint32_t)DSB2_STATE_TYPED_VALUE_LEN));
-        REQUIRE(ninlil_spy_add_row(&spy, DSB3_ES_ACTIVE_TYPED_KEY,
+        REQUIRE(ninlil_spy_add_row(&g_d3s3_spy_fx, DSB3_ES_ACTIVE_TYPED_KEY,
             (uint32_t)DSB3_ES_ACTIVE_TYPED_KEY_LEN, DSB3_ES_ACTIVE_TYPED_VALUE,
             (uint32_t)DSB3_ES_ACTIVE_TYPED_VALUE_LEN));
-        ops = ninlil_spy_ops(&spy);
-        handle = ninlil_spy_open_handle(&spy);
+        ops = ninlil_spy_ops(&g_d3s3_spy_fx);
+        handle = ninlil_spy_open_handle(&g_d3s3_spy_fx);
         ninlil_domain_scan_session_init(&session);
         (void)memset(&workspace, 0, sizeof(workspace));
         (void)memset(&context, 0, sizeof(context));
@@ -6756,9 +6713,9 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
         st = ninlil_domain_scan_d3s3_drive(&session, 64u);
         REQUIRE(st == NINLIL_OK);
         REQUIRE(context.semantic_pass == 6u);
-        gets_after_select = spy.get_calls;
+        gets_after_select = g_d3s3_spy_fx.get_calls;
         /* CU on first SELECT_SETUP companion GET; close deferred. */
-        REQUIRE(ninlil_spy_add_fault(&spy, NINLIL_SPY_OP_GET,
+        REQUIRE(ninlil_spy_add_fault(&g_d3s3_spy_fx, NINLIL_SPY_OP_GET,
             gets_after_select + 1u, NINLIL_STORAGE_COMMIT_UNKNOWN,
             NINLIL_SPY_SHAPE_NATURAL, 0u, 0u));
         st = ninlil_domain_scan_d3s3_drive(&session, 0u);
@@ -6767,10 +6724,10 @@ static int test_d3s3_handle_projection_clean_rollback_cu(void)
         REQUIRE(session.fence_pending == 1u);
         /* Pre-finalize: caller still H1 (fence not yet applied). */
         REQUIRE(handle != NULL);
-        REQUIRE(handle == (ninlil_storage_handle_t)&spy.handle_token);
+        REQUIRE(handle == (ninlil_storage_handle_t)&g_d3s3_spy_fx.handle_token);
         (void)ninlil_domain_scan_abort(
             &session, &(ninlil_domain_scan_result_t){0});
-        REQUIRE(ninlil_spy_assert_no_mutations(&spy));
+        REQUIRE(ninlil_spy_assert_no_mutations(&g_d3s3_spy_fx));
     }
     return 0;
 }

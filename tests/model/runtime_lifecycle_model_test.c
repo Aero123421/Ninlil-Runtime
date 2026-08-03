@@ -597,27 +597,23 @@ static int test_validation_and_precedence(void)
     REQUIRE(expect_validation(NINLIL_E_INVALID_ARGUMENT,
         NINLIL_MODEL_RUNTIME_VALIDATION_UNKNOWN_ROLE,
         &config, &fixture.platform));
-    config.role = NINLIL_ROLE_CELL_AGENT_RESERVED;
-    REQUIRE(expect_validation(NINLIL_E_UNSUPPORTED,
-        NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ROLE,
-        &config, &fixture.platform));
+    config = make_config(NINLIL_ROLE_CELL_AGENT);
+    REQUIRE(ninlil_model_runtime_validate_and_derive(
+        &config, &fixture.platform, &result) == NINLIL_OK);
     config = make_config(NINLIL_ROLE_CONTROLLER);
     config.environment = 0u;
     REQUIRE(expect_validation(NINLIL_E_INVALID_ARGUMENT,
         NINLIL_MODEL_RUNTIME_VALIDATION_UNKNOWN_ENVIRONMENT,
         &config, &fixture.platform));
     config.environment = NINLIL_ENV_LAB_RESERVED;
-    REQUIRE(expect_validation(NINLIL_E_UNSUPPORTED,
-        NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ENVIRONMENT,
-        &config, &fixture.platform));
+    REQUIRE(ninlil_model_runtime_validate_and_derive(
+        &config, &fixture.platform, &result) == NINLIL_OK);
     config.environment = NINLIL_ENV_FIELD_RESERVED;
-    REQUIRE(expect_validation(NINLIL_E_UNSUPPORTED,
-        NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ENVIRONMENT,
-        &config, &fixture.platform));
+    REQUIRE(ninlil_model_runtime_validate_and_derive(
+        &config, &fixture.platform, &result) == NINLIL_OK);
     config.environment = NINLIL_ENV_PRODUCTION_RESERVED;
-    REQUIRE(expect_validation(NINLIL_E_UNSUPPORTED,
-        NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ENVIRONMENT,
-        &config, &fixture.platform));
+    REQUIRE(ninlil_model_runtime_validate_and_derive(
+        &config, &fixture.platform, &result) == NINLIL_OK);
 
     config = make_config(NINLIL_ROLE_CONTROLLER);
     config.limits.max_services = 0u;
@@ -868,15 +864,15 @@ static int test_namespace_reserved_and_identity(void)
         &config, &fixture.platform));
     config = make_config(NINLIL_ROLE_CONTROLLER);
     config.storage_namespace.data = NULL;
-    config.role = NINLIL_ROLE_CELL_AGENT_RESERVED;
-    REQUIRE(expect_validation(NINLIL_E_UNSUPPORTED,
-        NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ROLE,
+    config.role = NINLIL_ROLE_CELL_AGENT;
+    REQUIRE(expect_validation(NINLIL_E_INVALID_ARGUMENT,
+        NINLIL_MODEL_RUNTIME_VALIDATION_NAMESPACE,
         &config, &fixture.platform));
     config = make_config(NINLIL_ROLE_CONTROLLER);
     config.storage_namespace.data = NULL;
     config.environment = NINLIL_ENV_LAB_RESERVED;
-    REQUIRE(expect_validation(NINLIL_E_UNSUPPORTED,
-        NINLIL_MODEL_RUNTIME_VALIDATION_UNSUPPORTED_ENVIRONMENT,
+    REQUIRE(expect_validation(NINLIL_E_INVALID_ARGUMENT,
+        NINLIL_MODEL_RUNTIME_VALIDATION_NAMESPACE,
         &config, &fixture.platform));
 
     for (index = 0u; index < 3u; ++index) {
@@ -1048,7 +1044,7 @@ static int test_rl1_to_rl7_matrix(void)
         0u, 0u, 1u, 1u, 1u, 1u, 2u, 1u, 1u
     };
     static const uint64_t CONTROLLER_MAX[19] = {
-        16u, 256u, 1u, 1024u, 262144u, 8u, 1u, 8u, 2048u, 32u,
+        16u, 256u, 4u, 1024u, 262144u, 8u, 1u, 8u, 2048u, 32u,
         0u, 0u, 64u, 64u, 64u, 64u, 64u, 64u, 32u
     };
     static const uint64_t ENDPOINT_MIN[19] = {
@@ -1056,7 +1052,7 @@ static int test_rl1_to_rl7_matrix(void)
         0u, 0u, 1u, 1u, 1u, 1u, 2u, 1u, 1u
     };
     static const uint64_t ENDPOINT_MAX[19] = {
-        8u, 32u, 1u, 1024u, 0u, 8u, 1u, 8u, 64u, 32u,
+        8u, 32u, 4u, 1024u, 0u, 8u, 1u, 8u, 64u, 32u,
         32u, 32768u, 64u, 64u, 64u, 64u, 64u, 64u, 32u
     };
     platform_fixture_t fixture = make_platform();

@@ -281,6 +281,11 @@ static int test_tb1_accounting_and_tb2_deep_copy(void)
         == NINLIL_BEARER_OK);
     REQUIRE(ninlil_test_bearer_direction_accounting(context.bearer,
         &context.a_id, &entries, &bytes));
+    /*
+     * TRACE-INV010-QUEUE-BOUNDARY
+     * The configured entry/byte limits are both reached exactly; one more
+     * message is rejected without consuming the caller's permit.
+     */
     REQUIRE(entries == 2u && bytes == 1021u);
     permit = acquire_permit(&context, &c1);
     REQUIRE(send_message(&context, context.a, &c1, &permit, &result)

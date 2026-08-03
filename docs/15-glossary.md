@@ -61,16 +61,16 @@ Device Identity、Site Membership、Attachment、Route Lease、Traffic Grantは�
 
 ## Application family
 
-公開familyは6つです。
+製品契約カタログ上の公開familyは6つです（将来の Normative unfreeze 候補を含む名前の一覧）。
 
 1. `EventFact`
-2. `LatestState`
-3. `MeasurementBatch`
+2. `LatestState`（製品概念名; M1a の public enum は `LATEST_STATE_RESERVED` で register = `UNSUPPORTED`）
+3. `MeasurementBatch`（製品概念名; M1a の public enum は `MEASUREMENT_RESERVED` で register = `UNSUPPORTED`）
 4. `DesiredStateCommand`
 5. `BoundedTransfer`
 6. `ConfigRevision`
 
-`NetworkControl`は内部protocol trafficであり、applicationが登録する7番目のpublic familyではありません。M1aが実装するのは`EventFact`と`DesiredStateCommand`だけです。
+`NetworkControl`は内部protocol trafficであり、applicationが登録する7番目のpublic familyではありません。**M1a が public 実装するのは `EventFact` と `DesiredStateCommand` だけ**です（[ADR-0024](adr/0024-m1a-public-family-matrix-freeze.md)）。V1 LAB の display / leak 例は **display snapshot event (EventFact)** / **leak measurement event (EventFact)** であり、reserved family の first-class 有効化ではありません。
 
 ## EventFactの保持
 

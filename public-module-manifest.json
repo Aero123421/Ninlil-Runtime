@@ -1,0 +1,2290 @@
+{
+  "$schema": "spec/public-module-manifest-v1.schema.json",
+  "schema": "ninlil-public-module-manifest-v1",
+  "schema_version": 1,
+  "authority": {
+    "adr_path": "docs/adr/0028-composable-public-runtime-modules.md",
+    "completion_contract_path": "docs/34-v2-runtime-fabric-completion.md",
+    "compatibility_matrix_path": "compatibility-matrix.json",
+    "schema_path": "spec/public-module-manifest-v1.schema.json",
+    "gate_path": "tools/public_module_manifest_gate.py"
+  },
+  "exact_contract_digests": {
+    "module_wire_storage_namespace_sha256": "4c5b9aed0cd3fceb4e1e35287ba3f60e8f4cdfaa75247222630fdbb8ee32119b",
+    "acceptance_ledger_sha256": "6a885314e71b93fa7873fd40bdf01e1ee36e30b989f4f360d2b90abd738da118"
+  },
+  "module_api_states": [
+    "PRIVATE_CANDIDATE",
+    "PUBLIC_API_SPEC_ACCEPTED",
+    "PACKAGE_EXPERIMENTAL",
+    "RELEASE_SUPPORTED"
+  ],
+  "allowed_module_api_transitions": {
+    "PRIVATE_CANDIDATE": ["PUBLIC_API_SPEC_ACCEPTED"],
+    "PUBLIC_API_SPEC_ACCEPTED": ["PACKAGE_EXPERIMENTAL"],
+    "PACKAGE_EXPERIMENTAL": ["RELEASE_SUPPORTED"],
+    "RELEASE_SUPPORTED": []
+  },
+  "completion_state_domain": {
+    "matrix_path": "compatibility-matrix.json",
+    "states_pointer": "/completion_states",
+    "features_pointer": "/features",
+    "supplemental_features_pointer": "/module_api_domain/supplemental_completion_features"
+  },
+  "cmake_component_contract": {
+    "variable_pattern": "Ninlil_<component>_<VARIABLE>",
+    "variables": [
+      "FOUND",
+      "API_VERSION",
+      "MODULE_API_STATE",
+      "COMPLETION_STATE",
+      "COMPLETION_STATE_BY_PLATFORM",
+      "PLATFORMS",
+      "WIRE_PROFILES",
+      "STORAGE_SCHEMAS",
+      "DEPENDENCIES"
+    ],
+    "semantics": {
+      "required_requested_absent": "Ninlil_FOUND_FALSE_AND_CONFIGURE_FAIL_WHEN_FIND_PACKAGE_IS_REQUIRED",
+      "optional_requested_absent": "COMPONENT_FOUND_FALSE_AND_Ninlil_FOUND_REMAINS_TRUE",
+      "unrequested_absent": "COMPONENT_FOUND_FALSE_WITHOUT_PACKAGE_FAILURE",
+      "required_component_flag_source": "Ninlil_FIND_REQUIRED_<component>",
+      "requested_target_creation": "ONLY_WHEN_COMPONENT_FOUND_TRUE",
+      "dependency_resolution": "TRANSITIVE_TOPOLOGICAL_NO_SILENT_ENABLE",
+      "dependency_absent": "REQUESTED_COMPONENT_FOUND_FALSE_WITH_EXACT_MISSING_DEPENDENCY",
+      "platform_mismatch": "REQUESTED_COMPONENT_FOUND_FALSE_WITH_EXACT_PLATFORM_MISMATCH",
+      "esp_only_component_on_host": "COMPONENT_FOUND_FALSE_WITH_EXACT_PLATFORM_MISMATCH",
+      "found_true_condition": "TARGET_HEADER_METADATA_PLATFORM_AND_TRANSITIVE_DEPENDENCIES_ALL_PRESENT",
+      "platform_completion_state_reducer": "MINIMUM_OF_PLATFORM_AND_FEATURES_MAPPED_TO_THAT_PLATFORM",
+      "aggregate_completion_state_reducer": "MINIMUM_OF_ALL_DECLARED_PLATFORM_ENTRIES",
+      "completion_state_by_platform_format": "DECLARED_PLATFORM_ORDER_PLATFORM_EQUALS_STATE_SEMICOLON_LIST"
+    }
+  },
+  "module_api_completion_mapping": {
+    "PRIVATE_CANDIDATE": {
+      "completion_floor": null,
+      "package_availability": "ABSENT",
+      "acceptance_requirement": "NONE"
+    },
+    "PUBLIC_API_SPEC_ACCEPTED": {
+      "completion_floor": "SPEC_ACCEPTED",
+      "package_availability": "ABSENT",
+      "acceptance_requirement": "MODULE_SPEC_ACCEPTED_INDEPENDENT_REVIEW_GO_P0_P1_P2_ZERO_AND_TRANSITIVE_DEPENDENCY_CLOSURE"
+    },
+    "PACKAGE_EXPERIMENTAL": {
+      "completion_floor": "SPEC_ACCEPTED",
+      "package_availability": "PRESENT",
+      "acceptance_requirement": "ALL_NON_HIL_ACCEPTANCE_PASS"
+    },
+    "RELEASE_SUPPORTED": {
+      "completion_floor": "RELEASE_SUPPORTED",
+      "package_availability": "PRESENT",
+      "acceptance_requirement": "ALL_ACCEPTANCE_AND_REQUIRED_HIL_PASS"
+    }
+  },
+  "inter_module_port_contract": {
+    "id": "ninlil_fabric_observer_v1",
+    "abi_version": 1,
+    "input_compatibility": "PREFIX_COMPATIBLE_STRUCT_SIZE",
+    "event_field_order": [
+      "uint32_t abi_version",
+      "uint32_t struct_size",
+      "uint8_t owner_instance_id[16]",
+      "uint64_t owner_generation",
+      "uint8_t subject_instance_id[16]",
+      "uint64_t subject_generation",
+      "uint32_t event_kind",
+      "uint32_t flags",
+      "const uint8_t *payload",
+      "size_t payload_size"
+    ],
+    "observer_field_order": [
+      "uint32_t abi_version",
+      "uint32_t struct_size",
+      "void *context",
+      "ninlil_fabric_observer_on_event_v1_fn on_event"
+    ],
+    "callback_signature": "ninlil_status_t (*)(void *context,const ninlil_fabric_observer_event_v1_t *event)",
+    "registration_ownership": "COPY_AND_BIND_OWNER_INSTANCE_ID_PLUS_GENERATION",
+    "callback_data_lifetime": "CALL_ONLY_NO_RETAIN",
+    "reentrancy": "SAME_INSTANCE_FORBIDDEN_RETURNS_BUSY",
+    "unknown_event": "IGNORE_WITHOUT_MUTATION",
+    "unregister": "DRAIN_THEN_INVALIDATE_GENERATION",
+    "selection_port": "ninlil_fabric_selection_port_v1",
+    "selection_port_contract_pointer": "/fabric_selection_port_contract"
+  },
+  "fabric_selection_port_contract": {
+    "id": "ninlil_fabric_selection_port_v1",
+    "abi_version": 1,
+    "status_type": "ninlil_status_t",
+    "status_values": {
+      "NINLIL_OK": 0,
+      "NINLIL_E_INVALID_ARGUMENT": 1,
+      "NINLIL_E_ABI_MISMATCH": 2,
+      "NINLIL_E_UNSUPPORTED": 3,
+      "NINLIL_E_WRONG_THREAD": 4,
+      "NINLIL_E_REENTRANT": 5,
+      "NINLIL_E_BUFFER_TOO_SMALL": 6,
+      "NINLIL_E_NOT_FOUND": 7,
+      "NINLIL_E_CONFLICT": 8,
+      "NINLIL_E_CAPACITY_EXHAUSTED": 9,
+      "NINLIL_E_WOULD_BLOCK": 15,
+      "NINLIL_E_INVALID_STATE": 16,
+      "NINLIL_E_DEGRADED": 18
+    },
+    "unknown_status_policy": "MAP_TO_NINLIL_E_INVALID_STATE_FENCE_SELECTION_AND_SEND_NOTHING",
+    "input_compatibility": "PREFIX_COMPATIBLE_STRUCT_SIZE",
+    "struct_policy": {
+      "header": "uint32_t abi_version; uint32_t struct_size",
+      "abi_version": "EXACT_1",
+      "minimum_size": "THROUGH_LAST_V1_FIELD",
+      "input_trailing_bytes": "IGNORE_WITHOUT_READ_OR_RETAIN",
+      "output_short": "NINLIL_E_BUFFER_TOO_SMALL_ZERO_KNOWN_OUTPUT_NO_PARTIAL_RESULT",
+      "output_trailing_bytes": "LEAVE_CALLER_BYTES_UNTOUCHED",
+      "reserved_fields": "MUST_BE_ZERO",
+      "unknown_flags_or_enum": "NINLIL_E_UNSUPPORTED_NO_SELECTION_NO_SEND"
+    },
+    "verdict_values": {
+      "NINLIL_FABRIC_SELECTION_REJECT": 0,
+      "NINLIL_FABRIC_SELECTION_ELIGIBLE": 1
+    },
+    "security_profile_values": {
+      "NINLIL_FABRIC_SECURITY_NONE": 0,
+      "NINLIL_FABRIC_SECURITY_AUTHENTICATED": 1,
+      "NINLIL_FABRIC_SECURITY_CONFIDENTIAL_AUTHENTICATED": 2,
+      "NINLIL_FABRIC_SECURITY_HARDWARE_BOUND_CONFIDENTIAL_AUTHENTICATED": 3
+    },
+    "security_profile_compatibility": {
+      "NINLIL_FABRIC_SECURITY_NONE": [0, 1, 2, 3],
+      "NINLIL_FABRIC_SECURITY_AUTHENTICATED": [1, 2, 3],
+      "NINLIL_FABRIC_SECURITY_CONFIDENTIAL_AUTHENTICATED": [2, 3],
+      "NINLIL_FABRIC_SECURITY_HARDWARE_BOUND_CONFIDENTIAL_AUTHENTICATED": [3]
+    },
+    "path_kind_values": {
+      "NINLIL_FABRIC_PATH_USB_CDC": 1,
+      "NINLIL_FABRIC_PATH_WIFI": 2,
+      "NINLIL_FABRIC_PATH_SX1262": 3,
+      "NINLIL_FABRIC_PATH_POSIX_LOOPBACK": 4,
+      "NINLIL_FABRIC_PATH_OTHER_REGISTERED": 5
+    },
+    "health_values": {
+      "NINLIL_FABRIC_PATH_HEALTHY": 1,
+      "NINLIL_FABRIC_PATH_DEGRADED": 2,
+      "NINLIL_FABRIC_PATH_UNAVAILABLE": 3
+    },
+    "health_eligibility": "HEALTHY_OR_DEGRADED_ONLY_UNAVAILABLE_REJECT_BEFORE_CALLBACK",
+    "request_flags_allowed_mask": 0,
+    "candidate_flags_allowed_mask": 0,
+    "result_flags_allowed_mask": 0,
+    "fabric_base_score_min": -1000000,
+    "fabric_base_score_max": 1000000,
+    "score_adjustment_min": -1000000,
+    "score_adjustment_max": 1000000,
+    "combined_score_min": -2000000,
+    "combined_score_max": 2000000,
+    "enum_mask_and_bounds_failure": "UNKNOWN_PROFILE_PATH_KIND_HEALTH_FLAG_BIT_OR_OUT_OF_RANGE_SCORE_REJECTS_WHOLE_SELECTION_WITH_NO_SEND",
+    "request_field_order": [
+      "uint32_t abi_version",
+      "uint32_t struct_size",
+      "uint8_t fabric_instance_id[16]",
+      "uint64_t fabric_generation",
+      "uint8_t selector_instance_id[16]",
+      "uint64_t selector_generation",
+      "uint8_t selection_authority_id[16]",
+      "uint64_t selection_authority_epoch",
+      "uint64_t policy_revision",
+      "uint8_t packet_id[16]",
+      "uint8_t peer_identity_id[16]",
+      "uint32_t packet_size",
+      "uint32_t required_capability_mask",
+      "uint32_t required_security_profile",
+      "uint32_t maximum_energy_millijoules",
+      "uint8_t compliance_permit_id[16]",
+      "uint64_t compliance_permit_generation",
+      "uint64_t deadline_tick",
+      "uint32_t flags",
+      "uint32_t reserved_zero"
+    ],
+    "candidate_field_order": [
+      "uint32_t abi_version",
+      "uint32_t struct_size",
+      "uint8_t fabric_instance_id[16]",
+      "uint64_t fabric_generation",
+      "uint8_t path_owner_instance_id[16]",
+      "uint64_t path_owner_generation",
+      "uint8_t path_id[16]",
+      "uint64_t path_generation",
+      "uint32_t path_kind",
+      "uint32_t capability_mask",
+      "uint32_t security_profile",
+      "uint32_t maximum_packet_size",
+      "uint32_t queue_depth",
+      "uint32_t health",
+      "uint32_t estimated_energy_millijoules",
+      "int32_t fabric_base_score",
+      "uint8_t compliance_permit_id[16]",
+      "uint64_t compliance_permit_generation",
+      "uint32_t flags",
+      "uint32_t reserved_zero"
+    ],
+    "result_field_order": [
+      "uint32_t abi_version",
+      "uint32_t struct_size",
+      "uint8_t fabric_instance_id[16]",
+      "uint64_t fabric_generation",
+      "uint8_t selector_instance_id[16]",
+      "uint64_t selector_generation",
+      "uint8_t selection_authority_id[16]",
+      "uint64_t selection_authority_epoch",
+      "uint64_t policy_revision",
+      "uint8_t path_id[16]",
+      "uint64_t path_generation",
+      "uint32_t verdict",
+      "int32_t score_adjustment",
+      "uint32_t flags",
+      "uint32_t reserved_zero"
+    ],
+    "port_field_order": [
+      "uint32_t abi_version",
+      "uint32_t struct_size",
+      "void *context",
+      "ninlil_fabric_selection_evaluate_candidate_v1_fn evaluate_candidate"
+    ],
+    "registration_handle_field_order": [
+      "uint32_t abi_version",
+      "uint32_t struct_size",
+      "uint8_t fabric_instance_id[16]",
+      "uint64_t fabric_generation",
+      "uint8_t selector_instance_id[16]",
+      "uint64_t selector_generation",
+      "uint8_t selection_authority_id[16]",
+      "uint64_t selection_authority_epoch",
+      "uint64_t policy_revision",
+      "uint8_t registration_id[16]",
+      "uint64_t registration_generation",
+      "uint8_t opaque_token[32]"
+    ],
+    "callback_signature": "ninlil_status_t (*)(void *context,const ninlil_fabric_selection_request_v1_t *request,const ninlil_fabric_selection_candidate_v1_t *candidate,ninlil_fabric_selection_result_v1_t *result)",
+    "registration_authority": "FABRIC_OWNER_COPIES_PORT_AND_BINDS_FABRIC_SELECTOR_AUTHORITY_POLICY_AND_REGISTRATION_GENERATIONS",
+    "selection_authority": "FABRIC_REVALIDATES_ELIGIBILITY_AND_OWNS_FINAL_SCORE_TIEBREAK_RESERVATION_AND_SEND",
+    "deterministic_selection": "VALIDATED_ELIGIBLE_ONLY_THEN_SIGNED64_BASE_PLUS_ADJUSTMENT_DESCENDING_THEN_PATH_ID_LEXICOGRAPHIC_ASCENDING",
+    "stale_policy": "ANY_FABRIC_SELECTOR_AUTHORITY_POLICY_PATH_OR_PERMIT_GENERATION_MISMATCH_REJECTS_WHOLE_SELECTION_WITH_NO_FALLBACK_SEND",
+    "cross_instance_policy": "ANY_REQUEST_CANDIDATE_RESULT_OR_HANDLE_FROM_ANOTHER_FABRIC_OR_SELECTOR_RETURNS_NINLIL_E_CONFLICT_WITH_NO_MUTATION",
+    "failure_policy": "CALLBACK_ERROR_UNKNOWN_STATUS_UNKNOWN_VERDICT_NONZERO_UNKNOWN_FLAG_PARTIAL_RESULT_OR_ALL_REJECTED_SENDS_NOTHING",
+    "lifetime": "REQUEST_CANDIDATE_AND_RESULT_CALL_ONLY_PORT_COPY_VALID_THROUGH_UNREGISTER_DRAIN",
+    "reentrancy": "SAME_FABRIC_INSTANCE_FORBIDDEN_RETURNS_NINLIL_E_REENTRANT",
+    "unregister": "STOP_NEW_SELECTIONS_DRAIN_CALLBACKS_INVALIDATE_REGISTRATION_GENERATION_THEN_RELEASE_PORT_COPY"
+  },
+  "acceptance_evidence_contract": {
+    "id": "ninlil_public_module_acceptance_evidence_v1",
+    "schema_version": 1,
+    "artifact_format": "STRICT_JSON_UTF8_NO_DUPLICATE_KEYS_NO_NONFINITE_VALUES",
+    "artifact_fields": [
+      "schema",
+      "schema_version",
+      "acceptance_id",
+      "test_id",
+      "platform_id",
+      "platform_profile_id",
+      "os",
+      "architecture",
+      "toolchain_family",
+      "toolchain_id",
+      "compiler_id",
+      "compiler_version",
+      "build_type",
+      "sanitizer_profile",
+      "cmake_cache_path",
+      "cmake_cache_sha256",
+      "esp_target",
+      "esp_idf_version",
+      "esp_elf_path",
+      "esp_elf_sha256",
+      "esp_map_path",
+      "esp_map_sha256",
+      "result",
+      "tested_commit_sha",
+      "tested_tree_sha",
+      "runner_kind",
+      "runner_registration_path",
+      "runner_id",
+      "runner_target",
+      "runner_source_path",
+      "runner_build_dir",
+      "runner_working_directory",
+      "runner_command_argv",
+      "runner_exit_code",
+      "stdout_path",
+      "stdout_size",
+      "stdout_sha256",
+      "stderr_path",
+      "stderr_size",
+      "stderr_sha256",
+      "started_at_utc",
+      "finished_at_utc"
+    ],
+    "result_values": [
+      "FAIL",
+      "PASS"
+    ],
+      "runner_kind_values": [
+        "LOCAL_CTEST_REPLAYABLE_RECEIPT"
+      ],
+      "evidence_mapping_fields": [
+        "profile_receipts",
+        "path",
+        "sha256",
+        "state"
+      ],
+      "profile_receipt_fields": [
+        "platform_profile_id",
+        "path",
+        "sha256"
+      ],
+      "aggregate_profile_policy": "PASS_OR_FAIL_REQUIRES_EXACT_DECLARED_PROFILE_ORDER_FOR_ALL_ALLOWED_PLATFORMS_NO_DUPLICATE_OR_LEGACY_SINGLE_RECEIPT",
+      "platform_profile_matrix": [
+        {"id":"linux-x86_64-gcc-debug","platform_id":"linux-x86_64","os":"Linux","architecture":"x86_64","toolchain_family":"GNU","build_type":"Debug","sanitizer_profile":"NONE","esp_target":null},
+        {"id":"linux-x86_64-clang-debug-asan-ubsan","platform_id":"linux-x86_64","os":"Linux","architecture":"x86_64","toolchain_family":"Clang","build_type":"Debug","sanitizer_profile":"ASAN_UBSAN","esp_target":null},
+        {"id":"linux-x86_64-gcc-release","platform_id":"linux-x86_64","os":"Linux","architecture":"x86_64","toolchain_family":"GNU","build_type":"Release","sanitizer_profile":"NONE","esp_target":null},
+        {"id":"linux-x86_64-clang-release","platform_id":"linux-x86_64","os":"Linux","architecture":"x86_64","toolchain_family":"Clang","build_type":"Release","sanitizer_profile":"NONE","esp_target":null},
+        {"id":"macos-arm64-appleclang-debug","platform_id":"macos-arm64","os":"Darwin","architecture":"arm64","toolchain_family":"AppleClang","build_type":"Debug","sanitizer_profile":"NONE","esp_target":null},
+        {"id":"macos-arm64-appleclang-release","platform_id":"macos-arm64","os":"Darwin","architecture":"arm64","toolchain_family":"AppleClang","build_type":"Release","sanitizer_profile":"NONE","esp_target":null},
+        {"id":"esp32s3-esp-idf-release","platform_id":"esp32s3-esp-idf","os":"ESP-IDF","architecture":"xtensa","toolchain_family":"ESP-IDF","build_type":"Release","sanitizer_profile":"NONE","esp_target":"esp32s3"}
+      ],
+    "pass_requirements": [
+      "TEST_FILE_EXISTS_AND_NONEMPTY",
+      "TEST_ID_MATCHES_ACCEPTANCE_ID_AND_ACTIVE_CTEST_REGISTRATION",
+          "PLATFORM_ID_IS_DECLARED_BY_MODULE_OR_CROSS_MODULE_COVERAGE",
+          "PLATFORM_PROFILE_ID_AND_OS_ARCH_TOOLCHAIN_BUILD_SANITIZER_MATCH_DECLARED_MATRIX",
+          "CMAKE_CACHE_DIGEST_BINDS_HOST_TOOLCHAIN_AND_FOR_ESP_FINAL_ELF_AND_MAP_DIGESTS_BIND_TARGET",
+      "TESTED_COMMIT_IS_EXACT_FIRST_PARENT_AND_TESTED_TREE_MATCHES_GIT_OBJECT",
+      "RUNNER_BUILD_DIR_IS_ROOT_CONFINED_NON_SYMLINK_CMAKE_TREE_FOR_TESTED_SOURCE",
+      "CLEAN_WORKTREE_AND_CMAKE_BUILD_SUCCEEDS_BEFORE_REPLAY",
+          "RUNNER_COMMAND_ARGV_AND_WORKING_DIRECTORY_MATCH_EXACT_ACTIVE_CTEST_ENTRY",
+          "CMK_FILE_API_CODEMODEL_PROVES_CTEST_TARGET_OWNS_DECLARED_SOURCE_AND_EXECUTABLE_ARTIFACT",
+      "GATE_REPLAYS_COMMAND_AND_OBSERVED_EXIT_STDOUT_STDERR_MATCH_RECEIPT",
+      "RESULT_IS_PASS_ONLY_WHEN_OBSERVED_EXIT_CODE_IS_ZERO",
+      "RUNNER_REGISTRATION_IS_ACTIVE_EXACT_ONCE_NON_DISABLED_AND_COMMAND_MATCHES_TEST_PATH",
+      "EVIDENCE_AND_STDOUT_STDERR_FILES_ARE_ROOT_CONFINED_NON_SYMLINK_NONEMPTY_OR_EXACT_ZERO_SIZE_AND_SHA256_MATCH",
+      "PROMOTION_HEAD_IS_EXACT_ADMINISTRATIVE_CHILD"
+    ],
+    "fail_requirements": [
+      "RESULT_IS_FAIL_ONLY_WHEN_OBSERVED_EXIT_CODE_IS_NONZERO",
+      "SAME_REPLAY_AND_ARTIFACT_INTEGRITY_AS_PASS"
+    ],
+      "not_run_policy": "TEST_AND_EVIDENCE_STATES_NOT_RUN_PROFILE_RECEIPTS_EMPTY_EVIDENCE_PATH_AND_SHA256_NULL",
+    "arbitrary_file_policy": "SELF_REPORTED_EXIT_FABRICATED_EXECUTION_ID_UNREPLAYABLE_COMMAND_EXTRA_OR_MISSING_FIELD_DIGEST_MISMATCH_OR_INACTIVE_RUNNER_REJECTED",
+    "ci_and_hil_policy": "NO_OFFLINE_VERIFIER_IN_V1_CI_OR_HIL_RECEIPT_CANNOT_PROMOTE_AND_LEDGER_MUST_REMAIN_NOT_RUN",
+    "replay_timeout_seconds": 300
+  },
+  "independent_review_contract": {
+    "id": "ninlil_public_module_independent_review_v1",
+    "schema_version": 1,
+    "review_artifact_required_fields": [
+      "module_id",
+      "verdict",
+      "reviewed_commit_sha",
+      "p0_count",
+      "p1_count",
+      "p2_count",
+      "reviewer_identity",
+      "reviewer_provenance_path",
+      "separation_verdict"
+    ],
+    "reviewer_identity_format": "GITHUB_NODE_ID_AND_LOGIN",
+    "reviewer_provenance_kind_values": [
+      "GITHUB_PR_REVIEW_API_RECEIPT_WITH_OIDC_ATTESTATION_V1"
+    ],
+    "provenance_receipt_fields": [
+      "schema",
+      "schema_version",
+      "provider",
+      "repository",
+      "review_id",
+      "pull_request_number",
+      "reviewer_node_id",
+      "reviewer_login",
+      "reviewed_commit_sha",
+      "review_state",
+      "submitted_at_utc",
+      "oidc_issuer",
+      "oidc_subject",
+      "attestation_bundle_sha256",
+      "implementer_identities"
+    ],
+    "provenance_receipt_schema": "ninlil_public_module_github_review_receipt_v1",
+    "provenance_provider": "GITHUB",
+    "provenance_review_state": "APPROVED",
+    "provenance_oidc_issuer": "https://token.actions.githubusercontent.com",
+    "implementer_identity_format": "GITHUB_NODE_ID_AND_LOGIN",
+    "separation_rule": "REVIEWER_IDENTITY_MUST_NOT_EQUAL_OR_ALIAS_ANY_IMPLEMENTER_IDENTITY_AND_MUST_BE_VERIFIED_BY_PROVENANCE",
+    "go_requirements": "VERDICT_GO_P0_P1_P2_ZERO_REVIEWED_COMMIT_EXACT_TESTED_PARENT_PROVENANCE_SIGNATURE_AND_ISSUER_VERIFIED_IMPLEMENTER_SEPARATION_VERIFIED",
+    "offline_verification_policy": "V1_OFFLINE_PROVENANCE_VERIFIER_NOT_IMPLEMENTED_GO_IS_FAIL_CLOSED_AND_STATUS_MUST_REMAIN_NOT_RUN",
+    "self_report_policy": "UNSIGNED_REVIEWER_NAME_LOCATOR_OR_SEPARATION_ASSERTION_IS_NOT_PROVENANCE_AND_CANNOT_PROMOTE",
+    "not_run_policy": "ALL_REVIEWER_PROVENANCE_FIELDS_NULL_IMPLEMENTER_IDENTITIES_EMPTY_SEPARATION_NOT_RUN"
+  },
+  "multi_instance_acceptance_contract": {
+    "runtime_instance_count": 2,
+    "module_instance_count_per_module": 2,
+    "positive_bindings": ["R0-M0", "R1-M1"],
+    "negative_bindings": [
+      "R0-M1",
+      "R1-M0",
+      "DESTROYED_GENERATION",
+      "SAME_ID_DIFFERENT_GENERATION"
+    ],
+    "storage_identity_fields": [
+      "realm_id[16]",
+      "physical_namespace",
+      "partition_prefix",
+      "module_instance_id[16]",
+      "module_generation"
+    ],
+    "storage_collision_policy": "REJECT_BEFORE_OPEN_NO_DEFAULT_REALM_OR_AUTO_PREFIX",
+    "physical_driver_owner_count": 1,
+    "driver_child_minimum_for_acceptance": 2,
+    "driver_demux_key": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+    "aggregate_protocol": "RESERVE_ALL_THEN_COMMIT_OR_RELEASE_ALL",
+    "aggregate_visibility": "NO_CHILD_VISIBLE_BEFORE_PARENT_COMMIT",
+    "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+    "acceptance_id": "PM-COMPOSITION-2X2-01"
+  },
+  "abi_layout_gate_contract": {
+    "macro_matrix": [
+      "DEFAULT",
+      "OPTIONAL_MACROS_UNDEFINED",
+      "ALL_OPTIONAL_MACROS_ZERO",
+      "ALL_OPTIONAL_MACROS_ONE"
+    ],
+    "languages": ["C11", "CXX"],
+    "comparisons": ["SIZEOF", "ALIGNOF", "PUBLIC_FIELD_OFFSETS", "SYMBOL_MANIFEST"],
+    "positive_rule": "ALL_CONFIGURATIONS_EQUAL_DEFAULT_GOLDEN",
+    "negative_probe": "INJECT_CONDITIONAL_PUBLIC_FIELD_AND_REQUIRE_COMPILE_FAILURE",
+    "negative_runner_rule": "NEGATIVE_FIXTURE_MUST_RUN_AND_EXIT_NONZERO",
+    "acceptance_id_pointer": "/modules/*/abi_contract/compile_time_layout_negative_acceptance_id"
+  },
+  "version_coexistence_contract": {
+    "current": "V2_NOT_ALLOCATED",
+    "v1_v2_same_process_claim": false,
+    "future_v2_requires": [
+      "DISTINCT_COMPONENT_AND_TARGET",
+      "DISTINCT_HEADER_ROOT",
+      "DISTINCT_SYMBOL_PREFIX",
+      "DISTINCT_STORAGE_NAMESPACE_OR_PREFIX",
+      "DISTINCT_WIRE_PROFILE",
+      "ACCEPTED_COINSTALLABILITY_ADR_AND_NEGATIVE_TESTS"
+    ],
+    "v1_as_v2_reinterpretation": "FORBIDDEN"
+  },
+  "identity_attachment_precondition_contract": {
+    "id": "ninlil_identity_attachment_precondition_v1",
+    "completion_feature_id": "identity-attachment-session-install",
+    "role": "CORE_FOUNDATION_PRECONDITION_NOT_PACKAGE_COMPONENT",
+    "authority_domains": [
+      "IDENTITY",
+      "MEMBERSHIP",
+      "ATTACHMENT",
+      "SESSION_INSTALL"
+    ],
+    "package_component": null,
+    "required_module_ids": [
+      "fabric_v1",
+      "wifi_v1",
+      "wifi_posix_v1",
+      "wifi_esp_v1",
+      "route_relay_v1",
+      "radio_fabric_adapter_v1",
+      "mfdt_v1"
+    ],
+    "exempt_module_ids": ["radio_frag_v1"],
+    "exemption_reason": "PURE_BOUNDED_TRANSFORM_WITHOUT_IDENTITY_SESSION_OR_IO",
+    "provider_port": {
+      "id": "ninlil_identity_attachment_provider_v1",
+      "abi_version": 1,
+      "status_type": "ninlil_status_t",
+      "status_values": {
+        "NINLIL_OK": 0,
+        "NINLIL_E_INVALID_ARGUMENT": 1,
+        "NINLIL_E_ABI_MISMATCH": 2,
+        "NINLIL_E_UNSUPPORTED": 3,
+        "NINLIL_E_WRONG_THREAD": 4,
+        "NINLIL_E_REENTRANT": 5,
+        "NINLIL_E_BUFFER_TOO_SMALL": 6,
+        "NINLIL_E_NOT_FOUND": 7,
+        "NINLIL_E_CONFLICT": 8,
+        "NINLIL_E_CAPACITY_EXHAUSTED": 9,
+        "NINLIL_E_STORAGE": 10,
+        "NINLIL_E_STORAGE_CORRUPT": 11,
+        "NINLIL_E_STORAGE_COMMIT_UNKNOWN": 12,
+        "NINLIL_E_CLOCK_UNCERTAIN": 13,
+        "NINLIL_E_WOULD_BLOCK": 15,
+        "NINLIL_E_INVALID_STATE": 16,
+        "NINLIL_E_DEGRADED": 18,
+        "NINLIL_E_AUTHENTICATION_FAILED": 19
+      },
+      "unknown_status_policy": "MAP_TO_NINLIL_E_INVALID_STATE_FENCE_BINDING_ZERO_OUTPUT_AND_NO_MUTATION",
+      "input_compatibility": "PREFIX_COMPATIBLE_STRUCT_SIZE",
+      "struct_policy": {
+        "header": "uint32_t abi_version; uint32_t struct_size",
+        "abi_version": "EXACT_1",
+        "minimum_size": "THROUGH_LAST_V1_FIELD",
+        "descriptor_request_result_event_trailing_bytes": "IGNORE_WITHOUT_READ_OR_RETAIN",
+        "opaque_handle_size": "EXACT_V1_SIZE",
+        "output_short": "NINLIL_E_BUFFER_TOO_SMALL_ZERO_KNOWN_OUTPUT_NO_PARTIAL_RESULT",
+        "output_trailing_bytes": "LEAVE_CALLER_BYTES_UNTOUCHED",
+        "reserved_fields": "MUST_BE_ZERO",
+        "unknown_flags": "NINLIL_E_INVALID_ARGUMENT_ZERO_OUTPUT_NO_MUTATION",
+        "unknown_enum": "NINLIL_E_UNSUPPORTED_ZERO_OUTPUT_NO_MUTATION"
+      },
+      "binding_verdict_values": {
+        "NINLIL_IDENTITY_BINDING_INVALID": 0,
+        "NINLIL_IDENTITY_BINDING_VALID": 1,
+        "NINLIL_IDENTITY_BINDING_NOT_YET_VALID": 2,
+        "NINLIL_IDENTITY_BINDING_EXPIRED": 3,
+        "NINLIL_IDENTITY_BINDING_REVOKED": 4,
+        "NINLIL_IDENTITY_BINDING_SUPERSEDED": 5,
+        "NINLIL_IDENTITY_BINDING_STALE": 6,
+        "NINLIL_IDENTITY_BINDING_CROSS_INSTANCE": 7,
+        "NINLIL_IDENTITY_BINDING_ROLLBACK": 8
+      },
+      "binding_scope_values": {
+        "NINLIL_IDENTITY_SCOPE_LOCAL_ACTIVE_SESSION": 1,
+        "NINLIL_IDENTITY_SCOPE_PEER_ACTIVE_SESSION": 2,
+        "NINLIL_IDENTITY_SCOPE_CONTROLLER_ACTIVE_SESSION": 3
+      },
+      "invalidation_reason_values": {
+        "NINLIL_IDENTITY_INVALIDATION_REVOKED": 1,
+        "NINLIL_IDENTITY_INVALIDATION_EXPIRED": 2,
+        "NINLIL_IDENTITY_INVALIDATION_SUPERSEDED": 3,
+        "NINLIL_IDENTITY_INVALIDATION_MEMBERSHIP_CHANGED": 4,
+        "NINLIL_IDENTITY_INVALIDATION_ATTACHMENT_CHANGED": 5,
+        "NINLIL_IDENTITY_INVALIDATION_SESSION_CHANGED": 6,
+        "NINLIL_IDENTITY_INVALIDATION_SECURITY_CHANGED": 7,
+        "NINLIL_IDENTITY_INVALIDATION_PROVIDER_RESTARTED": 8
+      },
+      "uint32_boolean_values": {
+        "NINLIL_FALSE": 0,
+        "NINLIL_TRUE": 1
+      },
+      "uint32_boolean_fields": [
+        "key_operation_result.verified",
+        "release_result.released",
+        "unsubscribe_result.callbacks_drained"
+      ],
+      "uint32_boolean_unknown_policy": "VALUE_OTHER_THAN_ZERO_OR_ONE_IS_NINLIL_E_INVALID_ARGUMENT_ZERO_OUTPUT_NO_MUTATION",
+      "changed_floor_bits": {
+        "NINLIL_IDENTITY_FLOOR_PROVIDER_GENERATION": 1,
+        "NINLIL_IDENTITY_FLOOR_CREDENTIAL_REVISION": 2,
+        "NINLIL_IDENTITY_FLOOR_MEMBERSHIP_EPOCH": 4,
+        "NINLIL_IDENTITY_FLOOR_ATTACHMENT_GENERATION": 8,
+        "NINLIL_IDENTITY_FLOOR_SESSION_GENERATION": 16,
+        "NINLIL_IDENTITY_FLOOR_SECURITY_EPOCH": 32,
+        "NINLIL_IDENTITY_FLOOR_EXPIRY_EPOCH": 64,
+        "NINLIL_IDENTITY_FLOOR_INVALIDATION_EPOCH": 128,
+        "NINLIL_IDENTITY_FLOOR_BINDING_HANDLE_GENERATION": 256,
+        "NINLIL_IDENTITY_FLOOR_KEY_GENERATION": 512
+      },
+      "changed_floor_allowed_mask": 1023,
+      "changed_floor_zero_policy": "REJECT_INVALIDATION_EVENT_AND_FENCE_BINDING",
+      "changed_floor_unknown_bits_policy": "REJECT_INVALIDATION_EVENT_AND_FENCE_BINDING",
+      "key_operation_values": {
+        "NINLIL_KEY_OPERATION_AUTH_TAG": 1,
+        "NINLIL_KEY_OPERATION_AUTH_VERIFY": 2,
+        "NINLIL_KEY_OPERATION_AEAD_SEAL": 3,
+        "NINLIL_KEY_OPERATION_AEAD_OPEN": 4,
+        "NINLIL_KEY_OPERATION_SIGN_DIGEST": 5,
+        "NINLIL_KEY_OPERATION_VERIFY_DIGEST": 6
+      },
+      "key_usage_bits": {
+        "NINLIL_KEY_USAGE_AUTH_TAG": 1,
+        "NINLIL_KEY_USAGE_AUTH_VERIFY": 2,
+        "NINLIL_KEY_USAGE_AEAD_SEAL": 4,
+        "NINLIL_KEY_USAGE_AEAD_OPEN": 8,
+        "NINLIL_KEY_USAGE_SIGN_DIGEST": 16,
+        "NINLIL_KEY_USAGE_VERIFY_DIGEST": 32
+      },
+      "key_usage_allowed_mask": 63,
+      "key_usage_zero_policy": "REJECT",
+      "key_usage_unknown_bits_policy": "REJECT_NINLIL_E_INVALID_ARGUMENT_NO_PROVIDER_CALL",
+      "key_operation_to_usage_bit": {
+        "NINLIL_KEY_OPERATION_AUTH_TAG": "NINLIL_KEY_USAGE_AUTH_TAG",
+        "NINLIL_KEY_OPERATION_AUTH_VERIFY": "NINLIL_KEY_USAGE_AUTH_VERIFY",
+        "NINLIL_KEY_OPERATION_AEAD_SEAL": "NINLIL_KEY_USAGE_AEAD_SEAL",
+        "NINLIL_KEY_OPERATION_AEAD_OPEN": "NINLIL_KEY_USAGE_AEAD_OPEN",
+        "NINLIL_KEY_OPERATION_SIGN_DIGEST": "NINLIL_KEY_USAGE_SIGN_DIGEST",
+        "NINLIL_KEY_OPERATION_VERIFY_DIGEST": "NINLIL_KEY_USAGE_VERIFY_DIGEST"
+      },
+      "key_operation_common_bounds": {
+        "nonce_size_max": 32,
+        "aad_size_max": 4096,
+        "input_size_max": 65535,
+        "authenticator_size_max": 512,
+        "output_size_max": 65535,
+        "pointer_rule": "SIZE_ZERO_REQUIRES_NULL_OR_IGNORED_POINTER_SIZE_NONZERO_REQUIRES_NON_NULL",
+        "overlap_rule": "OUTPUT_MUST_NOT_OVERLAP_NONZERO_NONCE_AAD_INPUT_OR_AUTHENTICATOR"
+      },
+      "key_operation_shapes": {
+        "NINLIL_KEY_OPERATION_AUTH_TAG": "NONCE_0_AAD_0_TO_4096_INPUT_1_TO_65535_AUTHENTICATOR_0_OUTPUT_CAPACITY_1_TO_64_SUCCESS_OUTPUT_1_TO_64_VERIFIED_0",
+        "NINLIL_KEY_OPERATION_AUTH_VERIFY": "NONCE_0_AAD_0_TO_4096_INPUT_1_TO_65535_AUTHENTICATOR_1_TO_64_OUTPUT_CAPACITY_0_SUCCESS_OUTPUT_0_VERIFIED_1_AUTH_FAILURE_STATUS_19_OUTPUT_0_VERIFIED_0",
+        "NINLIL_KEY_OPERATION_AEAD_SEAL": "NONCE_1_TO_32_AAD_0_TO_4096_INPUT_1_TO_65535_AUTHENTICATOR_0_OUTPUT_CAPACITY_1_TO_65535_SUCCESS_OUTPUT_1_TO_65535_VERIFIED_0",
+        "NINLIL_KEY_OPERATION_AEAD_OPEN": "NONCE_1_TO_32_AAD_0_TO_4096_INPUT_1_TO_65535_AUTHENTICATOR_0_OUTPUT_CAPACITY_1_TO_65535_SUCCESS_OUTPUT_1_TO_65535_VERIFIED_1_AUTH_FAILURE_STATUS_19_OUTPUT_0_VERIFIED_0",
+        "NINLIL_KEY_OPERATION_SIGN_DIGEST": "NONCE_0_AAD_0_INPUT_EXACT_32_AUTHENTICATOR_0_OUTPUT_CAPACITY_1_TO_512_SUCCESS_OUTPUT_1_TO_512_VERIFIED_0",
+        "NINLIL_KEY_OPERATION_VERIFY_DIGEST": "NONCE_0_AAD_0_INPUT_EXACT_32_AUTHENTICATOR_1_TO_512_OUTPUT_CAPACITY_0_SUCCESS_OUTPUT_0_VERIFIED_1_AUTH_FAILURE_STATUS_19_OUTPUT_0_VERIFIED_0"
+      },
+      "key_operation_invalid_shape_policy": "NINLIL_E_INVALID_ARGUMENT_NO_PROVIDER_CALL_ZERO_OUTPUT_VERIFIED_ZERO",
+      "key_handle_flag_bits": {
+        "NINLIL_KEY_HANDLE_NON_EXPORTABLE": 1,
+        "NINLIL_KEY_HANDLE_PROVIDER_BOUND": 2,
+        "NINLIL_KEY_HANDLE_SESSION_BOUND": 4
+      },
+      "key_handle_required_flags_mask": 7,
+      "key_handle_allowed_flags_mask": 7,
+      "key_handle_unknown_bits_policy": "REJECT_AND_INVALIDATE_HANDLE",
+      "request_flags_allowed_mask": 0,
+      "result_flags_allowed_mask": 0,
+      "provider_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "void *context",
+        "ninlil_identity_attachment_resolve_v1_fn resolve_binding",
+        "ninlil_identity_attachment_validate_v1_fn validate_binding",
+        "ninlil_identity_attachment_key_operation_v1_fn perform_key_operation",
+        "ninlil_identity_attachment_release_v1_fn release_binding",
+        "ninlil_identity_attachment_subscribe_v1_fn subscribe_invalidation",
+        "ninlil_identity_attachment_unsubscribe_v1_fn unsubscribe_invalidation"
+      ],
+      "binding_handle_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint8_t provider_instance_id[16]",
+        "uint64_t provider_generation",
+        "uint8_t binding_handle_id[16]",
+        "uint64_t binding_handle_generation",
+        "uint8_t runtime_instance_id[16]",
+        "uint64_t runtime_generation",
+        "uint8_t module_instance_id[16]",
+        "uint64_t module_generation",
+        "uint8_t opaque_token[32]"
+      ],
+      "binding_snapshot_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint8_t provider_instance_id[16]",
+        "uint64_t provider_generation",
+        "uint8_t runtime_instance_id[16]",
+        "uint64_t runtime_generation",
+        "uint8_t module_instance_id[16]",
+        "uint64_t module_generation",
+        "uint8_t stable_identity_id[16]",
+        "uint64_t credential_revision",
+        "uint8_t identity_binding_digest[32]",
+        "uint8_t membership_authority_id[16]",
+        "uint64_t membership_epoch",
+        "uint8_t membership_set_digest[32]",
+        "uint8_t attachment_id[16]",
+        "uint64_t attachment_generation",
+        "uint8_t session_id[16]",
+        "uint64_t session_generation",
+        "uint8_t security_context_id[16]",
+        "uint64_t security_epoch",
+        "uint8_t expiry_authority_id[16]",
+        "uint64_t expiry_epoch",
+        "uint64_t not_before_tick",
+        "uint64_t expires_at_tick",
+        "uint64_t invalidation_epoch"
+      ],
+      "key_handle_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint8_t provider_instance_id[16]",
+        "uint64_t provider_generation",
+        "uint8_t binding_handle_id[16]",
+        "uint64_t binding_handle_generation",
+        "uint8_t key_handle_id[16]",
+        "uint64_t key_generation",
+        "uint32_t usage_mask",
+        "uint32_t flags",
+        "uint8_t opaque_token[32]"
+      ],
+      "subscription_handle_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint8_t provider_instance_id[16]",
+        "uint64_t provider_generation",
+        "uint8_t binding_handle_id[16]",
+        "uint64_t binding_handle_generation",
+        "uint8_t subscription_id[16]",
+        "uint64_t subscription_generation",
+        "uint8_t opaque_token[32]"
+      ],
+      "resolve_request_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint8_t provider_instance_id[16]",
+        "uint64_t provider_generation",
+        "uint8_t runtime_instance_id[16]",
+        "uint64_t runtime_generation",
+        "uint8_t module_instance_id[16]",
+        "uint64_t module_generation",
+        "uint32_t binding_scope",
+        "uint32_t requested_usage_mask",
+        "uint8_t subject_identity_id[16]",
+        "uint64_t deadline_tick",
+        "uint32_t flags",
+        "uint32_t reserved_zero"
+      ],
+      "resolve_result_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint32_t binding_verdict",
+        "uint32_t flags",
+        "ninlil_identity_attachment_binding_snapshot_v1_t snapshot",
+        "ninlil_identity_attachment_binding_handle_v1_t binding_handle",
+        "ninlil_nonexporting_key_handle_v1_t key_handle"
+      ],
+      "validate_request_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "ninlil_identity_attachment_binding_handle_v1_t binding_handle",
+        "uint32_t required_usage_mask",
+        "uint32_t flags",
+        "uint8_t operation_context_digest[32]",
+        "uint64_t deadline_tick"
+      ],
+      "validate_result_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint32_t binding_verdict",
+        "uint32_t flags",
+        "uint64_t authoritative_invalidation_epoch",
+        "uint64_t authoritative_expiry_epoch"
+      ],
+      "key_operation_request_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "ninlil_identity_attachment_binding_handle_v1_t binding_handle",
+        "ninlil_nonexporting_key_handle_v1_t key_handle",
+        "uint32_t operation",
+        "uint32_t flags",
+        "const uint8_t *nonce",
+        "uint32_t nonce_size",
+        "const uint8_t *aad",
+        "uint32_t aad_size",
+        "const uint8_t *input",
+        "uint32_t input_size",
+        "const uint8_t *authenticator",
+        "uint32_t authenticator_size",
+        "uint64_t deadline_tick"
+      ],
+      "key_operation_result_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint32_t operation",
+        "uint32_t flags",
+        "uint8_t *output",
+        "uint32_t output_capacity",
+        "uint32_t output_size",
+        "uint32_t verified",
+        "uint32_t reserved_zero"
+      ],
+      "release_request_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "ninlil_identity_attachment_binding_handle_v1_t binding_handle",
+        "uint32_t flags",
+        "uint32_t reserved_zero"
+      ],
+      "release_result_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint32_t released",
+        "uint32_t flags"
+      ],
+      "subscribe_request_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "ninlil_identity_attachment_binding_handle_v1_t binding_handle",
+        "void *callback_context",
+        "ninlil_identity_attachment_on_invalidation_v1_fn on_invalidation",
+        "uint32_t flags",
+        "uint32_t reserved_zero"
+      ],
+      "subscribe_result_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "ninlil_identity_attachment_subscription_handle_v1_t subscription_handle",
+        "uint64_t subscribed_invalidation_epoch",
+        "uint32_t flags",
+        "uint32_t reserved_zero"
+      ],
+      "invalidation_event_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "ninlil_identity_attachment_binding_handle_v1_t binding_handle",
+        "uint32_t reason",
+        "uint32_t changed_floor_mask",
+        "uint64_t invalidation_epoch",
+        "uint64_t provider_generation",
+        "uint64_t binding_handle_generation",
+        "uint64_t key_generation",
+        "uint32_t flags",
+        "uint32_t reserved_zero"
+      ],
+      "unsubscribe_request_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "ninlil_identity_attachment_subscription_handle_v1_t subscription_handle",
+        "uint32_t flags",
+        "uint32_t reserved_zero"
+      ],
+      "unsubscribe_result_field_order": [
+        "uint32_t abi_version",
+        "uint32_t struct_size",
+        "uint64_t final_invalidation_epoch",
+        "uint32_t callbacks_drained",
+        "uint32_t flags"
+      ],
+      "callback_signatures": {
+        "resolve_binding": "ninlil_status_t (*)(void *context,const ninlil_identity_attachment_resolve_request_v1_t *request,ninlil_identity_attachment_resolve_result_v1_t *result)",
+        "validate_binding": "ninlil_status_t (*)(void *context,const ninlil_identity_attachment_validate_request_v1_t *request,ninlil_identity_attachment_validate_result_v1_t *result)",
+        "perform_key_operation": "ninlil_status_t (*)(void *context,const ninlil_identity_attachment_key_operation_request_v1_t *request,ninlil_identity_attachment_key_operation_result_v1_t *result)",
+        "release_binding": "ninlil_status_t (*)(void *context,const ninlil_identity_attachment_release_request_v1_t *request,ninlil_identity_attachment_release_result_v1_t *result)",
+        "subscribe_invalidation": "ninlil_status_t (*)(void *context,const ninlil_identity_attachment_subscribe_request_v1_t *request,ninlil_identity_attachment_subscribe_result_v1_t *result)",
+        "unsubscribe_invalidation": "ninlil_status_t (*)(void *context,const ninlil_identity_attachment_unsubscribe_request_v1_t *request,ninlil_identity_attachment_unsubscribe_result_v1_t *result)"
+      },
+      "invalidation_callback_signature": "void (*)(void *callback_context,const ninlil_identity_attachment_invalidation_event_v1_t *event)",
+      "callback_count": 6,
+      "callback_null_policy": "ALL_SIX_PROVIDER_CALLBACKS_AND_SUBSCRIBER_INVALIDATION_CALLBACK_REQUIRED",
+      "subscribe_lifecycle": {
+        "availability_sequence": "RESOLVE_VALIDATE_SUBSCRIBE_THEN_ATOMICALLY_PUBLISH_AVAILABLE",
+        "subscribe_failure": "KEEP_FENCED_RELEASE_BINDING_ZERO_LOCAL_HANDLES_AND_RETURN_ERROR",
+        "shutdown_sequence": "STOP_ADMISSION_FENCE_SEND_DRAIN_KEY_OPERATIONS_UNSUBSCRIBE_DRAIN_INVALIDATION_CALLBACKS_RELEASE_BINDING_ZERO_HANDLES_RELEASE_PROVIDER_COPY",
+        "unsubscribe_failure": "REMAIN_FENCED_CLOSING_RETAIN_PROVIDER_CONTEXT_SUBSCRIPTION_AND_BINDING_ALLOW_ONLY_UNSUBSCRIBE_RETRY",
+        "unsubscribe_success": "CALLBACKS_DRAINED_MUST_EQUAL_1_BEFORE_RELEASE_BINDING",
+        "callback_race": "CALLBACK_MAY_START_BEFORE_UNSUBSCRIBE_LINEARIZATION_BUT_MUST_FINISH_BEFORE_SUCCESS"
+      },
+      "provider_descriptor_ownership": "COPY_AT_MODULE_CREATE",
+      "binding_metadata_ownership": "COPY_ON_SUCCESS",
+      "opaque_handle_ownership": "PROVIDER_OWNED_RELEASE_REQUIRED",
+      "callback_input_lifetime": "CALL_ONLY_NO_RETAIN",
+      "provider_context_lifetime": "THROUGH_UNSUBSCRIBE_AND_CALLBACK_DRAIN",
+      "thread_model": "OWNER_EXECUTION_CONTEXT_SERIALIZED",
+      "reentrancy": "SAME_PROVIDER_OR_MODULE_FORBIDDEN_RETURNS_NINLIL_E_REENTRANT"
+    },
+    "restart_checkpoint_contract": {
+      "id": "ninlil_identity_attachment_floor_checkpoint_v1",
+      "magic_ascii": "NIAF",
+      "schema_version": 1,
+      "encoding": "LITTLE_ENDIAN_FIXED_WIDTH_CANONICAL",
+      "record_size_bytes": 308,
+      "payload_digest": {
+        "algorithm": "SHA-256",
+        "coverage_offset": 0,
+        "coverage_size": 272,
+        "output_offset": 272,
+        "output_size": 32,
+        "coverage_rule": "MAGIC_THROUGH_CHECKPOINT_GENERATION_EXCLUDES_DIGEST_AND_CRC"
+      },
+      "crc32c": {
+        "name": "CRC-32C_CASTAGNOLI",
+        "polynomial_normal": "0x1EDC6F41",
+        "polynomial_reflected": "0x82F63B78",
+        "init": "0xFFFFFFFF",
+        "refin": true,
+        "refout": true,
+        "xorout": "0xFFFFFFFF",
+        "coverage_offset": 0,
+        "coverage_size": 304,
+        "output_offset": 304,
+        "output_size": 4,
+        "output_byte_order": "LITTLE_ENDIAN",
+        "coverage_rule": "MAGIC_THROUGH_PAYLOAD_DIGEST_EXCLUDES_CRC_FIELD"
+      },
+      "record_field_order": [
+        "uint8_t magic[4]",
+        "uint16_t schema_version",
+        "uint16_t record_size",
+        "uint8_t realm_id[16]",
+        "uint8_t runtime_instance_id[16]",
+        "uint64_t runtime_generation",
+        "uint8_t module_instance_id[16]",
+        "uint64_t module_generation",
+        "uint8_t provider_instance_id[16]",
+        "uint64_t provider_generation_floor",
+        "uint8_t stable_identity_id[16]",
+        "uint64_t credential_revision_floor",
+        "uint8_t membership_authority_id[16]",
+        "uint64_t membership_epoch_floor",
+        "uint8_t attachment_id[16]",
+        "uint64_t attachment_generation_floor",
+        "uint8_t session_id[16]",
+        "uint64_t session_generation_floor",
+        "uint8_t security_context_id[16]",
+        "uint64_t security_epoch_floor",
+        "uint8_t expiry_authority_id[16]",
+        "uint64_t expiry_epoch_floor",
+        "uint64_t invalidation_epoch_floor",
+        "uint64_t binding_handle_generation_floor",
+        "uint64_t key_generation_floor",
+        "uint64_t checkpoint_generation",
+        "uint8_t payload_digest[32]",
+        "uint32_t crc32c"
+      ],
+      "canonical_key": "realm_id/runtime_instance_id/runtime_generation/module_instance_id/module_generation",
+      "writer": "CORE_FOUNDATION_DOMAIN_STORE_SINGLE_WRITER_FENCED_TO_RUNTIME_AND_MODULE_GENERATIONS",
+      "atomic_write": "ONE_FULL_RECORD_ONE_ATOMIC_DOMAIN_STORE_COMMIT_NO_MULTI_KEY_PARTIAL_CHECKPOINT",
+      "commit_unknown_recovery": "AUTHORITATIVE_READ_EXACT_KEY_ACCEPT_ONLY_EXACT_GENERATION_AND_DIGEST_ELSE_RETRY_FROM_LAST_PROVEN_FULL_RECORD",
+      "torn_or_corrupt_policy": "CRC_SIZE_DIGEST_OR_REQUIRED_FIELD_FAILURE_FENCES_AVAILABILITY_AND_KEY_USE_UNTIL_OPERATOR_RECOVERY",
+      "ambiguous_recovery_policy": "MULTIPLE_CURRENT_CANDIDATES_GENERATION_WRAP_OR_COMMIT_UNKNOWN_WITHOUT_AUTHORITATIVE_READ_FAILS_CLOSED",
+      "unknown_policy": "UNKNOWN_MAGIC_SCHEMA_OR_RECORD_SIZE_ANY_TRAILING_BYTE_OR_FIELD_FAILS_CLOSED",
+      "secret_exclusions": [
+        "provider_context",
+        "binding_handle",
+        "binding_opaque_token",
+        "key_handle",
+        "key_opaque_token",
+        "subscription_handle",
+        "private_scalar",
+        "raw_session_key"
+      ],
+      "startup_sequence": "RECOVER_AND_VALIDATE_FULL_CHECKPOINT_INSTALL_MONOTONIC_FLOORS_FRESH_RESOLVE_VALIDATE_SUBSCRIBE_THEN_PUBLISH_AVAILABLE"
+    },
+    "binding_rules": {
+      "identity_tuple": "STABLE_ID_CREDENTIAL_REVISION_BINDING_DIGEST",
+      "membership_tuple": "AUTHORITY_ID_EPOCH_SET_DIGEST",
+      "attachment_session_tuple": "ATTACHMENT_ID_AND_GENERATION_SESSION_ID_AND_GENERATION_SECURITY_CONTEXT_AND_EPOCH",
+      "key_policy": "OPAQUE_PROVIDER_BOUND_HANDLE_ONLY_NO_SECRET_PRIVATE_SCALAR_OR_RAW_SESSION_KEY_EXPORT",
+      "key_operation_policy": "PROVIDER_RETURNS_OPERATION_RESULT_ONLY_AND_ENFORCES_USAGE_MASK",
+      "key_failure_output_policy": "ZEROIZE_AND_REPORT_ZERO_OUTPUT_ON_NON_SUCCESS",
+      "expiry_policy": "PROVIDER_VALIDATE_BEFORE_ADMISSION_AND_SEND_NOW_GTE_EXPIRES_OR_BELOW_NOT_BEFORE_INVALID",
+      "time_comparison_authority": "TICKS_OPAQUE_TO_MODULE_PROVIDER_VALIDATE_IS_SOLE_COMPARISON_AUTHORITY",
+      "invalidation_policy": "REVOCATION_EXPIRY_OR_EPOCH_CHANGE_FENCES_NEW_AND_INFLIGHT_USE_BEFORE_CALLBACK_RETURN",
+      "forward_gap_policy": "ALLOW_ONLY_AFTER_FRESH_PROVIDER_RESOLVE_AND_INVALIDATE_ALL_OLD_HANDLES",
+      "restart_persistence": "NONSECRET_IDS_DIGESTS_AND_MONOTONIC_FLOORS_ONLY_NO_CONTEXT_OR_HANDLE",
+      "restart_storage_owner": "CORE_FOUNDATION_DOMAIN_STORE_SINGLE_WRITER_NOT_MODULE_PRIVATE_STORE",
+      "restart_resolution": "DURABLE_RECOVERY_THEN_FRESH_RESOLVE_OLD_HANDLES_ALWAYS_INVALID",
+      "monotonic_floors": [
+        "credential_revision",
+        "membership_epoch",
+        "attachment_generation",
+        "session_generation",
+        "security_epoch",
+        "expiry_epoch",
+        "invalidation_epoch",
+        "provider_generation",
+        "binding_handle_generation",
+        "key_generation"
+      ],
+      "fail_closed_conditions": [
+        "UNKNOWN_ABI_VERSION_OR_SHORT_STRUCT",
+        "ZERO_OR_MISMATCHED_IDENTITY",
+        "PROVIDER_RUNTIME_OR_MODULE_BINDING_MISMATCH",
+        "STALE_OR_CROSS_INSTANCE_HANDLE",
+        "GENERATION_OR_EPOCH_ROLLBACK_OR_WRAP",
+        "NOT_YET_VALID_EXPIRED_REVOKED_OR_SUPERSEDED",
+        "KEY_USAGE_OR_PROVIDER_MISMATCH",
+        "PROVIDER_UNAVAILABLE_REENTRY_OR_PARTIAL_OUTPUT",
+        "SUBSCRIBE_FAILURE_OR_UNSUBSCRIBE_WITHOUT_CALLBACK_DRAIN",
+        "TORN_CORRUPT_AMBIGUOUS_OR_UNKNOWN_RESTART_CHECKPOINT",
+        "RESTART_WITHOUT_FRESH_RESOLUTION"
+      ]
+    },
+    "promotion_policy": {
+      "PUBLIC_API_SPEC_ACCEPTED": "MODULE_SPEC_ACCEPTED_INDEPENDENT_REVIEW_GO_P0_P1_P2_ZERO_PRECONDITION_CONTRACT_AND_COMPLETION_FEATURE_SPEC_ACCEPTED",
+      "PACKAGE_EXPERIMENTAL": "MODULE_NON_HIL_ACCEPTANCE_INCLUDES_PROVIDER_2X2_AND_FAIL_CLOSED_NEGATIVES",
+      "RELEASE_SUPPORTED": "PM_IDENTITY_PRECONDITION_2X2_PASS_AND_COMPLETION_FEATURE_RELEASE_SUPPORTED"
+    },
+    "multi_instance_acceptance": {
+      "runtime_instance_count": 2,
+      "module_instance_count_per_required_module": 2,
+      "provider_instance_count_for_acceptance": 2,
+      "positive_bindings": ["R0-M0-P0-B0", "R1-M1-P1-B1"],
+      "negative_bindings": [
+        "R0-M1-P0",
+        "R1-M0-P1",
+        "CROSS_PROVIDER_HANDLE",
+        "STALE_PROVIDER_RUNTIME_MODULE_OR_BINDING_GENERATION",
+        "EXPIRED_REVOKED_OR_SUPERSEDED_BINDING",
+        "CREDENTIAL_MEMBERSHIP_ATTACHMENT_SESSION_SECURITY_OR_KEY_ROLLBACK",
+        "UNKNOWN_KEY_USAGE_OR_HANDLE_FLAG_BITS",
+        "SUBSCRIBE_FAILURE_RELEASE_ORDER",
+        "UNSUBSCRIBE_FAILURE_RETRY_AND_DRAIN_ORDER",
+        "TORN_CORRUPT_AMBIGUOUS_OR_COMMIT_UNKNOWN_CHECKPOINT",
+        "RESTART_OLD_BINDING_OR_KEY_HANDLE"
+      ],
+      "acceptance_id": "PM-IDENTITY-PRECONDITION-2X2-01"
+    }
+  },
+  "modules": [
+    {
+      "id": "fabric_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PACKAGE_EXPERIMENTAL",
+      "state_history": [
+        "PRIVATE_CANDIDATE",
+        "PUBLIC_API_SPEC_ACCEPTED",
+        "PACKAGE_EXPERIMENTAL"
+      ],
+      "promotion_authority": {
+        "normative_spec_path": "docs/adr/0029-v1-lean-public-composition.md",
+        "normative_spec_status": "ACCEPTED",
+        "independent_review_path": "docs/reviews/2026-08-02-v1-lean-public-composition-rereview.md",
+        "independent_review_status": "GO",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": "e2c7893614fceafbd27997b58278102373700453666b6b12446c05835f0a40a8",
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "UNVERIFIED"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "fabric-bearer-nfl1-path-registry",
+          "platforms": ["linux-x86_64", "macos-arm64"]
+        }
+      ],
+      "platforms": ["linux-x86_64", "macos-arm64"],
+      "package": {
+        "component": "fabric_v1",
+        "host_cmake_target": "Ninlil::fabric_v1",
+        "esp_idf_component": null,
+        "artifact_kind": "STATIC_ARCHIVE",
+        "public_header_root": "ninlil/fabric_v1.h",
+        "install_availability": "PRESENT",
+        "dependencies": [],
+        "exported_metadata_variables": []
+      },
+      "symbol_prefix": "ninlil_fabric_v1_",
+      "wire_profiles": ["NFL1-v1"],
+      "storage_schemas": ["ninlil.fabric.v1/schema1-candidate"],
+      "namespace_policy": {
+        "mode": "CALLER_SUPPLIED_REALM_DEDICATED",
+        "physical_namespaces": ["ninlil.fabric.v1"],
+        "partition_prefixes": ["fabric_v1"],
+        "single_writer": "REQUIRED",
+        "writer_owner": "fabric_v1_instance"
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "CALLER_SUPPLIED_REALM_AND_PARTITION",
+        "single_writer": "REQUIRED",
+        "driver_access": "BOUNDED_CHILD_HANDLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-FAB-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-FAB-ABI-01",
+        "PM-FAB-INSTANCE-01"
+      ]
+    },
+    {
+      "id": "wifi_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PRIVATE_CANDIDATE",
+      "state_history": ["PRIVATE_CANDIDATE"],
+      "promotion_authority": {
+        "normative_spec_path": "docs/modules/wifi-common-v1.md",
+        "normative_spec_status": "NOT_CREATED",
+        "independent_review_path": "docs/reviews/wifi-common-v1-public-api-spec-review.md",
+        "independent_review_status": "NOT_RUN",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": null,
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "NOT_RUN"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "posix-tcp-tls-wifi-reference",
+          "platforms": ["linux-x86_64", "macos-arm64"]
+        },
+        {
+          "feature_id": "esp32s3-wifi-sta-tcp-tls",
+          "platforms": ["esp32s3-esp-idf"]
+        }
+      ],
+      "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"],
+      "package": {
+        "component": "wifi_v1",
+        "host_cmake_target": "Ninlil::wifi_v1",
+        "esp_idf_component": "ninlil_wifi_common_v1",
+        "artifact_kind": "STATIC_ARCHIVE",
+        "public_header_root": "ninlil/wifi/v1/",
+        "install_availability": "ABSENT",
+        "dependencies": ["fabric_v1"],
+        "exported_metadata_variables": [
+          "FOUND",
+          "API_VERSION",
+          "MODULE_API_STATE",
+          "COMPLETION_STATE",
+          "COMPLETION_STATE_BY_PLATFORM",
+          "PLATFORMS",
+          "WIRE_PROFILES",
+          "STORAGE_SCHEMAS",
+          "DEPENDENCIES"
+        ]
+      },
+      "symbol_prefix": "ninlil_wifi_v1_",
+      "wire_profiles": ["NWB1-v1-candidate"],
+      "storage_schemas": ["NINLIL-WIFI-CREDENTIAL-STORE-V1-candidate"],
+      "namespace_policy": {
+        "mode": "CALLER_SUPPLIED_REALM_DEDICATED",
+        "physical_namespaces": ["ninlil.wifi.v1"],
+        "partition_prefixes": ["credential_store_v1"],
+        "single_writer": "REQUIRED",
+        "writer_owner": "wifi_v1_instance"
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [
+        {
+          "depends_on_feature_id": "fabric-bearer-nfl1-path-registry",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "identity-attachment-session-install",
+          "precondition_contract_id": "ninlil_identity_attachment_precondition_v1",
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        }
+      ],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "CALLER_SUPPLIED_REALM_AND_PARTITION",
+        "single_writer": "REQUIRED",
+        "driver_access": "NOT_APPLICABLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-WIFI-COMMON-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-WIFI-COMMON-ABI-01"
+      ]
+    },
+    {
+      "id": "wifi_posix_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PRIVATE_CANDIDATE",
+      "state_history": ["PRIVATE_CANDIDATE"],
+      "promotion_authority": {
+        "normative_spec_path": "docs/modules/wifi-posix-v1.md",
+        "normative_spec_status": "NOT_CREATED",
+        "independent_review_path": "docs/reviews/wifi-posix-v1-public-api-spec-review.md",
+        "independent_review_status": "NOT_RUN",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": null,
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "NOT_RUN"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "posix-tcp-tls-wifi-reference",
+          "platforms": ["linux-x86_64", "macos-arm64"]
+        }
+      ],
+      "platforms": ["linux-x86_64", "macos-arm64"],
+      "package": {
+        "component": "wifi_posix_v1",
+        "host_cmake_target": "Ninlil::wifi_posix_v1",
+        "esp_idf_component": null,
+        "artifact_kind": "STATIC_ARCHIVE",
+        "public_header_root": "ninlil/wifi/v1/posix/",
+        "install_availability": "ABSENT",
+        "dependencies": ["fabric_v1", "wifi_v1"],
+        "exported_metadata_variables": [
+          "FOUND",
+          "API_VERSION",
+          "MODULE_API_STATE",
+          "COMPLETION_STATE",
+          "COMPLETION_STATE_BY_PLATFORM",
+          "PLATFORMS",
+          "WIRE_PROFILES",
+          "STORAGE_SCHEMAS",
+          "DEPENDENCIES"
+        ]
+      },
+      "symbol_prefix": "ninlil_wifi_posix_v1_",
+      "wire_profiles": ["NWB1-v1-candidate"],
+      "storage_schemas": [],
+      "namespace_policy": {
+        "mode": "NONE",
+        "physical_namespaces": [],
+        "partition_prefixes": [],
+        "single_writer": "NOT_APPLICABLE",
+        "writer_owner": null
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [
+        {
+          "depends_on_feature_id": "posix-tcp-tls-wifi-reference",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "fabric-bearer-nfl1-path-registry",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "identity-attachment-session-install",
+          "precondition_contract_id": "ninlil_identity_attachment_precondition_v1",
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        }
+      ],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "NOT_APPLICABLE",
+        "single_writer": "NOT_APPLICABLE",
+        "driver_access": "BOUNDED_CHILD_HANDLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-WIFI-POSIX-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-WIFI-POSIX-ABI-01",
+        "PM-WIFI-POSIX-E2E-01"
+      ]
+    },
+    {
+      "id": "wifi_esp_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PRIVATE_CANDIDATE",
+      "state_history": ["PRIVATE_CANDIDATE"],
+      "promotion_authority": {
+        "normative_spec_path": "docs/modules/wifi-esp-v1.md",
+        "normative_spec_status": "NOT_CREATED",
+        "independent_review_path": "docs/reviews/wifi-esp-v1-public-api-spec-review.md",
+        "independent_review_status": "NOT_RUN",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": null,
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "NOT_RUN"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "esp32s3-wifi-sta-tcp-tls",
+          "platforms": ["esp32s3-esp-idf"]
+        }
+      ],
+      "platforms": ["esp32s3-esp-idf"],
+      "package": {
+        "component": "wifi_esp_v1",
+        "host_cmake_target": null,
+        "esp_idf_component": "ninlil_wifi_v1",
+        "artifact_kind": "ESP_IDF_COMPONENT",
+        "public_header_root": "ninlil_esp_idf/wifi/v1/",
+        "install_availability": "ABSENT",
+        "dependencies": ["fabric_v1", "wifi_v1"],
+        "exported_metadata_variables": [
+          "FOUND",
+          "API_VERSION",
+          "MODULE_API_STATE",
+          "COMPLETION_STATE",
+          "COMPLETION_STATE_BY_PLATFORM",
+          "PLATFORMS",
+          "WIRE_PROFILES",
+          "STORAGE_SCHEMAS",
+          "DEPENDENCIES"
+        ]
+      },
+      "symbol_prefix": "ninlil_wifi_esp_v1_",
+      "wire_profiles": ["NWB1-v1-candidate"],
+      "storage_schemas": [],
+      "namespace_policy": {
+        "mode": "NONE",
+        "physical_namespaces": [],
+        "partition_prefixes": [],
+        "single_writer": "NOT_APPLICABLE",
+        "writer_owner": null
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [
+        {
+          "depends_on_feature_id": "esp32s3-wifi-sta-tcp-tls",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "fabric-bearer-nfl1-path-registry",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "identity-attachment-session-install",
+          "precondition_contract_id": "ninlil_identity_attachment_precondition_v1",
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        }
+      ],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "NOT_APPLICABLE",
+        "single_writer": "NOT_APPLICABLE",
+        "driver_access": "BOUNDED_CHILD_HANDLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-WIFI-ESP-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-WIFI-ESP-ABI-01",
+        "PM-WIFI-ESP-HIL-01"
+      ]
+    },
+    {
+      "id": "route_relay_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PRIVATE_CANDIDATE",
+      "state_history": ["PRIVATE_CANDIDATE"],
+      "promotion_authority": {
+        "normative_spec_path": "docs/modules/route-relay-v1.md",
+        "normative_spec_status": "NOT_CREATED",
+        "independent_review_path": "docs/reviews/route-relay-v1-public-api-spec-review.md",
+        "independent_review_status": "NOT_RUN",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": null,
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "NOT_RUN"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "relay",
+          "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"]
+        },
+        {
+          "feature_id": "multi-parent-multi-controller",
+          "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"]
+        }
+      ],
+      "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"],
+      "package": {
+        "component": "route_relay_v1",
+        "host_cmake_target": "Ninlil::route_relay_v1",
+        "esp_idf_component": "ninlil_route_relay_v1",
+        "artifact_kind": "STATIC_ARCHIVE",
+        "public_header_root": "ninlil/route/v1/",
+        "install_availability": "ABSENT",
+        "dependencies": ["fabric_v1"],
+        "exported_metadata_variables": [
+          "FOUND",
+          "API_VERSION",
+          "MODULE_API_STATE",
+          "COMPLETION_STATE",
+          "COMPLETION_STATE_BY_PLATFORM",
+          "PLATFORMS",
+          "WIRE_PROFILES",
+          "STORAGE_SCHEMAS",
+          "DEPENDENCIES"
+        ]
+      },
+      "symbol_prefix": "ninlil_route_relay_v1_",
+      "wire_profiles": ["NRW1-0x11-existing"],
+      "storage_schemas": [
+        "ninlil.route.v1/schema1-candidate",
+        "ninlil.parent.v1/schema1-candidate"
+      ],
+      "namespace_policy": {
+        "mode": "CALLER_SUPPLIED_REALM_DEDICATED",
+        "physical_namespaces": ["ninlil.route.v1", "ninlil.parent.v1"],
+        "partition_prefixes": ["route_v1", "parent_v1"],
+        "single_writer": "REQUIRED",
+        "writer_owner": "route_relay_v1_instance"
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [
+        {
+          "depends_on_feature_id": "fabric-bearer-nfl1-path-registry",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "relay",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "multi-parent-multi-controller",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "identity-attachment-session-install",
+          "precondition_contract_id": "ninlil_identity_attachment_precondition_v1",
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        }
+      ],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "CALLER_SUPPLIED_REALM_AND_PARTITION",
+        "single_writer": "REQUIRED",
+        "driver_access": "BOUNDED_CHILD_HANDLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-RR-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-RR-ABI-01",
+        "PM-RR-FAILOVER-01",
+        "PM-RR-HIL-01"
+      ]
+    },
+    {
+      "id": "radio_frag_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PRIVATE_CANDIDATE",
+      "state_history": ["PRIVATE_CANDIDATE"],
+      "promotion_authority": {
+        "normative_spec_path": "docs/modules/radio-frag-v1.md",
+        "normative_spec_status": "NOT_CREATED",
+        "independent_review_path": "docs/reviews/radio-frag-v1-public-api-spec-review.md",
+        "independent_review_status": "NOT_RUN",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": null,
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "NOT_RUN"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "nrw1-link-frag-reassembly",
+          "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"]
+        }
+      ],
+      "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"],
+      "package": {
+        "component": "radio_frag_v1",
+        "host_cmake_target": "Ninlil::radio_frag_v1",
+        "esp_idf_component": "ninlil_radio_frag_v1",
+        "artifact_kind": "STATIC_ARCHIVE",
+        "public_header_root": "ninlil/radio/frag/v1/",
+        "install_availability": "ABSENT",
+        "dependencies": [],
+        "exported_metadata_variables": [
+          "FOUND",
+          "API_VERSION",
+          "MODULE_API_STATE",
+          "COMPLETION_STATE",
+          "COMPLETION_STATE_BY_PLATFORM",
+          "PLATFORMS",
+          "WIRE_PROFILES",
+          "STORAGE_SCHEMAS",
+          "DEPENDENCIES"
+        ]
+      },
+      "symbol_prefix": "ninlil_radio_frag_v1_",
+      "wire_profiles": ["R7-FRAG-v1-pure"],
+      "storage_schemas": [],
+      "namespace_policy": {
+        "mode": "NONE",
+        "physical_namespaces": [],
+        "partition_prefixes": [],
+        "single_writer": "NOT_APPLICABLE",
+        "writer_owner": null
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [
+        {
+          "depends_on_feature_id": "portable-core-host-runtime",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        }
+      ],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "NOT_APPLICABLE",
+        "single_writer": "NOT_APPLICABLE",
+        "driver_access": "NOT_APPLICABLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-R7-FRAG-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-R7-FRAG-ABI-01",
+        "PM-R7-FRAG-PURE-01"
+      ]
+    },
+    {
+      "id": "radio_fabric_adapter_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PRIVATE_CANDIDATE",
+      "state_history": ["PRIVATE_CANDIDATE"],
+      "promotion_authority": {
+        "normative_spec_path": "docs/modules/radio-fabric-adapter-v1.md",
+        "normative_spec_status": "NOT_CREATED",
+        "independent_review_path": "docs/reviews/radio-fabric-adapter-v1-public-api-spec-review.md",
+        "independent_review_status": "NOT_RUN",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": null,
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "NOT_RUN"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "nfl1-r7-nrw1-rf-mapping",
+          "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"]
+        }
+      ],
+      "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"],
+      "package": {
+        "component": "radio_fabric_adapter_v1",
+        "host_cmake_target": "Ninlil::radio_fabric_adapter_v1",
+        "esp_idf_component": "ninlil_radio_fabric_adapter_v1",
+        "artifact_kind": "STATIC_ARCHIVE",
+        "public_header_root": "ninlil/radio/fabric/v1/",
+        "install_availability": "ABSENT",
+        "dependencies": ["fabric_v1", "radio_frag_v1"],
+        "exported_metadata_variables": [
+          "FOUND",
+          "API_VERSION",
+          "MODULE_API_STATE",
+          "COMPLETION_STATE",
+          "COMPLETION_STATE_BY_PLATFORM",
+          "PLATFORMS",
+          "WIRE_PROFILES",
+          "STORAGE_SCHEMAS",
+          "DEPENDENCIES"
+        ]
+      },
+      "symbol_prefix": "ninlil_radio_fabric_adapter_v1_",
+      "wire_profiles": ["NFL1-R7-NRW1-mapping-unallocated"],
+      "storage_schemas": [],
+      "namespace_policy": {
+        "mode": "NONE",
+        "physical_namespaces": [],
+        "partition_prefixes": [],
+        "single_writer": "NOT_APPLICABLE",
+        "writer_owner": null
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [
+        {
+          "depends_on_feature_id": "nfl1-r7-nrw1-rf-mapping",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "fabric-bearer-nfl1-path-registry",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "nrw1-link-frag-reassembly",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "identity-attachment-session-install",
+          "precondition_contract_id": "ninlil_identity_attachment_precondition_v1",
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        }
+      ],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "NOT_APPLICABLE",
+        "single_writer": "NOT_APPLICABLE",
+        "driver_access": "BOUNDED_CHILD_HANDLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-R7-ADAPTER-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-R7-ADAPTER-ABI-01",
+        "PM-R7-ADAPTER-HIL-01"
+      ]
+    },
+    {
+      "id": "mfdt_v1",
+      "api_version": "1.0.0",
+      "module_api_state": "PRIVATE_CANDIDATE",
+      "state_history": ["PRIVATE_CANDIDATE"],
+      "promotion_authority": {
+        "normative_spec_path": "docs/modules/mfdt-v1.md",
+        "normative_spec_status": "NOT_CREATED",
+        "independent_review_path": "docs/reviews/mfdt-v1-public-api-spec-review.md",
+        "independent_review_status": "NOT_RUN",
+        "reviewed_commit_sha": null,
+        "review_artifact_sha256": null,
+        "reviewer_identity": null,
+        "reviewer_provenance_kind": null,
+        "reviewer_provenance_path": null,
+        "reviewer_provenance_sha256": null,
+        "implementer_identities": [],
+        "separation_verification": "NOT_RUN"
+      },
+      "completion_feature_mappings": [
+        {
+          "feature_id": "multi-frame-durable-transfer",
+          "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"]
+        }
+      ],
+      "platforms": ["linux-x86_64", "macos-arm64", "esp32s3-esp-idf"],
+      "package": {
+        "component": "mfdt_v1",
+        "host_cmake_target": "Ninlil::mfdt_v1",
+        "esp_idf_component": "ninlil_mfdt_v1",
+        "artifact_kind": "STATIC_ARCHIVE",
+        "public_header_root": "ninlil/mfdt/v1/",
+        "install_availability": "ABSENT",
+        "dependencies": [],
+        "exported_metadata_variables": [
+          "FOUND",
+          "API_VERSION",
+          "MODULE_API_STATE",
+          "COMPLETION_STATE",
+          "COMPLETION_STATE_BY_PLATFORM",
+          "PLATFORMS",
+          "WIRE_PROFILES",
+          "STORAGE_SCHEMAS",
+          "DEPENDENCIES"
+        ]
+      },
+      "symbol_prefix": "ninlil_mfdt_v1_",
+      "wire_profiles": ["MFDT-v1-candidate", "NCL1-v1-existing"],
+      "storage_schemas": ["ninlil.ctl.v1/mfdt-v1-candidate"],
+      "namespace_policy": {
+        "mode": "CALLER_SUPPLIED_REALM_SHARED_PREFIX",
+        "physical_namespaces": ["ninlil.ctl.v1"],
+        "partition_prefixes": ["mfdt_v1"],
+        "single_writer": "REQUIRED",
+        "writer_owner": "foundation_control_store_owner"
+      },
+      "coinstallability": {
+        "multiple_v1_instances": true,
+        "v1_v2_same_process": "V2_NOT_ALLOCATED",
+        "symbol_prefix_isolation": "REQUIRED",
+        "storage_namespace_isolation": "REQUIRED_WHEN_APPLICABLE",
+        "wire_profile_isolation": "REQUIRED_WHEN_APPLICABLE"
+      },
+      "dependencies": [
+        {
+          "depends_on_feature_id": "portable-core-host-runtime",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "canonical-domain-store",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "multi-frame-durable-transfer",
+          "precondition_contract_id": null,
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        },
+        {
+          "depends_on_feature_id": "identity-attachment-session-install",
+          "precondition_contract_id": "ninlil_identity_attachment_precondition_v1",
+          "minimum_completion_state": "SPEC_ACCEPTED",
+          "enforced_from_owner_module_state": "PUBLIC_API_SPEC_ACCEPTED"
+        }
+      ],
+      "instance_policy": {
+        "immutable_module_instance_id": true,
+        "module_instance_id_shape": "U128_NONZERO",
+        "runtime_binding": "EXPLICIT_HANDLE_AND_GENERATION",
+        "storage_locator": "CALLER_SUPPLIED_REALM_AND_PARTITION",
+        "single_writer": "REQUIRED",
+        "driver_access": "BOUNDED_CHILD_HANDLE",
+        "driver_child_limit_source": "PROFILE_BOUND_OR_NOT_APPLICABLE",
+        "demux_identity": "OWNER_AND_CHILD_INSTANCE_ID_PLUS_GENERATION",
+        "aggregate_protocol": "RESERVE_COMMIT_RELEASE",
+        "fairness": "STRICT_ROUND_ROBIN_ONE_QUANTUM",
+        "stale_handle_rejection": true,
+        "cross_instance_rejection": true
+      },
+      "abi_contract": {
+        "public_surface": "OPAQUE_HANDLE_OR_CALLER_OWNED_OPAQUE_WORKSPACE",
+        "layout_invariant_across_compile_definitions": true,
+        "compile_time_layout_negative_acceptance_id": "PM-MFDT-ABI-01",
+        "v1_v2_metadata": "V2_NOT_ALLOCATED"
+      },
+      "acceptance_ids": [
+        "PM-MFDT-ABI-01",
+        "PM-MFDT-CARRIER-01",
+        "PM-MFDT-HIL-01"
+      ]
+    }
+  ],
+  "cross_module_acceptance": [
+    {
+      "id": "PM-COMPOSITION-2X2-01",
+      "covered_module_ids": [
+        "fabric_v1",
+        "wifi_v1",
+        "wifi_posix_v1",
+        "wifi_esp_v1",
+        "route_relay_v1",
+        "radio_frag_v1",
+        "radio_fabric_adapter_v1",
+        "mfdt_v1"
+      ],
+      "requirement": "for every module, two Runtime plus two distinct module instances; exact positive and negative bindings, realm and writer isolation, sole physical driver owner with bounded children, aggregate all-or-none reservation and strict fairness",
+      "test": {
+        "path": "tests/public_modules/composition_2x2.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-IDENTITY-PRECONDITION-2X2-01",
+      "covered_module_ids": [
+        "wifi_v1",
+        "wifi_posix_v1",
+        "wifi_esp_v1",
+        "route_relay_v1",
+        "radio_fabric_adapter_v1",
+        "mfdt_v1"
+      ],
+      "requirement": "for every identity/session-dependent module, two Runtime plus two distinct module and provider instances; valid binding success plus cross/stale/expired/revoked/rollback/restart-old-handle, unknown key usage or flag bits, subscribe failure release order, unsubscribe drain order, and torn/corrupt/ambiguous checkpoint fail-closed negatives with no key export",
+      "test": {
+        "path": "tests/public_modules/identity_attachment_precondition_2x2.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "PM-FAB-ABI-01",
+      "module_id": "fabric_v1",
+      "requirement": "public fabric_v1.h 10 value-type sizeof/align/offsetof golden coverage, exact 19-function API/status surface, C11/C++ header smoke, and tests-OFF Ninlil::fabric_v1 install surface",
+      "test": {
+        "path": "tests/transport/fabric_v1/fabric_v1_public_api_test.c",
+        "state": "PASS"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": "docs/work/2026-08-02-public-fabric-v1-first-tranche.md",
+        "sha256": "7537774e3e6e780a76e6edb07582f7ef145f289cf48a37dec69dbbd1426eb13d",
+        "state": "PASS"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-FAB-INSTANCE-01",
+      "module_id": "fabric_v1",
+      "requirement": "two Runtime plus two distinct Fabric instances complete public submit to peer callback and reverse Receipt, with wrong-thread/re-entry zero effects and bounded close",
+      "test": {
+        "path": "tests/cmake/installed_fabric_v1_consumer/consumer.c",
+        "state": "PASS"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": "docs/work/2026-08-02-public-fabric-v1-first-tranche.md",
+        "sha256": "7537774e3e6e780a76e6edb07582f7ef145f289cf48a37dec69dbbd1426eb13d",
+        "state": "PASS"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-WIFI-COMMON-ABI-01",
+      "module_id": "wifi_v1",
+      "requirement": "portable static archive only, no POSIX or ESP dependency, invariant public ABI, exact component metadata, two Runtime plus two distinct common module instances, and Identity/Attachment provider 2x2 binding negatives",
+      "test": {
+        "path": "tests/public_modules/wifi_v1_common_abi_negative.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-WIFI-POSIX-ABI-01",
+      "module_id": "wifi_posix_v1",
+      "requirement": "tests-OFF install consumer, exact common plus Fabric dependencies, header closure and layout invariant negative probes",
+      "test": {
+        "path": "tests/public_modules/wifi_posix_v1_abi_negative.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-WIFI-POSIX-E2E-01",
+      "module_id": "wifi_posix_v1",
+      "requirement": "two Runtime plus two distinct real localhost TLS/NFL1 adapter instances with Identity/Attachment provider 2x2 binding negatives, disconnect, reconnect, bounded backpressure and no custody advertisement",
+      "test": {
+        "path": "tests/public_modules/wifi_posix_v1_actual_e2e.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-WIFI-ESP-ABI-01",
+      "module_id": "wifi_esp_v1",
+      "requirement": "ESP component public-header closure, final ELF map path, no POSIX dependency, compile-definition layout invariance, two Runtime plus two distinct ESP adapter workspaces, and Identity/Attachment provider 2x2 binding negatives",
+      "test": {
+        "path": "tests/public_modules/wifi_esp_v1_abi_negative.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-WIFI-ESP-HIL-01",
+      "module_id": "wifi_esp_v1",
+      "requirement": "ESP32-S3 real AP and peer TLS/NFL1 path, forced disconnect, sleep and wake, resource profile and soak evidence",
+      "test": {
+        "path": "tools/public_modules/run_wifi_esp_v1_hil.py",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": true,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-RR-ABI-01",
+      "module_id": "route_relay_v1",
+      "requirement": "public observer-only dependency direction, invariant ABI, two-instance package and namespace isolation negative probes",
+      "test": {
+        "path": "tests/public_modules/route_relay_v1_abi_negative.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-RR-FAILOVER-01",
+      "module_id": "route_relay_v1",
+      "requirement": "two Runtime, two distinct Route/Relay owners and two Fabric instances, Identity/Attachment provider 2x2 binding negatives, failover, restart, split-brain fencing, bounded fairness and no process-global owner",
+      "test": {
+        "path": "tests/public_modules/route_relay_v1_failover.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-RR-HIL-01",
+      "module_id": "route_relay_v1",
+      "requirement": "three physical RF nodes, parent loss, relay drain, power interruption and soak with raw evidence",
+      "test": {
+        "path": "tools/public_modules/run_route_relay_v1_hil.py",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": true,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-R7-FRAG-ABI-01",
+      "module_id": "radio_frag_v1",
+      "requirement": "pure fragmentation API with opaque workspace and compile-definition invariant layout; RF mapping, crypto and driver symbols absent",
+      "test": {
+        "path": "tests/public_modules/radio_frag_v1_abi_negative.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-R7-FRAG-PURE-01",
+      "module_id": "radio_frag_v1",
+      "requirement": "two Runtime plus two distinct engines, reorder, duplicate, loss, conflict, exhaustion and reassembly without an RF mapping dependency",
+      "test": {
+        "path": "tests/public_modules/radio_frag_v1_pure.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-R7-ADAPTER-ABI-01",
+      "module_id": "radio_fabric_adapter_v1",
+      "requirement": "separate Fabric adapter package, exact Accepted RF mapping dependency, compile-definition invariant ABI, two Runtime plus two distinct adapter instances, and Identity/Attachment provider 2x2 binding negatives",
+      "test": {
+        "path": "tests/public_modules/radio_fabric_adapter_v1_abi_negative.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-R7-ADAPTER-HIL-01",
+      "module_id": "radio_fabric_adapter_v1",
+      "requirement": "Accepted NFL1 to R7 FRAG to NRW1 mapping KAT plus two-device physical RF loss injection",
+      "test": {
+        "path": "tools/public_modules/run_radio_fabric_adapter_v1_hil.py",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": true,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-MFDT-ABI-01",
+      "module_id": "mfdt_v1",
+      "requirement": "public manager ABI, caller-owned storage realm and MFDT prefix isolation with compile-definition layout negative probes",
+      "test": {
+        "path": "tests/public_modules/mfdt_v1_abi_negative.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-MFDT-CARRIER-01",
+      "module_id": "mfdt_v1",
+      "requirement": "two Runtime plus two distinct manager instances with Identity/Attachment provider 2x2 binding negatives, carrying 4 KiB and 32 KiB over actual Foundation to Fabric to Wi-Fi, with restart, resume and replay",
+      "test": {
+        "path": "tests/public_modules/mfdt_v1_actual_carrier_e2e.c",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": false,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "PM-MFDT-HIL-01",
+      "module_id": "mfdt_v1",
+      "requirement": "real transport transfer with sender and receiver power interruption, durable resume and no partial apply",
+      "test": {
+        "path": "tools/public_modules/run_mfdt_v1_hil.py",
+        "state": "NOT_RUN"
+      },
+      "evidence": {
+        "profile_receipts": [],
+        "path": null,
+        "sha256": null,
+        "state": "NOT_RUN"
+      },
+      "hil": {
+        "required": true,
+        "state": "NOT_RUN",
+        "evidence_path": null,
+        "sha256": null
+      }
+    }
+  ]
+}

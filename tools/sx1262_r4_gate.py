@@ -229,7 +229,13 @@ def check_no_heap(path: pathlib.Path) -> None:
 
 
 def check_settx_not_sent(path: pathlib.Path) -> None:
-    """Banlist constant 0x83 may exist only as named ban pin / _Static_assert."""
+    """Banlist constant 0x83 may exist only as named ban pin / _Static_assert.
+
+    R9 phy TU (ninlil_sx1262_phy.c, Proposed ADR-0025) is the sole production
+    path allowed to compose SetTx under permit sole edge.
+    """
+    if path.name == "ninlil_sx1262_phy.c":
+        return
     raw = read_text(path)
     code = strip_c_comments_and_strings(raw)
     if re.search(
@@ -250,7 +256,11 @@ def check_settx_not_sent(path: pathlib.Path) -> None:
             fail(f"{path}: alternate TX symbol {alt}")
     # Only allowlisted production .c under drivers/sx126x
     if path.name.endswith(".c") and "drivers/sx126x" in str(path):
-        allowed = {"ninlil_sx1262_backend.c"}
+        allowed = {
+            "ninlil_sx1262_backend.c",
+            "ninlil_sx1262_phy.c",
+            "ninlil_sx1262_board_profiles.c",
+        }
         if path.name not in allowed:
             fail(f"unexpected production TU {path.name}")
 
@@ -313,13 +323,21 @@ def check_authority() -> None:
     if "sx1262_bus_spy" in text or "tests/" in text:
         fail("spy/tests must not be in sx1262 production authority")
     # Production .c allowlist under drivers/sx126x in authority.
+    # R4 backend + board profiles + R9 phy (Proposed ADR-0025); no other TUs.
+    allowed_sx = {
+        "drivers/sx126x/ninlil_sx1262_backend.c",
+        "drivers/sx126x/ninlil_sx1262_board_profiles.c",
+        "drivers/sx126x/ninlil_sx1262_phy.c",
+    }
     for line in text.splitlines():
         code = line.split("#", 1)[0].strip()
         if "RadioLib" in code or "radiolib" in code.lower():
             fail("RadioLib in production authority sources")
         m = re.match(r"(drivers/sx126x/[A-Za-z0-9_./-]+\.c)$", code)
-        if m and m.group(1) != "drivers/sx126x/ninlil_sx1262_backend.c":
+        if m and m.group(1) not in allowed_sx:
             fail(f"unexpected sx126x production source {m.group(1)}")
+    if "drivers/sx126x/ninlil_sx1262_phy.c" not in text:
+        fail("R9 phy missing from ninlil_sx1262_sources.cmake")
 
 
 def check_cmake() -> None:
@@ -436,8 +454,14 @@ def check_esp_bus() -> None:
     text = read_text(ESP_BUS_C)
     code = strip_c_comments_and_strings(text)
     hdr = read_text(ESP_BUS_H)
-    if "ninlil_sx1262_cmd_is_rf_banned" not in text:
-        fail("ESP bus must refuse RF-banned opcodes")
+    # CONTROL_ONLY deny remains via pure admit helper (R4 not weakened).
+    # RF_SOLE is single-shot grant for R9 sole-edge only (separate gate).
+    if "ninlil_sx1262_bus_spi_xfer_admitted" not in text:
+        fail("ESP bus must refuse opcodes via ninlil_sx1262_bus_spi_xfer_admitted")
+    if "capability_mode" not in text:
+        fail("ESP bus must track capability_mode (CONTROL_ONLY default)")
+    if "NINLIL_SX1262_BUS_CAP_CONTROL_ONLY" not in text and "CONTROL_ONLY" not in text:
+        fail("ESP bus must default CONTROL_ONLY capability")
     if "spi_device_polling_transmit" in code:
         fail("ESP bus must not use spi_device_polling_transmit (portMAX_DELAY)")
     if "spi_device_queue_trans" not in code or "spi_device_get_trans_result" not in code:

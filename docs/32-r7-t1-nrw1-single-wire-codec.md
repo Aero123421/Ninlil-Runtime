@@ -403,12 +403,19 @@ required names/count/behaviorを削除・skip・presence-onlyへ弱めずslice�
 2. ASan/UBSan full CTest。sanitizerでtest skipを増やさない
 3. oracle deterministic twice、freshness、bridge exact count、mutation self-tests
 4. tests-OFF fresh buildでprivate archive object/symbol exact once
-5. install tree/public libraries/includesへwire symbol/header/vector/test/tool 0
+5. install treeの通常public libraries/includesへwire symbol/header/vector/test/tool 0
 6. portable sourceにOS/heap/VLA/OpenSSL/mbedTLS/N6/R2/R5/HAL token/dependency 0
 7. GCC Release exact `-O2` + `-fstack-usage` compile command authority
 8. production wire functionsはstatic frame `<=2560 bytes`。dynamic/bounded/VLAはreject
 9. ESP-IDF v5.5.3 componentへportable source exact once、final ESP32-S3 ELFから実参照
 10. T0/R6 hash/gateおよびfull existing CTest無退行
+
+唯一の例外として、install対象のHost Runtime static archive
+`libninlil_runtime.a`（Windowsでは`ninlil_runtime.lib`または`libninlil_runtime.lib`）は、
+production private wire implementationを内部に保持できる。例外はこのexact basenameだけに適用し、
+`r7_wire_codec.c.o` exact once、wire family production 8 symbol exact、test seam/oracle/fixture/extra
+family symbol 0を検査する。その他のpublic libraryは従来どおりwire member/symbol 0であり、public
+header、package config、vector、test、toolへのprivate token/path exportも0のままとする。
 
 2560 bytesはT1 host candidate単体の初期ceilingであり、adapter callback chainやESP task stackの
 十分性を意味しない。ESP compile/linkは実機KAT、RF、USB、timing、power-cut HILの代替ではない。

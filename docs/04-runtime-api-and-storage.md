@@ -30,7 +30,20 @@ Runtime作成時にroleを1つ固定します。
 | `CELL_AGENT` | local schedule、transport custody、compliance permit、bearer observation |
 | `ENDPOINT` | origin spool、inbox、dedup、application dispatch、outcome cache |
 
-Foundation M1aが実装必須とするroleは`CONTROLLER`と`ENDPOINT`です。`CELL_AGENT`はport interfaceとtypeだけを予約し、実装はM3です。SimulatorはRuntime roleではなく、複数Runtimeをvirtual clockとfault portで駆動する外部harnessです。
+公開Runtimeは`CONTROLLER`、`CELL_AGENT`、`ENDPOINT`の全roleを作成できます。
+`CELL_AGENT`はapplication serviceのadmission authorityではないため、
+Foundationの`ninlil_service_register()`は`NINLIL_E_UNSUPPORTED`を返します。
+これは生成失敗ではなく、transport/fabric adapterが同じRuntime lifetime、
+Storage、Bearer、clock、bounded step ownershipを安全に共有するための
+明示的な役割境界です。SimulatorはRuntime roleではなく、複数Runtimeを
+virtual clockとfault portで駆動する外部harnessです。
+
+公開environmentは`TEST`、`LAB`、`FIELD`、`PRODUCTION`です。environmentは
+identity、policy、credential、compliance Portへ渡す実行境界であり、Coreが
+名前から安全性を推測するためのスイッチではありません。全environmentで
+同じfail-closed validation、FULL durability、bounded resource ruleを適用します。
+`LAB`設定を`PRODUCTION`へ暗黙昇格したり、未知値を既知environmentとして
+扱ってはいけません。
 
 ## Public type原則
 
@@ -167,14 +180,24 @@ Admission時にselectorをconcrete rosterへ固定します。各target record�
 - membership epoch
 - required evidence
 
-M1aはconcrete targetをちょうど1件だけ受理します。SelectorはM1a ABIに存在せず、将来tailとして提示されてもunsupportedです。Target countが0または2以上なら`REJECTED / NINLIL_REASON_TARGET_COUNT_UNSUPPORTED`です。
+公開Foundation profileは、submissionにcallerが列挙したconcrete targetを
+1件以上、Runtime/Serviceのresource limit以下かつ4件以下で受理します。
+rosterはcanonical target record順にsortし、重複するexact targetはrejectします。
+Selectorは公開ABIに存在せず、selector/group名から宛先を推測する処理も
+実装しません。Target countが0、上限超過、重複、または不正なtarget shapeなら
+rejectまたはAPI invalid argumentとしてfail closedします。
 
-M1bで最初に追加するgroup completion policyは`ALL_TARGETS`だけです。
+複数exact targetのcompletion policyは`ALL_TARGETS`だけです。
 
 - 全targetがrequired evidenceへ到達した場合だけtransactionを`SATISFIED`にします。
 - targetごとのoutcomeを保持します。
 - 0 targetかつevidence必須のsubmissionはrejectします。
 - 機器交換後のdeviceへ、既存transactionを暗黙転送しません。
+- admission、canonical idempotency digest、FULL transaction record、restart scan、
+  retry cursor、target evidence/outcomeは同じ固定rosterを使用します。
+- queryは必要なtarget capacityを先に返し、十分なbufferがある場合はcanonical
+  roster順の全target snapshotを返します。list itemはtransaction summaryであり、
+  target詳細はtransaction queryで取得します。
 
 `ANY_TARGET`、quorum、best-effort broadcastは将来RFCです。
 

@@ -4,7 +4,7 @@
 
 #include <string.h>
 
-#define NINLIL_RT_CANONICAL_V1_MAX_BYTES 512u
+#define NINLIL_RT_CANONICAL_V1_MAX_BYTES 1024u
 
 typedef struct canonical_writer {
     uint8_t *bytes;

@@ -293,6 +293,26 @@ ninlil_r7_crypto_status ninlil_r7_crypto_nonce_from_counter(
     uint8_t out_nonce12[NINLIL_R7_CRYPTO_AES128_NONCE_LEN]);
 
 /*
+ * Symmetric inverse of ninlil_r7_crypto_nonce_from_counter (docs/30 §8.6):
+ *   static_iv[0..3]  = nonce[0..3]
+ *   static_iv[4..11] = nonce[4..11] XOR counter_u64_be
+ * XOR is involutive: for_counter(from_nonce(n,c), c) == n.
+ *
+ * Header-only static inline (private provider header, not installed): must
+ * not export a separate public-archive symbol. Sole implementation reuses
+ * ninlil_r7_crypto_nonce_from_counter so call sites never hand-write XOR.
+ * counter domain: 1 .. UINT64_MAX-1. Failure: out mutation 0.
+ */
+static inline ninlil_r7_crypto_status ninlil_r7_crypto_static_iv_from_nonce(
+    const uint8_t nonce12[NINLIL_R7_CRYPTO_AES128_NONCE_LEN],
+    uint64_t counter,
+    uint8_t out_static_iv12[NINLIL_R7_CRYPTO_AES128_NONCE_LEN])
+{
+    return ninlil_r7_crypto_nonce_from_counter(
+        nonce12, counter, out_static_iv12);
+}
+
+/*
  * Private test seam: direct span-overlap / uintptr-overflow helper.
  * Only declared/defined when NINLIL_R7_CRYPTO_TEST_BUILD is set.
  * Production builds must not export this symbol.

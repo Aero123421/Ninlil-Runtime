@@ -55,6 +55,7 @@ struct storage_handle {
 
 typedef struct storage_fault {
     ninlil_storage_status_t status;
+    uint32_t skip_count;
     uint32_t remaining_count;
     int commit_unknown_committed;
 } storage_fault_t;
@@ -514,6 +515,10 @@ static int take_fault(
         return 0;
     }
     fault = &queue->entries[queue->head];
+    if (fault->skip_count != 0u) {
+        fault->skip_count -= 1u;
+        return 0;
+    }
     *out = *fault;
     fault->remaining_count -= 1u;
     if (fault->remaining_count == 0u) {
@@ -1422,9 +1427,10 @@ const ninlil_storage_ops_t *ninlil_test_storage_ops(
     return storage == NULL ? NULL : &storage->ops;
 }
 
-int ninlil_test_storage_fault_enqueue(
+int ninlil_test_storage_fault_enqueue_after(
     ninlil_test_storage_t *storage,
     ninlil_test_storage_operation_t operation,
+    uint32_t calls_to_skip,
     ninlil_storage_status_t status,
     uint32_t remaining_count,
     int has_commit_unknown_truth,
@@ -1461,10 +1467,24 @@ int ninlil_test_storage_fault_enqueue(
         % NINLIL_TEST_STORAGE_FAULT_QUEUE_CAPACITY;
     fault = &queue->entries[tail];
     fault->status = status;
+    fault->skip_count = calls_to_skip;
     fault->remaining_count = remaining_count;
     fault->commit_unknown_committed = commit_unknown_committed != 0;
     queue->count += 1u;
     return 1;
+}
+
+int ninlil_test_storage_fault_enqueue(
+    ninlil_test_storage_t *storage,
+    ninlil_test_storage_operation_t operation,
+    ninlil_storage_status_t status,
+    uint32_t remaining_count,
+    int has_commit_unknown_truth,
+    int commit_unknown_committed)
+{
+    return ninlil_test_storage_fault_enqueue_after(storage, operation, 0u,
+        status, remaining_count, has_commit_unknown_truth,
+        commit_unknown_committed);
 }
 
 int ninlil_test_storage_fault_next(

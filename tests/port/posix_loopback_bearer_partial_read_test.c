@@ -136,6 +136,40 @@ static int await_fragment(int read_fd, char expected)
     return read(read_fd, &value, 1u) == 1 && value == expected;
 }
 
+static int test_socket_path_boundaries(void)
+{
+    struct sockaddr_un address;
+    char valid_path[sizeof(address.sun_path)];
+    char invalid_path[sizeof(address.sun_path) + 2u];
+    ninlil_posix_loopback_bearer_config_t config;
+    ninlil_posix_loopback_bearer_t *bearer;
+    size_t prefix_length;
+
+    (void)memset(valid_path, 'x', sizeof(valid_path));
+    (void)memcpy(valid_path, "/tmp/ninlil-", sizeof("/tmp/ninlil-") - 1u);
+    valid_path[sizeof(valid_path) - 1u] = '\0';
+    prefix_length = sizeof("/tmp/ninlil-") - 1u;
+    REQUIRE(prefix_length < sizeof(valid_path) - 1u);
+
+    ninlil_posix_loopback_bearer_config_defaults(&config);
+    config.socket_path = valid_path;
+    config.role = NINLIL_POSIX_LOOPBACK_BEARER_ROLE_SERVER;
+    bearer = ninlil_posix_loopback_bearer_create(&config);
+    REQUIRE(bearer != NULL);
+    ninlil_posix_loopback_bearer_destroy(bearer);
+
+    (void)memset(invalid_path, 'x', sizeof(invalid_path));
+    (void)memcpy(invalid_path, "/tmp/ninlil-", sizeof("/tmp/ninlil-") - 1u);
+    invalid_path[sizeof(address.sun_path)] = '\0';
+    config.socket_path = invalid_path;
+    REQUIRE(ninlil_posix_loopback_bearer_create(&config) == NULL);
+
+    invalid_path[sizeof(address.sun_path)] = 'x';
+    invalid_path[sizeof(address.sun_path) + 1u] = '\0';
+    REQUIRE(ninlil_posix_loopback_bearer_create(&config) == NULL);
+    return 0;
+}
+
 int main(void)
 {
     char socket_path[96];
@@ -151,6 +185,7 @@ int main(void)
     int status;
     uint32_t attempt;
 
+    REQUIRE(test_socket_path_boundaries() == 0);
     REQUIRE(snprintf(socket_path, sizeof(socket_path),
         "/tmp/ninlil-loopback-partial-%ld.sock", (long)getpid()) > 0);
     (void)unlink(socket_path);

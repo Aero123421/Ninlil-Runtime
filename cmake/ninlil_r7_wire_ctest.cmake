@@ -65,6 +65,317 @@ add_test(
     COMMAND ninlil_r7_wire_vectors_bridge_test
 )
 
+add_executable(ninlil_nra1_codec_test
+    tests/transport/fabric_v1/nra1_codec_test.c
+)
+target_include_directories(ninlil_nra1_codec_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+)
+target_link_libraries(ninlil_nra1_codec_test PRIVATE
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_nra1_codec_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_nra1_codec_test)
+add_test(
+    NAME nra1_v1_codec
+    COMMAND ninlil_nra1_codec_test
+)
+
+add_executable(ninlil_nvb1_codec_test
+    tests/transport/fabric_v1/nvb1_codec_test.c
+)
+target_include_directories(ninlil_nvb1_codec_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+)
+target_link_libraries(ninlil_nvb1_codec_test PRIVATE
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_nvb1_codec_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_nvb1_codec_test)
+add_test(
+    NAME nvb1_v1_codec
+    COMMAND ninlil_nvb1_codec_test
+)
+
+add_executable(ninlil_v1_lab_binding_test
+    tests/transport/fabric_v1/v1_lab_binding_test.c
+)
+target_include_directories(ninlil_v1_lab_binding_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+)
+target_link_libraries(ninlil_v1_lab_binding_test PRIVATE
+    ninlil_runtime_private
+    ninlil_fabric_v1
+    ninlil
+)
+set_target_properties(ninlil_v1_lab_binding_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_v1_lab_binding_test)
+add_test(
+    NAME v1_lab_binding_codec
+    COMMAND ninlil_v1_lab_binding_test
+)
+
+add_executable(ninlil_v1_lab_radio_mapping_test
+    tests/transport/fabric_v1/v1_lab_radio_mapping_test.c
+)
+target_include_directories(ninlil_v1_lab_radio_mapping_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+)
+target_link_libraries(ninlil_v1_lab_radio_mapping_test PRIVATE
+    ninlil_runtime_private
+    ninlil_fabric_v1
+    ninlil
+)
+set_target_properties(ninlil_v1_lab_radio_mapping_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_v1_lab_radio_mapping_test)
+add_test(
+    NAME v1_lab_radio_mapping
+    COMMAND ninlil_v1_lab_radio_mapping_test
+)
+
+add_executable(ninlil_v1_lab_n6_owner_test
+    tests/transport/fabric_v1/v1_lab_n6_owner_test.c
+    tests/support/n6_mem_storage.c
+)
+target_include_directories(ninlil_v1_lab_n6_owner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+)
+target_link_libraries(ninlil_v1_lab_n6_owner_test PRIVATE
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_v1_lab_n6_owner_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_v1_lab_n6_owner_test)
+add_test(
+    NAME v1_lab_n6_owner
+    COMMAND ninlil_v1_lab_n6_owner_test
+)
+
+add_executable(ninlil_v1_lab_provisioner_test
+    tests/transport/fabric_v1/v1_lab_provisioner_test.c
+    tests/support/in_memory_storage.c
+)
+target_include_directories(ninlil_v1_lab_provisioner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+)
+target_link_libraries(ninlil_v1_lab_provisioner_test PRIVATE
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_v1_lab_provisioner_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_v1_lab_provisioner_test)
+add_test(
+    NAME v1_lab_provisioner
+    COMMAND ninlil_v1_lab_provisioner_test
+)
+
+add_executable(ninlil_v1_usb_bridge_test
+    tests/transport/fabric_v1/v1_usb_bridge_test.c
+    tests/support/fake_byte_stream.c
+)
+target_include_directories(ninlil_v1_usb_bridge_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+)
+target_link_libraries(ninlil_v1_usb_bridge_test PRIVATE
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_v1_usb_bridge_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_v1_usb_bridge_test)
+add_test(
+    NAME v1_usb_bridge
+    COMMAND ninlil_v1_usb_bridge_test
+)
+
+if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+    add_executable(ninlil_v1_usb_fabric_link_test
+        tests/transport/fabric_v1/v1_usb_fabric_link_test.c
+        src/transport/fabric_v1/v1_usb_fabric_link.c
+        tests/support/fake_byte_stream.c
+    )
+    target_include_directories(ninlil_v1_usb_fabric_link_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_usb_fabric_link_test PRIVATE
+        ninlil_runtime_private
+        ninlil_fabric_v1
+        ninlil
+    )
+    set_target_properties(ninlil_v1_usb_fabric_link_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_usb_fabric_link_test)
+    add_test(
+        NAME v1_usb_fabric_link
+        COMMAND ninlil_v1_usb_fabric_link_test
+    )
+
+    if(TARGET ninlil_posix_sqlite_storage
+        AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+        find_package(Threads REQUIRED)
+        add_executable(ninlil_v1_lab_controller_platform_test
+            tests/transport/fabric_v1/v1_lab_controller_platform_test.c
+            examples/v1_lab/v1_lab_controller_platform.c
+        )
+        target_include_directories(ninlil_v1_lab_controller_platform_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/examples/v1_lab
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_v1_lab_controller_platform_test PRIVATE
+            ninlil_posix_sqlite_storage
+            ninlil
+            OpenSSL::Crypto
+            Threads::Threads
+        )
+        set_target_properties(ninlil_v1_lab_controller_platform_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_host_feature_macros(
+            ninlil_v1_lab_controller_platform_test)
+        ninlil_apply_strict_warnings(
+            ninlil_v1_lab_controller_platform_test)
+        add_test(
+            NAME v1_lab_controller_platform
+            COMMAND ninlil_v1_lab_controller_platform_test
+        )
+    endif()
+endif()
+
+if(TARGET ninlil_posix_usb_serial
+    AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+    add_executable(ninlil_v1_usb_bridge_pty_test
+        tests/transport/fabric_v1/v1_usb_bridge_pty_test.c
+        tests/support/in_memory_storage.c
+    )
+    target_include_directories(ninlil_v1_usb_bridge_pty_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_usb_bridge_pty_test PRIVATE
+        ninlil_runtime_private
+        ninlil_posix_usb_serial
+        ninlil
+    )
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(ninlil_v1_usb_bridge_pty_test PRIVATE util)
+    endif()
+    set_target_properties(ninlil_v1_usb_bridge_pty_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_posix_usb_serial_feature_macros(
+        ninlil_v1_usb_bridge_pty_test)
+    ninlil_apply_strict_warnings(ninlil_v1_usb_bridge_pty_test)
+    add_test(
+        NAME v1_usb_bridge_pty
+        COMMAND ninlil_v1_usb_bridge_pty_test
+    )
+
+    if(TARGET ninlil_v1_lab_controller)
+        add_executable(ninlil_v1_lab_controller_probe_test
+            tests/transport/fabric_v1/v1_lab_controller_probe_test.c
+            tests/support/in_memory_storage.c
+        )
+        target_include_directories(ninlil_v1_lab_controller_probe_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_v1_lab_controller_probe_test PRIVATE
+            ninlil_runtime_private
+            ninlil_fabric_v1
+            ninlil
+        )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_link_libraries(
+                ninlil_v1_lab_controller_probe_test PRIVATE util)
+        endif()
+        set_target_properties(ninlil_v1_lab_controller_probe_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_usb_serial_feature_macros(
+            ninlil_v1_lab_controller_probe_test)
+        ninlil_apply_strict_warnings(
+            ninlil_v1_lab_controller_probe_test)
+        add_test(
+            NAME v1_lab_controller_probe
+            COMMAND ninlil_v1_lab_controller_probe_test
+                $<TARGET_FILE:ninlil_v1_lab_controller>
+        )
+    endif()
+endif()
+
+add_test(
+    NAME v1_lab_n6_callsite_gate
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_lab_n6_callsite_gate.py
+        check --root ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(
+    NAME v1_lab_n6_callsite_gate_self_test
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/v1_lab_n6_callsite_gate.py
+        self-test --root ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 # ---------------------------------------------------------------------------
 # Python gates: oracle, pin, platform, packaging, stack, ctest authority
 # ---------------------------------------------------------------------------
@@ -82,6 +393,13 @@ add_test(
         verify-json
         --json
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio/private/r7_wire_single_t1_vectors.json
+)
+
+add_test(
+    NAME nra1_v1_mapping_gate
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/nra1_mapping_gate.py
+        check
 )
 
 add_test(

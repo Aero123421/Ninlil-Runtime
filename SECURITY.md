@@ -2,7 +2,14 @@
 
 ## Project status
 
-**V1 LAB RC2（タグ `v1.0-lab-rc2`）** は隔離 LAB 向け host simulation の機能完成リリースです。**LAB_ONLY** — 国内実運用、production 法規認定、credential 保護の最終保証、physical RF/USB HIL、regulatory compliance、field SLO は **主張しません**。統合 E2E gate と CTest 成功は、security certification や現場運用承認の代わりに使用しないでください。物理実機系の残件は [RC 残件](docs/work/2026-07-23-v1-rc-residuals.md) を参照してください。
+現行`main`はRuntime完成作業中であり、production support済みreleaseではありません。
+履歴タグ`v1.0-lab-rc2`は隔離LAB向けhost simulation候補です。
+**LAB_ONLY** — 国内実運用、production法規認定、credential保護の最終保証、
+physical RF/USB/Wi-Fi HIL、regulatory compliance、field SLOは**主張しません**。
+統合E2E、target compile、CTest成功はsecurity certificationや現場運用承認の代わりに
+使用しないでください。機能別の現在stateとHIL境界は
+[`compatibility-matrix.json`](compatibility-matrix.json)、物理実機系の履歴残件は
+[RC残件](docs/work/2026-07-23-v1-rc-residuals.md)を参照してください。
 
 ## Reporting a vulnerability
 

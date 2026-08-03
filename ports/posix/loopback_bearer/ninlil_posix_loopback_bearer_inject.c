@@ -89,9 +89,21 @@ static ninlil_bearer_status_t inject_send(
     }
     inject->send_seq += 1u;
     if (should_drop_send(inject, message->kind)) {
+        ninlil_bearer_state_t state;
+
+        (void)memset(&state, 0, sizeof(state));
         (void)memset(out_result, 0, sizeof(*out_result));
         out_result->abi_version = NINLIL_ABI_VERSION;
         out_result->struct_size = (uint16_t)sizeof(*out_result);
+        if (inject->config.inner_bearer->state(
+                inject->config.inner_user, handle, &state)
+                != NINLIL_BEARER_OK
+            || state.abi_version != NINLIL_ABI_VERSION
+            || state.struct_size != sizeof(state)
+            || state.availability_epoch == 0u) {
+            return NINLIL_BEARER_CORRUPT;
+        }
+        out_result->availability_epoch = state.availability_epoch;
         return NINLIL_BEARER_WOULD_BLOCK;
     }
     status = inject->config.inner_bearer->send(

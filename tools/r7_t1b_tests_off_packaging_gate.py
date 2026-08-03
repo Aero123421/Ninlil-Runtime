@@ -7,6 +7,8 @@ Fresh OFF Release subbuild:
   - ar member r7_context_binding.c.o exact once
   - nm: exact six production APIs; zero test symbols
   - install tree and public export surface: no T1b private artifact leakage
+  - exact Host Runtime archive: production object/API exact once, no test seams
+  - every other installed public lib: no binding-family defined symbols
 
 Self-test uses controlled fixtures (no full-repo configure required).
 
@@ -95,6 +97,9 @@ LEGACY_BANNED_INSTALL_NEEDLES = (
 )
 PRIVATE_ARCHIVE_RE = re.compile(r"libninlil_runtime_private\.(a|lib)$")
 INSTALLED_LIB_RE = re.compile(r".*\.(a|lib|so|dylib)$|.*\.so\.\d+(\.\d+)*$")
+HOST_RUNTIME_ARCHIVE_NAMES = frozenset(
+    {"libninlil_runtime.a", "libninlil_runtime.lib", "ninlil_runtime.lib"}
+)
 _NM_TYPE_RE = re.compile(r"^[A-Za-z]$")
 PrivateArtifactAuthority = dict[str, tuple[int, str]]
 
@@ -295,6 +300,40 @@ def inspect_public_members(members: list[str]) -> list[str]:
     return errors
 
 
+def is_host_runtime_archive(path: Path) -> bool:
+    """True only for an exact, supported installed Host Runtime archive name."""
+    return path.name.lower() in HOST_RUNTIME_ARCHIVE_NAMES
+
+
+def inspect_installed_library(path: Path) -> list[str]:
+    """Inspect one library under the exact Host Runtime archive exception."""
+    errors: list[str] = []
+    is_archive = path.suffix.lower() in {".a", ".lib"}
+    runtime_archive = is_archive and is_host_runtime_archive(path)
+    members: list[str] = []
+    if is_archive:
+        try:
+            members = ar_members(path)
+        except subprocess.CalledProcessError as exc:
+            return [f"ar failed on installed archive {path}: {exc}"]
+        if runtime_archive:
+            errors.extend(inspect_members(members))
+            errors.extend(inspect_private_binding_member_symbols(path, members))
+        else:
+            errors.extend(inspect_public_members(members))
+
+    defined, nm_errs = run_nm_defined(path)
+    if defined is None:
+        errors.extend(nm_errs)
+    elif runtime_archive:
+        # Exact whole-archive family authority also catches a second object
+        # exporting a production-like or test-only binding symbol.
+        errors.extend(inspect_off_symbols(defined))
+    else:
+        errors.extend(inspect_public_symbols(defined))
+    return errors
+
+
 def catalog_matches(value: str) -> list[str]:
     normalized = value.replace("\\", "/").lower()
     matches = [
@@ -430,17 +469,7 @@ def inspect_install_tree(
                     f"private T1b artifact bytes installed: {rel} ({artifact}, sha256)"
                 )
         if path.is_file() and INSTALLED_LIB_RE.match(path.name):
-            if path.suffix.lower() in {".a", ".lib"}:
-                try:
-                    member_errors = inspect_public_members(ar_members(path))
-                except subprocess.CalledProcessError as exc:
-                    member_errors = [f"ar failed on public archive {path}: {exc}"]
-                errors.extend(member_errors)
-            defined, nm_errs = run_nm_defined(path)
-            if defined is None:
-                errors.extend(nm_errs)
-            else:
-                errors.extend(inspect_public_symbols(defined))
+            errors.extend(inspect_installed_library(path))
         if path.is_file() and path.suffix.lower() in {".cmake", ".h", ".hpp", ".pc"}:
             errors.extend(inspect_public_surface_text(path))
     return errors
@@ -564,7 +593,7 @@ def run_check(src_root: Path, generator: str) -> int:
             return 1
         ok(
             f"PASS member={BINDING_MEMBER} once; apis=6; bare-all archive=0; "
-            f"install public-only; binding symbols private-only"
+            f"Host Runtime binding production set exact; ordinary public libs clean"
         )
         return 0
 
@@ -664,6 +693,115 @@ def run_self_test(src_root: Path) -> int:
             for err in missing_member_errors
         ):
             failures.append("missing exact binding API escaped member check")
+
+    # The exact Host Runtime archive may carry this production-private member;
+    # ordinary or deceptively named public archives may not.
+    with tempfile.TemporaryDirectory(prefix="r7-t1b-host-runtime-mut-") as td:
+        root = Path(td)
+        install = root / "install"
+        lib = install / "lib"
+        lib.mkdir(parents=True)
+
+        def build_installed_binding_archive(
+            archive_name: str,
+            functions: set[str],
+            *,
+            extra_family_member: bool = False,
+            banned_member: bool = False,
+        ) -> Path | None:
+            for old in lib.iterdir():
+                old.unlink()
+            source = root / "r7_context_binding.c"
+            source.write_text(
+                "\n".join(
+                    f"void {function}(void) {{ }}"
+                    for function in sorted(functions)
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            member = root / BINDING_MEMBER
+            archive = lib / archive_name
+            command = ["ar", "rcs", str(archive), str(member)]
+            try:
+                subprocess.check_call(["cc", "-c", str(source), "-o", str(member)])
+                if extra_family_member:
+                    extra_source = root / "extra_family.c"
+                    extra_source.write_text(
+                        "void ninlil_r7_derive_unplanned_family_api(void) { }\n",
+                        encoding="utf-8",
+                    )
+                    extra_member = root / "extra_family.c.o"
+                    subprocess.check_call(
+                        ["cc", "-c", str(extra_source), "-o", str(extra_member)]
+                    )
+                    command.append(str(extra_member))
+                if banned_member:
+                    test_source = root / "test_seam.c"
+                    test_source.write_text(
+                        "void harmless_test_object_symbol(void) { }\n",
+                        encoding="utf-8",
+                    )
+                    test_member = root / "r7_t1b_oracle.c.o"
+                    subprocess.check_call(
+                        ["cc", "-c", str(test_source), "-o", str(test_member)]
+                    )
+                    command.append(str(test_member))
+                subprocess.check_call(command)
+            except subprocess.CalledProcessError as exc:
+                failures.append(f"Host Runtime archive mutation could not run: {exc}")
+                return None
+            return archive
+
+        runtime = build_installed_binding_archive(
+            "libninlil_runtime.a", set(EXACT_BINDING_DEFINED_APIS)
+        )
+        if runtime is not None:
+            runtime_errors = inspect_install_tree(install, private_authority)
+            if runtime_errors:
+                failures.append(f"exact Host Runtime archive baseline red: {runtime_errors}")
+
+        ordinary = build_installed_binding_archive(
+            "libordinary.a", set(EXACT_BINDING_DEFINED_APIS)
+        )
+        if ordinary is not None and not inspect_install_tree(install, private_authority):
+            failures.append("ordinary public archive inherited Host Runtime exception")
+
+        deceptive = build_installed_binding_archive(
+            "libninlil_runtime_extra.a", set(EXACT_BINDING_DEFINED_APIS)
+        )
+        if deceptive is not None and not inspect_install_tree(install, private_authority):
+            failures.append("deceptive Host Runtime archive name inherited exception")
+
+        missing = build_installed_binding_archive(
+            "libninlil_runtime.a",
+            set(EXACT_BINDING_DEFINED_APIS)
+            - {"ninlil_r7_derive_e2e_key_bundle_verified"},
+        )
+        if missing is not None and not inspect_install_tree(install, private_authority):
+            failures.append("Host Runtime missing production API did not go red")
+
+        extra = build_installed_binding_archive(
+            "libninlil_runtime.a",
+            set(EXACT_BINDING_DEFINED_APIS),
+            extra_family_member=True,
+        )
+        if extra is not None and not any(
+            "ninlil_r7_derive_unplanned_family_api" in err
+            for err in inspect_install_tree(install, private_authority)
+        ):
+            failures.append("Host Runtime second-member family API escaped exact set")
+
+        with_test_member = build_installed_binding_archive(
+            "libninlil_runtime.a",
+            set(EXACT_BINDING_DEFINED_APIS),
+            banned_member=True,
+        )
+        if with_test_member is not None and not any(
+            "r7_t1b_oracle.c.o" in err
+            for err in inspect_install_tree(install, private_authority)
+        ):
+            failures.append("Host Runtime oracle member escaped member gate")
 
     with tempfile.TemporaryDirectory(prefix="r7-t1b-install-mut-") as td:
         install = Path(td) / "install"

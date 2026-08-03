@@ -41,8 +41,23 @@ COMPONENT_CMAKE = (
     REPO_ROOT / "ports" / "esp-idf" / "components" / "ninlil" / "CMakeLists.txt"
 )
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "esp-idf.yml"
+ESP_CI_DOCKER_LAUNCHER = REPO_ROOT / "tools" / "esp_idf_ci_docker_run.sh"
 HOST_CMAKE = REPO_ROOT / "CMakeLists.txt"
 PRIVATE_AUTH = REPO_ROOT / "cmake" / "ninlil_runtime_private_sources.cmake"
+
+
+def _effective_esp_ci_workflow_text(wf_raw: str) -> str:
+    """Workflow YAML plus sole launcher body when workflow invokes it.
+
+    N6 collection executes inside tools/esp_idf_ci_docker_run.sh. Structure
+    authority follows that executed path without weakening collection rules:
+    the same N6_SU_DIR / mapfile / --esp-su-dir checks still apply to the
+    included launcher body.
+    """
+    if "esp_idf_ci_docker_run.sh" in wf_raw and ESP_CI_DOCKER_LAUNCHER.is_file():
+        launcher = ESP_CI_DOCKER_LAUNCHER.read_text(encoding="utf-8", errors="replace")
+        return wf_raw + "\n" + launcher
+    return wf_raw
 
 
 def _su_basename_for(identity: str) -> str:
@@ -1841,7 +1856,9 @@ def check_structure(
     if not workflow.is_file():
         errs.append(f"missing esp-idf workflow: {workflow}")
     else:
-        wf_raw = workflow.read_text(encoding="utf-8", errors="replace")
+        wf_file = workflow.read_text(encoding="utf-8", errors="replace")
+        # Executed N6 collection lives in the sole docker launcher when used.
+        wf_raw = _effective_esp_ci_workflow_text(wf_file)
         # Outer flags: blank strings + strip comments so comment-only args fail.
         wf_struct = _shell_structure_code(wf_raw)
         if "n6_frame_stack_gate.py" not in wf_struct:

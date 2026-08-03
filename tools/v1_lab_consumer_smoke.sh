@@ -30,6 +30,19 @@ if grep -q '^NINLIL_ENABLE_SANITIZERS:BOOL=ON' "$BUILD/CMakeCache.txt" 2>/dev/nu
   SANITIZERS=ON
 fi
 
+cache_bool() {
+  if grep -q "^${1}:BOOL=ON$" "$BUILD/CMakeCache.txt" 2>/dev/null; then
+    printf 'ON'
+  else
+    printf 'OFF'
+  fi
+}
+
+HOST_RUNTIME="$(cache_bool NINLIL_BUILD_HOST_RUNTIME)"
+FABRIC_V1="$(cache_bool NINLIL_BUILD_FABRIC_V1)"
+POSIX_TLS_V1="$(cache_bool NINLIL_BUILD_POSIX_TLS_V1)"
+POSIX_USB_SERIAL="$(cache_bool NINLIL_BUILD_POSIX_USB_SERIAL_V1)"
+
 CTEST="${CTEST:-ctest}"
 if ! command -v ctest >/dev/null 2>&1; then
   CTEST="$(cmake -LA -N "$BUILD" 2>/dev/null | awk -F= '/^CMAKE_CTEST_COMMAND:/{print $2; exit}')"
@@ -42,6 +55,10 @@ ARGS=(
   -DNINLIL_CTEST_COMMAND="$CTEST"
   -DNINLIL_BUILD_CONFIG="$CONFIG"
   -DNINLIL_INSTALL_SMOKE_SANITIZERS="$SANITIZERS"
+  -DNINLIL_SMOKE_HOST_RUNTIME_ENABLED="$HOST_RUNTIME"
+  -DNINLIL_SMOKE_FABRIC_V1_ENABLED="$FABRIC_V1"
+  -DNINLIL_SMOKE_POSIX_TLS_V1_ENABLED="$POSIX_TLS_V1"
+  -DNINLIL_SMOKE_POSIX_USB_SERIAL_ENABLED="$POSIX_USB_SERIAL"
   -DNINLIL_SMOKE_EXPECT_STATIC_SQLITE="$EXPECT_STATIC"
   -P "$ROOT/cmake/installed_posix_sqlite_consumer_smoke.cmake"
 )

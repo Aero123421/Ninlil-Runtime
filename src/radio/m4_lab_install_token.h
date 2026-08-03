@@ -2,8 +2,9 @@
 #define NINLIL_M4_LAB_INSTALL_TOKEN_H
 
 /*
- * M4 LAB authenticated Hop install token mint (docs/34 §4; item 7).
- * Mints incomplete tokens for T1c consume (item 8). Durable record in V1 allowlist.
+ * M4 LAB authenticated Hop install-token mint and single-use T1c consume
+ * adapter (docs/34 §4). The token type is intentionally opaque to T1c; the
+ * durable owner validates and commits the claim returned by this adapter.
  */
 
 #include "m4_lab_primitive.h"

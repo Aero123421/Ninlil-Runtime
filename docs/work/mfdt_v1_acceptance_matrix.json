@@ -1,0 +1,107 @@
+{
+  "schema": "mfdt_v1_acceptance_matrix_v1",
+  "status": "SPEC_ACCEPTED_DESIGN_AUTHORITY",
+  "release_policy": {
+    "default_compile": "OFF",
+    "default_runtime_admission": "OFF",
+    "allow_default_on_when": "all matrix rows status==GREEN including physical HIL",
+    "current_allows_default_on": false
+  },
+  "rows": [
+    {
+      "id": "SPEC-DESIGN-AUTHORITY",
+      "title": "ADR-0021 exact design and four-system machine authority",
+      "status": "GREEN",
+      "evidence": "2026-08-01 independent review P0=0 / P1=0 / P2=0; focused specification tests 10/10"
+    },
+    {
+      "id": "SW-NCL1-ADAPTER",
+      "title": "NCL1/NCG1 DATA adapter for MFN1 0x34..0x35 and MFDT 0x36..0x43",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-PIPELINE-AUTO",
+      "title": "Automatic split/reassembly/resume/dedupe pipeline",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-SPINE-SUBMIT",
+      "title": "spine_submit_admission MFDT bearer route + NM3S arm + family transfer",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-MFN1-NEGOTIATION",
+      "title": "Private MFN1 v1 OFFER/ACCEPT bound to Accepted control version 1 or 2",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-HOST-LAB-FULL-CU",
+      "title": "Host multi-key FULL crash CU OLD/NEW + restart",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-ESP-ADAPTER-BIND",
+      "title": "ESP store_esp binds real storage_ops; smoke bind helper",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-ESP-MAP-DRY-RUN",
+      "title": "ESP map/compile contract dry-run (lab store absent)",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-ESP-DOCKER-ELF-MAP",
+      "title": "Full docker ESP-IDF ELF+map proof with MFDT ON",
+      "status": "GREEN",
+      "evidence": "ESP-IDF v5.5.3 arm64 immutable-image build; live target-smoke/session/bearer-worker symbols; DRAM BSS 963 bytes for 49152-byte MFDT budget"
+    },
+    {
+      "id": "SW-RUNTIME-SIDECAR-BINDING",
+      "title": "Per-Runtime derived sidecar, exact NMS1 binding, collision and bootstrap CU classification",
+      "status": "GREEN",
+      "evidence": "111-vector Python/Node/C authority; real SQLite cold restart/isolation/collision; in-memory ABSENT/NEW/PARTIAL/EXTRA/THIRD, foreign-row fence, leak and teardown-order tests; fresh normal and ASan/UBSan PASS",
+      "note": "Host software sidecar bootstrap only; not public admission reconciliation or physical power-cut HIL"
+    },
+    {
+      "id": "SW-PUBLIC-RUNTIME-MFDT-E2E",
+      "title": "Installed public Runtime submit through MFDT to peer Service and target evidence",
+      "status": "RESIDUAL",
+      "note": "Scheduler, ingress demux, Foundation-sidecar reconciliation, remote apply/Receipt, and ESP exact-one remain open"
+    },
+    {
+      "id": "SW-CARRIER-FABRIC",
+      "title": "Production MFDT NCL1 DATA mapping through a real Fabric bearer in both directions",
+      "status": "GREEN",
+      "evidence": "Private/default-OFF instance-bound Foundation carrier; canonical TRANSFER_RESERVED owner-plane service; MFN1 OFFER/ACCEPT plus 4096-byte split/reassembly/publication over two real Fabric cores and bidirectional packet-links; normal and ASan/UBSan PASS in runtime_fabric_actual_e2e_test",
+      "note": "Software Fabric mapping only. Public ABI/default-ON and physical Wi-Fi/RF HIL remain explicitly unclaimed"
+    },
+    {
+      "id": "SW-CARRIER-RADIO",
+      "title": "Production MFDT mapping through the compact SX1262 radio path",
+      "status": "RESIDUAL",
+      "note": "Wire budget/profile and target compile exist; physical carrier E2E is not yet closed"
+    },
+    {
+      "id": "SW-HOST-ASAN",
+      "title": "Host normal + ASan/UBSan private suite",
+      "status": "GREEN"
+    },
+    {
+      "id": "SW-CI-GATES",
+      "title": "CI job mfdt-v1-private: OFF/tests-OFF/ON/ASan/ESP dry-run/HIL NOT_RUN",
+      "status": "GREEN"
+    },
+    {
+      "id": "HIL-POWERCUT",
+      "title": "Physical power-cut HIL every FULL boundary",
+      "status": "NOT_RUN",
+      "evidence": "tools/ninlil_hil/mfdt_v1_hil_runner.py"
+    },
+    {
+      "id": "REL-DEFAULT-ON",
+      "title": "Release policy default ON",
+      "status": "BLOCKED",
+      "note": "Blocked until every residual/public-integration row, independent review, and HIL-POWERCUT are GREEN"
+    }
+  ]
+}

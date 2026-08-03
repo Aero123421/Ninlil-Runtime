@@ -21,6 +21,12 @@
 
 static const uint8_t TEST_NAMESPACE[] = "v1-posix-platform-restart-e2e";
 
+static void set_header(uint16_t *version, uint16_t *size, size_t value)
+{
+    *version = NINLIL_ABI_VERSION;
+    *size = (uint16_t)value;
+}
+
 static void set_id(ninlil_id128_t *id, uint8_t first)
 {
     uint32_t index;
@@ -124,6 +130,10 @@ static int test_runtime_platform_restart_cycle(void)
     budget.max_state_transitions = 1u;
     budget.max_bearer_sends = 1u;
     (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
     REQUIRE(ninlil_runtime_step(runtime, &budget, &step_result) == NINLIL_OK);
     REQUIRE(ninlil_runtime_destroy(runtime) == NINLIL_OK);
     runtime = NULL;
@@ -132,6 +142,10 @@ static int test_runtime_platform_restart_cycle(void)
 
     REQUIRE(runtime_create_cycle(platform, &runtime, &validation));
     (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
     REQUIRE(ninlil_runtime_step(runtime, &budget, &step_result) == NINLIL_OK);
     REQUIRE(ninlil_runtime_destroy(runtime) == NINLIL_OK);
 

@@ -220,8 +220,9 @@ function(ninlil_sqlite3_select_test_interpose_backend)
     set(NINLIL_TEST_SQLITE_INTERPOSE_BACKEND "${_backend}" PARENT_SCOPE)
 endfunction()
 
-# Map source/binary absolute roots out of object/archive metadata (Debug too).
-# GCC/Clang only; unsupported compilers fail when the port is enabled.
+# Map source/binary absolute roots out of installed object/archive metadata
+# (Debug too). GCC/Clang only; unsupported compilers fail when an installable
+# archive target uses this function.
 #
 # Shipping artifact hygiene (absolute path needles = 0) is required for
 # non-sanitizer production builds. Sanitizer archives are NOT ship artifacts:
@@ -229,10 +230,10 @@ endfunction()
 # rewrite. Installed-consumer smoke skips only archive/object hygiene when
 # NINLIL_ENABLE_SANITIZERS is explicitly ON (no compiler guessing). Relpath
 # compile launchers (bash/Python/realpath) are intentionally not used.
-function(ninlil_posix_sqlite_apply_path_remap target)
+function(ninlil_apply_installed_archive_path_remap target)
     if(NOT (CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"))
         message(FATAL_ERROR
-            "POSIX SQLite storage requires GNU or Clang for "
+            "Installable target '${target}' requires GNU or Clang for "
             "-ffile-prefix-map/-fdebug-prefix-map path hygiene on installed "
             "archives (compiler='${CMAKE_C_COMPILER_ID}')")
     endif()
@@ -254,8 +255,8 @@ function(ninlil_posix_sqlite_apply_path_remap target)
     if(NOT NINLIL_HAVE_FFILE_PREFIX_MAP OR NOT NINLIL_HAVE_FDEBUG_PREFIX_MAP)
         message(FATAL_ERROR
             "Compiler lacks -ffile-prefix-map/-fdebug-prefix-map required to "
-            "keep installed POSIX SQLite archives free of absolute source/build "
-            "paths (even for Debug). Upgrade GCC/Clang or disable the port.")
+            "keep installed target '${target}' free of absolute source/build "
+            "paths (even for Debug). Upgrade GCC/Clang or disable that target.")
     endif()
     if(NOT NINLIL_HAVE_GNO_RECORD_GCC_SWITCHES)
         message(FATAL_ERROR
@@ -317,8 +318,13 @@ function(ninlil_posix_sqlite_apply_path_remap target)
         set(_hygiene_msg "prefix-map")
     endif()
     message(STATUS
-        "POSIX SQLite path hygiene: ${_hygiene_msg} "
+        "Installed archive '${target}' path hygiene: ${_hygiene_msg} "
         "(compiler=${CMAKE_C_COMPILER_ID}; no Debug strip; "
         "sanitizer archives are non-ship — hygiene scan gated by "
         "NINLIL_ENABLE_SANITIZERS)")
+endfunction()
+
+# Compatibility wrapper for the existing SQLite target call site.
+function(ninlil_posix_sqlite_apply_path_remap target)
+    ninlil_apply_installed_archive_path_remap(${target})
 endfunction()

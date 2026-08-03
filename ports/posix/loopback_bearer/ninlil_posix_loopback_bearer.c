@@ -69,6 +69,22 @@ struct ninlil_posix_loopback_bearer {
     size_t receive_body_offset;
 };
 
+static int socket_path_copy(char *destination, size_t destination_size,
+    const char *source)
+{
+    size_t length;
+
+    if (destination == NULL || destination_size == 0u || source == NULL) {
+        return 0;
+    }
+    length = strlen(source);
+    if (length == 0u || length >= destination_size) {
+        return 0;
+    }
+    (void)memcpy(destination, source, length + 1u);
+    return 1;
+}
+
 static int id_is_zero(const ninlil_id128_t *id)
 {
     uint32_t index;
@@ -400,21 +416,24 @@ static int connect_socket(ninlil_posix_loopback_bearer_t *bearer)
     struct sockaddr_un addr;
     int fd;
 
-    if (bearer->config.socket_path == NULL || bearer->config.socket_path[0] == '\0') {
+    if (bearer == NULL || bearer->config.socket_path == NULL) {
         return 0;
     }
     (void)memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    (void)snprintf(addr.sun_path, sizeof(addr.sun_path), "%s",
-        bearer->config.socket_path);
+    if (!socket_path_copy(
+            addr.sun_path, sizeof(addr.sun_path), bearer->config.socket_path)) {
+        return 0;
+    }
+    if (bearer->config.role == NINLIL_POSIX_LOOPBACK_BEARER_ROLE_SERVER
+        && bearer->socket_fd >= 0) {
+        return 1;
+    }
     fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) {
         return 0;
     }
     if (bearer->config.role == NINLIL_POSIX_LOOPBACK_BEARER_ROLE_SERVER) {
-        if (bearer->socket_fd >= 0) {
-            return 1;
-        }
         (void)unlink(bearer->config.socket_path);
         if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
             (void)close(fd);
@@ -731,8 +750,12 @@ ninlil_posix_loopback_bearer_t *ninlil_posix_loopback_bearer_create(
     const ninlil_posix_loopback_bearer_config_t *config)
 {
     ninlil_posix_loopback_bearer_t *bearer;
+    struct sockaddr_un address;
 
-    if (config == NULL || config->socket_path == NULL) {
+    if (config == NULL || config->socket_path == NULL
+        || strlen(config->socket_path) == 0u
+        || strlen(config->socket_path) >= sizeof(address.sun_path)
+        || strlen(config->socket_path) >= sizeof(bearer->owned_socket_path)) {
         return NULL;
     }
     bearer = (ninlil_posix_loopback_bearer_t *)calloc(1u, sizeof(*bearer));
@@ -740,8 +763,11 @@ ninlil_posix_loopback_bearer_t *ninlil_posix_loopback_bearer_create(
         return NULL;
     }
     bearer->config = *config;
-    (void)snprintf(bearer->owned_socket_path, sizeof(bearer->owned_socket_path),
-        "%s", config->socket_path);
+    if (!socket_path_copy(bearer->owned_socket_path,
+            sizeof(bearer->owned_socket_path), config->socket_path)) {
+        free(bearer);
+        return NULL;
+    }
     bearer->config.socket_path = bearer->owned_socket_path;
     bearer->socket_fd = -1;
     bearer->peer_fd = -1;

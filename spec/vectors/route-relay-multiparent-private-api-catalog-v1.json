@@ -1,0 +1,238 @@
+{
+  "api_version": 1,
+  "claims_implementation": 0,
+  "parent_op_count": 10,
+  "parent_ops": [
+    {
+      "max_parents": 8,
+      "name": "ninlil_parent_set_install",
+      "owner": "parent_set_install",
+      "parent_ids_inline": 1,
+      "parent_set_digest_bytes": 32,
+      "req": "ninlil_parent_set_install_req_v1",
+      "req_size": 240,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    },
+    {
+      "name": "ninlil_parent_owner_prepare",
+      "owner": "handoff_participant",
+      "req": "ninlil_parent_owner_prepare_req_v1",
+      "req_size": 464,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32",
+      "workspace_rule": "new_assignment_noa1[400] full sealed; scope+token bind before S3"
+    },
+    {
+      "name": "ninlil_parent_owner_fence_proof",
+      "owner": "old_owner_or_authority",
+      "req": "ninlil_parent_owner_fence_proof_req_v1",
+      "req_size": 96,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    },
+    {
+      "name": "ninlil_parent_authority_commit",
+      "owner": "authority_writer",
+      "req": "ninlil_parent_authority_commit_req_v1",
+      "req_size": 96,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    },
+    {
+      "name": "ninlil_parent_owner_activate",
+      "owner": "new_owner",
+      "req": "ninlil_parent_owner_activate_req_v1",
+      "req_size": 80,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    },
+    {
+      "name": "ninlil_parent_endpoint_observe",
+      "observed_parent_set_digest_bytes": 32,
+      "owner": "endpoint_routing",
+      "req": "ninlil_parent_endpoint_observe_req_v1",
+      "req_size": 80,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    },
+    {
+      "boundary": "participant_local_sole_owner_of_own_store",
+      "handoff_step": "S6",
+      "name": "ninlil_parent_owner_retire",
+      "owner": "old_owner",
+      "req": "ninlil_parent_owner_retire_req_v1",
+      "req_size": 80,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32",
+      "sole_caller_role": "old_owner",
+      "wrong_caller_status": "NOT_OWNER"
+    },
+    {
+      "name": "ninlil_parent_query",
+      "owner": "reader",
+      "req": "ninlil_parent_query_req_v1",
+      "req_size": 48,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    },
+    {
+      "name": "ninlil_parent_recover_commit_unknown",
+      "owner": "durable_owner",
+      "req": "ninlil_parent_recover_cu_req_v1",
+      "req_size": 80,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    },
+    {
+      "name": "ninlil_parent_diagnostics_snapshot",
+      "owner": "diagnostics",
+      "req": "ninlil_parent_diagnostics_req_v1",
+      "req_size": 32,
+      "result_size": 128,
+      "return_type": "ninlil_parent_status_u32"
+    }
+  ],
+  "parent_result_bytes": 128,
+  "parent_status_count": 21,
+  "preamble_bytes": 16,
+  "private_v2_api_version": 2,
+  "private_v2_op_count": 6,
+  "private_v2_ops": [
+    {
+      "name": "ninlil_parent_owner_prepare_v2",
+      "old_tuple_bytes": 104,
+      "owner": "handoff_participant",
+      "req": "ninlil_parent_owner_prepare_req_v2",
+      "req_size": 568
+    },
+    {
+      "name": "ninlil_parent_owner_fence_proof_v2",
+      "owner": "old_owner_or_authority",
+      "proof_kinds": [
+        "EXPLICIT_RESIGN",
+        "TRUSTED_EXACT_LEASE_EXPIRY"
+      ],
+      "req": "ninlil_parent_owner_fence_proof_req_v2",
+      "req_size": 248
+    },
+    {
+      "bundle_expected_witness_bytes": 296,
+      "name": "ninlil_parent_authority_commit_v2",
+      "owner": "authority_writer",
+      "req": "ninlil_parent_authority_commit_req_v2",
+      "req_size": 640
+    },
+    {
+      "caller_proof_is_authority": 0,
+      "name": "ninlil_rrmp_core_attempt_reclaim_v2",
+      "owner": "durable_owner",
+      "req": "ninlil_rrmp_attempt_reclaim_req_v2",
+      "req_size": 64
+    },
+    {
+      "fence_domain": "authority_global",
+      "name": "ninlil_rrmp_core_authority_writer_conflict_v2",
+      "owner": "authority_observer",
+      "req": "ninlil_rrmp_authority_writer_conflict_req_v2",
+      "req_size": 104
+    },
+    {
+      "fence_domain": "scope_local",
+      "name": "ninlil_rrmp_core_scope_parent_anomaly_v2",
+      "owner": "parent_observer",
+      "req": "ninlil_rrmp_scope_parent_anomaly_req_v2",
+      "req_size": 96
+    }
+  ],
+  "public_abi": 0,
+  "route_op_count": 10,
+  "route_ops": [
+    {
+      "name": "ninlil_route_install_batch",
+      "owner": "install_owner",
+      "req": "ninlil_route_install_batch_req_v1",
+      "req_size": "56+256*N",
+      "req_size_n1": 312,
+      "req_size_n8": 2104,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_activate",
+      "owner": "install_owner",
+      "req": "ninlil_route_activate_req_v1",
+      "req_size": 64,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_begin_drain",
+      "owner": "install_owner",
+      "req": "ninlil_route_begin_drain_req_v1",
+      "req_size": 80,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_retire",
+      "owner": "install_owner",
+      "req": "ninlil_route_retire_req_v1",
+      "req_size": 64,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_query",
+      "owner": "reader",
+      "req": "ninlil_route_query_req_v1",
+      "req_size": 48,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_forward_admit",
+      "owner": "forward_owner",
+      "req": "ninlil_route_forward_admit_req_v1",
+      "req_size": 128,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_forward_complete",
+      "owner": "forward_owner",
+      "req": "ninlil_route_forward_complete_req_v1",
+      "req_size": 64,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_cancel_drain",
+      "owner": "install_owner",
+      "req": "ninlil_route_cancel_drain_req_v1",
+      "req_size": 48,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_recover_commit_unknown",
+      "owner": "install_owner",
+      "req": "ninlil_route_recover_cu_req_v1",
+      "req_size": 80,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    },
+    {
+      "name": "ninlil_route_diagnostics_snapshot",
+      "owner": "diagnostics",
+      "req": "ninlil_route_diagnostics_req_v1",
+      "req_size": 32,
+      "result_size": 128,
+      "return_type": "ninlil_route_status_u32"
+    }
+  ],
+  "route_result_bytes": 128,
+  "route_status_count": 21,
+  "total_op_count": 20,
+  "v1_handoff_mutation_status": "UNSUPPORTED_API"
+}

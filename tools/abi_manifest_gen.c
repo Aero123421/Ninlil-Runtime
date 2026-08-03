@@ -1,4 +1,7 @@
 #include <ninlil/runtime.h>
+#include <ninlil/fabric_v1.h>
+#include <ninlil/composition_v1.h>
+#include <ninlil/posix_tls_v1.h>
 
 #include <inttypes.h>
 #include <stddef.h>
@@ -7,9 +10,9 @@
 #include <string.h>
 
 #define MANIFEST_FORMAT_VERSION 1u
-#define NINLIL_ABI_MANIFEST_EXPECTED_CONSTANTS 278u
-#define NINLIL_ABI_MANIFEST_EXPECTED_STRUCTS 53u
-#define NINLIL_ABI_MANIFEST_EXPECTED_FIELDS 526u
+#define NINLIL_ABI_MANIFEST_EXPECTED_CONSTANTS 385u
+#define NINLIL_ABI_MANIFEST_EXPECTED_STRUCTS 71u
+#define NINLIL_ABI_MANIFEST_EXPECTED_FIELDS 731u
 
 static size_t g_manifest_constant_count;
 static size_t g_manifest_struct_count;
@@ -87,6 +90,11 @@ static void emit_constant(FILE *out, const char *name, uint64_t value)
     do { \
         fprintf(out, "struct %s size=%zu\n", #type, sizeof(type)); \
         ++g_manifest_struct_count; \
+    } while (0);
+
+#define MANIFEST_STRUCT_ALIGN(type) \
+    do { \
+        fprintf(out, "align %s value=%zu\n", #type, _Alignof(type)); \
     } while (0);
 
 #define MANIFEST_STRUCT_END(type) ((void)0);

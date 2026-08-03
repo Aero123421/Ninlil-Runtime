@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ninlil.dev/schema/hil/ninlil-hil-resources-v1.schema.json",
+  "title": "Ninlil HIL resources v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "campaign_id", "run_id", "resources"],
+  "properties": {
+    "schema": {"const": "ninlil-hil-resources-v1"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resource_id",
+          "kind",
+          "identity",
+          "verification",
+          "attributes"
+        ],
+        "properties": {
+          "resource_id": {"$ref": "#/$defs/id"},
+          "kind": {
+            "enum": [
+              "target_board", "storage_media", "power_fixture", "serial_link",
+              "firmware", "host", "other"
+            ]
+          },
+          "identity": {"$ref": "#/$defs/text"},
+          "verification": {"const": "UNVERIFIED_DECLARATION"},
+          "attributes": {
+            "type": "object",
+            "maxProperties": 64,
+            "additionalProperties": {"$ref": "#/$defs/jsonValue"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "text": {"type": "string", "minLength": 1, "maxLength": 256},
+    "jsonValue": {
+      "anyOf": [
+        {"type": "null"}, {"type": "boolean"}, {"type": "integer"},
+        {"type": "number"}, {"type": "string", "maxLength": 4096},
+        {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/jsonValue"}},
+        {"type": "object", "maxProperties": 256, "additionalProperties": {"$ref": "#/$defs/jsonValue"}}
+      ]
+    }
+  }
+}

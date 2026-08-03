@@ -4,8 +4,9 @@
 /*
  * A2: ESP32-S3 USB OTG Device CDC-ACM byte-stream adapter (production-private).
  *
- * Implements C1 (src/transport/byte_stream.h) under ports/esp-idf.
- * Uses pinned esp_tinyusb managed component. No public include/ninlil ABI.
+ * Implements C1 (include/ninlil/byte_stream.h) under ports/esp-idf.
+ * Uses pinned esp_tinyusb managed component. Public consumer surface is
+ * ninlil/byte_stream.h + this header only — not src/transport root includes.
  * No product-specific vocabulary. No TinyUSB types in the C1 header.
  *
  * Lifecycle (docs/23 §3.1 / §3.4 / C1):
@@ -76,7 +77,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "byte_stream.h"
+#include "ninlil/byte_stream.h"
 
 #ifdef __cplusplus
 extern "C" {

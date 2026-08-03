@@ -54,6 +54,8 @@ Ninlilへ再利用する部品は、public contractとtestを満たす形へ移�
 | calibration/policy/template revision | `ConfigRevision`候補 | stage/validate/commit/rollback |
 | QR設置/移設/撤去 | Management lifecycle API | enrollment/binding/commission/drain/remove/reuse |
 
+上表の `LatestState` / `MeasurementBatch` は **製品契約マッピング上の概念名**です。M1a 公開 enum では `LATEST_STATE_RESERVED` / `MEASUREMENT_RESERVED` として `service_register = NINLIL_E_UNSUPPORTED`（[ADR-0024](adr/0024-m1a-public-family-matrix-freeze.md)）。現行 V1 LAB の display / leak は **display snapshot event (EventFact)** / **leak measurement event (EventFact)** で代行し、reserved family の first-class 有効化ではありません。
+
 「漏水なら表示を使用不可にする」はNinlilの責務ではありません。application rule engineがEventFactを受け、別のDesiredStateCommandを生成します。
 
 ## Display flow

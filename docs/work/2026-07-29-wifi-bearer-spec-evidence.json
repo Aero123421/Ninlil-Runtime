@@ -1,0 +1,103 @@
+{
+  "acceptance_id_count": 79,
+  "adr": "docs/adr/0018-wifi-bearer.md",
+  "claims": {
+    "P0_closure_GO": false,
+    "RELEASE_SUPPORTED": false,
+    "SPEC_ACCEPTED": false,
+    "implementation": false,
+    "independent_review_GO": false
+  },
+  "coverage": {
+    "c11": {
+      "donor_policy": "full cross-product victim\u00d7donor with donor!=victim (79\u00d778)",
+      "donor_rejects": 6162,
+      "executed_ids": 79,
+      "stdout_tail": [
+        "wifi_bearer_spec donor_self_test rejects=6162",
+        "wifi_bearer_spec_vector_test: PASS executed_ids=79 donor_rejects=6162"
+      ]
+    },
+    "inventory": {
+      "acceptance_ids": 79,
+      "digest_leaves": 96,
+      "integer_leaves": 386,
+      "object_paths": 117,
+      "scalar_leaves": 1078,
+      "string_leaves": 692
+    },
+    "node": {
+      "digest_leaves": 96,
+      "donor_policy": "one donor body per victim id (not full cross-product)",
+      "donor_rejects": 79,
+      "ids": 79,
+      "integer_leaves": 386,
+      "object_paths": 117,
+      "scalar_leaves": 1078,
+      "stdout_tail": "wifi bearer Node gate self-test: OK ids=79 donor_rejects=79 extra_mutations=12\nwifi bearer Node gate exhaustive structure: OK object_paths=117 unknown_accepted=0 integer_leaves=386 bool_accepted=0 int_as_str_accepted=0 string_leaves=692 str_as_int_accepted=0 digest_leaves=96 digest_flip_accepted=0\nwifi bearer Node gate exhaustive scalar-value: OK leaves=1078 accepted=0 allowlist=0\nwifi bearer Node gate self-test extra: nfl1/xwd1/bool/dup-key/unicode/bigint/assoc/kat/meta OK",
+      "string_leaves": 692
+    },
+    "python": {
+      "digest_leaves": 96,
+      "donor_policy": "one donor body per victim id (not full cross-product)",
+      "donor_rejects": 79,
+      "ids": 79,
+      "integer_leaves": 386,
+      "object_paths": 117,
+      "scalar_leaves": 1078,
+      "stdout_tail": "wifi bearer Python gate self-test: OK ids=79 donor_rejects=79 extra_mutations=12\nwifi bearer Python gate exhaustive structure: OK object_paths=117 unknown_accepted=0 integer_leaves=386 bool_accepted=0 int_as_str_accepted=0 string_leaves=692 str_as_int_accepted=0 digest_leaves=96 digest_flip_accepted=0\nwifi bearer Python gate exhaustive scalar-value: OK leaves=1078 accepted=0 allowlist=0\nwifi bearer Python gate self-test extra: nfl1/xwd1/bool/dup-key/assoc-bind/kat/meta/nested OK",
+      "string_leaves": 692
+    }
+  },
+  "coverage_fragment_path": "docs/work/2026-07-29-wifi-bearer-spec-coverage.fragment.md",
+  "digest_leaf_count": 96,
+  "executed_ids": 79,
+  "exhaustive": {
+    "bool_as_int_accepted": 0,
+    "descriptive_scalar_allowlist_size": 0,
+    "digest_flip_accepted": 0,
+    "int_as_str_accepted": 0,
+    "scalar_value_campaign_accepted": 0,
+    "scalar_value_campaign_leaves": 1078,
+    "str_as_int_accepted": 0,
+    "unknown_key_accepted": 0
+  },
+  "gates": {
+    "generator_check_exit": 0,
+    "generator_check_stdout": "fresh /Users/dt/job/LoRa/ninlil-d3s3-implementation/spec/vectors/wifi-bearer-spec-v1.json sha256=38d8050206d8de832dfe9395f6f39b99e1119eb06fa60ee2112af2cd375b25ff",
+    "node_check_exit": 0,
+    "node_check_stdout": "wifi bearer Node gate: PASS executed=79",
+    "node_self_test_exit": 0,
+    "node_self_test_stdout_tail": "wifi bearer Node gate self-test: OK ids=79 donor_rejects=79 extra_mutations=12\nwifi bearer Node gate exhaustive structure: OK object_paths=117 unknown_accepted=0 integer_leaves=386 bool_accepted=0 int_as_str_accepted=0 string_leaves=692 str_as_int_accepted=0 digest_leaves=96 digest_flip_accepted=0\nwifi bearer Node gate exhaustive scalar-value: OK leaves=1078 accepted=0 allowlist=0\nwifi bearer Node gate self-test extra: nfl1/xwd1/bool/dup-key/unicode/bigint/assoc/kat/meta OK",
+    "python_check_exit": 0,
+    "python_check_stdout": "wifi bearer Python gate: PASS executed=79",
+    "python_self_test_exit": 0,
+    "python_self_test_stdout_tail": "wifi bearer Python gate self-test: OK ids=79 donor_rejects=79 extra_mutations=12\nwifi bearer Python gate exhaustive structure: OK object_paths=117 unknown_accepted=0 integer_leaves=386 bool_accepted=0 int_as_str_accepted=0 string_leaves=692 str_as_int_accepted=0 digest_leaves=96 digest_flip_accepted=0\nwifi bearer Python gate exhaustive scalar-value: OK leaves=1078 accepted=0 allowlist=0\nwifi bearer Python gate self-test extra: nfl1/xwd1/bool/dup-key/assoc-bind/kat/meta/nested OK"
+  },
+  "integer_leaf_count": 386,
+  "machine_vector_false_green_surface": {
+    "bool_as_int": "closed 0/386 accepted (Py+Node exhaustive)",
+    "c11": "semantic ID contracts + KAT + inventory macros + document SHA pin",
+    "digest_preimage": "closed 0/96 digest-flip accepted (Py+Node exhaustive)",
+    "donor_c11": "donor_rejects=6162 (full cross-product victim\u00d7donor with donor!=victim (79\u00d778))",
+    "donor_node": "donor_rejects=79 (one donor body per victim id (not full cross-product))",
+    "donor_python": "donor_rejects=79 (one donor body per victim id (not full cross-product))",
+    "int_as_str_str_as_int": "closed 0 via type inventory path-set pins",
+    "recursive_unknown_key": "closed 0/117 accepted (Py+Node exhaustive)",
+    "scalar_value_campaign": "closed 0/1078 type-preserving accepted (canonical document model SHA)"
+  },
+  "object_path_count": 117,
+  "scalar_leaf_count": 1078,
+  "schema": "ninlil.wifi.bearer.spec.v1",
+  "status": "PROPOSED_CANDIDATE_NOT_SPEC_ACCEPTED",
+  "still_blocking_full_adr_spec_accepted": [
+    "ADR-0018 SPEC_ACCEPTED gate items 2\u20138 beyond real-path machine vectors (TLS cert/NRV1/NCM1/NWS1/\u2026 KAT corpus, S1\u2013S6 sync, independent security review)",
+    "No POSIX TCP/TLS host implementation (private/feature-gated, default OFF)",
+    "No ESP STA/driver/HIL path",
+    "No CLOSURE_ROOTS_V1 final-ELF / target archive fingerprints"
+  ],
+  "string_leaf_count": 692,
+  "vector_document_model_sha256_hex": "38d8050206d8de832dfe9395f6f39b99e1119eb06fa60ee2112af2cd375b25ff",
+  "vector_path": "spec/vectors/wifi-bearer-spec-v1.json",
+  "vector_sha256_hex": "38d8050206d8de832dfe9395f6f39b99e1119eb06fa60ee2112af2cd375b25ff"
+}

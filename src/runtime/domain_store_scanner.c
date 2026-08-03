@@ -5,6 +5,7 @@
 #include "domain_store_d3s1.h"
 #include "domain_store_d3s2.h"
 #include "domain_store_d3s3.h"
+#include "domain_store_d3s4.h"
 #include "v1_durable_allowlist.h"
 
 #include <stdint.h>
@@ -122,6 +123,20 @@ static int is_exact_family14_catalog_key(
         }
     }
     return 0;
+}
+
+static int is_exact_family34_catalog_key(
+    const uint8_t *key,
+    uint32_t length)
+{
+    if (key == NULL || length != 10u
+        || memcmp(key, CURRENT_ROOT, sizeof(CURRENT_ROOT)) != 0) {
+        return 0;
+    }
+    if (key[8] == 0x03u && key[9] >= 1u && key[9] <= 4u) {
+        return 1;
+    }
+    return key[8] == 0x04u && key[9] >= 1u && key[9] <= 11u;
 }
 
 /*
@@ -325,6 +340,33 @@ static int begin_profiled_d3s3_alias_ok(
     return 1;
 }
 
+static int begin_profiled_d3s4_alias_ok(
+    const ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_storage_handle_t *inout_handle,
+    const ninlil_domain_scan_workspace_t *workspace,
+    const ninlil_model_runtime_store_binding_t *candidate,
+    const ninlil_domain_scan_d3s4_context_t *context)
+{
+    const size_t context_bytes = sizeof(*context);
+
+    if (!begin_profiled_alias_ok(
+            session, storage, inout_handle, workspace, candidate)) {
+        return 0;
+    }
+    if (!ranges_are_disjoint(session, sizeof(*session), context, context_bytes)
+        || !ranges_are_disjoint(
+            workspace, sizeof(*workspace), context, context_bytes)
+        || !ranges_are_disjoint(storage, sizeof(*storage), context, context_bytes)
+        || !ranges_are_disjoint(
+            inout_handle, sizeof(*inout_handle), context, context_bytes)
+        || !ranges_are_disjoint(
+            candidate, sizeof(*candidate), context, context_bytes)) {
+        return 0;
+    }
+    return 1;
+}
+
 /*
  * out_result must not overlap session, bound workspace, bound ops object, or
  * bound handle slot. Validated before any cleanup/output mutation.
@@ -349,6 +391,15 @@ static int result_alias_ok(
             storage, sizeof(*storage), out_result, result_bytes)
         || !ranges_are_disjoint(
             handle_slot, sizeof(*handle_slot), out_result, result_bytes)) {
+        return 0;
+    }
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S4
+        && session->bound_d3s4_context != NULL
+        && !ranges_are_disjoint(
+            session->bound_d3s4_context,
+            sizeof(*session->bound_d3s4_context),
+            out_result,
+            result_bytes)) {
         return 0;
     }
     return 1;
@@ -517,6 +568,8 @@ static void publish_result(
     out_result->future_profile_candidate = session->future_profile_candidate;
     out_result->profile_get_present_mask = session->profile_get_present_mask;
     out_result->family14_iter_seen_mask = session->family14_iter_seen_mask;
+    out_result->d3s4_disposition_present = 0u;
+    out_result->d3s4_disposition = 0u;
 }
 
 static int digest_is_zero_bytes(
@@ -940,6 +993,11 @@ static int d3_pass_internal_active(const ninlil_domain_scan_session_t *session)
         return session->bound_d3s3_context->pass_kind
             == NINLIL_DOMAIN_SCAN_D3S3_PASS_INTERNAL;
     }
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S4
+        && session->bound_d3s4_context != NULL) {
+        return session->bound_d3s4_context->pass_kind
+            == NINLIL_DOMAIN_SCAN_D3S4_PASS_INTERNAL;
+    }
     return 0;
 }
 
@@ -958,8 +1016,10 @@ static int row_is_v1_allowlisted_spine_marker(
     if (status != NINLIL_OK) {
         return 0;
     }
-    return kind >= NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER
-        && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
+    return (kind >= NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER
+               && kind <= NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION)
+        || kind == NINLIL_V1_DURABLE_KIND_SPINE_BEARER_STATE
+        || kind == NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE;
 }
 
 static ninlil_status_t skip_allowlisted_spine_row(
@@ -1091,6 +1151,38 @@ static ninlil_status_t process_ok_row(
                 return class_status;
             }
         }
+        if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S4
+            && session->bound_d3s4_context != NULL
+            && session->profile_exact_active != 0u
+            && session->profile_mismatch == 0u
+            && session->future_profile_candidate == 0u
+            /*
+             * Mode34 Arm C deliberately consumes every current family3/4
+             * counter/capacity row.  Those 15 rows are also the profiled
+             * begin catalog; their D2 reconciliation role does not remove
+             * their S4 semantic role.  Modes31..33 and family1/2 retain the
+             * ordinary catalog exclusion.
+             */
+            && (!is_exact_family14_catalog_key(workspace->key, key_length)
+                || (session->bound_d3s4_context->focus_mode == 34u
+                    && is_exact_family34_catalog_key(
+                        workspace->key, key_length)))
+            && !is_family14_prefix_noncatalog(workspace->key, key_length)) {
+            /*
+             * S4 internal W uses the same lex-commit rule as S3: current
+             * iterator key is committed before a same-snapshot exact_get may
+             * overwrite the shared value buffer. Public D2 counters remain
+             * frozen for every internal pass.
+             */
+            (void)memcpy(workspace->previous_key, workspace->key, key_length);
+            session->previous_key_length = key_length;
+            session->has_previous = 1u;
+            class_status = ninlil_domain_scan_d3s4_on_row(
+                session, workspace, key_length, value_length, typed_current_ok);
+            if (class_status != NINLIL_OK) {
+                return class_status;
+            }
+        }
 
         /*
          * Pass-local previous_key only. S2 and S3 both freeze ok_row_count /
@@ -1108,7 +1200,8 @@ static ninlil_status_t process_ok_row(
         if (session->profile_reconciliation != 0u) {
             class_status = reconcile_catalog_row(
                 session, workspace, key_length, value_length);
-        } else if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3) {
+        } else if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3
+            || session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S4) {
             /*
              * S3 REP1: family14 seeded complete at begin (B0). Catalog visits
              * during BASELINE W are budget/lex only — no re-count / re-bit.
@@ -1168,7 +1261,8 @@ static ninlil_status_t process_ok_row(
      * during BASELINE W. PASS_INTERNAL freezes both via the internal branch
      * above (no ok_row increment). D2/S1/S2 keep class-based current count.
      */
-    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3) {
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S3
+        || session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S4) {
         session->current_domain_key_count = session->ok_row_count;
     }
     return NINLIL_OK;
@@ -1473,7 +1567,9 @@ static ninlil_status_t begin_profiled_common(
     ninlil_domain_scan_d3s2_context_t *d3s2_context,
     uint8_t d3s2_mode,
     ninlil_domain_scan_d3s3_context_t *d3s3_context,
-    uint8_t d3s3_mode)
+    uint8_t d3s3_mode,
+    ninlil_domain_scan_d3s4_context_t *d3s4_context,
+    uint8_t d3s4_mode)
 {
     ninlil_status_t status;
     int nbound = 0;
@@ -1487,6 +1583,9 @@ static ninlil_status_t begin_profiled_common(
         nbound += 1;
     }
     if (d3s3_context != NULL) {
+        nbound += 1;
+    }
+    if (d3s4_context != NULL) {
         nbound += 1;
     }
     if (nbound > 1) {
@@ -1531,6 +1630,14 @@ static ninlil_status_t begin_profiled_common(
         d3s3_context->pass_kind = NINLIL_DOMAIN_SCAN_D3S3_PASS_BASELINE;
         d3s3_context->phase = NINLIL_DOMAIN_SCAN_D3S3_PHASE_BASELINE;
     }
+    if (d3s4_context != NULL) {
+        session->bound_d3s4_context = d3s4_context;
+        session->bound_d3_kind = NINLIL_DOMAIN_SCAN_D3_KIND_S4;
+        (void)memset(d3s4_context, 0, sizeof(*d3s4_context));
+        d3s4_context->focus_mode = d3s4_mode;
+        d3s4_context->pass_kind = NINLIL_DOMAIN_SCAN_D3S4_PASS_BASELINE;
+        d3s4_context->phase = NINLIL_DOMAIN_SCAN_D3S4_PHASE_BASELINE;
+    }
     (void)memcpy(&workspace->candidate, candidate, sizeof(workspace->candidate));
 
     status = begin_read_only_txn(session, storage, inout_handle);
@@ -1566,7 +1673,7 @@ static ninlil_status_t begin_profiled_common(
      * re-reconcile or double-count catalog rows.
      * D2 / D3-S1 / D3-S2 begin paths are unchanged.
      */
-    if (d3s3_context != NULL) {
+    if (d3s3_context != NULL || d3s4_context != NULL) {
         if (session->profile_get_present_mask
             == NINLIL_DOMAIN_SCAN_PROFILE_ALL_MASK) {
             session->family14_iter_seen_mask =
@@ -1602,7 +1709,7 @@ ninlil_status_t ninlil_domain_scan_begin_profiled(
 
     return begin_profiled_common(
         session, storage, inout_handle, workspace, candidate, NULL, 0u, NULL,
-        0u, NULL, 0u);
+        0u, NULL, 0u, NULL, 0u);
 }
 
 ninlil_status_t ninlil_domain_scan_begin_profiled_d3s1(
@@ -1635,7 +1742,7 @@ ninlil_status_t ninlil_domain_scan_begin_profiled_d3s1(
 
     return begin_profiled_common(
         session, storage, inout_handle, workspace, candidate, context, mode,
-        NULL, 0u, NULL, 0u);
+        NULL, 0u, NULL, 0u, NULL, 0u);
 }
 
 ninlil_status_t ninlil_domain_scan_begin_profiled_d3s2(
@@ -1667,7 +1774,7 @@ ninlil_status_t ninlil_domain_scan_begin_profiled_d3s2(
 
     return begin_profiled_common(
         session, storage, inout_handle, workspace, candidate, NULL, 0u, context,
-        mode, NULL, 0u);
+        mode, NULL, 0u, NULL, 0u);
 }
 
 ninlil_status_t ninlil_domain_scan_begin_profiled_d3s3(
@@ -1699,7 +1806,39 @@ ninlil_status_t ninlil_domain_scan_begin_profiled_d3s3(
 
     return begin_profiled_common(
         session, storage, inout_handle, workspace, candidate, NULL, 0u, NULL,
-        0u, context, mode);
+        0u, context, mode, NULL, 0u);
+}
+
+ninlil_status_t ninlil_domain_scan_begin_profiled_d3s4(
+    ninlil_domain_scan_session_t *session,
+    const ninlil_storage_ops_t *storage,
+    ninlil_storage_handle_t *inout_handle,
+    ninlil_domain_scan_workspace_t *workspace,
+    const ninlil_model_runtime_store_binding_t *candidate,
+    uint8_t mode,
+    ninlil_domain_scan_d3s4_context_t *context)
+{
+    if (session == NULL || workspace == NULL || inout_handle == NULL
+        || candidate == NULL || context == NULL
+        || !storage_ops_required_nonnull(storage)
+        || *inout_handle == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (mode < NINLIL_DOMAIN_SCAN_D3S4_MODE_MIN
+        || mode > NINLIL_DOMAIN_SCAN_D3S4_MODE_MAX) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (!begin_profiled_d3s4_alias_ok(
+            session, storage, inout_handle, workspace, candidate, context)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_IDLE) {
+        return NINLIL_E_INVALID_STATE;
+    }
+
+    return begin_profiled_common(
+        session, storage, inout_handle, workspace, candidate, NULL, 0u, NULL,
+        0u, NULL, 0u, context, mode);
 }
 
 ninlil_status_t ninlil_domain_scan_reopen_zero_prefix_iter(
@@ -1918,6 +2057,9 @@ ninlil_status_t ninlil_domain_scan_advance(
                 } else if (session->bound_d3_kind
                     == NINLIL_DOMAIN_SCAN_D3_KIND_S3) {
                     h2 = ninlil_domain_scan_d3s3_on_exhausted(session);
+                } else if (session->bound_d3_kind
+                    == NINLIL_DOMAIN_SCAN_D3_KIND_S4) {
+                    h2 = ninlil_domain_scan_d3s4_on_exhausted(session);
                 }
                 if (h2 != NINLIL_OK) {
                     return h2;
@@ -2098,8 +2240,11 @@ ninlil_status_t ninlil_domain_scan_exact_get(
     ninlil_storage_status_t storage_status;
     ninlil_status_t mapped;
 
-    if (session == NULL || out_result == NULL) {
+    if (session == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (out_result == NULL) {
+        return NINLIL_E_INVALID_STATE;
     }
     if (session->state != NINLIL_DOMAIN_SCAN_STATE_OPEN
         && session->state != NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED) {
@@ -2248,6 +2393,9 @@ ninlil_status_t ninlil_domain_scan_finalize(
     if (session == NULL || out_result == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S4) {
+        return ninlil_domain_scan_d3s4_finalize(session, out_result);
+    }
     if (session->state != NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED
         && session->state != NINLIL_DOMAIN_SCAN_STATE_FAILED) {
         return NINLIL_E_INVALID_STATE;
@@ -2354,6 +2502,9 @@ ninlil_status_t ninlil_domain_scan_abort(
     if (session == NULL || out_result == NULL) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
+    if (session->bound_d3_kind == NINLIL_DOMAIN_SCAN_D3_KIND_S4) {
+        return ninlil_domain_scan_d3s4_abort(session, out_result);
+    }
     if (session->state != NINLIL_DOMAIN_SCAN_STATE_OPEN
         && session->state != NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED
         && session->state != NINLIL_DOMAIN_SCAN_STATE_FAILED) {
@@ -2372,5 +2523,127 @@ ninlil_status_t ninlil_domain_scan_abort(
         final_status = NINLIL_OK;
     }
     publish_result(session, out_result, final_status, 0u);
+    return final_status;
+}
+
+ninlil_status_t ninlil_domain_scan_d3s4_finalize(
+    ninlil_domain_scan_session_t *session,
+    ninlil_domain_scan_result_t *out_result)
+{
+    ninlil_domain_scan_d3s4_context_t *context;
+    ninlil_domain_scan_result_t candidate;
+    ninlil_status_t cleanup_outcome;
+    ninlil_status_t final_status;
+    ninlil_status_t ready_status = NINLIL_OK;
+    uint8_t disposition = 0u;
+    uint8_t disposition_present = 0u;
+    int evaluator_on;
+
+    if (session == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (out_result == NULL) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    if (session->bound_d3_kind != NINLIL_DOMAIN_SCAN_D3_KIND_S4
+        || session->bound_d3s4_context == NULL) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    context = session->bound_d3s4_context;
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED
+        && session->state != NINLIL_DOMAIN_SCAN_STATE_FAILED) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    if (!result_alias_ok(session, out_result)) {
+        return NINLIL_E_INVALID_STATE;
+    }
+
+    evaluator_on = session->profile_exact_active != 0u
+        && session->profile_mismatch == 0u
+        && session->future_profile_candidate == 0u;
+    if (session->state == NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED) {
+        if (evaluator_on) {
+            ready_status = ninlil_domain_scan_d3s4_ready_disposition(
+                context, &disposition);
+            if (ready_status != NINLIL_OK) {
+                return ready_status;
+            }
+            disposition_present = 1u;
+        } else {
+            /*
+             * Frozen evaluator-off baseline candidate.  It never publishes a
+             * D3-S4 disposition and may not carry internal masks/readiness.
+             */
+            if (context->phase != NINLIL_DOMAIN_SCAN_D3S4_PHASE_BASELINE
+                || context->pass_kind
+                    != NINLIL_DOMAIN_SCAN_D3S4_PASS_BASELINE
+                || context->flags
+                    != NINLIL_DOMAIN_SCAN_D3S4_FLAG_BASELINE_DONE
+                || context->count_complete_mask != 0u
+                || context->binding_complete_mask != 0u) {
+                return NINLIL_E_INVALID_STATE;
+            }
+        }
+    }
+
+    cleanup_outcome = cleanup_tree(session, NINLIL_OK);
+    final_status = aggregate_finalize_outcome(session, cleanup_outcome);
+
+    /*
+     * Context is terminal scratch: sample disposition first, perform all Port
+     * cleanup, then wipe all 949 bytes.  Cleanup failure and abort publish no
+     * output at all.
+     */
+    (void)memset(context, 0, sizeof(*context));
+    if (session->cleanup_status != NINLIL_STORAGE_OK) {
+        return final_status;
+    }
+
+    (void)memset(&candidate, 0, sizeof(candidate));
+    publish_result(session, &candidate, final_status, 0u);
+    if (final_status == NINLIL_OK && disposition_present != 0u) {
+        candidate.d3s4_disposition_present = 1u;
+        candidate.d3s4_disposition = disposition;
+    }
+    (void)memcpy(out_result, &candidate, sizeof(candidate));
+    return final_status;
+}
+
+ninlil_status_t ninlil_domain_scan_d3s4_abort(
+    ninlil_domain_scan_session_t *session,
+    ninlil_domain_scan_result_t *out_result)
+{
+    ninlil_domain_scan_d3s4_context_t *context;
+    ninlil_status_t cleanup_outcome;
+    ninlil_status_t final_status;
+
+    if (session == NULL) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    if (out_result == NULL) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    if (session->bound_d3_kind != NINLIL_DOMAIN_SCAN_D3_KIND_S4
+        || session->bound_d3s4_context == NULL) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    if (session->state != NINLIL_DOMAIN_SCAN_STATE_OPEN
+        && session->state != NINLIL_DOMAIN_SCAN_STATE_EXHAUSTED
+        && session->state != NINLIL_DOMAIN_SCAN_STATE_FAILED) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    if (!result_alias_ok(session, out_result)) {
+        return NINLIL_E_INVALID_STATE;
+    }
+    context = session->bound_d3s4_context;
+    cleanup_outcome = cleanup_tree(session, NINLIL_OK);
+    if (session->has_sticky_primary != 0u) {
+        final_status = session->sticky_primary;
+    } else if (cleanup_outcome != NINLIL_OK) {
+        final_status = cleanup_outcome;
+    } else {
+        final_status = NINLIL_OK;
+    }
+    (void)memset(context, 0, sizeof(*context));
     return final_status;
 }

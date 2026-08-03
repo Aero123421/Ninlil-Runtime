@@ -72,6 +72,7 @@ MARKERS = (
     "SEMANTIC: FRAG_CONFLICT_NO_REPLACE_EXISTING",
     "SEMANTIC: FRAG_START_EXACT_RETRY_NO_MUTATION",
     "SEMANTIC: FRAG_E2E_RETRY_FRESH_SEAL",
+    "SEMANTIC: FRAG_COUNT_EFFECTIVE_MAX_13",
     "SEMANTIC: FRAG_MAX_OUTER_ATTEMPTS_PER_FRAGMENT_16",
     "SEMANTIC: FRAG_SENDER_TIMING_EXACT",
     "SEMANTIC: TOMBSTONE_VOLATILE_ON_RESTART",
@@ -1498,6 +1499,21 @@ def check_docs30(root: pathlib.Path) -> str:
     )
     fs = parse_layout(doc, "LAYOUT_FRAG_START_BEGIN", "LAYOUT_FRAG_START_END")
     check_layout_exact([r for r in fs if r[0] < 64], FRAG_START_FIELDS, "FRAG_START")
+    require_contains(
+        doc,
+        "`frag_count = 1 + ceil((total_len - S) / 180)` with `2 ≤ frag_count ≤ 13`",
+        "docs/30 FRAG count domain",
+    )
+    require_contains(
+        doc,
+        "`1 + ceil((2048 - 1) / 180) = 13`",
+        "docs/30 FRAG count arithmetic",
+    )
+    require_contains(
+        doc,
+        "values 14..16 are non-canonical and reject",
+        "docs/30 FRAG count reject domain",
+    )
     check_layout_exact(
         parse_layout(doc, "LAYOUT_FRAG_CONT_BEGIN", "LAYOUT_FRAG_CONT_END"),
         FRAG_CONT_FIELDS,

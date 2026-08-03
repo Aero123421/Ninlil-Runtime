@@ -36,6 +36,8 @@ Ninlilは複数の独立したversion domainを持ちます。単一の`protocol
 
 - `0.x`: breaking changeを許しますが、minor bump、CHANGELOG、migration note、compatibility matrixが必須です。
 - `1.0+`: public APIのbreaking changeはmajor bumpを必須とします。
+- CMake packageのversion選択も同じ境界を使います。`0.x`は同一minor内だけを
+  compatibleと判定し、`1.0+`は同一major内をcompatibleと判定します。
 - bug fixでもwire、storage、schemaのdomain version変更が必要なら、それぞれ独立にbumpします。
 - release versionから他domain versionを推測してはなりません。
 
@@ -122,7 +124,8 @@ Update中もdownlink owner、membership epoch、transaction identityを維持し
 
 ## Machine-readable compatibility matrix
 
-各releaseは`compatibility-matrix.json`を含みます。最低限:
+各releaseはrepository rootの
+[`compatibility-matrix.json`](../compatibility-matrix.json)を含みます。最低限:
 
 ```text
 runtime release
@@ -138,6 +141,24 @@ deprecation/removal release
 ```
 
 Matrixと実test targetをCIで一致させます。文書だけに存在するsupported combinationを作りません。
+[`tools/compatibility_matrix_gate.py`](../tools/compatibility_matrix_gate.py)はCMake release、
+public ABI、Foundation storage schema、ESP-IDF component/pin、CI runner、evidence path、
+HIL必須機能の状態をfail-closedで照合します。`HIL_VERIFIED`または
+`RELEASE_SUPPORTED`へ進める変更は、対応する再現可能なevidenceと同じchangeでmatrixを
+更新しなければなりません。
+
+`features[].evidence`は仕様・実装・通常CIの追跡先、`hil_evidence`は実機手順と
+取得artifactの最低2ファイル、`release_evidence`はrelease gate・互換性・独立reviewを含む
+最低3ファイルです。`required_hil=true`の行は`hil_verified=true`と実在する
+`hil_evidence`なしに`HIL_VERIFIED`以上へ進めません。`RELEASE_SUPPORTED`はさらに
+`release_evidence`が無ければgateが拒否します。単にbooleanだけを書き換えて完成表示することは
+できません。
+
+各`hil_evidence` / `release_evidence`参照はclass、repository相対path、SHA-256を持ち、
+参照先JSONはschema、40桁source commit、対象feature/platformを表す`subject_id`、
+test ID、platform ID、PASS結果、実在するUTC日時を持ちます。HIL証跡は最低2件、
+release証跡は最低3件が必要です。required HIL対象を`RELEASE_SUPPORTED`へ進める場合も、
+HIL証跡を省略できません。
 
 ### M3-prep / M3-basic ESP-IDF pin（support 宣言ではない）
 
@@ -198,8 +219,69 @@ Release tag前に、次がすべて必要です。
 - Ninlil **complete / public** control protocol（public catalog / public ABI）: **未割当**
 - Ninlil **private minimal** control catalog（U1–U4 NCL1 HELLO/PING/PONG/RESET; [23章](23-usb-radio-boundary.md)）: private Normative（`control_version` 交渉値は U4 で 1）。public 採番・ABI 昇格とは別
 - Ninlil **private control protocol v2**（U5 assignment + U6 custody; [25章](25-u5-cell-operating-assignment.md) / [26章](26-u6-transport-custody.md); ADR-0005/0006）: private Normative（`selected_control_version=2`）。NCL1 envelope v1 は維持。v1 closed catalog へ type を silent 追加しない。public 採番・ABI 昇格とは別
+- Ninlil **private MFDT protocol v1**（multi-frame durable transfer）:
+  **SPEC_ACCEPTED design authority**。Accepted HELLO/control versionはexact 1または2のまま、
+  active sessionへbindした独立`private_mfdt_admission_v1` MFN1 transcriptを使う。
+  private NCL1 typeはAccepted catalog直後の最小連続範囲`0x34..0x43`
+  （MFN1 `0x34/0x35`、transfer `0x36..0x43`）。docs/23·25·26とADR-0006を
+  re-freezeせずbyte-exact維持する。base control version 1/2と別version domainであり、
+  default-ON、public ABI、release support allocationではない。正本は
+  [ADR-0021](adr/0021-multi-frame-durable-custody.md)。
 
 Wireを実装していないFoundationで`wire v1`を先取り採番しません。private U4 catalog の存在を public control protocol v1 割当とみなしません。private U5/U6 catalog も public 割当とみなしません。
+
+### ADR-0017 Fabric candidateのversion分離（Proposed）
+
+[ADR-0017](adr/0017-bearer-registry-path-selection.md)の`SPEC_ACCEPTED`候補は、既存domainを
+次のように維持する。ADR状態はProposedのままであり、下表はsupport/public allocation claimではない。
+
+| Domain | Exact candidate / rule |
+| --- | --- |
+| Runtime Platform C ABI | `NINLIL_ABI_VERSION=0x0001`不変、単一`ninlil_bearer_ops_t`。array/tail field追加0 |
+| Installed/public Fabric ABI | 未割当。public header、export symbol、install target、SemVer compatibility claim 0 |
+| Private Fabric source API | candidate `0x0001`。`NINLIL_ENABLE_PRIVATE_FABRIC_V1=OFF` default、exact-size struct、unknown version拒否 |
+| NFL1 logical envelope | candidate version 1。public application wireでもNRW1でもない |
+| NFL1 length domains | header 584、codec構造受理587..1925、codec buffer ceiling 2048。6-kind意味論positive最大は1797 |
+| Fabric storage | dedicated `ninlil.fabric.v1` schema 1 candidate。`FBM1/FBR1/FBP1/FBC1/FBA1/FBT1`、273 records / 137,940 CU bytes、FULL staging 546 / 275,880。FBA1は688-byte payload / 712-byte valueでcall-scoped permit claimを同居させ、別permit claim recordは持たない。Foundation schema 1、ESP format 4、radio-security store不変 |
+| Compact radio mapping | 未割当。NFL1↔NRW1を推測せず、別Accepted ADR/KATまでRF packet admission/TX 0 |
+
+mixed versionはdescriptorのlocal/peer versionがともにNFL1 exact 1で、peer capabilityの
+`NFL1_V1` bitもある場合だけを許す。peer 0、2、unknown、capability不一致では
+UNSUPPORTED/attach拒否とし、raw `ninlil_bearer_message_t`、field drop、zero補完へfallbackしない。
+rollback binaryが`ninlil.fabric.v1` unknown schema/migration markerを見た場合はREAD_WRITE call 0で
+拒否する。schema 1にはpredecessor migrationがなく、空namespaceへのfresh adoptionだけを許す。
+将来migrationはsource/target/migration generation/rollback floorと全write-point
+COMMIT_UNKNOWN KATを持つ新schema ADRなしに開始しない。
+Accepted 30章が示す現ESP port `max_namespaces=2`では、3個目の
+`ninlil.fabric.v1`を有効化しない。既存Foundation/radio-security namespaceへ混在させず、
+target storage profileの別review/evidenceまでESP FabricはUNSUPPORTEDである。
+
+compatibility matrixへFabricを載せるのは少なくとも次を満たしたreleaseだけである。
+
+- public Platform ABI manifestがbit/offset exact不変で、old non-Fabric consumerがcompile/linkする
+- private feature OFF buildがFabric symbol/object/storage namespaceを参照しない
+- feature ONのsame-version KATとold/new/unknown拒否matrixが通る
+- `tools/fabric_bearer_spec_vector_gen.py --check`がbyte-identicalである
+- compact RF mapping未実装buildがNRW1をemitせず、Accepted 30章のTxPermit sole authorityを迂回しない
+
+### ADR-0018 Wi-Fi candidate allocation summary（Proposed、未割当）
+
+[ADR-0018](adr/0018-wifi-bearer.md)のWi-Fi packet-link / NWB1 / TLS profileは**Proposed
+docs-only**であり、下表はsupport・public allocation・`SPEC_ACCEPTED` claimではない。
+
+| Domain | Exact candidate / rule |
+| --- | --- |
+| NWB1 framing | version 1候補。header 40、payload structural 587..1925、total 627..1965。境界reject 586/1926・626/1966。CRC32C Castagnoli。public on-air support 0 |
+| NWB1 session | post-attachment exporter only。pre-attachment `peer_session_id`だけではNWB1 0 |
+| Network durable metadata | namespace `ninlil.wifi.network.v1`、`NWD1` 160-byte record候補、committed 1,280 / staging 2,560 CU。password plaintext storage 0 |
+| TLS suite | `NINLIL-WIFI-TLS13-P256-V1`候補: `0x1301` / `0x0017` / `0x0403` only |
+| Host TLS pin | static `openssl-3.5.7`（peeled `8cf17aae…`）target 0x01/0x02。R7 generic OpenSSL 3.x major pinとは非同一authority |
+| ESP TLS pin | ESP-IDF `2c211b23…` + mbedTLS `ffb280bb…` direct。ESP-TLS public API 0 |
+| Machine vectors | `spec/vectors/wifi-bearer-spec-v1.json` + Python/Node/C11 gates。independent inventory 79 acceptance IDs with ID→semantic contract (not set-check only); COMMIT_UNKNOWN closed set includes BOTH |
+
+Wi-Fiをcompatibility matrix / `RELEASE_SUPPORTED`へ載せる条件はADR-0018の
+`SPEC_ACCEPTED` gateと`RELEASE_SUPPORTED` gateが閉じた後だけである。本summaryの存在を
+reserved採番や実装完了とみなさない。
 
 ### R5 RegulatoryProfile schema 2 (R6)
 

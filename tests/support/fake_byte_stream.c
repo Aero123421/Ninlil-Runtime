@@ -289,6 +289,17 @@ static ninlil_byte_stream_status_t fake_read(
             NINLIL_BYTE_STREAM_STAGE_READ, "capacity 0");
         return NINLIL_BYTE_STREAM_INVALID_ARGUMENT;
     }
+    if (fake->gen_bump_on_next_read
+        && fake->force_read_would_block_nonzero_once) {
+        fake->gen_bump_on_next_read = 0;
+        fake->force_read_would_block_nonzero_once = 0;
+        bump_generation(fake);
+        *out_length = 1u;
+        set_err(
+            fake, out_error, NINLIL_BYTE_STREAM_WOULD_BLOCK,
+            NINLIL_BYTE_STREAM_STAGE_READ, "wb nonzero generation bump");
+        return NINLIL_BYTE_STREAM_WOULD_BLOCK;
+    }
     if (fake->force_read_rx_overflow_once) {
         fake->force_read_rx_overflow_once = 0;
         *out_length = 0u;

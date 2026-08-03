@@ -1287,8 +1287,12 @@ int ninlil_abi_parse_translation_unit(
             }
             continue;
         }
-        if (strncmp(buffer + pos, "ninlil_status_t", 15) == 0
-            && isspace((unsigned char)buffer[pos + 15])) {
+        if ((strncmp(buffer + pos, "ninlil_status_t", 15) == 0
+                && isspace((unsigned char)buffer[pos + 15]))
+            || (strncmp(buffer + pos, "ninlil_fabric_status_t", 22) == 0
+                && isspace((unsigned char)buffer[pos + 22]))
+            || (strncmp(buffer + pos, "ninlil_posix_tls_status_t", 25) == 0
+                && isspace((unsigned char)buffer[pos + 25]))) {
             if (parse_function(buffer, &pos, out, label, error_out, error_out_size) != 0) {
                 goto fail;
             }
@@ -1954,6 +1958,11 @@ int ninlil_abi_run_repository_check(
         "include/ninlil/transaction.h",
         "include/ninlil/runtime.h",
     };
+    static const char *const k_manifest_only_headers[] = {
+        "include/ninlil/fabric_v1.h",
+        "include/ninlil/composition_v1.h",
+        "include/ninlil/posix_tls_v1.h",
+    };
     char doc_path[512];
     char constants_path[512];
     char structs_path[512];
@@ -2015,6 +2024,32 @@ int ninlil_abi_run_repository_check(
 
     if (ninlil_abi_compare_catalogs(doc, header, err) != 0) {
         goto cleanup;
+    }
+    /*
+     * ADR-0029 makes Fabric a public ABI, but docs/12 remains the Foundation
+     * API authority.  Merge Fabric only after that comparison so the existing
+     * manifest coverage check sees every public Fabric layout/constant without
+     * pretending that Fabric functions are Foundation functions.
+     */
+    for (i = 0;
+         i < sizeof(k_manifest_only_headers) / sizeof(k_manifest_only_headers[0]);
+         ++i) {
+        snprintf(
+            header_path,
+            sizeof(header_path),
+            "%s/%s",
+            repo_root,
+            k_manifest_only_headers[i]);
+        if (parse_header_file(
+                header_path,
+                k_manifest_only_headers[i],
+                header,
+                error,
+                sizeof(error))
+            != 0) {
+            fprintf(err, "abi drift: header parse error: %s\n", error);
+            goto cleanup;
+        }
     }
     if (ninlil_abi_compare_header_manifest(header, &manifest, err) != 0) {
         goto cleanup;

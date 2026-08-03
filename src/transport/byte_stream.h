@@ -1,8 +1,13 @@
-#ifndef NINLIL_TRANSPORT_BYTE_STREAM_H
-#define NINLIL_TRANSPORT_BYTE_STREAM_H
+#ifndef NINLIL_BYTE_STREAM_H
+#define NINLIL_BYTE_STREAM_H
 
 /*
- * C1: Portable byte-stream contract (production-private; not public ABI).
+ * C1: Portable byte-stream contract.
+ *
+ * Private path: src/transport/byte_stream.h (internal TUs include "byte_stream.h").
+ * Formal public path: include/ninlil/byte_stream.h (ESP/public INCLUDE_DIRS only).
+ * This private header is self-contained — do not shim to ninlil/ via -I include.
+ * Do not export src/transport as a public component INCLUDE_DIRS root.
  *
  * Abstract open/read/write/close/poll surface for USB control transport
  * adapters (A1 POSIX, A2 ESP CDC). Platform types (fd, termios, pthread,
@@ -33,7 +38,8 @@
  * open alone for async adapters; never on close/down).
  *
  * Nonclaims:
- * - Not public include/ninlil ABI / not installed.
+ * - This private path is not the installed public surface (use
+ *   include/ninlil/byte_stream.h for consumers / ESP public INCLUDE_DIRS).
  * - Raw write acceptance is not Transport Custody or Application Receipt.
  * - RX overflow is a continuity signal, not physical link down.
  * - Does not claim U1/U2 complete, USB series complete, or physical HIL.
@@ -323,4 +329,4 @@ static inline uint32_t ninlil_byte_stream_sat_hwm_u32(uint32_t current, uint32_t
 }
 #endif
 
-#endif /* NINLIL_TRANSPORT_BYTE_STREAM_H */
+#endif /* NINLIL_BYTE_STREAM_H */

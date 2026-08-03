@@ -1,0 +1,89 @@
+{
+  "schema": "ninlil-dependency-inventory-v1",
+  "project": {
+    "id": "ninlil-runtime",
+    "name": "Ninlil Runtime",
+    "version": "0.1.0",
+    "spdx_license": "Apache-2.0",
+    "supplier": "Organization: Ninlil project"
+  },
+  "host_dependencies": [
+    {
+      "id": "sqlite3",
+      "name": "SQLite3",
+      "version": "system-provided",
+      "version_requirement": "unversioned system provider",
+      "spdx_license": "blessing",
+      "relationship": "OPTIONAL_DIRECT"
+    },
+    {
+      "id": "openssl",
+      "name": "OpenSSL",
+      "version": "3.x",
+      "version_requirement": ">=3.0.0 <4.0.0",
+      "spdx_license": "Apache-2.0",
+      "relationship": "DIRECT"
+    }
+  ],
+  "vendored_dependencies": [
+    {
+      "id": "pyyaml",
+      "name": "PyYAML",
+      "version": "6.0.2",
+      "spdx_license": "MIT",
+      "relationship": "DIRECT",
+      "source_path": "tools/_vendor",
+      "download_location": "https://pypi.org/project/PyYAML/6.0.2/",
+      "component_hash": "00e9d5acfbcd65db22fb7ebc0637cd5920cf7ef43d512d059168026f72cc693a",
+      "supplier": "Organization: PyYAML project",
+      "syft_names": ["PyYAML", "pyyaml", "yaml"],
+      "comment": "Vendored pure-Python PyYAML for release workflow YAML semantic gates (tools/_vendor)."
+    }
+  ],
+  "syft_reconciliation": {
+    "justified_exclusions": []
+  },
+  "esp_idf": {
+    "container": {
+      "repository": "docker.io/espressif/idf",
+      "tag": "v5.5.3",
+      "platform": "linux/amd64",
+      "digest": "sha256:3e77b709e0ba7f0e9a711039231103be822736b4105790b8e33339a3bf4e47fb"
+    },
+    "lock_components": [
+      {
+        "id": "espressif/esp_tinyusb",
+        "name": "esp_tinyusb",
+        "version": "2.1.1",
+        "component_hash": "fa0c96d7bdc3fe37383d735e2839a9007200a0b6bc039458d45d004b50146e81",
+        "spdx_license": "Apache-2.0",
+        "relationship": "DIRECT"
+      },
+      {
+        "id": "espressif/tinyusb",
+        "name": "TinyUSB",
+        "version": "0.21.0~1",
+        "component_hash": "a72b7d67472914ab76309340fd50d578b31e310963d45ad0f81144bde3314752",
+        "spdx_license": "MIT",
+        "relationship": "TRANSITIVE"
+      },
+      {
+        "id": "idf",
+        "name": "ESP-IDF",
+        "version": "5.5.3",
+        "component_hash": null,
+        "spdx_license": "Apache-2.0",
+        "relationship": "DIRECT"
+      }
+    ],
+    "bundled_dependencies": [
+      {
+        "id": "mbedtls",
+        "name": "Mbed TLS",
+        "version": "ESP-IDF-5.5.3",
+        "spdx_license": "Apache-2.0 OR GPL-2.0-or-later",
+        "relationship": "TRANSITIVE"
+      }
+    ]
+  }
+}

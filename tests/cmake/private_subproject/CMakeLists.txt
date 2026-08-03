@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 
 project(ninlil_private_subproject_smoke LANGUAGES C CXX)
 
@@ -73,15 +73,11 @@ endif()
 
 get_target_property(_private_sources ninlil_runtime_private SOURCES)
 list(LENGTH _private_sources _private_source_count)
-# Exact base private sources + N6 + R7 T0 portable crypto + R7 T1 wire +
-# R7 T1b context binding + D3-S3 evaluator + V1 allowlist + V1 restart +
-# B1 spine + 2b delivery/event durable + 4 capability + M4/C3/C6/C4/C5 LAB =
-# 55.
+# The closed basename inventory below is the independent authority. Derive its
+# cardinality from that inventory rather than maintaining a second magic number
+# which can drift while the exact-list comparison remains correct.
 # Host OpenSSL 3 adapter is top-level/tests only and must not appear in this
 # add_subdirectory consumer (NINLIL_R7_HOST_CRYPTO_ENABLED=FALSE).
-if(NOT _private_source_count EQUAL 55)
-    message(FATAL_ERROR "private source count is not 55: ${_private_sources}")
-endif()
 set(_private_source_names)
 foreach(_source IN LISTS _private_sources)
     if(_source MATCHES "tests/support")
@@ -111,6 +107,7 @@ set(_expected_private_source_names
     domain_store_d3s1.c
     domain_store_d3s2.c
     domain_store_d3s3.c
+    domain_store_d3s4.c
     domain_store_scanner.c
     logical_session.c
     m4_lab_handshake.c
@@ -121,7 +118,10 @@ set(_expected_private_source_names
     n6_crypto_host.c
     n6_record_codec.c
     ncl1_codec.c
+    nra1_codec.c
+    nvb1_codec.c
     pcp_authority.c
+    pcp_lab_session_ledger.c
     profile_loader.c
     r7_context_binding.c
     r7_crypto_nonce.c
@@ -132,6 +132,7 @@ set(_expected_private_source_names
     resource_ledger_batch.c
     runtime_lifecycle_model.c
     runtime_public.c
+    runtime_terminal_owner_projection.c
     runtime_store_bootstrap.c
     runtime_store_codec.c
     runtime_store_orchestrator.c
@@ -139,19 +140,35 @@ set(_expected_private_source_names
     runtime_v1_bearer_wire.c
     runtime_v1_capability.c
     runtime_v1_delivery_durable.c
+    runtime_v1_event_ledger_codec.c
     runtime_v1_event_mgmt.c
     runtime_v1_family_capability.c
     runtime_v1_spine_durable.c
     runtime_v1_target_resolver.c
+    runtime_v1_transaction_codec.c
     stage5_empty_metadata.c
     storage_canonical_plan.c
     submission_admission.c
     submission_canonical_v1.c
     submission_preflight.c
+    sx1262_r9_edge.c
     v1_durable_allowlist.c
     v1_durable_restart.c
     v1_frame_manifest.c
+    v1_lab_binding.c
+    v1_lab_fabric.c
+    v1_lab_n6_owner.c
+    v1_lab_provisioner.c
+    v1_lab_radio_mapping.c
+    v1_usb_bridge.c
 )
+list(LENGTH _expected_private_source_names _expected_private_source_count)
+if(NOT _private_source_count EQUAL _expected_private_source_count)
+    message(FATAL_ERROR
+        "private source count does not match closed inventory "
+        "(actual=${_private_source_count}, "
+        "expected=${_expected_private_source_count}): ${_private_sources}")
+endif()
 list(SORT _expected_private_source_names)
 if(NOT _private_source_names STREQUAL _expected_private_source_names)
     message(FATAL_ERROR
@@ -282,6 +299,8 @@ target_link_libraries(ninlil_subproject_private_consumer PRIVATE
     ninlil
 )
 
-file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/ninlil-smoke-paths.cmake" CONTENT
+file(GENERATE
+    OUTPUT "${CMAKE_BINARY_DIR}/ninlil-smoke-paths-$<CONFIG>.cmake"
+    CONTENT
     "set(NINLIL_PUBLIC_CONSUMER \"$<TARGET_FILE:ninlil_subproject_public_consumer>\")\nset(NINLIL_PRIVATE_CONSUMER \"$<TARGET_FILE:ninlil_subproject_private_consumer>\")\nset(NINLIL_PRIVATE_ARCHIVE \"$<TARGET_FILE:ninlil_runtime_private>\")\n"
 )

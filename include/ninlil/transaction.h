@@ -68,6 +68,12 @@ typedef struct ninlil_target_snapshot {
     uint32_t attempt_in_cycle;
     uint64_t retry_cycle_id;
     uint64_t cumulative_attempts;
+    uint32_t has_late_evidence;
+    uint32_t evidence_counter_saturated;
+    uint64_t valid_evidence_count;
+    uint64_t duplicate_evidence_count;
+    uint64_t raw_evidence_overflow_count;
+    uint64_t late_evidence_count;
 } ninlil_target_snapshot_t;
 
 typedef struct ninlil_transaction_snapshot {

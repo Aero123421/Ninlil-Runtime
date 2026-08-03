@@ -1,0 +1,570 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch, or tag to package without publishing
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-source:
+    name: Resolve one immutable source commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      workflow-commit: ${{ steps.source.outputs.workflow-commit }}
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - name: Resolve requested release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Publish immutable source commit
+        id: source
+        env:
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          test -n "${commit}"
+          test "${WORKFLOW_COMMIT}" != ""
+          {
+            echo "commit=${commit}"
+            echo "workflow-commit=${WORKFLOW_COMMIT}"
+          } >> "${GITHUB_OUTPUT}"
+
+  full-host-ci:
+    name: Reuse the full Linux and macOS CI matrix
+    needs: resolve-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      source-ref: ${{ needs.resolve-source.outputs.commit }}
+      workflow-definition-ref: ${{ needs.resolve-source.outputs.workflow-commit }}
+
+  esp32s3-target-ci:
+    name: Reuse the pinned ESP32-S3 target matrix
+    needs: resolve-source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/esp-idf.yml
+    with:
+      source-ref: ${{ needs.resolve-source.outputs.commit }}
+      workflow-definition-ref: ${{ needs.resolve-source.outputs.workflow-commit }}
+
+  verify:
+    name: Full host verification
+    needs: resolve-source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      verified-commit: ${{ steps.source.outputs.commit }}
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - name: Checkout release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.resolve-source.outputs.commit }}
+
+      - name: Pin verified source commit
+        id: source
+        env:
+          RESOLVED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          RESOLVED_WORKFLOW_COMMIT: ${{ needs.resolve-source.outputs.workflow-commit }}
+          ACTUAL_WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          test "${commit}" = "${RESOLVED_COMMIT}"
+          test "${ACTUAL_WORKFLOW_COMMIT}" = "${RESOLVED_WORKFLOW_COMMIT}"
+          echo "commit=${commit}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install host verification dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          gcc-13 g++-13 ninja-build libssl-dev libsqlite3-dev
+
+      - name: Verify release distribution authority (fail-closed order)
+        run: |
+          # Ordered: vocabulary → archive (self+two-run+git) → tests-OFF
+          # surface → Markdown links → matrix/notice/version/workflow/SBOM/
+          # public boundary/docs.
+          python3 tools/release_distribution_authority_gate.py check
+          python3 tools/release_distribution_authority_gate.py self-test
+
+      - name: Configure strict Release build
+        run: >-
+          cmake -S . -B build/release -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=gcc-13
+          -DCMAKE_CXX_COMPILER=g++-13
+          -DCMAKE_C_FLAGS_RELEASE='-O2 -DNDEBUG'
+          -DCMAKE_CXX_FLAGS_RELEASE='-O2 -DNDEBUG'
+          -DNINLIL_BUILD_TESTS=ON
+          -DNINLIL_ENABLE_STRICT_WARNINGS=ON
+          -DNINLIL_ENABLE_SANITIZERS=OFF
+          -DNINLIL_SQLITE_LINKAGE=SHARED
+
+      - name: Build all configured targets
+        run: cmake --build build/release --parallel 2
+
+      - name: Run the full configured CTest suite
+        run: |
+          count="$(ctest --test-dir build/release -N \
+            | sed -n 's/^Total Tests: //p')"
+          if [[ -z "${count}" || "${count}" == "0" ]]; then
+            echo "release verification configured no tests" >&2
+            exit 1
+          fi
+          echo "Running ${count} configured tests"
+          ctest --test-dir build/release --output-on-failure
+
+  package:
+    name: Source, SBOM, and checksums
+    needs:
+      - resolve-source
+      - full-host-ci
+      - esp32s3-target-ci
+      - verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      artifact-name: ${{ steps.metadata.outputs.artifact-name }}
+      base: ${{ steps.metadata.outputs.base }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      source-commit: ${{ steps.metadata.outputs.commit }}
+      workflow-commit: ${{ steps.metadata.outputs.workflow-commit }}
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/checkout v7.0.0
+      - name: Checkout release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.verify.outputs.verified-commit }}
+
+      - name: Validate source and derive artifact names
+        id: metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_ID: ${{ github.run_id }}
+          VERIFIED_COMMIT: ${{ needs.verify.outputs.verified-commit }}
+          WORKFLOW_COMMIT: ${{ needs.resolve-source.outputs.workflow-commit }}
+          ACTUAL_WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          test -n "${commit}"
+          test "${commit}" = "${VERIFIED_COMMIT}"
+          test "${ACTUAL_WORKFLOW_COMMIT}" = "${WORKFLOW_COMMIT}"
+
+          # Fail-closed version identity: tag core == CMake/matrix/inventory/ESP.
+          # Optional -prerelease / +build are tag suffixes only; package core is
+          # the canonical CMake VERSION (no leading zeros in core components).
+          python3 tools/release_version_identity.py self-test
+          identity_json="$(python3 tools/release_version_identity.py enforce \
+            --event-name "${EVENT_NAME}" \
+            --ref-name "${REF_NAME}" \
+            --ref-type "${REF_TYPE}" \
+            --commit "${commit}")"
+          core="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["core"])')"
+          base="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["base"])')"
+          source_version="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["source_version"])')"
+          tag="$(printf '%s\n' "${identity_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+          test -n "${core}"
+          test -n "${base}"
+          test -n "${source_version}"
+          test "${core}" = "$(python3 tools/release_version_identity.py print-core)"
+
+          if [[ "${EVENT_NAME}" == "push" ]]; then
+            test "${REF_TYPE}" = "tag"
+            test "${tag}" = "${REF_NAME}"
+            if [[ "$(git cat-file -t "refs/tags/${tag}")" != "tag" ]]; then
+              echo "release tag must be annotated: ${tag}" >&2
+              exit 1
+            fi
+            tagged_commit="$(git rev-parse "${tag}^{commit}")"
+            test "${tagged_commit}" = "${commit}"
+            test "${base}" = "ninlil-runtime-${tag}"
+            test "${source_version}" = "${tag}"
+          else
+            test "${tag}" = ""
+            test "${base}" = "ninlil-runtime-dry-run-${commit:0:12}"
+            test "${source_version}" = "${commit}"
+          fi
+
+          artifact_name="${base}-release-files-${RUN_ID}-${RUN_ATTEMPT}"
+          {
+            echo "artifact-name=${artifact_name}"
+            echo "base=${base}"
+            echo "commit=${commit}"
+            echo "workflow-commit=${WORKFLOW_COMMIT}"
+            echo "tag=${tag}"
+            echo "core-version=${core}"
+            echo "project-version=${core}"
+            echo "source-version=${source_version}"
+          } >> "${GITHUB_OUTPUT}"
+
+      # anchore/sbom-action/download-syft v0.24.0; Syft is separately pinned.
+      - name: Install pinned Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610
+        with:
+          syft-version: v1.49.0
+
+      - name: Generate SPDX JSON SBOM
+        env:
+          RAW_SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.syft.raw.spdx.json
+          SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.spdx.json
+          PROJECT_VERSION: ${{ steps.metadata.outputs.project-version }}
+          SOURCE_VERSION: ${{ steps.metadata.outputs.source-version }}
+          SYFT_CMD: ${{ steps.syft.outputs.cmd }}
+        run: |
+          test -x "${SYFT_CMD}"
+          test -n "${PROJECT_VERSION}"
+          test -n "${SOURCE_VERSION}"
+          "${SYFT_CMD}" scan dir:. \
+            --source-name ninlil-runtime \
+            --source-version "${SOURCE_VERSION}" \
+            --output "spdx-json=${RAW_SBOM}"
+          test -s "${RAW_SBOM}"
+          python3 tools/spdx_release_sbom.py enrich \
+            "${RAW_SBOM}" "${SBOM}" \
+            --project-version "${PROJECT_VERSION}" \
+            --source-version "${SOURCE_VERSION}"
+          python3 tools/spdx_release_sbom.py check \
+            "${SBOM}" \
+            --project-version "${PROJECT_VERSION}" \
+            --source-version "${SOURCE_VERSION}"
+          python3 tools/spdx_release_sbom.py self-test
+          test -s "${SBOM}"
+
+      - name: Create deterministic source archives and checksums
+        env:
+          BASE: ${{ steps.metadata.outputs.base }}
+          SBOM: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.spdx.json
+          BUILD_METADATA: ${{ runner.temp }}/${{ steps.metadata.outputs.base }}.build-metadata.json
+          SOURCE_COMMIT: ${{ steps.metadata.outputs.commit }}
+          WORKFLOW_COMMIT: ${{ steps.metadata.outputs.workflow-commit }}
+          EVENT_NAME: ${{ github.event_name }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          PROJECT_VERSION: ${{ steps.metadata.outputs.project-version }}
+          SOURCE_VERSION: ${{ steps.metadata.outputs.source-version }}
+        run: |
+          test -s "${SBOM}"
+
+          python3 - "${BASE}" "${SOURCE_COMMIT}" "${WORKFLOW_COMMIT}" \
+            "${EVENT_NAME}" "${TAG}" "${PROJECT_VERSION}" "${SOURCE_VERSION}" \
+            "${BUILD_METADATA}" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          (
+              base,
+              source_commit,
+              workflow_commit,
+              event_name,
+              tag,
+              project_version,
+              source_version,
+              build_metadata_path,
+          ) = sys.argv[1:]
+          if len(source_commit) != 40 or len(workflow_commit) != 40:
+              raise SystemExit("source/workflow commit must be a full SHA")
+          if not project_version:
+              raise SystemExit("project_version required")
+          if not source_version:
+              raise SystemExit("source_version required")
+          if event_name == "push":
+              if not tag.startswith("v" + project_version):
+                  raise SystemExit(
+                      f"tag {tag!r} must start with v{project_version}"
+                  )
+              if base != f"ninlil-runtime-{tag}":
+                  raise SystemExit(
+                      f"artifact base {base!r} must equal ninlil-runtime-{tag}"
+                  )
+              if source_version != tag:
+                  raise SystemExit(
+                      f"source_version {source_version!r} must equal tag {tag!r}"
+                  )
+          payload = {
+              "schema": "ninlil-release-build-metadata-v1",
+              "source_commit": source_commit,
+              "workflow_definition_commit": workflow_commit,
+              "event_name": event_name,
+              "tag": tag or None,
+              "project_version": project_version,
+              "source_version": source_version,
+              "artifact_base": base,
+          }
+          pathlib.Path(build_metadata_path).write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          test -s "${BUILD_METADATA}"
+
+          # Deterministic git-tree packing (fixed uid/gid/mode/mtime/order),
+          # then fail-closed payload + vocabulary scan of generated archives.
+          rm -rf "${RUNNER_TEMP}/ninlil-release-arch"
+          python3 tools/release_archive_payload_gate.py build-from-git \
+            --two-run \
+            --source git \
+            --require-clean-worktree \
+            --no-force-release-gates \
+            --treeish HEAD \
+            --prefix "${BASE}" \
+            --out-dir "${RUNNER_TEMP}/ninlil-release-arch"
+
+          # Only create repository-local release output after the immutable
+          # git-tree builder has proved the checkout clean. SBOM and metadata
+          # are staged in RUNNER_TEMP so --require-clean-worktree is meaningful.
+          rm -rf dist
+          mkdir -p dist
+          mv "${SBOM}" "dist/${BASE}.spdx.json"
+          mv "${BUILD_METADATA}" "dist/${BASE}.build-metadata.json"
+          cp "${RUNNER_TEMP}/ninlil-release-arch/run1/${BASE}.tar.gz" "dist/${BASE}.tar.gz"
+          cp "${RUNNER_TEMP}/ninlil-release-arch/run1/${BASE}.zip" "dist/${BASE}.zip"
+          # Re-validate the shipped copies (not only the temp builder outputs).
+          python3 tools/release_archive_payload_gate.py check \
+            --tar "dist/${BASE}.tar.gz" \
+            --zip "dist/${BASE}.zip" \
+            --prefix "${BASE}"
+          python3 tools/release_forbidden_vocabulary_gate.py check
+          # From-archive clean-room: unpack shipped tar → build/test/package.
+          python3 tools/release_archive_payload_gate.py cleanroom \
+            --tar "dist/${BASE}.tar.gz" \
+            --zip "dist/${BASE}.zip" \
+            --prefix "${BASE}" \
+            --profile host \
+            --out-dir "${RUNNER_TEMP}/ninlil-release-cleanroom"
+
+          (
+            cd dist
+            sha256sum \
+              "${BASE}.tar.gz" \
+              "${BASE}.zip" \
+              "${BASE}.spdx.json" \
+              "${BASE}.build-metadata.json" \
+              > "${BASE}.SHA256SUMS"
+            sha256sum --check "${BASE}.SHA256SUMS"
+          )
+          # two-run builder outputs must match shipped digests exactly
+          test "$(sha256sum "dist/${BASE}.tar.gz" | awk '{print $1}')" = \
+            "$(sha256sum "${RUNNER_TEMP}/ninlil-release-arch/run2/${BASE}.tar.gz" | awk '{print $1}')"
+          test "$(sha256sum "dist/${BASE}.zip" | awk '{print $1}')" = \
+            "$(sha256sum "${RUNNER_TEMP}/ninlil-release-arch/run2/${BASE}.zip" | awk '{print $1}')"
+
+          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "5"
+
+      # actions/upload-artifact v4.6.2
+      - name: Upload dry-run or release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.metadata.outputs.artifact-name }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  attest:
+    name: Provenance and SBOM attestations
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/download-artifact v5.0.0
+      - name: Download packaged files
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: ${{ needs.package.outputs.artifact-name }}
+          path: dist
+
+      - name: Verify package before attestation
+        env:
+          BASE: ${{ needs.package.outputs.base }}
+          TAG: ${{ needs.package.outputs.tag }}
+        run: |
+          test "${TAG}" = "${GITHUB_REF_NAME}"
+          test -s "dist/${BASE}.tar.gz"
+          test -s "dist/${BASE}.zip"
+          test -s "dist/${BASE}.spdx.json"
+          test -s "dist/${BASE}.build-metadata.json"
+          test -s "dist/${BASE}.SHA256SUMS"
+          jq -e \
+            --arg source "${{ needs.package.outputs.source-commit }}" \
+            --arg workflow "${{ needs.package.outputs.workflow-commit }}" \
+            '.schema == "ninlil-release-build-metadata-v1"
+             and .source_commit == $source
+             and .workflow_definition_commit == $workflow' \
+            "dist/${BASE}.build-metadata.json" >/dev/null
+          (
+            cd dist
+            sha256sum --check "${BASE}.SHA256SUMS"
+          )
+
+      # actions/attest v4
+      - name: Attest release-file build provenance
+        id: provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
+        with:
+          subject-path: |
+            dist/${{ needs.package.outputs.base }}.tar.gz
+            dist/${{ needs.package.outputs.base }}.zip
+            dist/${{ needs.package.outputs.base }}.spdx.json
+            dist/${{ needs.package.outputs.base }}.build-metadata.json
+            dist/${{ needs.package.outputs.base }}.SHA256SUMS
+          show-summary: true
+
+      # actions/attest v4; independent SPDX SBOM predicate for both archives.
+      - name: Attest SBOM for source archives
+        id: sbom
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
+        with:
+          subject-path: |
+            dist/${{ needs.package.outputs.base }}.tar.gz
+            dist/${{ needs.package.outputs.base }}.zip
+          sbom-path: dist/${{ needs.package.outputs.base }}.spdx.json
+          show-summary: true
+
+      - name: Add unambiguous Sigstore bundles
+        env:
+          BASE: ${{ needs.package.outputs.base }}
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.sbom.outputs.bundle-path }}
+        run: |
+          test -s "${PROVENANCE_BUNDLE}"
+          test -s "${SBOM_BUNDLE}"
+          cp "${PROVENANCE_BUNDLE}" \
+            "dist/${BASE}.provenance.sigstore.json"
+          cp "${SBOM_BUNDLE}" \
+            "dist/${BASE}.sbom-attestation.sigstore.json"
+          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "7"
+
+      # actions/upload-artifact v4.6.2
+      - name: Upload attested release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ needs.package.outputs.artifact-name }}-attested
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish immutable tag release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs:
+      - package
+      - attest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      # actions/download-artifact v5.0.0
+      - name: Download attested release files
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: ${{ needs.package.outputs.artifact-name }}-attested
+          path: dist
+
+      - name: Verify complete release set
+        env:
+          BASE: ${{ needs.package.outputs.base }}
+          TAG: ${{ needs.package.outputs.tag }}
+        run: |
+          test "${TAG}" = "${GITHUB_REF_NAME}"
+          test -s "dist/${BASE}.tar.gz"
+          test -s "dist/${BASE}.zip"
+          test -s "dist/${BASE}.spdx.json"
+          test -s "dist/${BASE}.build-metadata.json"
+          test -s "dist/${BASE}.SHA256SUMS"
+          test -s "dist/${BASE}.provenance.sigstore.json"
+          test -s "dist/${BASE}.sbom-attestation.sigstore.json"
+          (
+            cd dist
+            sha256sum --check "${BASE}.SHA256SUMS"
+          )
+          jq -e . "dist/${BASE}.provenance.sigstore.json" >/dev/null
+          jq -e . "dist/${BASE}.sbom-attestation.sigstore.json" >/dev/null
+          jq -e \
+            --arg source "${{ needs.package.outputs.source-commit }}" \
+            --arg workflow "${{ needs.package.outputs.workflow-commit }}" \
+            '.schema == "ninlil-release-build-metadata-v1"
+             and .source_commit == $source
+             and .workflow_definition_commit == $workflow' \
+            "dist/${BASE}.build-metadata.json" >/dev/null
+          test "$(find dist -maxdepth 1 -type f | wc -l | tr -d ' ')" = "7"
+
+      - name: Create complete draft release, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.package.outputs.tag }}
+        run: |
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "release already exists; refusing to replace assets for ${TAG}" >&2
+            exit 1
+          fi
+
+          prerelease=()
+          if [[ "${TAG}" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
+
+          gh release create "${TAG}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --draft \
+            --title "Ninlil Runtime ${TAG}" \
+            --notes-from-tag \
+            "${prerelease[@]}"
+
+          gh release edit "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --draft=false

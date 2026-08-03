@@ -32,6 +32,26 @@ void ninlil_rt_v1_aggregate_target_outcomes(
 int ninlil_rt_v1_all_targets_evidence_recorded(
     const ninlil_rt_transaction_slot_t *txn);
 
+void ninlil_rt_v1_initialize_target_state(
+    ninlil_rt_target_slot_t *target,
+    ninlil_family_t family);
+
+int ninlil_rt_v1_select_dispatch_target(
+    ninlil_rt_transaction_slot_t *txn,
+    const ninlil_time_sample_t *clock_sample,
+    uint32_t *out_index);
+
+void ninlil_rt_v1_activate_target(
+    ninlil_rt_transaction_slot_t *txn,
+    uint32_t target_index);
+
+void ninlil_rt_v1_refresh_target_aggregate(
+    ninlil_rt_transaction_slot_t *txn);
+
+int ninlil_rt_v1_active_target(
+    const ninlil_rt_transaction_slot_t *txn,
+    uint32_t *out_index);
+
 #ifdef __cplusplus
 }
 #endif

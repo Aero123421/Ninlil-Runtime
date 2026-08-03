@@ -16,7 +16,8 @@
 #define FIELD_TESTS ((uint32_t)1u << 8)
 #define FIELD_GAP ((uint32_t)1u << 9)
 #define ALL_FIELDS ((uint32_t)0x3ffu)
-#define MAX_KNOWN_TESTS 256u
+/* Registry of literal CTest names mined from CMakeLists; grows with suite size. */
+#define MAX_KNOWN_TESTS 1024u
 #define MAX_REPOSITORY_PATH 1024u
 
 typedef struct line_view {

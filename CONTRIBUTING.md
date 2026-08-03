@@ -22,11 +22,15 @@ Foundation M1aの正本は次のNormative文書です。
 
 ## Languageとbuild requirements
 
+- Repository の configure・build・CTest gate と install 済み CMake package を
+  使う独立 consumer は、どちらも CMake 3.20 以上を要求します。
 - Portable Core、fixture、toolのC codeはC11です。
 - Public headerはC11とC++17の両方からincludeできなければなりません。
 - Compiler extensionへ依存せず、strict warningをerrorとして通してください。
 - Pointer値、struct padding、host時刻、container iteration順へ決定結果を依存させないでください。
-- **Building and running the test suite** requires a **Python 3** interpreter on `PATH` (used only by the independent Domain Store D1-A / D1-B1 vector oracle: `tools/domain_store_vector_gen.py generate|check`). Production libraries do not link or invoke Python.
+- **Building and running the test suite** requires a **Python 3** interpreter on
+  `PATH`（independent vector oracle、compatibility/dependency authority、
+  package/source gateに使用）。Production libraryはPythonをlink・invokeしません。
 
 通常buildとtest:
 
@@ -69,3 +73,13 @@ PRを提出する前に、変更範囲に応じたtargeted testに加えて、�
 ## Reporting security issues
 
 機密性のある脆弱性情報はpublic issueへ投稿せず、[Security Policy](SECURITY.md)のprivate reporting手順を使用してください。
+
+## Communityとmaintainer運用
+
+- 参加時の行動基準: [Community Code of Conduct](CODE_OF_CONDUCT.md)
+- 意思決定とmaintainerの役割: [Governance](GOVERNANCE.md)
+- 問い合わせ範囲と必要情報: [Support](SUPPORT.md)
+- Release作成・検証手順: [Release Guide](docs/releasing.md)
+
+IssueとPull Requestにはrepositoryのtemplateを使用してください。未修正の脆弱性や
+行動規範違反の証拠はpublic Issueへ投稿しないでください。

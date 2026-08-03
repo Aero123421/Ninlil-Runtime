@@ -1,0 +1,60 @@
+name: Feature request
+description: 製品非依存の機能・contract改善を提案する
+title: "[Feature] "
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: 特定製品名ではなく、利用者が解決できない通信・運用上の問題を説明してください
+    validations:
+      required: true
+  - type: textarea
+    id: use_cases
+    attributes:
+      label: Generic use cases
+      description: 異なるapplicationやplatformでも成立する例を示してください
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: API、ownership、failure、期限、互換性など観測可能な挙動
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: application adapterや既存APIで解決できない理由
+    validations:
+      required: true
+  - type: dropdown
+    id: contract
+    attributes:
+      label: Contract impact
+      options:
+        - No public contract change
+        - Public API / ABI
+        - Wire protocol
+        - Storage format
+        - Security / compliance boundary
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: 必要なtest、simulation、HIL、migration、documentation
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: 既存Issue、roadmap、documentationを確認しました
+          required: true
+        - label: 未検証の安全性・法令適合性を前提にしていません
+          required: true

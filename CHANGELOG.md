@@ -4,9 +4,53 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ## Unreleased
 
+### Added
+
+- OSS community運用文書、Issue / Pull Request template、およびfull host test後に
+  source archive・SPDX SBOM・checksum・SLSA/SBOM attestationをtagから公開する
+  SHA-pinned release workflowを追加した。
+- version、platform、feature状態、HIL境界を記録するmachine-readable
+  `compatibility-matrix.json`と、CMake/ABI/storage/ESP-IDF/CI/evidenceを照合する
+  fail-closed gateを追加した。M4/M5を含むfeature依存グラフも固定し、依存機能が未完成の
+  `RELEASE_SUPPORTED`を拒否する。matrixはinstall treeとsource releaseの両方へ含める。
+- closed dependency inventory、既知package/version/license/hashを補完するSPDX 2.3
+  enrichment gate、およびsource commitとworkflow-definition commitを分離記録する
+  release build metadataを追加した。
+
 ### Changed
 
+- `0.x`のinstalled CMake packageが次minorを互換と誤判定しないよう、
+  package version policyを同一minorへ限定した。`0.1.x`内のpatch互換、
+  `0.2.x`/`1.x`拒否をCTestで固定し、`1.0+`では同一major互換へ戻す。
+- 非Domain Host RuntimeのSERVICE registryとSERVICE capacity台帳を同じFULL
+  transactionで更新するよう修正した。初回登録は`used/high_water`を永続化し、
+  再起動時はregistry復元後にcapacityを照合する。満杯後の最初の拒否は
+  `blocked=1`をFULL永続化する。PUT/commit失敗ではregistry・capacityとも不変、
+  `COMMIT_UNKNOWN`ではsame instanceをfenceし、cold restartで旧状態または新状態の
+  どちらか一方へ収束する。writer allowlistはSERVICE markerとSERVICE capacity行
+  だけに限定し、他capacity kindへの権限は追加しない。
+- tests-OFFでinstallしたHost Runtimeの外部consumer gateを、単純な
+  `create → step → destroy` marker確認から、公開APIだけを使う4 Service
+  （DesiredState受信2種、EventFact送信2種）のdurable lifecycle検証へ強化した。
+  任意binary payload、同一key/digestの同一transaction dedupe、key conflict、
+  query/list、capacity/metrics、bounded stepを値でassertし、Runtime再生成後も
+  transaction/service registryとdedupeが継続することを検証する。memory providerは
+  同じdurable object、SQLite providerはobject/connectionを破棄してdiskから再openする。
+  SQLite ON/OFF、C11 strict、installed target/include境界、主要API/reopen/assert除去の
+  mutation self-testをfail-closedに維持する。Domain-ON未公開profileの
+  `NINLIL_E_UNSUPPORTED` create試験は別経路のまま維持する。
 - 公開文書・ソースコメント・品質ゲートを製品非依存の表現へ統一し、reference application integration を汎用プロファイルとして再整理した。
+- Third-party noticeを現行Host/ESP dependency graphへ更新し、direct/transitive lock、
+  license token、pinned SPDX SBOM生成経路の不一致を拒否するCI gateを追加した。
+- tag releaseが通常branchの過去CI結果へ依存せず、同じtag commitでfull Linux/macOS CIと
+  pinned ESP32-S3 target CIをreusable workflowとして再実行してからpackage/attestationへ
+  進むようrelease gateを強化した。
+- Manual dry runのbranch/tag/refを最初にimmutable commitへ解決し、Host、ESP32-S3、
+  strict Release test、packageの全jobが同じcommitだけを検証するよう固定した。
+  全workflowにchecksum-pinned actionlintとchecksum-pinned ShellCheckの
+  syntax/semantic gateも追加した。
+- ESP-IDF CI imageをofficial linux/amd64 manifest digestへ固定し、macOS authorityを
+  supportedな`macos-15` arm64 runnerへ更新した。
 - U5/U6の製品非依存editorial deltaをfreeze v2として再固定した。Normative meaning、wire、storage、API、実装状態の変更はない。
 
 ## [v1.0-lab-rc2] - 2026-07-24
@@ -130,9 +174,17 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 
 ### Known limitations
 
-- Public Runtime APIのfunction bodyと`runtime_step`は未完成です。
-- Bearer、Tx Gate、Origin Authorization、Reliable Command、Durable Eventはend-to-endで未統合です。Runtime 統合済み production durable storage も未完了です（ESP dual-slot candidate / POSIX SQLite host candidate はいずれも Runtime body 未接続; field-ready 非claim）。
-- ESP-IDF port の storage FULL attestation / physical power-cut HIL、USB series 完成、Wi-Fi、SX1262 production TX、Display/Leak 実機 path は未完成です。M3-prep は component packaging、M3-basic は clock/entropy/execution adapters、control framing は private `NCG1` codec、owner/cell/loopback skeleton は [docs/22](docs/22-m3-owner-cell-agent-skeleton.md)、storage candidate は host conformance + ESP_UNPROVEN（[docs/21](docs/21-m3-esp-idf-durable-storage.md)）、U1 は host POSIX USB/serial **implementation candidate**（Required HIL pending; complete ではない）、U2 は ESP CDC-ACM **implementation candidate**（host pure + target compile/link; Required HIL pending; complete ではない）、U3 は C3/C4 framing-session + U3↔U4 boundary **implementation candidate**（host fake stream）、U4 は NCL1 pure codec + logical session host **candidate**（Required host vectors/gates; complete / series 完成 / HIL ではない）、R1 は `ninlil_radio_hal` **host candidate**（sole transmit-with-permit + spy; R2 permit authority / real SX1262 / RF HIL 未）までです。public Runtime wiring / assignment / security / complete / series 完成は未実装です。
+- Public Runtime APIと`runtime_step`、POSIX SQLiteを含むdurable Host Runtimeは
+  実装済みのプレリリース候補です。ただし、Linux/macOSの全配布行列とremote CIを
+  現在のcommitで再確認するまでrelease-supportedとはしません。
+- Bearer、Tx Gate、Origin Authorization、Reliable Command、Durable EventはHost
+  software E2Eへ統合済みです。これはUSB、Wi-Fi AP、LoRa RF、電源断を使った物理E2Eの
+  代替証拠ではなく、field-ready claimでもありません。
+- ESP-IDF port、USB/CDC、Wi-Fi、SX1262 TX/RXにはtarget実装候補とcompile/link証拠が
+  ありますが、storage FULL attestation、physical power-cut、実USB series、実AP、
+  実RF、Display/Leak実機pathのRequired HILは未実施です。各機能の正確な状態と
+  fail-closedな昇格条件は`compatibility-matrix.json`、[Testing and Quality](docs/07-testing-and-quality.md)、
+  [HIL Evidence](docs/hil-evidence.md)を正本とし、software testから物理完成を推論しません。
 - Public API、wire、storage formatの互換性はまだ保証しません。
 - Security、regulatory compliance、production SLO、field readinessを保証するreleaseではありません。
 

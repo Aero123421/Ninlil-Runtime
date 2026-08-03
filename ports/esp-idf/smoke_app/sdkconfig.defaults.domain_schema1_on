@@ -1,0 +1,3 @@
+# Domain schema1 HOST_CANDIDATE private feature for ESP map measurement.
+# Not default. Not public ABI. Not HIL-complete by itself.
+CONFIG_NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=y

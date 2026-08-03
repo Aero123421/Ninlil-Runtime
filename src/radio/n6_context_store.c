@@ -18,12 +18,30 @@
 #include "n6_context_store.h"
 
 #include "ninlil/version.h"
+#include "tx_exclusive_tranche.h"
 
 #include <string.h>
 
 _Static_assert(
     sizeof(ninlil_n6_local_identity_claim_t) == 24u,
     "local identity claim ABI v1 is exact 24 bytes");
+_Static_assert(
+    sizeof(ninlil_n6_authority_claim_t) == NINLIL_N6_AUTHORITY_CLAIM_BYTES,
+    "accepted authority claim ABI v1 is exact 32 bytes");
+_Static_assert(
+    offsetof(ninlil_n6_authority_claim_t, clock_epoch_id) == 8u
+        && offsetof(ninlil_n6_authority_claim_t, now_ms) == 24u,
+    "accepted authority claim offsets are portable");
+_Static_assert(
+    sizeof(ninlil_n6_install_claim_t) == NINLIL_N6_INSTALL_CLAIM_BYTES,
+    "accepted install claim ABI v1 is exact 128 bytes");
+_Static_assert(
+    offsetof(ninlil_n6_install_claim_t, layer_code) == 8u
+        && offsetof(ninlil_n6_install_claim_t, context_id) == 12u
+        && offsetof(ninlil_n6_install_claim_t, membership_epoch) == 16u
+        && offsetof(ninlil_n6_install_claim_t, binding_digest32) == 32u
+        && offsetof(ninlil_n6_install_claim_t, local_node_id) == 96u,
+    "accepted install claim offsets are portable");
 
 #define N6_MAGIC ((uint32_t)0x4E365354u)
 #define N6_CANARY ((uint32_t)0xC4A4A4C4u)
@@ -1300,6 +1318,103 @@ ninlil_n6_status_t ninlil_n6_bind_authority_stamp(
     n6_leave(n6);
     return NINLIL_N6_OK;
 #endif
+}
+
+static int n6_bytes_nonzero(const uint8_t *bytes, size_t length)
+{
+    uint8_t any = 0u;
+    size_t i;
+    if (bytes == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < length; ++i) {
+        any = (uint8_t)(any | bytes[i]);
+    }
+    return any != 0u;
+}
+
+ninlil_n6_status_t ninlil_n6_bind_authority_stamp_accepted(
+    ninlil_n6_t *n6,
+    const ninlil_n6_authority_ops_t *ops,
+    ninlil_n6_accepted_authority_token_t *mutable_token)
+{
+    ninlil_n6_authority_claim_t claim;
+    ninlil_n6_authority_accept_status_t accepted;
+    ninlil_n6_status_t st = n6_enter(n6);
+
+    if (st != NINLIL_N6_OK) {
+        return st;
+    }
+    if (n6->state == NINLIL_N6_STATE_FENCED) {
+        n6_set_err(n6, NINLIL_N6_FENCED, NINLIL_N6_REASON_FENCE, "auth_fenced");
+        n6_leave(n6);
+        return NINLIL_N6_FENCED;
+    }
+    if (n6->state == NINLIL_N6_STATE_CU_PENDING) {
+        n6_set_err(n6, NINLIL_N6_COMMIT_UNKNOWN,
+            NINLIL_N6_REASON_COMMIT_UNKNOWN, "auth_cu");
+        n6_leave(n6);
+        return NINLIL_N6_COMMIT_UNKNOWN;
+    }
+    if (n6->state != NINLIL_N6_STATE_INIT
+        && n6->state != NINLIL_N6_STATE_BOUND
+        && n6->state != NINLIL_N6_STATE_BOOTED
+        && n6->state != NINLIL_N6_STATE_READY) {
+        n6_set_err(n6, NINLIL_N6_INVALID_STATE, NINLIL_N6_REASON_STATE,
+            "auth_state");
+        n6_leave(n6);
+        return NINLIL_N6_INVALID_STATE;
+    }
+    if (ops == NULL || mutable_token == NULL
+        || !n6_ranges_disjoint(n6, sizeof(*n6), ops, sizeof(*ops))
+        || (const void *)mutable_token == (const void *)n6
+        || (const void *)mutable_token == (const void *)ops) {
+        st = (ops == NULL || mutable_token == NULL)
+            ? NINLIL_N6_INVALID_ARGUMENT
+            : NINLIL_N6_ALIAS;
+        n6_set_err(n6, st,
+            st == NINLIL_N6_ALIAS ? NINLIL_N6_REASON_ALIAS
+                                  : NINLIL_N6_REASON_STAMP,
+            "auth_ops");
+        n6_leave(n6);
+        return st;
+    }
+    if (ops->abi_version != NINLIL_N6_AUTHORITY_OPS_ABI
+        || ops->struct_size != (uint16_t)sizeof(*ops)
+        || ops->reserved_zero != 0u || ops->consume == NULL) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_STAMP,
+            "auth_ops");
+        n6_leave(n6);
+        return NINLIL_N6_INVALID_ARGUMENT;
+    }
+
+    ninlil_n6_secure_zero(&claim, sizeof(claim));
+    accepted = ops->consume(ops->user, mutable_token, &claim);
+    if (accepted != NINLIL_N6_AUTHORITY_ACCEPT_OK
+        || claim.abi_version != NINLIL_N6_AUTHORITY_CLAIM_ABI
+        || claim.struct_size != NINLIL_N6_AUTHORITY_CLAIM_BYTES
+        || claim.reserved_zero != 0u
+        || !n6_bytes_nonzero(claim.clock_epoch_id, 16u)
+        || (n6->stamp_bound != 0
+            && (memcmp(n6->stamp.clock_epoch_id, claim.clock_epoch_id, 16u)
+                    != 0
+                || claim.now_ms < n6->stamp_last_now_ms))) {
+        ninlil_n6_secure_zero(&claim, sizeof(claim));
+        n6_set_err(n6, NINLIL_N6_M4_REQUIRED, NINLIL_N6_REASON_STAMP,
+            "auth_accept");
+        n6_leave(n6);
+        return NINLIL_N6_M4_REQUIRED;
+    }
+    ninlil_n6_secure_zero(&n6->stamp, sizeof(n6->stamp));
+    (void)memcpy(n6->stamp.clock_epoch_id, claim.clock_epoch_id, 16u);
+    n6->stamp.now_ms = claim.now_ms;
+    n6->stamp.trusted_class_d = 1u;
+    n6->stamp_last_now_ms = claim.now_ms;
+    n6->stamp_bound = 1;
+    ninlil_n6_secure_zero(&claim, sizeof(claim));
+    n6_set_err(n6, NINLIL_N6_OK, NINLIL_N6_REASON_NONE, NULL);
+    n6_leave(n6);
+    return NINLIL_N6_OK;
 }
 
 /*
@@ -3610,13 +3725,30 @@ static ninlil_n6_status_t n6_derive_lane_keys(
     return NINLIL_N6_INVALID_ARGUMENT;
 }
 
-static void n6_nonce_apply_counter(uint8_t iv12[12], uint64_t counter)
+/*
+ * docs/30 §8.6 reference: nonce = static_iv XOR (0||counter_be).
+ * Lease/ticket.iv12 is static only; r7 wire/frag call
+ * ninlil_r7_crypto_nonce_from_counter. This helper is not used on burn/precheck
+ * (pre-applying here caused double-XOR nonce reuse).
+ */
+#if defined(NINLIL_N6_TEST_BUILD)
+void ninlil_n6_test_nonce_from_static_and_counter(
+    const uint8_t static_iv12[12], uint64_t counter, uint8_t out_nonce12[12])
 {
     int i;
+    if (static_iv12 == NULL || out_nonce12 == NULL) {
+        return;
+    }
+    for (i = 0; i < 4; ++i) {
+        out_nonce12[i] = static_iv12[i];
+    }
     for (i = 0; i < 8; ++i) {
-        iv12[4 + i] ^= (uint8_t)((counter >> (56 - 8 * i)) & 0xffu);
+        out_nonce12[4 + i] = (uint8_t)(
+            static_iv12[4 + i]
+            ^ (uint8_t)((counter >> (56 - 8 * i)) & 0xffu));
     }
 }
+#endif
 
 static int n6_capsule_ok(const ninlil_n6_install_capsule_t *c)
 {
@@ -3633,7 +3765,7 @@ static int n6_capsule_ok(const ninlil_n6_install_capsule_t *c)
 
 static ninlil_n6_status_t n6_install_engine(
     ninlil_n6_t *n6, const ninlil_n6_install_capsule_t *cap, int hop,
-    ninlil_n6_handle_t *out_h)
+    int accepted_provenance, ninlil_n6_handle_t *out_h)
 {
     n6_slot_t *slot;
     n6_txn_t wtxn;
@@ -3651,24 +3783,32 @@ static ninlil_n6_status_t n6_install_engine(
     if (n6->state != NINLIL_N6_STATE_BOOTED && n6->state != NINLIL_N6_STATE_READY)
         return NINLIL_N6_INVALID_STATE;
     if (n6->stamp_bound == 0) return NINLIL_N6_INVALID_STATE;
-    if (cap->provenance == NINLIL_N6_PROVENANCE_M4_AUTHENTICATED) {
+    if (accepted_provenance != 0) {
+        if (cap->provenance != NINLIL_N6_PROVENANCE_M4_AUTHENTICATED) {
+            n6->stats.install_fail++;
+            n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT,
+                NINLIL_N6_REASON_PROVENANCE, "accepted_provenance");
+            return NINLIL_N6_INVALID_ARGUMENT;
+        }
+    } else if (cap->provenance == NINLIL_N6_PROVENANCE_M4_AUTHENTICATED) {
         /* No production M4 capsule adapter yet — fail closed at boundary. */
         n6->stats.install_fail++;
         n6_set_err(n6, NINLIL_N6_M4_REQUIRED, NINLIL_N6_REASON_M4, "m4");
         return NINLIL_N6_M4_REQUIRED;
-    }
-    if (cap->provenance != NINLIL_N6_PROVENANCE_FIXTURE_ONLY) {
+    } else if (cap->provenance != NINLIL_N6_PROVENANCE_FIXTURE_ONLY) {
         n6->stats.install_fail++;
         return NINLIL_N6_INVALID_ARGUMENT;
     }
 #if !defined(NINLIL_N6_TEST_BUILD)
-    /* FIXTURE_ONLY rejected outside test-build TU. */
-    n6->stats.install_fail++;
-    n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_PROVENANCE,
-        "no_fixture_in_production");
-    return NINLIL_N6_INVALID_ARGUMENT;
+    if (accepted_provenance == 0) {
+        /* FIXTURE_ONLY rejected outside test-build TU. */
+        n6->stats.install_fail++;
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_PROVENANCE,
+            "no_fixture_in_production");
+        return NINLIL_N6_INVALID_ARGUMENT;
+    }
 #endif
-    /* Fixture install requires bound local identity matching capsule. */
+    /* Every install requires the already accepted local identity. */
     if (n6->local_id_bound == 0
         || memcmp(n6->local_node_id, cap->local_node_id, 16u) != 0) {
         n6->stats.install_fail++;
@@ -4114,7 +4254,7 @@ ninlil_n6_status_t ninlil_n6_install_hop(
 {
     ninlil_n6_status_t st = n6_enter(n6), r;
     if (st != NINLIL_N6_OK) return st;
-    r = n6_install_engine(n6, c, 1, h);
+    r = n6_install_engine(n6, c, 1, 0, h);
     n6_leave(n6);
     return r;
 }
@@ -4123,9 +4263,149 @@ ninlil_n6_status_t ninlil_n6_install_e2e(
 {
     ninlil_n6_status_t st = n6_enter(n6), r;
     if (st != NINLIL_N6_OK) return st;
-    r = n6_install_engine(n6, c, 0, h);
+    r = n6_install_engine(n6, c, 0, 0, h);
     n6_leave(n6);
     return r;
+}
+
+static int n6_install_claim_ok(
+    const ninlil_n6_install_claim_t *claim, int hop)
+{
+    if (claim == NULL
+        || claim->abi_version != NINLIL_N6_INSTALL_CLAIM_ABI
+        || claim->struct_size != NINLIL_N6_INSTALL_CLAIM_BYTES
+        || claim->reserved_zero != 0u || claim->reserved0 != 0u
+        || claim->layer_code
+            != (hop != 0 ? NINLIL_N6_LAYER_HOP : NINLIL_N6_LAYER_E2E)
+        || claim->direction_code > NINLIL_N6_DIR_RI
+        || (claim->alloc_side != NINLIL_N6_ALLOC_INBOUND_RX
+            && claim->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX)
+        || claim->context_id == 0u || claim->context_id == UINT32_MAX
+        || claim->membership_epoch == 0u || claim->key_generation == 0u
+        || !n6_bytes_nonzero(claim->binding_digest32, 32u)
+        || !n6_bytes_nonzero(claim->traffic_secret32, 32u)
+        || !n6_bytes_nonzero(claim->local_node_id, 16u)
+        || !n6_bytes_nonzero(claim->receiver_node_id, 16u)) {
+        return 0;
+    }
+    if (claim->alloc_side == NINLIL_N6_ALLOC_INBOUND_RX) {
+        return memcmp(claim->local_node_id, claim->receiver_node_id, 16u) == 0;
+    }
+    return memcmp(claim->local_node_id, claim->receiver_node_id, 16u) != 0;
+}
+
+static ninlil_n6_status_t n6_install_accepted(
+    ninlil_n6_t *n6,
+    const ninlil_n6_install_ops_t *ops,
+    ninlil_n6_accepted_install_token_t *mutable_token,
+    ninlil_n6_handle_t *out_handle,
+    int hop)
+{
+    ninlil_n6_install_claim_t claim;
+    ninlil_n6_install_capsule_t capsule;
+    ninlil_n6_install_accept_status_t accepted;
+    ninlil_n6_status_t result;
+    ninlil_n6_status_t st = n6_enter(n6);
+
+    if (st != NINLIL_N6_OK) {
+        return st;
+    }
+    if (n6->state != NINLIL_N6_STATE_BOOTED
+        && n6->state != NINLIL_N6_STATE_READY) {
+        result = n6->state == NINLIL_N6_STATE_CU_PENDING
+            ? NINLIL_N6_COMMIT_UNKNOWN
+            : (n6->state == NINLIL_N6_STATE_FENCED ? NINLIL_N6_FENCED
+                                                    : NINLIL_N6_INVALID_STATE);
+        n6_set_err(n6, result,
+            result == NINLIL_N6_COMMIT_UNKNOWN
+                ? NINLIL_N6_REASON_COMMIT_UNKNOWN
+                : (result == NINLIL_N6_FENCED ? NINLIL_N6_REASON_FENCE
+                                               : NINLIL_N6_REASON_STATE),
+            "install_state");
+        n6_leave(n6);
+        return result;
+    }
+    if (n6->stamp_bound == 0) {
+        n6_set_err(n6, NINLIL_N6_INVALID_STATE, NINLIL_N6_REASON_STAMP,
+            "install_stamp");
+        n6_leave(n6);
+        return NINLIL_N6_INVALID_STATE;
+    }
+    if (ops == NULL || mutable_token == NULL || out_handle == NULL
+        || !n6_ranges_disjoint(n6, sizeof(*n6), ops, sizeof(*ops))
+        || !n6_ranges_disjoint(
+            n6, sizeof(*n6), out_handle, sizeof(*out_handle))
+        || !n6_ranges_disjoint(
+            ops, sizeof(*ops), out_handle, sizeof(*out_handle))
+        || (const void *)mutable_token == (const void *)n6
+        || (const void *)mutable_token == (const void *)ops
+        || (const void *)mutable_token == (const void *)out_handle) {
+        result = (ops == NULL || mutable_token == NULL || out_handle == NULL)
+            ? NINLIL_N6_INVALID_ARGUMENT
+            : NINLIL_N6_ALIAS;
+        n6_set_err(n6, result,
+            result == NINLIL_N6_ALIAS ? NINLIL_N6_REASON_ALIAS
+                                      : NINLIL_N6_REASON_PROVENANCE,
+            "install_ops");
+        n6_leave(n6);
+        return result;
+    }
+    *out_handle = 0u;
+    if (ops->abi_version != NINLIL_N6_INSTALL_OPS_ABI
+        || ops->struct_size != (uint16_t)sizeof(*ops)
+        || ops->reserved_zero != 0u || ops->consume == NULL) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT,
+            NINLIL_N6_REASON_PROVENANCE, "install_ops");
+        n6_leave(n6);
+        return NINLIL_N6_INVALID_ARGUMENT;
+    }
+
+    ninlil_n6_secure_zero(&claim, sizeof(claim));
+    accepted = ops->consume(ops->user, mutable_token, &claim);
+    if (accepted != NINLIL_N6_INSTALL_ACCEPT_OK
+        || !n6_install_claim_ok(&claim, hop)) {
+        ninlil_n6_secure_zero(&claim, sizeof(claim));
+        n6_set_err(n6, NINLIL_N6_M4_REQUIRED, NINLIL_N6_REASON_PROVENANCE,
+            "install_accept");
+        n6_leave(n6);
+        return NINLIL_N6_M4_REQUIRED;
+    }
+
+    ninlil_n6_secure_zero(&capsule, sizeof(capsule));
+    capsule.provenance = NINLIL_N6_PROVENANCE_M4_AUTHENTICATED;
+    capsule.layer_code = claim.layer_code;
+    capsule.direction_code = claim.direction_code;
+    capsule.alloc_side = claim.alloc_side;
+    capsule.context_id = claim.context_id;
+    capsule.membership_epoch = claim.membership_epoch;
+    capsule.key_generation = claim.key_generation;
+    (void)memcpy(capsule.binding_digest32, claim.binding_digest32, 32u);
+    (void)memcpy(capsule.traffic_secret32, claim.traffic_secret32, 32u);
+    (void)memcpy(capsule.local_node_id, claim.local_node_id, 16u);
+    (void)memcpy(capsule.receiver_node_id, claim.receiver_node_id, 16u);
+    ninlil_n6_secure_zero(&claim, sizeof(claim));
+    result = n6_install_engine(n6, &capsule, hop, 1, out_handle);
+    ninlil_n6_secure_zero(&capsule, sizeof(capsule));
+    n6_leave(n6);
+    return result;
+}
+
+ninlil_n6_status_t ninlil_n6_install_hop_accepted(
+    ninlil_n6_t *n6,
+    const ninlil_n6_install_ops_t *ops,
+    ninlil_n6_accepted_install_token_t *mutable_token,
+    ninlil_n6_handle_t *out_handle)
+{
+    return n6_install_accepted(n6, ops, mutable_token, out_handle, 1);
+}
+
+ninlil_n6_status_t ninlil_n6_install_e2e_accepted(
+    ninlil_n6_t *n6,
+    const ninlil_n6_install_ops_t *ops,
+    ninlil_n6_accepted_install_token_t *mutable_token,
+    ninlil_n6_handle_t *out_handle)
+{
+    return n6_install_accepted(n6, ops, mutable_token, out_handle, 0);
 }
 
 /* TX: reserve block only when ram window exhausted */
@@ -4177,7 +4457,7 @@ ninlil_n6_status_t ninlil_n6_tx_burn(
         uint8_t key[48], val[68], oldbuf[68];
         size_t klen=0, vlen=0;
         ninlil_bytes_view_t kb, vb;
-        uint64_t c0, c1, room, grow;
+        uint64_t c0, c1;
         ninlil_n6_status_t cst;
         /* exclusive end may be UINT64_MAX so last counter is MAX-1 */
         const uint64_t max_ex = UINT64_MAX;
@@ -4212,9 +4492,12 @@ ninlil_n6_status_t ninlil_n6_tx_burn(
                 pst = n6_prov_fail(n6, &w, NINLIL_N6_CAPACITY, 1);
                 n6_leave(n6); return pst;
             }
-            room = max_ex - c0;
-            grow = (room < NINLIL_N6_TX_BLOCK_SIZE) ? room : NINLIL_N6_TX_BLOCK_SIZE;
-            c1 = c0 + grow;
+            /* docs/30 §9.2 checked final partial tranche (shared helper). */
+            if (!ninlil_tx_exclusive_grow(
+                    c0, NINLIL_N6_TX_BLOCK_SIZE, &c1)) {
+                pst = n6_prov_fail(n6, &w, NINLIL_N6_CAPACITY, 1);
+                n6_leave(n6); return pst;
+            }
             tv.reserved_exclusive = c1;
             if (ninlil_n6_encode_n6tx_value(&tv, val, sizeof(val), &vlen) != NINLIL_N6_CODEC_OK) {
                 pst = n6_prov_fail(n6, &w, NINLIL_N6_CORRUPT, 1);
@@ -4268,7 +4551,13 @@ ninlil_n6_status_t ninlil_n6_tx_burn(
             ninlil_n6_secure_zero(L, sizeof(*L));
             n6_leave(n6); return NINLIL_N6_CRYPTO;
         }
-        n6_nonce_apply_counter(L->iv12, c);
+        /*
+         * iv12 is the lane static_iv12 only (docs/30 §8.6).
+         * Callers (r7 wire/frag codec) apply counter via
+         * ninlil_r7_crypto_nonce_from_counter(static_iv, counter, nonce).
+         * Applying counter here would double-XOR with the codec and collapse
+         * every counter to the same AEAD nonce (release-blocker P0).
+         */
         slot->tx_ram_next[idx] = c + 1u;
         *out_lease = *L;
     }
@@ -4387,22 +4676,32 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
         ninlil_n6_secure_zero(out_ticket, sizeof(*out_ticket));
     }
     if (!out_ticket || !counter || counter == UINT64_MAX) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_DOMAIN,
+            "rx_precheck_arg");
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
     if (n6->state != NINLIL_N6_STATE_READY) {
+        n6_set_err(n6, NINLIL_N6_INVALID_STATE, NINLIL_N6_REASON_STATE,
+            "rx_precheck_state");
         n6_leave(n6); return NINLIL_N6_INVALID_STATE;
     }
     {
         int corrupt = 0;
         slot = n6_find_handle(n6, handle, &corrupt);
         if (corrupt != 0) {
+            n6_set_err(n6, NINLIL_N6_CORRUPT, NINLIL_N6_REASON_CORRUPT,
+                "rx_precheck_corrupt");
             n6_leave(n6); return NINLIL_N6_CORRUPT;
         }
     }
     if (!slot || slot->fenced || slot->alloc_side != NINLIL_N6_ALLOC_INBOUND_RX) {
+        n6_set_err(n6, NINLIL_N6_NOT_FOUND, NINLIL_N6_REASON_NOT_FOUND,
+            "rx_precheck_handle");
         n6_leave(n6); return NINLIL_N6_NOT_FOUND;
     }
     if (!n6_lane_ok_for_slot(slot, lane_kind)) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_DOMAIN,
+            "rx_precheck_lane_kind");
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
     idx = n6_lane_idx(lane_kind);
@@ -4411,10 +4710,18 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
      * INVALID_ARGUMENT with zero mutation (out_ticket already zeroed; no
      * internal ticket allocated). Also silences GCC -Warray-bounds at O2. */
     if (!n6_lane_idx_in_range(idx)) {
+        n6_set_err(n6, NINLIL_N6_INVALID_ARGUMENT, NINLIL_N6_REASON_DOMAIN,
+            "rx_precheck_lane");
         n6_leave(n6); return NINLIL_N6_INVALID_ARGUMENT;
     }
+    /*
+     * Typed REPLAY: counter already admitted / below boot floor / OOR.
+     * Distinct from live-ticket collision (TICKET) and ticket CAPACITY.
+     */
     if (!n6_rx_precheck_window(slot, idx, counter)) {
-        n6_leave(n6); return NINLIL_N6_TICKET;
+        n6_set_err(n6, NINLIL_N6_REPLAY, NINLIL_N6_REASON_REPLAY,
+            "rx_precheck_replay");
+        n6_leave(n6); return NINLIL_N6_REPLAY;
     }
     /* no live ticket for same handle/lane/counter */
     for (ti = 0; ti < (int)NINLIL_N6_MAX_LIVE_TICKETS; ++ti) {
@@ -4422,12 +4729,16 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
             && n6->tickets[ti].handle == handle
             && n6->tickets[ti].lane_kind == lane_kind
             && n6->tickets[ti].counter == counter) {
+            n6_set_err(n6, NINLIL_N6_TICKET, NINLIL_N6_REASON_TICKET,
+                "rx_precheck_live_ticket");
             n6_leave(n6); return NINLIL_N6_TICKET;
         }
     }
     for (ti = 0; ti < (int)NINLIL_N6_MAX_LIVE_TICKETS; ++ti)
         if (!n6->tickets[ti].live) break;
     if (ti >= (int)NINLIL_N6_MAX_LIVE_TICKETS) {
+        n6_set_err(n6, NINLIL_N6_CAPACITY, NINLIL_N6_REASON_CAPACITY,
+            "rx_precheck_ticket_pool");
         n6_leave(n6); return NINLIL_N6_CAPACITY;
     }
     {
@@ -4450,7 +4761,10 @@ ninlil_n6_status_t ninlil_n6_rx_precheck(
             ninlil_n6_secure_zero(T, sizeof(*T));
             n6_leave(n6); return NINLIL_N6_CRYPTO;
         }
-        n6_nonce_apply_counter(T->iv12, counter);
+        /*
+         * iv12 = static_iv12 only. Wire/frag Open applies counter once.
+         * Do not pre-XOR here (double-XOR ⇒ nonce reuse across counters).
+         */
         /* public copy for AEAD open; admit ignores caller fields */
         out_ticket->ticket_id = T->ticket_id;
         out_ticket->handle = T->handle;
@@ -5198,6 +5512,95 @@ int ninlil_n6_test_rx_window_snapshot(
     *out_boot_floor = boot[idx];
     *out_ram_highest = high[idx];
     *out_bitmap = bm[idx];
+    return 1;
+}
+
+/*
+ * Seed durable + RAM TX exclusive window for §9.2 boundary tests.
+ * Sets reserved_exclusive = exclusive and empty RAM window (next==limit==exclusive)
+ * so the next tx_burn grows from that exclusive (partial final tranche near MAX).
+ * exclusive domain: 1..UINT64_MAX (UINT64_MAX = terminal / exhausted).
+ * Returns 1 on success, 0 on refuse.
+ */
+int ninlil_n6_test_seed_tx_exclusive(
+    ninlil_n6_t *n6,
+    ninlil_n6_handle_t handle,
+    uint8_t lane_kind,
+    uint64_t exclusive)
+{
+    n6_slot_t *slot;
+    int idx;
+    int corrupt = 0;
+    ninlil_n6_lane_key_t lk;
+    ninlil_n6_tx_value_t tv;
+    uint8_t key[48], val[68], oldbuf[68];
+    size_t klen = 0u, vlen = 0u;
+    ninlil_bytes_view_t kb, vb;
+    n6_txn_t w;
+    uint32_t olen = 0u;
+    ninlil_n6_status_t pst;
+
+    if (n6 == NULL || handle == 0u || exclusive == 0u) {
+        return 0;
+    }
+    if (n6->state != NINLIL_N6_STATE_READY) {
+        return 0;
+    }
+    slot = n6_find_handle(n6, handle, &corrupt);
+    if (corrupt != 0 || slot == NULL || slot->fenced
+        || slot->alloc_side != NINLIL_N6_ALLOC_OUTBOUND_TX) {
+        return 0;
+    }
+    if (!n6_lane_ok_for_slot(slot, lane_kind)) {
+        return 0;
+    }
+    idx = n6_lane_idx(lane_kind);
+    if (!n6_lane_idx_in_range(idx)) {
+        return 0;
+    }
+    n6_make_lane_key(slot, lane_kind, &lk);
+    if (ninlil_n6_encode_lane_key(&lk, key, sizeof(key), &klen)
+        != NINLIL_N6_CODEC_OK) {
+        return 0;
+    }
+    if (n6_need_storage(n6) != NINLIL_N6_OK) {
+        return 0;
+    }
+    pst = n6_prov_begin(n6, NINLIL_STORAGE_READ_WRITE, &w);
+    if (pst != NINLIL_N6_OK) {
+        return 0;
+    }
+    kb.data = key;
+    kb.length = (uint32_t)klen;
+    pst = n6_prov_get(n6, &w, kb, oldbuf, (uint32_t)sizeof(oldbuf), &olen,
+        N6_GET_REQUIRE_PRESENT);
+    if (pst != NINLIL_N6_OK) {
+        (void)n6_prov_fail(n6, &w, pst, 1);
+        return 0;
+    }
+    if (ninlil_n6_decode_n6tx_value(oldbuf, olen, &tv) != NINLIL_N6_CODEC_OK) {
+        (void)n6_prov_fail(n6, &w, NINLIL_N6_CORRUPT, 1);
+        return 0;
+    }
+    tv.reserved_exclusive = exclusive;
+    if (ninlil_n6_encode_n6tx_value(&tv, val, sizeof(val), &vlen)
+        != NINLIL_N6_CODEC_OK) {
+        (void)n6_prov_fail(n6, &w, NINLIL_N6_CORRUPT, 1);
+        return 0;
+    }
+    vb.data = val;
+    vb.length = (uint32_t)vlen;
+    pst = n6_prov_put(n6, &w, kb, vb);
+    if (pst != NINLIL_N6_OK) {
+        (void)n6_prov_fail(n6, &w, pst, 1);
+        return 0;
+    }
+    pst = n6_prov_commit(n6, &w);
+    if (pst != NINLIL_N6_OK) {
+        return 0;
+    }
+    slot->tx_ram_next[idx] = exclusive;
+    slot->tx_ram_limit[idx] = exclusive;
     return 1;
 }
 #endif /* NINLIL_N6_TEST_BUILD */

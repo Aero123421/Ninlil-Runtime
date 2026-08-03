@@ -139,12 +139,14 @@ _Static_assert(
 struct ninlil_domain_scan_d3s1_context;
 struct ninlil_domain_scan_d3s2_context;
 struct ninlil_domain_scan_d3s3_context;
+struct ninlil_domain_scan_d3s4_context;
 
-/* bound_d3_kind: exclusive S1/S2/S3 (or none). Not a public ABI. */
+/* bound_d3_kind: exclusive S1/S2/S3/S4 (or none). Not a public ABI. */
 #define NINLIL_DOMAIN_SCAN_D3_KIND_NONE ((uint8_t)0u)
 #define NINLIL_DOMAIN_SCAN_D3_KIND_S1 ((uint8_t)1u)
 #define NINLIL_DOMAIN_SCAN_D3_KIND_S2 ((uint8_t)2u)
 #define NINLIL_DOMAIN_SCAN_D3_KIND_S3 ((uint8_t)3u)
+#define NINLIL_DOMAIN_SCAN_D3_KIND_S4 ((uint8_t)4u)
 
 typedef struct ninlil_domain_scan_session {
     ninlil_domain_scan_state_t state;
@@ -164,6 +166,7 @@ typedef struct ninlil_domain_scan_session {
         struct ninlil_domain_scan_d3s1_context *bound_d3_context;
         struct ninlil_domain_scan_d3s2_context *bound_d3s2_context;
         struct ninlil_domain_scan_d3s3_context *bound_d3s3_context;
+        struct ninlil_domain_scan_d3s4_context *bound_d3s4_context;
     };
     ninlil_storage_handle_t bound_handle_value;
     /*
@@ -216,7 +219,17 @@ typedef struct ninlil_domain_scan_result {
     uint8_t future_profile_candidate;
     uint32_t profile_get_present_mask;
     uint32_t family14_iter_seen_mask;
+    uint8_t d3s4_disposition_present;
+    uint8_t d3s4_disposition;
 } ninlil_domain_scan_result_t;
+
+#if defined(__cplusplus)
+static_assert(sizeof(ninlil_domain_scan_result_t) <= 64u,
+    "private Domain scan result exceeds 64-byte target ceiling");
+#else
+_Static_assert(sizeof(ninlil_domain_scan_result_t) <= 64u,
+    "private Domain scan result exceeds 64-byte target ceiling");
+#endif
 
 /*
  * Initialize a fresh/non-live session object to IDLE with zero live Port

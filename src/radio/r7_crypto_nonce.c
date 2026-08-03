@@ -78,3 +78,5 @@ ninlil_r7_crypto_status ninlil_r7_crypto_nonce_from_counter(
 
     return NINLIL_R7_CRYPTO_OK;
 }
+
+/* Inverse helper is static inline in r7_crypto_provider.h (no exported symbol). */

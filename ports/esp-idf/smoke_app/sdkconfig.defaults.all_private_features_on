@@ -1,0 +1,22 @@
+# Combined private-feature overlay: ALL private candidates ON simultaneously.
+# Individual overlays (mfdt_on / rrmp_on / …) MUST NOT substitute for this file.
+# Default smoke remains OFF. Not public ABI. Not physical HIL PASS.
+#
+# Features:
+#   R7 FRAG, V1 LAB radio path, Domain schema1, MFDT v1,
+#   Route-relay/multi-parent, Wi-Fi + Fabric
+CONFIG_NINLIL_ENABLE_SX1262_R9=y
+CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE=y
+CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH=y
+CONFIG_NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=y
+CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE=y
+CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=y
+CONFIG_NINLIL_RRMP_ROLE_ENDPOINT=y
+CONFIG_NINLIL_RRMP_ROLE_RELAY=y
+CONFIG_NINLIL_RRMP_ROLE_PARENT=y
+CONFIG_NINLIL_ENABLE_PRIVATE_WIFI_V1=y
+CONFIG_NINLIL_ENABLE_PRIVATE_FABRIC_V1=y
+# Required by private Wi-Fi TLS exporter session IDs (no synthetic IDs).
+CONFIG_MBEDTLS_SSL_KEYING_MATERIAL_EXPORT=y
+# Owner workspaces are BSS/heap; enlarge main task stack for multi-feature smoke.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288

@@ -31,6 +31,20 @@ extern "C" {
 NINLIL_ESP_IDF_INTERNAL ninlil_r7_crypto_status
 ninlil_r7_crypto_mbedtls_provider_init(ninlil_r7_crypto_provider *out_provider);
 
+/*
+ * Close the private adapter instance.  In the Wi-Fi composition this requires
+ * OTHER_REGISTERED(R7_RAW_V1) outstanding == 0 before releasing its arena.
+ * Standalone R7 keeps the historical allocation boundary and simply clears
+ * the caller-owned provider value.
+ */
+NINLIL_ESP_IDF_INTERNAL ninlil_r7_crypto_status
+ninlil_r7_crypto_mbedtls_provider_close(
+    ninlil_r7_crypto_provider *provider);
+
+#if defined(NINLIL_WIFI_ESP_TLS_ALLOCATOR_TEST_BUILD)
+void ninlil_r7_crypto_mbedtls_test_reset(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

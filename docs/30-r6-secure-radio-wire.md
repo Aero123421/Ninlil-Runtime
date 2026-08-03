@@ -34,6 +34,7 @@
 **SEMANTIC: TYPE_LENGTH_START_130_255**  
 **SEMANTIC: TYPE_LENGTH_CONT_76_255**  
 **SEMANTIC: TYPE_LENGTH_FRAG_ACK_79_EXACT**  
+**SEMANTIC: FRAG_COUNT_EFFECTIVE_MAX_13**  
 **SEMANTIC: ENCODE_CANON_BYTE_EXACT**  
 **SEMANTIC: ENVIRONMENT_CODE_LAB_FIELD**  
 **SEMANTIC: HKDF_SALT_IS_CONTEXT_BINDING_DIGEST**  
@@ -2252,7 +2253,9 @@ LAYOUT_FRAG_START_END
 ```
 
 Domains: `1 ≤ S ≤ 126`, `S < total_len ≤ 2048`, `continuation_unit = 180` exact.  
-`frag_count = 1 + ceil((total_len - S) / 180)` with `2 ≤ frag_count ≤ 16`.  
+`frag_count = 1 + ceil((total_len - S) / 180)` with `2 ≤ frag_count ≤ 13`.  
+The upper bound is derived from the same frozen domains:
+`1 + ceil((2048 - 1) / 180) = 13`; values 14..16 are non-canonical and reject.  
 Outer total = **129+S** (check 129+S ≤ 255 ⇒ S≤126). Packet domain **130..255**.
 
 **TRANSFER_HANDLE_SENDER_ENCODER_RULE / FIRST_FRAG_START_TEMPLATE_HANDLE_INJECT (exact; same 7 events):**  
@@ -2392,7 +2395,7 @@ Generated FRAG_ACK reverse E2E burns obey §15.3.7 (semantic version max2; trans
 
 1. Reverse E2E context is the exact handshake pair of the saved forward outgoing E2E context  
 2. Active outgoing transfer exists with **exact** `transfer_handle`  
-3. Saved manifest `frag_count` ∈ 2..16 and wire `frag_count` exact match  
+3. Saved manifest `frag_count` ∈ 2..13 and wire `frag_count` exact match  
 4. Bitmap bits at indices ≥ frag_count are 0  
 5. Status table:  
    - PARTIAL: reason NONE, bit0=1, not full  
@@ -3195,9 +3198,9 @@ Testbuild (`NINLIL_N6_TEST_BUILD`) **derives from the same source list** and is 
 
 ### 20.3 Private API closed set (signatures in `n6_context_store.h`)
 
-`context_pool_bytes` · `init` · `bind_storage` · `bind_crypto` · `bind_authority_stamp` · `bind_local_identity_accepted` · `boot_scan` · `install_hop` · `install_e2e` · `recover_cu` (internal classify; no external classification arg) · `tx_burn` (returns copy-owned TX crypto lease) · `tx_lease_release` · `rx_precheck` (returns AEAD-open ticket materials) · `rx_admit_after_aead` · `rx_abort` · `fence` · `restamp` · `reclaim` · `gc` · `stats` · `last_error` · `shutdown` · `esp_ready` · `state`.
+`context_pool_bytes` · `init` · `bind_storage` · `bind_crypto` · `bind_authority_stamp` · `bind_authority_stamp_accepted` · `bind_local_identity_accepted` · `boot_scan` · `install_hop` · `install_e2e` · `install_hop_accepted` · `install_e2e_accepted` · `recover_cu` (internal classify; no external classification arg) · `tx_burn` (returns copy-owned TX crypto lease) · `tx_lease_release` · `rx_precheck` (returns AEAD-open ticket materials) · `rx_admit_after_aead` · `rx_abort` · `fence` · `restamp` · `reclaim` · `gc` · `stats` · `last_error` · `shutdown` · `esp_ready` · `state`.
 
-**Production rules:** The **durable install/TX/RX/boot engine compiles in the production private object**. Only fixture authority stamp and FIXTURE_ONLY install-provenance admission are gated by `NINLIL_N6_TEST_BUILD` / test support (separate testbuild TU). **Local identity has no raw fixture bind symbol in core** — tests call the **same** production `bind_local_identity_accepted` with fixture token+ops living only under `tests/support/` (§20.4.1). Production **MUST NOT** export fixture/test-binder symbols and **MUST NOT** provide fake-success or no-op stubs for install/TX/RX that pretend readiness. Without authenticated M4/M5/local-identity inputs, entry points **fail closed at the provenance/secret/identity boundary** (typed status; no half-success). M4 provenance without M4 adapter ⇒ `M4_REQUIRED`. Fence/restamp/reclaim/gc production path ⇒ `M4_REQUIRED` (no bit-flag proof success). Caller-owned pool **1..128** slots (controller ceiling); no heap/VLA. Handles/lease_id/ticket_id nonzero monotonic; no reuse after release/retire. TX/RX counters and accept windows are multi-key **FULL** durable; RAM/output publish only after FULL_OK. TX leases issue one counter at a time from a durable-covered `[ram_next, ram_limit)` window; a FULL block of **64** is reserved only when the window is exhausted. COMMIT_UNKNOWN retains copy-owned write plan; `recover_cu` runs NEED_CLOSE_OLD→NEED_OPEN→READ_CLASSIFY (re-entrant on phase fault), re-reads storage, and computes ALL_OLD/ALL_PROPOSED/MIXED/THIRD internally (NOT_FOUND with `old_present==0` is ALL_OLD side; `old_present==1` is THIRD). ALL_PROPOSED applies copy-owned post-actions (TX next/limit, RX accept_through); install CU never publishes a handle. Authority: production `bind_authority_stamp` is fail-closed without R2 accepted-token verifier (raw boolean / struct fields alone do **not** establish trust). Host fixture stamp injection exists only in the test-build TU. N6 does not call OS time / R2 clock_ops.
+**Production rules:** The **durable install/TX/RX/boot engine compiles in the production private object**. Only fixture authority stamp and FIXTURE_ONLY install-provenance admission are gated by `NINLIL_N6_TEST_BUILD` / test support (separate testbuild TU). **Local identity has no raw fixture bind symbol in core** — tests call the **same** production `bind_local_identity_accepted` with fixture token+ops living only under `tests/support/` (§20.4.1). Production **MUST NOT** export fixture/test-binder symbols and **MUST NOT** provide fake-success or no-op stubs for install/TX/RX that pretend readiness. Raw `bind_authority_stamp` and raw `install_hop` / `install_e2e` remain production fail-closed. ADR-0036's private V1 LAB owner may use only the opaque one-shot `*_accepted` adapters described in §20.4.2; their fixed claims are copy-owned and validated before Storage mutation. Without an accepted token/local identity, entry points **fail closed at the provenance/secret/identity boundary** (typed status; no half-success). Fence/restamp/reclaim/gc production path ⇒ `M4_REQUIRED` (no bit-flag proof success). Caller-owned pool **1..128** slots (controller ceiling); no heap/VLA. Handles/lease_id/ticket_id nonzero monotonic; no reuse after release/retire. TX/RX counters and accept windows are multi-key **FULL** durable; RAM/output publish only after FULL_OK. TX leases issue one counter at a time from a durable-covered `[ram_next, ram_limit)` window; a FULL block of **64** is reserved only when the window is exhausted. COMMIT_UNKNOWN retains copy-owned write plan; `recover_cu` runs NEED_CLOSE_OLD→NEED_OPEN→READ_CLASSIFY (re-entrant on phase fault), re-reads storage, and computes ALL_OLD/ALL_PROPOSED/MIXED/THIRD internally (NOT_FOUND with `old_present==0` is ALL_OLD side; `old_present==1` is THIRD). ALL_PROPOSED applies copy-owned post-actions (TX next/limit, RX accept_through); install CU never publishes a handle. N6 does not call OS time / R2 clock_ops.
 
 **State BOUND (exact):**  
 `STATE_BOUND` ⇔ `storage_bound && crypto_bound && local_identity_bound`.  
@@ -3211,6 +3214,23 @@ Install inputs MUST be an **authenticated provenance capsule** (M4) or an explic
 **Forbidden:** production install from caller-supplied raw node IDs alone. Missing M4 binder on production provenance ⇒ **`M4_REQUIRED`** (fail-closed).  
 FIXTURE_ONLY admission exists only under `NINLIL_N6_TEST_BUILD`.  
 RAM usable handle publish **only after** durable multi-key **FULL_OK**. Publish-before-FULL is forbidden.
+
+#### 20.4.2 V1 LAB accepted authority/install adapters
+
+ADR-0036 adds one deliberately bounded production path for fresh V1 LAB
+provisioning. An incomplete one-shot authority token copy-owns an exact 32-byte
+accepted class-D claim. A separate incomplete one-shot install token copy-owns
+an exact 128-byte Hop/E2E install claim. N6 validates exact ABI/size/reserved,
+local/receiver allocation shape, layer, context, epoch, digest and secret before
+durable work. Rejected, stale, malformed or wrong-layer claims perform no
+Storage/context mutation. The existing raw APIs do not inherit this authority.
+The callbacks are a trusted private-caller seam, not independently
+cryptographic capabilities. Production source calls are fixed by CI to the
+single ADR-0036 V1 owner, which revalidates the binding, local side, directional
+receiver and canonical R7 binding digests before minting a token.
+The full V1 constraints, allocator-coordinator amendment and acceptance tests
+are normative in ADR-0036; this subsection does not generalize them to FIELD,
+resume/M5 or arbitrary M4 callers.
 
 #### 20.4.1 Authenticated local identity — exact private accepted adapter ABI
 
@@ -3356,7 +3376,13 @@ Durable active records **MUST NOT** store `traffic_secret32`. After `boot_scan`:
 
 ### 20.6 Authority time
 
-N6 accepts only a **copy-in** of an already-accepted R2 class-D token via `bind_authority_stamp` **after** R2 verifier / opaque accepted-token adapter acceptance. Production without that adapter ⇒ fail-closed (`M4_REQUIRED` / stamp reason). Raw caller-supplied boolean trust fields alone MUST NOT establish authority. Host fixture stamp injection is test-build-only. N6 **MUST NOT** sample OS or host local time itself (no R2 clock_ops call from N6). Epoch mismatch / regression on re-stamp (test path) ⇒ fail-closed.
+N6 accepts only a **copy-in** of an already-accepted R2 class-D token via
+`bind_authority_stamp_accepted`. Raw `bind_authority_stamp` remains production
+fail-closed (`M4_REQUIRED` / stamp reason). Raw caller-supplied boolean trust
+fields alone MUST NOT establish authority. Host fixture stamp injection is
+test-build-only. N6 **MUST NOT** sample OS or host local time itself (no R2
+clock_ops call from N6). Epoch mismatch / regression on accepted refresh or
+test fixture re-stamp ⇒ fail-closed.
 
 ### 20.7 Durable codec / crypto (cross-ref §5.3 / §8)
 
@@ -3439,3 +3465,23 @@ Portable private host candidate + exhaustive host gates (codec KAT/faults, HKDF/
 8. **Test-only fault seams.** Seams that inject arbitrary internal `lane_kind` values or mutate individual CU plan fields exist **only** under `NINLIL_N6_TEST_BUILD` and **MUST NOT** appear in tests-OFF production objects, install trees, or archives. Production public/private headers **SHOULD** remain free of new seam declarations when tests can use test-build-only `extern` linkage.
 
 9. **Non-claims.** This erratum does **not** claim R6 product complete, R7 AEAD codec complete, M4/M5, ESP N6 capacity, RF/USB HIL, Japan legal, or production radio. gate PASS ≠ product GO.
+
+### 20.13 Frozen erratum — reachable FRAG count domain (2026-07-28; Accepted)
+
+**Status:** Normative Accepted arithmetic erratum to §12.1 and §12.3.  
+**Wire profile / field width / layout / schema / public ABI / version:** **unchanged**.
+
+The frozen domains are `S >= 1`, `total_len <= 2048`, and continuation unit
+`180` exact. Therefore the largest reachable canonical fragment count is:
+
+```text
+1 + ceil((2048 - 1) / 180) = 13
+```
+
+For wire profile `0x11`, encoder and decoder MUST use `2..13` as the closed
+`frag_count` domain. Values `14..16` were never constructible from the frozen
+length equation and are now explicitly non-canonical/rejected. The 16-bit ACK
+bitmap layout remains unchanged; bits at indices `frag_count..15` remain zero.
+Conformance matrices MUST exercise every count `2..13` and MUST reject
+`0`, `1`, and `14..65535`. This correction does not increase resource limits,
+packet lengths, transfer length, retry budgets, or any on-wire field width.

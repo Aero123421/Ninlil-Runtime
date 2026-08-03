@@ -223,6 +223,12 @@ typedef uint32_t ninlil_radio_hal_reason_t;
 #define NINLIL_RADIO_HAL_REASON_ZERO_ID ((ninlil_radio_hal_reason_t)38u)
 #define NINLIL_RADIO_HAL_REASON_STRUCT_INVALID ((ninlil_radio_hal_reason_t)39u)
 #define NINLIL_RADIO_HAL_REASON_PLAN_MUTATED ((ninlil_radio_hal_reason_t)40u)
+/* docs/30 §15.3.4.1 consume typed reasons 43–45 (CONSUME_TYPED_REASON_43_45). */
+#define NINLIL_RADIO_HAL_REASON_FIFO_OUT_OF_ORDER \
+    ((ninlil_radio_hal_reason_t)43u)
+#define NINLIL_RADIO_HAL_REASON_CONSUME_CLOCK_UNCERTAIN \
+    ((ninlil_radio_hal_reason_t)44u)
+#define NINLIL_RADIO_HAL_REASON_CONSUME_BUSY ((ninlil_radio_hal_reason_t)45u)
 
 typedef struct ninlil_radio_hal_id {
     uint8_t bytes[NINLIL_RADIO_HAL_ID_BYTES];

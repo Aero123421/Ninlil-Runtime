@@ -19,6 +19,10 @@ from typing import Callable
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 C1_HEADER = REPO_ROOT / "src" / "transport" / "byte_stream.h"
+PUBLIC_C1_HEADER = REPO_ROOT / "include" / "ninlil" / "byte_stream.h"
+SHIM_TO_PUBLIC = re.compile(
+    r'^\s*#\s*include\s*[<"]ninlil/byte_stream\.h[>"]', re.MULTILINE
+)
 
 BANNED_INCLUDE_NAMES = (
     "termios.h",
@@ -188,9 +192,17 @@ def check_path(path: pathlib.Path) -> None:
 
 def check() -> None:
     check_path(C1_HEADER)
+    text = C1_HEADER.read_text(encoding="utf-8")
+    if SHIM_TO_PUBLIC.search(text):
+        fail(
+            f"{C1_HEADER.relative_to(REPO_ROOT)} must not shim to "
+            'ninlil/byte_stream.h (private header must be self-contained)'
+        )
+    check_path(PUBLIC_C1_HEADER)
     print(
         "byte_stream_portability_gate ok: "
-        f"{C1_HEADER.relative_to(REPO_ROOT)} platform-clean"
+        f"{C1_HEADER.relative_to(REPO_ROOT)} and "
+        f"{PUBLIC_C1_HEADER.relative_to(REPO_ROOT)} platform-clean"
     )
 
 

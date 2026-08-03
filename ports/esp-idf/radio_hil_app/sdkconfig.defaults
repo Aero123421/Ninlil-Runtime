@@ -1,0 +1,52 @@
+# XIAO ESP32-S3 + Wio-SX1262 radio_hil composition (Proposed ADR-0025).
+# Immutable board profile (Seeed Wio-SX1262 datasheet v1.0 — informative):
+#   VCC 3.3 V typ; TCXO via DIO3 ≥200 mV below VCC → 3.0 V encode;
+#   DIO2 internal RF switch; carrier RF_SW GPIO = ANT_SW.
+# Not RF HIL PASS. Pins must match ninlil_sx1262_board_profiles.h.
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# Main task stack: max retained call-chain (fresh .su + ELF), not INIT-only.
+# TX/new-epoch chain sum = 18256 B (app_main…pcp_algorithm_e_body…scan_ns).
+# INIT-only / max-single-frame gates are false-green at 16 KiB.
+# Require ≥24 KiB with gate margin 4096 B (wrappers/indirect).
+# Physical FreeRTOS watermark remains NOT_RUN.
+# Gate: tools/sx1262_radio_hil_elf_evidence_gate.py (min 24576, max chain+sum).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=24576
+
+# R9 physical path sole composition site (default OFF elsewhere).
+CONFIG_NINLIL_ENABLE_SX1262_R9=y
+# V1 release HIL: session RAM ledger diagnostic must stay OFF.
+# CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG is not set
+
+# Flash FULL durable for PCP ledger (restart recovery software path).
+# Physical power-cut PASS remains NOT_RUN without device evidence.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../partitions/ninlil_storage.csv"
+CONFIG_PARTITION_TABLE_FILENAME="../partitions/ninlil_storage.csv"
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+
+# R7 crypto (mbedTLS HKDF) required by packaged ninlil component sources.
+CONFIG_MBEDTLS_HKDF_C=y
+
+# U2 esp_tinyusb is a component dependency of ninlil packaging (headers compile).
+# radio_hil does not use CDC path at runtime; keep CDC enabled for compile.
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=1
+
+# Target board pin profile (NSS=41 SCK=7 MOSI=9 MISO=8 RST=42 BUSY=40 DIO1=39 ANT_SW=38)
+CONFIG_NINLIL_SX1262_PIN_NSS=41
+CONFIG_NINLIL_SX1262_PIN_SCK=7
+CONFIG_NINLIL_SX1262_PIN_MOSI=9
+CONFIG_NINLIL_SX1262_PIN_MISO=8
+CONFIG_NINLIL_SX1262_PIN_RESET=42
+CONFIG_NINLIL_SX1262_PIN_BUSY=40
+CONFIG_NINLIL_SX1262_PIN_DIO1=39
+CONFIG_NINLIL_SX1262_PIN_ANT_SW=38
+CONFIG_NINLIL_SX1262_ANT_SW_ACTIVE_HIGH=y
+CONFIG_NINLIL_SX1262_SPI_HOST=1

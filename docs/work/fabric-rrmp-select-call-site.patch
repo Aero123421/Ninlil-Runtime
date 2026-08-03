@@ -1,0 +1,23 @@
+--- a/src/transport/fabric_v1/fabric_private_core.c
++++ b/src/transport/fabric_v1/fabric_private_core.c
+@@ -1,6 +1,7 @@
+ #include "fabric_private_api.h"
+ #include "fabric_workspace.h"
++#include "fabric_rrmp_select_hook.h"
+ 
+ #include <stddef.h>
+ 
+@@ -5245,6 +5246,14 @@
+     }
+ 
+     ninlil_fabric_private_select(snap, &sel);
++    /* RRMP select-path dispatch (no-op when RRMP feature OFF). */
++    ninlil_fabric_rrmp_on_path_selected(
++        sel.selected_instance_id,
++        sel.has_selection,
++        snap->query.requires_custody,
++        fabric->path_selection_epoch,
++        snap->query.now_ms);
+     if (sel.resolution == NINLIL_FABRIC_PRIVATE_SEL_CORRUPT) {
+         return NINLIL_BEARER_CORRUPT;
+     }

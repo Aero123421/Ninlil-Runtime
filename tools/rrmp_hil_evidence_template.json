@@ -1,0 +1,65 @@
+{
+  "schema_id": "ninlil-hil-rrmp-multiparent-v1",
+  "schema_version": 1,
+  "campaign_id": "rrmp-physical-residual-template",
+  "status": "NOT_RUN",
+  "software_prerequisites": {
+    "spec_accepted": true,
+    "private_implementation_candidate": true,
+    "host_tests_green": true,
+    "asan_ubsan_green": true,
+    "feature_default_off_symbols_zero": true,
+    "esp_idf_map_proof": "PASS",
+    "workspace_budget_bytes": 393216,
+    "workspace_measured_host_bytes": 388048,
+    "storage_export_max_bytes": 307200,
+    "storage_piece_scratch_bytes": 61440,
+    "target_smoke_store_bytes": 307456,
+    "worst_case_live_dynamic_bytes": 1064144,
+    "esp_runtime_workspace_measured_bytes": null,
+    "esp_runtime_minimum_free_psram_bytes": null
+  },
+  "physical_claims": {
+    "rf_2hop": "NOT_RUN",
+    "rf_3hop": "NOT_RUN",
+    "multiparent_air": "NOT_RUN",
+    "powercut_dual_slot": "NOT_RUN"
+  },
+  "nonclaims": [
+    "physical HIL PASS from SPEC_ACCEPTED alone",
+    "physical RF multi-hop complete",
+    "security audit complete",
+    "product vocabulary in public ABI"
+  ],
+  "nodes": [
+    {
+      "node_id": "A",
+      "role_flags": ["endpoint", "relay"],
+      "runtime_id_hex": "1112131415161718191a1b1c1d1e1f20"
+    },
+    {
+      "node_id": "B",
+      "role_flags": ["relay"],
+      "runtime_id_hex": "22232425262728292a2b2c2d2e2f3031"
+    },
+    {
+      "node_id": "C",
+      "role_flags": ["endpoint"],
+      "runtime_id_hex": "333435363738393a3b3c3d3e3f404142"
+    }
+  ],
+  "scenarios": [
+    { "id": "sw-abc-host", "kind": "e2e_3hop", "status": "PASS", "evidence_path": "tests/runtime/route_relay_v1/rrmp_sm_test.c" },
+    { "id": "rf-2hop", "kind": "e2e_2hop", "status": "NOT_RUN" },
+    { "id": "rf-3hop", "kind": "e2e_3hop", "status": "NOT_RUN" },
+    { "id": "parent-failover-air", "kind": "parent_failover", "status": "NOT_RUN" },
+    { "id": "split-brain-air", "kind": "split_brain_seal", "status": "NOT_RUN" },
+    { "id": "restart-rehydrate", "kind": "restart_rehydrate", "status": "PASS", "evidence_path": "tests/runtime/route_relay_v1/rrmp_crash_corrupt_test.c" },
+    { "id": "powercut-cu", "kind": "powercut_cu", "status": "NOT_RUN" }
+  ],
+  "tooling": {
+    "host_runner": "ctest -R 'rrmp_|route_relay'",
+    "esp_map_proof": "tools/rrmp_esp_idf_map_proof.sh",
+    "software_hil_manifest": "tools/rrmp_software_hil_manifest.json"
+  }
+}

@@ -1,0 +1,5473 @@
+{
+  "_t": "obj",
+  "k": {
+    "schema": {
+      "_t": "str"
+    },
+    "schema_version": {
+      "_t": "int"
+    },
+    "title": {
+      "_t": "str"
+    },
+    "adr": {
+      "_t": "str"
+    },
+    "normative_doc": {
+      "_t": "str"
+    },
+    "status": {
+      "_t": "str"
+    },
+    "status_map": {
+      "_t": "obj",
+      "k": {
+        "vector": {
+          "_t": "str"
+        },
+        "pa_tranche": {
+          "_t": "str"
+        },
+        "pa_tranche_state": {
+          "_t": "str"
+        },
+        "accepted": {
+          "_t": "bool"
+        },
+        "implementation": {
+          "_t": "bool"
+        },
+        "hil": {
+          "_t": "bool"
+        },
+        "release": {
+          "_t": "bool"
+        },
+        "spec_accepted": {
+          "_t": "bool"
+        }
+      }
+    },
+    "sources": {
+      "_t": "arr",
+      "item": {
+        "_t": "str"
+      }
+    },
+    "nonclaims": {
+      "_t": "arr",
+      "item": {
+        "_t": "str"
+      }
+    },
+    "tools": {
+      "_t": "obj",
+      "k": {
+        "generator": {
+          "_t": "str"
+        },
+        "composition": {
+          "_t": "str"
+        },
+        "expected_model": {
+          "_t": "str"
+        },
+        "independent_authority": {
+          "_t": "str"
+        },
+        "python_gate": {
+          "_t": "str"
+        },
+        "node_gate": {
+          "_t": "str"
+        },
+        "c_test": {
+          "_t": "str"
+        },
+        "schema_authority": {
+          "_t": "str"
+        },
+        "magic_registry_gate": {
+          "_t": "str"
+        }
+      }
+    },
+    "lifecycle_constants": {
+      "_t": "obj",
+      "k": {
+        "member_count_exact": {
+          "_t": "int"
+        },
+        "old_cardinality_rule": {
+          "_t": "str"
+        },
+        "new_pending_member_count": {
+          "_t": "int"
+        },
+        "partial_member_counts_rejected": {
+          "_t": "arr",
+          "item": {
+            "_t": "int"
+          }
+        },
+        "accepted_classifications": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        },
+        "accepted_snapshots": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        },
+        "value_label": {
+          "_t": "str"
+        },
+        "ctx_label": {
+          "_t": "str"
+        },
+        "cookie_time_bucket_seconds": {
+          "_t": "int"
+        },
+        "method": {
+          "_t": "int"
+        },
+        "rfc_message_1_method_byte": {
+          "_t": "int"
+        },
+        "nac1_header_bytes": {
+          "_t": "int"
+        },
+        "nab1_entry_count": {
+          "_t": "int"
+        }
+      }
+    },
+    "required_gate_cases": {
+      "_t": "arr",
+      "item": {
+        "_t": "str"
+      }
+    },
+    "carrier_transcript": {
+      "_t": "obj",
+      "k": {
+        "normative_formula_id": {
+          "_t": "str"
+        },
+        "hash": {
+          "_t": "str"
+        },
+        "label": {
+          "_t": "str"
+        },
+        "schema_version": {
+          "_t": "int"
+        },
+        "role_in_preimage": {
+          "_t": "bool"
+        },
+        "direction_encoding": {
+          "_t": "str"
+        },
+        "edhoc_wire_rule": {
+          "_t": "str"
+        },
+        "nac1_scope_rule": {
+          "_t": "str"
+        },
+        "excluded": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        },
+        "primary_path": {
+          "_t": "obj",
+          "k": {
+            "carrier_class": {
+              "_t": "int"
+            },
+            "carrier_class_name": {
+              "_t": "str"
+            },
+            "cookie_mode": {
+              "_t": "int"
+            },
+            "cookie_mode_name": {
+              "_t": "str"
+            },
+            "session_id_hex": {
+              "_t": "str"
+            },
+            "exchange_generation": {
+              "_t": "int"
+            },
+            "attempt_index": {
+              "_t": "int"
+            },
+            "attachment_epoch": {
+              "_t": "int"
+            },
+            "method": {
+              "_t": "int"
+            },
+            "suite": {
+              "_t": "int"
+            },
+            "entry_count": {
+              "_t": "int"
+            },
+            "entry_order_kinds": {
+              "_t": "arr",
+              "item": {
+                "_t": "int"
+              }
+            },
+            "entries": {
+              "_t": "arr",
+              "item": {
+                "_t": "obj",
+                "k": {
+                  "kind": {
+                    "_t": "int"
+                  },
+                  "record_sequence": {
+                    "_t": "int"
+                  },
+                  "nac1_total_bytes": {
+                    "_t": "int"
+                  },
+                  "nac1_payload_bytes": {
+                    "_t": "int"
+                  },
+                  "nac1_sha256": {
+                    "_t": "str"
+                  },
+                  "nac1_hex": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "preimage_length": {
+              "_t": "int"
+            },
+            "preimage_sha256": {
+              "_t": "str"
+            },
+            "preimage_hex": {
+              "_t": "str"
+            },
+            "digest_hex": {
+              "_t": "str"
+            }
+          }
+        },
+        "negatives": {
+          "_t": "arr",
+          "item": {
+            "_t": "obj",
+            "k": {
+              "id": {
+                "_t": "str"
+              },
+              "digest_hex": {
+                "_t": "str"
+              },
+              "preimage_hex": {
+                "_t": "str"
+              },
+              "preimage_sha256": {
+                "_t": "str"
+              },
+              "preimage_length": {
+                "_t": "int"
+              },
+              "differs_from_base": {
+                "_t": "bool"
+              },
+              "rejected": {
+                "_t": "bool"
+              },
+              "reject_reason": {
+                "_t": "str"
+              },
+              "note": {
+                "_t": "str"
+              },
+              "recomputed_digest_hex": {
+                "_t": "str"
+              },
+              "field_matrix_id": {
+                "_t": "str"
+              }
+            }
+          }
+        },
+        "nai1_offset": {
+          "_t": "int"
+        },
+        "nax1_offset": {
+          "_t": "int"
+        },
+        "bound_into": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        }
+      }
+    },
+    "profile": {
+      "_t": "obj",
+      "k": {
+        "method": {
+          "_t": "int"
+        },
+        "mandatory_suites": {
+          "_t": "obj",
+          "k": {
+            "2": {
+              "_t": "arr",
+              "item": {
+                "_t": "int"
+              }
+            },
+            "3": {
+              "_t": "arr",
+              "item": {
+                "_t": "int"
+              }
+            }
+          }
+        },
+        "credential": {
+          "_t": "str"
+        },
+        "message_4_required": {
+          "_t": "bool"
+        },
+        "ead_allowed": {
+          "_t": "bool"
+        },
+        "automatic_suite_downgrade_allowed": {
+          "_t": "bool"
+        },
+        "exporter_labels": {
+          "_t": "obj",
+          "k": {
+            "attach_i2r_key16": {
+              "_t": "int"
+            },
+            "attach_r2i_key16": {
+              "_t": "int"
+            },
+            "attach_i2r_iv13": {
+              "_t": "int"
+            },
+            "attach_r2i_iv13": {
+              "_t": "int"
+            },
+            "hop_ir_secret32": {
+              "_t": "int"
+            },
+            "hop_ri_secret32": {
+              "_t": "int"
+            },
+            "e2e_ir_secret32": {
+              "_t": "int"
+            },
+            "e2e_ri_secret32": {
+              "_t": "int"
+            }
+          }
+        },
+        "control_aead": {
+          "_t": "obj",
+          "k": {
+            "cose_algorithm": {
+              "_t": "int"
+            },
+            "name": {
+              "_t": "str"
+            },
+            "key_bytes": {
+              "_t": "int"
+            },
+            "iv_bytes": {
+              "_t": "int"
+            },
+            "tag_bytes": {
+              "_t": "int"
+            }
+          }
+        }
+      }
+    },
+    "limits": {
+      "_t": "obj",
+      "k": {
+        "nac1_header_bytes": {
+          "_t": "int"
+        },
+        "nac1_payload_max": {
+          "_t": "int"
+        },
+        "nac1_record_max": {
+          "_t": "int"
+        },
+        "nas1_header_bytes": {
+          "_t": "int"
+        },
+        "nas1_record_max": {
+          "_t": "int"
+        },
+        "nar1_profile": {
+          "_t": "int"
+        },
+        "nar1_header_bytes": {
+          "_t": "int"
+        },
+        "nar1_packet_max": {
+          "_t": "int"
+        },
+        "nar1_fragment_payload_max": {
+          "_t": "int"
+        },
+        "nar1_fragment_count_max": {
+          "_t": "int"
+        },
+        "nap1_bytes": {
+          "_t": "int"
+        },
+        "nai1_bytes": {
+          "_t": "int"
+        },
+        "nax1_bytes": {
+          "_t": "int"
+        },
+        "nat1_bytes": {
+          "_t": "int"
+        },
+        "n6at_key_bytes": {
+          "_t": "int"
+        },
+        "n6at_value_bytes": {
+          "_t": "int"
+        },
+        "nab1_header_bytes": {
+          "_t": "int"
+        },
+        "nab1_entry_bytes": {
+          "_t": "int"
+        },
+        "nab1_entry_count": {
+          "_t": "int"
+        },
+        "nab1_total_bytes": {
+          "_t": "int"
+        }
+      }
+    },
+    "carrier_bindings": {
+      "_t": "obj",
+      "k": {
+        "usb": {
+          "_t": "obj",
+          "k": {
+            "carrier_class": {
+              "_t": "int"
+            },
+            "fields": {
+              "_t": "obj",
+              "k": {
+                "label": {
+                  "_t": "str"
+                },
+                "carrier_instance_id_hex": {
+                  "_t": "str"
+                },
+                "peer_id_hex": {
+                  "_t": "str"
+                },
+                "connection_generation": {
+                  "_t": "int"
+                },
+                "accepted_carrier_config_digest_hex": {
+                  "_t": "str"
+                }
+              }
+            },
+            "canonical_input_hex": {
+              "_t": "str"
+            },
+            "digest_hex": {
+              "_t": "str"
+            }
+          }
+        },
+        "wifi": {
+          "_t": "obj",
+          "k": {
+            "carrier_class": {
+              "_t": "int"
+            },
+            "fields": {
+              "_t": "obj",
+              "k": {
+                "label": {
+                  "_t": "str"
+                },
+                "carrier_instance_id_hex": {
+                  "_t": "str"
+                },
+                "peer_session_id_hex": {
+                  "_t": "str"
+                },
+                "peer_id_hex": {
+                  "_t": "str"
+                },
+                "network_instance_id_hex": {
+                  "_t": "str"
+                },
+                "connection_generation": {
+                  "_t": "int"
+                },
+                "path_generation": {
+                  "_t": "int"
+                },
+                "accepted_carrier_config_digest_hex": {
+                  "_t": "str"
+                }
+              }
+            },
+            "canonical_input_hex": {
+              "_t": "str"
+            },
+            "digest_hex": {
+              "_t": "str"
+            }
+          }
+        },
+        "compact_radio": {
+          "_t": "obj",
+          "k": {
+            "carrier_class": {
+              "_t": "int"
+            },
+            "fields": {
+              "_t": "obj",
+              "k": {
+                "label": {
+                  "_t": "str"
+                },
+                "carrier_instance_id_hex": {
+                  "_t": "str"
+                },
+                "channel_plan_digest_hex": {
+                  "_t": "str"
+                },
+                "radio_epoch": {
+                  "_t": "int"
+                },
+                "accepted_carrier_config_digest_hex": {
+                  "_t": "str"
+                }
+              }
+            },
+            "canonical_input_hex": {
+              "_t": "str"
+            },
+            "digest_hex": {
+              "_t": "str"
+            }
+          }
+        }
+      }
+    },
+    "stream_wrapper": {
+      "_t": "obj",
+      "k": {
+        "usb_nas1_length": {
+          "_t": "int"
+        },
+        "usb_nas1_hex": {
+          "_t": "str"
+        },
+        "usb_nas1_sha256": {
+          "_t": "str"
+        }
+      }
+    },
+    "nas1_stream_lifecycle": {
+      "_t": "obj",
+      "k": {
+        "buffer_capacity_bytes": {
+          "_t": "int"
+        },
+        "one_record_per_wrapper": {
+          "_t": "bool"
+        },
+        "cases": {
+          "_t": "obj",
+          "k": {
+            "single_read_success": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "delivery_count": {
+                  "_t": "int"
+                },
+                "read_count": {
+                  "_t": "int"
+                },
+                "buffered_bytes": {
+                  "_t": "int"
+                },
+                "inner_sha256": {
+                  "_t": "str"
+                }
+              }
+            },
+            "partial_read_success": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "delivery_count": {
+                  "_t": "int"
+                },
+                "read_count": {
+                  "_t": "int"
+                },
+                "buffered_bytes": {
+                  "_t": "int"
+                },
+                "inner_sha256": {
+                  "_t": "str"
+                }
+              }
+            },
+            "short_eof_close": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "delivery_count": {
+                  "_t": "int"
+                },
+                "read_count": {
+                  "_t": "int"
+                },
+                "buffered_bytes": {
+                  "_t": "int"
+                }
+              }
+            },
+            "trailing_bytes_close": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "delivery_count": {
+                  "_t": "int"
+                },
+                "read_count": {
+                  "_t": "int"
+                },
+                "buffered_bytes": {
+                  "_t": "int"
+                }
+              }
+            },
+            "future_version_close": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "delivery_count": {
+                  "_t": "int"
+                },
+                "read_count": {
+                  "_t": "int"
+                },
+                "buffered_bytes": {
+                  "_t": "int"
+                }
+              }
+            },
+            "inner_carrier_mismatch_close": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "delivery_count": {
+                  "_t": "int"
+                },
+                "read_count": {
+                  "_t": "int"
+                },
+                "buffered_bytes": {
+                  "_t": "int"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "stateless_cookie": {
+      "_t": "obj",
+      "k": {
+        "time_bucket_seconds": {
+          "_t": "int"
+        },
+        "time_bucket": {
+          "_t": "int"
+        },
+        "current_secret_hex": {
+          "_t": "str"
+        },
+        "previous_secret_hex": {
+          "_t": "str"
+        },
+        "source_locator_digest_hex": {
+          "_t": "str"
+        },
+        "canonical_input_hex": {
+          "_t": "str"
+        },
+        "current_cookie_hex": {
+          "_t": "str"
+        },
+        "previous_bucket_previous_secret_cookie_hex": {
+          "_t": "str"
+        },
+        "secret_bucket_matrix": {
+          "_t": "obj",
+          "k": {
+            "current_secret_x_current_bucket": {
+              "_t": "obj",
+              "k": {
+                "time_bucket": {
+                  "_t": "int"
+                },
+                "secret_name": {
+                  "_t": "str"
+                },
+                "canonical_input_hex": {
+                  "_t": "str"
+                },
+                "cookie_hex": {
+                  "_t": "str"
+                }
+              }
+            },
+            "current_secret_x_previous_bucket": {
+              "_t": "obj",
+              "k": {
+                "time_bucket": {
+                  "_t": "int"
+                },
+                "secret_name": {
+                  "_t": "str"
+                },
+                "canonical_input_hex": {
+                  "_t": "str"
+                },
+                "cookie_hex": {
+                  "_t": "str"
+                }
+              }
+            },
+            "previous_secret_x_current_bucket": {
+              "_t": "obj",
+              "k": {
+                "time_bucket": {
+                  "_t": "int"
+                },
+                "secret_name": {
+                  "_t": "str"
+                },
+                "canonical_input_hex": {
+                  "_t": "str"
+                },
+                "cookie_hex": {
+                  "_t": "str"
+                }
+              }
+            },
+            "previous_secret_x_previous_bucket": {
+              "_t": "obj",
+              "k": {
+                "time_bucket": {
+                  "_t": "int"
+                },
+                "secret_name": {
+                  "_t": "str"
+                },
+                "canonical_input_hex": {
+                  "_t": "str"
+                },
+                "cookie_hex": {
+                  "_t": "str"
+                }
+              }
+            }
+          }
+        },
+        "challenge_nac1_hex": {
+          "_t": "str"
+        },
+        "response_payload_length": {
+          "_t": "int"
+        },
+        "response_payload_hex": {
+          "_t": "str"
+        },
+        "response_nac1_length": {
+          "_t": "int"
+        },
+        "response_nac1_hex": {
+          "_t": "str"
+        },
+        "response_length_formula": {
+          "_t": "str"
+        },
+        "response_length_parts": {
+          "_t": "obj",
+          "k": {
+            "nac1_header_bytes": {
+              "_t": "int"
+            },
+            "cookie_bytes": {
+              "_t": "int"
+            },
+            "original_message_1_length_u16be_bytes": {
+              "_t": "int"
+            },
+            "original_message_1_bytes": {
+              "_t": "int"
+            },
+            "total_bytes": {
+              "_t": "int"
+            }
+          }
+        },
+        "response_radio_fragments": {
+          "_t": "arr",
+          "item": {
+            "_t": "obj",
+            "k": {
+              "index": {
+                "_t": "int"
+              },
+              "length": {
+                "_t": "int"
+              },
+              "hex": {
+                "_t": "str"
+              },
+              "sha256": {
+                "_t": "str"
+              }
+            }
+          }
+        },
+        "response_fragment_count": {
+          "_t": "int"
+        },
+        "identity_or_authentication_claimed": {
+          "_t": "bool"
+        }
+      }
+    },
+    "edhoc_message_1": {
+      "_t": "obj",
+      "k": {
+        "suite_2": {
+          "_t": "obj",
+          "k": {
+            "hex": {
+              "_t": "str"
+            },
+            "length": {
+              "_t": "int"
+            },
+            "sha256": {
+              "_t": "str"
+            },
+            "nac1_hex": {
+              "_t": "str"
+            }
+          }
+        },
+        "suite_3": {
+          "_t": "obj",
+          "k": {
+            "hex": {
+              "_t": "str"
+            },
+            "length": {
+              "_t": "int"
+            },
+            "sha256": {
+              "_t": "str"
+            },
+            "nac1_hex": {
+              "_t": "str"
+            }
+          }
+        }
+      }
+    },
+    "edhoc_attempts": {
+      "_t": "obj",
+      "k": {
+        "attempts": {
+          "_t": "obj",
+          "k": {
+            "suite_2": {
+              "_t": "obj",
+              "k": {
+                "method": {
+                  "_t": "int"
+                },
+                "suite": {
+                  "_t": "int"
+                },
+                "exchange_generation": {
+                  "_t": "int"
+                },
+                "fixture_kind": {
+                  "_t": "str"
+                },
+                "messages": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "obj",
+                    "k": {
+                      "stage": {
+                        "_t": "int"
+                      },
+                      "kind": {
+                        "_t": "int"
+                      },
+                      "message_name": {
+                        "_t": "str"
+                      },
+                      "payload_hex": {
+                        "_t": "str"
+                      },
+                      "payload_sha256": {
+                        "_t": "str"
+                      },
+                      "nac1_hex": {
+                        "_t": "str"
+                      },
+                      "ead_present": {
+                        "_t": "bool"
+                      },
+                      "ead_item_count": {
+                        "_t": "int"
+                      },
+                      "verified": {
+                        "_t": "bool"
+                      }
+                    }
+                  }
+                },
+                "message_4_required": {
+                  "_t": "bool"
+                },
+                "message_4_verified_before_exporter": {
+                  "_t": "bool"
+                },
+                "exporter_calls_before_message_4": {
+                  "_t": "int"
+                },
+                "exporter_calls_after_message_4": {
+                  "_t": "int"
+                },
+                "final_state": {
+                  "_t": "str"
+                },
+                "real_provider_kat_claimed": {
+                  "_t": "bool"
+                }
+              }
+            },
+            "suite_3": {
+              "_t": "obj",
+              "k": {
+                "method": {
+                  "_t": "int"
+                },
+                "suite": {
+                  "_t": "int"
+                },
+                "exchange_generation": {
+                  "_t": "int"
+                },
+                "fixture_kind": {
+                  "_t": "str"
+                },
+                "messages": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "obj",
+                    "k": {
+                      "stage": {
+                        "_t": "int"
+                      },
+                      "kind": {
+                        "_t": "int"
+                      },
+                      "message_name": {
+                        "_t": "str"
+                      },
+                      "payload_hex": {
+                        "_t": "str"
+                      },
+                      "payload_sha256": {
+                        "_t": "str"
+                      },
+                      "nac1_hex": {
+                        "_t": "str"
+                      },
+                      "ead_present": {
+                        "_t": "bool"
+                      },
+                      "ead_item_count": {
+                        "_t": "int"
+                      },
+                      "verified": {
+                        "_t": "bool"
+                      }
+                    }
+                  }
+                },
+                "message_4_required": {
+                  "_t": "bool"
+                },
+                "message_4_verified_before_exporter": {
+                  "_t": "bool"
+                },
+                "exporter_calls_before_message_4": {
+                  "_t": "int"
+                },
+                "exporter_calls_after_message_4": {
+                  "_t": "int"
+                },
+                "final_state": {
+                  "_t": "str"
+                },
+                "real_provider_kat_claimed": {
+                  "_t": "bool"
+                }
+              }
+            }
+          }
+        },
+        "ead_nonempty_terminal_matrix": {
+          "_t": "arr",
+          "item": {
+            "_t": "obj",
+            "k": {
+              "id": {
+                "_t": "str"
+              },
+              "stage": {
+                "_t": "int"
+              },
+              "ead_hex": {
+                "_t": "str"
+              },
+              "outcome": {
+                "_t": "str"
+              },
+              "wire_records_after_reject": {
+                "_t": "int"
+              },
+              "exporter_calls": {
+                "_t": "int"
+              },
+              "automatic_retry_count": {
+                "_t": "int"
+              }
+            }
+          }
+        },
+        "downgrade_failure": {
+          "_t": "obj",
+          "k": {
+            "initial_pinned_suite": {
+              "_t": "int"
+            },
+            "suggested_other_suite": {
+              "_t": "int"
+            },
+            "automatic_retry_count": {
+              "_t": "int"
+            },
+            "same_policy_revision_retry_allowed": {
+              "_t": "bool"
+            },
+            "fresh_policy_revision_required": {
+              "_t": "bool"
+            },
+            "fresh_session_generation_required": {
+              "_t": "bool"
+            },
+            "outcome": {
+              "_t": "str"
+            }
+          }
+        },
+        "rfc9529_trace_role": {
+          "_t": "str"
+        },
+        "provider_interoperability_claimed": {
+          "_t": "bool"
+        }
+      }
+    },
+    "rfc9529_method3_suite2_reference": {
+      "_t": "obj",
+      "k": {
+        "source": {
+          "_t": "str"
+        },
+        "method": {
+          "_t": "int"
+        },
+        "selected_suite": {
+          "_t": "int"
+        },
+        "profile_acceptance": {
+          "_t": "bool"
+        },
+        "reason": {
+          "_t": "str"
+        },
+        "messages": {
+          "_t": "obj",
+          "k": {
+            "message_1": {
+              "_t": "obj",
+              "k": {
+                "length": {
+                  "_t": "int"
+                },
+                "hex": {
+                  "_t": "str"
+                },
+                "sha256": {
+                  "_t": "str"
+                }
+              }
+            },
+            "message_2": {
+              "_t": "obj",
+              "k": {
+                "length": {
+                  "_t": "int"
+                },
+                "hex": {
+                  "_t": "str"
+                },
+                "sha256": {
+                  "_t": "str"
+                }
+              }
+            },
+            "message_3": {
+              "_t": "obj",
+              "k": {
+                "length": {
+                  "_t": "int"
+                },
+                "hex": {
+                  "_t": "str"
+                },
+                "sha256": {
+                  "_t": "str"
+                }
+              }
+            },
+            "message_4": {
+              "_t": "obj",
+              "k": {
+                "length": {
+                  "_t": "int"
+                },
+                "hex": {
+                  "_t": "str"
+                },
+                "sha256": {
+                  "_t": "str"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "attachment_install": {
+      "_t": "obj",
+      "k": {
+        "nap1_length": {
+          "_t": "int"
+        },
+        "nap1_hex": {
+          "_t": "str"
+        },
+        "nap1_sha256": {
+          "_t": "str"
+        },
+        "proposal_fields": {
+          "_t": "obj",
+          "k": {
+            "proposal_id": {
+              "_t": "str"
+            },
+            "initiator_stable_digest": {
+              "_t": "str"
+            },
+            "site_domain": {
+              "_t": "str"
+            },
+            "authority_id": {
+              "_t": "str"
+            },
+            "authority_term": {
+              "_t": "int"
+            },
+            "membership_epoch": {
+              "_t": "int"
+            },
+            "credential_set_revision": {
+              "_t": "int"
+            },
+            "revocation_generation": {
+              "_t": "int"
+            },
+            "assignment_epoch": {
+              "_t": "int"
+            },
+            "device_hop_context_ri": {
+              "_t": "int"
+            },
+            "device_e2e_context_ri": {
+              "_t": "int"
+            },
+            "device_hop_min_key_generation_ri": {
+              "_t": "int"
+            },
+            "device_e2e_min_key_generation_ri": {
+              "_t": "int"
+            },
+            "e2e_security_id": {
+              "_t": "str"
+            },
+            "e2e_security_epoch": {
+              "_t": "int"
+            },
+            "membership_grant_digest": {
+              "_t": "str"
+            }
+          }
+        },
+        "nai1_length": {
+          "_t": "int"
+        },
+        "nai1_hex": {
+          "_t": "str"
+        },
+        "nai1_sha256": {
+          "_t": "str"
+        },
+        "install_fields": {
+          "_t": "obj",
+          "k": {
+            "attachment_id": {
+              "_t": "str"
+            },
+            "initiator_stable_digest": {
+              "_t": "str"
+            },
+            "responder_stable_digest": {
+              "_t": "str"
+            },
+            "site_domain": {
+              "_t": "str"
+            },
+            "authority_id": {
+              "_t": "str"
+            },
+            "authority_term": {
+              "_t": "int"
+            },
+            "membership_epoch": {
+              "_t": "int"
+            },
+            "attachment_epoch": {
+              "_t": "int"
+            },
+            "lease_epoch": {
+              "_t": "int"
+            },
+            "lease_clock_epoch": {
+              "_t": "str"
+            },
+            "lease_not_before_ms": {
+              "_t": "int"
+            },
+            "lease_expires_at_ms": {
+              "_t": "int"
+            },
+            "credential_set_revision": {
+              "_t": "int"
+            },
+            "initiator_credential_generation": {
+              "_t": "int"
+            },
+            "responder_credential_generation": {
+              "_t": "int"
+            },
+            "revocation_generation": {
+              "_t": "int"
+            },
+            "assignment_epoch": {
+              "_t": "int"
+            },
+            "hop_context_ir": {
+              "_t": "int"
+            },
+            "hop_context_ri": {
+              "_t": "int"
+            },
+            "e2e_context_ir": {
+              "_t": "int"
+            },
+            "e2e_context_ri": {
+              "_t": "int"
+            },
+            "hop_key_generation_ir": {
+              "_t": "int"
+            },
+            "hop_key_generation_ri": {
+              "_t": "int"
+            },
+            "e2e_key_generation_ir": {
+              "_t": "int"
+            },
+            "e2e_key_generation_ri": {
+              "_t": "int"
+            },
+            "e2e_security_id": {
+              "_t": "str"
+            },
+            "e2e_security_epoch": {
+              "_t": "int"
+            },
+            "route_policy_digest": {
+              "_t": "str"
+            },
+            "membership_grant_digest": {
+              "_t": "str"
+            },
+            "carrier_transcript_digest": {
+              "_t": "str"
+            },
+            "proposal_digest": {
+              "_t": "str"
+            }
+          }
+        },
+        "install_digest": {
+          "_t": "str"
+        },
+        "nax1_length": {
+          "_t": "int"
+        },
+        "nax1_hex": {
+          "_t": "str"
+        },
+        "nat1_length": {
+          "_t": "int"
+        },
+        "nat1_hex": {
+          "_t": "str"
+        },
+        "protection_exporter_context_digest": {
+          "_t": "str"
+        },
+        "traffic_exporter_context_digest": {
+          "_t": "str"
+        },
+        "attach_i2r_base_iv13_hex": {
+          "_t": "str"
+        },
+        "attach_r2i_base_iv13_hex": {
+          "_t": "str"
+        },
+        "protection_nonces": {
+          "_t": "obj",
+          "k": {
+            "propose_i2r_seq5": {
+              "_t": "str"
+            },
+            "install_r2i_seq6": {
+              "_t": "str"
+            },
+            "confirm_device_i2r_seq7": {
+              "_t": "str"
+            },
+            "confirm_authority_r2i_seq8": {
+              "_t": "str"
+            }
+          }
+        },
+        "aead_vector_status": {
+          "_t": "str"
+        },
+        "proposal_opaque_ciphertext_and_tag_length": {
+          "_t": "int"
+        },
+        "opaque_ciphertext_and_tag_length": {
+          "_t": "int"
+        },
+        "confirm_opaque_ciphertext_and_tag_length": {
+          "_t": "int"
+        },
+        "records": {
+          "_t": "obj",
+          "k": {
+            "propose_seq5": {
+              "_t": "str"
+            },
+            "install_seq6": {
+              "_t": "str"
+            },
+            "confirm_device_seq7": {
+              "_t": "str"
+            },
+            "confirm_authority_seq8": {
+              "_t": "str"
+            }
+          }
+        },
+        "install_nac1_aad_prefix_hex": {
+          "_t": "str"
+        }
+      }
+    },
+    "compact_radio_fragments": {
+      "_t": "arr",
+      "item": {
+        "_t": "obj",
+        "k": {
+          "index": {
+            "_t": "int"
+          },
+          "length": {
+            "_t": "int"
+          },
+          "hex": {
+            "_t": "str"
+          },
+          "sha256": {
+            "_t": "str"
+          }
+        }
+      }
+    },
+    "nar1_reassembly": {
+      "_t": "obj",
+      "k": {
+        "owner_key_fields": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        },
+        "fixed_slots": {
+          "_t": "int"
+        },
+        "cases": {
+          "_t": "obj",
+          "k": {
+            "canonical_success": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "complete_sha256": {
+                  "_t": "str"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "reordered_success": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "complete_sha256": {
+                  "_t": "str"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "same_duplicate_no_progress": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "complete_sha256": {
+                  "_t": "str"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "conflicting_duplicate_discard": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "gap_loss_timeout_discard": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "overlap_discard": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "reason": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "mixed_tuple_discard": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "inner_mismatch_discard": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            },
+            "source_mismatch_discard": {
+              "_t": "obj",
+              "k": {
+                "outcome": {
+                  "_t": "str"
+                },
+                "progress_count": {
+                  "_t": "int"
+                },
+                "duplicate_count": {
+                  "_t": "int"
+                },
+                "published_bytes": {
+                  "_t": "int"
+                },
+                "transitions": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "preauth_owner": {
+      "_t": "obj",
+      "k": {
+        "owner_key_fields": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        },
+        "source_locator_digest_hex": {
+          "_t": "str"
+        },
+        "per_source_scratch_limit": {
+          "_t": "int"
+        },
+        "global_scratch_limit": {
+          "_t": "int"
+        },
+        "scratch_fragment_count_exact": {
+          "_t": "int"
+        },
+        "idle_timeout_seconds": {
+          "_t": "int"
+        },
+        "idle_timeout_ms": {
+          "_t": "int"
+        },
+        "cookie_valid_buckets": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        },
+        "token_bucket_capacity": {
+          "_t": "int"
+        },
+        "token_refill_seconds": {
+          "_t": "int"
+        },
+        "token_refill_ms": {
+          "_t": "int"
+        },
+        "current_cookie_bucket": {
+          "_t": "int"
+        },
+        "identity_allocations_before_cookie": {
+          "_t": "int"
+        },
+        "credential_resolver_calls_before_cookie": {
+          "_t": "int"
+        },
+        "required_branch_names": {
+          "_t": "arr",
+          "item": {
+            "_t": "str"
+          }
+        },
+        "branch_coverage": {
+          "_t": "obj",
+          "k": {
+            "ALLOCATE": {
+              "_t": "int"
+            },
+            "FRAGMENT_0_ACCEPT": {
+              "_t": "int"
+            },
+            "FRAGMENT_1_ACCEPT": {
+              "_t": "int"
+            },
+            "SAME_DUPLICATE": {
+              "_t": "int"
+            },
+            "CONFLICTING_DUPLICATE_TERMINAL": {
+              "_t": "int"
+            },
+            "COMPLETE_RELEASE": {
+              "_t": "int"
+            },
+            "PER_SOURCE_QUOTA_DENY": {
+              "_t": "int"
+            },
+            "GLOBAL_QUOTA_DENY": {
+              "_t": "int"
+            },
+            "TOKEN_CAPACITY_DENY": {
+              "_t": "int"
+            },
+            "REFILL_BEFORE_2S": {
+              "_t": "int"
+            },
+            "REFILL_AT_2S": {
+              "_t": "int"
+            },
+            "IDLE_BEFORE_9S": {
+              "_t": "int"
+            },
+            "IDLE_AT_9S_RELEASE": {
+              "_t": "int"
+            },
+            "COOKIE_CURRENT_ACCEPT": {
+              "_t": "int"
+            },
+            "COOKIE_PREVIOUS_ACCEPT": {
+              "_t": "int"
+            },
+            "COOKIE_OLDER_EXISTING_TERMINAL": {
+              "_t": "int"
+            },
+            "COOKIE_OLDER_NO_OWNER": {
+              "_t": "int"
+            }
+          }
+        },
+        "transitions": {
+          "_t": "arr",
+          "item": {
+            "_t": "obj",
+            "k": {
+              "scenario": {
+                "_t": "str"
+              },
+              "reset_before": {
+                "_t": "bool"
+              },
+              "at_ms": {
+                "_t": "int"
+              },
+              "operation": {
+                "_t": "str"
+              },
+              "source_label": {
+                "_t": "str"
+              },
+              "source_locator_digest_hex": {
+                "_t": "str"
+              },
+              "session_id_hex": {
+                "_t": "str"
+              },
+              "exchange_generation": {
+                "_t": "int"
+              },
+              "record_sequence": {
+                "_t": "int"
+              },
+              "complete_nac1_bytes": {
+                "_t": "int"
+              },
+              "digest16_hex": {
+                "_t": "str"
+              },
+              "cookie_bucket": {
+                "_t": "int"
+              },
+              "fragment_index": {
+                "_t": "int"
+              },
+              "fragment_payload_variant": {
+                "_t": "str"
+              },
+              "fragment_payload_hex": {
+                "_t": "str"
+              },
+              "step": {
+                "_t": "int"
+              },
+              "expected": {
+                "_t": "obj",
+                "k": {
+                  "result": {
+                    "_t": "str"
+                  },
+                  "branches": {
+                    "_t": "arr",
+                    "item": {
+                      "_t": "str"
+                    }
+                  },
+                  "active_scratch_count": {
+                    "_t": "int"
+                  },
+                  "source_active_scratch_count": {
+                    "_t": "int"
+                  },
+                  "source_tokens": {
+                    "_t": "int"
+                  },
+                  "active_owner_received_mask": {
+                    "_t": "int"
+                  },
+                  "expired_release_count_delta": {
+                    "_t": "int"
+                  },
+                  "completion_count": {
+                    "_t": "int"
+                  },
+                  "release_count": {
+                    "_t": "int"
+                  },
+                  "terminal_discard_count": {
+                    "_t": "int"
+                  },
+                  "identity_allocations": {
+                    "_t": "int"
+                  },
+                  "credential_resolver_calls": {
+                    "_t": "int"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "magic_registry": {
+      "_t": "obj",
+      "k": {
+        "registry": {
+          "_t": "str"
+        },
+        "pa_allocations": {
+          "_t": "obj",
+          "k": {
+            "NAC1": {
+              "_t": "str"
+            },
+            "NAS1": {
+              "_t": "str"
+            },
+            "NAR1": {
+              "_t": "str"
+            }
+          }
+        },
+        "forbidden_pa_allocations": {
+          "_t": "obj",
+          "k": {
+            "NPA1": {
+              "_t": "str"
+            },
+            "NPS1": {
+              "_t": "str"
+            }
+          }
+        },
+        "all_pa_allocations_unique": {
+          "_t": "bool"
+        },
+        "repository_registry_gate_required": {
+          "_t": "bool"
+        }
+      }
+    },
+    "prerequisites": {
+      "_t": "obj",
+      "k": {
+        "dependency_readiness": {
+          "_t": "obj",
+          "k": {
+            "factory_identity": {
+              "_t": "str"
+            },
+            "site_membership": {
+              "_t": "str"
+            },
+            "production_attachment_status": {
+              "_t": "str"
+            },
+            "pa_may_claim_dependency_ready": {
+              "_t": "bool"
+            },
+            "owner_start_without_accepted_dependencies": {
+              "_t": "str"
+            }
+          }
+        },
+        "factory_identity_claim": {
+          "_t": "obj",
+          "k": {
+            "required_state": {
+              "_t": "str"
+            },
+            "stable_id_digest_bytes": {
+              "_t": "int"
+            },
+            "claim_revision_nonzero": {
+              "_t": "bool"
+            },
+            "copy_owned": {
+              "_t": "bool"
+            }
+          }
+        },
+        "site_membership_claim": {
+          "_t": "obj",
+          "k": {
+            "required_state": {
+              "_t": "str"
+            },
+            "site_domain_hex": {
+              "_t": "str"
+            },
+            "membership_epoch": {
+              "_t": "int"
+            },
+            "authority_id_hex": {
+              "_t": "str"
+            },
+            "authority_term": {
+              "_t": "int"
+            },
+            "credential_set_revision": {
+              "_t": "int"
+            },
+            "revocation_generation": {
+              "_t": "int"
+            },
+            "assignment_epoch": {
+              "_t": "int"
+            },
+            "copy_owned": {
+              "_t": "bool"
+            }
+          }
+        },
+        "local_credential_descriptors": {
+          "_t": "obj",
+          "k": {
+            "initiator_local_role_1": {
+              "_t": "obj",
+              "k": {
+                "local_role": {
+                  "_t": "int"
+                },
+                "factory_identity_state": {
+                  "_t": "str"
+                },
+                "factory_stable_id_digest_hex": {
+                  "_t": "str"
+                },
+                "factory_claim_revision": {
+                  "_t": "int"
+                },
+                "canonical_ccs_hex": {
+                  "_t": "str"
+                },
+                "canonical_ccs_sha256": {
+                  "_t": "str"
+                },
+                "kid_hex": {
+                  "_t": "str"
+                },
+                "curve": {
+                  "_t": "str"
+                },
+                "public_key_digest_hex": {
+                  "_t": "str"
+                },
+                "credential_set_revision": {
+                  "_t": "int"
+                },
+                "provider_generation": {
+                  "_t": "int"
+                },
+                "opaque_key_reference_hex": {
+                  "_t": "str"
+                },
+                "opaque_key_reference_length": {
+                  "_t": "int"
+                },
+                "copy_owned": {
+                  "_t": "bool"
+                }
+              }
+            },
+            "responder_local_role_2": {
+              "_t": "obj",
+              "k": {
+                "local_role": {
+                  "_t": "int"
+                },
+                "factory_identity_state": {
+                  "_t": "str"
+                },
+                "factory_stable_id_digest_hex": {
+                  "_t": "str"
+                },
+                "factory_claim_revision": {
+                  "_t": "int"
+                },
+                "canonical_ccs_hex": {
+                  "_t": "str"
+                },
+                "canonical_ccs_sha256": {
+                  "_t": "str"
+                },
+                "kid_hex": {
+                  "_t": "str"
+                },
+                "curve": {
+                  "_t": "str"
+                },
+                "public_key_digest_hex": {
+                  "_t": "str"
+                },
+                "credential_set_revision": {
+                  "_t": "int"
+                },
+                "provider_generation": {
+                  "_t": "int"
+                },
+                "opaque_key_reference_hex": {
+                  "_t": "str"
+                },
+                "opaque_key_reference_length": {
+                  "_t": "int"
+                },
+                "copy_owned": {
+                  "_t": "bool"
+                }
+              }
+            }
+          }
+        },
+        "local_static_dh_port": {
+          "_t": "obj",
+          "k": {
+            "operation": {
+              "_t": "str"
+            },
+            "input_fields": {
+              "_t": "arr",
+              "item": {
+                "_t": "str"
+              }
+            },
+            "output_owner": {
+              "_t": "str"
+            },
+            "output_bytes_exact": {
+              "_t": "int"
+            },
+            "write_count_exact": {
+              "_t": "int"
+            },
+            "private_scalar_exported": {
+              "_t": "bool"
+            },
+            "backend_pointer_exported": {
+              "_t": "bool"
+            },
+            "provider_serialization": {
+              "_t": "str"
+            },
+            "partial_output_action": {
+              "_t": "str"
+            },
+            "after_prk_action": {
+              "_t": "str"
+            }
+          }
+        },
+        "positive_model": {
+          "_t": "obj",
+          "k": {
+            "status": {
+              "_t": "str"
+            },
+            "ecdh_output_bytes_written": {
+              "_t": "int"
+            },
+            "ecdh_write_count": {
+              "_t": "int"
+            },
+            "wire_records_before_binding_checks": {
+              "_t": "int"
+            },
+            "private_key_bytes_exported": {
+              "_t": "int"
+            },
+            "real_provider_kat_claimed": {
+              "_t": "bool"
+            }
+          }
+        },
+        "failure_matrix": {
+          "_t": "arr",
+          "item": {
+            "_t": "obj",
+            "k": {
+              "id": {
+                "_t": "str"
+              },
+              "status": {
+                "_t": "str"
+              },
+              "wire_records": {
+                "_t": "int"
+              },
+              "exporter_calls": {
+                "_t": "int"
+              },
+              "ecdh_output_published_bytes": {
+                "_t": "int"
+              },
+              "zeroized_output_bytes": {
+                "_t": "int"
+              },
+              "private_key_bytes_exported": {
+                "_t": "int"
+              }
+            }
+          }
+        }
+      }
+    },
+    "credentials": {
+      "_t": "obj",
+      "k": {
+        "type": {
+          "_t": "str"
+        },
+        "curve": {
+          "_t": "str"
+        },
+        "cose_kty": {
+          "_t": "int"
+        },
+        "cose_crv": {
+          "_t": "int"
+        },
+        "encoding": {
+          "_t": "str"
+        },
+        "initiator_ccs_hex": {
+          "_t": "str"
+        },
+        "responder_ccs_hex": {
+          "_t": "str"
+        },
+        "initiator_kid_hex": {
+          "_t": "str"
+        },
+        "responder_kid_hex": {
+          "_t": "str"
+        },
+        "initiator_x_hex": {
+          "_t": "str"
+        },
+        "initiator_y_hex": {
+          "_t": "str"
+        },
+        "responder_x_hex": {
+          "_t": "str"
+        },
+        "responder_y_hex": {
+          "_t": "str"
+        },
+        "initiator_credential_digest_hex": {
+          "_t": "str"
+        },
+        "responder_credential_digest_hex": {
+          "_t": "str"
+        },
+        "initiator_ccs_sha256": {
+          "_t": "str"
+        },
+        "responder_ccs_sha256": {
+          "_t": "str"
+        },
+        "resolver_key_input_hex": {
+          "_t": "str"
+        },
+        "resolver_key_sha256": {
+          "_t": "str"
+        },
+        "note": {
+          "_t": "str"
+        }
+      }
+    },
+    "n6_attachment_marker": {
+      "_t": "obj",
+      "k": {
+        "local_role": {
+          "_t": "int"
+        },
+        "key_hex": {
+          "_t": "str"
+        },
+        "key_length": {
+          "_t": "int"
+        },
+        "value_hex": {
+          "_t": "str"
+        },
+        "value_length": {
+          "_t": "int"
+        },
+        "value_sha256": {
+          "_t": "str"
+        },
+        "state": {
+          "_t": "int"
+        },
+        "state_name": {
+          "_t": "str"
+        }
+      }
+    },
+    "lifecycle": {
+      "_t": "obj",
+      "k": {
+        "roles": {
+          "_t": "obj",
+          "k": {
+            "device_local_role_1": {
+              "_t": "obj",
+              "k": {
+                "pending": {
+                  "_t": "obj",
+                  "k": {
+                    "state": {
+                      "_t": "int"
+                    },
+                    "state_name": {
+                      "_t": "str"
+                    },
+                    "key_hex": {
+                      "_t": "str"
+                    },
+                    "value_hex": {
+                      "_t": "str"
+                    },
+                    "value_sha256": {
+                      "_t": "str"
+                    }
+                  }
+                },
+                "active": {
+                  "_t": "obj",
+                  "k": {
+                    "state": {
+                      "_t": "int"
+                    },
+                    "state_name": {
+                      "_t": "str"
+                    },
+                    "key_hex": {
+                      "_t": "str"
+                    },
+                    "value_hex": {
+                      "_t": "str"
+                    },
+                    "value_sha256": {
+                      "_t": "str"
+                    }
+                  }
+                },
+                "fenced_third": {
+                  "_t": "obj",
+                  "k": {
+                    "state": {
+                      "_t": "int"
+                    },
+                    "state_name": {
+                      "_t": "str"
+                    },
+                    "key_hex": {
+                      "_t": "str"
+                    },
+                    "value_hex": {
+                      "_t": "str"
+                    },
+                    "value_sha256": {
+                      "_t": "str"
+                    },
+                    "accepted": {
+                      "_t": "bool"
+                    }
+                  }
+                }
+              }
+            },
+            "authority_local_role_2": {
+              "_t": "obj",
+              "k": {
+                "pending": {
+                  "_t": "obj",
+                  "k": {
+                    "state": {
+                      "_t": "int"
+                    },
+                    "state_name": {
+                      "_t": "str"
+                    },
+                    "key_hex": {
+                      "_t": "str"
+                    },
+                    "value_hex": {
+                      "_t": "str"
+                    },
+                    "value_sha256": {
+                      "_t": "str"
+                    }
+                  }
+                },
+                "active": {
+                  "_t": "obj",
+                  "k": {
+                    "state": {
+                      "_t": "int"
+                    },
+                    "state_name": {
+                      "_t": "str"
+                    },
+                    "key_hex": {
+                      "_t": "str"
+                    },
+                    "value_hex": {
+                      "_t": "str"
+                    },
+                    "value_sha256": {
+                      "_t": "str"
+                    }
+                  }
+                },
+                "fenced_third": {
+                  "_t": "obj",
+                  "k": {
+                    "state": {
+                      "_t": "int"
+                    },
+                    "state_name": {
+                      "_t": "str"
+                    },
+                    "key_hex": {
+                      "_t": "str"
+                    },
+                    "value_hex": {
+                      "_t": "str"
+                    },
+                    "value_sha256": {
+                      "_t": "str"
+                    },
+                    "accepted": {
+                      "_t": "bool"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "pending_marker": {
+          "_t": "obj",
+          "k": {
+            "state": {
+              "_t": "int"
+            },
+            "state_name": {
+              "_t": "str"
+            },
+            "local_role": {
+              "_t": "int"
+            },
+            "key_hex": {
+              "_t": "str"
+            },
+            "value_hex": {
+              "_t": "str"
+            },
+            "value_sha256": {
+              "_t": "str"
+            }
+          }
+        },
+        "pending_to_active": {
+          "_t": "obj",
+          "k": {
+            "old_state": {
+              "_t": "int"
+            },
+            "new_state": {
+              "_t": "int"
+            },
+            "mutation_kind": {
+              "_t": "str"
+            },
+            "old_value_hex": {
+              "_t": "str"
+            },
+            "new_value_hex": {
+              "_t": "str"
+            },
+            "old_value_sha256": {
+              "_t": "str"
+            },
+            "new_value_sha256": {
+              "_t": "str"
+            }
+          }
+        },
+        "commit_unknown": {
+          "_t": "obj",
+          "k": {
+            "old_pending_value_hex": {
+              "_t": "str"
+            },
+            "new_active_value_hex": {
+              "_t": "str"
+            },
+            "third_value_hex": {
+              "_t": "str"
+            },
+            "third_value_state": {
+              "_t": "int"
+            },
+            "third_value_accepted": {
+              "_t": "bool"
+            },
+            "accepted_states": {
+              "_t": "arr",
+              "item": {
+                "_t": "int"
+              }
+            },
+            "accepted_classifications": {
+              "_t": "arr",
+              "item": {
+                "_t": "str"
+              }
+            }
+          }
+        },
+        "group_machine": {
+          "_t": "obj",
+          "k": {
+            "member_count_exact": {
+              "_t": "int"
+            },
+            "old_count_is_protocol_constant": {
+              "_t": "bool"
+            },
+            "observed_old_non_absent_count": {
+              "_t": "int"
+            },
+            "legal_nonempty_lane_old_required": {
+              "_t": "bool"
+            },
+            "new_pending_member_count": {
+              "_t": "int"
+            },
+            "partial_member_counts_rejected": {
+              "_t": "arr",
+              "item": {
+                "_t": "int"
+              }
+            },
+            "extra_member_rejected": {
+              "_t": "bool"
+            },
+            "third_value_or_digest_mismatch_rejected": {
+              "_t": "bool"
+            },
+            "pending_to_active_single_key_full": {
+              "_t": "bool"
+            },
+            "publication_before_dual_confirm": {
+              "_t": "int"
+            },
+            "device_complete_keys_concat_sha256": {
+              "_t": "str"
+            },
+            "authority_complete_keys_concat_sha256": {
+              "_t": "str"
+            },
+            "device_pending_key_hex": {
+              "_t": "str"
+            },
+            "device_pending_value_hex": {
+              "_t": "str"
+            },
+            "device_active_value_hex": {
+              "_t": "str"
+            },
+            "authority_pending_key_hex": {
+              "_t": "str"
+            },
+            "authority_pending_value_hex": {
+              "_t": "str"
+            },
+            "authority_active_value_hex": {
+              "_t": "str"
+            },
+            "role_attachment_id_must_match": {
+              "_t": "bool"
+            },
+            "snapshots": {
+              "_t": "obj",
+              "k": {
+                "classification_domain": {
+                  "_t": "arr",
+                  "item": {
+                    "_t": "str"
+                  }
+                },
+                "roles": {
+                  "_t": "obj",
+                  "k": {
+                    "device_local_role_1": {
+                      "_t": "obj",
+                      "k": {
+                        "exact_old": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "observed_old_non_absent_count": {
+                              "_t": "int"
+                            },
+                            "marker_absent": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "write_set_rows": {
+                          "_t": "arr",
+                          "item": {
+                            "_t": "obj",
+                            "k": {
+                              "index": {
+                                "_t": "int"
+                              },
+                              "identity": {
+                                "_t": "str"
+                              },
+                              "member_kind": {
+                                "_t": "int"
+                              },
+                              "complete_key_hex": {
+                                "_t": "str"
+                              },
+                              "old_present": {
+                                "_t": "bool"
+                              },
+                              "old_value_hex": {
+                                "_t": "str"
+                              },
+                              "old_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "new_value_hex": {
+                                "_t": "str"
+                              },
+                              "new_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "old_new_relation": {
+                                "_t": "str"
+                              }
+                            }
+                          }
+                        },
+                        "cu_row_classifier_cases": {
+                          "_t": "arr",
+                          "item": {
+                            "_t": "obj",
+                            "k": {
+                              "id": {
+                                "_t": "str"
+                              },
+                              "old_present": {
+                                "_t": "bool"
+                              },
+                              "old_value_hex": {
+                                "_t": "str"
+                              },
+                              "old_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "new_value_hex": {
+                                "_t": "str"
+                              },
+                              "new_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "durable_present": {
+                                "_t": "bool"
+                              },
+                              "durable_value_hex": {
+                                "_t": "str"
+                              },
+                              "durable_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "expected_classification": {
+                                "_t": "str"
+                              }
+                            }
+                          }
+                        },
+                        "partial_1": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_2": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_3": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_4": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_5": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_6": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_7": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_8": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_9": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_10": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_11": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_12": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_13": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_14": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "exact_new_pending_15": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "present_keys_concat_sha256": {
+                              "_t": "str"
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "marker_state": {
+                              "_t": "int"
+                            },
+                            "marker_value_hex": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "value_substitution_rejected": {
+                              "_t": "obj",
+                              "k": {
+                                "mutated_index": {
+                                  "_t": "int"
+                                },
+                                "members": {
+                                  "_t": "arr",
+                                  "item": {
+                                    "_t": "obj",
+                                    "k": {
+                                      "index": {
+                                        "_t": "int"
+                                      },
+                                      "identity": {
+                                        "_t": "str"
+                                      },
+                                      "member_kind": {
+                                        "_t": "int"
+                                      },
+                                      "complete_key_hex": {
+                                        "_t": "str"
+                                      },
+                                      "complete_key_length": {
+                                        "_t": "int"
+                                      },
+                                      "value_hex": {
+                                        "_t": "str"
+                                      },
+                                      "value_sha256": {
+                                        "_t": "str"
+                                      },
+                                      "value_bytes": {
+                                        "_t": "int"
+                                      },
+                                      "context_digest_hex": {
+                                        "_t": "str"
+                                      }
+                                    }
+                                  }
+                                },
+                                "full_image_sha256": {
+                                  "_t": "str"
+                                },
+                                "classification": {
+                                  "_t": "str"
+                                },
+                                "commit_unknown_accepted": {
+                                  "_t": "bool"
+                                }
+                              }
+                            },
+                            "context_digest_substitution_rejected": {
+                              "_t": "obj",
+                              "k": {
+                                "mutated_index": {
+                                  "_t": "int"
+                                },
+                                "members": {
+                                  "_t": "arr",
+                                  "item": {
+                                    "_t": "obj",
+                                    "k": {
+                                      "index": {
+                                        "_t": "int"
+                                      },
+                                      "identity": {
+                                        "_t": "str"
+                                      },
+                                      "member_kind": {
+                                        "_t": "int"
+                                      },
+                                      "complete_key_hex": {
+                                        "_t": "str"
+                                      },
+                                      "complete_key_length": {
+                                        "_t": "int"
+                                      },
+                                      "value_hex": {
+                                        "_t": "str"
+                                      },
+                                      "value_sha256": {
+                                        "_t": "str"
+                                      },
+                                      "value_bytes": {
+                                        "_t": "int"
+                                      },
+                                      "context_digest_hex": {
+                                        "_t": "str"
+                                      }
+                                    }
+                                  }
+                                },
+                                "full_image_sha256": {
+                                  "_t": "str"
+                                },
+                                "classification": {
+                                  "_t": "str"
+                                },
+                                "commit_unknown_accepted": {
+                                  "_t": "bool"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "extra_16": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "foreign_complete_key_hex": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "third_mismatch": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "marker_state": {
+                              "_t": "int"
+                            },
+                            "marker_value_hex": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "pending_to_active": {
+                          "_t": "obj",
+                          "k": {
+                            "mutation_kind": {
+                              "_t": "str"
+                            },
+                            "marker_key_hex": {
+                              "_t": "str"
+                            },
+                            "old_state": {
+                              "_t": "int"
+                            },
+                            "new_state": {
+                              "_t": "int"
+                            },
+                            "old_value_hex": {
+                              "_t": "str"
+                            },
+                            "new_value_hex": {
+                              "_t": "str"
+                            },
+                            "old_value_sha256": {
+                              "_t": "str"
+                            },
+                            "new_value_sha256": {
+                              "_t": "str"
+                            },
+                            "accepted": {
+                              "_t": "bool"
+                            },
+                            "non_marker_rows_unchanged": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "commit_unknown": {
+                          "_t": "obj",
+                          "k": {
+                            "accepted_classifications": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "accepted_snapshots": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "rejected_snapshot_kinds": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "active_marker_only": {
+                              "_t": "obj",
+                              "k": {
+                                "marker_key_hex": {
+                                  "_t": "str"
+                                },
+                                "value_hex": {
+                                  "_t": "str"
+                                },
+                                "value_sha256": {
+                                  "_t": "str"
+                                },
+                                "classification": {
+                                  "_t": "str"
+                                },
+                                "commit_unknown_accepted": {
+                                  "_t": "bool"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "publication_before_dual_confirm": {
+                          "_t": "int"
+                        }
+                      }
+                    },
+                    "authority_local_role_2": {
+                      "_t": "obj",
+                      "k": {
+                        "exact_old": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "observed_old_non_absent_count": {
+                              "_t": "int"
+                            },
+                            "marker_absent": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "write_set_rows": {
+                          "_t": "arr",
+                          "item": {
+                            "_t": "obj",
+                            "k": {
+                              "index": {
+                                "_t": "int"
+                              },
+                              "identity": {
+                                "_t": "str"
+                              },
+                              "member_kind": {
+                                "_t": "int"
+                              },
+                              "complete_key_hex": {
+                                "_t": "str"
+                              },
+                              "old_present": {
+                                "_t": "bool"
+                              },
+                              "old_value_hex": {
+                                "_t": "str"
+                              },
+                              "old_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "new_value_hex": {
+                                "_t": "str"
+                              },
+                              "new_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "old_new_relation": {
+                                "_t": "str"
+                              }
+                            }
+                          }
+                        },
+                        "cu_row_classifier_cases": {
+                          "_t": "arr",
+                          "item": {
+                            "_t": "obj",
+                            "k": {
+                              "id": {
+                                "_t": "str"
+                              },
+                              "old_present": {
+                                "_t": "bool"
+                              },
+                              "old_value_hex": {
+                                "_t": "str"
+                              },
+                              "old_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "new_value_hex": {
+                                "_t": "str"
+                              },
+                              "new_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "durable_present": {
+                                "_t": "bool"
+                              },
+                              "durable_value_hex": {
+                                "_t": "str"
+                              },
+                              "durable_context_digest_hex": {
+                                "_t": "str"
+                              },
+                              "expected_classification": {
+                                "_t": "str"
+                              }
+                            }
+                          }
+                        },
+                        "partial_1": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_2": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_3": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_4": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_5": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_6": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_7": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_8": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_9": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_10": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_11": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_12": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_13": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "partial_14": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "advanced_to_new_count": {
+                              "_t": "int"
+                            }
+                          }
+                        },
+                        "exact_new_pending_15": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "present_complete_keys_hex": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "present_keys_concat_sha256": {
+                              "_t": "str"
+                            },
+                            "members": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "obj",
+                                "k": {
+                                  "index": {
+                                    "_t": "int"
+                                  },
+                                  "identity": {
+                                    "_t": "str"
+                                  },
+                                  "member_kind": {
+                                    "_t": "int"
+                                  },
+                                  "complete_key_hex": {
+                                    "_t": "str"
+                                  },
+                                  "complete_key_length": {
+                                    "_t": "int"
+                                  },
+                                  "value_hex": {
+                                    "_t": "str"
+                                  },
+                                  "value_sha256": {
+                                    "_t": "str"
+                                  },
+                                  "value_bytes": {
+                                    "_t": "int"
+                                  },
+                                  "context_digest_hex": {
+                                    "_t": "str"
+                                  }
+                                }
+                              }
+                            },
+                            "full_image_sha256": {
+                              "_t": "str"
+                            },
+                            "marker_state": {
+                              "_t": "int"
+                            },
+                            "marker_value_hex": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            },
+                            "value_substitution_rejected": {
+                              "_t": "obj",
+                              "k": {
+                                "mutated_index": {
+                                  "_t": "int"
+                                },
+                                "members": {
+                                  "_t": "arr",
+                                  "item": {
+                                    "_t": "obj",
+                                    "k": {
+                                      "index": {
+                                        "_t": "int"
+                                      },
+                                      "identity": {
+                                        "_t": "str"
+                                      },
+                                      "member_kind": {
+                                        "_t": "int"
+                                      },
+                                      "complete_key_hex": {
+                                        "_t": "str"
+                                      },
+                                      "complete_key_length": {
+                                        "_t": "int"
+                                      },
+                                      "value_hex": {
+                                        "_t": "str"
+                                      },
+                                      "value_sha256": {
+                                        "_t": "str"
+                                      },
+                                      "value_bytes": {
+                                        "_t": "int"
+                                      },
+                                      "context_digest_hex": {
+                                        "_t": "str"
+                                      }
+                                    }
+                                  }
+                                },
+                                "full_image_sha256": {
+                                  "_t": "str"
+                                },
+                                "classification": {
+                                  "_t": "str"
+                                },
+                                "commit_unknown_accepted": {
+                                  "_t": "bool"
+                                }
+                              }
+                            },
+                            "context_digest_substitution_rejected": {
+                              "_t": "obj",
+                              "k": {
+                                "mutated_index": {
+                                  "_t": "int"
+                                },
+                                "members": {
+                                  "_t": "arr",
+                                  "item": {
+                                    "_t": "obj",
+                                    "k": {
+                                      "index": {
+                                        "_t": "int"
+                                      },
+                                      "identity": {
+                                        "_t": "str"
+                                      },
+                                      "member_kind": {
+                                        "_t": "int"
+                                      },
+                                      "complete_key_hex": {
+                                        "_t": "str"
+                                      },
+                                      "complete_key_length": {
+                                        "_t": "int"
+                                      },
+                                      "value_hex": {
+                                        "_t": "str"
+                                      },
+                                      "value_sha256": {
+                                        "_t": "str"
+                                      },
+                                      "value_bytes": {
+                                        "_t": "int"
+                                      },
+                                      "context_digest_hex": {
+                                        "_t": "str"
+                                      }
+                                    }
+                                  }
+                                },
+                                "full_image_sha256": {
+                                  "_t": "str"
+                                },
+                                "classification": {
+                                  "_t": "str"
+                                },
+                                "commit_unknown_accepted": {
+                                  "_t": "bool"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "extra_16": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "foreign_complete_key_hex": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "third_mismatch": {
+                          "_t": "obj",
+                          "k": {
+                            "member_count": {
+                              "_t": "int"
+                            },
+                            "marker_state": {
+                              "_t": "int"
+                            },
+                            "marker_value_hex": {
+                              "_t": "str"
+                            },
+                            "classification": {
+                              "_t": "str"
+                            },
+                            "commit_unknown_accepted": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "pending_to_active": {
+                          "_t": "obj",
+                          "k": {
+                            "mutation_kind": {
+                              "_t": "str"
+                            },
+                            "marker_key_hex": {
+                              "_t": "str"
+                            },
+                            "old_state": {
+                              "_t": "int"
+                            },
+                            "new_state": {
+                              "_t": "int"
+                            },
+                            "old_value_hex": {
+                              "_t": "str"
+                            },
+                            "new_value_hex": {
+                              "_t": "str"
+                            },
+                            "old_value_sha256": {
+                              "_t": "str"
+                            },
+                            "new_value_sha256": {
+                              "_t": "str"
+                            },
+                            "accepted": {
+                              "_t": "bool"
+                            },
+                            "non_marker_rows_unchanged": {
+                              "_t": "bool"
+                            }
+                          }
+                        },
+                        "commit_unknown": {
+                          "_t": "obj",
+                          "k": {
+                            "accepted_classifications": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "accepted_snapshots": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "rejected_snapshot_kinds": {
+                              "_t": "arr",
+                              "item": {
+                                "_t": "str"
+                              }
+                            },
+                            "active_marker_only": {
+                              "_t": "obj",
+                              "k": {
+                                "marker_key_hex": {
+                                  "_t": "str"
+                                },
+                                "value_hex": {
+                                  "_t": "str"
+                                },
+                                "value_sha256": {
+                                  "_t": "str"
+                                },
+                                "classification": {
+                                  "_t": "str"
+                                },
+                                "commit_unknown_accepted": {
+                                  "_t": "bool"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "publication_before_dual_confirm": {
+                          "_t": "int"
+                        }
+                      }
+                    }
+                  }
+                },
+                "durability_model": {
+                  "_t": "str"
+                },
+                "reattach_policy": {
+                  "_t": "str"
+                },
+                "reattach_10k_restart": {
+                  "_t": "obj",
+                  "k": {
+                    "cycles": {
+                      "_t": "int"
+                    },
+                    "restart_after_each_cycle": {
+                      "_t": "bool"
+                    },
+                    "initial_floors": {
+                      "_t": "arr",
+                      "item": {
+                        "_t": "int"
+                      }
+                    },
+                    "final_floors": {
+                      "_t": "arr",
+                      "item": {
+                        "_t": "int"
+                      }
+                    },
+                    "initial_high_waters": {
+                      "_t": "arr",
+                      "item": {
+                        "_t": "int"
+                      }
+                    },
+                    "final_high_waters": {
+                      "_t": "arr",
+                      "item": {
+                        "_t": "int"
+                      }
+                    },
+                    "regression_count": {
+                      "_t": "int"
+                    },
+                    "transcript_sha256": {
+                      "_t": "str"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "publication_before_dual_confirm": {
+          "_t": "int"
+        }
+      }
+    },
+    "atomic_batch_manifests": {
+      "_t": "obj",
+      "k": {
+        "status": {
+          "_t": "str"
+        },
+        "ordering": {
+          "_t": "str"
+        },
+        "device_local_role_1": {
+          "_t": "obj",
+          "k": {
+            "length": {
+              "_t": "int"
+            },
+            "hex": {
+              "_t": "str"
+            },
+            "sha256": {
+              "_t": "str"
+            },
+            "exact_inventory": {
+              "_t": "arr",
+              "item": {
+                "_t": "obj",
+                "k": {
+                  "identity": {
+                    "_t": "str"
+                  },
+                  "member_kind": {
+                    "_t": "int"
+                  },
+                  "direction": {
+                    "_t": "int"
+                  },
+                  "lane": {
+                    "_t": "int"
+                  },
+                  "local_side": {
+                    "_t": "int"
+                  },
+                  "context_id": {
+                    "_t": "int"
+                  },
+                  "key_generation": {
+                    "_t": "int"
+                  },
+                  "key_bytes": {
+                    "_t": "int"
+                  },
+                  "value_bytes": {
+                    "_t": "int"
+                  },
+                  "layer_code": {
+                    "_t": "int"
+                  },
+                  "complete_key_hex": {
+                    "_t": "str"
+                  },
+                  "complete_key_length": {
+                    "_t": "int"
+                  },
+                  "value_hex": {
+                    "_t": "str"
+                  },
+                  "value_sha256": {
+                    "_t": "str"
+                  },
+                  "context_digest_hex": {
+                    "_t": "str"
+                  },
+                  "old_present": {
+                    "_t": "bool"
+                  },
+                  "old_value_hex": {
+                    "_t": "str"
+                  },
+                  "old_value_sha256": {
+                    "_t": "str"
+                  },
+                  "old_context_digest_hex": {
+                    "_t": "str"
+                  },
+                  "old_new_relation": {
+                    "_t": "str"
+                  },
+                  "index": {
+                    "_t": "int"
+                  }
+                }
+              }
+            },
+            "complete_keys_concat_sha256": {
+              "_t": "str"
+            },
+            "full_image_sha256": {
+              "_t": "str"
+            }
+          }
+        },
+        "authority_local_role_2": {
+          "_t": "obj",
+          "k": {
+            "length": {
+              "_t": "int"
+            },
+            "hex": {
+              "_t": "str"
+            },
+            "sha256": {
+              "_t": "str"
+            },
+            "exact_inventory": {
+              "_t": "arr",
+              "item": {
+                "_t": "obj",
+                "k": {
+                  "identity": {
+                    "_t": "str"
+                  },
+                  "member_kind": {
+                    "_t": "int"
+                  },
+                  "direction": {
+                    "_t": "int"
+                  },
+                  "lane": {
+                    "_t": "int"
+                  },
+                  "local_side": {
+                    "_t": "int"
+                  },
+                  "context_id": {
+                    "_t": "int"
+                  },
+                  "key_generation": {
+                    "_t": "int"
+                  },
+                  "key_bytes": {
+                    "_t": "int"
+                  },
+                  "value_bytes": {
+                    "_t": "int"
+                  },
+                  "layer_code": {
+                    "_t": "int"
+                  },
+                  "complete_key_hex": {
+                    "_t": "str"
+                  },
+                  "complete_key_length": {
+                    "_t": "int"
+                  },
+                  "value_hex": {
+                    "_t": "str"
+                  },
+                  "value_sha256": {
+                    "_t": "str"
+                  },
+                  "context_digest_hex": {
+                    "_t": "str"
+                  },
+                  "old_present": {
+                    "_t": "bool"
+                  },
+                  "old_value_hex": {
+                    "_t": "str"
+                  },
+                  "old_value_sha256": {
+                    "_t": "str"
+                  },
+                  "old_context_digest_hex": {
+                    "_t": "str"
+                  },
+                  "old_new_relation": {
+                    "_t": "str"
+                  },
+                  "index": {
+                    "_t": "int"
+                  }
+                }
+              }
+            },
+            "complete_keys_concat_sha256": {
+              "_t": "str"
+            },
+            "full_image_sha256": {
+              "_t": "str"
+            }
+          }
+        }
+      }
+    }
+  }
+}

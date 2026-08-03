@@ -15,7 +15,12 @@
 - transaction、deadline、cancel、Receipt、EventFact retry/recoveryの状態遷移は[13-foundation-state-machine.md](13-foundation-state-machine.md)を正本とします。
 - 本章はport transaction、durability、capacity unit、simulator ordering、fixture byteを詳細化します。
 - SimulatorはRuntime roleではありません。`CONTROLLER`と`ENDPOINT`を外部から駆動するtest harnessです。`SIMULATOR`というRuntime role、identity、admission authorityを作ってはなりません。
-- M1aはconcrete target 1件だけを受理します。EventFactは`NINLIL_NO_DEADLINE`かつ`evidence_grace_ms = 0`であり、8-attempt cycle枯渇後も`PARKED_RETRY`でpayloadを保持します。fresh Bearer availability epoch + `available=1`または一意なoperator resume operationでだけ次cycleへ進みます。
+- ADR-0027 exact roster profileではDesiredStateのconcrete target 1〜4件を
+  `ALL_TARGETS`で受理します。EventFactはexactly 1件、
+  `NINLIL_NO_DEADLINE`かつ`evidence_grace_ms = 0`であり、8-attempt cycle
+  枯渇後も`PARKED_RETRY`でpayloadを保持します。fresh Bearer availability
+  epoch + `available=1`または一意なoperator resume operationでだけ次cycleへ
+  進みます。
 
 本章で使用する`MUST`、`MUST NOT`、`SHOULD`、`MAY`は[README.md](README.md)の規範語に従います。
 
@@ -85,7 +90,7 @@ Runtime createは全config validation後、Storage `open`より前にnamespace�
 
 ### Runtime create lifecycle vectors
 
-Harnessは`ninlil_runtime_create()`のobservable call traceを次の9 stageで照合します。Earlier stageが失敗したらlater stageへ到達せず、non-NULL `out_runtime` storageはrequired pointer validation直後にNULL化し、stage 9までRuntime handleをpublishしません。
+Harnessは`ninlil_runtime_create()`のobservable call traceを次の10 stageで照合します。Earlier stageが失敗したらlater stageへ到達せず、non-NULL `out_runtime` storageはrequired pointer validation直後にNULL化し、stage 10までRuntime handleをpublishしません。
 
 | Stage | Exact work |
 | ---: | --- |
@@ -93,24 +98,25 @@ Harnessは`ninlil_runtime_create()`のobservable call traceを次の9 stageで�
 | 2 | `execution.current_context_id`をexactly 1回呼び、non-zero owner contextをcapture |
 | 3 | Core state/vtable/config scalar copy、namespace exact deep-copy、profile-bounded tableをAllocatorで確保 |
 | 4 | copied namespaceで`storage.open(..., NINLIL_STORAGE_SCHEMA_M1A, ...)`をexactly 1回 |
-| 5 | schema/profile binding、commit-unknown resolution、recovery scan/fence、persistent capacity metadataを完了 |
-| 6 | `bearer.open(user, runtime_id, role, ...)`をexactly 1回。M1aはeager openで、lazy openしない |
-| 7 | `clock.now`をexactly 1回取得し、trusted sampleをmetrics startへ固定。`clock_epoch_id` non-zero、`now_ms == 0` valid |
-| 8 | metrics epoch IDを最大4 entropy-call/partial/all-zero規則で取得。Collision checkなし。transaction/attempt用entropyは未消費 |
-| 9 | Stage 5で再構成したdurable causesをfixed priorityへproject（cleanならhealth OK/reason NONE、markerありならDEGRADED/exact reason）、zero metrics、start sample/epoch ID、owner/handlesをfinalizeし、Runtimeをexactly 1回publish |
+| 5 | schema/profile binding、commit-unknown resolution、T0–T4 recovery scan/fence、persistent capacity metadata、identity recoveryを完了 |
+| 6 | `clock.now`をexactly 1回取得しtrusted sampleを固定。同じsampleでT5 `CLOCK_BASELINE` FULL更新とfresh re-scanを完了 |
+| 7 | T6 fresh full scanからdurable health sourceを再構成し、Storage priority 1/2 zeroを固定 |
+| 8 | T5/T6完了後にだけ`bearer.open(user, runtime_id, role, ...)`をexactly 1回。M1aはeager openで、lazy openしない |
+| 9 | metrics epoch IDを最大4 entropy-call/partial/all-zero規則で取得。Collision checkなし。transaction/attempt用entropyは未消費 |
+| 10 | Stage 7 durable causesをfixed priorityへproject（cleanならhealth OK/reason NONE、markerありならDEGRADED/exact reason）、zero metrics、Stage 6 start sample/epoch ID、owner/handlesをfinalizeし、Runtimeをexactly 1回publish |
 
 | Vector | Fault / setup | Required result and exact boundary |
 | --- | --- | --- |
-| `CR1_SUCCESS_ORDER` | Foundation Controller/Endpoint fixtureをclean namespaceでcreate | stage 1→9のexact trace、`NINLIL_OK`、non-NULL Runtime。Storage recovery完了前のBearer open、Bearer open前のclock/entropyは0 |
+| `CR1_SUCCESS_ORDER` | Foundation Controller/Endpoint fixtureをclean namespaceでcreate | stage 1→10のexact trace、`NINLIL_OK`、non-NULL Runtime。Exact orderはstorage recovery→trusted clock/T5→health/T6→Bearer open→entropy→publish |
 | `CR2_PURE_VALIDATION` | stage 1の各null/header/reserved/enum/range/profile violationを1つずつ注入し、outをpoison | exact API status、out NULL、Allocator/Execution/Storage/Bearer/Clock/Entropy call 0 |
 | `CR3_OWNER_CONTEXT_ZERO` | current context ID=0 | `NINLIL_E_DEGRADED`、out NULL、context call 1、Allocatorと他Port call 0 |
 | `CR4_ALLOC_PREFIX_ROLLBACK` | stage 3の各allocation pointを1つずつNULLにする | `NINLIL_E_CAPACITY_EXHAUSTED`、out NULL、取得済みallocationをreverse orderでexactly once free、Storage open 0 |
 | `CR5_STORAGE_OPEN_MAPPING` | openからBUSY / NO_SPACE / IO_ERROR / CORRUPT / unexpected NOT_FOUND / BUFFER_TOO_SMALL / UNSUPPORTED_SCHEMA / COMMIT_UNKNOWNを返す | 順に`WOULD_BLOCK / CAPACITY_EXHAUSTED / STORAGE / STORAGE_CORRUPT / STORAGE_CORRUPT / STORAGE_CORRUPT / UNSUPPORTED / STORAGE_COMMIT_UNKNOWN`。返却handleがあればclose後、reverse free |
 | `CR6_RECOVERY_BEFORE_BEARER` | clean initial binding、exact reopen、schema/role/environment/runtime ID/19 limits/3 retentions各1-field mutation、current identity exact/forward/stale/device mismatch、initial/rotation commit-unknown、各Storage failure | Cleanはbinding+capacity+transaction/ordered-input/owner counters+visited cursor+identityを1 FULL commit、exact identityはwrite0、higher binding/membership epochだけcurrent identityをFULL更新。Immutable mismatch=`UNSUPPORTED`、device/stale identity=`CONFLICT`、partial/mismatched counter=`STORAGE_CORRUPT`、Bearer/clock/entropy 0。Specific namespace/identity hooks、unknown all-present/all-absentまたはrotation applied/not-appliedへ収束 |
-| `CR7_BEARER_OPEN_MAPPING` | openからOK+NULL、WOULD_BLOCK、UNAVAILABLE、DENIED、EMPTY、LOST_UNKNOWN、CORRUPT | statusは順に`DEGRADED / WOULD_BLOCK / WOULD_BLOCK / UNSUPPORTED / DEGRADED / DEGRADED / DEGRADED`。Bearer handleがあればclose→Storage close→reverse free |
-| `CR8_CLOCK_SAMPLE` | stage 7でvalid trusted epoch + `now_ms=0`、temporary、UNCERTAIN、permanent、trusted+全zero epoch、invalid trust enum、external same-epoch baselineとdurable recovered stateに対するregressionを個別実行 | time 0はcreate継続。temporary/UNCERTAINは`NINLIL_E_CLOCK_UNCERTAIN`、他は`NINLIL_E_DEGRADED`。failureはclock call 1、entropy 0、reverse cleanup。L1 external baseline testはdurable variantを代替せず、durable source/update境界確定までCR8/public createは未完了 |
+| `CR7_BEARER_OPEN_MAPPING` | T5/T6完了後のopenからOK+NULL、WOULD_BLOCK、UNAVAILABLE、DENIED、EMPTY、LOST_UNKNOWN、CORRUPT | statusは順に`DEGRADED / WOULD_BLOCK / WOULD_BLOCK / UNSUPPORTED / DEGRADED / DEGRADED / DEGRADED`。Bearer handleがあればclose→Storage close→reverse free。T5 durable valueは巻き戻さない |
+| `CR8_CLOCK_SAMPLE` | stage 6でvalid trusted epoch + `now_ms=0`、temporary、UNCERTAIN、permanent、trusted+全zero epoch、invalid trust enum、external same-epoch baselineとdurable recovered stateに対するregressionを個別実行 | time 0はT5へ継続。temporary/UNCERTAINは`NINLIL_E_CLOCK_UNCERTAIN`、他は`NINLIL_E_DEGRADED`。failureはclock call 1、Bearer/entropy/callback/handle/publish 0。L1 external baseline testはdurable variantを代替しない |
 | `CR9_METRICS_ENTROPY` | candidate partial/failure/all-zeroを0〜3回後にvalid non-zero、または4回全てinvalid/failure。直前createと同じnon-zero candidateのvariantも実行 | validならそのcandidateをmetrics epochへ使用。同値variantもcollision rejectしない。4回失敗は`NINLIL_E_ENTROPY`、transaction/attempt draw 0、reverse cleanup |
-| `CR10_PUBLISH_AND_METRICS` | stage 8後/9前のhookでhandle visibilityを観測。Cleanとdurable RECOVERY_REQUIRED/counter markerありを各実行 | publish前はout NULL。Success時だけmetrics epoch/start epoch non-zero、全metrics zero。Clean health=OK/NONE、markerありは固定priorityDEGRADED/exact reason |
+| `CR10_PUBLISH_AND_METRICS` | stage 9後/10前のhookでhandle visibilityを観測。Cleanとdurable RECOVERY_REQUIRED/counter markerありを各実行 | publish前はout NULL。Success時だけmetrics epoch/start epoch non-zero、全metrics zero。Clean health=OK/NONE、markerありは固定priorityDEGRADED/exact reason |
 | `CR11_FIRST_FAILURE_WINS` | earlier stage failure、later stage fault、cleanup監視を同時script | exact sequenceで最初に観測したfailureだけを返し、later fault occurrence 0。Cleanupはoriginal statusを上書きせず、Port `user`をfreeしない |
 
 Lifecycle L1 pure modelはRuntime body/Port callを持たず、`status`、diagnostic `failure_field`、kind 1..11のlimitsを返します。Validationはtop-level pointer → outer header → inline config header/platform sub-vtable pointer → sub-vtable header → required function → reserved/unknown enum → named unsupported role/environment → runtime ID/local identity/namespace shape → lower/conditional/cross-field/retention → checked derivation overflow → profile upperの順で、pointer/function欠落はINVALID_ARGUMENT、header/size違反はABI_MISMATCHです。Outer headerの検証前にnested fieldをreadしません。Supported createはController/Endpoint + TESTだけで、8 sub-vtable（Allocator、Execution、Clock、Entropy、Storage、Bearer、Tx Gate、Origin Authorization）と各required functionはroleによらず必須、各`user == NULL`はvalidです。
@@ -119,7 +125,7 @@ Open mapperはstatus/handle shapeをstatus mappingより優先します。Storag
 
 Clock helperのoptional baselineはPort/harness supplied external inputだけです。同epochでlower `now_ms`なら`DEGRADED`、equalはvalid、別epochはregression比較しません。External helperはdurable recovered baselineを表さず、Runtimeのdurable source/update境界が定義されるまでCR8/public createは未完了です。Entropyは最大4回の16-byte観測で、`OK + non-zero`を即受理し、同値collisionを検査しません。Non-OK partial bytesは失敗として無視し、`OK` partialはCoreから観測不能なので返却bufferがnon-zeroなら受理します。
 
-Health pure reducerの入力はpriority 1..8（`STORAGE_IO`、`STORAGE_COMMIT_UNKNOWN`、`CALLBACK_CONTRACT`、`APPLICATION_FAILED`、`GRANT_PROVIDER_UNAVAILABLE`、`CLOCK_UNCERTAIN`、`COUNTER_EXHAUSTED`、`OUTCOME_UNKNOWN`）のreference countだけです。Generic projectorはlowest-number non-zero slotを`DEGRADED`へprojectし、全zeroは`OK/NONE`、`FATAL`は生成しません。Stage 9 fixtureは別のpublish gateでStage 5 recovery completeとStorage slot 1/2 zeroを検査し、Stage 5 durable markerだけをprojectします。未解決Storage causeを単にDEGRADEDとして成功createしません。
+Health pure reducerの入力はpriority 1..8（`STORAGE_IO`、`STORAGE_COMMIT_UNKNOWN`、`CALLBACK_CONTRACT`、`APPLICATION_FAILED`、`GRANT_PROVIDER_UNAVAILABLE`、`CLOCK_UNCERTAIN`、`COUNTER_EXHAUSTED`、`OUTCOME_UNKNOWN`）のreference countだけです。Generic projectorはlowest-number non-zero slotを`DEGRADED`へprojectし、全zeroは`OK/NONE`、`FATAL`は生成しません。Stage 7 T6 fixtureはStage 5 recovery completeとStorage slot 1/2 zeroを検査し、Stage 5 durable markerだけを再構成します。その結果はStage 10のpublish gateでprojectし、未解決Storage causeを単にDEGRADEDとして成功createしません。
 
 Stage 4以降の失敗cleanupは、存在するresourceだけを`bearer.close` → live Storage transaction/iterator 0確認 → `storage.close` → service/table/namespace/runtime allocationのreverse deallocate順で処理します。同じresourceを二重close/freeせず、Origin AuthorizationとTx Gateをcreate中に呼びません。
 
@@ -211,6 +217,10 @@ ACTIVE --rollback/error--> ABORTED_DEGRADED_CLOSED
 規則:
 
 - 1 storage handleにつきactive write transactionは最大1つです。nested transactionとimplicit savepointは禁止します。
+- この上限とexact namespace exclusive-writer openは、互いに独立した複数handle間の
+  conditional put/CASを提供しません。private featureがmulti-controller authority CASを必要と
+  する場合は、そのfeature固有のdefault-OFF provider境界で実装し、public Storage ABIの保証と
+  して扱ってはなりません。
 - `begin`成功時に、以後のread viewとなるsnapshotを固定します。
 - `get`、`put`、`erase`、iteratorは`ACTIVE`でだけ有効です。
 - transactionはread-your-writesです。`put`した値を同じtransactionの`get`と新規iteratorから読め、`erase`したkeyは見えません。
@@ -347,25 +357,30 @@ Private key/value codec、17-record inventory、CRC32C、presence classification
 - L2a codec/bootstrap modelはPort call 0のpure C11です。Exact key golden、全record round-trip、big-endian boundary、CRC golden/1-bit mutation、short/long/trailing value、key/type mismatch、unknown version、17/17・0/17・各1-record missing/extra、profile各field mutation、identity exact/conflict/forward、counter/capacity local invariantを検査します。
 - L2b Storage orchestrationはL2aを唯一のbootstrap byte codecとして使用し、public ABIを追加しません。Generic business operation journal、transaction/Delivery/cycle codec、Clock durable baselineはbootstrap groupへ混ぜず、[17章](17-foundation-domain-store.md)のD1以降で別familyとして実装します。
 
-L2b create Stage 5は次のexact orderです。
+L2b create Stage 5はprofile authorityで分岐する。以下の既存READ_ONLY pathはformat 1
+Legacy LABのexisting/retry classificationに限る。Canonical Domain format 2のinitial
+adoptionは[ADR-0022](adr/0022-domain-store-schema1-runtime-binding.md)どおり、fresh
+READ_WRITE transactionのmutation前full namespace scanで0-rowを証明し、iterator close後も
+同じtransaction内で17 CREATEをstageして1回のFULL commitへ進む。別READ_ONLY snapshotから
+READ_WRITEへrebegin/upgradeしない。
 
 1. `open + OK`はproviderが同じstore identityのold writerをfence済みであることの証明です。Dead-owner検出はStorage provider責務で、未確認なら`BUSY`を返します。Coreはlease generation/fencing tokenをpublic ABIへ追加しません。
-2. 1つのREAD_ONLY transaction snapshotで17 exact keysをunsigned-byte lexicographic順に`get`します。0/17の場合だけ0-byte prefix iteratorでnamespace全体がemptyか確認します。Iteratorをcloseし、rollback OKでtransactionをconsumeするまでloaded resultを採用しません。
-3. NewならREAD_WRITE transactionへ17 valuesを同じkey順でputし、HC13 before → `commit(FULL)` → OK時だけHC13 afterです。Identityを同じatomic groupへ含め、HC14 occurrenceは0です。Definite failureは全record non-commit、COMMIT_UNKNOWNはafter 0、transaction consumed、Storage close/fence、public `NINLIL_E_STORAGE_COMMIT_UNKNOWN`です。
+2. Existing/retryだけは1つのREAD_ONLY transaction snapshotで17 exact keysをunsigned-byte lexicographic順に`get`し、full namespace scan、iterator close、rollback OK後に結果を採用する。T1a OLDでもこのtransactionからmutationへ進まず、fresh READ_WRITE transactionで0-rowを再証明する。
+3. Canonical Newは上記same READ_WRITE transactionへformat 2の17 valuesを同じkey順でputし、HC13 before → `commit(FULL)` → OK時だけHC13 afterです。Identityを同じatomic groupへ含め、HC14 occurrenceは0です。Definite failureは全record non-commit、COMMIT_UNKNOWNはafter 0、transaction consumed、Storage close/fence、public `NINLIL_E_STORAGE_COMMIT_UNKNOWN`です。
 4. Existingなら17-record structural/integrity検査後にprofileをtyped exact比較します。Mismatchは`NINLIL_E_UNSUPPORTED`、write、identity rotation、domain recovery mutation、Bearer/Clock/Entropy call 0です。
 5. Exact profileだけが[17章](17-foundation-domain-store.md)のoperation witness/domain recovery scanへ進みます。4 counter/cursorとowner/index、11 capacity recordとdomain-derived used/reserved、durable health sourceを同じsnapshotで検査します。Partial group、orphan、underflow/overflow、checksum/digest conflictはfail closedです。D1 codec、D2 scanner、D3相互validation成功前はL2a/L2b1 successだけでStage 5全体をcompleteにしません。
 6. Recovery完了後にcurrent identityを比較します。Exactはwrite/hook 0、device anchor mismatchまたはchanged tupleのequal/regressive epochは`NINLIL_E_CONFLICT`、valid forward rotationはType 2だけを1 READ_WRITE/FULL transactionとHC14 pairで置換します。Rotation COMMIT_UNKNOWN後はold/new recordのauthoritative truthが決まるまでBearerをopenしません。
-7. Stage 5 durable markerだけからhealth referenceを再構成し、Storage priority 1/2がzeroの場合だけStage 9 publish gateへ渡します。Clock/provider/entropy/Bearerのinstance-local causeをcopyしません。
+7. Stage 5 recovery完了後はStage 6 trusted clock/T5へ進み、そのfresh re-scan後のStage 7 T6でdurable health referenceを再構成する。Storage priority 1/2がzeroの場合だけStage 8 Bearer、Stage 9 entropy、Stage 10 publishへ進む。Clock/provider/entropy/Bearerのinstance-local causeをrestartからcopyしない。
 
 READ_ONLY cleanup rollbackがOK以外ならloaded snapshotを破棄し、Storageをclose/reopen対象にします。An earlier primary failureのcleanupとしてunexpected transaction/iteratorをconsumeしている場合はprimary statusを上書きせず、cleanup failureをbounded diagnosticへ残してreopenします。Status mappingはBUSY→`NINLIL_E_WOULD_BLOCK`、NO_SPACE→`NINLIL_E_CAPACITY_EXHAUSTED`、definite IO→`NINLIL_E_STORAGE`、CORRUPT、current-key oversized `BUFFER_TOO_SMALL`、unexpected absence/partial→`NINLIL_E_STORAGE_CORRUPT`、UNSUPPORTED_SCHEMA/record version/profile→`NINLIL_E_UNSUPPORTED`、COMMIT_UNKNOWN→`NINLIL_E_STORAGE_COMMIT_UNKNOWN`です。Unknown status/invalid output shapeはcorruptとしてfail closedします。
 
-Initial bootstrapはexact 17 entries / 1,583 logical bytesを必要とします。`capacity()`はadvisory preflightに使用できますが、authoritative NO_SPACEはfinal transaction viewに対するFULL commit結果です。Backend journal、flush、fixed replacement headroomはportable logical bytesへ加えずStorage provider preconditionです。
+Legacy LAB format 1 initial bootstrapはexact 17 entries / 1,583 logical bytes、Canonical Domain format 2 initial bootstrapはexact 17 entries / 1,615 logical bytesを必要とします。`capacity()`はadvisory preflightに使用できますが、authoritative NO_SPACEはfinal transaction viewに対するFULL commit結果です。Backend journal、flush、fixed replacement headroomはportable logical bytesへ加えずStorage provider preconditionです。
 
 L2bはcompact L2a planからcaller-owned scratchへ1 recordずつencodeして`put`できます。Conformance Storageは各`put: OK`のreturn前にkey/valueをtransaction-owned stagingへdeep-copyし、callerがscratchを直後にpoison/reuseしてもcommit結果が変わらないことを検査します。Error時ownership 0、transaction consume後staging 0です。Lifecycle/Runtime Store sourceは非export `ninlil_runtime_private` STATIC targetへ分離済みで、public `ninlil`、TEST fixture、public includeへ依存を漏らしません。SQLite provider、domain recovery、public Runtime統合はL2b1より後続の変更であり、bootstrap-only orchestrationの完成をproduction Storage統合やStage 5全体の完成と扱いません。
 
-#### L2b1 bootstrap-only Storage orchestrator boundary
+#### L2b1 Legacy LAB bootstrap-only Storage orchestrator boundary
 
-最初のL2b変更は、既に`open`成功済みのStorage handleを受け取る非export Core helperとします。このhelperが所有するのは、helper内で開始したtransactionとiteratorだけです。public `runtime_create`、Storage `open`、family 5/6、domain recovery、identity比較/rotation、health publish、Bearer/Clock/Entropy callは含めません。成功outcomeは`NEW_BOOTSTRAP_COMMITTED`または`EXISTING_PROFILE_EXACT_RECOVERY_REQUIRED`のどちらかであり、どちらもStage 5全体の完了やpublic Runtime公開を意味しません。
+最初のL2b変更は、既に`open`成功済みのStorage handleを受け取る非export Core helperとします。このhelperはformat 1 Legacy LABの実装資料であり、Canonical Domain format 2のinitial-adoption authorityまたはpublication authorityではありません。このhelperが所有するのは、helper内で開始したtransactionとiteratorだけです。public `runtime_create`、Storage `open`、family 5/6、domain recovery、identity比較/rotation、health publish、Bearer/Clock/Entropy callは含めません。成功outcomeは`NEW_BOOTSTRAP_COMMITTED`または`EXISTING_PROFILE_EXACT_RECOVERY_REQUIRED`のどちらかであり、どちらもStage 5全体の完了やpublic Runtime公開を意味しません。
 
 17 exact valueのencoded bytes、view、validated typed snapshot、bootstrap record scratchはcaller-owned bounded workspaceに置き、orchestratorの関数stackへaggregateを置きません。WorkspaceはRuntime instanceのallocator/arenaから確保し、同じinstanceのcreate中だけ単独利用します。Outputはworkspaceとaliasせず、failure時はoutcomeをnoneへ戻します。
 
@@ -447,6 +462,87 @@ Typed messageは12章のfieldにより、最低限次を明示します。
 - senderはcustody acceptanceをdurable commitし、serviceのcustody release policyが許可した後だけlocal payloadを解放できます。
 - M1a EventFact fixtureのcustody policyは`NINLIL_CUSTODY_UNTIL_REQUIRED_EVIDENCE`です。transport custodyだけでorigin spoolを解放してはなりません。
 - Receiptはpositive evidenceだけ、Delivery Dispositionはnegative/retry resultだけを表します。
+
+### Proposed ADR-0017 Fabric adapter boundary（Foundation ABI不変）
+
+このsubsectionは[ADR-0017](adr/0017-bearer-registry-path-selection.md)のprivate/default-OFF
+`SPEC_ACCEPTED`候補をFoundation outer Bearerへ写像する。Foundation baselineやpublic/install ABIを
+変更せず、本章の`ninlil_bearer_ops_t` field、offset、status、ownership、Tx Gate reducerを
+再定義しない。
+
+Fabric adapterのouter `send`は、次のownership pointだけで判定する。
+
+```text
+NO_OWNERSHIP
+  -- exact policy/path/resource reservation
+  -- NFL1 encode
+  -- FBA1 PREPARED FULL commit
+  -- all NFL1 bytes tentative copy to bounded Fabric queue
+  -- hard gate + fresh TxPermit validation
+  -- same-call packet-link start_send
+  -- provider RETAINED (all bytes/retry state copy-owned, permit consumed)
+  -- FBA1 LINK_RETAINED FULL commit OK
+  -> OWNERSHIP_TRANSFERRED
+```
+
+- `NO_OWNERSHIP`でFabric/providerが0 byteを保持し、eligible pathはあるがqueue/attempt/timer/
+  workspaceが一時的に満杯の場合だけ`NINLIL_BEARER_WOULD_BLOCK`を返す。permitをconsumeせず、
+  same immutable Foundation message/attemptを上位規則で再invokeできる。
+- no eligible/attached/current path、MTU/transfer/deadline不適合は`UNAVAILABLE`、明示的
+  authority/security/compliance/policy/TxPermit拒否は`DENIED`。どちらもownership 0、TX 0である。
+- FBA1 `COMMIT_UNKNOWN`はprovider start 0でも`LOST_UNKNOWN`でfenceする。read-classify前の
+  reencode/reselect、same-attempt reinvokeを許さない。
+- packet-link `start_send`は同じouter send callでexact 1回呼ぶ。provider `WOULD_BLOCK`では
+  FBA1を`RETRYABLE_NO_ACCEPT`へFULL replacementし、tentative queue/reservation/timerをreleaseして
+  outer `WOULD_BLOCK`を返す。permitはconsumeせず、Fabric内部のdelayed start/retryは0である。
+- provider `RETAINED`後にFBA1 `LINK_RETAINED` FULL commitがOKなら
+  `NINLIL_BEARER_OK + NINLIL_BEARER_SEND_ACCEPTED`である。TCP/TLS partial writeはこの後の
+  provider内部進捗で、Fabric/link providerがretry stateを所有しRuntimeへduplicate sendを要求しない。
+  LINK_RETAINED commit failure/COMMIT_UNKNOWNはprovider side effectを否定できないため
+  `LOST_UNKNOWN`でfenceする。
+- local queue/FBA1 commitはremote durable custodyでないため
+  `NINLIL_BEARER_SEND_DURABLE_CUSTODY`を生成しない。accepted後のtimeout/loss/link drainも
+  Application ReceiptやNO_EFFECTへ変換しない。
+
+sendのfirst-condition precedenceは`malformed/conflict/CORRUPT -> COMMIT_UNKNOWN/LOST_UNKNOWN ->
+hard DENIED -> UNAVAILABLE -> pre-retain capacity/WOULD_BLOCK -> retained ACCEPTED`である。
+unknown packet-link status、status/output shape矛盾、same attemptで異なるmessage/policy/path、
+same availability epochで異なるstateはCORRUPTで、positive evidence/TX 0である。
+Fabric outer availabilityはFBM1のnon-zero epoch/availableへFULL保存し、0↔1またはpreviously
+blocked queueへ実capacityが戻るtransitionだけstrict +1する。registry 0でもouter openは成功し、
+state available=0を返す。restartだけでepochを増減させない。
+
+Fabric packet-linkはprovider-to-Fabric callbackを持たない。全link vtableはowner contextの
+outer callまたは`fabric_private_step_v1()`から同期的に呼ばれ、providerはcall中にFabric、
+Runtime、同じvtableへ再入しない。入力NFL1/permit viewはcall中borrowedで、linkが`RETAINED`を
+返す前に全byte/retry stateをbounded copy-ownする。receive viewはlink所有で、Fabricが
+2048-byte以下のdecode workspaceへcopyした後release exactly 1回である。
+Fabric `step`はshared queue/bufferを先に予約できる場合だけlink receiveをpullする。全NFL1検証と
+APPLICATION/CANCEL_REQUESTのFBT1 FULL commit、reverse kindの保存context照合後だけ既存messageへ
+projectする。outer receive loanは同時1個、EMPTYはout zero、valid OK viewはouter
+`release_received`までFabric所有である。invalid/COMMIT_UNKNOWN/capacityではRuntime
+callback/reducer/positive reply 0で、link tokenだけをexactly 1回releaseする。
+
+same kindの複数instanceを許し、registration orderを選択に使わない。各attemptはpolicy
+ID/revision/digest、selected instance、selection epoch、descriptor/security/peer/Attachment/
+availability snapshotをcopy-ownする。sortは
+`(policy rank, latency class, cost class, instance ID unsigned lexicographic)`昇順だけである。
+provider start直前にavailability epoch/lifecycle/expiry/revocation/authority/TxPermitを
+同じouter call内で再検証し、raceならprovider call/retention 0、FBA1 CLOSED FULL後に
+UNAVAILABLE/DENIEDとする。provider RETAINED後のraceはouter ACCEPTEDを遡及変更せずtoken terminalまで
+追跡する。どちらもsame attemptを別pathへreselectしない。別pathはsame transaction/new attemptだけである。hot unregisterはinstanceを
+即DRAININGにして新規selectionから除外するが、
+保持済みqueue/tokenがterminal/releaseされるまでprovider user/function/handleを生存させる。
+
+Profile 1の上限はregistry 16、policy 64、candidate/policy 8、authority binding 64、attempt 64、
+trigger context 64、shared send+receive queue 32/per-link retained 8、owned NFL1 bytes 61,600、
+timer 64、start call 1/outer send、caller workspace 196,608 bytesである。durable maximumは
+273 records / 134,612 Storage CU bytes、FULL stagingは546 / 269,224である。上限時にheap/VLA/active evictionを
+使わず、ownership前はWOULD_BLOCK、ingress trigger不足はRuntime publish/callback 0でfail closedする。
+
+physical RF instanceはFabricのavailable/rank/reservationで送信許可されない。現行
+`ninlil_tx_permit_t`とAccepted 30章のR5/R2/R1/L1 sole pipelineを通り、NFL1↔NRW1 mappingが
+別Accepted ADRでfreezeするまではRF packet admission/TX 0である。
 
 ### Message kind, orientation, and reply-binding vectors
 
@@ -1124,7 +1220,7 @@ Scheduler/clock/error vectors:
 
 ### Metrics and Runtime health vectors
 
-MetricsはRuntime create stage 9からdestroy fenceまでのepoch-local observabilityです。各createはfreshly drawn non-zero metrics epoch、全counter 0で始まり、旧journalからcounterを再構成しません。Metrics epochのstrict uniquenessは保証せず、Runtime/start sampleと一緒に識別します。Exact increment matrixは次です。
+MetricsはRuntime create Stage 9でepochを取得し、Stage 10 publishからdestroy fenceまでepoch-local observabilityを公開します。各createはfreshly drawn non-zero metrics epoch、全counter 0で始まり、旧journalからcounterを再構成しません。Metrics epochのstrict uniquenessは保証せず、Runtime/start sampleと一緒に識別します。Exact increment matrixは次です。
 
 | Metrics field | Exact increment trigger |
 | --- | --- |
@@ -1174,7 +1270,7 @@ Runtime healthはactive degraded-cause multisetから導出し、発生順にsti
 | `HL3_PROVIDER_HEALTH` | provider temporary、permanent、invalid、valid evaluation | temporaryはWOULD_BLOCK/health不変。Permanent/invalidはDEGRADED/GRANT_PROVIDER_UNAVAILABLE、valid evaluation後clear |
 | `HL4_NON_CAUSES` | API invalid、normal rejection、Bearer WOULD_BLOCK、business transaction OUTCOME_UNKNOWNだけを生成 | Runtime healthはOK/NONEのまま。Business outcomeをpriority 8 internal fenceと混同しない |
 | `HL5_NONCLEARING_CAUSES` | counter exhaustion、internal invariantをaddし、同じRuntimeで通常のsuccessful operationを複数実行 | 同Runtime instanceでclearせず、理由をNONEや低priorityへsilent変更しない |
-| `HL6_RESTART_RECONSTRUCTION` | callback contract/FATAL RECOVERY_REQUIRED各2件、counter marker、instance-local entropy/Bearer causeを作りdestroy/crash→recreate | Durable markerだけをreference-count再構成しStage 9直後からDEGRADED exact priority。Metricsはzero。Instance-local causeはcopyせずnew observationで再評価。Reconcile marker clearごとに1 reference clear |
+| `HL6_RESTART_RECONSTRUCTION` | callback contract/FATAL RECOVERY_REQUIRED各2件、counter marker、instance-local entropy/Bearer causeを作りdestroy/crash→recreate | Durable markerだけをStage 7 T6でreference-count再構成し、Stage 10 publish直後からDEGRADED exact priority。Metricsはzero。Instance-local causeはcopyせずnew observationで再評価。Reconcile marker clearごとに1 reference clear |
 | `HL7_PRIORITY8_SOURCE_LATCHES` | transaction entropy failure反復、attempt entropy failure、TxGate fault、send/receive/state fault反復を別々にaddし、各methodを順に正常化 | 反復はsourceごと1 reference。Transaction成功はattemptをclearせず、valid TxGate/send/receive/stateは同methodだけclear。最後でOK/NONE。Restartはinstance key 0、durable invariantだけ再構成 |
 | `BS7_DENIED_HEALTH_LIFECYCLE` | receive/state DENIEDを各反復、normal method return、callback durable marker併存、CORRUPT→DENIED、restart | DENIED keyはmethodごと1 reference。Normal returnは同methodだけclear。CORRUPT faultはDENIEDでclear後denial key add。Bearer keys clear後もcallback markerが残ればDEGRADED、restartはBearer key 0 |
 
@@ -1423,6 +1519,7 @@ Vector `D2_CALLBACK_GENERATION_U64`はdurable `prior_callback_invocations = UINT
 | `CB5_EVIDENCE_DEEP_COPY` | COMPLETE/KNOWN_RESULTが1〜128 byte mutable evidence bufferを返す | callback return直後、他callback/Port/public returnより先にlength検証とexact deep-copy。runtime_step return後の元buffer mutationでcache/Receipt bytes不変、元pointerをpersistしない |
 | `CB6_BORROWED_VIEWS` | token、delivery/reconcile nested views、out pointerをcallback外へ保存 | Application conformance failure。DEFER時にcopy可能なのはdelivery tokenのvalueだけで、payload/nested/out pointer lifetimeはreturnで終了 |
 | `CB7_RECONCILE_FIXED_BACKOFF` | local now=1,000、descriptor `retry_backoff_ms=100`でreconcileがRETRY_LATERを返し、out resultへpoison delay/trap evidenceを置く | out resultを読まず、internal retry-not-before=1,100。Application指定delay/absolute time 0。clock uncertain/epoch mismatch/checked overflowではtimer 0でfail closed |
+| `CB8_SYNC_CLOCK_FENCE` | Bearer downlink、Bearer uplink、EventFact local dispatchを各々、callback直前expiryとCOMPLETE後のtemporary/UNCERTAIN/permanent/invalid ABI/epoch change/rollback/expiryへ置く | callback直前はfresh trusted sampleがstep/token epochへ一致し非後退かつ未失効の場合だけinvoke。Pre-expiryはcallback 0でtimeout/recoveryをFULL commit。COMPLETE後はresult/evidence deep-copyがclock callより先で、unsafe sampleはpositive result 0、ACTIVE tokenをeffect-unknown recoveryへFULL fenceし、同callback再実行0 |
 
 CB1 registration failure variantはcallback/user pointerを一切保持しません。CB5でcallback stackと同時に寿命が終わるevidence objectを返すApplicationはcontract違反であり、Runtimeが非同期copyして救済したと主張しません。M1aにはservice unregisterがないため、copy済みfunction codeとnon-NULL user pointeeはRuntime destroy完了までcallable/validです。
 
@@ -1439,6 +1536,8 @@ CB1 registration failure variantはcallback/user pointerを一切保持しませ
 | `F5_RECONCILE_OUTCOME_UNKNOWN` | `NINLIL_RECONCILE_OUTCOME_UNKNOWN` | effect possibleとexact OUTCOME_UNKNOWN Dispositionを`FULL` commit、positive Receipt 0 |
 
 F1〜F3のrecovery commitがdefinite failure/unknownならpositive Receiptを出さずdeliveryをfenceし、RuntimeをDEGRADEDに保ちます。Reopen後にactive tokenを復元せず、durable recordを再読して`on_reconcile`またはsafe idempotent recoveryへ進めます。F4/F5をcallback returnそのものだけで成功evidenceとして扱いません。
+
+CB8のpost-callback clock fenceもF1〜F3と同じstorage原則を使います。FULL definite failureではlive instanceの`pending_dispatch` / `ingress_pending`を閉じてsame callbackを再実行せず、COMMIT_UNKNOWNのcommitted/uncommitted両truthではcurrent instanceをmutation-fenceします。Crash/recreate後は、committed truthのrecovery tupleまたはStage 5による旧ACTIVE tokenのrecovery変換のどちらかだけを公開し、positive result/Receiptを復元しません。
 
 F1〜F3はE1 Controller receiverで`controller.before_callback_recovery_commit` / `after`、C1 Endpoint receiverで`endpoint.before_callback_recovery_commit` / `after`をそれぞれ実行します。Before-hook crashではafter 0、commit unknown/definite failureでもafter 0/Receipt 0です。Recoveryが同じ未commit transitionを再実行する場合もgeneric recovery hookへaliasせず同じrole-specific pairを通ります。F4/F5のreconcile result commitは`*_before_reconcile_commit` / `after`でありcallback-recovery pairを使いません。
 
@@ -1707,7 +1806,7 @@ Quota suiteは12章のexact keyを使い、receiver ingressをcounterへ混ぜ�
 
 ### Role × family and callback-shape vectors
 
-M1a registration/submit matrixは次の4行だけです。Local sender/receiverはrole、family、required directionからCoreが導出し、caller指定fieldを追加しません。
+Foundation registration/submit matrixは次の4行だけです。Local sender/receiverはrole、family、required directionからCoreが導出し、caller指定fieldを追加しません。Controller DesiredState senderだけが1〜4 exact targetをadmitし、他3行はexactly 1を維持します。
 
 | Runtime | Family / descriptor | Local side | Required callbacks | Submit |
 | --- | --- | --- | --- | --- |
@@ -2044,7 +2143,7 @@ repeated fixed 100-byte records:
 
 `target_flags`は12章`NINLIL_TARGET_HAS_DEVICE / INSTALLATION / SITE`のbit値です。flagなしfieldはzero placeholder、flagありrequired IDはnon-zeroでなければなりません。未知flag、non-zero `reserved_zero`、flagとplaceholderの不一致はcanonical encode前にrejectします。
 
-Recordをrecord全100 bytesのunsigned lexicographic orderでsortします。完全一致duplicateはvalidation errorです。M1aは`target_count=1`だけをadmitしますが、encoder自体は同じcanonical sortを実装します。required evidenceはtop-level tag `0d`だけに存在し、target recordへ重複encodeしません。
+Recordをrecord全100 bytesのunsigned lexicographic orderでsortします。完全一致duplicateはvalidation errorです。DesiredStateは1〜4件をadmitし、EventFactはexactly 1件です。required evidenceはtop-level tag `0d`だけに存在し、target recordへ重複encodeしません。
 
 ### Family metadata
 
@@ -2192,7 +2291,63 @@ E1のidempotency keyをlength 11 / exact ASCII `event-key-a`、E3をlength 11 / 
 
 E4 payload hexは`01000200000000000000`、lengthは10です。E3はkeyだけが異なるためcanonical byte列もE1と完全一致しますが、event mappingのexact raw key不一致でconflictになります。補助index digestをtest doubleで同値に強制したE3 variantも同じconflictで、hash一致をexact key一致に格上げしません。
 
-Golden testはencoder出力、decoder round-trip、1-bit mutation、field order、target fixed-record/flags、invalid ASCII/pattern/length、NO_DEADLINE、overflowを検査します。Multi-target sortはM1b forward-only encoder testであり、M1a admission successに数えません。C1/E1のraw payload schemaはfixture内でlittle-endianですが、canonical metadataのintegerは常にbig-endianです。
+Golden testはencoder出力、decoder round-trip、1-bit mutation、field order、target fixed-record/flags、invalid ASCII/pattern/length、NO_DEADLINE、overflowを検査します。2-target reverse-order inputと4-target maximumはADR-0027 admission/restart成功vectorです。C1/E1のraw payload schemaはfixture内でlittle-endianですが、canonical metadataのintegerは常にbig-endianです。
+
+### ADR-0027 exact-roster vectors
+
+`X2_COMMAND_EXACT`はC1と同じdescriptor/schema/payload/deadline/evidence/
+generationを使い、target record `T20`と`T30`をcallerから逆順で渡します。
+Golden fixtureは`NCS1` canonical bytesに`target_count=2`、続いてunsigned
+lexicographic orderの`T20 || T30`をexactに含め、その全byte列とSHA-256 digestを
+fixtureへ固定します。C実装内で再計算した値だけとの自己比較を合格根拠にしては
+なりません。Same key + reordered rosterは同じdigest/transaction、
+1 target変更はconflictです。
+
+`X2_DELIVERY_RESTART`はA required Receipt後、B initial attempt timeout/retry
+commit後にcold restartします。Restart後のqueryはA terminal/counter/evidenceと
+B retry timer/counterをexact復元し、Aを再送せずBだけを完了します。
+`X2_EXHAUST_CONTINUE`はAの8 attemptsを使い切ってもBをdispatchし、B完了後に
+だけmixed aggregateを13章優先順位で確定します。
+`X2_ATTEMPT_TARGET_BINDING`はA attempt + B source、B attempt + A source、
+stale/duplicateを投入し、target state、resource ledger、record revision
+（invalid crossing）、aggregateが不変であることを検査します。
+
+`X2_LATE_EVIDENCE_MONOTONIC`はAへhigher-stage new material、Bへlower-stage
+new material、A terminal後へknown past attemptのlate new material、同じexact
+tupleのduplicateを順に投入します。A/Bのlatest/counter/fingerprintが独立し、
+top-level latestとterminal Outcome/reasonが巻き戻らず、wrong-target crossingは
+record revisionを含めmutation 0であることを検査します。途中とterminal後の
+cold restartを挟み、同じtupleがduplicate、異なるlower/same/higher tupleがnew
+materialとして同じ結果へ収束することを要求します。
+
+`X4_CAPACITY_MAX`は4 target、Runtime `max_evidence_per_target=8`でadmitし、
+TARGET total 4、EVIDENCE total 36（used + reserved）を同じFULL transactionで
+観測します。Caller roster mutation、BUFFER_TOO_SMALL target-array nonmutation、
+terminal release、cold restart、queryを含めます。
+
+Private LAB NTS3はschema `1.2`だけをdecodeします。Target-local attempt bindingを
+持たない`1.0`、MFDT correlationを持たない`1.1`、unknown minor/major、CRC/length corruptionは
+`NINLIL_E_UNSUPPORTED`または`NINLIL_E_STORAGE_CORRUPT`でfail closedし、
+部分restoreしません。`X4_NTS3_MAX`は4 targets × 8 attempts、payload 926、
+最大evidenceを含むnon-MFDT recordを4,031 bytesでencode/decode round-tripし、
+4,030-byte capacityをBUFFER_TOO_SMALLにします。`v1_transaction_codec`の
+MFDT correlation caseは4-target record 3,185 bytes、各target末尾の
+16-byte transfer ID + u32 BE ordinal、
+3,184-byte capacityのBUFFER_TOO_SMALL/output不変、receiver ordinal 3保存、
+non-MFDT suffix不在/zero projectionを検査します。
+`X_MFDT_NTS3_LOGICAL`はMFDT logical length 927と32768をinline length 0で
+round-tripし、owned inline bytesを読み書きしません。Single-frame
+logical/inline不一致、MFDT inline non-zero、MFDT logical 926以下/32769以上、
+record内length corruptionはfail closedし、再起動で部分transactionを公開
+しません。
+
+`X_MFDT_RUNTIME_FAIL_CLOSED`はprivate MFDTを有効にしてpublic APIから927 bytesを
+admitし、通常起動とcold restart後の複数stepで、public/target stateが
+`ADMITTED_READY`、`more_work=1`、pendingのまま、Tx Gate acquire、Bearer send、
+attempt/retry/record revision、terminal transitionが全て0であることを検査します。
+同じfixtureで926-byte single-frameをnegative controlとして送信し、guardが
+通常Application経路を誤って止めないことも検査します。これは未接続MFDT
+schedulerの完成証跡ではありません。
 
 ### Submission result all-field vectors
 
@@ -2248,7 +2403,7 @@ SR2はcanonical計算まで到達していてもdigestを公開しません。SR
 | `NIN-FND-CAP-001` Runtime resource ledger | CAP1〜CAP9 11-kind limits/order/durability/block metadata/epoch saturation/corruption、Event/evidence exact cost |
 | `NIN-FND-APP-001` bounded defer | D1/D2 timeout/invalidation/reconcile、same-time complete、uint64 generation、33rd rejection |
 | `NIN-FND-APP-002` callback/result contract | F1〜F5、DV1〜DV11、one-field invalid cross-product |
-| `NIN-FND-APP-003` callback ownership/lifetime | CB1〜CB7 struct/user copy、out init/read gating、evidence deep-copy、borrowed views、reconcile fixed backoff |
+| `NIN-FND-APP-003` callback ownership/lifetime | CB1〜CB8 struct/user copy、out init/read gating、evidence deep-copy、borrowed views、reconcile fixed backoff、sync clock fence |
 | `NIN-FND-RTY-001` timeout/backoff | R1C/R1E/R1S/R1N、R2〜R4、family split、late Receipt、8-attempt park |
 | `NIN-FND-EVT-001` manual resume ledger | M1〜M8 8-slot/pre-reservation/lookup precedence/unknown/cause guard |
 | `NIN-FND-AUD-001` audited discard | A1 success/unknown/clock-uncertain/Receipt race |
@@ -2261,7 +2416,7 @@ Storage suiteは各operationに対し、success、invalid argument、capacity、
 
 - canonical C1/E1、Event E2〜E4、entropy block/ID order、TXID1〜TXID3、ID1〜ID3
 - storage FULL1/MB1〜MB8/SH1〜SH6/namespace NS1〜NS9、typed bearer TB1〜TB9、bearer handle BH1、create CR1〜CR11、destroy DR1〜DR8、bearer kind+orientation/O2/BS1〜BS8 send/receive/state/custody、clock/permit P1〜P5/TG1〜TG4 conformance
-- role/family RF1〜RF10、service restart SV1〜SV5、reason RZ1〜RZ10、representability U1〜U4、Submission SR1〜SR5、origin authorization G1〜G9/OA1〜OA10、admission quota AQ1〜AQ10、deferred D1/D2、callback CB1〜CB7/F1〜F5、Disposition DV1〜DV11
+- role/family RF1〜RF10、service restart SV1〜SV5、reason RZ1〜RZ10、representability U1〜U4、Submission SR1〜SR5、origin authorization G1〜G9/OA1〜OA10、admission quota AQ1〜AQ10、deferred D1/D2、callback CB1〜CB8/F1〜F5、Disposition DV1〜DV11
 - retry R1C/R1E/R1S/R1N/R2〜R4、admission/Receipt time T0〜T4、resume M1〜M8、discard A1
 - config RL1〜RL7、capacity CAP1〜CAP9、step B1〜B13、scheduler SCH1〜SCH7/SC1〜SC2/SE1/AVP1/INQ1〜INQ2、availability AV1〜AV2、management MG1〜MG5、metrics MT1〜MT7/health HL1〜HL7、wake W1〜W6、retention RET1〜RET6、same-time boundary S1/S2
 - transaction query/list QRY1〜QRY8/QPX1〜QPX4、origin-only domain、all-field projection、mutation/restart/revision/unknown/exhaustion
@@ -2303,6 +2458,10 @@ Storage suiteは各operationに対し、success、invalid argument、capacity、
 - same seed/scriptから同じevent order、trace digest、public final snapshotを得る。
 - C1/E1 scenario resetでmetrics/transaction/attempt IDがblock0/1/2 goldenへ一致する。
 - crash/restart後にfalse success、EventFact silent loss、terminal reversal、permit bypassが0である。
+- DesiredState 1〜4 exact rosterでattempt/Receipt/retry/timer/evidenceが
+  target-localに復元され、wrong-target crossingとaggregate fallbackが0である。
+- X2/X4のcanonical golden、mixed outcome、4-target capacity、NTS3 1.2
+  maximum/corruption vectorsがnormalとASan/UBSanで一致する。
 - Remote cancelがsingle prepareを守り、definite WOULD_BLOCK以外またはuncertain crash後にrequestを再invokeしない。
 - deferred timeout後のlate completionがstateを変えず、reconcile完了までdelivery resourceを解放しない。
 - `PARKED_RETRY` EventFactがrestartだけで再送されず、fresh Bearer availability epoch + `available=1`または一意resumeでだけ再開する。

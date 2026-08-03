@@ -13,7 +13,10 @@
 
 - M0 decisionとFable review dispositionが記録済み。
 - 12章のC ABI、13章のreducer、14章のport/vectorに重大な矛盾がない。
-- M1aは`TEST` environment、`CONTROLLER` / `ENDPOINT`、single targetだけ。
+- ADR-0027 public profileは4 environments、3 rolesをcreateできる。
+  Application serviceは`CONTROLLER` / `ENDPOINT`だけで、DesiredStateは1〜4
+  exact target / `ALL_TARGETS`、EventFactはexactly 1。`CELL_AGENT`のservice
+  registerはfail closed。
 - application-specific package、Legacy LinkOS、radio、ESP-IDFをportable Coreへimportしない。
 - `ADMITTED_SCHEDULED`、counter-offer、selector、group、supersedeを実装済みと表示しない。
 
@@ -160,6 +163,7 @@ Gate:
 | Port status/ownership、runtime step、budget/clock/wake、metrics/health | 3 | FULL/MB/SH/BH、BS/P/TG、B/W/MT/HL、in-memory trace |
 | namespace/create/destroy、service registry/reattach、resource ledger、retention、query/list、SQLite recovery | 4 | NS/CR/DR/SV/CAP/RET/QRY/QPX、commit-unknown matrix |
 | Command、callback/token、Receipt/Disposition/cancel/reconcile | 5 | C1、F/CB/DV/R/O2、Command M1A and crash vectors |
+| exact roster target-local retry/binding/aggregate/late evidence、NTS3 1.2 logical-vs-inline length + MFDT target correlation | 5 | X2/X4、M1B-GRP-001〜015、`v1_transaction_codec` correlation case、normal + sanitizer |
 | Event admission/custody/retry/park/availability/resume/discard | 6 | E1〜E4、G/AQ/AV/M/A1、Event M1A and crash vectors |
 | closed hook registry、full conformance inventory、fault/replay/release evidence | 7 | HC/all named hooks、全mandatory suite、seed/fuzz/sanitizer/docs gate |
 
@@ -170,7 +174,7 @@ PRを分割・統合する場合もcontract area owner、test ID、durable bound
 PR 1〜7とM1a exit gate完了後に開始できるのは、software-only `TEST` laneです。
 
 - PC上のControllerとsimulated bearerまたはoptional POSIX loopback Endpoint
-- reference Display adapterのsingle-target DesiredStateCommand / APPLIED
+- reference Display adapterの1〜4 exact-target DesiredStateCommand / APPLIED
 - reference Leak adapterのEventFact / DURABLY_RECORDED
 - Ninlil public APIのみを利用し、USB実機・SX1262・radio TXを使わない
 

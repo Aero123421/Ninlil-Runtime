@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ninlil.dev/schema/hil/ninlil-hil-rrmp-multiparent-v1.schema.json",
+  "title": "Ninlil HIL evidence schema — route-relay / multi-parent (physical residual)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "campaign_id",
+    "status",
+    "software_prerequisites",
+    "physical_claims",
+    "nonclaims",
+    "nodes",
+    "scenarios",
+    "tooling"
+  ],
+  "properties": {
+    "schema_id": { "const": "ninlil-hil-rrmp-multiparent-v1" },
+    "schema_version": { "const": 1 },
+    "campaign_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "type": "string",
+      "enum": ["NOT_RUN", "PARTIAL", "PASS", "FAIL"]
+    },
+    "software_prerequisites": {
+      "type": "object",
+      "required": [
+        "spec_accepted",
+        "private_implementation_candidate",
+        "host_tests_green",
+        "asan_ubsan_green",
+        "feature_default_off_symbols_zero",
+        "esp_idf_map_proof",
+        "workspace_budget_bytes",
+        "workspace_measured_host_bytes",
+        "storage_export_max_bytes",
+        "storage_piece_scratch_bytes",
+        "target_smoke_store_bytes",
+        "worst_case_live_dynamic_bytes",
+        "esp_runtime_workspace_measured_bytes",
+        "esp_runtime_minimum_free_psram_bytes"
+      ],
+      "properties": {
+        "spec_accepted": { "type": "boolean" },
+        "private_implementation_candidate": { "type": "boolean" },
+        "host_tests_green": { "type": "boolean" },
+        "asan_ubsan_green": { "type": "boolean" },
+        "feature_default_off_symbols_zero": { "type": "boolean" },
+        "esp_idf_map_proof": {
+          "type": "string",
+          "enum": ["PASS", "NOT_RUN", "FAIL"]
+        },
+        "workspace_budget_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 393216
+        },
+        "workspace_measured_host_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 393216
+        },
+        "storage_export_max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 307200
+        },
+        "storage_piece_scratch_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 61440
+        },
+        "target_smoke_store_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 307456
+        },
+        "worst_case_live_dynamic_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        },
+        "esp_runtime_workspace_measured_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 393216
+        },
+        "esp_runtime_minimum_free_psram_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "physical_claims": {
+      "type": "object",
+      "required": [
+        "rf_2hop",
+        "rf_3hop",
+        "multiparent_air",
+        "powercut_dual_slot"
+      ],
+      "properties": {
+        "rf_2hop": { "$ref": "#/$defs/physicalClaimStatus" },
+        "rf_3hop": { "$ref": "#/$defs/physicalClaimStatus" },
+        "multiparent_air": { "$ref": "#/$defs/physicalClaimStatus" },
+        "powercut_dual_slot": { "$ref": "#/$defs/physicalClaimStatus" }
+      },
+      "additionalProperties": false
+    },
+    "nonclaims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["node_id", "role_flags", "runtime_id_hex"],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "role_flags": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": ["endpoint", "relay", "parent"]
+            }
+          },
+          "runtime_id_hex": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 32,
+            "pattern": "^[0-9a-fA-F]{32}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "e2e_2hop",
+              "e2e_3hop",
+              "parent_failover",
+              "split_brain_seal",
+              "restart_rehydrate",
+              "powercut_cu"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["NOT_RUN", "PASS", "FAIL"]
+          },
+          "evidence_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "tooling": {
+      "type": "object",
+      "required": [
+        "host_runner",
+        "esp_map_proof",
+        "software_hil_manifest"
+      ],
+      "properties": {
+        "host_runner": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "esp_map_proof": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "software_hil_manifest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "physicalClaimStatus": {
+      "type": "string",
+      "enum": ["NOT_RUN", "PASS", "FAIL"]
+    }
+  }
+}

@@ -2,9 +2,10 @@
 """R7 T1 wire static-frame gate (docs/32 §9.7–8).
 
 .su: production wire functions static, frame <= 2560.
-When --compile-commands is provided: r7_wire_codec.c exact once, with
--fstack-usage exact once and optimization flags exact sole -O2 once.
-Missing / non-O2 / duplicate compile entries are fail-closed.
+When --compile-commands is provided: r7_wire_codec.c is compiled by the exact
+private target, and optionally once more by the installable Runtime target,
+with -fstack-usage exact once and optimization flags exact sole -O2 once per
+owner. Missing / non-O2 / unknown-owner / same-owner duplicate entries fail.
 
 PASS ≠ ESP task stack / adapter chain / T1 Accepted.
 """
@@ -126,11 +127,24 @@ def tokenize_entry(entry: dict) -> list[str]:
     return []
 
 
+def compile_owner(tokens: list[str]) -> str | None:
+    output: str | None = None
+    for index, token in enumerate(tokens):
+        if token == "-o" and index + 1 < len(tokens):
+            output = tokens[index + 1]
+        elif token.startswith("-o") and len(token) > 2:
+            output = token[2:]
+    if output is None:
+        return None
+    match = re.search(r"(?:^|/)CMakeFiles/([^/]+)\.dir(?:/|$)", output)
+    return match.group(1) if match is not None else None
+
+
 def check_compile_commands(path: pathlib.Path) -> list[str]:
     """Fail-closed GCC Release authority when path is supplied.
 
     Requires:
-      - exactly one compile command for r7_wire_codec.c
+      - exact private owner and optional exact installable Runtime owner
       - -fstack-usage exact once
       - optimization flags exact ['-O2'] (sole -O2 once; missing -O* is red)
     """
@@ -150,21 +164,29 @@ def check_compile_commands(path: pathlib.Path) -> list[str]:
             continue
         if pathlib.Path(file_path).name in COMPILE_SOURCES:
             matches.append(entry)
-    if len(matches) != 1:
+    token_rows = [(compile_owner(tokenize_entry(entry)), tokenize_entry(entry))
+                  for entry in matches]
+    owners = [owner for owner, _tokens in token_rows]
+    if sorted(owners, key=lambda value: "" if value is None else value) not in (
+        ["ninlil_runtime_private"],
+        ["ninlil_runtime", "ninlil_runtime_private"],
+    ):
         errors.append(
-            f"expected exactly one wire compile command, got {len(matches)}"
+            "wire compile owners must be exact private-only or "
+            f"private+installed-runtime, got {owners!r}"
         )
-        return errors
-    tokens = tokenize_entry(matches[0])
-    if tokens.count("-fstack-usage") != 1:
-        errors.append(
-            f"wire TU -fstack-usage count={tokens.count('-fstack-usage')} want 1"
-        )
-    o_flags = optimization_flags(tokens)
-    if o_flags != ["-O2"]:
-        errors.append(
-            f"wire TU optimization flags must be exact ['-O2'], got {o_flags}"
-        )
+    for owner, tokens in token_rows:
+        if owner is None:
+            errors.append("wire TU output object does not identify a CMake target")
+        if tokens.count("-fstack-usage") != 1:
+            errors.append(
+                f"wire TU -fstack-usage count={tokens.count('-fstack-usage')} want 1"
+            )
+        o_flags = optimization_flags(tokens)
+        if o_flags != ["-O2"]:
+            errors.append(
+                f"wire TU optimization flags must be exact ['-O2'], got {o_flags}"
+            )
     return errors
 
 
@@ -240,6 +262,9 @@ def run_self_test() -> int:
                 "-fstack-usage",
                 "-c",
                 "r7_wire_codec.c",
+                "-o",
+                str(td_path / "CMakeFiles/ninlil_runtime_private.dir/"
+                    "src/radio/r7_wire_codec.c.o"),
             ],
         }
         good_path = td_path / "good.json"
@@ -268,6 +293,20 @@ def run_self_test() -> int:
         _write_cc(miss_path, [missing_o])
         if not check_compile_commands(miss_path):
             failures.append("missing -O* did not go red")
+
+        runtime_good = dict(good)
+        runtime_good["arguments"] = list(good["arguments"])
+        runtime_good["arguments"][-1] = str(
+            td_path / "CMakeFiles/ninlil_runtime.dir/"
+            "src/radio/r7_wire_codec.c.o"
+        )
+        dual_path = td_path / "dual.json"
+        _write_cc(dual_path, [good, runtime_good])
+        if check_compile_commands(dual_path):
+            failures.append(
+                f"private+installed-runtime compile ownership red: "
+                f"{check_compile_commands(dual_path)}"
+            )
 
         dup_path = td_path / "dup.json"
         _write_cc(dup_path, [good, dict(good)])

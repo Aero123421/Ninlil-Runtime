@@ -309,6 +309,33 @@ static int request_structurally_valid(
     return request->current_window_started_at_ms == expected_window;
 }
 
+/*
+ * M1a public uplink is EventFact only (docs/12 §14 / ADR-0024). Product
+ * labels "latest-state" / "leak-measurement" are service_id strings on
+ * EventFact, not public LATEST_STATE/MEASUREMENT family enums.
+ */
+static int event_fact_product_lab_allow(
+    const ninlil_origin_authorization_request_t *request)
+{
+    int service_ok;
+
+    if (request->service.family != NINLIL_FAMILY_EVENT_FACT) {
+        return 0;
+    }
+    service_ok =
+        (text_matches(&request->service.service_id, "latest-state")
+            && text_matches(&request->service.schema_id, "latest-state"))
+        || (text_matches(&request->service.service_id, "leak-measurement")
+            && text_matches(
+                   &request->service.schema_id, "leak-measurement"));
+    return service_ok != 0
+        && request->required_evidence == NINLIL_EVIDENCE_APPLIED
+        && id_valid(&request->event_id)
+        && id_valid(&request->target.target_runtime_id)
+        && id_valid(&request->target.target_application_instance_id);
+}
+
+/* Historical reserved-family LAB shapes (public register remains UNSUPPORTED). */
 static int latest_state_lab_allow(
     const ninlil_origin_authorization_request_t *request)
 {
@@ -589,6 +616,10 @@ static ninlil_origin_auth_status_t fixture_evaluate(
         set_deny_decision(out_decision, request,
             NINLIL_REASON_CLOCK_UNCERTAIN,
             NINLIL_RETRY_OPERATOR_ACTION, 0u);
+        return finish_natural(provider, request, out_decision);
+    }
+    if (event_fact_product_lab_allow(request)) {
+        set_allow_decision(out_decision, request);
         return finish_natural(provider, request, out_decision);
     }
     if (latest_state_lab_allow(request)) {

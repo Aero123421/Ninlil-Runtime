@@ -515,7 +515,8 @@ static int test_allocation_invalid_shapes(void)
     REQUIRE(expect_allocation_invalid(&input));
 
     input = make_allocation_input(NINLIL_FAMILY_DESIRED_STATE, 3u);
-    input.descriptor_contract.target_limit = 2u;
+    input.descriptor_contract.target_limit =
+        NINLIL_FOUNDATION_MAX_EXACT_TARGETS + 1u;
     REQUIRE(expect_allocation_invalid(&input));
 
     input = make_allocation_input(NINLIL_FAMILY_DESIRED_STATE, 3u);

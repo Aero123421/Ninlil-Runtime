@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Aero123421/Ninlil-Runtime/security/advisories/new
+    about: 脆弱性やcredential漏えいは非公開で報告してください
+  - name: Support policy
+    url: https://github.com/Aero123421/Ninlil-Runtime/blob/main/SUPPORT.md
+    about: Support範囲と問い合わせに必要な情報を確認する
+  - name: Community Code of Conduct
+    url: https://github.com/Aero123421/Ninlil-Runtime/blob/main/CODE_OF_CONDUCT.md
+    about: 行動規範と非公開の報告手順を確認する

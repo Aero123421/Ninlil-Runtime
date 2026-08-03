@@ -11,9 +11,11 @@ Fresh isolated OFF Release subbuild (never reuses a parent tests-ON tree):
   6. nm on that fresh OFF private archive: no TEST_BUILD seam /
      test / oracle / fixture defined symbols (tests-ON may contain seams;
      never reuse a tests-ON archive as evidence)
-  7. temp install: path bans + nm every installed static/shared library for
-     public leakage of ninlil_r7_crypto_ / ninlil_r7_mbedtls_ / provider
-     factory / private seam symbols (platform nm failure = fail closed)
+  7. temp install: path bans + nm every installed static/shared library.
+     Ordinary public libraries may not carry private R7 crypto. The exact
+     Host Runtime archive may carry the exact production Host crypto set as
+     internal implementation, but never ESP/test/oracle/fixture/extra symbols
+     (platform nm failure = fail closed).
 
 Self-test mutations (must go red, not configure-fail alone as catch for
 inspection mutations):
@@ -89,8 +91,10 @@ BANNED_OFF_ARCHIVE_SYMBOL_NEEDLES = (
     "r7_crypto_openssl3_test",
 )
 
-# Defined symbols / prefixes that must never appear in public installed libs.
-# Private production symbols live only in ninlil_runtime_private (not installed).
+# Defined symbols / prefixes that must never appear in ordinary installed
+# public libraries. The exact Host Runtime archive is the sole exception: it
+# carries an exact production-private implementation set behind the public
+# Runtime ABI, without installing any of these private headers.
 BANNED_PUBLIC_LIB_SYMBOL_PREFIXES = (
     "ninlil_r7_crypto_",
     "ninlil_r7_mbedtls_",
@@ -102,6 +106,28 @@ BANNED_PUBLIC_LIB_SYMBOLS = frozenset(
         "ninlil_r7_crypto_openssl3_provider_init",
         "ninlil_r7_crypto_mbedtls_provider_init",
         "ninlil_r7_crypto_provider_validate",
+    }
+)
+
+HOST_RUNTIME_LIBRARY_NAMES = frozenset(
+    {
+        "libninlil_runtime.a",
+        "libninlil_runtime.lib",
+        "ninlil_runtime.a",
+        "ninlil_runtime.lib",
+    }
+)
+
+HOST_RUNTIME_CRYPTO_SYMBOLS = frozenset(
+    {
+        "ninlil_r7_crypto_provider_validate",
+        "ninlil_r7_crypto_sha256",
+        "ninlil_r7_crypto_hkdf_extract_sha256",
+        "ninlil_r7_crypto_hkdf_expand_sha256",
+        "ninlil_r7_crypto_aes128_gcm_seal",
+        "ninlil_r7_crypto_aes128_gcm_open",
+        "ninlil_r7_crypto_nonce_from_counter",
+        "ninlil_r7_crypto_openssl3_provider_init",
     }
 )
 
@@ -270,10 +296,42 @@ def inspect_off_archive_symbols(defined: Iterable[str]) -> list[str]:
     return errors
 
 
+def is_host_runtime_library(lib_label: str) -> bool:
+    return Path(lib_label).name in HOST_RUNTIME_LIBRARY_NAMES
+
+
 def inspect_public_lib_symbols(defined: Iterable[str], *, lib_label: str) -> list[str]:
-    """Installed public static/shared libs must not export private R7 symbols."""
+    """Validate private R7 symbols in an installed library fail-closed.
+
+    The exact Host Runtime archive is an implementation carrier, not a new
+    public R7 ABI. It must contain the exact Host production set and no other
+    crypto-family symbol. Every other installed library retains the zero-R7
+    rule.
+    """
     errors: list[str] = []
     names = set(defined)
+    if is_host_runtime_library(lib_label):
+        family = {
+            sym
+            for sym in names
+            if sym.startswith(BANNED_PUBLIC_LIB_SYMBOL_PREFIXES)
+            or sym in BANNED_PUBLIC_LIB_SYMBOLS
+        }
+        if family != HOST_RUNTIME_CRYPTO_SYMBOLS:
+            missing = sorted(HOST_RUNTIME_CRYPTO_SYMBOLS - family)
+            extra = sorted(family - HOST_RUNTIME_CRYPTO_SYMBOLS)
+            if missing:
+                errors.append(
+                    f"Host Runtime {lib_label} misses exact production R7 "
+                    f"crypto symbols: {missing}"
+                )
+            if extra:
+                errors.append(
+                    f"Host Runtime {lib_label} carries forbidden R7 crypto "
+                    f"symbols: {extra}"
+                )
+        errors.extend(inspect_off_archive_symbols(names))
+        return errors
     for sym in sorted(names):
         if sym in BANNED_PUBLIC_LIB_SYMBOLS:
             errors.append(
@@ -877,7 +935,8 @@ def run_self_test(src_root: Path) -> int:
         )
     )
 
-    # Public installed lib must not carry any ninlil_r7_crypto_* definitions.
+    # Ordinary public libraries must not carry private R7 definitions. The
+    # exact Host Runtime archive is allowed only the exact production Host set.
     failures.append(
         _mutation(
             "public_lib_symbols_baseline",
@@ -914,6 +973,48 @@ def run_self_test(src_root: Path) -> int:
             lambda: inspect_public_lib_symbols(
                 {"ninlil_r7_mbedtls_provider_init"},
                 lib_label="lib/libfoo.so",
+            ),
+            expect_errors=True,
+        )
+    )
+    failures.append(
+        _mutation(
+            "host_runtime_exact_crypto_set",
+            lambda: inspect_public_lib_symbols(
+                HOST_RUNTIME_CRYPTO_SYMBOLS | {"ninlil_runtime_create"},
+                lib_label="lib/libninlil_runtime.a",
+            ),
+            expect_errors=False,
+        )
+    )
+    failures.append(
+        _mutation(
+            "host_runtime_missing_crypto_symbol",
+            lambda: inspect_public_lib_symbols(
+                HOST_RUNTIME_CRYPTO_SYMBOLS - {"ninlil_r7_crypto_sha256"},
+                lib_label="lib/libninlil_runtime.a",
+            ),
+            expect_errors=True,
+        )
+    )
+    failures.append(
+        _mutation(
+            "host_runtime_esp_crypto_symbol",
+            lambda: inspect_public_lib_symbols(
+                HOST_RUNTIME_CRYPTO_SYMBOLS
+                | {"ninlil_r7_mbedtls_provider_init"},
+                lib_label="lib/libninlil_runtime.a",
+            ),
+            expect_errors=True,
+        )
+    )
+    failures.append(
+        _mutation(
+            "host_runtime_test_seam_symbol",
+            lambda: inspect_public_lib_symbols(
+                HOST_RUNTIME_CRYPTO_SYMBOLS
+                | {"ninlil_r7_crypto_test_spans_forbidden"},
+                lib_label="lib/libninlil_runtime.a",
             ),
             expect_errors=True,
         )
@@ -1161,7 +1262,8 @@ def run_self_test(src_root: Path) -> int:
     ok(
         "self-test PASS "
         "(multiline install, member miss/dup, seam/test/oracle/generated, "
-        "nm TEST_BUILD seam, public lib private symbols, Host/ESP swap, "
+        "nm TEST_BUILD seam, ordinary public-lib zero-R7, exact Host Runtime "
+        "production set, Host/ESP swap, "
         "archive ambiguity, install path+nm leaks, CI OPENSSL shell form)"
     )
     return 0

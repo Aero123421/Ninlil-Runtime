@@ -443,8 +443,11 @@ def compile_and_run_mutation(name: str, rel: str, old: str, new: str) -> None:
             ignore=shutil.ignore_patterns(
                 "build",
                 "build-*",
+                "tmp-*",
+                ".tmp*",
                 ".git",
                 "cmake-build*",
+                "__pycache__",
                 "*.o",
                 "*.a",
                 "install*",
@@ -505,8 +508,11 @@ def run_oracle_fixture_crc_mutation() -> None:
             ignore=shutil.ignore_patterns(
                 "build",
                 "build-*",
+                "tmp-*",
+                ".tmp*",
                 ".git",
                 "cmake-build*",
+                "__pycache__",
                 "*.o",
                 "*.a",
                 "install*",
@@ -694,10 +700,14 @@ def run_self_test() -> None:
                 ignore=shutil.ignore_patterns(
                     "build",
                     "build-*",
+                    "tmp-*",
+                    ".tmp*",
                     ".git",
                     "cmake-build*",
+                    "__pycache__",
                     "*.o",
                     "*.a",
+                    "install*",
                 ),
             )
             path = troot / rel

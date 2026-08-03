@@ -3,6 +3,10 @@
 #include "domain_store_body_codec.h"
 #include "domain_store_codec.h"
 #include "runtime_store_codec.h"
+#include "runtime_v1_bearer_wire.h"
+#include "runtime_v1_capability.h"
+#include "runtime_v1_event_ledger_codec.h"
+#include "runtime_v1_transaction_codec.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -73,7 +77,25 @@ const ninlil_v1_durable_allowlist_row_t g_ninlil_v1_durable_allowlist_table[
     {NINLIL_V1_DURABLE_KIND_M4_INSTALL_TOKEN, NINLIL_V1_DURABLE_OWNER_M4,
         "M4_INSTALL_TOKEN"},
     {NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION, NINLIL_V1_DURABLE_OWNER_C3,
-        "C3_REPLAY_ADMISSION"}
+        "C3_REPLAY_ADMISSION"},
+    {NINLIL_V1_DURABLE_KIND_SPINE_BEARER_STATE,
+        NINLIL_V1_DURABLE_OWNER_S1, "SPINE_BEARER_STATE"},
+    {NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE,
+        NINLIL_V1_DURABLE_OWNER_S1, "SPINE_ATTEMPT_PREPARE"},
+    {NINLIL_V1_DURABLE_KIND_DOM_IDEMPOTENCY_MAP, NINLIL_V1_DURABLE_OWNER_S1,
+        "DOM_IDEMPOTENCY_MAP"},
+    {NINLIL_V1_DURABLE_KIND_DOM_EVENT_ID_MAP, NINLIL_V1_DURABLE_OWNER_S1,
+        "DOM_EVENT_ID_MAP"},
+    {NINLIL_V1_DURABLE_KIND_DOM_WITNESS_HEADER, NINLIL_V1_DURABLE_OWNER_S1,
+        "DOM_WITNESS_HEADER"},
+    {NINLIL_V1_DURABLE_KIND_DOM_WITNESS_MANIFEST_CHUNK,
+        NINLIL_V1_DURABLE_OWNER_S1, "DOM_WITNESS_MANIFEST_CHUNK"},
+    {NINLIL_V1_DURABLE_KIND_DOM_SERVICE, NINLIL_V1_DURABLE_OWNER_S1,
+        "DOM_SERVICE"},
+    {NINLIL_V1_DURABLE_KIND_DOM_SERVICE_QUOTA, NINLIL_V1_DURABLE_OWNER_S1,
+        "DOM_SERVICE_QUOTA"},
+    {NINLIL_V1_DURABLE_KIND_DOM_RESERVATION, NINLIL_V1_DURABLE_OWNER_S1,
+        "DOM_RESERVATION"}
 };
 
 static ninlil_v1_durable_record_kind_t key_id_to_kind(
@@ -139,12 +161,162 @@ static ninlil_status_t classify_runtime_store_row(
     return NINLIL_OK;
 }
 
+/*
+ * Same-record local classification for WITNESS_HEADER / MANIFEST_CHUNK
+ * (docs/17 §10; scanner validate_witness_row_local contract). Typed D1-B
+ * validate_typed_record does not yet host 7e/7f body unions.
+ */
+static ninlil_status_t classify_witness_metadata_row(
+    ninlil_bytes_view_t key,
+    ninlil_bytes_view_t value,
+    ninlil_v1_durable_record_kind_t *out_kind)
+{
+    ninlil_model_domain_key_view_t key_view;
+    ninlil_model_domain_envelope_t envelope;
+    ninlil_model_domain_digest_t expected_identity;
+    uint8_t expect_primary_id[NINLIL_MODEL_DOMAIN_ID_BYTES];
+    ninlil_status_t status;
+    ninlil_bytes_view_t id_view;
+
+    status = ninlil_model_domain_parse_key(key, &key_view);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (key_view.family != NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN
+        || (key_view.subtype != NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_HEADER
+            && key_view.subtype
+                != NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_MANIFEST_CHUNK)
+        || key_view.identity_kind
+            != NINLIL_MODEL_DOMAIN_ID_KIND_SHA256_COMPOSITE
+        || key_view.identity_length != NINLIL_MODEL_DOMAIN_DIGEST_BYTES
+        || key_view.identity == NULL) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    status = ninlil_model_domain_decode_envelope(value, &envelope);
+    if (status != NINLIL_OK) {
+        return status == NINLIL_E_INVALID_ARGUMENT
+            ? NINLIL_E_STORAGE_CORRUPT
+            : status;
+    }
+    {
+        uint32_t zi;
+        int pvd_nonzero = 0;
+        for (zi = 0u; zi < 32u; ++zi) {
+            if (envelope.header.primary_value_digest[zi] != 0u) {
+                pvd_nonzero = 1;
+                break;
+            }
+        }
+        if (envelope.record_type != NINLIL_MODEL_DOMAIN_RECORD_TYPE_DOMAIN
+            || envelope.header.subtype != key_view.subtype
+            || envelope.header.flags != 0u
+            || pvd_nonzero != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+    }
+
+    if (key_view.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_HEADER) {
+        ninlil_model_domain_witness_header_t header;
+        ninlil_bytes_view_t op_identity;
+
+        status = ninlil_model_domain_decode_witness_header(
+            envelope.body, &header);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        op_identity.data = header.operation_identity_length == 0u
+            ? NULL
+            : header.operation_identity;
+        op_identity.length = header.operation_identity_length;
+        status = ninlil_model_domain_witness_identity_digest(
+            header.operation_kind, op_identity, &expected_identity);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        if (memcmp(
+                key_view.identity,
+                expected_identity.bytes,
+                NINLIL_MODEL_DOMAIN_DIGEST_BYTES)
+            != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        id_view.data = key_view.identity;
+        id_view.length = key_view.identity_length;
+        if (ninlil_model_domain_primary_id_from_identity(
+                key_view.identity_kind, id_view, expect_primary_id)
+                != NINLIL_OK
+            || memcmp(
+                   envelope.header.primary_id,
+                   expect_primary_id,
+                   NINLIL_MODEL_DOMAIN_ID_BYTES)
+                != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        *out_kind = NINLIL_V1_DURABLE_KIND_DOM_WITNESS_HEADER;
+        return NINLIL_OK;
+    }
+
+    {
+        ninlil_model_domain_witness_chunk_t chunk;
+        uint8_t components[34];
+        ninlil_bytes_view_t components_view;
+
+        status = ninlil_model_domain_decode_witness_chunk(
+            envelope.body, &chunk);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        (void)memcpy(components, chunk.witness_digest, 32u);
+        components[32] = (uint8_t)((chunk.chunk_index >> 8) & 0xffu);
+        components[33] = (uint8_t)(chunk.chunk_index & 0xffu);
+        components_view.data = components;
+        components_view.length = 34u;
+        status = ninlil_model_domain_composite_digest(
+            NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_MANIFEST_CHUNK,
+            components_view,
+            &expected_identity);
+        if (status != NINLIL_OK) {
+            return status == NINLIL_E_INVALID_ARGUMENT
+                ? NINLIL_E_STORAGE_CORRUPT
+                : status;
+        }
+        if (memcmp(
+                key_view.identity,
+                expected_identity.bytes,
+                NINLIL_MODEL_DOMAIN_DIGEST_BYTES)
+            != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        id_view.data = key_view.identity;
+        id_view.length = key_view.identity_length;
+        if (ninlil_model_domain_primary_id_from_identity(
+                key_view.identity_kind, id_view, expect_primary_id)
+                != NINLIL_OK
+            || memcmp(
+                   envelope.header.primary_id,
+                   expect_primary_id,
+                   NINLIL_MODEL_DOMAIN_ID_BYTES)
+                != 0) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        *out_kind = NINLIL_V1_DURABLE_KIND_DOM_WITNESS_MANIFEST_CHUNK;
+        return NINLIL_OK;
+    }
+}
+
 static ninlil_status_t classify_domain_row(
     ninlil_bytes_view_t key,
     ninlil_bytes_view_t value,
     ninlil_v1_durable_record_kind_t *out_kind)
 {
     ninlil_model_domain_key_class_t key_class;
+    ninlil_model_domain_key_view_t key_view;
     ninlil_model_domain_typed_record_t typed;
     ninlil_status_t status;
 
@@ -157,6 +329,16 @@ static ninlil_status_t classify_domain_row(
     }
     if (key_class != NINLIL_MODEL_DOMAIN_KEY_CLASS_CURRENT) {
         return NINLIL_E_STORAGE_CORRUPT;
+    }
+    status = ninlil_model_domain_parse_key(key, &key_view);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (key_view.family == NINLIL_MODEL_DOMAIN_FAMILY_DOMAIN
+        && (key_view.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_HEADER
+            || key_view.subtype
+                == NINLIL_MODEL_DOMAIN_SUBTYPE_WITNESS_MANIFEST_CHUNK)) {
+        return classify_witness_metadata_row(key, value, out_kind);
     }
     status = ninlil_model_domain_validate_typed_record(key, value, &typed);
     if (status != NINLIL_OK) {
@@ -171,6 +353,26 @@ static ninlil_status_t classify_domain_row(
     }
     if (typed.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_CLOCK_BASELINE) {
         *out_kind = NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE;
+        return NINLIL_OK;
+    }
+    if (typed.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_IDEMPOTENCY_MAP) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_DOM_IDEMPOTENCY_MAP;
+        return NINLIL_OK;
+    }
+    if (typed.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_EVENT_ID_MAP) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_DOM_EVENT_ID_MAP;
+        return NINLIL_OK;
+    }
+    if (typed.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_SERVICE) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_DOM_SERVICE;
+        return NINLIL_OK;
+    }
+    if (typed.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_SERVICE_QUOTA) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_DOM_SERVICE_QUOTA;
+        return NINLIL_OK;
+    }
+    if (typed.subtype == NINLIL_MODEL_DOMAIN_SUBTYPE_RESERVATION) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_DOM_RESERVATION;
         return NINLIL_OK;
     }
     return NINLIL_E_UNSUPPORTED;
@@ -247,8 +449,11 @@ static ninlil_status_t classify_c3_row(
 
 static ninlil_status_t classify_spine_marker_row(
     ninlil_bytes_view_t key,
+    ninlil_bytes_view_t value,
     ninlil_v1_durable_record_kind_t *out_kind)
 {
+    ninlil_status_t status = NINLIL_OK;
+
     if (key.length < 2u || key.data == NULL) {
         return NINLIL_E_STORAGE_CORRUPT;
     }
@@ -259,43 +464,92 @@ static ninlil_status_t classify_spine_marker_row(
     }
     if (key.data[0] == 0x54u && key.data[1] == 0x58u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_TXN_ADMISSION;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        return ninlil_rt_v1_transaction_record_validate_envelope(value);
     }
     if (key.data[0] == 0x43u && key.data[1] == 0x4eu) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_CANCEL_ADMISSION;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        return ninlil_rt_v1_transaction_record_validate_envelope(value);
     }
     if (key.data[0] == 0x44u && key.data[1] == 0x53u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_DELIVERY_STARTED;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        status = ninlil_rt_v1_transaction_record_validate_envelope(value);
+        return status;
     }
     if (key.data[0] == 0x45u && key.data[1] == 0x56u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_DELIVERY_EVIDENCE;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        status = ninlil_rt_v1_transaction_record_validate_envelope(value);
+        return status;
     }
     if (key.data[0] == 0x4fu && key.data[1] == 0x43u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_DELIVERY_OUTCOME;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        status = ninlil_rt_v1_transaction_record_validate_envelope(value);
+        return status;
     }
     if (key.data[0] == 0x45u && key.data[1] == 0x53u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_EVENT_SPOOL;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        status = ninlil_rt_v1_transaction_record_validate_envelope(value);
+        return status;
     }
     if (key.data[0] == 0x45u && key.data[1] == 0x52u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_EVENT_RESUME;
-        return NINLIL_OK;
+        if (key.length != NINLIL_RT_V1_EVENT_LEDGER_KEY_BYTES) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        return ninlil_rt_v1_event_ledger_validate(
+            NINLIL_RT_V1_EVENT_LEDGER_KIND_RESUME, value);
     }
     if (key.data[0] == 0x45u && key.data[1] == 0x44u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_EVENT_DISCARD;
-        return NINLIL_OK;
+        if (key.length != NINLIL_RT_V1_EVENT_LEDGER_KEY_BYTES) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        return ninlil_rt_v1_event_ledger_validate(
+            NINLIL_RT_V1_EVENT_LEDGER_KIND_DISCARD, value);
     }
     if (key.data[0] == 0x52u && key.data[1] == 0x54u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        status = ninlil_rt_v1_transaction_record_validate_envelope(value);
+        return status;
     }
     if (key.data[0] == 0x52u && key.data[1] == 0x56u) {
         *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
-        return NINLIL_OK;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        return ninlil_rt_v1_reservation_marker_validate(value);
+    }
+    if (key.data[0] == 0x42u && key.data[1] == 0x53u) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_BEARER_STATE;
+        return ninlil_rt_v1_bearer_state_marker_validate(key, value);
+    }
+    if (key.data[0] == 0x41u && key.data[1] == 0x50u) {
+        *out_kind = NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE;
+        if (key.length != 18u) {
+            return NINLIL_E_UNSUPPORTED;
+        }
+        status = ninlil_rt_v1_transaction_record_validate_envelope(value);
+        return status;
     }
     return NINLIL_E_UNSUPPORTED;
 }
@@ -313,19 +567,20 @@ ninlil_status_t ninlil_v1_durable_classify_row(
         || (value.length != 0u && value.data == NULL)) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
-    if (key.length >= 8u
+    {
+        ninlil_status_t spine_status =
+            classify_spine_marker_row(key, value, out_kind);
+        if (spine_status == NINLIL_OK
+            || *out_kind != (ninlil_v1_durable_record_kind_t)0) {
+            return spine_status;
+        }
+    }
+    if (key.length >= 9u
         && key.data != NULL
         && key.data[7] == 0x01u
         && (key.data[8] == 0x01u || key.data[8] == 0x02u
             || key.data[8] == 0x03u || key.data[8] == 0x04u)) {
         return classify_runtime_store_row(key, value, out_kind);
-    }
-    {
-        ninlil_status_t spine_status =
-            classify_spine_marker_row(key, out_kind);
-        if (spine_status == NINLIL_OK) {
-            return NINLIL_OK;
-        }
     }
     if (key.length >= 3u && key.data != NULL
         && key.data[0] == 0x4du && key.data[1] == 0x34u
@@ -340,48 +595,82 @@ ninlil_status_t ninlil_v1_durable_classify_row(
     return classify_domain_row(key, value, out_kind);
 }
 
+typedef struct ninlil_v1_durable_operation_kind_mask {
+    ninlil_v1_durable_operation_t operation;
+    uint64_t kind_mask;
+} ninlil_v1_durable_operation_kind_mask_t;
+
+/*
+ * Closed operation->record-kind authority. Bit zero represents kind 1.
+ * Keep every operation explicit so the source gate can reject an omitted
+ * operation, an extra operation, or any changed operation/kind pair.
+ */
+static const ninlil_v1_durable_operation_kind_mask_t
+    g_ninlil_v1_durable_operation_kind_masks[
+        NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT] = {
+        {NINLIL_V1_DURABLE_OP_BOOTSTRAP_COMMIT, UINT64_C(0x00001ffff)},
+        {NINLIL_V1_DURABLE_OP_METADATA_INIT_COMMIT, UINT64_C(0x000060000)},
+        {NINLIL_V1_DURABLE_OP_CLOCK_TRUSTED_COMMIT, UINT64_C(0x000040000)},
+        /*
+         * First registration only: NRS SERVICE marker + SERVICE capacity row
+         * in the same FULL transaction. Never other capacity kinds or an
+         * admission quota rewrite.
+         */
+        {NINLIL_V1_DURABLE_OP_SERVICE_REGISTER_COMMIT, UINT64_C(0x000080040)},
+        /*
+         * SUBMIT admits TX + reservation + capacities + SERVICE ledger rewrite
+         * (kind 20 / bit 19) + IDEMPOTENCY_MAP (35) + EVENT_ID_MAP (36) +
+         * WITNESS_HEADER (37) + WITNESS_MANIFEST_CHUNK (38).
+         * Base 0x02011ffc0 | 0x80000 | bits 34..37.
+         */
+        {NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT,
+            UINT64_C(0x3c2019ffc0)},
+        /*
+         * Terminal / release paths that may co-stage SERVICE quota decrement
+         * (bit 19 / kind 20 SPINE_SERVICE_MARKER) with TX + capacity rows.
+         */
+        {NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT, UINT64_C(0x00029ffc0)},
+        {NINLIL_V1_DURABLE_OP_DELIVERY_STARTED_COMMIT, UINT64_C(0x00049ffc8)},
+        {NINLIL_V1_DURABLE_OP_DELIVERY_EVIDENCE_COMMIT, UINT64_C(0x00089ffc8)},
+        {NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT, UINT64_C(0x00109ffc0)},
+        {NINLIL_V1_DURABLE_OP_EVENT_SPOOL_COMMIT, UINT64_C(0x002000000)},
+        {NINLIL_V1_DURABLE_OP_EVENT_RESUME_COMMIT, UINT64_C(0x00409ffc8)},
+        {NINLIL_V1_DURABLE_OP_EVENT_DISCARD_COMMIT, UINT64_C(0x00809ffc8)},
+        {NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT, UINT64_C(0x010000000)},
+        {NINLIL_V1_DURABLE_OP_RESERVATION_COMMIT, UINT64_C(0x020000000)},
+        {NINLIL_V1_DURABLE_OP_M4_INSTALL_TOKEN_COMMIT, UINT64_C(0x040000000)},
+        {NINLIL_V1_DURABLE_OP_C3_REPLAY_ADMISSION_COMMIT,
+            UINT64_C(0x080000000)},
+        {NINLIL_V1_DURABLE_OP_BEARER_STATE_COMMIT, UINT64_C(0x100000000)},
+        {NINLIL_V1_DURABLE_OP_APPLICATION_ATTEMPT_PREPARE_COMMIT,
+            UINT64_C(0x200000000)},
+        {NINLIL_V1_DURABLE_OP_DESTROY_RECOVERY_COMMIT,
+            UINT64_C(0x00089ffc0)}
+};
+
 static int operation_allows_kind(
     ninlil_v1_durable_operation_t operation,
     ninlil_v1_durable_record_kind_t kind)
 {
-    switch (operation) {
-    case NINLIL_V1_DURABLE_OP_BOOTSTRAP_COMMIT:
-        return kind >= NINLIL_V1_DURABLE_KIND_RS_BINDING
-            && kind <= NINLIL_V1_DURABLE_KIND_RS_CAPACITY_DEFERRED_TOKEN;
-    case NINLIL_V1_DURABLE_OP_METADATA_INIT_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_DOM_WITNESS_HEAD_INDEX
-            || kind == NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE;
-    case NINLIL_V1_DURABLE_OP_CLOCK_TRUSTED_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_DOM_CLOCK_BASELINE;
-    case NINLIL_V1_DURABLE_OP_SERVICE_REGISTER_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_SERVICE_MARKER;
-    case NINLIL_V1_DURABLE_OP_SUBMIT_ADMISSION_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_TXN_ADMISSION;
-    case NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_CANCEL_ADMISSION;
-    case NINLIL_V1_DURABLE_OP_DELIVERY_STARTED_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_DELIVERY_STARTED;
-    case NINLIL_V1_DURABLE_OP_DELIVERY_EVIDENCE_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_DELIVERY_EVIDENCE;
-    case NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_DELIVERY_OUTCOME;
-    case NINLIL_V1_DURABLE_OP_EVENT_SPOOL_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_EVENT_SPOOL;
-    case NINLIL_V1_DURABLE_OP_EVENT_RESUME_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_EVENT_RESUME;
-    case NINLIL_V1_DURABLE_OP_EVENT_DISCARD_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_EVENT_DISCARD;
-    case NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_RETRY_STATE;
-    case NINLIL_V1_DURABLE_OP_RESERVATION_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_SPINE_RESERVATION;
-    case NINLIL_V1_DURABLE_OP_M4_INSTALL_TOKEN_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_M4_INSTALL_TOKEN;
-    case NINLIL_V1_DURABLE_OP_C3_REPLAY_ADMISSION_COMMIT:
-        return kind == NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION;
-    default:
+    size_t index;
+    uint32_t kind_index;
+
+    if (kind < NINLIL_V1_DURABLE_KIND_RS_BINDING
+        || kind > NINLIL_V1_DURABLE_KIND_DOM_RESERVATION) {
         return 0;
     }
+    kind_index = (uint32_t)kind - 1u;
+    for (index = 0u;
+         index < NINLIL_V1_DURABLE_ALLOWLIST_OPERATION_COUNT;
+         ++index) {
+        if (g_ninlil_v1_durable_operation_kind_masks[index].operation
+            == operation) {
+            return (g_ninlil_v1_durable_operation_kind_masks[index].kind_mask
+                       & (UINT64_C(1) << kind_index))
+                != UINT64_C(0);
+        }
+    }
+    return 0;
 }
 
 static ninlil_status_t validate_allowed_state(
@@ -434,7 +723,8 @@ ninlil_status_t ninlil_v1_durable_writer_gate_check(
     ninlil_status_t status;
 
     if (operation < NINLIL_V1_DURABLE_OP_BOOTSTRAP_COMMIT
-        || operation > NINLIL_V1_DURABLE_OP_C3_REPLAY_ADMISSION_COMMIT) {
+        || operation
+            > NINLIL_V1_DURABLE_OP_DESTROY_RECOVERY_COMMIT) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     status = ninlil_v1_durable_classify_row(key, value, &kind);
@@ -596,6 +886,18 @@ static void publication_classify_row(
         return;
     }
     if (kind == NINLIL_V1_DURABLE_KIND_C3_REPLAY_ADMISSION) {
+        *ok_count += 1u;
+        return;
+    }
+    if (kind == NINLIL_V1_DURABLE_KIND_SPINE_BEARER_STATE
+        || kind == NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE
+        || kind == NINLIL_V1_DURABLE_KIND_DOM_IDEMPOTENCY_MAP
+        || kind == NINLIL_V1_DURABLE_KIND_DOM_EVENT_ID_MAP
+        || kind == NINLIL_V1_DURABLE_KIND_DOM_WITNESS_HEADER
+        || kind == NINLIL_V1_DURABLE_KIND_DOM_WITNESS_MANIFEST_CHUNK
+        || kind == NINLIL_V1_DURABLE_KIND_DOM_SERVICE
+        || kind == NINLIL_V1_DURABLE_KIND_DOM_SERVICE_QUOTA
+        || kind == NINLIL_V1_DURABLE_KIND_DOM_RESERVATION) {
         *ok_count += 1u;
         return;
     }

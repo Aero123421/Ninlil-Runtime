@@ -10,11 +10,23 @@ set(_prefix "${_root}/prefix")
 set(_build "${_root}/build")
 file(REMOVE_RECURSE "${_root}")
 
-if(NOT DEFINED NINLIL_BUILD_CONFIG OR NINLIL_BUILD_CONFIG STREQUAL "")
-    set(NINLIL_BUILD_CONFIG Release)
+if(NOT DEFINED NINLIL_BUILD_CONFIG)
+    set(NINLIL_BUILD_CONFIG "")
 endif()
 if(NOT DEFINED NINLIL_INSTALL_SMOKE_SANITIZERS)
     set(NINLIL_INSTALL_SMOKE_SANITIZERS OFF)
+endif()
+if(NOT DEFINED NINLIL_SMOKE_HOST_RUNTIME_ENABLED)
+    set(NINLIL_SMOKE_HOST_RUNTIME_ENABLED OFF)
+endif()
+if(NOT DEFINED NINLIL_SMOKE_FABRIC_V1_ENABLED)
+    set(NINLIL_SMOKE_FABRIC_V1_ENABLED OFF)
+endif()
+if(NOT DEFINED NINLIL_SMOKE_POSIX_TLS_V1_ENABLED)
+    set(NINLIL_SMOKE_POSIX_TLS_V1_ENABLED OFF)
+endif()
+if(NOT DEFINED NINLIL_SMOKE_POSIX_USB_SERIAL_ENABLED)
+    set(NINLIL_SMOKE_POSIX_USB_SERIAL_ENABLED OFF)
 endif()
 
 # Optional: force the same SQLite archive the producer used (required for
@@ -29,9 +41,44 @@ if(NOT DEFINED NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
     set(NINLIL_SMOKE_EXPECT_STATIC_SQLITE OFF)
 endif()
 
+# This smoke installs the complete enabled package. Build every enabled
+# installable archive first so focused CI jobs cannot pass configuration while
+# leaving another exported target absent from the install tree.
+set(_producer_targets ninlil_posix_sqlite_storage)
+if(NINLIL_SMOKE_FABRIC_V1_ENABLED)
+    list(APPEND _producer_targets ninlil_fabric_v1)
+endif()
+if(NINLIL_SMOKE_POSIX_TLS_V1_ENABLED)
+    list(APPEND _producer_targets ninlil_posix_tls_v1)
+endif()
+if(NINLIL_SMOKE_POSIX_USB_SERIAL_ENABLED)
+    list(APPEND _producer_targets ninlil_posix_usb_serial)
+endif()
+if(NINLIL_SMOKE_HOST_RUNTIME_ENABLED)
+    list(APPEND _producer_targets ninlil_runtime)
+endif()
+set(_producer_build_command
+    "${CMAKE_COMMAND}" --build "${NINLIL_BUILD_DIR}"
+    --target ${_producer_targets})
+if(NINLIL_BUILD_CONFIG AND NOT NINLIL_BUILD_CONFIG STREQUAL "")
+    list(APPEND _producer_build_command --config "${NINLIL_BUILD_CONFIG}")
+endif()
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" --install "${NINLIL_BUILD_DIR}"
-        --prefix "${_prefix}" --config "${NINLIL_BUILD_CONFIG}"
+    COMMAND ${_producer_build_command}
+    RESULT_VARIABLE _producer_build_rc)
+if(NOT _producer_build_rc EQUAL 0)
+    message(FATAL_ERROR
+        "Ninlil installable target build failed: ${_producer_build_rc}")
+endif()
+
+set(_install_command
+    "${CMAKE_COMMAND}" --install "${NINLIL_BUILD_DIR}"
+    --prefix "${_prefix}")
+if(NINLIL_BUILD_CONFIG AND NOT NINLIL_BUILD_CONFIG STREQUAL "")
+    list(APPEND _install_command --config "${NINLIL_BUILD_CONFIG}")
+endif()
+execute_process(
+    COMMAND ${_install_command}
     RESULT_VARIABLE _install_rc)
 if(NOT _install_rc EQUAL 0)
     message(FATAL_ERROR "Ninlil install failed: ${_install_rc}")
@@ -251,11 +298,12 @@ if(NINLIL_SMOKE_EXPECT_STATIC_SQLITE)
 endif()
 
 # One install, then consumer matrix:
-# - match: producer config (historical path)
+# - match: producer config (historical Debug/Release path)
 # - none: omit CMAKE_BUILD_TYPE (regression for empty/default consumer)
 # - alt: Debug↔Release mismatch (MAP_IMPORTED_CONFIG / single-config export)
 # - strict_map: alt config with identity CMAKE_MAP_IMPORTED_CONFIG_* so only
 #   package target MAP (not CMake auto-fallback) can resolve locations
+# - NOCONFIG producer: empty, Debug, Release, and strict identity-map consumers
 # Multi-config generators: single configure (no build type) + Debug/Release
 # build/run; static checks run on the first successful executable.
 set(_consumer_is_multi FALSE)
@@ -265,11 +313,22 @@ if(NINLIL_GENERATOR MATCHES "Multi-Config"
     set(_consumer_is_multi TRUE)
 endif()
 
-string(TOUPPER "${NINLIL_BUILD_CONFIG}" _producer_cfg_upper)
-if(_producer_cfg_upper STREQUAL "DEBUG")
-    set(_alt_consumer_cfg "Release")
+if(NOT NINLIL_BUILD_CONFIG OR NINLIL_BUILD_CONFIG STREQUAL "")
+    set(_producer_is_noconfig TRUE)
+    set(_producer_cfg_upper "NOCONFIG")
 else()
-    set(_alt_consumer_cfg "Debug")
+    set(_producer_is_noconfig FALSE)
+    string(TOUPPER "${NINLIL_BUILD_CONFIG}" _producer_cfg_upper)
+    if(_producer_cfg_upper STREQUAL "DEBUG")
+        set(_alt_consumer_cfg "Release")
+    else()
+        set(_alt_consumer_cfg "Debug")
+    endif()
+endif()
+if(_consumer_is_multi AND _producer_is_noconfig)
+    message(FATAL_ERROR
+        "multi-config installed consumer smoke requires CTest -C <config>; "
+        "the producer config was empty")
 endif()
 
 function(ninlil_installed_consumer_static_checks build_dir build_config label build_out build_err)
@@ -298,9 +357,13 @@ function(ninlil_installed_consumer_static_checks build_dir build_config label bu
     endif()
 
     set(_exe "")
-    foreach(_cand
-            "${build_dir}/ninlil_installed_posix_sqlite_consumer"
+    set(_exe_candidates
+        "${build_dir}/ninlil_installed_posix_sqlite_consumer")
+    if(build_config AND NOT build_config STREQUAL "")
+        list(APPEND _exe_candidates
             "${build_dir}/${build_config}/ninlil_installed_posix_sqlite_consumer")
+    endif()
+    foreach(_cand IN LISTS _exe_candidates)
         if(EXISTS "${_cand}")
             set(_exe "${_cand}")
             break()
@@ -365,10 +428,13 @@ function(ninlil_installed_consumer_build_and_run build_dir build_config label)
     message(STATUS
         "installed consumer build/run '${label}': dir='${build_dir}' "
         "config='${build_config}'")
+    set(_build_cmd
+        "${CMAKE_COMMAND}" --build "${build_dir}" --verbose)
+    if(build_config AND NOT build_config STREQUAL "")
+        list(APPEND _build_cmd --config "${build_config}")
+    endif()
     execute_process(
-        COMMAND "${CMAKE_COMMAND}" --build "${build_dir}"
-            --config "${build_config}"
-            --verbose
+        COMMAND ${_build_cmd}
         RESULT_VARIABLE _build_rc
         OUTPUT_VARIABLE _build_out
         ERROR_VARIABLE _build_err)
@@ -406,14 +472,6 @@ function(ninlil_installed_consumer_run_one)
         message(FATAL_ERROR
             "ninlil_installed_consumer_run_one requires LABEL and BUILD_DIR")
     endif()
-    if(NOT DEFINED NIC_BUILD_CONFIG OR NIC_BUILD_CONFIG STREQUAL "")
-        if(NIC_BUILD_TYPE AND NOT NIC_BUILD_TYPE STREQUAL "")
-            set(NIC_BUILD_CONFIG "${NIC_BUILD_TYPE}")
-        else()
-            set(NIC_BUILD_CONFIG "${NINLIL_BUILD_CONFIG}")
-        endif()
-    endif()
-
     set(_args ${_consumer_common_args})
     if(DEFINED NIC_EXTRA_CMAKE_ARGS)
         list(APPEND _args ${NIC_EXTRA_CMAKE_ARGS})
@@ -463,6 +521,34 @@ if(_consumer_is_multi)
     foreach(_mc_cfg Debug Release)
         ninlil_installed_consumer_build_and_run(
             "${_mc_build}" "${_mc_cfg}" "multi-${_mc_cfg}")
+    endforeach()
+elseif(_producer_is_noconfig)
+    # A single-config producer with empty CMAKE_BUILD_TYPE exports NOCONFIG.
+    # Keep every config option absent for the matching empty consumer, then
+    # prove package fallback from NOCONFIG for ordinary and strict-map
+    # Debug/Release consumers.
+    ninlil_installed_consumer_run_one(
+        LABEL "noconfig-empty"
+        BUILD_DIR "${_root}/consumer-noconfig-empty"
+        BUILD_TYPE ""
+        BUILD_CONFIG "")
+
+    foreach(_consumer_cfg Debug Release)
+        ninlil_installed_consumer_run_one(
+            LABEL "noconfig-${_consumer_cfg}"
+            BUILD_DIR "${_root}/consumer-noconfig-${_consumer_cfg}"
+            BUILD_TYPE "${_consumer_cfg}"
+            BUILD_CONFIG "${_consumer_cfg}")
+
+        string(TOUPPER "${_consumer_cfg}" _consumer_cfg_upper)
+        ninlil_installed_consumer_run_one(
+            LABEL "noconfig-strict-map-${_consumer_cfg}"
+            BUILD_DIR
+                "${_root}/consumer-noconfig-strict-map-${_consumer_cfg}"
+            BUILD_TYPE "${_consumer_cfg}"
+            BUILD_CONFIG "${_consumer_cfg}"
+            EXTRA_CMAKE_ARGS
+                "-DCMAKE_MAP_IMPORTED_CONFIG_${_consumer_cfg_upper}=${_consumer_cfg}")
     endforeach()
 else()
     ninlil_installed_consumer_run_one(

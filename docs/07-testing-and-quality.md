@@ -19,6 +19,21 @@ requirement ID
 
 Requirementを削除・弱化する変更は、testだけを削除して通してはいけません。仕様変更理由とcompatibility impactを必要とします。
 
+### Complete coverage V2 authority
+
+`requirements-traceability-coverage.json`は12〜14章と本章invariantのcomplete coverage正本です。coverage unitは次のとおりです。
+
+- Markdown fence外にある12〜14章の全H2、H3、H4。見出しpathは親H2から対象見出しまでの完全pathとする
+- Markdown fence外に明示された全`NIN-FND-*`
+- 本節`## 常時検査するinvariant`直下の`NIN-INV-001`〜`NIN-INV-014`
+- 303 vectorの個別定義は既存`vector_inventory_check`と`vector_reference_check`へ委譲し、coverage manifestは委譲先、件数、profileを固定する
+
+各見出しIDは明示値であり、現在の文書順序や行番号から再生成しません。見出しの並べ替えでは同じ完全pathと同じIDを維持します。rename、split、mergeではID/path対応をreviewし、仕様変更理由とcompatibility impactを記録します。source SHA-256はdrift検出であり、変更後の文章を既存testが証明するという意味ではありません。
+
+test evidenceはconfigured CTestの`--show-only=json-v1`に存在し、かつ`DISABLED`でないtestだけを有効とします。CMake source中に`add_test`文字列があるだけ、`if(FALSE)`内だけ、または別profileでだけ有効なtestはevidenceに数えません。baselineとall-privateはprofile別に検査し、あるfeature構成で意図的に非適用となるunitはmanifestの`profiles`で明示します。
+
+`NIN-PR1-TRACE-COVERAGE-001`を`verified`へ昇格できるのは、V2 self-test、baseline、all-private、303-vector authority、および対応するfocused invariant testがすべてgreenになった後だけです。それまでは`partial`を維持します。自己検査は最低でもomission、duplicate、reorder、disabled/`if(FALSE)`、fenced heading、source byte hash、invariant section外移動を拒否します。
+
 ## Test layers
 
 1. pure unit test
@@ -37,6 +52,39 @@ Requirementを削除・弱化する変更は、testだけを削除して通し�
 14. reproducible release artifact/SBOM check
 
 上位層を下位層で代替しません。SimulatorだけでRF性能や法規適合を証明したと表現してはいけません。
+
+### all-private Host統合証拠
+
+`all-private` Host profileは、Domain Schema 1、Fabric、Wi-Fi、R7 FRAG、
+Route/Relay/Multi-parent、MFDTの6 private featureを同じCMake build treeで
+同時に有効化した構成だけを指します。このprofileの統合証拠には、次をすべて
+必要とします。
+
+- configure成功や`ctest -N`への登録だけをbuild evidenceにしない。同じtreeで
+  all-private aggregate targetを実際にbuildし、各featureのproduction-private
+  archive/objectをcompileして最終test executableをlinkする
+- CMakeがlinkした1個のHost processから6 featureそれぞれのproduction live
+  callを実行し、feature別の成功markerを検査する。これは同時共存、compile/link、
+  個別live-callの証拠であり、6 feature間のcanonical cross-feature E2Eではない。
+  symbol列挙、関数address参照、または一部sourceを別途直コンパイルしただけの
+  結果は代替にならない
+- `host_completion_wire.c`を使うmulti-process scenarioはtest-only transport
+  fixtureとして区別し、canonical owner-plane completionの証拠にしない。同じ
+  CMake treeでbuildしたdriverを使い、fail-closed性だけを検査する
+- Foundation owner-planeからcanonical NFL1へ到達するactual pathとして、
+  `runtime_fabric_actual_e2e`、`multi_service_node_host_actual_e2e`、
+  `mfdt_v1_fabric_actual_e2e`を必ずbuild/runする。Domain Schema 1 public
+  Runtime readinessが未昇格の間は、この3本はDomain OFFの明示的なcompanion
+  profileで実行し、all-private aggregate側では同じactual executableの
+  compile/linkまでを必須にする
+- normalとASan/UBSanの各profileでaggregate build、同時共存probe、
+  test-only transport fixture、および上記3 actual E2Eを別々に実行する
+- 6 featureのどれかがOFFのprofileにはall-private統合testを登録しない
+
+このHost software証拠からphysical HIL、RF、power-cut、実device実行を推論して
+はいけません。Domain、Wi-Fi、R7 FRAG、RRMP、MFDTのうちactual pathで相互接続
+していないedgeも、同時共存probeから接続済みと推論してはいけません。物理試験を
+実行していない結果は`NOT_RUN`と明記します。
 
 ## Deterministic simulator
 
@@ -188,9 +236,14 @@ Generated bridge fixture headers（`add_custom_command` OUTPUT）は、**2 つ�
 
 M3 complete 前でも、component packaging と basic platform adapters の回帰を次で防ぎます（[18章](18-m3-prep-esp-idf-component.md)、[20章](20-m3-basic-esp-idf-platform-adapters.md)）:
 
-- host CTest: `esp_idf_component_packaging_gate`（portable / port source authority 分離、pin 一致、no GLOB、portable に ESP-IDF include なし、port-owned headers、smoke が 3 adapter を include）
+- host CTest: `esp_idf_component_packaging_gate`（portable / port source authority 分離、pin 一致、no GLOB、portable に ESP-IDF include なし、port-owned headers、smoke が 3 adapter を include；executable `docker run` は immutable digest + `linux/amd64` のみ、`env` 経由の docker 埋め込みも fail-closed）
+- OSS release authority gates（local / CI）:
+  - `tools/compatibility_matrix_gate.py` — status 正本位置のみ、blockquote smuggle 拒否、full Apache-2.0 LICENSE bytes、NOTICE obligations、live SDK distribution JSON authority
+  - `tools/release_workflow_identity_gate.py` — executed YAML `uses`/`ref` allowlist（comment-smuggle / quoted-key / flow-map / variable 拒否）
+  - `tools/third_party_notice_gate.py` — executed Syft pin identity
+  - `tools/spdx_release_sbom.py` — deterministic SPDX enrich（two-run timestamp/namespace self-test）
 - host CTest: `esp_idf_port_logic`（clock/entropy/execution の invalid argument / boundary / entropy singleton lifecycle）
-- 分離 workflow `.github/workflows/esp-idf.yml`: 公式 image `espressif/idf:<ESP_IDF_VERSION>` で **esp32s3 smoke app の compile/link build**（`idf.py set-target esp32s3 build`）。**device 上の実行や HIL は含まない**
+- 分離 workflow `.github/workflows/esp-idf.yml`: 公式 image immutable digest `docker.io/espressif/idf@sha256:3e77b709e0ba7f0e9a711039231103be822736b4105790b8e33339a3bf4e47fb`（human pin **v5.5.3**）を `--platform linux/amd64` で実行し、**esp32s3 smoke app の compile/link build**（`idf.py set-target esp32s3 build`）。**device 上の実行や HIL は含まない**
 - host `ci.yml` は ESP-IDF を install せず、従来の GCC/Clang CTest のみ
 - 実機/HIL/on-target runtime smoke は **未実証**。CI が証明するのは target firmware image の **build** まで
 
@@ -292,8 +345,8 @@ Do not treat its result as GO.
 
 | Path | SHA-256 |
 | --- | --- |
-| `src/radio/n6_context_store.c` | `bc8633657a1033fb16cc473794ad8cfab54b17ec00a741814682194d5c7789f6` |
-| `src/radio/n6_context_store.h` | `1901a595b29e91af938cfa1f9acc0cc7eaf8151698eb44885c08b8d38833844c` |
+| `src/radio/n6_context_store.c` | `45680af9b40c229a82a42ce69d8f0840c0d8b05ffb0b948868bde8f8cefa8632` |
+| `src/radio/n6_context_store.h` | `87609b009c957d3b063c736fc24012df54a4bc9f894ba167d106d612263c7699` |
 | `src/radio/n6_crypto_host.c` | `bdbb9a2bf2cc860101da41d2425192904c12c7f42fd2fcf77b3c42716bdc71b2` |
 
 <!-- n6-storage-accepted-manifest:end -->

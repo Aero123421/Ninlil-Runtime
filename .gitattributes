@@ -1,3 +1,8 @@
 # CommonMark uses two trailing spaces for an intentional hard line break.
 # Keep Git's other whitespace checks active for Markdown and all source files.
 *.md whitespace=-blank-at-eol
+
+# Preserve vendored upstream bytes exactly. In particular, wheel metadata and
+# source distributions may intentionally retain CRLF or upstream whitespace,
+# while their text still remains visible for review.
+tools/_vendor/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab

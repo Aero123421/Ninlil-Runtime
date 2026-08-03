@@ -14,7 +14,9 @@ M1aに限り、00〜10章の概念記述と本章が競合する場合は本章�
 
 ## 2. M1aで固定する判断
 
-- Runtime roleは`CONTROLLER`と`ENDPOINT`だけです。
+- Runtime roleは`CONTROLLER`、`ENDPOINT`、`CELL_AGENT`です。
+- Environmentは`TEST`、`LAB`、`FIELD`、`PRODUCTION`です。Environment名は
+  validation、durability、bounded-resource contractを弱化しません。
 - SimulatorはRuntime roleではなく、複数Runtime、virtual clock、simulated bearer、fault hookを駆動する外部harnessです。
 - Application familyは`DESIRED_STATE_COMMAND`と`EVENT_FACT`だけです。
 - Submissionはconcrete target配列だけを受け取ります。selectorはM1a非対応です。
@@ -62,6 +64,7 @@ extern "C" {
 #define NINLIL_M1A_EVENT_DISCARD_OPERATION_SLOT_BYTES ((uint64_t)512u)
 #define NINLIL_M1A_EVENT_MANAGEMENT_RESERVATION_BYTES ((uint64_t)2560u)
 #define NINLIL_M1A_MAX_RETENTION_MS          ((uint64_t)604800000u)
+#define NINLIL_FOUNDATION_MAX_EXACT_TARGETS  ((uint32_t)4u)
 
 #define NINLIL_STRUCT_HEADER \
     uint16_t abi_version;   \
@@ -204,7 +207,7 @@ API invocation errorとSubmission rejectionを混同しません。構文的に�
 - Input structは`abi_version == NINLIL_ABI_VERSION`必須です。
 - `struct_size`がM1aのrequired末尾fieldより小さい場合は`NINLIL_E_ABI_MISMATCH`です。
 - `struct_size`がlibraryの既知sizeより大きい場合、未知tailを読みません。
-- `reserved_zero`、reserved flag、registryに存在しないunknown numeric enum値の入力は`NINLIL_E_INVALID_ARGUMENT`です。名前付き`*_RESERVED`値はknownですがM1aで実行不能なので、各APIの§14規則どおり`NINLIL_E_UNSUPPORTED`です。Unknown numeric値をUNSUPPORTEDへ丸めません。
+- `reserved_zero`、reserved flag、registryに存在しないunknown numeric enum値の入力は`NINLIL_E_INVALID_ARGUMENT`です。Role/environmentの旧`*_RESERVED`名はcurrent public値へのsource aliasであり実行可能です。その他の名前付き`*_RESERVED`値はknownですがM1aで実行不能なので、各APIの§14規則どおり`NINLIL_E_UNSUPPORTED`です。Unknown numeric値をUNSUPPORTEDへ丸めません。
 - Output structはcallerがABI header、buffer pointer、capacityだけを初期化し、それ以外を0にします。
 - Libraryはcallerの`struct_size`を超えて書きません。
 
@@ -215,12 +218,16 @@ API invocation errorとSubmission rejectionを混同しません。構文的に�
 ```c
 #define NINLIL_ROLE_CONTROLLER             ((ninlil_role_t)1u)
 #define NINLIL_ROLE_ENDPOINT               ((ninlil_role_t)2u)
-#define NINLIL_ROLE_CELL_AGENT_RESERVED    ((ninlil_role_t)3u)
+#define NINLIL_ROLE_CELL_AGENT             ((ninlil_role_t)3u)
+#define NINLIL_ROLE_CELL_AGENT_RESERVED    NINLIL_ROLE_CELL_AGENT
 
 #define NINLIL_ENV_TEST                    ((ninlil_environment_t)1u)
-#define NINLIL_ENV_LAB_RESERVED            ((ninlil_environment_t)2u)
-#define NINLIL_ENV_FIELD_RESERVED          ((ninlil_environment_t)3u)
-#define NINLIL_ENV_PRODUCTION_RESERVED     ((ninlil_environment_t)4u)
+#define NINLIL_ENV_LAB                     ((ninlil_environment_t)2u)
+#define NINLIL_ENV_FIELD                   ((ninlil_environment_t)3u)
+#define NINLIL_ENV_PRODUCTION              ((ninlil_environment_t)4u)
+#define NINLIL_ENV_LAB_RESERVED            NINLIL_ENV_LAB
+#define NINLIL_ENV_FIELD_RESERVED          NINLIL_ENV_FIELD
+#define NINLIL_ENV_PRODUCTION_RESERVED     NINLIL_ENV_PRODUCTION
 
 #define NINLIL_FAMILY_EVENT_FACT           ((ninlil_family_t)1u)
 #define NINLIL_FAMILY_DESIRED_STATE        ((ninlil_family_t)2u)
@@ -233,7 +240,11 @@ API invocation errorとSubmission rejectionを混同しません。構文的に�
 #define NINLIL_FAMILY_MASK_DESIRED_STATE   ((uint32_t)1u << 1)
 ```
 
-`CELL_AGENT_RESERVED`、`LAB_RESERVED`以降、reserved familyの使用はM1aで`NINLIL_E_UNSUPPORTED`です。`SIMULATOR` role値は存在しません。
+3 roleと4 environmentはすべてpublic create値です。旧`*_RESERVED`名は
+source compatibility aliasであり、同じnumeric valueを表します。`CELL_AGENT`は
+application service authorityを持たず、`service_register`は
+`NINLIL_E_UNSUPPORTED`です。Named reserved familyの使用はM1aで
+`NINLIL_E_UNSUPPORTED`です。`SIMULATOR` role値は存在しません。
 
 ### 4.2 Service contract
 
@@ -786,7 +797,13 @@ Concrete target validation:
 - `target_runtime_id`と`target_application_instance_id`は常にnon-zeroです。
 - `flags`は`HAS_DEVICE | HAS_INSTALLATION | HAS_SITE`の範囲だけです。各flagが1なら対応IDはnon-zero、0なら対応IDはall-zeroです。
 - `binding_epoch`はdeviceまたはinstallationがある場合non-zero、それ以外は0です。`membership_epoch`はsiteがある場合non-zero、それ以外は0です。
-- M1a Submissionのtarget countはController/Endpointともexactly 1です。0または2以上は構文的に有効なSubmission rejectionで、reasonは`TARGET_COUNT_UNSUPPORTED`です。
+- ControllerがadmitするDesiredState Submissionは1..4のexplicit concrete
+  target rosterを持てます。さらにRuntime `max_targets_per_transaction`と
+  descriptor `target_limit`の小さい方に制限されます。
+- EventFactはOrigin Authorization Portが1つのexact targetを評価するため
+  exactly 1です。0、profile上限超過、Runtime/Service limit超過、duplicate
+  targetは構文的に有効なSubmission rejectionで、reasonは
+  `TARGET_COUNT_UNSUPPORTED`です。
 
 ```c
 typedef struct ninlil_tx_permit {
@@ -1093,51 +1110,51 @@ typedef struct ninlil_runtime_config {
 
 `NINLIL-FOUNDATION-SMALL-1` inclusive上限:
 
-| Field | Controller | Endpoint |
-| --- | ---: | ---: |
-| max_services | 16 | 8 |
-| max_nonterminal_transactions | 256 | 32 |
-| max_targets_per_transaction | 1 | 1 |
-| max_logical_payload_bytes | 1024 | 1024 |
-| max_durable_outbox_payload_bytes | 262144 | 0 |
-| max_attempts_per_target_per_cycle | 8 | 8 |
-| max_cancel_attempts_per_transaction | 1 | 1 |
-| max_evidence_per_target | 8 | 8 |
-| max_retained_terminal_transactions | 2048 | 64 |
-| max_nonterminal_deliveries | 32 | 32 |
-| max_event_spool_count | 0 | 32 |
-| max_event_spool_bytes | 0 | 32768 |
-| max_result_cache_entries | 64 | 64 |
-| max_retained_dispositions | 64 | 64 |
-| max_ingress_per_step | 64 | 64 |
-| max_callbacks_per_step | 64 | 64 |
-| max_state_transitions_per_step | 64 | 64 |
-| max_bearer_sends_per_step | 64 | 64 |
-| max_deferred_tokens | 32 | 32 |
+| Field | Controller | Endpoint | Cell Agent |
+| --- | ---: | ---: | ---: |
+| max_services | 16 | 8 | 8 |
+| max_nonterminal_transactions | 256 | 32 | 32 |
+| max_targets_per_transaction | 4 | 4 | 4 |
+| max_logical_payload_bytes | 1024 | 1024 | 1024 |
+| max_durable_outbox_payload_bytes | 262144 | 0 | 0 |
+| max_attempts_per_target_per_cycle | 8 | 8 | 8 |
+| max_cancel_attempts_per_transaction | 1 | 1 | 1 |
+| max_evidence_per_target | 8 | 8 | 8 |
+| max_retained_terminal_transactions | 2048 | 64 | 64 |
+| max_nonterminal_deliveries | 32 | 32 | 32 |
+| max_event_spool_count | 0 | 32 | 0 |
+| max_event_spool_bytes | 0 | 32768 | 0 |
+| max_result_cache_entries | 64 | 64 | 64 |
+| max_retained_dispositions | 64 | 64 | 64 |
+| max_ingress_per_step | 64 | 64 | 64 |
+| max_callbacks_per_step | 64 | 64 | 64 |
+| max_state_transitions_per_step | 64 | 64 | 64 |
+| max_bearer_sends_per_step | 64 | 64 | 64 |
+| max_deferred_tokens | 32 | 32 | 32 |
 
 Accepted range/zero matrix（上表maxとのinclusive range）:
 
-| Field | Controller | Endpoint |
-| --- | --- | --- |
-| max_services | 1..16 | 1..8 |
-| max_nonterminal_transactions | 1..256 | 1..32 |
-| max_targets_per_transaction | exactly 1 | exactly 1 |
-| max_logical_payload_bytes | 1..1024 | 1..1024 |
-| max_durable_outbox_payload_bytes | 1..262144 | exactly 0 |
-| max_attempts_per_target_per_cycle | exactly 8 | exactly 8 |
-| max_cancel_attempts_per_transaction | exactly 1 | exactly 1 |
-| max_evidence_per_target | 1..8 | 1..8 |
-| max_retained_terminal_transactions | 1..2048 | 1..64 |
-| max_nonterminal_deliveries | 1..32 | 1..32 |
-| max_event_spool_count | exactly 0 | 0..32 |
-| max_event_spool_bytes | exactly 0 | count=0ならexactly 0、count>0なら2560..32768 |
-| max_result_cache_entries | 1..64 | 1..64 |
-| max_retained_dispositions | 1..64 | 1..64 |
-| max_ingress_per_step | 1..64 | 1..64 |
-| max_callbacks_per_step | 1..64 | 1..64 |
-| max_state_transitions_per_step | 2..64 | 2..64 |
-| max_bearer_sends_per_step | 1..64 | 1..64 |
-| max_deferred_tokens | 1..32 | 1..32 |
+| Field | Controller | Endpoint | Cell Agent |
+| --- | --- | --- | --- |
+| max_services | 1..16 | 1..8 | 1..8 |
+| max_nonterminal_transactions | 1..256 | 1..32 | 1..32 |
+| max_targets_per_transaction | 1..4 | 1..4 | 1..4 |
+| max_logical_payload_bytes | 1..1024 | 1..1024 | 1..1024 |
+| max_durable_outbox_payload_bytes | 1..262144 | exactly 0 | exactly 0 |
+| max_attempts_per_target_per_cycle | exactly 8 | exactly 8 | exactly 8 |
+| max_cancel_attempts_per_transaction | exactly 1 | exactly 1 | exactly 1 |
+| max_evidence_per_target | 1..8 | 1..8 | 1..8 |
+| max_retained_terminal_transactions | 1..2048 | 1..64 | 1..64 |
+| max_nonterminal_deliveries | 1..32 | 1..32 | 1..32 |
+| max_event_spool_count | exactly 0 | 0..32 | exactly 0 |
+| max_event_spool_bytes | exactly 0 | count=0ならexactly 0、count>0なら2560..32768 | exactly 0 |
+| max_result_cache_entries | 1..64 | 1..64 | 1..64 |
+| max_retained_dispositions | 1..64 | 1..64 | 1..64 |
+| max_ingress_per_step | 1..64 | 1..64 | 1..64 |
+| max_callbacks_per_step | 1..64 | 1..64 | 1..64 |
+| max_state_transitions_per_step | 2..64 | 2..64 | 2..64 |
+| max_bearer_sends_per_step | 1..64 | 1..64 | 1..64 |
+| max_deferred_tokens | 1..32 | 1..32 | 1..32 |
 
 規則:
 
@@ -1147,19 +1164,19 @@ Accepted range/zero matrix（上表maxとのinclusive range）:
 - Storage `open`へ渡す`ninlil_bytes_view_t`はcopy済みnamespaceの同じlengthとexact bytesです。Storage Portにはopen call中だけborrowedで、pointer identityやNUL終端へ依存せず、必要ならhandleへ自らcopyします。runtime_createが後で失敗した場合も、CoreはStorage handleをcloseしてcopyをexactly 1回deallocateします。成功時はruntime_destroyでStorage close後にcopyをexactly 1回deallocateします。
 - `runtime_id`はnon-zero、`local_identity`は3.1のpresence規則を満たします。送信source partyはこのruntime ID/local identityと登録serviceの`local_application_instance_id`から構成し、caller submissionに自己申告source fieldを持たせません。
 - 上表で0を含むfieldだけ0を指定できます。0をdefault/unbounded/disabledの暗黙値へ読み替えません。Range未満/conditional zero違反は`runtime_create = NINLIL_E_INVALID_ARGUMENT`、named profile上限超過は`NINLIL_E_UNSUPPORTED`です。別のlarger named profileはM1aにありません。
-- `max_targets_per_transaction == 1`、`max_attempts_per_target_per_cycle == NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE`です。M1aで小さくして保証を変えたり、大きくしてcycleを延長しません。
+- `max_targets_per_transaction`は1..4、`max_attempts_per_target_per_cycle == NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE`です。attempt cycleを小さくして保証を変えたり、大きくしてcycleを延長しません。
 - `max_cancel_attempts_per_transaction == 1`です。0または2以上を設定せず、Command admissionはremote cancel record/attempt 1件分をlocal reservationへ含めます。
 - Cross-fieldは`max_deferred_tokens <= max_nonterminal_deliveries <= max_nonterminal_transactions`、`max_event_spool_count <= max_nonterminal_transactions`、Controllerでは`max_durable_outbox_payload_bytes >= max_logical_payload_bytes`です。全比較/加算はcheckedで、違反/overflowは`NINLIL_E_INVALID_ARGUMENT`です。Endpoint event count>0はmanagement reservation 2560 bytes以上を要求しますが、payload/attempt capacityは各admissionで残量検査し、count limitまで必ず同時収容できる保証にはしません。
 - `terminal_retention_ms`は1..`NINLIL_M1A_MAX_RETENTION_MS`、`result_cache_retention_ms`は1..terminal retention、`observation_retention_ms`は0..`NINLIL_M1A_MAX_RETENTION_MS`です。範囲外は`NINLIL_E_INVALID_ARGUMENT`です。Foundation Simulator fixtureはterminal/result cache 86400000ms、observation 3600000msを明示し、0をdefaultにしません。
 - EventFactはrequired Receiptまたはexplicit discardまでretention対象外で、削除禁止です。
 
-Stage 1 validationの分類precedenceはclosedで、`top-level config/platform pointer` → `config/platform outer ABI header/size` → `inline config headerとplatform sub-vtable pointer` → `platform sub-vtable ABI header/size` → `required function pointer` → `reserved/unknown numeric enum` → `named unsupported role/environment` → `runtime ID/local identity/namespace shape` → `lower/conditional/cross-field/retention` → `checked derivation overflow` → `named profile upper`の順です。Pointer/function欠落は`NINLIL_E_INVALID_ARGUMENT`、ABI header/size違反は`NINLIL_E_ABI_MISMATCH`、それ以降はclosed tableの`NINLIL_E_INVALID_ARGUMENT`または`NINLIL_E_UNSUPPORTED`へ正規化し、後順位の違反で先順位を上書きしません。Outer ABI headerが有効になるまでnested pointer/fieldをreadしません。Supported createはController/EndpointかつTESTだけです。PlatformはroleによらずAllocator、Execution、Clock、Entropy、Storage、Bearer、Tx Gate、Origin Authorizationの8 sub-vtableと、各required function pointerをすべて要求します。各sub-vtableの`user`はNULLでもvalidです。
+Stage 1 validationの分類precedenceはclosedで、`top-level config/platform pointer` → `config/platform outer ABI header/size` → `inline config headerとplatform sub-vtable pointer` → `platform sub-vtable ABI header/size` → `required function pointer` → `reserved/unknown numeric enum` → `runtime ID/local identity/namespace shape` → `lower/conditional/cross-field/retention` → `checked derivation overflow` → `named profile upper`の順です。Pointer/function欠落は`NINLIL_E_INVALID_ARGUMENT`、ABI header/size違反は`NINLIL_E_ABI_MISMATCH`、それ以降はclosed tableの`NINLIL_E_INVALID_ARGUMENT`または`NINLIL_E_UNSUPPORTED`へ正規化し、後順位の違反で先順位を上書きしません。Outer ABI headerが有効になるまでnested pointer/fieldをreadしません。Supported createはController/Endpoint/Cell AgentとTEST/LAB/FIELD/PRODUCTIONの全組合せです。Environment名によってvalidation、durability、bounded resource contractを弱化しません。PlatformはroleによらずAllocator、Execution、Clock、Entropy、Storage、Bearer、Tx Gate、Origin Authorizationの8 sub-vtableと、各required function pointerをすべて要求します。各sub-vtableの`user`はNULLでもvalidです。
 
 Capacity limitはaccepted configから`N = max_nonterminal_transactions + max_retained_terminal_transactions`として、kind 1..11を順に`max_services`、`N`、`N * max_targets_per_transaction`、`max_durable_outbox_payload_bytes`、`max_nonterminal_deliveries`、`max_event_spool_count`、`max_event_spool_bytes`、`max_result_cache_entries + max_retained_dispositions`、`N * max_targets_per_transaction * (uint64(max_evidence_per_target) + 1)`、`max_ingress_per_step`、`max_deferred_tokens`へ導出します。全加算/乗算は`uint64_t` checked arithmeticで、1件でもoverflowしたら`NINLIL_E_INVALID_ARGUMENT`、partial limit publish 0です。Roleで不使用のkindもzero entryを残します。
 
 ### 6.1 Runtime create lifecycle
 
-`ninlil_runtime_create()`は次のstageをexact orderで実行します。`*out_runtime`はrequired pointer validation直後にNULL化し、stage 9までpublishしません。Earlier stage failureではlater stage/Portを呼びません。
+`ninlil_runtime_create()`は次のstageをexact orderで実行します。`*out_runtime`はrequired pointer validation直後にNULL化し、stage 10までpublishしません。Earlier stage failureではlater stage/Portを呼びません。
 
 | Stage | Required work | Failure/public effect |
 | ---: | --- | --- |
@@ -1167,11 +1184,12 @@ Capacity limitはaccepted configから`N = max_nonterminal_transactions + max_re
 | 2 | `execution.current_context_id(user)`を1回callしnon-zero owner contextをcapture | 0なら`NINLIL_E_DEGRADED`。他Port call 0 |
 | 3 | Core state、vtable/config scalar copy、namespace exact deep-copy、profile-bounded tablesをAllocatorで確保 | 最初のNULLで`NINLIL_E_CAPACITY_EXHAUSTED`。取得済みallocationをreverse orderでexactly once free |
 | 4 | `storage.open(user, copied_namespace, NINLIL_STORAGE_SCHEMA_M1A, &handle)`をexactly 1回 | 下表mapping。FailureはStorage handleがあればclose後deallocate |
-| 5 | Storage schema/profile binding、commit-unknown resolution、recovery scan/fence、persistent capacity metadataを完了 | Existing incompatible profile=`NINLIL_E_UNSUPPORTED`。Storage mapping/unknownは下表。Recovery未完了でBearerをopenしない |
-| 6 | `bearer.open(user, runtime_id, role, &handle)`をexactly 1回。M1aはlazy openしない | 下表mapping。FailureはBearer handleがあればclose、次にStorage close、deallocate |
-| 7 | `clock.now`を1回取得し、trusted sampleをmetrics startへ固定。`clock_epoch_id`はnon-zero required、`now_ms == 0`はvalid。[17章](17-foundation-domain-store.md) CLOCK_BASELINEと比較・FULL更新 | temporary/UNCERTAIN=`NINLIL_E_CLOCK_UNCERTAIN`、permanent、trusted+全zero epoch、invalid trust enum、same-epoch regression=`NINLIL_E_DEGRADED`。Baseline COMMIT_UNKNOWNはnamespace fence、publish 0 |
-| 8 | metrics epoch IDを§5.2の最大4 entropy call/partial/all-zero規則で取得。Collision checkなし | 4 candidates失敗=`NINLIL_E_ENTROPY`。reverse cleanup。Transaction/attempt entropyは消費しない |
-| 9 | Stage 5で再構成したdurable health causesを固定priorityへprojectし、cleanなら`OK/NONE`、残存causeありなら`DEGRADED/exact reason`。metrics zero counters/start sample/epoch ID、owner context、Port handlesをfinalizeし`*out_runtime`へ1回publish | `NINLIL_OK`。DEGRADED healthはcreate API failureではない。この時点からcallerがruntimeを所有 |
+| 5 | Storage schema/profile binding、commit-unknown resolution、T0–T4 recovery scan/fence、persistent capacity metadata、identity recoveryを完了 | Existing incompatible profile=`NINLIL_E_UNSUPPORTED`。Storage mapping/unknownは下表。Recovery未完了でClock/Bearerを進めない |
+| 6 | `clock.now`を1回取得しtrusted sampleをrequestへ固定。その同じsampleで[17章](17-foundation-domain-store.md) T5 `CLOCK_BASELINE` old/new比較・FULL更新・fresh re-scanを完了 | temporary/UNCERTAIN=`NINLIL_E_CLOCK_UNCERTAIN`、permanent、trusted+全zero epoch、invalid trust enum、same-epoch regression=`NINLIL_E_DEGRADED`。Baseline COMMIT_UNKNOWNはnamespace fence。Bearer/callback/handle/publish 0 |
+| 7 | T6 fresh full scanからdurable health sourceを再構成し、priority 1/2がzeroであることをpublish gateへ固定 | scan/cross-row/priority 1/2 failureはfail closed。Bearer/callback/handle/publish 0 |
+| 8 | T5/T6完了後にだけ`bearer.open(user, runtime_id, role, &handle)`をexactly 1回。M1aはlazy openしない | 下表mapping。FailureはBearer handleがあればclose、次にStorage close、deallocate。handle publish 0 |
+| 9 | metrics epoch IDを§5.2の最大4 entropy call/partial/all-zero規則で取得。Collision checkなし | 4 candidates失敗=`NINLIL_E_ENTROPY`。Bearer close後reverse cleanup。Transaction/attempt entropyは消費しない |
+| 10 | Stage 7で再構成したdurable health causesを固定priorityへprojectし、cleanなら`OK/NONE`、残存causeありなら`DEGRADED/exact reason`。metrics zero counters/Stage 6 start sample/epoch ID、owner context、Port handlesをfinalizeし`*out_runtime`へ1回publish | `NINLIL_OK`。DEGRADED healthはcreate API failureではない。この時点からcallerがruntimeを所有 |
 
 Stage 5の0/17 bootstrap/domain判定は0-byte prefix iteratorとcaller-owned key 255/value 4096-byte workspaceを使います。Private namespaceはfuture rootを含めsingle value 4096 bytes以下がcontractで、required key>255またはvalue>4096の`BUFFER_TOO_SMALL`はbytesを推測せず`NINLIL_E_STORAGE_CORRUPT`です。65,536-byte temporary allocation、ESP32 task stack上のrecord buffer、keyだけの採用は行いません。
 
@@ -1200,9 +1218,9 @@ Bearer open status mapping:
 
 Bearer `open`は`OK + non-NULL`だけが継続です。Known non-OK + NULLは上表へmappingします。Non-OK + non-NULLまたはunknown statusはunexpected handleがあればexactly once closeし、shape faultを優先して`NINLIL_E_DEGRADED`です。
 
-Stage 7のpure clock mapperはcurrent ABI headerを設定し、残りをzero初期化したsampleを入力bufferにします。`OK + trusted + non-zero epoch`だけが継続し、`UNCERTAIN`または`TEMPORARY + exact unchanged buffer`は`NINLIL_E_CLOCK_UNCERTAIN`、`PERMANENT + exact unchanged buffer`とunknown status/non-OK poison/partial header/zero epoch/unknown trust/reservedは`NINLIL_E_DEGRADED`です。Pure helperはPort/harnessが与えるoptional external baselineを受け取り、同epochで`now_ms < baseline_now_ms`だけをregressionとして`NINLIL_E_DEGRADED`にできます。Production source/update境界は[17章](17-foundation-domain-store.md)のCLOCK_BASELINEです。D1 codecとRuntime接続前はhelper testだけでCR8 completeと扱いません。
+Stage 6のpure clock mapperはcurrent ABI headerを設定し、残りをzero初期化したsampleを入力bufferにします。`OK + trusted + non-zero epoch`だけが継続し、`UNCERTAIN`または`TEMPORARY + exact unchanged buffer`は`NINLIL_E_CLOCK_UNCERTAIN`、`PERMANENT + exact unchanged buffer`とunknown status/non-OK poison/partial header/zero epoch/unknown trust/reservedは`NINLIL_E_DEGRADED`です。Pure helperはPort/harnessが与えるoptional external baselineを受け取り、同epochで`now_ms < baseline_now_ms`だけをregressionとして`NINLIL_E_DEGRADED`にできます。Production source/update境界は[17章](17-foundation-domain-store.md)のCLOCK_BASELINEです。D1 codecとRuntime接続前はhelper testだけでCR8 completeと扱いません。
 
-Stage 8は最大4回`entropy.fill(16)`を観測し、`OK + 16-byte non-zero candidate`を即採用します。直前createと同値でもcollision checkしません。All-zero、TEMPORARY/PERMANENT/unknown status、non-OK時のpartial bytesはfailed candidateとして次へ進み、4回失敗で`NINLIL_E_ENTROPY`です。Port contract上、Coreは`OK`で返った16-byte bufferがpartial writeかを推定せず、non-zeroなら受理します。
+Stage 9は最大4回`entropy.fill(16)`を観測し、`OK + 16-byte non-zero candidate`を即採用します。直前createと同値でもcollision checkしません。All-zero、TEMPORARY/PERMANENT/unknown status、non-OK時のpartial bytesはfailed candidateとして次へ進み、4回失敗で`NINLIL_E_ENTROPY`です。Port contract上、Coreは`OK`で返った16-byte bufferがpartial writeかを推定せず、non-zeroなら受理します。
 
 Stage 4以降のcleanup orderは、存在する場合だけ`bearer.close` → live Storage transaction/iterator 0を確認 → `storage.close` → service/table/namespace/runtime allocationsのreverse deallocateです。Close/deallocateは元failure statusを上書きせず、Port `user`を解放しません。Origin authorizationとTx Gateはcreate中にcallしません。複数faultをscriptしてもexact sequenceで最初に観測したfailureだけを返し、later fault pointへ到達しません。
 
@@ -1260,16 +1278,17 @@ Total lengthはexact `12 + payload_length + 4`で、trailing byteを許しませ
 
 Payloadは次のfieldだけをexact order/widthで持ちます。
 
-- Type 1 profile binding、payload 167 bytes: `binding_format:u32=1`、`profile_name_length:u16=25`、exact 25-byte ASCII `NINLIL-FOUNDATION-SMALL-1`、`storage_schema:u32`、`role:u32`、`environment:u32`、`runtime_id[16]`、resource limit 19 scalarをABI宣言順かつABIのunsigned width（`max_durable_outbox_payload_bytes`と`max_event_spool_bytes`だけu64、他はu32）、terminal/result-cache/observation retentionを各u64でencodeします。Value totalは183 bytesです。ABI header、reserved field、namespace、paddingは保存しません。
+- Type 1 profile binding format 1（V1 LAB）、payload 167 bytes: `binding_format:u32=1`、`profile_name_length:u16=25`、exact 25-byte ASCII `NINLIL-FOUNDATION-SMALL-1`、`storage_schema:u32`、`role:u32`、`environment:u32`、`runtime_id[16]`、resource limit 19 scalarをABI宣言順かつABIのunsigned width（`max_durable_outbox_payload_bytes`と`max_event_spool_bytes`だけu64、他はu32）、terminal/result-cache/observation retentionを各u64でencodeします。Value totalは183 bytesです。ABI header、reserved field、namespace、paddingは保存しません。
+- Type 1 profile binding format 2（canonical Domain候補）、payload 199 bytes / value total 215 bytes: format 1のprofile name直後へ`storage_profile_id[16]=ASCII("NINLIL-DOMAIN-S1")`、`storage_profile_revision:u32=1`、`minimum_writer_generation:u32=2`、`rollback_epoch:u64=1`を挿入し、`binding_format=2`とします。残り136 bytesはformat 1と同じです。Format 1/2間のfallback、unknown profile ID、writer generation不足、revision/epoch rollbackは`NINLIL_E_UNSUPPORTED`、mutation/Bearer/handle 0です。Exact allocationとold-LAB downgrade testの正本は[ADR-0022](adr/0022-domain-store-schema1-runtime-binding.md)です。
 - Type 2 current identity、payload 68 bytes: `flags:u32`、device/installation/site IDを各16 bytes、`binding_epoch:u64`、`membership_epoch:u64`です。Value totalは84 bytesです。Known flagだけ、presenceとzero/non-zero ID/epochの3.1規則を要求します。
 - Type 3 counter/cursor、payload 16 bytes: `counter_kind:u32`、`value:u64`、`exhausted_marker:u32`です。Value totalは32 bytesです。Kindはkey suffixと一致し、markerはexact 0/1、kind 4では0必須です。Kind 1..3のmarker 1はvalue `UINT64_MAX`を要求しますが、value MAXだけでmarker 1を推測しません。Initial value/markerは全kind 0です。Live owner/indexとの大小、orphan、wrap痕跡の相互validationはL2b domain recovery scanで行い、codec単体の成功条件へ偽装しません。
 - Type 4 capacity metadata、payload 52 bytes: `resource_kind:u32`、`limit:u64`、`used:u64`、`reserved:u64`、`high_water:u64`、`capacity_epoch:u64`、`blocked:u32`、`counter_exhausted:u32`です。Value totalは68 bytesです。Kindはkey suffix、limitはprofileからのchecked derivationとexact一致し、booleanはexact 0/1、epochはnon-zero、checked `used + reserved <= high_water <= limit`です。`counter_exhausted=1`はepoch MAXかつblocked 0を要求しますが、epoch MAXだけでmarkerを推測しません。Initialは11 kindすべてused/reserved/high-water 0、epoch 1、blocked/exhausted 0で、role非使用kindもrecordを省略しません。
 
-Initial bootstrap groupはprofile 1、identity 1、counter 4、capacity 11のexact 17 recordsです。上記codecではencoded key+valueがexact 1,311 bytes、Storage portable usageがexact 17 entries / 1,583 logical bytes（`16 + key_length + value_length`）です。17 recordsをkey unsigned-byte lexicographic順にstageし、`runtime.before_namespace_binding_commit`後に1回だけ`commit(FULL)`します。Commit OK後だけ`runtime.after_namespace_binding_commit`へ到達します。Initial identityはこのHC13 groupに含め、identity-rotation hook occurrenceは0です。
+Initial bootstrap groupはprofile 1、identity 1、counter 4、capacity 11のexact 17 recordsです。Format 1 LAB codecではencoded key+valueがexact 1,311 bytes、Storage portable usageがexact 17 entries / 1,583 logical bytesです。Format 2 Domain候補では32 bytes増えてexact 1,343 / 1,615 bytesです（logical usageは各entry `16 + key_length + value_length`）。Initial adoptionはfresh `READ_WRITE` transactionをbeginし、そのmutation前snapshotでnamespace全体0-rowをiterateし終えてiteratorをcloseした後、同じtransactionへ17 recordsをkey unsigned-byte lexicographic順にstageします。別`READ_ONLY` transactionからのupgrade/rebeginは禁止です。`runtime.before_namespace_binding_commit`後に1回だけ`commit(FULL)`し、Commit OK後だけ`runtime.after_namespace_binding_commit`へ到達します。Initial identityはこのHC13 groupに含め、identity-rotation hook occurrenceは0です。
 
-同一read snapshotで17/17 presentはexisting、0/17かつnamespace全体にkey 0件だけをnew、1..16/17は`NINLIL_E_STORAGE_CORRUPT`と分類します。0/17でもcurrent keyspaceの別keyまたはunrecognized private dataがあればemptyとみなさずcorrupt、recognizable future keyspace/profile versionは`NINLIL_E_UNSUPPORTED`です。Envelope integrityと17-record completenessをprofile compatibilityより先に検査します。Profile exact mismatchは`NINLIL_E_UNSUPPORTED`、write/recovery mutation/Bearer open 0です。
+同一read snapshotで17/17 presentはexisting、0/17かつnamespace全体にkey 0件だけをnew、1..16/17は`NINLIL_E_STORAGE_CORRUPT`と分類します。Storage ABIが証明できない「過去に存在しなかった」は要件にせず、このauthoritative 0-row snapshotだけをinitial adoption authorityにします。0/17でもcurrent keyspaceの別keyまたはunrecognized private dataがあればemptyとみなさずcorrupt、recognizable future keyspace/profile versionは`NINLIL_E_UNSUPPORTED`です。Envelope integrityと17-record completenessをprofile compatibilityより先に検査します。Profile exact mismatchは`NINLIL_E_UNSUPPORTED`、write/recovery mutation/Bearer open 0です。
 
-Initial commitが`COMMIT_UNKNOWN`ならsame transactionをretryせずStorageをclose/fenceし、`NINLIL_E_STORAGE_COMMIT_UNKNOWN`を返します。次createは同一snapshotの17/17をcommitted truth、0/17かつemptyをnon-committed truthとしてauthoritativeに扱い、partialをcorruptにします。Current identity rotationはsingle Type 2 replacementなので、unknown後のold/new exact valueがauthoritative truthです。Bootstrap/identity以外のmulti-record business operationは[17章](17-foundation-domain-store.md)のwitnessによりall-old/all-newへ収束します。
+Initial commitが`COMMIT_UNKNOWN`ならsame transactionをretryせずStorageをclose/fenceし、`NINLIL_E_STORAGE_COMMIT_UNKNOWN`を返します。次createのfresh `READ_ONLY` classification snapshotは17/17をcommitted truth、0/17かつemptyをnon-committed truthとしてauthoritativeに扱い、partialをcorruptにします。0-row OLDから再試行する場合も、そのREAD_ONLY transactionをupgradeせず、fresh READ_WRITE transaction内でnamespace全体0-rowを再証明してから17 CREATEをstageします。Current identity rotationはsingle Type 2 replacementなので、unknown後のold/new exact valueがauthoritative truthです。Bootstrap/identity以外のmulti-record business operationは[17章](17-foundation-domain-store.md)のwitnessによりall-old/all-newへ収束します。
 
 L2aはkey builder、envelope/profile/identity/counter/capacity codec、CRC、17-record presence classification、profile compare、identity forward-rotation判定だけを行うpure modelで、Storage Port callとRuntime bodyを持ちません。L2bはStorage open、single-snapshot load、FULL bootstrap、Stage 5 journal/domain recovery、counter/capacity相互validation、durable health-source scan、identity rotation、cleanup/status mappingを担当します。Clock durable baselineは[17章](17-foundation-domain-store.md)family 6 subtype 62としてD1以降に実装します。
 
@@ -1327,7 +1346,11 @@ Descriptor validation:
 - `local_application_instance_id`とcallback/userはdescriptor digestの対象外ですが、同一Runtimeでの再登録時はlocal application ID、両function pointer値、user pointer値がexact一致必須です。callbacks struct自体のaddressは比較しません。
 - Exact再登録成功は`NINLIL_OK`で、最初の登録が返した**同じ`ninlil_service_t *` pointer value**を返します。alias handle、new allocation、SERVICE used/reserved/high-water増加、descriptor/callback/user copyの置換、registration順変更を行いません。Callerが一時callbacks structを別addressで再構成しても、そのfield値がexactなら同じhandleです。
 - 同じnamespace+service+revisionだが上記contract/local application/function/user valueのどれかが異なるvalid再登録は`NINLIL_E_CONFLICT`、`*out_service = NULL`です。既存handle/state/capacityを変更しません。Callback shape自体がinvalidな場合はlookupより先に7.1の`NINLIL_E_INVALID_ARGUMENT`です。
-- M1aはdescriptor `target_limit == 1`かつruntime `max_targets_per_transaction == 1`だけを受理します。一般にdescriptorのpayload、target、inflight、attempt、evidence等のhard limitがruntime resource profileを超える場合、`service_register`は`NINLIL_E_UNSUPPORTED`です。
+- DesiredState descriptor `target_limit`は1..4、EventFact descriptorはexactly
+  1です。いずれもRuntime `max_targets_per_transaction`以下でなければなりません。
+  一般にdescriptorのpayload、target、inflight、attempt、evidence等のhard
+  limitがruntime resource profileを超える場合、`service_register`は
+  `NINLIL_E_UNSUPPORTED`です。
 - `logical_payload_limit`、`inflight_limit`、`admission_window_ms`、`max_admissions_per_window`、`max_payload_bytes_per_window`、`required_dedup_window_ms`はnon-zeroです。`admission_window_ms`は1..`NINLIL_M1A_MAX_RETRY_DELAY_MS`、`max_payload_bytes_per_window >= logical_payload_limit`です。違反は`NINLIL_E_INVALID_ARGUMENT`です。
 - `supported_evidence_mask`は両M1a familyとも`RECEIVED`、`DURABLY_RECORDED`、`APPLIED`、`VERIFIED`の4 known bitから成るnon-empty subsetです。bit 0 (`NONE`)またはreserved bitを含むdescriptorは`NINLIL_E_INVALID_ARGUMENT`です。M1aにfamily別の追加mask制限はなく、required evidenceはこのdescriptor maskに含まれるexactly 1 non-zero stageをSubmissionが選びます。Receiverは各stageのsemantic factを実際に成立・durably記録した場合だけそのstageをReceiptとして発行し、単にmaskでadvertiseしたことを証拠の成立と扱いません。
 - admission fixed windowは`floor(now_ms / admission_window_ms)`です。admit count/bytesはadmissionと同じFULL transactionで更新します。
@@ -1475,8 +1498,9 @@ Callback contract:
 - M1a delivery tokenは`context_id = delivery.transaction_id`、`generation = N`（当該Deliveryのdurable counter。1始まりのchecked `uint64_t`）、callback前clock sampleのepoch ID、`expires_at_ms = completion_expires_at_ms`です。tokenはそのRuntime内のtransaction/delivery/digest/expiryへbindingし、別Runtime/transactionへ移植できません。`N+1`がchecked不能ならcallbackを呼ばず`COUNTER_EXHAUSTED`でfail closed/reconcileします。
 - Durable counterは常に`delivery_count = callback_invocations = token_generation = N`です。`N`はactual `on_delivery`開始回数であり、**DELIVERY_START FULL commitだけ**が3値を同一post値へchecked +1します。REDELIVER / reconcile actionは`N`を増やしません。`delivery_view.delivery_count == token.generation == N`です。Reconcile viewの`prior_callback_invocations`は当該Deliveryで既に開始commitしたcallback回数（=`N`）のchecked uint64で、REDELIVER直後（次START前）も同じ`N`を写します。どちらもnarrowingしません。
 - Runtimeはcallbackを呼ぶ**前**に上記tokenを割り当て、`delivery_started_at_ms`（sample `now_ms` の写し。**0 可**）と`completion_expires_at_ms = checked(delivery_started_at_ms + application_completion_timeout_ms)`（descriptor 上 timeout≥1 のため **expiry は non-zero**；overflow なら token 発行 0）を計算し、physical `DELIVERY_STARTED`、`token_state=ACTIVE`、transaction/delivery/digest binding、post `N`を1つの`FULL` transactionへcommitします。ACTIVE の RESULT_CACHE timer 5-tuple は17章どおり: epochs non-zero かつ一致、`delivery_started_at_ms` 任意 u64、`token_expires_at_ms = completion_expires_at_ms` かつ both non-zero。commit失敗または不明ならcallbackを呼びません。
-- `CALLBACK_COMPLETE`では`out_sync_result`がvalid必須です。Runtimeがcallback return後にresult cache/Dispositionとtoken invalidation（`token_state=CONSUMED`、timer 5-tuple **retain**。`delivery_started_at_ms=0` の retain 可）を同じ`FULL` transactionへcommitします。commit前にReceiptを発行しません。
-- callback return後のtrusted clock sampleが`completion_expires_at_ms`を超えていれば、同期resultもcommitせずtimeout/recovery規則を適用します。同時刻なら同期resultを先にreduceします。
+- `DELIVERY_STARTED` commit後のcallback直前に、Runtimeは各delivery専用のfresh clock sampleをもう1回取得します。Sampleはtrusted/non-zero epochで、step-entry sampleとactive tokenのepochへexact一致し、`now_ms >= step-entry now_ms`かつ`now_ms >= delivery_started_at_ms`でなければなりません。Same epochで`now_ms > completion_expires_at_ms`ならcallbackを0回のままtoken timeoutを`FULL` commitし、epoch不一致またはrollbackならsuccessへ戻せないrecovery fenceを`FULL` commitします。Temporary/UNCERTAINで時刻を判断できない場合はcallbackを呼ばずerror returnし、active claimを後続のfresh sampleまたはrecoveryへ残します。
+- `CALLBACK_COMPLETE`では`out_sync_result`がvalid必須です。Runtimeはcallback return直後、他のcallback/Port call/public returnより先にresult値とvalid範囲のevidence bytesをRuntime-owned scratchへdeep-copyし、その後に各delivery専用のfresh clock sampleを1回取得します。Sampleがtrusted/non-zero epoch、step/token epoch exact一致、`now_ms >= step-entry now_ms`、`now_ms >= delivery_started_at_ms`を満たし、かつexpiryを超えていない場合だけ、Runtime-owned copyからresult cache/Dispositionとtoken invalidation（`token_state=CONSUMED`、timer 5-tuple **retain**。`delivery_started_at_ms=0` の retain 可）を同じ`FULL` transactionへcommitします。commit前にReceiptを発行しません。
+- callback return後のsampleが`completion_expires_at_ms`を超えていれば同期resultをcommitせず、`EXPIRED + APPLICATION_COMPLETION_TIMEOUT + RECOVERY_REQUIRED`へ`FULL` commitします。同時刻なら同期resultを先にreduceします。Post-callback clockのtemporary/UNCERTAIN/permanent/invalid、epoch不一致、またはrollbackではapplication effectを既に観測不能として、positive resultを捨て、active tokenを`RECOVERY_REQUIRED_TOMBSTONE`または`EXPIRED`、E_REC `OUTCOME_UNKNOWN`、effect `POSSIBLE`へ同じ`FULL`でfenceします。このfence後は同じRuntime instanceで同じcallbackを再実行しません。Fence commitのdefinite failureではlive instanceのdispatch flagを閉じ、COMMIT_UNKNOWNではnamespace mutation fenceを維持します。いずれもrestart Stage 5がdurable ACTIVE truthをsuccessへ戻さずrecoveryへ収束させます。
 - `CALLBACK_DEFER`ではresultを無視します。**追加FULL writeなし**。physical RESULT_CACHEは`delivery_state=DELIVERY_STARTED` + ACTIVEのままです。DEFERRED_WAITは同一Runtime instanceのin-memory/public projectionだけです。Applicationはcallback中にdelivery tokenの値をcopyし、`ninlil_delivery_complete()`成功またはcompletion timeoutまでだけ使用できます。token pointer自体を保持してはなりません。budget上の未使用第2 state-transition reservationは既存規則どおり同一stepへ返します。
 - Deferred中、payload pointerは無効になります。Applicationは必要なdataを自分でcopyします。
 - `CALLBACK_FATAL`、unknown callback action、`CALLBACK_COMPLETE`だがinvalid resultでは、callback前にcommit済みtokenを放置しません。Runtimeはtoken invalidation（`token_state=RECOVERY_REQUIRED_TOMBSTONE`、timer 5-tuple **retain**、started_at の zero 可）、active slot release、Delivery=`RECOVERY_REQUIRED`、effect certainty=`EFFECT_POSSIBLE`を1つのFULL transactionへcommitし、positive Receiptを生成しません。reasonはFATALで`APPLICATION_FAILED`、unknown/invalidで`CALLBACK_CONTRACT`、Runtime healthは`DEGRADED`です。Controller receiverでは`controller.before_callback_recovery_commit` / `controller.after_callback_recovery_commit`、Endpoint receiverでは`endpoint.before_callback_recovery_commit` / `endpoint.after_callback_recovery_commit`のexact pairを通ります。
@@ -1614,9 +1638,17 @@ typedef struct ninlil_submission_result {
 
 Rules:
 
-- `target_count == 0`なら`targets == NULL`、`target_count > 0`なら`targets != NULL`です。M1a admitted countはexactly 1、descriptor/runtime target limitも1です。count 0または2以上はpointer invocation errorではなく`TARGET_COUNT_UNSUPPORTED` rejectionです。
+- `target_count == 0`なら`targets == NULL`、`target_count > 0`なら
+  `targets != NULL`です。DesiredState admitted countは1..4かつ
+  descriptor/runtime limit以内、EventFactはexactly 1です。zero、duplicate、
+  profile/descriptor/runtime上限超過はpointer invocation errorではなく
+  `TARGET_COUNT_UNSUPPORTED` rejectionです。
 - M1aにselector fieldはありません。
-- Runtimeはadmission commit前にtargets/payload/keyをdeep copyします。
+- Runtimeはadmission commit前にtargetsをcanonical 100-byte target recordの
+  unsigned-byte lexicographic順へsortし、exact duplicateを拒否します。
+  targets/payload/keyはdeep copyし、complete roster、targetごとのsummary/
+  evidence reservation、retry cursorを同じFULL admission transactionへcommit
+  します。
 - idempotency keyは1〜64 bytesです。
 - `schema_major`はdescriptor exact match、`schema_minor`はdescriptor min/max内です。違反は`NINLIL_OK + REJECTED + INVALID_SCHEMA`です。
 - payload lengthはdescriptor/runtime上限内、required evidenceはdescriptor maskでsupportedです。違反はそれぞれ`INVALID_PAYLOAD_LENGTH`、`EVIDENCE_UNSUPPORTED` rejectionです。
@@ -1666,6 +1698,12 @@ typedef struct ninlil_target_snapshot {
     uint32_t attempt_in_cycle;
     uint64_t retry_cycle_id;
     uint64_t cumulative_attempts;
+    uint32_t has_late_evidence;
+    uint32_t evidence_counter_saturated;
+    uint64_t valid_evidence_count;
+    uint64_t duplicate_evidence_count;
+    uint64_t raw_evidence_overflow_count;
+    uint64_t late_evidence_count;
 } ninlil_target_snapshot_t;
 
 typedef struct ninlil_transaction_snapshot {
@@ -1750,13 +1788,50 @@ typedef struct ninlil_cancel_result {
 } ninlil_cancel_result_t;
 ```
 
-Public snapshot projectionはsingle targetのためtop-levelとtargetを次のclosed ruleで作ります。
+Public snapshot projectionはtop-level aggregateとcanonical target rosterを次のclosed ruleで作ります。
 
-- `target_count == 1`、`targets[0].target`はadmission concrete target exact copyです。Top-levelとtargetの`state`、`outcome`、`reason`、`latest_evidence`は常にvalue exact一致します。Aggregate用の別reason/stateを作りません。
+- `target_capacity > 0`の`targets`は可変長ABI structの連続配列です。先頭要素の
+  `struct_size`を配列全体のbyte strideとし、全provided要素は
+  `abi_version == NINLIL_ABI_VERSION`かつ先頭と**同じ**`struct_size`でなければ
+  なりません。Strideは少なくともlibrary既知の`sizeof(ninlil_target_snapshot_t)`
+  で、各要素addressは`targets + index * stride`のchecked byte算術だけで導出
+  します。Library既知のC配列添字（`targets[index]`）でfuture-size要素を歩き
+  ません。`index * stride`またはbase address加算がoverflowする入力は
+  `NINLIL_E_INVALID_ARGUMENT`です。Libraryは各要素の既知prefixだけを書き、
+  `struct_size`が既知sizeより大きい場合のunknown tailをbyte-for-byte変更
+  しません。
+- `target_count`はdurable admitted roster count、`targets[]`はcanonical順の
+  concrete target exact copyです。Caller capacityが不足する場合は
+  `NINLIL_E_BUFFER_TOO_SMALL`とrequired `target_count`だけを返し、target arrayを
+  部分更新しません。Capacity比較前に全provided要素のheader/strideを検証し、
+  header/stride errorでもtarget arrayは変更しません。
+- 各targetは自身のdurable delivery phase/outcome/reason/evidence/counterを返します。
+  未完targetのOutcomeは`NONE`であり、別targetまたはtransaction aggregateの
+  state/reason/evidence/counterをfallbackとしてコピーしません。Top-levelは
+  `ALL_TARGETS` aggregateで、全targetがrequired evidenceへ到達したときだけ
+  `SATISFIED`です。Single-targetでは従来どおりtop-levelとtarget projectionが
+  一致します。
 - Internal READY/HELD_READY→`TXN_READY`、ATTEMPT_PREPARED→`TXN_DISPATCHING`、AWAITING_RECEIPT/AWAITING_EVIDENCE/AWAITING_GRACE→`TXN_AWAITING_EVIDENCE`、RETRY_WAIT/RECONCILE_WAIT→`TXN_WAITING_WINDOW`、Event PARKED_RETRY→`TXN_PARKED_RETRY`、全terminal→`TXN_TERMINAL`です。CommandでPARKED_RETRYを生成しません。
 - Non-terminal Outcomeは常に`NONE`です。Terminal stateだけが5つのreachable non-zero Outcomeを持ち、`SUPERSEDED_RESERVED`は0件です。
 - Public `TXN_READY` / `TXN_DISPATCHING`と通常のaccepted-send AWAITINGへ入るcommitはreasonを`NONE`へresetします。WAITING_WINDOWはその待機を作ったexact durable reason、cancel pending/too-late AWAITINGは対応cancel reason、deadline後のevidence waitは`EFFECT_POSSIBLE_EVIDENCE_PENDING`、PARKEDは常に`EVENT_RETRY_CYCLE_PARKED`、terminalはOutcomeを決めたpersist済みterminal reasonです。Late evidenceはterminal reasonを変えません。
-- `latest_evidence`はsummaryのlatest stage、未受信は`NONE`です。Top/targetで同じ値を返します。
+- Top-level `latest_evidence`はtarget-local latest stageの最大値、各targetの
+  `latest_evidence`はそのtarget自身のdurable値、未受信targetは`NONE`です。
+  Single-targetの場合だけ自然に同じ値になります。
+- 各targetの`has_late_evidence`は、そのtargetでterminal後またはdeadline
+  verdict `MISSED`のvalid new materialを1件以上durable commitしたときだけ1です。
+  `valid_evidence_count`、`duplicate_evidence_count`、
+  `raw_evidence_overflow_count`、`late_evidence_count`は当該targetだけの
+  saturating uint64 counterです。本節をこのflagのtransition authorityとします。
+  Increment対象が`UINT64_MAX`未満ならchecked +1しflagを変更しません。このため
+  `UINT64_MAX-1 -> UINT64_MAX`のcommit直後はflag 0が正規形です。その後、対象が
+  既に`UINT64_MAX`の状態でさらにincrementを要求されたcommitだけが、値をMAXに
+  保ったまま`evidence_counter_saturated=1`をstickyにします。Flag 1なら4 counterの
+  少なくとも1つはMAXでなければならず、flag 0とMAXの組合せは許容します。別target
+  またはtop-level aggregateの値をfallbackしません。
+- Top-level `has_late_evidence`は全targetのORです。Target-local late materialは
+  terminal Outcome/reason/deadline verdictを反転せず、exact duplicateは
+  `duplicate_evidence_count`と`record_revision`以外のsemantic public fieldを
+  変更しません。
 
 Family-specific all-field rule:
 
@@ -1766,8 +1841,8 @@ Family-specific all-field rule:
 | deadline epoch/time/grace | non-zero admitted epoch / finite absolute time / admitted grace | all-zero epoch / `NINLIL_NO_DEADLINE` / 0 |
 | `deadline_verdict` | active before deadline=`PENDING`; proven in-time=`MET`; proven late/EXPIRED=`MISSED`; time/effect unresolved after deadline or OUTCOME_UNKNOWN=`INDETERMINATE`; CANCELLED/FAILED before deadline proof=`PENDING` | always `NOT_APPLICABLE` |
 | `event_park_cause` | always `NONE` | PARKEDだけexact non-zero cause、他stateは`NONE` |
-| target `attempt_in_cycle` / `retry_cycle_id` | 0 / 0 | current cycle attempts 0..8 / admissionで1、resumeごとchecked +1 |
-| target `cumulative_attempts` | Command lifetimeのcommitted attempts used | Event lifetimeの全committed attempts合計 |
+| target `attempt_in_cycle` / `retry_cycle_id` | 当該targetのlifetime committed attempts 0..8 / 0（V1は単一cycle） | current cycle attempts 0..8 / admissionで1、resumeごとchecked +1 |
+| target `cumulative_attempts` | 当該targetのlifetime committed attempts。V1では`attempt_in_cycle`と一致し、top-level internal cumulativeは全target合計 | Event lifetimeの全committed attempts合計 |
 | `event_spool_revision` | 0 | admission=1からchecked mutation value、terminal retention中もnon-zero |
 | `has_late_evidence` | summary late flag 0/1 | summary late flag 0/1 |
 | `explicitly_discarded` | 0 | audited discard terminalだけ1、required Receipt terminal/activeは0 |
@@ -2257,7 +2332,7 @@ External side effect前のbudget preflightは次のworst-case reservationです�
 - Valid headerだがcapacity 11未満なら`NINLIL_E_BUFFER_TOO_SMALL`とrequired `entry_count = 11`を返し、entryを部分書込しません。capacity 11以上なら先頭11要素だけへexact orderで書き、`entry_count = 11`、余剰要素は変更しません。
 ### 11.3 Metrics and health
 
-MetricsはRuntime create stage 9からdestroy fenceまでのobservability counterで、transaction journalの代替ではありません。各createはfreshly drawn non-zero `metrics_epoch_id`、全counter 0で始まり、restart時に旧counterを再構成しません。Metrics epochのstrict uniquenessは保証せず、Runtime/start sampleと一緒に解釈します。`started_clock_epoch_id`/`started_at_ms`はcreate stage 7のtrusted sampleへ固定し、後のepoch changeで書き換えません。
+MetricsはRuntime create stage 10からdestroy fenceまでのobservability counterで、transaction journalの代替ではありません。各createはfreshly drawn non-zero `metrics_epoch_id`、全counter 0で始まり、restart時に旧counterを再構成しません。Metrics epochのstrict uniquenessは保証せず、Runtime/start sampleと一緒に解釈します。`started_clock_epoch_id`/`started_at_ms`はcreate stage 6のtrusted sampleへ固定し、後のepoch changeで書き換えません。
 
 | Counter | Exact increment rule |
 | --- | --- |
@@ -2279,7 +2354,7 @@ MetricsはRuntime create stage 9からdestroy fenceまでのobservability counte
 
 Runtime healthはactive degraded-cause multisetから導出します。Cause 0件なら`health = OK`かつ`degraded_reason = NONE`、1件以上なら`health = DEGRADED`かつ次priorityで最上位のnon-zero reasonを返します。`HEALTH_FATAL`は生成しません。
 
-Lifecycle L1 pure reducerのhealth入力は次表の8 slotにclosedです。各slotはfree-form reasonでなくnon-negative reference countで、lowest-numberのnon-zero slotだけをprojectします。全slot zeroなら`OK/NONE`、1件以上なら`DEGRADED/該当reason`で、同priorityは最後のreferenceがclearされるまで残ります。Generic projectorはpublished Runtimeのhealth表示用にpriority 1/2も扱えます。Stage 9は別のpublish gateを必須とし、Stage 5 recovery completeかつpriority 1/2 zeroのときだけproject可能です。Stage 9へ渡すのはStage 5がdurable markerから再構成したreferenceだけで、Provider/clock/entropy/Bearer等のinstance-local causeはrestart時にcopyしません。
+Lifecycle L1 pure reducerのhealth入力は次表の8 slotにclosedです。各slotはfree-form reasonでなくnon-negative reference countで、lowest-numberのnon-zero slotだけをprojectします。全slot zeroなら`OK/NONE`、1件以上なら`DEGRADED/該当reason`で、同priorityは最後のreferenceがclearされるまで残ります。Generic projectorはpublished Runtimeのhealth表示用にpriority 1/2も扱えます。Stage 7はStage 5 recoveryとStage 6 T5 clock更新後のfresh scanからdurable sourceを再構成し、priority 1/2 zeroだけをStage 10 publish gateへ渡します。Provider/clock/entropy/Bearer等のinstance-local causeはrestart時にcopyしません。
 
 | Priority | Active cause / reason | Add / clear boundary |
 | ---: | --- | --- |
@@ -2311,7 +2386,7 @@ Transaction entropy成功はattempt keyを、send成功はreceive/state keyをcl
 
 同priority/causeは最後のdistinct source/marker解消までclearしません。複数causeが同時発生しても表のpriorityだけでcurrent `degraded_reason`を決め、発生順やhash iterationに依存しません。Higher cause解消時は次active reasonへ移り、全cause解消時だけOK/NONEへ戻ります。通常のAPI invalid/rejection、Bearer WOULD_BLOCK、business `OUTCOME_UNKNOWN` transactionだけではRuntime healthをDEGRADEDにしません。
 
-Health counter自体を別journalへ二重保存せず、Stage 5 recovery scanがdurable source markersからactive multisetを再構成します。対象は未解決commit fence、Delivery `RECOVERY_REQUIRED`のpersist済みreason、namespace/transaction/cycle/resourceのcounter-exhausted marker、persist済みinternal-invariant fenceです。各markerを1 referenceとして同じpriorityへ数え、valid reconcile/authoritative recoveryでmarkerをclearするFULL commitが同じreferenceをclearします。Storage/Bearer/entropy/provider/clockのRuntime-instance-local causeはrestartで盲目的にcopyせず、new Port/provider observationで再評価します。Recovery完了時に未解決Storage fenceが残る場合はcreateを成功させず対応API error、成功createでは残存durable markerだけをStage 9 healthへprojectします。Metrics counterはnew epochでzeroでもhealth projectionはDEGRADEDになり得ます。
+Health counter自体を別journalへ二重保存せず、Stage 7のT6 fresh scanがdurable source markersからactive multisetを再構成します。対象は未解決commit fence、Delivery `RECOVERY_REQUIRED`のpersist済みreason、namespace/transaction/cycle/resourceのcounter-exhausted marker、persist済みinternal-invariant fenceです。各markerを1 referenceとして同じpriorityへ数え、valid reconcile/authoritative recoveryでmarkerをclearするFULL commitが同じreferenceをclearします。Storage/Bearer/entropy/provider/clockのRuntime-instance-local causeはrestartで盲目的にcopyせず、new Port/provider observationで再評価します。Recovery完了時に未解決Storage fenceが残る場合はcreateを成功させず対応API error、成功createでは残存durable markerだけをStage 10 healthへprojectします。Metrics counterはnew epochでzeroでもhealth projectionはDEGRADEDになり得ます。
 
 ## 12. Public function signature
 
@@ -2437,9 +2512,9 @@ Definite group failureではatomic Storage contractによりtoken mutation 0、C
 
 | Request | Result |
 | --- | --- |
-| named reserved role `CELL_AGENT_RESERVED` | runtime_create = `NINLIL_E_UNSUPPORTED` |
+| Cell Agentからapplication service登録 | runtime_createはsupported、service_register = `NINLIL_E_UNSUPPORTED` |
 | role SIMULATOR | enum自体なし。外部harnessを使用 |
-| named reserved environment `LAB_RESERVED` / `FIELD_RESERVED` / `PRODUCTION_RESERVED` | runtime_create = `NINLIL_E_UNSUPPORTED` |
+| `TEST` / `LAB` / `FIELD` / `PRODUCTION` environment | 全roleでruntime_create対象。旧`*_RESERVED`名はsource alias |
 | named reserved family `LATEST_STATE_RESERVED` / `MEASUREMENT_RESERVED` / `TRANSFER_RESERVED` / `CONFIG_RESERVED` / `NETWORK_CONTROL_RESERVED` | service_register = `NINLIL_E_UNSUPPORTED` |
 | role/environment/family/direction/authority/apply/custody等のregistry外numeric enum | 対応API = `NINLIL_E_INVALID_ARGUMENT`。named reservedへ丸めない |
 | EventFact/Command descriptorのwrong direction・authority・apply contract | service_register = `NINLIL_E_UNSUPPORTED`、service NULL |
@@ -2451,7 +2526,7 @@ Definite group failureではatomic Storage contractによりtoken mutation 0、C
 | atomic application storage participant | service_register = `NINLIL_E_UNSUPPORTED` |
 | supersede/replace | ABI 0.1にfield/APIなし。unknown tailはignoredで検出を主張せず、新ABI/capabilityが必要 |
 | fragment/attachment | ABI 0.1にfield/APIなし。unknown tailはignoredで検出を主張せず、新ABI/capabilityが必要 |
-| 0または2以上のtargets | `NINLIL_OK` + submission REJECTED / `TARGET_COUNT_UNSUPPORTED` |
+| zero、duplicate、profile/Runtime/Service limit超過target roster、またはEventFactの2以上targets | `NINLIL_OK` + submission REJECTED / `TARGET_COUNT_UNSUPPORTED` |
 | Endpointからcancel、またはControllerのexisting EventFact cancel | `NINLIL_E_UNSUPPORTED`。EventFact diagnostic reasonは`EVENT_FACT_IMMUTABLE`、API result zero、spool不変 |
 | Controllerからevent_resume/discard | `NINLIL_E_UNSUPPORTED`、result INVALID/zero |
 | otherwise well-formed query/cancel/event managementのunknown・retention-cleaned transaction ID | `NINLIL_E_NOT_FOUND`、各error-output規則どおりzero |
@@ -2471,14 +2546,18 @@ ABIから14章canonical fieldへの入力mappingは次で固定します。
 | source application instance | registered descriptorの`local_application_instance_id` |
 | family | descriptor `family`。public valueはEventFact=1、DesiredStateCommand=2 |
 | schema identity/version | descriptor `schema_id/schema_major`とSubmission `schema_minor` |
-| concrete target roster | Submission `target_count`と各`ninlil_concrete_target_t`全field。M1a admitted countはexactly 1 |
+| concrete target roster | Submission `target_count`とcanonical順の各`ninlil_concrete_target_t`全field。DesiredStateは1..4、EventFactはexactly 1 |
 | effect deadline、evidence grace、required evidence | Submission同名field |
 | family metadata | DesiredStateは`generation`、EventFactは`event_id` |
 | content digest、payload length | Submission `content_digest`と`payload.length` |
 
 Idempotency keyは`source application instance + namespace + service ID` scopeのlookup keyでありcanonical bytesへ含めません。source runtime/local identity、transaction/attempt ID、grant/provider identity・revision・expiry、permit、raw payload、apply contractのdirect valueも含めません。apply contractを含むservice contractはdescriptor digestでbindingします。caller scheduled/not-before fieldはM1a ABIに存在せず、canonicalへ追加しません。
 
-0または2以上のtargetは`TARGET_COUNT_UNSUPPORTED`でrejectionし、M1a required golden vectorに2-target success/sortを置きません。2-target canonical fixtureはM1b以降のforward-only資料であり、M1a conformance claimに使用しません。
+Zero、duplicate、profile/Runtime/Service limit超過targetは
+`TARGET_COUNT_UNSUPPORTED`でrejectionします。Required conformanceには
+2-target success/canonical sort/idempotent replay/restartと、上記negative
+rosterを含めます。Selector、named group、`ANY_TARGET`、quorum、best-effort
+broadcastはABI 0.1に存在せず、exact rosterから推測しません。
 
 ## 16. M1a Service fixture requirements
 

@@ -36,6 +36,11 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import domain_scan_crossrow_vector_gen as s1  # noqa: E402
 import domain_scan_crossrow_d3s2_vector_gen as s2  # noqa: E402
+from domain_scan_crossrow_d3s4_authority import (  # noqa: E402
+    AuthorityError as CrossrowAuthorityError,
+    canonical_bytes as crossrow_canonical_bytes,
+    load_expanded as load_crossrow_expanded,
+)
 from domain_scan_crossrow_d3s2_vector_gen import (  # noqa: E402
     MODE23_ACCEPTED_L,
     from_hex,
@@ -79,6 +84,7 @@ D1_SHA256 = (
 D1_COUNT = 1549
 CROSSROW_FORMAT_D3S2 = "ninlil-domain-scan-crossrow-v1-d3s2"
 CROSSROW_FORMAT_D3S3 = "ninlil-domain-scan-crossrow-v1-d3s3"
+CROSSROW_FORMAT_D3S4 = "ninlil-domain-scan-crossrow-v1-d3s4"
 # Frozen D3-S2 raw authority (full-file when format was d3s2 / 144 vectors).
 CROSSROW_D3S2_RAW_SHA256 = (
     "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec"
@@ -87,6 +93,17 @@ CROSSROW_D3S2_CONTENT_SHA256 = (
     "a9fccb12d932f0082111c94da3a23cd6680dc4bedecb2108e739bdca55d80fed"
 )
 CROSSROW_D3S2_COUNT = 144
+# Current append-only D3-S4 authority.  DSD1 still consumes only the frozen
+# D3-S2 projection below; these pins prove that the containing authority is the
+# reviewed successor rather than accepting an arbitrary document that merely
+# copies d3s2_prefix_authority metadata.
+CROSSROW_D3S4_RAW_SHA256 = (
+    "33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15"
+)
+CROSSROW_D3S4_CONTENT_SHA256 = (
+    "b18f717e2752c9d617d575c86194ef644f301706263674f2666a5d29ed951e25"
+)
+CROSSROW_D3S4_COUNT = 468
 # Backward-compat aliases (d3s2-only worktrees).
 CROSSROW_FORMAT = CROSSROW_FORMAT_D3S2
 CROSSROW_SHA256 = CROSSROW_D3S2_RAW_SHA256
@@ -140,19 +157,79 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _assert_d3s2_projection_metadata(
+    doc: Dict[str, Any], successor: str
+) -> None:
+    """Verify the frozen D3-S2 projection advertised by a successor."""
+    auth = doc.get("d3s2_prefix_authority") or {}
+    if int(doc.get("d3s2_prefix_count", -1)) != CROSSROW_D3S2_COUNT:
+        raise SystemExit(
+            f"{successor} d3s2_prefix_count pin fail: "
+            f"{doc.get('d3s2_prefix_count')}"
+        )
+    if auth.get("format") != CROSSROW_FORMAT_D3S2:
+        raise SystemExit(
+            f"{successor} prefix authority format pin fail: "
+            f"{auth.get('format')!r}"
+        )
+    if int(auth.get("vector_count", -1)) != CROSSROW_D3S2_COUNT:
+        raise SystemExit(
+            f"{successor} prefix authority count pin fail: "
+            f"{auth.get('vector_count')}"
+        )
+    if auth.get("raw_sha256") != CROSSROW_D3S2_RAW_SHA256:
+        raise SystemExit(
+            f"{successor} prefix authority raw_sha256 pin fail "
+            f"{auth.get('raw_sha256')} != {CROSSROW_D3S2_RAW_SHA256}"
+        )
+    if auth.get("content_sha256") != CROSSROW_D3S2_CONTENT_SHA256:
+        raise SystemExit(
+            f"{successor} prefix authority content_sha256 pin fail "
+            f"{auth.get('content_sha256')} != {CROSSROW_D3S2_CONTENT_SHA256}"
+        )
+    if int(doc.get("vector_count", -1)) < CROSSROW_D3S2_COUNT:
+        raise SystemExit(
+            f"{successor} vector_count pin fail: {doc.get('vector_count')}"
+        )
+
+
 def _assert_authority_pins() -> None:
-    """Pin D1 + crossrow. D3-S3 append keeps frozen D3-S2 144-prefix authority.
+    """Pin D1 + crossrow; successors retain frozen D3-S2 projection authority.
 
     Accept either:
     - historical d3s2 full-file raw/format/count, or
-    - d3s3 file whose d3s2_prefix_authority matches the frozen d3s2 pins
-      (raw_sha256 / content_sha256 / count) without weakening that pin.
+    - d3s3 file whose d3s2_prefix_authority matches the frozen d3s2 pins, or
+    - the exact reviewed d3s4 full authority carrying that same projection.
+
+    D3-S4 is pinned by full-file raw SHA and canonical content SHA in addition
+    to the embedded projection metadata.  This prevents a false green from an
+    unreviewed successor that copies otherwise-valid D3-S2 metadata.
     """
     _assert_d1_authority_pin()
     if not CROSSROW_VECTORS.is_file():
         raise SystemExit(f"missing crossrow authority {CROSSROW_VECTORS}")
-    got = _sha256_file(CROSSROW_VECTORS)
-    doc = json.loads(CROSSROW_VECTORS.read_text(encoding="utf-8"))
+    try:
+        source_raw = CROSSROW_VECTORS.read_bytes()
+        source_probe = json.loads(source_raw)
+        if (
+            isinstance(source_probe, dict)
+            and source_probe.get("format")
+            == "ninlil-domain-scan-crossrow-manifest-v1"
+        ):
+            doc = load_crossrow_expanded(
+                CROSSROW_VECTORS, pin_fixed_authority=True
+            )
+            got = hashlib.sha256(crossrow_canonical_bytes(doc)).hexdigest()
+        else:
+            doc = source_probe
+            got = hashlib.sha256(source_raw).hexdigest()
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        CrossrowAuthorityError,
+    ) as exc:
+        raise SystemExit(f"unreadable crossrow authority: {exc}") from exc
     fmt = doc.get("format")
     if fmt == CROSSROW_FORMAT_D3S2:
         if got != CROSSROW_D3S2_RAW_SHA256:
@@ -165,33 +242,25 @@ def _assert_authority_pins() -> None:
             )
         return
     if fmt == CROSSROW_FORMAT_D3S3:
-        auth = doc.get("d3s2_prefix_authority") or {}
-        if int(doc.get("d3s2_prefix_count", -1)) != CROSSROW_D3S2_COUNT:
+        _assert_d3s2_projection_metadata(doc, "d3s3")
+        return
+    if fmt == CROSSROW_FORMAT_D3S4:
+        if got != CROSSROW_D3S4_RAW_SHA256:
             raise SystemExit(
-                f"d3s3 d3s2_prefix_count pin fail: {doc.get('d3s2_prefix_count')}"
+                "d3s4 authority sha mismatch: "
+                f"{got} != {CROSSROW_D3S4_RAW_SHA256}"
             )
-        if auth.get("format") != CROSSROW_FORMAT_D3S2:
+        if int(doc.get("vector_count", -1)) != CROSSROW_D3S4_COUNT:
             raise SystemExit(
-                f"d3s3 prefix authority format pin fail: {auth.get('format')!r}"
+                f"d3s4 vector_count pin fail: {doc.get('vector_count')}"
             )
-        if int(auth.get("vector_count", -1)) != CROSSROW_D3S2_COUNT:
+        if doc.get("content_sha256") != CROSSROW_D3S4_CONTENT_SHA256:
             raise SystemExit(
-                f"d3s3 prefix authority count pin fail: {auth.get('vector_count')}"
+                "d3s4 content_sha256 pin fail "
+                f"{doc.get('content_sha256')} != "
+                f"{CROSSROW_D3S4_CONTENT_SHA256}"
             )
-        if auth.get("raw_sha256") != CROSSROW_D3S2_RAW_SHA256:
-            raise SystemExit(
-                "d3s3 prefix authority raw_sha256 pin fail "
-                f"{auth.get('raw_sha256')} != {CROSSROW_D3S2_RAW_SHA256}"
-            )
-        if auth.get("content_sha256") != CROSSROW_D3S2_CONTENT_SHA256:
-            raise SystemExit(
-                "d3s3 prefix authority content_sha256 pin fail "
-                f"{auth.get('content_sha256')} != {CROSSROW_D3S2_CONTENT_SHA256}"
-            )
-        if int(doc.get("vector_count", -1)) < CROSSROW_D3S2_COUNT:
-            raise SystemExit(
-                f"d3s3 vector_count pin fail: {doc.get('vector_count')}"
-            )
+        _assert_d3s2_projection_metadata(doc, "d3s4")
         return
     raise SystemExit(f"crossrow format pin fail: {fmt!r}")
 

@@ -339,6 +339,20 @@ struct ninlil_pcp {
     ninlil_pcp_ram_trust_t ram_trust;
     ninlil_pcp_ram_validate_t ram_validate;
 
+    /*
+     * Single-use issue sample pin (docs/30 §15.3.1): R2 samples class-D once,
+     * pins here; ninlil_pcp_issue consumes without re-sample (no TOCTOU).
+     * Cleared on consume, clear API, or failed pin path. Direct issue callers
+     * with live==0 sample normally at I1.
+     *
+     * issue_cs_held: pin→validate→issue critical section (holds in_api so no
+     * other API can re-pin/overwrite S mid-path).
+     */
+    uint32_t issue_sample_sticky_live;
+    uint32_t issue_sample_sticky_klass; /* internal clock class encoding */
+    uint32_t issue_cs_held; /* 1 while R2 owns pin→issue CS */
+    ninlil_time_sample_t issue_sample_sticky;
+
     ninlil_pcp_r2_stats_t stats;
     ninlil_pcp_error_t last_error;
 
@@ -438,6 +452,49 @@ ninlil_pcp_status_t ninlil_pcp_issue(
     const ninlil_pcp_issue_request_t *request,
     ninlil_radio_hal_permit_snapshot_t *out_snapshot,
     ninlil_pcp_error_t *out_error);
+
+/*
+ * R2 private: sample class-D clock exactly once and pin for the next
+ * ninlil_pcp_issue on this object (same accepted S). No second sample.
+ * On non-OK, sticky is cleared. out_sample receives the accepted sample when
+ * status is OK (TRUSTED path) or CLOCK_UNCERTAIN (sample still populated for
+ * gate mapping); CLOCK_FAULT may leave out_sample zeroed after fence apply.
+ */
+ninlil_pcp_status_t ninlil_pcp_issue_sample_pin(
+    ninlil_pcp_t *pcp,
+    ninlil_time_sample_t *out_sample,
+    ninlil_pcp_error_t *out_error);
+
+/*
+ * R2 private: pin an already-accepted class-D sample from
+ * ninlil_r2_private_sample_authority_clock for the next ninlil_pcp_issue
+ * (no second sample; same-S TOCTOU closed). accepted must be TRUSTED with
+ * non-zero epoch. Holds pin→issue CS until issue/clear.
+ */
+ninlil_pcp_status_t ninlil_pcp_issue_sample_pin_accepted(
+    ninlil_pcp_t *pcp,
+    const ninlil_time_sample_t *accepted,
+    ninlil_pcp_error_t *out_error);
+
+/* Drop any unused sticky sample without sampling. */
+void ninlil_pcp_issue_sample_clear(ninlil_pcp_t *pcp);
+
+/*
+ * docs/30 §11.2.3 / docs/24: common CLOCK fence FULL-commit helper on existing
+ * published meta only (MUST NOT create first meta).
+ *
+ * Return closed durable outcome for sample three-axis mapping:
+ *   FULL_OK | COMMIT_UNKNOWN | DEFINITE_FAIL | UNPUBLISHED
+ * RAM CLOCK bit is always set when published; durable outcome is separate.
+ */
+#define NINLIL_R2_FC_DURABLE_FULL_OK ((uint8_t)0u)
+#define NINLIL_R2_FC_DURABLE_COMMIT_UNKNOWN ((uint8_t)1u)
+#define NINLIL_R2_FC_DURABLE_DEFINITE_FAIL ((uint8_t)2u)
+#define NINLIL_R2_FC_DURABLE_UNPUBLISHED ((uint8_t)3u)
+
+uint8_t ninlil_r2_private_commit_clock_fault_fence(
+    ninlil_pcp_t *pcp,
+    ninlil_pcp_fence_code_t code);
 
 ninlil_pcp_status_t ninlil_pcp_advance_expired_heads(
     ninlil_pcp_t *pcp,
