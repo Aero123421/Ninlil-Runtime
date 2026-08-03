@@ -20,12 +20,14 @@ extern "C" {
 #define NINLIL_NVB1_KIND_BINDING_SET ((uint8_t)1u)
 #define NINLIL_NVB1_KIND_FABRIC_PACKET ((uint8_t)2u)
 #define NINLIL_NVB1_KIND_STATUS ((uint8_t)3u)
+#define NINLIL_NVB1_KIND_BOARD_INFO ((uint8_t)4u)
 
 #define NINLIL_NVB1_BINDING_MIN ((size_t)557u)
 #define NINLIL_NVB1_BINDING_MAX ((size_t)966u)
 #define NINLIL_NVB1_FABRIC_MIN ((size_t)587u)
 #define NINLIL_NVB1_FABRIC_MAX ((size_t)760u)
 #define NINLIL_NVB1_STATUS_BYTES ((size_t)16u)
+#define NINLIL_NVB1_BOARD_INFO_BYTES ((size_t)32u)
 
 #define NINLIL_NVB1_STATUS_INSTALLED ((uint32_t)1u)
 #define NINLIL_NVB1_STATUS_ACCEPTED_LOCAL ((uint32_t)2u)
@@ -55,6 +57,12 @@ typedef struct ninlil_nvb1_local_status {
     uint64_t pair_generation;
 } ninlil_nvb1_local_status_t;
 
+typedef struct ninlil_nvb1_board_info {
+    uint8_t clock_epoch_id[16];
+    uint64_t clock_now_ms;
+    uint32_t clock_trust;
+} ninlil_nvb1_board_info_t;
+
 ninlil_nvb1_status_t ninlil_nvb1_encode(
     const ninlil_nvb1_envelope_t *envelope,
     uint8_t *out,
@@ -73,6 +81,14 @@ ninlil_nvb1_status_t ninlil_nvb1_status_encode(
 ninlil_nvb1_status_t ninlil_nvb1_status_decode(
     const uint8_t encoded[NINLIL_NVB1_STATUS_BYTES],
     ninlil_nvb1_local_status_t *out_status);
+
+ninlil_nvb1_status_t ninlil_nvb1_board_info_encode(
+    const ninlil_nvb1_board_info_t *info,
+    uint8_t out[NINLIL_NVB1_BOARD_INFO_BYTES]);
+
+ninlil_nvb1_status_t ninlil_nvb1_board_info_decode(
+    const uint8_t encoded[NINLIL_NVB1_BOARD_INFO_BYTES],
+    ninlil_nvb1_board_info_t *out_info);
 
 #ifdef __cplusplus
 }

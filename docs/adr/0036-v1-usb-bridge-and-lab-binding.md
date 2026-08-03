@@ -77,6 +77,7 @@ spans NCG1 frames.
 | `BINDING_SET` | 1 | Controller to board | exact LAB binding below |
 | `FABRIC_PACKET` | 2 | either | one complete NFL1 Application or Receipt |
 | `STATUS` | 3 | response | exact 16-byte local status |
+| `BOARD_INFO` | 4 | board to Controller | exact 32-byte boot clock anchor |
 
 Unknown version/kind/flags, zero operation ID, wrong direction or wrong length
 is rejected before binding/work-slot, Storage, RF or Runtime mutation. The
@@ -101,6 +102,30 @@ A received STATUS resolves only the exact outstanding local ID. Unknown,
 duplicate and wrong-direction STATUS messages are rejected without releasing
 another operation or fencing an otherwise continuous link. This bounded
 monotonic rule proves uniqueness without an unbounded seen-ID set.
+
+`BOARD_INFO` is the only one-way NVB1 notification. Its payload is
+`clock_epoch_id[16]`, `clock_now_ms:u64`, `clock_trust:u32` and
+`reserved_zero:u32`. The epoch is non-zero, trust is exactly `TRUSTED`, and
+reserved bits are zero. The board emits it exactly once at the start of every
+physical link generation, before accepting `BINDING_SET`. It consumes the
+normal outbound NCG1 sequence and outbound NVB1 operation ID, but has no
+`STATUS` response and occupies no request slot. The Controller must
+successfully apply the anchor before the bridge allows construction or
+submission of the boot's LAB binding. A failed anchor handoff fences that
+physical-link generation. It uses the epoch and sampled time to configure the
+Controller clock view; the USB boundary remains
+trusted-local and this notification is not an authenticated network-time
+protocol.
+
+The board firmware does not compile a Controller Runtime ID. When its
+provisioner starts in USB-parent mode, the first valid binding derives the
+local Runtime ID from the binding's already-validated `controller_side`.
+That ID becomes immutable for the rest of the boot, and every later pair must
+name the same Controller Runtime. A malformed binding, inconsistent Service
+directions, clock-epoch mismatch, failed generation/secret floor, or failed
+Storage/N6 admission does not publish an identity. A peer provisioner remains
+explicitly configured and never uses this adoption mode. This is bounded LAB
+bootstrap, not automated Join, field reassignment or hardware identity.
 
 `INSTALLED` carries the exact accepted binding `pair_generation`; every other
 STATUS carries zero. Provisioning results map exactly as follows:
@@ -462,10 +487,14 @@ background task or allocate from the heap. The application calls one bounded
 owner step from the same task that owns the USB byte stream and radio path.
 
 The owner is initialized only with already-bound platform dependencies: the
-local Runtime ID, trusted clock, durable provisioner, R7 crypto provider,
-SX1262 PHY, PCP authority, radio HAL and active live radio profile. A
-successful `BINDING_SET` callback creates exactly two R7 directional binds
-from the four returned N6 handles and the authenticated binding context IDs.
+trusted clock, durable provisioner, R7 crypto provider, SX1262 PHY, PCP
+authority, radio HAL and active live radio profile. A peer owner also receives
+its explicit local Runtime ID. The USB-parent owner instead starts with the
+unbound Controller-adoption provisioner from section 2; after the first valid
+binding durably publishes that Controller Runtime ID, the owner initializes
+the one packet-link with the adopted ID. It does not start RF before that
+point. A successful `BINDING_SET` callback creates exactly two R7 directional
+binds from the four returned N6 handles and the authenticated binding context IDs.
 Only the direction transmitted by the local endpoint receives PCP/HAL/live
 authority. The callback then installs the exact pair into the fixed packet
 link. Capacity or any contradiction fences the owner; it cannot fall back to

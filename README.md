@@ -32,8 +32,10 @@ binding永続化、双方向packet、close/reopen generationを確認しまし�
 消費しないこともHost試験で確認しています。USB bridge・provisioner・radio adapterを
 一つのbounded stepで所有する固定board ownerも実装し、Host模擬経路で
 USB→SX1262 spy→peerと逆向きReceipt→USBを確認しました。同じownerはESP-IDF v5.5.3の
-全private同時ON構成のcomponent archiveへcompile/package済みです。実ESPアプリへの
-platform依存注入と物理HILは未完のため、縦断機能の状態は`PROPOSED`のままです。
+全private同時ON構成のcomponent archiveへcompile/package済みです。USB接続世代ごとの
+trusted clock anchorと、最初のdurable bindingからController Runtime IDを採用してから
+RFを開始する起動契約もHost通常・ASan/UBSan試験で確認しました。実ESPアプリへのplatform
+依存注入と物理HILは未完のため、縦断機能の状態は`PROPOSED`のままです。
 仕様候補やcompile成功を物理HIL済みとは扱いません。
 
 ### 完成までの進捗台帳
@@ -78,7 +80,7 @@ ADR-0034により、項目4の大型データ・relay統合はV2へ移しまし�
 2. ~~POSIX TCP/TLS公開と2プロセスrestart E2E~~ — 完了
 3. ~~POSIX USB serial公開とinstalled PTY E2E~~ — 完了
 4. USB control framingと単一hop ApplicationData↔NRW1 SINGLE mappingを固定 — NCG1/NVB1 bridge、exact LAB binding、N6接続owner、durable LAB provisioner、公開POSIX USB portのbinding・双方向PTYと、別経路の実Fabric→NRA1→NRW1→SX1262 spy→Receipt Host縦断まで完了
-5. private SX1262 packet-linkをESP32-S3へ載せる — USB bridge、provisioner、packet-linkを束ねる固定board ownerとHost模擬E2Eを実装。全private同時ONのcomponent compile/packageは合格。残件は実ESPアプリでの依存注入と実行確認
+5. private SX1262 packet-linkをESP32-S3へ載せる — USB bridge、provisioner、packet-linkを束ねる固定board owner、接続世代ごとのclock anchor、bindingからのController ID採用をHost模擬E2Eで実装。全private同時ONのcomponent compile/packageは合格。残件は実ESPアプリでの依存注入と実行確認
 6. README・SDK配布物・CIの最終整合監査 — Host/ESP software gateを更新済み。独立差分レビューとremote CIを閉じる
 7. 3台で物理USB＋SX1262の10件/10秒HIL — 機材で実行するまで`NOT_RUN`。実AP、電源断、20件/10秒、relay/multi-parentはV2 gate
 

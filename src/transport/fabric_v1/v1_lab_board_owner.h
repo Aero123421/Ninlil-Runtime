@@ -36,6 +36,7 @@ typedef struct ninlil_v1_lab_board_owner_config {
     ninlil_byte_stream_t *usb_stream;
     ninlil_v1_lab_provisioner_t *provisioner;
     const ninlil_r7_crypto_provider *crypto;
+    /* NULL only for an unbound USB-parent provisioner in adoption mode. */
     const uint8_t *local_runtime_id;
     const ninlil_clock_ops_t *clock;
     ninlil_sx1262_phy_t *phy;
@@ -55,9 +56,14 @@ typedef struct ninlil_v1_lab_board_owner {
     uint8_t fenced;
     uint8_t pair_count;
     uint8_t usb_receive_pending;
+    uint8_t radio_ready;
+    uint8_t reserved_state[3];
     ninlil_v1_lab_provisioner_t *provisioner;
     ninlil_pcp_t *pcp;
     ninlil_radio_hal_t *hal;
+    ninlil_sx1262_phy_t *phy;
+    ninlil_r7_crypto_provider crypto;
+    ninlil_clock_ops_t clock;
     ninlil_pcp_live_profile_t live;
     ninlil_v1_usb_bridge_handle_t usb_receive_handle;
     void *radio_receive_token;

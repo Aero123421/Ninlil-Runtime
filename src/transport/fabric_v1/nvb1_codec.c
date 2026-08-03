@@ -82,7 +82,24 @@ static int nvb1_payload_length_valid(uint8_t kind, size_t length)
     if (kind == NINLIL_NVB1_KIND_STATUS) {
         return length == NINLIL_NVB1_STATUS_BYTES;
     }
+    if (kind == NINLIL_NVB1_KIND_BOARD_INFO) {
+        return length == NINLIL_NVB1_BOARD_INFO_BYTES;
+    }
     return 0;
+}
+
+static int nvb1_nonzero(const uint8_t *bytes, size_t length)
+{
+    uint8_t any = 0u;
+    size_t i;
+
+    if (bytes == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < length; ++i) {
+        any = (uint8_t)(any | bytes[i]);
+    }
+    return any != 0u;
 }
 
 static int nvb1_status_code_valid(uint32_t code)
@@ -211,5 +228,53 @@ ninlil_nvb1_status_t ninlil_nvb1_status_decode(
         return NINLIL_NVB1_STRUCTURAL;
     }
     *out_status = candidate;
+    return NINLIL_NVB1_OK;
+}
+
+ninlil_nvb1_status_t ninlil_nvb1_board_info_encode(
+    const ninlil_nvb1_board_info_t *info,
+    uint8_t out[NINLIL_NVB1_BOARD_INFO_BYTES])
+{
+    if (info == NULL || out == NULL) {
+        return NINLIL_NVB1_INVALID_ARGUMENT;
+    }
+    if (!nvb1_disjoint(info, sizeof(*info), out,
+            NINLIL_NVB1_BOARD_INFO_BYTES)) {
+        return NINLIL_NVB1_ALIAS;
+    }
+    if (!nvb1_nonzero(info->clock_epoch_id, 16u)
+        || info->clock_trust != 1u) {
+        return NINLIL_NVB1_STRUCTURAL;
+    }
+    (void)memcpy(out, info->clock_epoch_id, 16u);
+    nvb1_put_u64(out + 16u, info->clock_now_ms);
+    nvb1_put_u32(out + 24u, info->clock_trust);
+    nvb1_put_u32(out + 28u, 0u);
+    return NINLIL_NVB1_OK;
+}
+
+ninlil_nvb1_status_t ninlil_nvb1_board_info_decode(
+    const uint8_t encoded[NINLIL_NVB1_BOARD_INFO_BYTES],
+    ninlil_nvb1_board_info_t *out_info)
+{
+    ninlil_nvb1_board_info_t candidate;
+
+    if (encoded == NULL || out_info == NULL) {
+        return NINLIL_NVB1_INVALID_ARGUMENT;
+    }
+    if (!nvb1_disjoint(encoded, NINLIL_NVB1_BOARD_INFO_BYTES,
+            out_info, sizeof(*out_info))) {
+        return NINLIL_NVB1_ALIAS;
+    }
+    (void)memset(&candidate, 0, sizeof(candidate));
+    (void)memcpy(candidate.clock_epoch_id, encoded, 16u);
+    candidate.clock_now_ms = nvb1_get_u64(encoded + 16u);
+    candidate.clock_trust = nvb1_get_u32(encoded + 24u);
+    if (!nvb1_nonzero(candidate.clock_epoch_id, 16u)
+        || candidate.clock_trust != 1u
+        || nvb1_get_u32(encoded + 28u) != 0u) {
+        return NINLIL_NVB1_STRUCTURAL;
+    }
+    *out_info = candidate;
     return NINLIL_NVB1_OK;
 }

@@ -320,9 +320,12 @@ static ninlil_v1_lab_provision_status_t scan_floor_namespace(
         if (ninlil_v1_lab_binding_decode(&p->r7_crypto,
                 value.data, value.length, &binding)
                 != NINLIL_V1_LAB_BINDING_OK
-            || ninlil_v1_lab_binding_local_side(
-                   &binding, p->local_runtime_id, &local_side)
-                != NINLIL_V1_LAB_BINDING_OK
+            || (p->local_runtime_bound != 0u
+                && ninlil_v1_lab_binding_local_side(
+                       &binding, p->local_runtime_id, &local_side)
+                    != NINLIL_V1_LAB_BINDING_OK)
+            || (p->local_runtime_bound == 0u
+                && p->controller_adopt_mode == 0u)
             || memcmp(key.data + 4u, binding.pair_id, 32u) != 0) {
             ninlil_v1_lab_binding_clear(&binding);
             result = NINLIL_V1_LAB_PROVISION_CORRUPT;
@@ -561,14 +564,15 @@ static int pair_is_active(
     return 0;
 }
 
-ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init(
+static ninlil_v1_lab_provision_status_t provisioner_init_common(
     ninlil_v1_lab_provisioner_t *p,
     ninlil_n6_t *n6,
     const ninlil_storage_ops_t *storage,
     const ninlil_n6_crypto_ops_t *n6_crypto,
     const ninlil_r7_crypto_provider *r7_crypto,
     const uint8_t local_runtime_id[16],
-    const ninlil_r2_authority_clock_result_t *authority_result)
+    const ninlil_r2_authority_clock_result_t *authority_result,
+    uint8_t controller_adopt_mode)
 {
     ninlil_v1_lab_provision_status_t result;
 
@@ -577,7 +581,9 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init(
         || n6_crypto->hkdf_sha256 == NULL || r7_crypto == NULL
         || ninlil_r7_crypto_provider_validate(r7_crypto)
             != NINLIL_R7_CRYPTO_OK
-        || !bytes_nonzero(local_runtime_id, 16u)
+        || (controller_adopt_mode == 0u
+            && !bytes_nonzero(local_runtime_id, 16u))
+        || (controller_adopt_mode != 0u && local_runtime_id != NULL)
         || !class_d_result_valid(authority_result)
         || ninlil_n6_state(n6) != NINLIL_N6_STATE_INIT) {
         return NINLIL_V1_LAB_PROVISION_INVALID_ARGUMENT;
@@ -590,13 +596,43 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init(
     p->n6_crypto = *n6_crypto;
     p->r7_crypto = *r7_crypto;
     p->authority_result = *authority_result;
-    (void)memcpy(p->local_runtime_id, local_runtime_id, 16u);
+    p->controller_adopt_mode = controller_adopt_mode != 0u ? 1u : 0u;
+    if (local_runtime_id != NULL) {
+        (void)memcpy(p->local_runtime_id, local_runtime_id, 16u);
+        p->local_runtime_bound = 1u;
+    }
     result = scan_floor_namespace(p);
     if (result != NINLIL_V1_LAB_PROVISION_OK) {
         provisioner_fence(p);
         return result;
     }
     return NINLIL_V1_LAB_PROVISION_OK;
+}
+
+ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init(
+    ninlil_v1_lab_provisioner_t *p,
+    ninlil_n6_t *n6,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_n6_crypto_ops_t *n6_crypto,
+    const ninlil_r7_crypto_provider *r7_crypto,
+    const uint8_t local_runtime_id[16],
+    const ninlil_r2_authority_clock_result_t *authority_result)
+{
+    return provisioner_init_common(p, n6, storage, n6_crypto, r7_crypto,
+        local_runtime_id, authority_result, 0u);
+}
+
+ninlil_v1_lab_provision_status_t
+ninlil_v1_lab_provisioner_init_controller(
+    ninlil_v1_lab_provisioner_t *p,
+    ninlil_n6_t *n6,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_n6_crypto_ops_t *n6_crypto,
+    const ninlil_r7_crypto_provider *r7_crypto,
+    const ninlil_r2_authority_clock_result_t *authority_result)
+{
+    return provisioner_init_common(p, n6, storage, n6_crypto, r7_crypto,
+        NULL, authority_result, 1u);
 }
 
 ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_install_pair(
@@ -610,8 +646,10 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_install_pair(
     ninlil_v1_lab_provision_status_t result;
     ninlil_n6_status_t n6_status;
     uint8_t digests[4][32];
+    uint8_t candidate_local_runtime_id[16];
     uint8_t local_side = 0u;
     uint8_t local_controller;
+    uint8_t adopt_local_runtime = 0u;
     uint8_t active_max;
     int floor_index;
     uint8_t i;
@@ -629,13 +667,40 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_install_pair(
     (void)memset(&binding, 0, sizeof(binding));
     (void)memset(&handles, 0, sizeof(handles));
     (void)memset(digests, 0, sizeof(digests));
+    (void)memset(candidate_local_runtime_id, 0,
+        sizeof(candidate_local_runtime_id));
     if (ninlil_v1_lab_binding_decode(&p->r7_crypto,
             encoded_binding, encoded_length, &binding)
-            != NINLIL_V1_LAB_BINDING_OK
-        || ninlil_v1_lab_binding_local_side(
-               &binding, p->local_runtime_id, &local_side)
-            != NINLIL_V1_LAB_BINDING_OK
-        || memcmp(local_side == NINLIL_V1_LAB_SIDE_A
+            != NINLIL_V1_LAB_BINDING_OK) {
+        ninlil_v1_lab_binding_clear(&binding);
+        ninlil_n6_secure_zero(digests, sizeof(digests));
+        return NINLIL_V1_LAB_PROVISION_INVALID_ARGUMENT;
+    }
+    if (p->local_runtime_bound != 0u) {
+        if (ninlil_v1_lab_binding_local_side(
+                &binding, p->local_runtime_id, &local_side)
+            != NINLIL_V1_LAB_BINDING_OK) {
+            ninlil_v1_lab_binding_clear(&binding);
+            ninlil_n6_secure_zero(digests, sizeof(digests));
+            return NINLIL_V1_LAB_PROVISION_INVALID_ARGUMENT;
+        }
+        (void)memcpy(candidate_local_runtime_id,
+            p->local_runtime_id, sizeof(candidate_local_runtime_id));
+    } else if (p->controller_adopt_mode != 0u
+        && p->active_pair_count == 0u && p->mode_fixed == 0u) {
+        local_side = binding.controller_side;
+        (void)memcpy(candidate_local_runtime_id,
+            local_side == NINLIL_V1_LAB_SIDE_A
+                ? binding.endpoint_a.runtime_id
+                : binding.endpoint_b.runtime_id,
+            sizeof(candidate_local_runtime_id));
+        adopt_local_runtime = 1u;
+    } else {
+        ninlil_v1_lab_binding_clear(&binding);
+        ninlil_n6_secure_zero(digests, sizeof(digests));
+        return NINLIL_V1_LAB_PROVISION_INVALID_ARGUMENT;
+    }
+    if (memcmp(local_side == NINLIL_V1_LAB_SIDE_A
                     ? binding.endpoint_a.clock_epoch_id
                     : binding.endpoint_b.clock_epoch_id,
                p->authority_result.sample_epoch_id, 16u)
@@ -703,7 +768,7 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_install_pair(
         p->n6_reset_done = 1u;
         n6_status = ninlil_v1_lab_n6_owner_init(&p->n6_owner, p->n6,
             &p->storage, &p->n6_crypto, &p->r7_crypto,
-            p->local_runtime_id);
+            candidate_local_runtime_id);
         p->last_n6_status = n6_status;
         if (n6_status != NINLIL_N6_OK) {
             result = map_n6_status(n6_status);
@@ -757,6 +822,11 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_install_pair(
     (void)memcpy(p->active_pair_ids[p->active_pair_count],
         binding.pair_id, 32u);
     p->active_pair_count += 1u;
+    if (adopt_local_runtime != 0u) {
+        (void)memcpy(p->local_runtime_id, candidate_local_runtime_id,
+            sizeof(p->local_runtime_id));
+        p->local_runtime_bound = 1u;
+    }
     *out_handles = handles;
     ninlil_v1_lab_binding_clear(&binding);
     ninlil_n6_secure_zero(digests, sizeof(digests));

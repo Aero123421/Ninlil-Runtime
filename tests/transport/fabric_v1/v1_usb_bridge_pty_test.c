@@ -49,10 +49,12 @@ typedef struct test_n6 {
 
 typedef struct installed_state {
     uint32_t calls;
+    uint32_t board_info_calls;
     size_t binding_length;
     ninlil_v1_lab_n6_handles_t handles;
     uint32_t fabric_calls;
     uint8_t last_packet_first;
+    ninlil_nvb1_board_info_t board_info;
 } installed_state_t;
 
 static ninlil_byte_stream_status_t master_write(
@@ -292,6 +294,43 @@ static uint32_t fabric_handoff(void *user, const uint8_t *packet, size_t length)
     return NINLIL_NVB1_STATUS_ACCEPTED_LOCAL;
 }
 
+static ninlil_v1_usb_bridge_status_t board_info_handoff(
+    void *user, const ninlil_nvb1_board_info_t *info)
+{
+    installed_state_t *state = (installed_state_t *)user;
+
+    state->board_info_calls += 1u;
+    state->board_info = *info;
+    return NINLIL_V1_USB_BRIDGE_OK;
+}
+
+static int pump_until_board_info(
+    ninlil_v1_usb_bridge_t *host,
+    ninlil_v1_usb_bridge_t *board,
+    installed_state_t *state,
+    uint32_t expected_calls,
+    uint64_t now)
+{
+    unsigned int i;
+
+    for (i = 0u; i < 256u; ++i) {
+        ninlil_v1_usb_bridge_status_t board_status =
+            ninlil_v1_usb_bridge_step(board, now + i, 1u);
+        ninlil_v1_usb_bridge_status_t host_status =
+            ninlil_v1_usb_bridge_step(host, now + i, 1u);
+        if ((board_status != NINLIL_V1_USB_BRIDGE_OK
+                && board_status != NINLIL_V1_USB_BRIDGE_WOULD_BLOCK)
+            || (host_status != NINLIL_V1_USB_BRIDGE_OK
+                && host_status != NINLIL_V1_USB_BRIDGE_WOULD_BLOCK)) {
+            return 0;
+        }
+        if (state->board_info_calls == expected_calls) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int pump_until_complete(
     ninlil_v1_usb_bridge_t *owner,
     ninlil_v1_usb_bridge_t *other,
@@ -390,6 +429,7 @@ static int run_test(void)
     bridge_config.role = NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER;
     bridge_config.stream = &host_stream;
     bridge_config.fabric_handoff = fabric_handoff;
+    bridge_config.board_info = board_info_handoff;
     bridge_config.callback_user = &callbacks;
     REQUIRE(ninlil_v1_usb_bridge_init(&host_bridge, &bridge_config)
         == NINLIL_V1_USB_BRIDGE_OK);
@@ -397,12 +437,28 @@ static int run_test(void)
     bridge_config.stream = &master.view;
     bridge_config.provisioner = &provisioner;
     bridge_config.pair_installed = pair_installed;
+    bridge_config.board_info = NULL;
     REQUIRE(ninlil_v1_usb_bridge_init(&board_bridge, &bridge_config)
         == NINLIL_V1_USB_BRIDGE_OK);
     REQUIRE(ninlil_v1_usb_bridge_step(&host_bridge, 1u, 0u)
         == NINLIL_V1_USB_BRIDGE_OK);
     REQUIRE(ninlil_v1_usb_bridge_step(&board_bridge, 1u, 0u)
         == NINLIL_V1_USB_BRIDGE_OK);
+
+    {
+        ninlil_nvb1_board_info_t info;
+        (void)memset(&info, 0, sizeof(info));
+        (void)memcpy(info.clock_epoch_id,
+            clock_sample.sample_epoch_id, sizeof(info.clock_epoch_id));
+        info.clock_now_ms = clock_sample.sample_now_ms;
+        info.clock_trust = clock_sample.sample_trust;
+        REQUIRE(ninlil_v1_usb_bridge_submit_board_info(&board_bridge, &info)
+            == NINLIL_V1_USB_BRIDGE_OK);
+        REQUIRE(pump_until_board_info(&host_bridge, &board_bridge,
+            &callbacks, 1u, 2u));
+        REQUIRE(memcmp(callbacks.board_info.clock_epoch_id,
+            binding.endpoint_a.clock_epoch_id, 16u) == 0);
+    }
 
     REQUIRE(ninlil_v1_usb_bridge_submit_binding(&host_bridge,
         binding.raw, binding.raw_length, 1000u, &handle)
@@ -463,11 +519,23 @@ static int run_test(void)
         == NINLIL_V1_USB_BRIDGE_OK);
     REQUIRE(ninlil_v1_usb_bridge_step(&board_bridge, 901u, 0u)
         == NINLIL_V1_USB_BRIDGE_OK);
+    {
+        ninlil_nvb1_board_info_t info;
+        (void)memset(&info, 0, sizeof(info));
+        (void)memcpy(info.clock_epoch_id,
+            clock_sample.sample_epoch_id, sizeof(info.clock_epoch_id));
+        info.clock_now_ms = clock_sample.sample_now_ms;
+        info.clock_trust = clock_sample.sample_trust;
+        REQUIRE(ninlil_v1_usb_bridge_submit_board_info(&board_bridge, &info)
+            == NINLIL_V1_USB_BRIDGE_OK);
+        REQUIRE(pump_until_board_info(&host_bridge, &board_bridge,
+            &callbacks, 2u, 902u));
+    }
     REQUIRE(ninlil_v1_usb_bridge_submit_fabric(&host_bridge,
         packet, sizeof(packet), 5000u, &handle) == NINLIL_V1_USB_BRIDGE_OK);
     REQUIRE(handle.operation_id == 1u);
     REQUIRE(pump_until_complete(&host_bridge, &board_bridge,
-        handle, 902u, &completion));
+        handle, 1200u, &completion));
     REQUIRE(completion.remote_status_code
         == NINLIL_NVB1_STATUS_ACCEPTED_LOCAL);
     REQUIRE(callbacks.fabric_calls == 3u);

@@ -81,12 +81,18 @@ typedef uint32_t (*ninlil_v1_usb_bridge_fabric_handoff_fn)(
     const uint8_t *encoded_packet,
     size_t encoded_length);
 
+typedef ninlil_v1_usb_bridge_status_t
+    (*ninlil_v1_usb_bridge_board_info_fn)(
+    void *user,
+    const ninlil_nvb1_board_info_t *info);
+
 typedef struct ninlil_v1_usb_bridge_config {
     ninlil_v1_usb_bridge_role_t role;
     ninlil_byte_stream_t *stream;
     ninlil_v1_lab_provisioner_t *provisioner;
     ninlil_v1_usb_bridge_pair_installed_fn pair_installed;
     ninlil_v1_usb_bridge_fabric_handoff_fn fabric_handoff;
+    ninlil_v1_usb_bridge_board_info_fn board_info;
     void *callback_user;
 } ninlil_v1_usb_bridge_config_t;
 
@@ -110,6 +116,7 @@ typedef struct ninlil_v1_usb_bridge {
     ninlil_v1_lab_provisioner_t *provisioner;
     ninlil_v1_usb_bridge_pair_installed_fn pair_installed;
     ninlil_v1_usb_bridge_fabric_handoff_fn fabric_handoff;
+    ninlil_v1_usb_bridge_board_info_fn board_info;
     void *callback_user;
     uint64_t active_generation;
     uint64_t next_local_operation_id;
@@ -121,8 +128,11 @@ typedef struct ninlil_v1_usb_bridge {
     uint8_t rx_sequence_exhausted;
     uint8_t remote_operation_exhausted;
     uint8_t tx_is_local_request;
+    uint8_t tx_kind;
+    uint8_t board_info_sent;
+    uint8_t board_info_received;
     uint8_t in_step;
-    uint8_t reserved_state[2];
+    uint8_t reserved_state[3];
     uint64_t tx_operation_id;
     uint32_t tx_wire_length;
     uint32_t rx_residual_length;
@@ -155,6 +165,11 @@ ninlil_v1_usb_bridge_status_t ninlil_v1_usb_bridge_submit_fabric(
     size_t encoded_length,
     uint64_t deadline_ms,
     ninlil_v1_usb_bridge_handle_t *out_handle);
+
+/* Board-only one-way notification. No work slot or STATUS response. */
+ninlil_v1_usb_bridge_status_t ninlil_v1_usb_bridge_submit_board_info(
+    ninlil_v1_usb_bridge_t *bridge,
+    const ninlil_nvb1_board_info_t *info);
 
 /* Performs bounded poll, at most one raw write and at most one frame handoff. */
 ninlil_v1_usb_bridge_status_t ninlil_v1_usb_bridge_step(

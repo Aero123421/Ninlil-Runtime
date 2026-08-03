@@ -19,6 +19,7 @@ typedef struct callback_state {
     uint32_t fabric_status;
     size_t last_length;
     uint8_t last_first;
+    ninlil_v1_usb_bridge_status_t board_info_status;
 } callback_state_t;
 
 static int all_zero(const void *memory, size_t length)
@@ -45,6 +46,15 @@ static uint32_t fabric_handoff(
     return state->fabric_status;
 }
 
+static ninlil_v1_usb_bridge_status_t board_info_handoff(
+    void *user, const ninlil_nvb1_board_info_t *info)
+{
+    callback_state_t *state = (callback_state_t *)user;
+
+    (void)info;
+    return state->board_info_status;
+}
+
 static int setup_bridge(
     ninlil_v1_usb_bridge_t *bridge,
     ninlil_fake_byte_stream_t *fake,
@@ -59,6 +69,10 @@ static int setup_bridge(
     config.role = role;
     config.stream = &fake->view;
     config.fabric_handoff = callbacks == NULL ? NULL : fabric_handoff;
+    config.board_info = role == NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER
+            && callbacks != NULL
+        ? board_info_handoff
+        : NULL;
     config.callback_user = callbacks;
     REQUIRE(ninlil_v1_usb_bridge_init(bridge, &config)
         == NINLIL_V1_USB_BRIDGE_OK);
@@ -143,6 +157,31 @@ static int inject_frame(
     return 1;
 }
 
+static int inject_board_info(
+    ninlil_v1_usb_bridge_t *bridge,
+    ninlil_fake_byte_stream_t *fake,
+    uint64_t operation_id,
+    uint32_t sequence,
+    ninlil_v1_usb_bridge_status_t expected)
+{
+    ninlil_nvb1_board_info_t info;
+    uint8_t payload[NINLIL_NVB1_BOARD_INFO_BYTES];
+    uint8_t wire[NINLIL_MODEL_CONTROL_FRAME_MAX_BYTES];
+    uint32_t wire_length = 0u;
+
+    (void)memset(&info, 0, sizeof(info));
+    (void)memset(info.clock_epoch_id, 0x42, sizeof(info.clock_epoch_id));
+    info.clock_now_ms = 41u;
+    info.clock_trust = 1u;
+    REQUIRE(ninlil_nvb1_board_info_encode(&info, payload)
+        == NINLIL_NVB1_OK);
+    REQUIRE(encode_wire(NINLIL_NVB1_KIND_BOARD_INFO, operation_id, sequence,
+        NINLIL_MODEL_CONTROL_FRAME_TYPE_DATA, 0u,
+        payload, sizeof(payload), wire, &wire_length));
+    REQUIRE(inject_frame(bridge, fake, wire, wire_length, expected));
+    return 1;
+}
+
 static int decode_status_tx(
     ninlil_fake_byte_stream_t *fake,
     uint64_t expected_operation_id,
@@ -177,8 +216,10 @@ static int test_bidirectional_fabric_and_status(void)
     ninlil_v1_usb_bridge_t board;
     ninlil_fake_byte_stream_t host_stream;
     ninlil_fake_byte_stream_t board_stream;
-    callback_state_t host_callbacks = {0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
-    callback_state_t board_callbacks = {0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
+    callback_state_t host_callbacks = {
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
+    callback_state_t board_callbacks = {
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
     ninlil_v1_usb_bridge_handle_t handle;
     ninlil_v1_usb_bridge_completion_t completion;
     uint8_t packet[NINLIL_NVB1_FABRIC_MIN];
@@ -262,7 +303,8 @@ static int test_sequence_and_operation_fences(void)
 {
     ninlil_v1_usb_bridge_t bridge;
     ninlil_fake_byte_stream_t fake;
-    callback_state_t callbacks = {0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
+    callback_state_t callbacks = {
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
     uint8_t packet[NINLIL_NVB1_FABRIC_MIN];
     uint8_t wire[NINLIL_MODEL_CONTROL_FRAME_MAX_BYTES];
     uint32_t wire_length = 0u;
@@ -300,7 +342,8 @@ static int test_fixed_field_consumes_sequence(void)
 {
     ninlil_v1_usb_bridge_t bridge;
     ninlil_fake_byte_stream_t fake;
-    callback_state_t callbacks = {0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
+    callback_state_t callbacks = {
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
     uint8_t packet[NINLIL_NVB1_FABRIC_MIN];
     uint8_t wire[NINLIL_MODEL_CONTROL_FRAME_MAX_BYTES];
     uint32_t wire_length = 0u;
@@ -331,7 +374,8 @@ static int test_status_completion_duplicate_and_wrong_direction(void)
 {
     ninlil_v1_usb_bridge_t bridge;
     ninlil_fake_byte_stream_t fake;
-    callback_state_t callbacks = {0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
+    callback_state_t callbacks = {
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
     ninlil_v1_usb_bridge_handle_t handle;
     ninlil_v1_usb_bridge_completion_t completion;
     uint8_t packet[NINLIL_NVB1_FABRIC_MIN];
@@ -383,7 +427,7 @@ static int test_mid_io_generation_fence(void)
     ninlil_v1_usb_bridge_t bridge;
     ninlil_fake_byte_stream_t fake;
     callback_state_t callbacks = {
-        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
     ninlil_v1_usb_bridge_handle_t handle;
     ninlil_v1_usb_bridge_completion_t completion;
     uint8_t packet[NINLIL_NVB1_FABRIC_MIN];
@@ -497,7 +541,8 @@ static int test_capacity_timeout_and_reconnect(void)
 {
     ninlil_v1_usb_bridge_t bridge;
     ninlil_fake_byte_stream_t fake;
-    callback_state_t callbacks = {0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
+    callback_state_t callbacks = {
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
     ninlil_v1_usb_bridge_handle_t handles[5];
     ninlil_v1_usb_bridge_completion_t completion;
     uint8_t packet[NINLIL_NVB1_FABRIC_MIN];
@@ -550,7 +595,8 @@ static int test_binding_generation_and_unsent_timeout(void)
 {
     ninlil_v1_usb_bridge_t bridge;
     ninlil_fake_byte_stream_t fake;
-    callback_state_t callbacks = {0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u};
+    callback_state_t callbacks = {
+        0u, NINLIL_NVB1_STATUS_ACCEPTED_LOCAL, 0u, 0u, 0u};
     ninlil_v1_usb_bridge_handle_t handle;
     ninlil_v1_usb_bridge_completion_t completion;
     uint8_t binding[NINLIL_NVB1_BINDING_MIN];
@@ -561,21 +607,36 @@ static int test_binding_generation_and_unsent_timeout(void)
     (void)memset(binding, 0, sizeof(binding));
     binding[11] = 1u;
     (void)memset(packet, 0x91, sizeof(packet));
+    callbacks.board_info_status = NINLIL_V1_USB_BRIDGE_INVALID_STATE;
+    REQUIRE(setup_bridge(&bridge, &fake,
+        NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER, &callbacks));
+    REQUIRE(inject_board_info(&bridge, &fake, 1u, 0u,
+        NINLIL_V1_USB_BRIDGE_FENCED));
+    REQUIRE(bridge.board_info_received == 0u);
+    REQUIRE(ninlil_v1_usb_bridge_is_fenced(&bridge));
+
+    callbacks.board_info_status = NINLIL_V1_USB_BRIDGE_OK;
     REQUIRE(setup_bridge(&bridge, &fake,
         NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER, &callbacks));
     REQUIRE(sizeof(bridge) <= NINLIL_V1_USB_BRIDGE_OBJECT_CEILING_BYTES);
+    REQUIRE(ninlil_v1_usb_bridge_submit_binding(&bridge, binding,
+        sizeof(binding), 100u, &handle)
+        == NINLIL_V1_USB_BRIDGE_INVALID_STATE);
+    REQUIRE(inject_board_info(&bridge, &fake, 1u, 0u,
+        NINLIL_V1_USB_BRIDGE_OK));
+    REQUIRE(bridge.board_info_received != 0u);
     REQUIRE(ninlil_v1_usb_bridge_submit_binding(&bridge, binding,
         sizeof(binding), 100u, &handle) == NINLIL_V1_USB_BRIDGE_OK);
     REQUIRE(ninlil_v1_usb_bridge_step(&bridge, 2u, 0u)
         == NINLIL_V1_USB_BRIDGE_OK);
     REQUIRE(ninlil_fake_byte_stream_take_tx(&fake, wire, sizeof(wire)) != 0u);
-    REQUIRE(encode_status_wire(handle.operation_id, 0u,
+    REQUIRE(encode_status_wire(handle.operation_id, 1u,
         NINLIL_NVB1_STATUS_INSTALLED, 2u, wire, &wire_length));
     REQUIRE(inject_frame(&bridge, &fake, wire, wire_length,
         NINLIL_V1_USB_BRIDGE_OK));
     REQUIRE(ninlil_v1_usb_bridge_take_completion(&bridge, handle, &completion)
         == NINLIL_V1_USB_BRIDGE_WOULD_BLOCK);
-    REQUIRE(encode_status_wire(handle.operation_id, 1u,
+    REQUIRE(encode_status_wire(handle.operation_id, 2u,
         NINLIL_NVB1_STATUS_INSTALLED, 1u, wire, &wire_length));
     REQUIRE(inject_frame(&bridge, &fake, wire, wire_length,
         NINLIL_V1_USB_BRIDGE_OK));

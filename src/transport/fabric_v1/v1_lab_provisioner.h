@@ -63,6 +63,9 @@ typedef struct ninlil_v1_lab_provisioner {
     uint8_t active_pair_count;
     uint8_t local_controller_mode;
     uint8_t mode_fixed;
+    uint8_t local_runtime_bound;
+    uint8_t controller_adopt_mode;
+    uint8_t reserved_state[2];
     ninlil_n6_t *n6;
     ninlil_storage_ops_t storage;
     ninlil_n6_crypto_ops_t n6_crypto;
@@ -88,6 +91,19 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init(
     const ninlil_n6_crypto_ops_t *n6_crypto,
     const ninlil_r7_crypto_provider *r7_crypto,
     const uint8_t local_runtime_id[16],
+    const ninlil_r2_authority_clock_result_t *authority_result);
+
+/*
+ * USB-parent bootstrap variant. The first accepted binding adopts its derived
+ * Controller Runtime ID; peers must use the explicit init above.
+ */
+ninlil_v1_lab_provision_status_t
+ninlil_v1_lab_provisioner_init_controller(
+    ninlil_v1_lab_provisioner_t *provisioner,
+    ninlil_n6_t *n6,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_n6_crypto_ops_t *n6_crypto,
+    const ninlil_r7_crypto_provider *r7_crypto,
     const ninlil_r2_authority_clock_result_t *authority_result);
 
 /*

@@ -758,9 +758,11 @@ static int verify_receipt(
 
 typedef struct host_capture {
     uint32_t count;
+    uint32_t board_info_count;
     uint32_t length;
     uint32_t response_code;
     uint8_t packet[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    ninlil_nvb1_board_info_t board_info;
 } host_capture_t;
 
 static void teardown_node(test_node_t *node);
@@ -781,6 +783,16 @@ static uint32_t capture_host_packet(
     return capture->response_code == 0u
         ? NINLIL_NVB1_STATUS_ACCEPTED_LOCAL
         : capture->response_code;
+}
+
+static ninlil_v1_usb_bridge_status_t capture_board_info(
+    void *user, const ninlil_nvb1_board_info_t *info)
+{
+    host_capture_t *capture = (host_capture_t *)user;
+
+    capture->board_info = *info;
+    capture->board_info_count += 1u;
+    return NINLIL_V1_USB_BRIDGE_OK;
 }
 
 static int transfer_fake_stream(
@@ -808,6 +820,7 @@ static int setup_board_owner(
     ninlil_n6_context_pool_t pool;
     ninlil_r2_authority_clock_result_t sample;
     ninlil_v1_lab_board_owner_config_t owner_config;
+    ninlil_clock_ops_t invalid_clock;
 
     (void)memset(node, 0, sizeof(*node));
     (void)memset(&storage_config, 0, sizeof(storage_config));
@@ -825,22 +838,27 @@ static int setup_board_owner(
                 &node->n6)
         == NINLIL_N6_OK);
     fill_class_d(&sample, binding->endpoint_a.clock_epoch_id);
-    REQUIRE(ninlil_v1_lab_provisioner_init(&g_board_provisioner,
+    REQUIRE(ninlil_v1_lab_provisioner_init_controller(&g_board_provisioner,
                 node->n6, ninlil_test_storage_ops(node->n6_storage),
-                ninlil_n6_crypto_host_ops(), g_crypto,
-                binding->endpoint_a.runtime_id, &sample)
+                ninlil_n6_crypto_host_ops(), g_crypto, &sample)
         == NINLIL_V1_LAB_PROVISION_OK);
     REQUIRE(setup_radio(node, pcp) == 0);
     (void)memset(&owner_config, 0, sizeof(owner_config));
     owner_config.usb_stream = &stream->view;
     owner_config.provisioner = &g_board_provisioner;
     owner_config.crypto = g_crypto;
-    owner_config.local_runtime_id = binding->endpoint_a.runtime_id;
+    owner_config.local_runtime_id = NULL;
     owner_config.clock = ninlil_test_clock_ops(pcp->clock);
     owner_config.phy = node->phy;
     owner_config.pcp = pcp->pcp;
     owner_config.hal = node->hal;
     owner_config.live = &pcp->live;
+    invalid_clock = *owner_config.clock;
+    invalid_clock.now = NULL;
+    owner_config.clock = &invalid_clock;
+    REQUIRE(ninlil_v1_lab_board_owner_init(&g_board_owner, &owner_config)
+        == NINLIL_V1_LAB_BOARD_OWNER_INVALID_ARGUMENT);
+    owner_config.clock = ninlil_test_clock_ops(pcp->clock);
     REQUIRE(ninlil_v1_lab_board_owner_init(&g_board_owner, &owner_config)
         == NINLIL_V1_LAB_BOARD_OWNER_OK);
     return 0;
@@ -920,6 +938,7 @@ static int run_board_owner_vertical(
     host_config.role = NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER;
     host_config.stream = &host_stream.view;
     host_config.fabric_handoff = capture_host_packet;
+    host_config.board_info = capture_board_info;
     host_config.callback_user = &capture;
     REQUIRE(ninlil_v1_usb_bridge_init(&host_bridge, &host_config)
         == NINLIL_V1_USB_BRIDGE_OK);
@@ -928,6 +947,17 @@ static int run_board_owner_vertical(
     REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
         == NINLIL_V1_LAB_BOARD_OWNER_OK);
     now += 1u;
+
+    for (i = 0u; i < 16u && capture.board_info_count == 0u; ++i, ++now) {
+        REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+        REQUIRE(transfer_fake_stream(&board_stream, &host_stream) == 0);
+        REQUIRE(ninlil_v1_usb_bridge_step(&host_bridge, now, 0u)
+            == NINLIL_V1_USB_BRIDGE_OK);
+    }
+    REQUIRE(capture.board_info_count == 1u);
+    REQUIRE(memcmp(capture.board_info.clock_epoch_id,
+        binding->endpoint_a.clock_epoch_id, 16u) == 0);
 
     REQUIRE(ninlil_v1_usb_bridge_submit_binding(&host_bridge,
                 encoded_binding, encoded_length, now + 1000u, &usb_handle)
@@ -950,7 +980,13 @@ static int run_board_owner_vertical(
         && usb_completion.reason
             == NINLIL_V1_USB_BRIDGE_COMPLETION_REMOTE_STATUS
         && usb_completion.remote_status_code == NINLIL_NVB1_STATUS_INSTALLED
-        && g_board_owner.pair_count == 1u);
+        && g_board_owner.pair_count == 1u
+        && g_board_owner.radio_ready != 0u
+        && g_board_provisioner.local_runtime_bound != 0u
+        && memcmp(g_board_provisioner.local_runtime_id,
+            binding->endpoint_a.runtime_id, 16u) == 0
+        && memcmp(g_board_owner.radio.mapper.local_runtime_id,
+            binding->endpoint_a.runtime_id, 16u) == 0);
 
     REQUIRE(make_application(
                 g_crypto, binding, application, &application_length)

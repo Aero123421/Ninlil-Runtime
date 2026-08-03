@@ -116,11 +116,67 @@ static int test_status_and_alias(void)
     return 0;
 }
 
+static int test_board_info_round_trip(void)
+{
+    union {
+        ninlil_nvb1_board_info_t info;
+        uint8_t bytes[64];
+    } alias;
+    ninlil_nvb1_board_info_t in;
+    ninlil_nvb1_board_info_t out;
+    ninlil_nvb1_envelope_t envelope;
+    ninlil_nvb1_envelope_t decoded;
+    uint8_t payload[NINLIL_NVB1_BOARD_INFO_BYTES];
+    uint8_t wire[NINLIL_NVB1_HEADER_BYTES + NINLIL_NVB1_BOARD_INFO_BYTES];
+    size_t length = 0u;
+    size_t i;
+
+    (void)memset(&in, 0, sizeof(in));
+    for (i = 0u; i < sizeof(in.clock_epoch_id); ++i) {
+        in.clock_epoch_id[i] = (uint8_t)(0x20u + i);
+    }
+    in.clock_now_ms = UINT64_C(0x0102030405060708);
+    in.clock_trust = 1u;
+    REQUIRE(ninlil_nvb1_board_info_encode(&in, payload) == NINLIL_NVB1_OK);
+    REQUIRE(payload[16] == 1u && payload[23] == 8u);
+    REQUIRE(payload[24] == 0u && payload[27] == 1u);
+    REQUIRE(payload[28] == 0u && payload[31] == 0u);
+    REQUIRE(ninlil_nvb1_board_info_decode(payload, &out) == NINLIL_NVB1_OK);
+    REQUIRE(memcmp(&in, &out, sizeof(in)) == 0);
+
+    (void)memset(&envelope, 0, sizeof(envelope));
+    envelope.kind = NINLIL_NVB1_KIND_BOARD_INFO;
+    envelope.operation_id = 9u;
+    envelope.payload = payload;
+    envelope.payload_length = sizeof(payload);
+    REQUIRE(ninlil_nvb1_encode(&envelope, wire, sizeof(wire), &length)
+        == NINLIL_NVB1_OK);
+    REQUIRE(ninlil_nvb1_decode(wire, length, &decoded) == NINLIL_NVB1_OK);
+    REQUIRE(decoded.kind == NINLIL_NVB1_KIND_BOARD_INFO
+        && decoded.operation_id == 9u
+        && decoded.payload_length == NINLIL_NVB1_BOARD_INFO_BYTES);
+
+    payload[31] = 1u;
+    REQUIRE(ninlil_nvb1_board_info_decode(payload, &out)
+        == NINLIL_NVB1_STRUCTURAL);
+    payload[31] = 0u;
+    (void)memset(payload, 0, 16u);
+    REQUIRE(ninlil_nvb1_board_info_decode(payload, &out)
+        == NINLIL_NVB1_STRUCTURAL);
+    (void)memset(&alias, 0, sizeof(alias));
+    alias.info.clock_epoch_id[0] = 1u;
+    alias.info.clock_trust = 1u;
+    REQUIRE(ninlil_nvb1_board_info_encode(&alias.info, alias.bytes)
+        == NINLIL_NVB1_ALIAS);
+    return 0;
+}
+
 int main(void)
 {
     REQUIRE(test_binding_round_trip() == 0);
     REQUIRE(test_closed_lengths_and_fields() == 0);
     REQUIRE(test_status_and_alias() == 0);
+    REQUIRE(test_board_info_round_trip() == 0);
     (void)fprintf(stdout, "nvb1_codec_test OK\n");
     return 0;
 }

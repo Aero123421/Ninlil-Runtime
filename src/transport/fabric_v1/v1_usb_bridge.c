@@ -72,6 +72,7 @@ static void clear_tx(ninlil_v1_usb_bridge_t *bridge)
     bridge_zero(bridge->tx_wire, sizeof(bridge->tx_wire));
     bridge->tx_wire_length = 0u;
     bridge->tx_is_local_request = 0u;
+    bridge->tx_kind = 0u;
     bridge->tx_operation_id = 0u;
 }
 
@@ -151,6 +152,8 @@ static void start_generation(
     bridge->tx_sequence_exhausted = 0u;
     bridge->rx_sequence_exhausted = 0u;
     bridge->remote_operation_exhausted = 0u;
+    bridge->board_info_sent = 0u;
+    bridge->board_info_received = 0u;
 }
 
 static ninlil_v1_usb_bridge_slot_t *find_slot(
@@ -246,6 +249,7 @@ static ninlil_v1_usb_bridge_status_t build_tx(
     bridge_zero(bridge->tx_payload, sizeof(bridge->tx_payload));
     bridge->tx_wire_length = wire_length;
     bridge->tx_is_local_request = is_local_request;
+    bridge->tx_kind = kind;
     bridge->tx_operation_id = operation_id;
     return NINLIL_V1_USB_BRIDGE_OK;
 }
@@ -360,6 +364,8 @@ static ninlil_v1_usb_bridge_status_t handle_binding_request(
     (void)memset(&handles, 0, sizeof(handles));
     if (bridge->role != NINLIL_V1_USB_BRIDGE_ROLE_USB_BOARD) {
         code = NINLIL_NVB1_STATUS_REJECTED;
+    } else if (bridge->board_info_sent == 0u) {
+        return NINLIL_V1_USB_BRIDGE_INVALID_STATE;
     } else if (bridge->provisioner == NULL
         || bridge->pair_installed == NULL) {
         code = NINLIL_NVB1_STATUS_UNSUPPORTED;
@@ -399,6 +405,29 @@ static ninlil_v1_usb_bridge_status_t handle_fabric_request(
         }
     }
     return queue_status(bridge, envelope->operation_id, code, 0u);
+}
+
+static ninlil_v1_usb_bridge_status_t handle_board_info(
+    ninlil_v1_usb_bridge_t *bridge,
+    const ninlil_nvb1_envelope_t *envelope)
+{
+    ninlil_nvb1_board_info_t info;
+
+    if (bridge->role != NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER
+        || bridge->board_info == NULL
+        || bridge->board_info_received != 0u
+        || ninlil_nvb1_board_info_decode(envelope->payload, &info)
+            != NINLIL_NVB1_OK) {
+        return NINLIL_V1_USB_BRIDGE_INVALID_STATE;
+    }
+    if (bridge->board_info(bridge->callback_user, &info)
+        != NINLIL_V1_USB_BRIDGE_OK) {
+        bridge_zero(&info, sizeof(info));
+        return NINLIL_V1_USB_BRIDGE_INVALID_STATE;
+    }
+    bridge->board_info_received = 1u;
+    bridge_zero(&info, sizeof(info));
+    return NINLIL_V1_USB_BRIDGE_OK;
 }
 
 static ninlil_v1_usb_bridge_status_t handle_frame(
@@ -452,6 +481,8 @@ static ninlil_v1_usb_bridge_status_t handle_frame(
         result = handle_binding_request(bridge, &envelope);
     } else if (envelope.kind == NINLIL_NVB1_KIND_FABRIC_PACKET) {
         result = handle_fabric_request(bridge, &envelope);
+    } else if (envelope.kind == NINLIL_NVB1_KIND_BOARD_INFO) {
+        result = handle_board_info(bridge, &envelope);
     } else {
         result = NINLIL_V1_USB_BRIDGE_INVALID_STATE;
     }
@@ -550,6 +581,7 @@ static ninlil_v1_usb_bridge_status_t flush_tx(
     uint32_t wire_length = bridge->tx_wire_length;
     uint64_t operation_id = bridge->tx_operation_id;
     uint8_t is_local_request = bridge->tx_is_local_request;
+    uint8_t tx_kind = bridge->tx_kind;
 
     (void)memset(&error, 0, sizeof(error));
     stream_status = bridge->stream->ops->write(bridge->stream,
@@ -587,6 +619,8 @@ static ninlil_v1_usb_bridge_status_t flush_tx(
             return NINLIL_V1_USB_BRIDGE_FENCED;
         }
         slot->sent = 1u;
+    } else if (tx_kind == NINLIL_NVB1_KIND_BOARD_INFO) {
+        bridge->board_info_sent = 1u;
     }
     clear_tx(bridge);
     if (bridge->tx_sequence == UINT32_MAX - 1u) {
@@ -640,6 +674,7 @@ ninlil_v1_usb_bridge_status_t ninlil_v1_usb_bridge_init(
     bridge->provisioner = config->provisioner;
     bridge->pair_installed = config->pair_installed;
     bridge->fabric_handoff = config->fabric_handoff;
+    bridge->board_info = config->board_info;
     bridge->callback_user = config->callback_user;
     if (ninlil_model_control_frame_parser_init(&bridge->parser,
             bridge->parser_payload, sizeof(bridge->parser_payload))
@@ -695,6 +730,9 @@ static ninlil_v1_usb_bridge_status_t submit_request(
         if (bridge->role != NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER) {
             return NINLIL_V1_USB_BRIDGE_INVALID_STATE;
         }
+        if (bridge->board_info_received == 0u) {
+            return NINLIL_V1_USB_BRIDGE_INVALID_STATE;
+        }
         slot = &bridge->binding_slot;
         if (slot->state != SLOT_EMPTY) {
             return NINLIL_V1_USB_BRIDGE_BUSY;
@@ -747,6 +785,53 @@ ninlil_v1_usb_bridge_status_t ninlil_v1_usb_bridge_submit_fabric(
 {
     return submit_request(bridge, NINLIL_NVB1_KIND_FABRIC_PACKET,
         encoded_packet, encoded_length, deadline_ms, out_handle);
+}
+
+ninlil_v1_usb_bridge_status_t ninlil_v1_usb_bridge_submit_board_info(
+    ninlil_v1_usb_bridge_t *bridge,
+    const ninlil_nvb1_board_info_t *info)
+{
+    uint8_t payload[NINLIL_NVB1_BOARD_INFO_BYTES];
+    ninlil_v1_usb_bridge_status_t result;
+    uint64_t operation_id;
+
+    if (!bridge_known(bridge) || info == NULL
+        || bridge->role != NINLIL_V1_USB_BRIDGE_ROLE_USB_BOARD
+        || !ranges_disjoint(bridge, sizeof(*bridge), info, sizeof(*info))) {
+        return NINLIL_V1_USB_BRIDGE_INVALID_ARGUMENT;
+    }
+    if (bridge->in_step != 0u) {
+        return NINLIL_V1_USB_BRIDGE_INVALID_STATE;
+    }
+    if (bridge->active_generation == 0u) {
+        return NINLIL_V1_USB_BRIDGE_LINK_DOWN;
+    }
+    if (bridge->generation_fenced != 0u) {
+        return NINLIL_V1_USB_BRIDGE_FENCED;
+    }
+    if (bridge->tx_wire_length != 0u) {
+        return NINLIL_V1_USB_BRIDGE_BUSY;
+    }
+    if (bridge->board_info_sent != 0u) {
+        return NINLIL_V1_USB_BRIDGE_INVALID_STATE;
+    }
+    if (bridge->tx_sequence_exhausted != 0u
+        || bridge->next_local_operation_id == UINT64_MAX) {
+        return NINLIL_V1_USB_BRIDGE_SEQUENCE_EXHAUSTED;
+    }
+    if (ninlil_nvb1_board_info_encode(info, payload) != NINLIL_NVB1_OK) {
+        bridge_zero(payload, sizeof(payload));
+        return NINLIL_V1_USB_BRIDGE_INVALID_ARGUMENT;
+    }
+    operation_id = bridge->next_local_operation_id;
+    result = build_tx(bridge, NINLIL_NVB1_KIND_BOARD_INFO, operation_id,
+        payload, sizeof(payload), 0u);
+    bridge_zero(payload, sizeof(payload));
+    if (result != NINLIL_V1_USB_BRIDGE_OK) {
+        return result;
+    }
+    bridge->next_local_operation_id += 1u;
+    return NINLIL_V1_USB_BRIDGE_OK;
 }
 
 ninlil_v1_usb_bridge_status_t ninlil_v1_usb_bridge_step(

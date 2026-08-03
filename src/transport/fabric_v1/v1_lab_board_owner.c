@@ -27,6 +27,44 @@ static int owner_valid(const ninlil_v1_lab_board_owner_t *owner)
         && owner->active != 0u && owner->provisioner != NULL;
 }
 
+static int time_sample_valid(const ninlil_time_sample_t *sample)
+{
+    uint8_t any = 0u;
+    size_t i;
+
+    if (sample == NULL || sample->abi_version != NINLIL_ABI_VERSION
+        || sample->struct_size != (uint16_t)sizeof(*sample)
+        || sample->trust != NINLIL_CLOCK_TRUSTED
+        || sample->reserved_zero != 0u) {
+        return 0;
+    }
+    for (i = 0u; i < sizeof(sample->clock_epoch_id.bytes); ++i) {
+        any = (uint8_t)(any | sample->clock_epoch_id.bytes[i]);
+    }
+    return any != 0u;
+}
+
+static int clock_ops_valid(const ninlil_clock_ops_t *clock)
+{
+    return clock != NULL && clock->abi_version == NINLIL_ABI_VERSION
+        && clock->struct_size == (uint16_t)sizeof(*clock)
+        && clock->now != NULL;
+}
+
+static int bytes_nonzero(const uint8_t *bytes, size_t length)
+{
+    uint8_t any = 0u;
+    size_t i;
+
+    if (bytes == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < length; ++i) {
+        any = (uint8_t)(any | bytes[i]);
+    }
+    return any != 0u;
+}
+
 static void owner_fence(ninlil_v1_lab_board_owner_t *owner)
 {
     if (owner_valid(owner)) {
@@ -80,6 +118,17 @@ static void pair_installed(
         owner_fence(owner);
         return;
     }
+    if (owner->radio_ready == 0u) {
+        if (owner->provisioner->local_runtime_bound == 0u
+            || ninlil_v1_lab_radio_packet_link_init(&owner->radio,
+                   &owner->crypto, owner->provisioner->local_runtime_id,
+                   &owner->clock, owner->phy)
+                != NINLIL_V1_LAB_RADIO_LINK_OK) {
+            owner_fence(owner);
+            return;
+        }
+        owner->radio_ready = 1u;
+    }
     (void)memset(&binding, 0, sizeof(binding));
     if (ninlil_v1_lab_binding_decode(&owner->radio.mapper.crypto,
             encoded_binding, encoded_length, &binding)
@@ -123,7 +172,8 @@ static uint32_t fabric_handoff(
     ninlil_v1_lab_radio_link_status_t status;
 
     if (!owner_valid(owner) || owner->fenced != 0u
-        || encoded_packet == NULL || encoded_length > UINT32_MAX) {
+        || owner->radio_ready == 0u || encoded_packet == NULL
+        || encoded_length > UINT32_MAX) {
         return NINLIL_NVB1_STATUS_REJECTED;
     }
     status = ninlil_v1_lab_radio_packet_link_board_submit(
@@ -153,10 +203,21 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_init(
 
     if (owner == NULL || config == NULL || config->usb_stream == NULL
         || config->provisioner == NULL || config->crypto == NULL
-        || config->local_runtime_id == NULL || config->clock == NULL
-        || config->phy == NULL || config->pcp == NULL || config->hal == NULL
+        || ninlil_r7_crypto_provider_validate(config->crypto)
+            != NINLIL_R7_CRYPTO_OK
+        || !clock_ops_valid(config->clock) || config->phy == NULL
+        || config->pcp == NULL || config->hal == NULL
         || config->live == NULL || config->provisioner->active == 0u
-        || ninlil_v1_lab_provisioner_is_fenced(config->provisioner)) {
+        || ninlil_v1_lab_provisioner_is_fenced(config->provisioner)
+        || (config->local_runtime_id == NULL
+            && (config->provisioner->controller_adopt_mode == 0u
+                || config->provisioner->local_runtime_bound != 0u))
+        || (config->local_runtime_id != NULL
+            && (!bytes_nonzero(config->local_runtime_id, 16u)
+                || config->provisioner->local_runtime_bound == 0u
+                || memcmp(config->local_runtime_id,
+                       config->provisioner->local_runtime_id, 16u)
+                    != 0))) {
         return NINLIL_V1_LAB_BOARD_OWNER_INVALID_ARGUMENT;
     }
     (void)memset(owner, 0, sizeof(*owner));
@@ -165,13 +226,19 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_init(
     owner->provisioner = config->provisioner;
     owner->pcp = config->pcp;
     owner->hal = config->hal;
+    owner->phy = config->phy;
+    owner->crypto = *config->crypto;
+    owner->clock = *config->clock;
     owner->live = *config->live;
-    if (ninlil_v1_lab_radio_packet_link_init(&owner->radio,
-            config->crypto, config->local_runtime_id, config->clock,
-            config->phy)
-        != NINLIL_V1_LAB_RADIO_LINK_OK) {
-        clear_bytes(owner, sizeof(*owner));
-        return NINLIL_V1_LAB_BOARD_OWNER_RADIO;
+    if (config->local_runtime_id != NULL) {
+        if (ninlil_v1_lab_radio_packet_link_init(&owner->radio,
+                config->crypto, config->local_runtime_id, config->clock,
+                config->phy)
+            != NINLIL_V1_LAB_RADIO_LINK_OK) {
+            clear_bytes(owner, sizeof(*owner));
+            return NINLIL_V1_LAB_BOARD_OWNER_RADIO;
+        }
+        owner->radio_ready = 1u;
     }
     (void)memset(&bridge_config, 0, sizeof(bridge_config));
     bridge_config.role = NINLIL_V1_USB_BRIDGE_ROLE_USB_BOARD;
@@ -182,7 +249,9 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_init(
     bridge_config.callback_user = owner;
     if (ninlil_v1_usb_bridge_init(&owner->bridge, &bridge_config)
         != NINLIL_V1_USB_BRIDGE_OK) {
-        ninlil_v1_lab_radio_packet_link_clear(&owner->radio);
+        if (owner->radio_ready != 0u) {
+            ninlil_v1_lab_radio_packet_link_clear(&owner->radio);
+        }
         clear_bytes(owner, sizeof(*owner));
         return NINLIL_V1_LAB_BOARD_OWNER_USB;
     }
@@ -246,6 +315,46 @@ static ninlil_v1_lab_board_owner_status_t map_bridge_step(
     return NINLIL_V1_LAB_BOARD_OWNER_USB;
 }
 
+static ninlil_v1_lab_board_owner_status_t ensure_board_info(
+    ninlil_v1_lab_board_owner_t *owner)
+{
+    ninlil_time_sample_t sample;
+    ninlil_nvb1_board_info_t info;
+    ninlil_v1_usb_bridge_status_t status;
+
+    if (owner->bridge.active_generation == 0u
+        || owner->bridge.board_info_sent != 0u) {
+        return NINLIL_V1_LAB_BOARD_OWNER_OK;
+    }
+    if (owner->bridge.tx_wire_length != 0u) {
+        return NINLIL_V1_LAB_BOARD_OWNER_BUSY;
+    }
+    (void)memset(&sample, 0, sizeof(sample));
+    if (owner->clock.now == NULL
+        || owner->clock.now(owner->clock.user, &sample) != NINLIL_PORT_OK
+        || !time_sample_valid(&sample)) {
+        clear_bytes(&sample, sizeof(sample));
+        owner_fence(owner);
+        return NINLIL_V1_LAB_BOARD_OWNER_FENCED;
+    }
+    (void)memset(&info, 0, sizeof(info));
+    (void)memcpy(info.clock_epoch_id,
+        sample.clock_epoch_id.bytes, sizeof(info.clock_epoch_id));
+    info.clock_now_ms = sample.now_ms;
+    info.clock_trust = sample.trust;
+    status = ninlil_v1_usb_bridge_submit_board_info(&owner->bridge, &info);
+    clear_bytes(&info, sizeof(info));
+    clear_bytes(&sample, sizeof(sample));
+    if (status == NINLIL_V1_USB_BRIDGE_OK) {
+        return NINLIL_V1_LAB_BOARD_OWNER_OK;
+    }
+    if (status == NINLIL_V1_USB_BRIDGE_BUSY) {
+        return NINLIL_V1_LAB_BOARD_OWNER_BUSY;
+    }
+    owner_fence(owner);
+    return NINLIL_V1_LAB_BOARD_OWNER_USB;
+}
+
 ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_step(
     ninlil_v1_lab_board_owner_t *owner,
     uint64_t now_ms,
@@ -253,6 +362,7 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_step(
 {
     ninlil_v1_lab_board_owner_status_t completion_status;
     ninlil_v1_lab_board_owner_status_t bridge_result;
+    ninlil_v1_lab_board_owner_status_t info_result;
     ninlil_v1_usb_bridge_status_t usb_status;
     ninlil_v1_lab_radio_link_status_t radio_status;
     const uint8_t *nfl1 = NULL;
@@ -279,7 +389,17 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_step(
         owner_fence(owner);
         return bridge_result;
     }
+    if (bridge_result != NINLIL_V1_LAB_BOARD_OWNER_OK) {
+        return bridge_result;
+    }
+    info_result = ensure_board_info(owner);
+    if (info_result != NINLIL_V1_LAB_BOARD_OWNER_OK) {
+        return info_result;
+    }
 
+    if (owner->radio_ready == 0u) {
+        return NINLIL_V1_LAB_BOARD_OWNER_OK;
+    }
     radio_status = ninlil_v1_lab_radio_packet_link_step(&owner->radio);
     if (radio_status != NINLIL_V1_LAB_RADIO_LINK_OK) {
         owner_fence(owner);
@@ -287,9 +407,8 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_step(
             ? NINLIL_V1_LAB_BOARD_OWNER_RADIO
             : NINLIL_V1_LAB_BOARD_OWNER_FENCED;
     }
-    if (owner->usb_receive_pending != 0u
-        || bridge_result != NINLIL_V1_LAB_BOARD_OWNER_OK) {
-        return bridge_result;
+    if (owner->usb_receive_pending != 0u) {
+        return NINLIL_V1_LAB_BOARD_OWNER_OK;
     }
 
     radio_status = ninlil_v1_lab_radio_packet_link_board_receive_next(
@@ -335,12 +454,16 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_clear(
     if (!owner_valid(owner)) {
         return NINLIL_V1_LAB_BOARD_OWNER_INVALID_ARGUMENT;
     }
-    if (owner->usb_receive_pending != 0u || owner->radio.tx.active != 0u
-        || owner->radio.rx.active != 0u) {
+    if (owner->usb_receive_pending != 0u
+        || (owner->radio_ready != 0u
+            && (owner->radio.tx.active != 0u
+                || owner->radio.rx.active != 0u))) {
         return NINLIL_V1_LAB_BOARD_OWNER_BUSY;
     }
     ninlil_v1_usb_bridge_clear(&owner->bridge);
-    ninlil_v1_lab_radio_packet_link_clear(&owner->radio);
+    if (owner->radio_ready != 0u) {
+        ninlil_v1_lab_radio_packet_link_clear(&owner->radio);
+    }
     for (i = 0u; i < NINLIL_V1_LAB_RADIO_PAIR_MAX; ++i) {
         ninlil_r7_frag_prod_bind_reset(&owner->pairs[i].a_to_b);
         ninlil_r7_frag_prod_bind_reset(&owner->pairs[i].b_to_a);
