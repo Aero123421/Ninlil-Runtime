@@ -158,6 +158,7 @@ set(_expected_private_source_names
     v1_lab_binding.c
     v1_lab_n6_owner.c
     v1_lab_provisioner.c
+    v1_usb_bridge.c
 )
 list(LENGTH _expected_private_source_names _expected_private_source_count)
 if(NOT _private_source_count EQUAL _expected_private_source_count)

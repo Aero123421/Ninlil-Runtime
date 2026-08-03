@@ -49,6 +49,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/transport/fabric_v1/v1_lab_binding.c
     src/transport/fabric_v1/v1_lab_n6_owner.c
     src/transport/fabric_v1/v1_lab_provisioner.c
+    src/transport/fabric_v1/v1_usb_bridge.c
     src/radio/airtime_calculator.c
     src/radio/radio_hal.c
     src/radio/pcp_authority.c
@@ -111,6 +112,7 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/transport/fabric_v1/v1_lab_binding.c
     src/transport/fabric_v1/v1_lab_n6_owner.c
     src/transport/fabric_v1/v1_lab_provisioner.c
+    src/transport/fabric_v1/v1_usb_bridge.c
     ${NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES}
     ${NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES}
     ${NINLIL_N6_PRODUCTION_RELATIVE_SOURCES}

@@ -41,6 +41,18 @@ zero and then increments by exactly one. Duplicate, gap, regression or wrap
 fences the bridge. Recovery requires a new, strictly different physical
 `link_generation`.
 
+Every raw read/write is ticketed with the generation observed before I/O. If
+the link or generation differs after I/O, bytes are not processed and the
+post-I/O generation is itself fenced. It cannot be adopted on the next step;
+recovery requires one further physical-link generation. This prevents bytes
+possibly accepted by a reconnecting stream from sharing sequence or operation
+IDs with a freshly reset bridge.
+
+Sequence `UINT32_MAX` is never emitted or accepted. After successfully
+emitting or accepting `UINT32_MAX-1`, that direction is exhausted; another
+frame in that direction requires a new physical-link generation. An incoming
+`UINT32_MAX` fences before NVB1 processing and does not advance sequence.
+
 After NCG1 framing/CRC acceptance, sequence is validated before NVB1. An exact
 sequence is consumed even when later fixed-field or NVB1 semantic validation
 fails. A sequence mismatch does not advance. This sequence advancement is the
@@ -77,9 +89,29 @@ already accepted NCG1 sequence advancement in section 1 is the sole exception.
 most once. `STATUS` proves only local USB handling; it is never an Application
 Receipt or RF delivery result.
 
-Each side owns IDs for operations it originates. A received STATUS resolves
-only the exact outstanding local ID. Unknown, duplicate and wrong-direction
-STATUS messages are rejected without releasing another operation.
+Each side owns IDs for requests it originates. Its private bridge allocator
+starts at `1` in every physical-link generation and assigns the next exact ID
+only when a request enters a work slot. Received requests must therefore use
+the next exact inbound request ID. Reuse, gap, regression or `UINT64_MAX`
+fences before work mutation. `STATUS` only echoes a received request ID and
+does not consume either request allocator. After allocating or accepting
+`UINT64_MAX-1`, that request direction is exhausted until a new generation.
+
+A received STATUS resolves only the exact outstanding local ID. Unknown,
+duplicate and wrong-direction STATUS messages are rejected without releasing
+another operation or fencing an otherwise continuous link. This bounded
+monotonic rule proves uniqueness without an unbounded seen-ID set.
+
+`INSTALLED` carries the exact accepted binding `pair_generation`; every other
+STATUS carries zero. Provisioning results map exactly as follows:
+
+- success -> `INSTALLED`;
+- commit outcome unknown -> `STORAGE_UNKNOWN`;
+- generation/secret floor violation, definite Storage/N6 failure or any
+  fenced provisioner ->
+  `REPROVISION_REQUIRED`;
+- non-fencing capacity or invalid provisioner state -> `BUSY`;
+- malformed or semantically invalid incoming binding -> `REJECTED`.
 
 ### 3. Exact single-frame LAB binding
 
@@ -312,6 +344,31 @@ work is released by matching STATUS, local timeout or link fence. STATUS ends
 only the USB operation; the radio mapping owns its separate maximum-four
 Application correlations until exact Receipt, terminal Runtime result, timeout
 or restart releases them.
+
+The private bridge executes binding install and Fabric handoff synchronously
+from its bounded `step`; callbacks must not re-enter the same bridge. A Fabric
+handoff returns one of `ACCEPTED_LOCAL`, `REJECTED`, `BUSY` or `UNSUPPORTED`
+and never claims RF delivery. A missing handoff returns `UNSUPPORTED`. At most
+one complete NCG1 frame awaits raw-stream acceptance, so five outstanding
+operations do not require five packet copies. While a response cannot be
+queued, the bridge stops reading instead of growing another queue.
+
+The complete private bridge object is fixed at no more than 6144 bytes. If a
+local deadline expires before its request reaches raw-stream acceptance, the
+slot completes as timeout and the current generation fences: the already
+allocated request ID cannot be skipped safely. A timeout after raw acceptance
+does not fence; a late STATUS is ignored and the next request ID remains valid.
+Raw receive scratch and unused residual tails are zeroized before returning
+from a step that handled bytes. Parser payload/window are fully zeroized after
+an accepted or rejected complete frame and on every fence; an incomplete frame
+retains only the exact prefix required by the next step.
+
+The board configuration also has one fixed installed-pair handoff, not a
+registry. It is required before `BINDING_SET` can mutate Storage. After a
+successful durable install it receives the immutable binding bytes and the
+four copied N6 handles, copies any needed values before returning, and cannot
+reject or retain the borrowed binding pointer. A missing provisioner or
+installed-pair handoff returns `UNSUPPORTED` without provisioning.
 
 ## Acceptance before Accepted
 

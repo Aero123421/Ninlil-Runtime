@@ -24,9 +24,10 @@ ABIとしてexportしません。
 V1を実機で使える最小経路へ絞る[ADR-0034](docs/adr/0034-v1-functional-lab-scope.md)は
 Acceptedです。[ADR-0035](docs/adr/0035-v1-compact-radio-mapping.md)のRF mappingは
 Proposedで、private codec・KAT・airtime gate・ESP target compile候補まであります。
-NVB1 codec、exact LAB binding codec、N6接続ownerとdurable LAB provisionerの
-Host候補まで実装済みです。NCG1 bridge統合と実経路は未完のため、縦断機能の
-状態は`PROPOSED`のままです。
+NVB1 codec、exact LAB binding codec、N6接続owner、durable LAB provisioner、
+固定上限NCG1 bridgeのHost候補まで実装済みです。公開POSIX USB portを使う実PTYで
+binding永続化、双方向packet、close/reopen generationを確認しました。単一hop
+SX1262 mappingとの結合は未完のため、縦断機能の状態は`PROPOSED`のままです。
 仕様候補やcompile成功を物理HIL済みとは扱いません。
 
 ### 完成までの進捗台帳
@@ -50,7 +51,7 @@ Host候補まで実装済みです。NCG1 bridge統合と実経路は未完の�
 | Multi-parent / multi-Controller | **SPEC_ACCEPTED / software候補レビュー合格** | durable used-attempt台帳、old/new exact authority CAS、global split-brain fence、10,000 lifecycleは合格。公開ABI判断と実機failover HILを閉じる |
 | Multi-frame durable transfer | **SPEC_ACCEPTED / Host software候補** | private MFDT protocol v1、revision 2 OPEN、Host 4-slot coordinator、Runtimeごとのsidecar、1〜4 target admission/restart reconciliationを実装。公開`ninlil_submit()`から2つのHost Runtimeを通常の`ninlil_runtime_step()`だけで駆動し、927〜32768 byteの分割・再構成・digest検証、Application Service apply、positive evidence、handoff、既存Receipt、durable closure、terminal/content releaseまで通常・ASan/UBSanで合格。READY、HANDED_OFF、Receipt closed、retained terminalのcold restartと不一致fail-closedも確認済み。残件はinstalled module/package受入、ESP exact-1 owner、MF-O08 target promotion、物理Wi-Fi/RF/power-cut HIL |
 | V1 composition | **SPEC_ACCEPTED / Host・ESP package候補** | ADR-0032の公開`composition_v1` base owner（workspace/create、Runtime/Fabric借用、bounded step、terminal release、close/destroy）を実装。tests-OFF install後の公開APIだけで2つのCompositionを駆動するApplicationData→Receipt E2Eを通常・ASan/UBSanで確認。HostとESP-IDFは同じFabric/Composition source authorityを使用し、ESP32-S3 component archiveのexact-one、最終ELF symbol/map、公開headerだけのtarget翻訳単位を確認済み。target上のdurable create/step/close、Bearer前sidecar recovery、MFDT/FRAG/relay/multi-parent接続とlarge-data/relay受入は未完。8-module制度や汎用plugin frameworkはV1非対象 |
-| V1 functional LAB vertical slice | **PROPOSED** | ADR-0034でLinux/macOS→USB親機→単一hop SX1262→指定peer/Service→APPLIED ReceiptをV1の実機完成線としてAccepted。NRA1/NVB1 codec、exact LAB binding codec、fresh N6接続owner、`NLB1` FULL保存・cold-restart floor・fresh reset/fenceは通常・Sanitizer Host試験とESP packaging gateに合格。NCG1 bridge統合、Host縦断試験と物理3台HILは未完。20件/10秒はV2 |
+| V1 functional LAB vertical slice | **PROPOSED** | ADR-0034でLinux/macOS→USB親機→単一hop SX1262→指定peer/Service→APPLIED ReceiptをV1の実機完成線としてAccepted。NRA1/NVB1 codec、exact LAB binding、fresh N6接続owner、`NLB1` FULL保存・cold-restart floor・fresh reset/fence、固定上限NCG1 bridgeは通常・Sanitizer Host試験とESP packaging gateに合格。公開POSIX USB portの実PTYでbinding、双方向packet、close/reopenも合格。残件はApplicationData↔NRA1↔NRW1 SINGLE↔SX1262のHost縦断、ESP実行、物理3台HIL。20件/10秒はV2 |
 | OSS package / docs / release CI | **HOST_CANDIDATE** | actionlint・全shellcheck・固定OpenSSL authorityは合格。commit-tree dry run、公開asset照合、独立review（`RELEASE_SUPPORTED`は未昇格） |
 
 OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost software候補を
@@ -70,7 +71,7 @@ ADR-0034により、項目4の大型データ・relay統合はV2へ移しまし�
 1. ~~Portable Fabric公開と実Runtime取引~~ — 完了
 2. ~~POSIX TCP/TLS公開と2プロセスrestart E2E~~ — 完了
 3. ~~POSIX USB serial公開とinstalled PTY E2E~~ — 完了
-4. USB control framingと単一hop ApplicationData↔NRW1 SINGLE mappingを固定 — NRA1/NVB1 codec、exact LAB binding、N6接続owner、durable LAB provisioner候補は作成済み。NCG1 bridge/Host統合は未完
+4. USB control framingと単一hop ApplicationData↔NRW1 SINGLE mappingを固定 — NCG1/NVB1 bridge、exact LAB binding、N6接続owner、durable LAB provisioner、公開POSIX USB portのbinding・双方向PTY縦断は完了。NRA1/NRW1とのHost統合は未完
 5. private SX1262 packet-linkを`composition_v1`へ接続しESP32-S3 build/mapを再検証 — package/buildの土台は合格、live RF経路は未完
 6. README・SDK配布物・CIの最終整合監査 — 実経路のsoftware gate完了後に実施
 7. 3台で物理USB＋SX1262の10件/10秒HIL — 機材で実行するまで`NOT_RUN`。実AP、電源断、20件/10秒、relay/multi-parentはV2 gate
@@ -79,7 +80,7 @@ ADR-0034により、項目4の大型データ・relay統合はV2へ移しまし�
 
 | 区分 | 内容 |
 | --- | --- |
-| **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。composition sidecar接続、ESP ownerと実機経路は未完であり、機能ごとの正式状態は上表を優先します |
+| **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private V1 USB bridgeの永続binding・双方向packet・再接続PTY、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。composition sidecar接続、ESP ownerと実機経路は未完であり、機能ごとの正式状態は上表を優先します |
 | **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter、公開Fabric/Compositionのcomponent packagingと最終ELF link。target上でのlive compositionと物理経路は未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
 | **物理HIL待ち** | ESP flash、実AP、USB CDC、SX1262 TX/RX、2/3-hop、multi-parent failover、電源断、長時間soak。SX1262は2台双方向raw RF runnerまで用意済みですが、機材未接続のため一律`NOT_RUN`です |
 
