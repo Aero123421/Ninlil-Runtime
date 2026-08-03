@@ -873,7 +873,7 @@ jobs:
   clang-sanitizers:
     name: Clang ASan and UBSan (dynamic SQLite)
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
