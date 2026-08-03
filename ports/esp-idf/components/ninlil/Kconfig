@@ -84,7 +84,7 @@ menu "Ninlil SX1262 board profile (XIAO ESP32-S3 + Wio-SX1262)"
             Do not enable for release HIL / power-cut recovery claims.
 
     config NINLIL_RADIO_HIL_V1_BOARD
-        bool "Diagnostic V1 USB parent board mode (session-only)"
+        bool "Diagnostic V1 USB/RF board owner (session-only)"
         default n
         depends on NINLIL_ENABLE_V1_LAB_RADIO_PATH
         depends on NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG
@@ -93,6 +93,16 @@ menu "Ninlil SX1262 board profile (XIAO ESP32-S3 + Wio-SX1262)"
             This target uses session-only PSRAM storage and therefore requires
             reprovisioning after reboot. It is for physical path bring-up, not
             release, restart durability, legal or field evidence.
+
+    config NINLIL_RADIO_HIL_V1_PEER
+        bool "Use generic peer role instead of USB parent"
+        default n
+        depends on NINLIL_RADIO_HIL_V1_BOARD
+        help
+            Selects the endpoint opposite controller_side from the first valid
+            binding. OFF selects the USB-parent endpoint. Both profiles use the
+            same source and adopt their Runtime ID at boot; this is not a
+            dynamic role manager or automated Join.
 
 endmenu
 

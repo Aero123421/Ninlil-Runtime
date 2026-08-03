@@ -117,15 +117,17 @@ Controller clock view; the USB boundary remains
 trusted-local and this notification is not an authenticated network-time
 protocol.
 
-The board firmware does not compile a Controller Runtime ID. When its
+The board firmware does not compile a Controller or peer Runtime ID. When its
 provisioner starts in USB-parent mode, the first valid binding derives the
 local Runtime ID from the binding's already-validated `controller_side`.
-That ID becomes immutable for the rest of the boot, and every later pair must
-name the same Controller Runtime. A malformed binding, inconsistent Service
-directions, clock-epoch mismatch, failed generation/secret floor, or failed
-Storage/N6 admission does not publish an identity. A peer provisioner remains
-explicitly configured and never uses this adoption mode. This is bounded LAB
-bootstrap, not automated Join, field reassignment or hardware identity.
+When it starts in peer mode, it derives the local Runtime ID from the opposite
+endpoint. That ID becomes immutable for the rest of the boot. A Controller may
+then accept one additional pair naming the same Controller Runtime; a peer may
+accept only its first pair. A malformed binding, inconsistent Service
+directions, local clock-epoch mismatch, failed generation/secret floor, or
+failed Storage/N6 admission does not publish an identity. These two explicit
+boot profiles are bounded LAB bootstrap, not automated Join, field
+reassignment or hardware identity.
 
 `INSTALLED` carries the exact accepted binding `pair_generation`; every other
 STATUS carries zero. Provisioning results map exactly as follows:
@@ -173,20 +175,29 @@ Foundation presence validation is reused exactly. Runtime/Application/clock
 IDs are non-zero and clock trust is TRUSTED or UNCERTAIN.
 
 Endpoint A has the lexicographically smaller Runtime ID; equal Runtime IDs are
-rejected. Both endpoints use the same non-zero clock epoch ID. A different
-epoch is rejected because a reverse Receipt must echo the original deadline
-clock while Fabric admission, availability, attestation and authority checks
-use the local endpoint clock. The USB board and host Controller process use the
-same endpoint identity. Service rows identify that endpoint consistently:
+rejected. Each endpoint has its own non-zero boot-local clock epoch ID; the two
+IDs may differ and no clock value is compared across them. A DesiredState
+deadline stays in the Controller endpoint's epoch. A peer Receipt keeps that
+deadline unchanged and carries evidence time in the peer endpoint's epoch.
+Consequently peer evidence alone cannot prove the Controller deadline when the
+epochs differ: the Controller Runtime applies its existing trusted ingress-time
+fallback and otherwise reports an indeterminate deadline verdict. Fabric
+admission, availability, attestation, authority leases, mapper expiry and
+rollback checks use only the local endpoint clock. The USB board and host
+Controller process still use the same Controller endpoint identity and clock
+anchor. Service rows identify that endpoint consistently:
 
 - DesiredState is DOWNLINK from Controller to peer; and
 - EventFact is UPLINK from peer to Controller.
 
-Contradictory rows are rejected. A board accepts the payload only when its
-configured Runtime ID is A or B and its radio site-domain and membership epoch
-match. In the operational bridge, the USB parent is the Controller endpoint. A
-peer may be connected temporarily for provisioning, but it cannot act as the
-Controller bridge for this pair. A third carrier ID is not inferred.
+Contradictory rows are rejected. A bound board accepts the payload only when
+its Runtime ID is A or B and its local clock epoch, radio site-domain and
+membership epoch match. An unbound diagnostic board accepts only the endpoint
+selected by its explicit USB-parent or peer boot profile, and publishes that
+identity only after durable provisioning succeeds. In the operational bridge,
+the USB parent is the Controller endpoint. A peer may be connected temporarily
+for provisioning, but it cannot act as the Controller bridge for this pair. A
+third carrier ID is not inferred.
 
 Rows are sorted by ascending unique slot. Each row is 134 fixed bytes followed
 by three 1..16-byte UTF-8/opaque text IDs:
@@ -300,9 +311,10 @@ authority term/assignment epoch/revision are the exact pair generation, owner
 scope is the first 16 bytes of the stable pair ID, and its 200-byte canonical
 owner tuple is a fixed versioned projection of the binding, endpoints, flow,
 slot, policy and logical E2E identity with the unused tail zero. The local
-endpoint clock epoch and `UINT64_MAX` lease are used on both sides. A Receipt
-uses this retained original forward authority and policy; no reverse binding
-is synthesized.
+endpoint clock epoch and `UINT64_MAX` lease are used on each side. A
+Receipt uses this retained original forward authority and policy; no reverse
+binding is synthesized and no peer timestamp is rewritten into the Controller
+clock.
 
 The authority binding ID is the first 16 bytes of SHA-256 over the non-NUL
 ASCII tag `NINLIL-V1-LAB-AUTHORITY-ID`, followed by `pair_id[32]`, pair
@@ -488,12 +500,12 @@ owner step from the same task that owns the USB byte stream and radio path.
 
 The owner is initialized only with already-bound platform dependencies: the
 trusted clock, durable provisioner, R7 crypto provider, SX1262 PHY, PCP
-authority, radio HAL and active live radio profile. A peer owner also receives
-its explicit local Runtime ID. The USB-parent owner instead starts with the
-unbound Controller-adoption provisioner from section 2; after the first valid
-binding durably publishes that Controller Runtime ID, the owner initializes
-the one packet-link with the adopted ID. It does not start RF before that
-point. A successful `BINDING_SET` callback creates exactly two R7 directional
+authority, radio HAL and active live radio profile. The USB-parent and peer
+profiles start with their corresponding unbound adoption provisioner from
+section 2; after the first valid binding durably publishes the selected local
+Runtime ID, the owner initializes the one packet-link with the adopted ID. It
+does not start RF before that point. A successful `BINDING_SET` callback creates
+exactly two R7 directional
 binds from the four returned N6 handles and the authenticated binding context IDs.
 Only the direction transmitted by the local endpoint receives PCP/HAL/live
 authority. The callback then installs the exact pair into the fixed packet
@@ -527,14 +539,15 @@ binding contradiction or a fenced provisioner fences the whole owner and
 prevents further RF admission. Physical USB/RF operation remains a separate
 HIL gate.
 
-### 7. ESP32-S3 diagnostic board profile
+### 7. ESP32-S3 diagnostic board profiles
 
-The repository provides one default-off `radio_hil_app` board profile for
-physical USB/RF bring-up. It enables the existing V1 LAB packet-link, opens the
-native USB CDC control stream and drives exactly one fixed board owner from the
-`app_main` task. UART remains the diagnostic console. The image has no compiled
-Controller Runtime ID and admits no RF traffic until section 2's first valid
-binding adoption.
+The repository provides two default-off `radio_hil_app` build profiles for
+physical USB/RF bring-up: `USB parent` and `generic peer`. They compile the same
+source and differ by one fixed Kconfig role bit; V1 does not add a dynamic role
+manager. Both enable the existing V1 LAB packet-link, open the native USB CDC
+control stream and drive exactly one fixed board owner from the `app_main` task.
+UART remains the diagnostic console. Neither image has a compiled Runtime ID,
+and neither admits RF traffic until section 2's first valid binding adoption.
 
 This profile deliberately uses the session LAB Storage because the current ESP
 flash adapter does not attest a successful `FULL` commit. It allocates that one
@@ -555,19 +568,22 @@ retain that nonclaim.
 1. NVB1 codec KATs cover all kinds/bounds, sequence consumption/fence and
    failure atomicity.
 2. Binding KATs cover 1/3 rows, exact 557/966-byte limits, deterministic IDs,
+   distinct endpoint clock epochs, local-clock-only rollback fencing,
    identity/Service negatives and four-slot capacity.
 3. Storage tests cover namespace reset, exact N6 fresh install, coordinated
    receiver IDs/collision/floors, token single-consume and failure atomicity,
    FULL failure/COMMIT_UNKNOWN, cold-restart deny, one global strictly newer
    boot membership epoch shared by both pairs, pair generation floors,
-   two-pair maximum-28-row bound, exact 32-row reset and fifth-record fence.
+   two-pair maximum-28-row bound, exact 32-row reset, Controller/peer identity
+   adoption and fifth-record fence.
 4. A PTY test uses the installed POSIX USB port and the same private bridge as
    ESP packaging.
 5. Host vertical simulation covers two peers, the multi-Service node, both
    directions, APPLIED correlation, duplicate, timeout, tamper, wrong key,
    wrong binding/Service and restart/reprovision.
-6. The ESP32-S3 target compiles/links this same codec, owner and bridge with
-   no test-only provenance or public ABI exposure.
+6. The ESP32-S3 target compiles/links the same codec, owner and bridge in both
+   USB-parent and generic-peer profiles with no test-only provenance or public
+   ABI exposure.
 
 Physical USB/RF evidence remains `NOT_RUN` until ADR-0034's three-board run.
 

@@ -325,7 +325,7 @@ static ninlil_v1_lab_provision_status_t scan_floor_namespace(
                        &binding, p->local_runtime_id, &local_side)
                     != NINLIL_V1_LAB_BINDING_OK)
             || (p->local_runtime_bound == 0u
-                && p->controller_adopt_mode == 0u)
+                && p->runtime_adopt_mode == NINLIL_V1_LAB_ADOPT_NONE)
             || memcmp(key.data + 4u, binding.pair_id, 32u) != 0) {
             ninlil_v1_lab_binding_clear(&binding);
             result = NINLIL_V1_LAB_PROVISION_CORRUPT;
@@ -572,7 +572,7 @@ static ninlil_v1_lab_provision_status_t provisioner_init_common(
     const ninlil_r7_crypto_provider *r7_crypto,
     const uint8_t local_runtime_id[16],
     const ninlil_r2_authority_clock_result_t *authority_result,
-    uint8_t controller_adopt_mode)
+    uint8_t runtime_adopt_mode)
 {
     ninlil_v1_lab_provision_status_t result;
 
@@ -581,9 +581,13 @@ static ninlil_v1_lab_provision_status_t provisioner_init_common(
         || n6_crypto->hkdf_sha256 == NULL || r7_crypto == NULL
         || ninlil_r7_crypto_provider_validate(r7_crypto)
             != NINLIL_R7_CRYPTO_OK
-        || (controller_adopt_mode == 0u
+        || (runtime_adopt_mode == NINLIL_V1_LAB_ADOPT_NONE
             && !bytes_nonzero(local_runtime_id, 16u))
-        || (controller_adopt_mode != 0u && local_runtime_id != NULL)
+        || (runtime_adopt_mode != NINLIL_V1_LAB_ADOPT_NONE
+            && runtime_adopt_mode != NINLIL_V1_LAB_ADOPT_CONTROLLER
+            && runtime_adopt_mode != NINLIL_V1_LAB_ADOPT_PEER)
+        || (runtime_adopt_mode != NINLIL_V1_LAB_ADOPT_NONE
+            && local_runtime_id != NULL)
         || !class_d_result_valid(authority_result)
         || ninlil_n6_state(n6) != NINLIL_N6_STATE_INIT) {
         return NINLIL_V1_LAB_PROVISION_INVALID_ARGUMENT;
@@ -596,7 +600,7 @@ static ninlil_v1_lab_provision_status_t provisioner_init_common(
     p->n6_crypto = *n6_crypto;
     p->r7_crypto = *r7_crypto;
     p->authority_result = *authority_result;
-    p->controller_adopt_mode = controller_adopt_mode != 0u ? 1u : 0u;
+    p->runtime_adopt_mode = runtime_adopt_mode;
     if (local_runtime_id != NULL) {
         (void)memcpy(p->local_runtime_id, local_runtime_id, 16u);
         p->local_runtime_bound = 1u;
@@ -619,7 +623,7 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init(
     const ninlil_r2_authority_clock_result_t *authority_result)
 {
     return provisioner_init_common(p, n6, storage, n6_crypto, r7_crypto,
-        local_runtime_id, authority_result, 0u);
+        local_runtime_id, authority_result, NINLIL_V1_LAB_ADOPT_NONE);
 }
 
 ninlil_v1_lab_provision_status_t
@@ -632,7 +636,19 @@ ninlil_v1_lab_provisioner_init_controller(
     const ninlil_r2_authority_clock_result_t *authority_result)
 {
     return provisioner_init_common(p, n6, storage, n6_crypto, r7_crypto,
-        NULL, authority_result, 1u);
+        NULL, authority_result, NINLIL_V1_LAB_ADOPT_CONTROLLER);
+}
+
+ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init_peer(
+    ninlil_v1_lab_provisioner_t *p,
+    ninlil_n6_t *n6,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_n6_crypto_ops_t *n6_crypto,
+    const ninlil_r7_crypto_provider *r7_crypto,
+    const ninlil_r2_authority_clock_result_t *authority_result)
+{
+    return provisioner_init_common(p, n6, storage, n6_crypto, r7_crypto,
+        NULL, authority_result, NINLIL_V1_LAB_ADOPT_PEER);
 }
 
 ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_install_pair(
@@ -686,9 +702,13 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_install_pair(
         }
         (void)memcpy(candidate_local_runtime_id,
             p->local_runtime_id, sizeof(candidate_local_runtime_id));
-    } else if (p->controller_adopt_mode != 0u
+    } else if (p->runtime_adopt_mode != NINLIL_V1_LAB_ADOPT_NONE
         && p->active_pair_count == 0u && p->mode_fixed == 0u) {
-        local_side = binding.controller_side;
+        local_side = p->runtime_adopt_mode == NINLIL_V1_LAB_ADOPT_CONTROLLER
+            ? binding.controller_side
+            : (binding.controller_side == NINLIL_V1_LAB_SIDE_A
+                    ? NINLIL_V1_LAB_SIDE_B
+                    : NINLIL_V1_LAB_SIDE_A);
         (void)memcpy(candidate_local_runtime_id,
             local_side == NINLIL_V1_LAB_SIDE_A
                 ? binding.endpoint_a.runtime_id

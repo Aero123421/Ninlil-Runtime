@@ -71,10 +71,6 @@ static void fill_binding(
     binding->pair_generation = pair_generation;
     fill_endpoint(&binding->endpoint_a, 0x10u);
     fill_endpoint(&binding->endpoint_b, peer_seed);
-    (void)memcpy(
-        binding->endpoint_b.clock_epoch_id,
-        binding->endpoint_a.clock_epoch_id,
-        16u);
     fill_bytes(binding->radio_site_domain_id, 16u, 0x90u);
     binding->radio_membership_epoch = membership_epoch;
     binding->a_to_b_hop_context_id = context_id;
@@ -620,7 +616,8 @@ static int test_controller_identity_adoption(
                 n6.n6, ops, ninlil_n6_crypto_host_ops(), crypto, &sample)
         == NINLIL_V1_LAB_PROVISION_OK);
     REQUIRE(provisioner.local_runtime_bound == 0u
-        && provisioner.controller_adopt_mode == 1u);
+        && provisioner.runtime_adopt_mode
+            == NINLIL_V1_LAB_ADOPT_CONTROLLER);
 
     fill_binding(&wrong_clock, 0x30u, 1u, 10u, 1u, 0x31u);
     wrong_clock.endpoint_a.clock_epoch_id[0] ^= 0x55u;
@@ -684,6 +681,113 @@ static int test_controller_identity_adoption(
     ninlil_v1_lab_binding_clear(&second);
     ninlil_v1_lab_binding_clear(&wrong_clock);
     ninlil_v1_lab_binding_clear(&wrong_controller);
+    ninlil_test_storage_destroy(storage);
+    return 0;
+}
+
+static int test_peer_identity_adoption(
+    const ninlil_r7_crypto_provider *crypto)
+{
+    ninlil_test_storage_config_t config = {4u, 32u, 65536u};
+    ninlil_test_storage_t *storage = ninlil_test_storage_create(&config);
+    const ninlil_storage_ops_t *ops;
+    test_n6_t n6;
+    ninlil_v1_lab_provisioner_t provisioner;
+    ninlil_v1_lab_binding_t correct;
+    ninlil_v1_lab_binding_t wrong_clock;
+    ninlil_v1_lab_binding_t second;
+    ninlil_v1_lab_n6_handles_t handles;
+    ninlil_r2_authority_clock_result_t sample;
+
+    REQUIRE(storage != NULL);
+    ops = ninlil_test_storage_ops(storage);
+    fill_binding(&correct, 0x30u, 1u, 10u, 1u, 0x11u);
+    REQUIRE(memcmp(correct.endpoint_a.clock_epoch_id,
+                correct.endpoint_b.clock_epoch_id, 16u)
+        != 0);
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &correct)
+        == NINLIL_V1_LAB_BINDING_OK);
+    fill_class_d(&sample, correct.endpoint_b.clock_epoch_id);
+    REQUIRE(init_n6(&n6) == 0);
+    REQUIRE(ninlil_v1_lab_provisioner_init_peer(&provisioner,
+                n6.n6, ops, ninlil_n6_crypto_host_ops(), crypto, &sample)
+        == NINLIL_V1_LAB_PROVISION_OK);
+    REQUIRE(provisioner.local_runtime_bound == 0u
+        && provisioner.runtime_adopt_mode == NINLIL_V1_LAB_ADOPT_PEER);
+
+    wrong_clock = correct;
+    wrong_clock.endpoint_b.clock_epoch_id[0] ^= 0x55u;
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &wrong_clock)
+        == NINLIL_V1_LAB_BINDING_OK);
+    REQUIRE(ninlil_v1_lab_provisioner_install_pair(&provisioner,
+                wrong_clock.raw, wrong_clock.raw_length, &handles)
+        == NINLIL_V1_LAB_PROVISION_INVALID_ARGUMENT);
+    REQUIRE(provisioner.local_runtime_bound == 0u
+        && ninlil_n6_state(n6.n6) == NINLIL_N6_STATE_INIT);
+
+    REQUIRE(ninlil_v1_lab_provisioner_install_pair(&provisioner,
+                correct.raw, correct.raw_length, &handles)
+        == NINLIL_V1_LAB_PROVISION_OK);
+    REQUIRE(provisioner.local_runtime_bound == 1u
+        && provisioner.local_controller_mode == 0u
+        && provisioner.active_pair_count == 1u
+        && memcmp(provisioner.local_runtime_id,
+               correct.endpoint_b.runtime_id, 16u)
+            == 0);
+
+    fill_binding(&second, 0x30u, 2u, 10u, 2u, 0x51u);
+    fill_endpoint(&second.endpoint_a, 0x20u);
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &second)
+        == NINLIL_V1_LAB_BINDING_OK);
+    REQUIRE(ninlil_v1_lab_provisioner_install_pair(&provisioner,
+                second.raw, second.raw_length, &handles)
+        == NINLIL_V1_LAB_PROVISION_CAPACITY);
+    REQUIRE(provisioner.active_pair_count == 1u
+        && !ninlil_v1_lab_provisioner_is_fenced(&provisioner));
+
+    ninlil_v1_lab_provisioner_clear(&provisioner);
+    ninlil_v1_lab_binding_clear(&correct);
+    ninlil_v1_lab_binding_clear(&wrong_clock);
+    ninlil_v1_lab_binding_clear(&second);
+    ninlil_test_storage_destroy(storage);
+    return 0;
+}
+
+static int test_peer_identity_adoption_controller_b(
+    const ninlil_r7_crypto_provider *crypto)
+{
+    ninlil_test_storage_config_t config = {4u, 32u, 65536u};
+    ninlil_test_storage_t *storage = ninlil_test_storage_create(&config);
+    const ninlil_storage_ops_t *ops;
+    test_n6_t n6;
+    ninlil_v1_lab_provisioner_t provisioner;
+    ninlil_v1_lab_binding_t binding;
+    ninlil_v1_lab_n6_handles_t handles;
+    ninlil_r2_authority_clock_result_t sample;
+
+    REQUIRE(storage != NULL);
+    ops = ninlil_test_storage_ops(storage);
+    fill_binding(&binding, 0x30u, 1u, 10u, 1u, 0x11u);
+    binding.services[0].flow = NINLIL_V1_LAB_FLOW_B_TO_A;
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
+        == NINLIL_V1_LAB_BINDING_OK);
+    REQUIRE(binding.controller_side == NINLIL_V1_LAB_SIDE_B);
+    fill_class_d(&sample, binding.endpoint_a.clock_epoch_id);
+    REQUIRE(init_n6(&n6) == 0);
+    REQUIRE(ninlil_v1_lab_provisioner_init_peer(&provisioner,
+                n6.n6, ops, ninlil_n6_crypto_host_ops(), crypto, &sample)
+        == NINLIL_V1_LAB_PROVISION_OK);
+    REQUIRE(ninlil_v1_lab_provisioner_install_pair(&provisioner,
+                binding.raw, binding.raw_length, &handles)
+        == NINLIL_V1_LAB_PROVISION_OK);
+    REQUIRE(provisioner.local_runtime_bound == 1u
+        && provisioner.local_controller_mode == 0u
+        && memcmp(provisioner.local_runtime_id,
+               binding.endpoint_a.runtime_id, 16u)
+            == 0);
+
+    ninlil_v1_lab_provisioner_clear(&provisioner);
+    ninlil_v1_lab_binding_clear(&binding);
     ninlil_test_storage_destroy(storage);
     return 0;
 }
@@ -756,6 +860,8 @@ int main(void)
     REQUIRE(test_publication_commit_unknown(&crypto, 0) == 0);
     REQUIRE(test_publication_commit_unknown(&crypto, 1) == 0);
     REQUIRE(test_controller_identity_adoption(&crypto) == 0);
+    REQUIRE(test_peer_identity_adoption(&crypto) == 0);
+    REQUIRE(test_peer_identity_adoption_controller_b(&crypto) == 0);
     REQUIRE(test_session_ledger_v1_capacity(&crypto) == 0);
     (void)fprintf(stdout, "v1_lab_provisioner_test OK\n");
     return 0;

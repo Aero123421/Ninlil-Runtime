@@ -140,6 +140,7 @@ static ninlil_v1_lab_radio_mapping_status_t sample_pair_now(
     const ninlil_time_sample_t *now)
 {
     ninlil_v1_lab_radio_pair_slot_t *pair;
+    const ninlil_v1_lab_endpoint_t *local;
     uint8_t i;
 
     if (!mapper_valid(mapper) || pair_slot >= NINLIL_V1_LAB_RADIO_PAIR_MAX
@@ -153,8 +154,14 @@ static ninlil_v1_lab_radio_mapping_status_t sample_pair_now(
     if (pair->fenced != 0u) {
         return NINLIL_V1_LAB_RADIO_MAPPING_FENCED;
     }
+    local = endpoint_for_side(&pair->binding, pair->local_side);
+    if (local == NULL) {
+        pair->fenced = 1u;
+        clear_pair_correlations(mapper, pair_slot);
+        return NINLIL_V1_LAB_RADIO_MAPPING_FENCED;
+    }
     if (memcmp(
-            pair->binding.endpoint_a.clock_epoch_id,
+            local->clock_epoch_id,
             now->clock_epoch_id.bytes,
             16u)
             != 0

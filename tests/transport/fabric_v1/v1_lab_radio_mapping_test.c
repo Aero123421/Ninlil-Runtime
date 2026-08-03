@@ -41,7 +41,8 @@ static void fill_endpoint(
     endpoint->identity_flags = NINLIL_LOCAL_IDENTITY_HAS_DEVICE
         | NINLIL_LOCAL_IDENTITY_HAS_INSTALLATION
         | NINLIL_LOCAL_IDENTITY_HAS_SITE;
-    fill_bytes(endpoint->clock_epoch_id, 16u, 0x61u);
+    fill_bytes(
+        endpoint->clock_epoch_id, 16u, (uint8_t)(seed + 0x51u));
     endpoint->clock_trust = NINLIL_CLOCK_TRUSTED;
 }
 
@@ -280,13 +281,19 @@ static int make_receipt(
 static void make_now(
     ninlil_time_sample_t *now,
     const ninlil_v1_lab_binding_t *binding,
+    uint8_t local_side,
     uint64_t now_ms)
 {
+    const ninlil_v1_lab_endpoint_t *local =
+        local_side == NINLIL_V1_LAB_SIDE_A
+        ? &binding->endpoint_a
+        : &binding->endpoint_b;
+
     (void)memset(now, 0, sizeof(*now));
     now->abi_version = NINLIL_ABI_VERSION;
     now->struct_size = (uint16_t)sizeof(*now);
     (void)memcpy(
-        now->clock_epoch_id.bytes, binding->endpoint_a.clock_epoch_id, 16u);
+        now->clock_epoch_id.bytes, local->clock_epoch_id, 16u);
     now->now_ms = now_ms;
     now->trust = NINLIL_CLOCK_TRUSTED;
 }
@@ -341,7 +348,7 @@ static int test_application_receipt_round_trip(
                 crypto, binding, 0x01u, 77u, NINLIL_EVIDENCE_APPLIED,
                 app_nfl1, &app_length)
         == 0);
-    make_now(&now, binding, 1000u);
+    make_now(&now, binding, NINLIL_V1_LAB_SIDE_A, 1000u);
     REQUIRE(ninlil_v1_lab_radio_mapper_encode(
                 &mapper_a,
                 app_nfl1,
@@ -357,7 +364,7 @@ static int test_application_receipt_round_trip(
     REQUIRE(flow == NINLIL_V1_LAB_FLOW_A_TO_B);
     REQUIRE(body_length >= NINLIL_NRA1_APPLICATION_BODY_MIN);
 
-    make_now(&now, binding, 1100u);
+    make_now(&now, binding, NINLIL_V1_LAB_SIDE_B, 1100u);
     REQUIRE(ninlil_v1_lab_radio_mapper_decode(
                 &mapper_b,
                 0u,
@@ -382,6 +389,9 @@ static int test_application_receipt_round_trip(
         == NINLIL_FABRIC_PRIVATE_NFL1_OK);
     REQUIRE(envelope.path_selection_epoch == binding->pair_generation);
     REQUIRE(envelope.generation == 42u);
+    REQUIRE(memcmp(envelope.deadline_clock_epoch_id.bytes,
+                binding->endpoint_a.clock_epoch_id, 16u)
+        == 0);
     REQUIRE(envelope.payload.length == sizeof("display:occupied") - 1u);
     REQUIRE(memcmp(envelope.payload.bytes, "display:occupied",
                 sizeof("display:occupied") - 1u)
@@ -395,7 +405,7 @@ static int test_application_receipt_round_trip(
                 receipt_nfl1,
                 &receipt_length)
         == 0);
-    make_now(&now, binding, 1200u);
+    make_now(&now, binding, NINLIL_V1_LAB_SIDE_B, 1200u);
     REQUIRE(ninlil_v1_lab_radio_mapper_encode(
                 &mapper_b,
                 receipt_nfl1,
@@ -409,7 +419,7 @@ static int test_application_receipt_round_trip(
         == NINLIL_V1_LAB_RADIO_MAPPING_OK);
     REQUIRE(flow == NINLIL_V1_LAB_FLOW_B_TO_A);
 
-    make_now(&now, binding, 1300u);
+    make_now(&now, binding, NINLIL_V1_LAB_SIDE_A, 1300u);
     REQUIRE(ninlil_v1_lab_radio_mapper_decode(
                 &mapper_a,
                 0u,
@@ -435,6 +445,12 @@ static int test_application_receipt_round_trip(
     REQUIRE(envelope.message_kind == NINLIL_BEARER_MESSAGE_RECEIPT);
     REQUIRE(envelope.path_selection_epoch == 77u);
     REQUIRE(envelope.receipt_stage == NINLIL_EVIDENCE_APPLIED);
+    REQUIRE(memcmp(envelope.deadline_clock_epoch_id.bytes,
+                binding->endpoint_a.clock_epoch_id, 16u)
+        == 0);
+    REQUIRE(memcmp(envelope.evidence_time_clock_epoch_id.bytes,
+                binding->endpoint_b.clock_epoch_id, 16u)
+        == 0);
     REQUIRE(memcmp(
                 envelope.source_runtime_id.bytes,
                 binding->endpoint_b.runtime_id,
@@ -499,7 +515,7 @@ static int test_conflict_expiry_and_clock_fence(
                 crypto, binding, 0x41u, 100u, NINLIL_EVIDENCE_APPLIED,
                 packet, &packet_length)
         == 0);
-    make_now(&now, binding, 2000u);
+    make_now(&now, binding, NINLIL_V1_LAB_SIDE_A, 2000u);
     REQUIRE(ninlil_v1_lab_radio_mapper_encode(
                 &mapper,
                 packet,
@@ -579,7 +595,7 @@ static int test_conflict_expiry_and_clock_fence(
                     &receipt_body_length)
             == NINLIL_NRA1_OK);
     }
-    make_now(&now, binding, 32000u);
+    make_now(&now, binding, NINLIL_V1_LAB_SIDE_A, 32000u);
     REQUIRE(ninlil_v1_lab_radio_mapper_decode(
                 &mapper,
                 0u,
@@ -593,7 +609,7 @@ static int test_conflict_expiry_and_clock_fence(
                 &receipt_token)
         == NINLIL_V1_LAB_RADIO_MAPPING_NOT_FOUND);
 
-    make_now(&now, binding, 31999u);
+    make_now(&now, binding, NINLIL_V1_LAB_SIDE_A, 31999u);
     REQUIRE(ninlil_v1_lab_radio_mapper_encode(
                 &mapper,
                 packet,
@@ -638,7 +654,8 @@ static int test_none_evidence_does_not_consume_correlations(
                     (uint8_t)(0x81u + i), (uint64_t)(200u + i),
                     NINLIL_EVIDENCE_NONE, packet, &packet_length)
             == 0);
-        make_now(&now, binding, (uint64_t)(4000u + i));
+        make_now(&now, binding, NINLIL_V1_LAB_SIDE_A,
+            (uint64_t)(4000u + i));
         REQUIRE(ninlil_v1_lab_radio_mapper_encode(&mapper, packet,
                     packet_length, &now, &pair_slot, &flow, body,
                     sizeof(body), &body_length)

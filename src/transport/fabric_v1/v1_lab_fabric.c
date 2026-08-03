@@ -196,7 +196,6 @@ ninlil_v1_lab_fabric_status_t ninlil_v1_lab_fabric_build_path(
                                             : NINLIL_V1_LAB_SIDE_A);
     controller = endpoint_for_side(binding, binding->controller_side);
     if (row == NULL || local == NULL || peer == NULL || controller == NULL
-        || memcmp(local->clock_epoch_id, peer->clock_epoch_id, 16u) != 0
         || !descriptor_common(
             binding,
             row->selected_path_id,
@@ -342,12 +341,7 @@ ninlil_v1_lab_fabric_status_t ninlil_v1_lab_fabric_build_service(
     local = endpoint_for_side(binding, side);
     controller = endpoint_for_side(binding, binding->controller_side);
     if (local == NULL || controller == NULL
-        || !flow_endpoints(binding, row->flow, &source, &target)
-        || memcmp(
-               binding->endpoint_a.clock_epoch_id,
-               binding->endpoint_b.clock_epoch_id,
-               16u)
-            != 0) {
+        || !flow_endpoints(binding, row->flow, &source, &target)) {
         return NINLIL_V1_LAB_FABRIC_BINDING;
     }
 

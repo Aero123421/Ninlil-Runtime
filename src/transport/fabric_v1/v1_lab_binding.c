@@ -449,11 +449,6 @@ static ninlil_v1_lab_binding_status_t validate_base(
         || memcmp(
                b->endpoint_a.runtime_id, b->endpoint_b.runtime_id, 16u)
             >= 0
-        || memcmp(
-               b->endpoint_a.clock_epoch_id,
-               b->endpoint_b.clock_epoch_id,
-               16u)
-            != 0
         || is_zero(b->radio_site_domain_id, 16u)
         || b->radio_membership_epoch == 0u
         || !context_id_valid(b->a_to_b_hop_context_id)

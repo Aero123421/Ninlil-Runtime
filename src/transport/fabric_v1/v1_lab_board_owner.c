@@ -210,7 +210,8 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_init(
         || config->live == NULL || config->provisioner->active == 0u
         || ninlil_v1_lab_provisioner_is_fenced(config->provisioner)
         || (config->local_runtime_id == NULL
-            && (config->provisioner->controller_adopt_mode == 0u
+            && (config->provisioner->runtime_adopt_mode
+                    == NINLIL_V1_LAB_ADOPT_NONE
                 || config->provisioner->local_runtime_bound != 0u))
         || (config->local_runtime_id != NULL
             && (!bytes_nonzero(config->local_runtime_id, 16u)

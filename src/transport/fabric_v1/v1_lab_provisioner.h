@@ -22,6 +22,10 @@ extern "C" {
 #define NINLIL_V1_LAB_FLOOR_MAX ((uint8_t)4u)
 #define NINLIL_V1_LAB_ACTIVE_PAIR_MAX ((uint8_t)2u)
 
+#define NINLIL_V1_LAB_ADOPT_NONE ((uint8_t)0u)
+#define NINLIL_V1_LAB_ADOPT_CONTROLLER ((uint8_t)1u)
+#define NINLIL_V1_LAB_ADOPT_PEER ((uint8_t)2u)
+
 typedef uint32_t ninlil_v1_lab_provision_status_t;
 #define NINLIL_V1_LAB_PROVISION_OK \
     ((ninlil_v1_lab_provision_status_t)0u)
@@ -64,7 +68,7 @@ typedef struct ninlil_v1_lab_provisioner {
     uint8_t local_controller_mode;
     uint8_t mode_fixed;
     uint8_t local_runtime_bound;
-    uint8_t controller_adopt_mode;
+    uint8_t runtime_adopt_mode;
     uint8_t reserved_state[2];
     ninlil_n6_t *n6;
     ninlil_storage_ops_t storage;
@@ -95,10 +99,23 @@ ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init(
 
 /*
  * USB-parent bootstrap variant. The first accepted binding adopts its derived
- * Controller Runtime ID; peers must use the explicit init above.
+ * Controller Runtime ID.
  */
 ninlil_v1_lab_provision_status_t
 ninlil_v1_lab_provisioner_init_controller(
+    ninlil_v1_lab_provisioner_t *provisioner,
+    ninlil_n6_t *n6,
+    const ninlil_storage_ops_t *storage,
+    const ninlil_n6_crypto_ops_t *n6_crypto,
+    const ninlil_r7_crypto_provider *r7_crypto,
+    const ninlil_r2_authority_clock_result_t *authority_result);
+
+/*
+ * Generic peer bootstrap variant. The first accepted binding adopts the
+ * endpoint opposite controller_side and then fixes that identity for the
+ * remainder of the boot.
+ */
+ninlil_v1_lab_provision_status_t ninlil_v1_lab_provisioner_init_peer(
     ninlil_v1_lab_provisioner_t *provisioner,
     ninlil_n6_t *n6,
     const ninlil_storage_ops_t *storage,

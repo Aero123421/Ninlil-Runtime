@@ -120,6 +120,10 @@ static const char *TAG = "radio_hil";
         || !defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG))
 #error "V1 board mode requires the V1 LAB radio path and session ledger"
 #endif
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER) \
+    && !defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+#error "V1 peer role requires V1 board mode"
+#endif
 
 /* Release radio_hil must bind exact XIAO ESP32-S3 + Wio-SX1262 pins. */
 #if CONFIG_NINLIL_SX1262_PIN_NSS != NINLIL_SX1262_XIAO_WIO_PIN_NSS
@@ -817,6 +821,7 @@ static int v1_board_init(void)
 {
     ninlil_n6_context_pool_t pool;
     ninlil_r2_authority_clock_result_t class_d;
+    ninlil_v1_lab_provision_status_t provision_status;
     ninlil_byte_stream_error_t usb_error;
     ninlil_v1_lab_board_owner_config_t owner_config;
     size_t pool_bytes;
@@ -841,11 +846,20 @@ static int v1_board_init(void)
         emit("ERR v1_n6_init");
         return 1;
     }
-    if (v1_class_d_sample(&class_d) != 0
-        || ninlil_v1_lab_provisioner_init_controller(&g_v1_provisioner,
-               g_v1_n6, g_ledger_ops, ninlil_n6_crypto_host_ops(),
-               &g_r7_crypto, &class_d)
-            != NINLIL_V1_LAB_PROVISION_OK) {
+    if (v1_class_d_sample(&class_d) != 0) {
+        emit("ERR v1_provisioner");
+        return 1;
+    }
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+    provision_status = ninlil_v1_lab_provisioner_init_peer(&g_v1_provisioner,
+        g_v1_n6, g_ledger_ops, ninlil_n6_crypto_host_ops(),
+        &g_r7_crypto, &class_d);
+#else
+    provision_status = ninlil_v1_lab_provisioner_init_controller(
+        &g_v1_provisioner, g_v1_n6, g_ledger_ops,
+        ninlil_n6_crypto_host_ops(), &g_r7_crypto, &class_d);
+#endif
+    if (provision_status != NINLIL_V1_LAB_PROVISION_OK) {
         emit("ERR v1_provisioner");
         return 1;
     }
@@ -880,8 +894,13 @@ static int v1_board_init(void)
         emit("ERR v1_board_owner");
         return 1;
     }
-    emit("READY v1_board usb=control-cdc radio=single_hop "
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+    emit("READY v1_board role=peer usb=control-cdc radio=single_hop "
+         "ledger=session_diag restart_durable=false peer_id=binding");
+#else
+    emit("READY v1_board role=usb_parent usb=control-cdc radio=single_hop "
          "ledger=session_diag restart_durable=false controller_id=binding");
+#endif
     return 0;
 }
 
@@ -1425,7 +1444,11 @@ void app_main(void)
     mint_boot_identity();
     hex16(g_boot_id, boot_hex);
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+    ESP_LOGI(TAG, "starting V1 generic peer diagnostic profile");
+#else
     ESP_LOGI(TAG, "starting V1 USB parent diagnostic profile");
+#endif
     if (v1_board_init() != 0) {
         emit("ERR v1_board_startup");
         for (;;) {

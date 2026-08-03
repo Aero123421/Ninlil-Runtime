@@ -845,4 +845,39 @@ do
   grep -E " [Tt] ${sym}$" "${V1_BOARD_DIR}/ninlil_v1_board.nm.txt"
 done
 echo "V1 diagnostic USB+SX1262 board target compile/link OK (session-only, not HIL)"
+
+# The generic peer is the same diagnostic owner with one fixed build-time role
+# bit. Build it separately so peer adoption cannot exist only in Host tests.
+(
+  cd ports/esp-idf/radio_hil_app
+  idf.py -B build-v1-peer \
+    -D SDKCONFIG=build-v1-peer/sdkconfig.v1-peer \
+    -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.v1-board.defaults;sdkconfig.v1-peer.defaults" \
+    build
+)
+V1_PEER_DIR=ports/esp-idf/radio_hil_app/build-v1-peer
+V1_PEER_ELF="${V1_PEER_DIR}/ninlil_radio_hil.elf"
+V1_PEER_SDK="${V1_PEER_DIR}/sdkconfig.v1-peer"
+test -s "${V1_PEER_ELF}"
+for config in \
+  CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE \
+  CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH \
+  CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG \
+  CONFIG_NINLIL_RADIO_HIL_V1_BOARD \
+  CONFIG_NINLIL_RADIO_HIL_V1_PEER
+do
+  grep -E "^${config}=y$" "${V1_PEER_SDK}"
+done
+xtensa-esp32s3-elf-nm "${V1_PEER_ELF}" > "${V1_PEER_DIR}/ninlil_v1_peer.nm.txt"
+for sym in \
+  app_main \
+  ninlil_esp_idf_usb_cdc_open \
+  ninlil_pcp_lab_session_ledger_init \
+  ninlil_v1_lab_provisioner_init_peer \
+  ninlil_v1_lab_board_owner_init \
+  ninlil_v1_lab_board_owner_step
+do
+  grep -E " [Tt] ${sym}$" "${V1_PEER_DIR}/ninlil_v1_peer.nm.txt"
+done
+echo "V1 generic peer USB+SX1262 target compile/link OK (session-only, not HIL)"
 NINLIL_ESP_CI

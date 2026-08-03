@@ -36,7 +36,7 @@ typedef struct ninlil_v1_lab_board_owner_config {
     ninlil_byte_stream_t *usb_stream;
     ninlil_v1_lab_provisioner_t *provisioner;
     const ninlil_r7_crypto_provider *crypto;
-    /* NULL only for an unbound USB-parent provisioner in adoption mode. */
+    /* NULL only for an unbound USB-parent or peer adoption provisioner. */
     const uint8_t *local_runtime_id;
     const ninlil_clock_ops_t *clock;
     ninlil_sx1262_phy_t *phy;

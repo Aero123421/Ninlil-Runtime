@@ -308,7 +308,7 @@ static int test_rejection_is_atomic(ninlil_r7_crypto_provider *crypto)
     REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
         == NINLIL_V1_LAB_BINDING_SEMANTIC);
     fill_binding(&binding, 1u, 1u);
-    binding.endpoint_b.clock_epoch_id[0] ^= 1u;
+    (void)memset(binding.endpoint_b.clock_epoch_id, 0, 16u);
     REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
         == NINLIL_V1_LAB_BINDING_STRUCTURAL);
     fill_binding(&binding, 1u, 1u);
@@ -318,6 +318,64 @@ static int test_rejection_is_atomic(ninlil_r7_crypto_provider *crypto)
     ninlil_v1_lab_binding_clear(&binding);
     ninlil_v1_lab_binding_clear(&output);
     ninlil_v1_lab_binding_clear(&before);
+    return 0;
+}
+
+static int test_distinct_endpoint_clock_epochs(
+    ninlil_r7_crypto_provider *crypto)
+{
+    ninlil_v1_lab_binding_t binding;
+    ninlil_fabric_link_descriptor_v1_t descriptor_a;
+    ninlil_fabric_link_descriptor_v1_t descriptor_b;
+    ninlil_fabric_link_state_v1_t state_a;
+    ninlil_fabric_link_state_v1_t state_b;
+    ninlil_fabric_path_policy_v1_t policy;
+    ninlil_fabric_authority_binding_v1_t authority_a;
+    ninlil_fabric_authority_binding_v1_t authority_b;
+
+    fill_binding(&binding, 2u, 4u);
+    binding.endpoint_b.clock_epoch_id[0] ^= 0x5au;
+    REQUIRE(memcmp(binding.endpoint_a.clock_epoch_id,
+                binding.endpoint_b.clock_epoch_id, 16u)
+        != 0);
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
+        == NINLIL_V1_LAB_BINDING_OK);
+    REQUIRE(ninlil_v1_lab_fabric_build_path(crypto, &binding,
+                binding.endpoint_a.runtime_id,
+                NINLIL_V1_LAB_FLOW_A_TO_B, &descriptor_a, &state_a)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(ninlil_v1_lab_fabric_build_path(crypto, &binding,
+                binding.endpoint_b.runtime_id,
+                NINLIL_V1_LAB_FLOW_A_TO_B, &descriptor_b, &state_b)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(memcmp(descriptor_a.attestation_clock_epoch_id.bytes,
+                binding.endpoint_a.clock_epoch_id, 16u)
+        == 0);
+    REQUIRE(memcmp(state_a.availability_clock_epoch_id.bytes,
+                binding.endpoint_a.clock_epoch_id, 16u)
+        == 0);
+    REQUIRE(memcmp(descriptor_b.attestation_clock_epoch_id.bytes,
+                binding.endpoint_b.clock_epoch_id, 16u)
+        == 0);
+    REQUIRE(memcmp(state_b.availability_clock_epoch_id.bytes,
+                binding.endpoint_b.clock_epoch_id, 16u)
+        == 0);
+    REQUIRE(ninlil_v1_lab_fabric_build_service(crypto, &binding,
+                binding.endpoint_a.runtime_id, 0u, &policy, &authority_a)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(ninlil_v1_lab_fabric_build_service(crypto, &binding,
+                binding.endpoint_b.runtime_id, 0u, &policy, &authority_b)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(memcmp(authority_a.authority_clock_epoch_id.bytes,
+                binding.endpoint_a.clock_epoch_id, 16u)
+        == 0);
+    REQUIRE(memcmp(authority_b.authority_clock_epoch_id.bytes,
+                binding.endpoint_b.clock_epoch_id, 16u)
+        == 0);
+    REQUIRE(memcmp(authority_a.binding_id.bytes,
+                authority_b.binding_id.bytes, 16u)
+        == 0);
+    ninlil_v1_lab_binding_clear(&binding);
     return 0;
 }
 
@@ -565,6 +623,7 @@ int main(void)
     REQUIRE(test_minimum_round_trip(&crypto) == 0);
     REQUIRE(test_maximum_and_e2e_projection(&crypto) == 0);
     REQUIRE(test_rejection_is_atomic(&crypto) == 0);
+    REQUIRE(test_distinct_endpoint_clock_epochs(&crypto) == 0);
     REQUIRE(test_closed_fabric_builder(&crypto) == 0);
     (void)fprintf(stdout, "v1_lab_binding_test OK\n");
     return 0;
