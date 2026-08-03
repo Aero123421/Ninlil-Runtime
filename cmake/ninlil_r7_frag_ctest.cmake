@@ -371,8 +371,25 @@ if(TARGET ninlil_n6_store_testbuild)
     )
     ninlil_apply_strict_warnings(
         ninlil_v1_lab_radio_packet_link_vertical_test)
-    add_test(NAME v1_lab_radio_packet_link_vertical
-        COMMAND ninlil_v1_lab_radio_packet_link_vertical_test)
+    if(TARGET ninlil_v1_lab_controller)
+        target_compile_definitions(
+            ninlil_v1_lab_radio_packet_link_vertical_test PRIVATE
+            NINLIL_TEST_CONTROLLER_VERTICAL=1)
+        add_dependencies(ninlil_v1_lab_radio_packet_link_vertical_test
+            ninlil_v1_lab_controller)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_link_libraries(
+                ninlil_v1_lab_radio_packet_link_vertical_test PRIVATE util)
+        endif()
+        ninlil_apply_posix_usb_serial_feature_macros(
+            ninlil_v1_lab_radio_packet_link_vertical_test)
+        add_test(NAME v1_lab_radio_packet_link_vertical
+            COMMAND ninlil_v1_lab_radio_packet_link_vertical_test
+                $<TARGET_FILE:ninlil_v1_lab_controller>)
+    else()
+        add_test(NAME v1_lab_radio_packet_link_vertical
+            COMMAND ninlil_v1_lab_radio_packet_link_vertical_test)
+    endif()
 endif()
 
 set(_r7_frag_test_tgts

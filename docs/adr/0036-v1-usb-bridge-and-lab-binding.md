@@ -572,6 +572,18 @@ deployment manager. Applications that need continuous submission, EventFact
 consumption or their own result presentation use the installed Runtime API and
 their own process lifecycle.
 
+The Host acceptance path for this diagnostic is one continuous execution, not
+a collection of mocked hand-offs. A separate Controller process opens a real
+PTY through the public POSIX USB port and submits through the public Runtime.
+The PTY bytes enter the fixed USB board owner, the resulting NFL1 packet crosses
+the existing NRA1/NRW1/R7/R9/SX1262-spy path, and a peer Runtime invokes its
+Application callback. That peer Runtime must generate VERIFIED Receipt evidence
+through the same radio path in reverse; the USB parent returns it to the
+Controller, whose transaction becomes satisfied and whose process exits zero.
+The test may replace only physical USB and RF propagation with PTY and SX1262
+bus spies. It may not synthesize the Receipt, bypass either Runtime, or add a
+general simulation framework.
+
 The connection probe prints `READY` only after registered links are quiesced
 and Composition has completed its normative close/destroy sequence. A bounded
 cleanup failure exits nonzero without releasing owner resources early.

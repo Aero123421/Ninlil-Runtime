@@ -24,6 +24,26 @@
 #include "ninlil_sx1262_backend.h"
 #include "ninlil_sx1262_phy.h"
 
+#if defined(NINLIL_TEST_CONTROLLER_VERTICAL)
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
+
+#if defined(__APPLE__)
+#include <util.h>
+#elif defined(__linux__)
+#include <pty.h>
+#else
+#error "Controller radio vertical test supports Linux and macOS"
+#endif
+#endif
+
 #include <stdio.h>
 #include <string.h>
 
@@ -39,6 +59,7 @@
 #define TEST_CONTEXT_SLOTS ((uint32_t)8u)
 #define TEST_N6_POOL_BYTES ((size_t)4096u)
 #define TEST_POLL_LIMIT ((uint32_t)12u)
+#define TEST_CONTROLLER_TIMEOUT_MS UINT64_C(15000)
 
 #if !defined(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING) \
     || (NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING == 0)
@@ -1094,6 +1115,134 @@ static int transfer_fake_stream(
         : 1;
 }
 
+#if defined(NINLIL_TEST_CONTROLLER_VERTICAL)
+static int controller_monotonic_ms(uint64_t *out_ms)
+{
+    struct timespec value;
+
+    if (out_ms == NULL || clock_gettime(CLOCK_MONOTONIC, &value) != 0
+        || value.tv_sec < 0 || value.tv_nsec < 0
+        || value.tv_nsec >= 1000000000L) {
+        return 0;
+    }
+    *out_ms = (uint64_t)value.tv_sec * UINT64_C(1000)
+        + (uint64_t)value.tv_nsec / UINT64_C(1000000);
+    return 1;
+}
+
+static int wait_for_controller_raw_mode(int descriptor, uint64_t timeout_ms)
+{
+    const struct timespec pause = {0, 1000000L};
+    uint64_t start;
+
+    if (!controller_monotonic_ms(&start)) {
+        return 0;
+    }
+    for (;;) {
+        struct termios attributes;
+        uint64_t now;
+
+        if (tcgetattr(descriptor, &attributes) == 0
+            && (attributes.c_lflag & (tcflag_t)(ICANON | ECHO)) == 0u) {
+            return 1;
+        }
+        if (!controller_monotonic_ms(&now) || now < start
+            || now - start > timeout_ms) {
+            return 0;
+        }
+        (void)nanosleep(&pause, NULL);
+    }
+}
+
+static int write_all(int descriptor, const uint8_t *bytes, size_t length)
+{
+    size_t used = 0u;
+
+    while (used < length) {
+        ssize_t amount = write(descriptor, bytes + used, length - used);
+
+        if (amount > 0) {
+            used += (size_t)amount;
+            continue;
+        }
+        if (amount < 0 && errno == EINTR) {
+            continue;
+        }
+        if (amount < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            struct pollfd ready;
+            int poll_status;
+
+            ready.fd = descriptor;
+            ready.events = POLLOUT;
+            ready.revents = 0;
+            poll_status = poll(&ready, 1, 100);
+            if (poll_status > 0 && (ready.revents & POLLOUT) != 0) {
+                continue;
+            }
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int transfer_fake_to_pty(
+    ninlil_fake_byte_stream_t *from, int descriptor)
+{
+    uint8_t bytes[NINLIL_FAKE_BS_RING_BYTES];
+    uint32_t length = ninlil_fake_byte_stream_take_tx(
+        from, bytes, sizeof(bytes));
+
+    return length == 0u || write_all(descriptor, bytes, length) ? 0 : 1;
+}
+
+static int transfer_pty_to_fake(
+    int descriptor, ninlil_fake_byte_stream_t *to)
+{
+    uint8_t bytes[NINLIL_FAKE_BS_RING_BYTES];
+
+    for (;;) {
+        ssize_t length = read(descriptor, bytes, sizeof(bytes));
+
+        if (length > 0) {
+            if (ninlil_fake_byte_stream_inject_rx(
+                    to, bytes, (uint32_t)length)
+                == 0) {
+                return 1;
+            }
+            continue;
+        }
+        if (length < 0 && errno == EINTR) {
+            continue;
+        }
+        if (length == 0 || (length < 0
+                && (errno == EAGAIN || errno == EWOULDBLOCK
+                    || errno == EIO || errno == ENXIO))) {
+            return 0;
+        }
+        return 1;
+    }
+}
+
+static void remove_controller_database(const char *path)
+{
+    char sidecar[256];
+    int written;
+
+    if (path == NULL || path[0] == '\0') {
+        return;
+    }
+    (void)unlink(path);
+    written = snprintf(sidecar, sizeof(sidecar), "%s-wal", path);
+    if (written > 0 && (size_t)written < sizeof(sidecar)) {
+        (void)unlink(sidecar);
+    }
+    written = snprintf(sidecar, sizeof(sidecar), "%s-shm", path);
+    if (written > 0 && (size_t)written < sizeof(sidecar)) {
+        (void)unlink(sidecar);
+    }
+}
+#endif
+
 static int setup_board_owner(
     test_node_t *node,
     const ninlil_v1_lab_binding_t *binding,
@@ -1872,6 +2021,248 @@ static int run_peer_runtime_bootstrap(test_pcp_t *pcp)
 }
 #endif
 
+#if defined(NINLIL_TEST_CONTROLLER_VERTICAL) && TEST_PEER_RUNTIME_ENABLED
+#define CONTROLLER_VERTICAL_REQUIRE(condition)                              \
+    do {                                                                    \
+        if (!(condition)) {                                                 \
+            (void)fprintf(stderr,                                           \
+                "controller vertical failure %s:%d: %s\n",              \
+                __FILE__, __LINE__, #condition);                            \
+            goto cleanup;                                                   \
+        }                                                                   \
+    } while (0)
+
+static int run_controller_peer_runtime_vertical(
+    const char *controller_path,
+    const ninlil_v1_lab_binding_t *binding,
+    const uint8_t *encoded_binding,
+    size_t encoded_length,
+    test_pcp_t *pcp)
+{
+    const struct timespec pause = {0, 1000000L};
+    test_peer_runtime_t peer_runtime;
+    ninlil_fake_byte_stream_t board_stream;
+    char slave_path[256];
+    char binding_path[] = "/tmp/ninlil-radio-binding-XXXXXX";
+    char database_path[] = "/tmp/ninlil-radio-controller-XXXXXX";
+    int master_fd = -1;
+    int slave_fd = -1;
+    int binding_fd = -1;
+    int database_fd = -1;
+    int descriptor_flags;
+    int child_status = 0;
+    int result = 1;
+    int peer_ready = 0;
+    int peer_node_ready = 0;
+    int board_ready = 0;
+    int stream_ready = 0;
+    int application_relayed = 0;
+    int receipt_relayed = 0;
+    pid_t child = -1;
+    uint64_t started_ms;
+    uint64_t board_now = 1000u;
+    uint32_t close_done = 0u;
+    uint32_t i;
+
+    (void)memset(&peer_runtime, 0, sizeof(peer_runtime));
+    (void)memset(&board_stream, 0, sizeof(board_stream));
+    CONTROLLER_VERTICAL_REQUIRE(controller_path != NULL
+        && controller_path[0] == '/' && binding != NULL
+        && encoded_binding != NULL && encoded_length > 0u && pcp != NULL);
+    CONTROLLER_VERTICAL_REQUIRE(setup_peer_runtime(&peer_runtime, pcp) == 0);
+    peer_ready = 1;
+    CONTROLLER_VERTICAL_REQUIRE(setup_node(&g_node_b, binding,
+        encoded_binding, encoded_length, NINLIL_V1_LAB_SIDE_B, pcp) == 0);
+    peer_node_ready = 1;
+    CONTROLLER_VERTICAL_REQUIRE(ninlil_v1_lab_peer_runtime_pair_ready(
+        &peer_runtime.runtime, &g_node_b.packet_link, g_node_b.pair_slot,
+        encoded_binding, encoded_length) == 0);
+    CONTROLLER_VERTICAL_REQUIRE(ninlil_v1_lab_peer_runtime_step(
+        &peer_runtime.runtime) == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+
+    ninlil_fake_byte_stream_init(&board_stream);
+    ninlil_fake_byte_stream_open_up(&board_stream, 1u);
+    stream_ready = 1;
+    CONTROLLER_VERTICAL_REQUIRE(setup_board_owner(&g_node_a, binding, pcp,
+        &board_stream, NINLIL_V1_LAB_ADOPT_CONTROLLER,
+        NINLIL_V1_LAB_BOARD_OWNER_DATA_USB, NULL, NULL) == 0);
+    board_ready = 1;
+
+    binding_fd = mkstemp(binding_path);
+    CONTROLLER_VERTICAL_REQUIRE(binding_fd >= 0);
+    CONTROLLER_VERTICAL_REQUIRE(write_all(
+        binding_fd, encoded_binding, encoded_length));
+    CONTROLLER_VERTICAL_REQUIRE(close(binding_fd) == 0);
+    binding_fd = -1;
+    database_fd = mkstemp(database_path);
+    CONTROLLER_VERTICAL_REQUIRE(database_fd >= 0);
+    CONTROLLER_VERTICAL_REQUIRE(close(database_fd) == 0);
+    database_fd = -1;
+    CONTROLLER_VERTICAL_REQUIRE(unlink(database_path) == 0);
+    CONTROLLER_VERTICAL_REQUIRE(openpty(
+        &master_fd, &slave_fd, slave_path, NULL, NULL) == 0);
+    descriptor_flags = fcntl(master_fd, F_GETFL, 0);
+    CONTROLLER_VERTICAL_REQUIRE(descriptor_flags >= 0
+        && fcntl(master_fd, F_SETFL, descriptor_flags | O_NONBLOCK) == 0);
+
+    child = fork();
+    CONTROLLER_VERTICAL_REQUIRE(child >= 0);
+    if (child == 0) {
+        (void)close(master_fd);
+        (void)close(slave_fd);
+        (void)execl(controller_path, controller_path,
+            "--usb", slave_path,
+            "--database", database_path,
+            "--binding", binding_path,
+            "--timeout-ms", "8000",
+            "--send-binding", "1",
+            "--send-service", "1",
+            "--payload-hex", "01020304", (char *)NULL);
+        _exit(127);
+    }
+    CONTROLLER_VERTICAL_REQUIRE(wait_for_controller_raw_mode(
+        slave_fd, UINT64_C(5000)));
+    CONTROLLER_VERTICAL_REQUIRE(close(slave_fd) == 0);
+    slave_fd = -1;
+    CONTROLLER_VERTICAL_REQUIRE(controller_monotonic_ms(&started_ms));
+
+    for (;;) {
+        uint64_t now_ms;
+        pid_t waited;
+
+        CONTROLLER_VERTICAL_REQUIRE(controller_monotonic_ms(&now_ms)
+            && now_ms >= started_ms
+            && now_ms - started_ms <= TEST_CONTROLLER_TIMEOUT_MS);
+        CONTROLLER_VERTICAL_REQUIRE(
+            transfer_fake_to_pty(&board_stream, master_fd) == 0);
+        CONTROLLER_VERTICAL_REQUIRE(
+            transfer_pty_to_fake(master_fd, &board_stream) == 0);
+        CONTROLLER_VERTICAL_REQUIRE(ninlil_v1_lab_board_owner_step(
+            &g_board_owner, board_now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+        CONTROLLER_VERTICAL_REQUIRE(ninlil_v1_lab_peer_runtime_step(
+            &peer_runtime.runtime) == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+
+        if (application_relayed == 0
+            && g_node_a.bus.last_tx_payload_len > 0u
+            && ninlil_sx1262_phy_state(g_node_b.phy)
+                == NINLIL_SX1262_PHY_STATE_RX_ACTIVE) {
+            g_node_b.bus.rx_payload_len = g_node_a.bus.last_tx_payload_len;
+            (void)memcpy(g_node_b.bus.rx_payload,
+                g_node_a.bus.last_tx_payload,
+                g_node_a.bus.last_tx_payload_len);
+            g_node_b.bus.irq_status = 0x0002u;
+            g_node_a.bus.last_tx_payload_len = 0u;
+            application_relayed = 1;
+        }
+        if (application_relayed != 0 && receipt_relayed == 0
+            && peer_runtime.delivery_count == 1u
+            && g_node_b.bus.last_tx_payload_len > 0u
+            && ninlil_sx1262_phy_state(g_node_a.phy)
+                == NINLIL_SX1262_PHY_STATE_RX_ACTIVE) {
+            g_node_a.bus.rx_payload_len = g_node_b.bus.last_tx_payload_len;
+            (void)memcpy(g_node_a.bus.rx_payload,
+                g_node_b.bus.last_tx_payload,
+                g_node_b.bus.last_tx_payload_len);
+            g_node_a.bus.irq_status = 0x0002u;
+            g_node_b.bus.last_tx_payload_len = 0u;
+            receipt_relayed = 1;
+        }
+        CONTROLLER_VERTICAL_REQUIRE(
+            transfer_fake_to_pty(&board_stream, master_fd) == 0);
+        CONTROLLER_VERTICAL_REQUIRE(
+            transfer_pty_to_fake(master_fd, &board_stream) == 0);
+        waited = waitpid(child, &child_status, WNOHANG);
+        CONTROLLER_VERTICAL_REQUIRE(waited >= 0);
+        if (waited == child) {
+            child = -1;
+            break;
+        }
+        board_now += 1u;
+        (void)nanosleep(&pause, NULL);
+    }
+
+    for (i = 0u; i < 64u && g_board_owner.usb_receive_pending != 0u;
+         ++i, ++board_now) {
+        CONTROLLER_VERTICAL_REQUIRE(
+            transfer_pty_to_fake(master_fd, &board_stream) == 0);
+        CONTROLLER_VERTICAL_REQUIRE(ninlil_v1_lab_board_owner_step(
+            &g_board_owner, board_now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+    }
+    CONTROLLER_VERTICAL_REQUIRE(WIFEXITED(child_status)
+        && WEXITSTATUS(child_status) == 0);
+    CONTROLLER_VERTICAL_REQUIRE(application_relayed != 0
+        && receipt_relayed != 0 && peer_runtime.delivery_count == 1u
+        && g_board_owner.usb_receive_pending == 0u
+        && !ninlil_v1_lab_board_owner_is_fenced(&g_board_owner));
+
+    CONTROLLER_VERTICAL_REQUIRE(ninlil_v1_lab_peer_runtime_close_begin(
+        &peer_runtime.runtime) == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+    for (i = 0u; i < 64u && close_done == 0u; ++i) {
+        ninlil_v1_lab_peer_runtime_status_t status =
+            ninlil_v1_lab_peer_runtime_close_step(
+                &peer_runtime.runtime, &close_done);
+        CONTROLLER_VERTICAL_REQUIRE(status == NINLIL_V1_LAB_PEER_RUNTIME_OK
+            || status == NINLIL_V1_LAB_PEER_RUNTIME_CLOSING);
+    }
+    CONTROLLER_VERTICAL_REQUIRE(close_done == 1u
+        && teardown_peer_runtime(&peer_runtime) == 0);
+    peer_ready = 0;
+    teardown_node(&g_node_b);
+    peer_node_ready = 0;
+    CONTROLLER_VERTICAL_REQUIRE(teardown_board_owner(&g_node_a) == 0);
+    board_ready = 0;
+    ninlil_fake_byte_stream_close(&board_stream);
+    stream_ready = 0;
+    result = 0;
+
+cleanup:
+    if (child > 0) {
+        (void)kill(child, SIGTERM);
+        (void)waitpid(child, &child_status, 0);
+    }
+    if (peer_ready != 0) {
+        uint32_t ignored_done = 0u;
+
+        if (ninlil_v1_lab_peer_runtime_close_begin(&peer_runtime.runtime)
+            == NINLIL_V1_LAB_PEER_RUNTIME_OK) {
+            for (i = 0u; i < 64u && ignored_done == 0u; ++i) {
+                (void)ninlil_v1_lab_peer_runtime_close_step(
+                    &peer_runtime.runtime, &ignored_done);
+            }
+        }
+        (void)teardown_peer_runtime(&peer_runtime);
+    }
+    if (peer_node_ready != 0) {
+        teardown_node(&g_node_b);
+    }
+    if (board_ready != 0) {
+        (void)teardown_board_owner(&g_node_a);
+    }
+    if (stream_ready != 0) {
+        ninlil_fake_byte_stream_close(&board_stream);
+    }
+    if (binding_fd >= 0) {
+        (void)close(binding_fd);
+    }
+    if (database_fd >= 0) {
+        (void)close(database_fd);
+    }
+    if (master_fd >= 0) {
+        (void)close(master_fd);
+    }
+    if (slave_fd >= 0) {
+        (void)close(slave_fd);
+    }
+    (void)unlink(binding_path);
+    remove_controller_database(database_path);
+    return result;
+}
+
+#undef CONTROLLER_VERTICAL_REQUIRE
+#endif
+
 static void teardown_node(test_node_t *node)
 {
     ninlil_sx1262_error_t sx_error;
@@ -1907,7 +2298,7 @@ static void teardown_pcp(test_pcp_t *pcp)
     ninlil_test_entropy_destroy(pcp->entropy);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     ninlil_r7_crypto_provider crypto;
     ninlil_v1_lab_binding_t binding;
@@ -1949,6 +2340,15 @@ int main(void)
     REQUIRE(run_peer_board_owner_bootstrap(&pcp) == 0);
 #if TEST_PEER_RUNTIME_ENABLED
     REQUIRE(run_peer_runtime_bootstrap(&pcp) == 0);
+#endif
+#if defined(NINLIL_TEST_CONTROLLER_VERTICAL) && TEST_PEER_RUNTIME_ENABLED
+    REQUIRE(argc == 2 && argv != NULL && argv[1] != NULL);
+    REQUIRE(run_controller_peer_runtime_vertical(argv[1], &binding,
+                encoded_binding, encoded_length, &pcp)
+        == 0);
+#else
+    REQUIRE(argc == 1);
+    (void)argv;
 #endif
     REQUIRE(setup_node(&g_node_a, &binding, encoded_binding, encoded_length,
                 NINLIL_V1_LAB_SIDE_A, &pcp)
