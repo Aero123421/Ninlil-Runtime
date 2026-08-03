@@ -321,16 +321,17 @@ static int packet_shape_valid(
             == 0;
 }
 
-static ninlil_fabric_link_status_t radio_start_send(
-    void *user,
-    ninlil_fabric_packet_link_handle_t handle,
-    const ninlil_fabric_packet_view_v1_t *packet,
+static ninlil_fabric_link_status_t start_send_common(
+    ninlil_v1_lab_radio_packet_link_t *link,
+    ninlil_v1_lab_radio_path_port_t *expected_port,
+    const uint8_t *nfl1,
+    uint32_t nfl1_length,
+    const ninlil_tx_permit_t *permit,
+    uint8_t delegated,
+    const ninlil_time_sample_t *now,
     ninlil_fabric_packet_token_t *out_token)
 {
-    ninlil_v1_lab_radio_path_port_t *port =
-        (ninlil_v1_lab_radio_path_port_t *)user;
-    ninlil_v1_lab_radio_packet_link_t *link;
-    ninlil_time_sample_t now;
+    ninlil_v1_lab_radio_path_port_t *port;
     ninlil_r7_frag_prod_tx_result_t result;
     ninlil_v1_lab_radio_mapping_status_t mapping_status;
     ninlil_v1_lab_radio_route_t *route;
@@ -344,34 +345,23 @@ static ninlil_fabric_link_status_t radio_start_send(
     int r7_held;
     int32_t r7_status;
 
-    if (out_token != NULL) {
-        *out_token = NULL;
-    }
-    if (!handle_matches(port, handle, 0) || packet == NULL
-        || out_token == NULL) {
+    if (!link_valid(link) || nfl1 == NULL || now == NULL
+        || nfl1_length < NINLIL_FABRIC_PRIVATE_NFL1_STRUCTURAL_MIN
+        || nfl1_length > NINLIL_V1_LAB_RADIO_NFL1_MAX
+        || (delegated == 0u && (expected_port == NULL || permit == NULL))) {
         return NINLIL_FABRIC_LINK_DENIED;
     }
-    link = port->owner;
     if (link->tx.active != 0u || link->rx.active != 0u
         || ninlil_sx1262_phy_state(link->phy)
             == NINLIL_SX1262_PHY_STATE_TX_ACTIVE) {
         return NINLIL_FABRIC_LINK_WOULD_BLOCK;
     }
-    if (!sample_now(link, &now)) {
-        mark_pair_unavailable(link, port->pair_slot);
-        clear_bytes(&now, sizeof(now));
-        return NINLIL_FABRIC_LINK_UNAVAILABLE;
-    }
-    if (!packet_shape_valid(port, packet, &now)) {
-        clear_bytes(&now, sizeof(now));
-        return NINLIL_FABRIC_LINK_DENIED;
-    }
     (void)memset(nra1, 0, sizeof(nra1));
     mapping_status = ninlil_v1_lab_radio_mapper_encode(
         &link->mapper,
-        packet->bytes,
-        packet->length,
-        &now,
+        nfl1,
+        nfl1_length,
+        now,
         &pair_slot,
         &radio_flow,
         nra1,
@@ -379,17 +369,22 @@ static ninlil_fabric_link_status_t radio_start_send(
         &nra1_length);
     if (mapping_status != NINLIL_V1_LAB_RADIO_MAPPING_OK) {
         ninlil_v1_lab_radio_link_status_t local =
-            map_mapping_status(link, port->pair_slot, mapping_status);
-        clear_bytes(&now, sizeof(now));
+            map_mapping_status(link,
+                expected_port != NULL ? expected_port->pair_slot : pair_slot,
+                mapping_status);
         clear_bytes(nra1, sizeof(nra1));
         return step_status_to_fabric(local);
     }
     original_flow = nra1[4] == NINLIL_NRA1_KIND_RECEIPT
         ? opposite_flow(radio_flow)
         : radio_flow;
-    if (pair_slot != port->pair_slot || original_flow != port->original_flow
-        || !flow_valid(radio_flow)) {
-        clear_bytes(&now, sizeof(now));
+    if (!flow_valid(radio_flow) || !flow_valid(original_flow)) {
+        clear_bytes(nra1, sizeof(nra1));
+        return NINLIL_FABRIC_LINK_CORRUPT;
+    }
+    port = &link->ports[route_index(pair_slot, original_flow)];
+    if (!port_valid(port)
+        || (expected_port != NULL && expected_port != port)) {
         clear_bytes(nra1, sizeof(nra1));
         return NINLIL_FABRIC_LINK_CORRUPT;
     }
@@ -398,7 +393,14 @@ static ninlil_fabric_link_status_t radio_start_send(
         || link->next_candidate_token == UINT64_MAX
         || link->next_tx_generation == UINT32_MAX
         || link->next_tx_generation >= (uint32_t)(UINTPTR_MAX >> 8u)) {
-        clear_bytes(&now, sizeof(now));
+        clear_bytes(nra1, sizeof(nra1));
+        return NINLIL_FABRIC_LINK_UNAVAILABLE;
+    }
+    r7_status = ninlil_r7_frag_prod_time_authority_valid(route->r7)
+        ? ninlil_r7_frag_prod_time_authority_refresh(
+              route->r7, route->r7->time_owner_gen)
+        : ninlil_r7_frag_prod_time_authority_mint(route->r7, NULL);
+    if (r7_status != NINLIL_R7_FRAG_PROD_OK) {
         clear_bytes(nra1, sizeof(nra1));
         return NINLIL_FABRIC_LINK_UNAVAILABLE;
     }
@@ -416,7 +418,6 @@ static ninlil_fabric_link_status_t radio_start_send(
         0u,
         &result);
     link->next_candidate_token += 1u;
-    clear_bytes(&now, sizeof(now));
     clear_bytes(nra1, sizeof(nra1));
     r7_held = result.edge_invoked == 0u
         && result.cleanup_class == NINLIL_R7_FRAG_CLN_ISSUED_HELD
@@ -441,18 +442,56 @@ static ninlil_fabric_link_status_t radio_start_send(
     link->tx.completion_kind = NINLIL_FABRIC_LINK_COMPLETION_PENDING;
     link->tx.r7_held = r7_held != 0 ? 1u : 0u;
     link->tx.r7_route_index = route_index(pair_slot, radio_flow);
+    link->tx.delegated = delegated != 0u ? 1u : 0u;
     link->tx.generation = link->next_tx_generation;
     link->tx.candidate_token = candidate_token;
     link->tx.tx_ok_before = stats.tx_ok;
     link->tx.tx_timeout_before = stats.tx_timeout;
-    (void)memcpy(link->tx.permit_id, packet->permit->permit_id.bytes, 16u);
-    (void)memcpy(
-        link->tx.permit_clock_epoch_id,
-        packet->permit->clock_epoch_id.bytes,
-        16u);
-    *out_token = make_tx_token(link->tx.generation);
+    if (permit != NULL) {
+        (void)memcpy(link->tx.permit_id, permit->permit_id.bytes, 16u);
+        (void)memcpy(link->tx.permit_clock_epoch_id,
+            permit->clock_epoch_id.bytes, 16u);
+    }
+    if (out_token != NULL) {
+        *out_token = make_tx_token(link->tx.generation);
+    }
     clear_bytes(&result, sizeof(result));
     return NINLIL_FABRIC_LINK_RETAINED;
+}
+
+static ninlil_fabric_link_status_t radio_start_send(
+    void *user,
+    ninlil_fabric_packet_link_handle_t handle,
+    const ninlil_fabric_packet_view_v1_t *packet,
+    ninlil_fabric_packet_token_t *out_token)
+{
+    ninlil_v1_lab_radio_path_port_t *port =
+        (ninlil_v1_lab_radio_path_port_t *)user;
+    ninlil_v1_lab_radio_packet_link_t *link;
+    ninlil_time_sample_t now;
+    ninlil_fabric_link_status_t status;
+
+    if (out_token != NULL) {
+        *out_token = NULL;
+    }
+    if (!handle_matches(port, handle, 0) || packet == NULL
+        || out_token == NULL) {
+        return NINLIL_FABRIC_LINK_DENIED;
+    }
+    link = port->owner;
+    if (!sample_now(link, &now)) {
+        mark_pair_unavailable(link, port->pair_slot);
+        clear_bytes(&now, sizeof(now));
+        return NINLIL_FABRIC_LINK_UNAVAILABLE;
+    }
+    if (!packet_shape_valid(port, packet, &now)) {
+        clear_bytes(&now, sizeof(now));
+        return NINLIL_FABRIC_LINK_DENIED;
+    }
+    status = start_send_common(link, port, packet->bytes, packet->length,
+        packet->permit, 0u, &now, out_token);
+    clear_bytes(&now, sizeof(now));
+    return status;
 }
 
 static ninlil_v1_lab_radio_link_status_t progress_tx(
@@ -786,8 +825,17 @@ ninlil_v1_lab_radio_link_status_t ninlil_v1_lab_radio_packet_link_step(
     if (!link_valid(link)) {
         return NINLIL_V1_LAB_RADIO_LINK_INVALID_ARGUMENT;
     }
-    if (link->tx.active != 0u && link->tx.terminal == 0u) {
-        return progress_tx(link);
+    if (link->tx.active != 0u) {
+        ninlil_v1_lab_radio_link_status_t tx_status =
+            NINLIL_V1_LAB_RADIO_LINK_OK;
+
+        if (link->tx.terminal == 0u) {
+            tx_status = progress_tx(link);
+        }
+        if (link->tx.delegated != 0u && link->tx.terminal != 0u) {
+            clear_bytes(&link->tx, sizeof(link->tx));
+        }
+        return tx_status;
     }
     if (link->rx.active != 0u) {
         return NINLIL_V1_LAB_RADIO_LINK_OK;
@@ -844,6 +892,114 @@ ninlil_v1_lab_radio_link_status_t ninlil_v1_lab_radio_packet_link_step(
     }
     mark_all_unavailable(link);
     return NINLIL_V1_LAB_RADIO_LINK_PHY;
+}
+
+ninlil_v1_lab_radio_link_status_t
+ninlil_v1_lab_radio_packet_link_board_submit(
+    ninlil_v1_lab_radio_packet_link_t *link,
+    const uint8_t *nfl1,
+    uint32_t nfl1_length)
+{
+    ninlil_time_sample_t now;
+    ninlil_fabric_link_status_t status;
+
+    if (!link_valid(link) || nfl1 == NULL
+        || nfl1_length < NINLIL_FABRIC_PRIVATE_NFL1_STRUCTURAL_MIN
+        || nfl1_length > NINLIL_V1_LAB_RADIO_NFL1_MAX) {
+        return NINLIL_V1_LAB_RADIO_LINK_INVALID_ARGUMENT;
+    }
+    if (!sample_now(link, &now)) {
+        mark_all_unavailable(link);
+        return NINLIL_V1_LAB_RADIO_LINK_FENCED;
+    }
+    status = start_send_common(
+        link, NULL, nfl1, nfl1_length, NULL, 1u, &now, NULL);
+    clear_bytes(&now, sizeof(now));
+    if (status == NINLIL_FABRIC_LINK_RETAINED
+        || status == NINLIL_FABRIC_LINK_OK) {
+        return NINLIL_V1_LAB_RADIO_LINK_OK;
+    }
+    if (status == NINLIL_FABRIC_LINK_WOULD_BLOCK) {
+        return NINLIL_V1_LAB_RADIO_LINK_CAPACITY;
+    }
+    if (status == NINLIL_FABRIC_LINK_UNAVAILABLE) {
+        return NINLIL_V1_LAB_RADIO_LINK_FENCED;
+    }
+    if (status == NINLIL_FABRIC_LINK_LOST_UNKNOWN) {
+        return NINLIL_V1_LAB_RADIO_LINK_PHY;
+    }
+    if (status == NINLIL_FABRIC_LINK_CORRUPT) {
+        return NINLIL_V1_LAB_RADIO_LINK_CORRUPT;
+    }
+    return NINLIL_V1_LAB_RADIO_LINK_BINDING;
+}
+
+ninlil_v1_lab_radio_link_status_t
+ninlil_v1_lab_radio_packet_link_board_receive_next(
+    ninlil_v1_lab_radio_packet_link_t *link,
+    const uint8_t **out_nfl1,
+    uint32_t *out_length,
+    void **out_receive_token)
+{
+    if (out_nfl1 != NULL) {
+        *out_nfl1 = NULL;
+    }
+    if (out_length != NULL) {
+        *out_length = 0u;
+    }
+    if (out_receive_token != NULL) {
+        *out_receive_token = NULL;
+    }
+    if (!link_valid(link) || out_nfl1 == NULL || out_length == NULL
+        || out_receive_token == NULL) {
+        return NINLIL_V1_LAB_RADIO_LINK_INVALID_ARGUMENT;
+    }
+    if (link->rx.active == 0u) {
+        return NINLIL_V1_LAB_RADIO_LINK_EMPTY;
+    }
+    if (link->rx.loaned != 0u) {
+        return NINLIL_V1_LAB_RADIO_LINK_CAPACITY;
+    }
+    link->rx.loaned = 1u;
+    *out_nfl1 = link->rx.nfl1;
+    *out_length = link->rx.nfl1_length;
+    *out_receive_token = make_rx_token(link->rx.generation);
+    return NINLIL_V1_LAB_RADIO_LINK_OK;
+}
+
+ninlil_v1_lab_radio_link_status_t
+ninlil_v1_lab_radio_packet_link_board_release_received(
+    ninlil_v1_lab_radio_packet_link_t *link,
+    void *receive_token,
+    uint8_t accepted_local)
+{
+    ninlil_v1_lab_radio_path_port_t *port;
+    ninlil_v1_lab_radio_mapping_status_t mapping_status;
+    uint8_t pair_slot;
+
+    if (!link_valid(link) || link->rx.port_index
+            >= NINLIL_V1_LAB_RADIO_LINK_PATH_MAX
+        || accepted_local > 1u) {
+        return NINLIL_V1_LAB_RADIO_LINK_INVALID_ARGUMENT;
+    }
+    port = &link->ports[link->rx.port_index];
+    if (!rx_token_matches(link, port, receive_token)) {
+        return NINLIL_V1_LAB_RADIO_LINK_INVALID_ARGUMENT;
+    }
+    pair_slot = port->pair_slot;
+    if (link->rx.mapper_receipt_token != 0u) {
+        mapping_status = accepted_local != 0u
+            ? ninlil_v1_lab_radio_mapper_commit_received(
+                  &link->mapper, link->rx.mapper_receipt_token)
+            : ninlil_v1_lab_radio_mapper_abort_received(
+                  &link->mapper, link->rx.mapper_receipt_token);
+        if (mapping_status != NINLIL_V1_LAB_RADIO_MAPPING_OK) {
+            clear_bytes(&link->rx, sizeof(link->rx));
+            return map_mapping_status(link, pair_slot, mapping_status);
+        }
+    }
+    clear_bytes(&link->rx, sizeof(link->rx));
+    return NINLIL_V1_LAB_RADIO_LINK_OK;
 }
 
 static ninlil_fabric_link_status_t radio_receive_next(
@@ -913,11 +1069,8 @@ static void radio_release_received(
     if (!rx_token_matches(link, port, receive_token)) {
         return;
     }
-    if (link->rx.mapper_receipt_token != 0u) {
-        (void)ninlil_v1_lab_radio_mapper_commit_received(
-            &link->mapper, link->rx.mapper_receipt_token);
-    }
-    clear_bytes(&link->rx, sizeof(link->rx));
+    (void)ninlil_v1_lab_radio_packet_link_board_release_received(
+        link, receive_token, 1u);
 }
 
 static ninlil_fabric_link_status_t radio_state(

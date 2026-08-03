@@ -37,6 +37,8 @@ typedef uint32_t ninlil_v1_lab_radio_link_status_t;
     ((ninlil_v1_lab_radio_link_status_t)6u)
 #define NINLIL_V1_LAB_RADIO_LINK_FENCED \
     ((ninlil_v1_lab_radio_link_status_t)7u)
+#define NINLIL_V1_LAB_RADIO_LINK_EMPTY \
+    ((ninlil_v1_lab_radio_link_status_t)8u)
 
 struct ninlil_v1_lab_radio_packet_link;
 
@@ -68,7 +70,8 @@ typedef struct ninlil_v1_lab_radio_link_tx {
     uint8_t completion_kind;
     uint8_t r7_held;
     uint8_t r7_route_index;
-    uint8_t reserved_zero[2];
+    uint8_t delegated;
+    uint8_t reserved_zero;
     uint32_t generation;
     uint64_t candidate_token;
     uint8_t permit_id[16];
@@ -140,6 +143,31 @@ ninlil_v1_lab_radio_packet_link_path(
 /* One bounded owner-task progress unit: PHY poll, one RX admit, or RX arm. */
 ninlil_v1_lab_radio_link_status_t ninlil_v1_lab_radio_packet_link_step(
     ninlil_v1_lab_radio_packet_link_t *link);
+
+/*
+ * Fixed USB-board seam from ADR-0036. The Controller Fabric already consumed
+ * its Foundation TxPermit before NVB1; this call never mints a replacement.
+ */
+ninlil_v1_lab_radio_link_status_t
+ninlil_v1_lab_radio_packet_link_board_submit(
+    ninlil_v1_lab_radio_packet_link_t *link,
+    const uint8_t *nfl1,
+    uint32_t nfl1_length);
+
+/* One exact RF receive loan for the fixed board owner. */
+ninlil_v1_lab_radio_link_status_t
+ninlil_v1_lab_radio_packet_link_board_receive_next(
+    ninlil_v1_lab_radio_packet_link_t *link,
+    const uint8_t **out_nfl1,
+    uint32_t *out_length,
+    void **out_receive_token);
+
+/* accepted_local commits a pending Receipt correlation; failure only drops. */
+ninlil_v1_lab_radio_link_status_t
+ninlil_v1_lab_radio_packet_link_board_release_received(
+    ninlil_v1_lab_radio_packet_link_t *link,
+    void *receive_token,
+    uint8_t accepted_local);
 
 void ninlil_v1_lab_radio_packet_link_clear(
     ninlil_v1_lab_radio_packet_link_t *link);

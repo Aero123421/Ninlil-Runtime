@@ -29,10 +29,11 @@ NVB1 codec、exact LAB binding codec、N6接続owner、durable LAB provisioner�
 binding永続化、双方向packet、close/reopen generationを確認しました。別のHost縦断では、
 実Fabric/NRA1/NRW1/R7/R9/SX1262 spyを通るApplicationと逆向きAPPLIED Receipt、重複拒否を
 確認しました。R7送信保留は同じsealed objectを再開し、応答不要のApplicationは相関枠を
-消費しないこともHost試験で確認しています。同じradio adapterはESP-IDF v5.5.3の
-全private同時ON構成でcompile/linkしました。
-USB legとradio legを同じESP上で実行する最終compositionと物理HILは未完のため、縦断機能の
-状態は`PROPOSED`のままです。
+消費しないこともHost試験で確認しています。USB bridge・provisioner・radio adapterを
+一つのbounded stepで所有する固定board ownerも実装し、Host模擬経路で
+USB→SX1262 spy→peerと逆向きReceipt→USBを確認しました。同じownerはESP-IDF v5.5.3の
+全private同時ON構成のcomponent archiveへcompile/package済みです。実ESPアプリへの
+platform依存注入と物理HILは未完のため、縦断機能の状態は`PROPOSED`のままです。
 仕様候補やcompile成功を物理HIL済みとは扱いません。
 
 ### 完成までの進捗台帳
@@ -56,7 +57,7 @@ USB legとradio legを同じESP上で実行する最終compositionと物理HIL�
 | Multi-parent / multi-Controller | **SPEC_ACCEPTED / software候補レビュー合格** | durable used-attempt台帳、old/new exact authority CAS、global split-brain fence、10,000 lifecycleは合格。公開ABI判断と実機failover HILを閉じる |
 | Multi-frame durable transfer | **SPEC_ACCEPTED / Host software候補** | private MFDT protocol v1、revision 2 OPEN、Host 4-slot coordinator、Runtimeごとのsidecar、1〜4 target admission/restart reconciliationを実装。公開`ninlil_submit()`から2つのHost Runtimeを通常の`ninlil_runtime_step()`だけで駆動し、927〜32768 byteの分割・再構成・digest検証、Application Service apply、positive evidence、handoff、既存Receipt、durable closure、terminal/content releaseまで通常・ASan/UBSanで合格。READY、HANDED_OFF、Receipt closed、retained terminalのcold restartと不一致fail-closedも確認済み。残件はinstalled module/package受入、ESP exact-1 owner、MF-O08 target promotion、物理Wi-Fi/RF/power-cut HIL |
 | V1 composition | **SPEC_ACCEPTED / Host・ESP package候補** | ADR-0032の公開`composition_v1` base owner（workspace/create、Runtime/Fabric借用、bounded step、terminal release、close/destroy）を実装。tests-OFF install後の公開APIだけで2つのCompositionを駆動するApplicationData→Receipt E2Eを通常・ASan/UBSanで確認。HostとESP-IDFは同じFabric/Composition source authorityを使用し、ESP32-S3 component archiveのexact-one、最終ELF symbol/map、公開headerだけのtarget翻訳単位を確認済み。target上のdurable create/step/close、Bearer前sidecar recovery、MFDT/FRAG/relay/multi-parent接続とlarge-data/relay受入は未完。8-module制度や汎用plugin frameworkはV1非対象 |
-| V1 functional LAB vertical slice | **PROPOSED / Host・target候補** | ADR-0034でLinux/macOS→USB親機→単一hop SX1262→指定peer/Service→APPLIED ReceiptをV1の実機完成線としてAccepted。NRA1/NVB1 codec、exact LAB binding、fresh N6接続owner、`NLB1` FULL保存・cold-restart floor・fresh reset/fence、固定上限NCG1 bridgeは通常Host試験とESP packaging gateに合格。公開POSIX USB portの実PTYでbinding、双方向packet、close/reopenを確認。実Fabric/NRA1/NRW1/R7/R9/SX1262 spyを通る32-byte Applicationと逆向きAPPLIED Receipt、重複拒否、R7保留からのexact-object再開、応答不要通信の相関枠非消費もHost試験に合格し、同じpacket-linkはESP-IDF v5.5.3の全private同時ON構成でcompile/link済み。残件はUSB→radioのtarget実行compositionと物理3台HIL。20件/10秒はV2 |
+| V1 functional LAB vertical slice | **PROPOSED / Host・target候補** | ADR-0034でLinux/macOS→USB親機→単一hop SX1262→指定peer/Service→APPLIED ReceiptをV1の実機完成線としてAccepted。NRA1/NVB1 codec、exact LAB binding、fresh N6接続owner、`NLB1` FULL保存・cold-restart floor・fresh reset/fence、固定上限NCG1 bridgeは通常Host試験とESP packaging gateに合格。公開POSIX USB portの実PTYでbinding、双方向packet、close/reopenを確認。固定board ownerを使うHost模擬E2EでUSB→NRA1/NRW1/R7/R9/SX1262 spy→peerと逆向きAPPLIED Receipt→USBを確認し、通常・ASan/UBSanに合格。同じownerはESP-IDF v5.5.3のcomponent archiveへcompile/package済み。残件は実ESPアプリへの依存注入と物理3台HIL。20件/10秒はV2 |
 | OSS package / docs / release CI | **HOST_CANDIDATE** | actionlint・全shellcheck・固定OpenSSL authorityは合格。commit-tree dry run、公開asset照合、独立review（`RELEASE_SUPPORTED`は未昇格） |
 
 OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost software候補を
@@ -77,7 +78,7 @@ ADR-0034により、項目4の大型データ・relay統合はV2へ移しまし�
 2. ~~POSIX TCP/TLS公開と2プロセスrestart E2E~~ — 完了
 3. ~~POSIX USB serial公開とinstalled PTY E2E~~ — 完了
 4. USB control framingと単一hop ApplicationData↔NRW1 SINGLE mappingを固定 — NCG1/NVB1 bridge、exact LAB binding、N6接続owner、durable LAB provisioner、公開POSIX USB portのbinding・双方向PTYと、別経路の実Fabric→NRA1→NRW1→SX1262 spy→Receipt Host縦断まで完了
-5. private SX1262 packet-linkをESP32-S3へ載せる — 全private同時ONのcompile/linkは合格。残件はUSB bridge、Fabric、packet-linkを同じtarget loopで動かす実行composition
+5. private SX1262 packet-linkをESP32-S3へ載せる — USB bridge、provisioner、packet-linkを束ねる固定board ownerとHost模擬E2Eを実装。全private同時ONのcomponent compile/packageは合格。残件は実ESPアプリでの依存注入と実行確認
 6. README・SDK配布物・CIの最終整合監査 — Host/ESP software gateを更新済み。独立差分レビューとremote CIを閉じる
 7. 3台で物理USB＋SX1262の10件/10秒HIL — 機材で実行するまで`NOT_RUN`。実AP、電源断、20件/10秒、relay/multi-parentはV2 gate
 
@@ -85,8 +86,8 @@ ADR-0034により、項目4の大型データ・relay統合はV2へ移しまし�
 
 | 区分 | 内容 |
 | --- | --- |
-| **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private V1 USB bridgeの永続binding・双方向packet・再接続PTY、実Fabric/NRA1/NRW1/R7/R9/SX1262 spyのApplication→Receipt縦断、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。USBとradioを同じtargetで動かすcomposition、ESP実行と実機経路は未完であり、機能ごとの正式状態は上表を優先します |
-| **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter、公開Fabric/Compositionとprivate V1 radio packet-linkのcomponent packaging・最終ELF link。全private機能を同時にONにした構成でも合格。target上でのlive compositionと物理経路は未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
+| **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private V1 USB bridgeの永続binding・双方向packet・再接続PTY、固定board ownerによるUSB→NRA1/NRW1/R7/R9/SX1262 spy→peer→Receipt→USB縦断、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。ESP実行と実機経路は未完であり、機能ごとの正式状態は上表を優先します |
+| **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter、公開Fabric/Compositionとprivate V1 radio packet-link・固定board ownerのcomponent packaging。全private機能を同時にONにした構成でも合格。target上でのlive platform依存注入と物理経路は未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
 | **物理HIL待ち** | ESP flash、実AP、USB CDC、SX1262 TX/RX、2/3-hop、multi-parent failover、電源断、長時間soak。SX1262は2台双方向raw RF runnerまで用意済みですが、機材未接続のため一律`NOT_RUN`です |
 
 ## アーキテクチャ

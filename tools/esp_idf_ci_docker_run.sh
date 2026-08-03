@@ -595,7 +595,9 @@ do
 done
 ALLFEAT_ON_BUILD=ports/esp-idf/smoke_app/build-all-private-features-on
 rm -rf "${ALLFEAT_ON_BUILD}"
+# Isolate config from the default smoke sdkconfig; overlays must be authoritative.
 idf.py -C ports/esp-idf/smoke_app -B "${ALLFEAT_ON_BUILD}" \
+  -DSDKCONFIG="${PWD}/${ALLFEAT_ON_BUILD}/sdkconfig" \
   -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;../wifi_hil_app/sdkconfig.defaults;sdkconfig.defaults.all_private_features_on" \
   set-target esp32s3 build
 ALLFEAT_ELF="${ALLFEAT_ON_BUILD}/ninlil_m3_combined_smoke.elf"
@@ -634,6 +636,7 @@ done
 for sym in \
   ninlil_domain_schema1_owner_run_storage_recovery \
   ninlil_v1_lab_radio_packet_link_init \
+  ninlil_v1_lab_board_owner_step \
   ninlil_wifi_esp_owner_step
 do
   grep -E "${sym}" /tmp/ninlil_allfeat_arc_nm.txt \

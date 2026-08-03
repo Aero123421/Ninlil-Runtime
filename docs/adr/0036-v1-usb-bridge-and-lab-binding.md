@@ -453,6 +453,51 @@ four copied N6 handles, copies any needed values before returning, and cannot
 reject or retain the borrowed binding pointer. A missing provisioner or
 installed-pair handoff returns `UNSUPPORTED` without provisioning.
 
+### 6. Fixed board owner
+
+The USB board has one private, caller-owned `V1 LAB board owner`. It owns the
+NVB1 bridge, the single SX1262 packet-link and two fixed pair slots. It does
+not create a second Foundation Runtime or Fabric, publish a plugin API, start a
+background task or allocate from the heap. The application calls one bounded
+owner step from the same task that owns the USB byte stream and radio path.
+
+The owner is initialized only with already-bound platform dependencies: the
+local Runtime ID, trusted clock, durable provisioner, R7 crypto provider,
+SX1262 PHY, PCP authority, radio HAL and active live radio profile. A
+successful `BINDING_SET` callback creates exactly two R7 directional binds
+from the four returned N6 handles and the authenticated binding context IDs.
+Only the direction transmitted by the local endpoint receives PCP/HAL/live
+authority. The callback then installs the exact pair into the fixed packet
+link. Capacity or any contradiction fences the owner; it cannot fall back to
+another peer, key, path or radio configuration.
+
+A Controller-to-board `FABRIC_PACKET` already passed the Controller Fabric's
+TxGate and logical RF-path selection before entering the trusted-local USB
+leg. The board therefore does not mint, reconstruct or pretend to possess a
+second Foundation `ninlil_tx_permit_t`. It re-decodes the complete NFL1,
+requires an exact active pair/Service/path match, maps it through NRA1 and then
+uses the existing R7/R2/R5/R9 sole edge. `ACCEPTED_LOCAL` means only that this
+bounded radio operation was retained; it is never transport completion or an
+Application Receipt. A later RF failure is observed by the Controller as a
+missing authenticated Receipt and remains owned by the existing Runtime retry
+policy.
+
+For RF-to-USB traffic the owner borrows exactly one decoded NFL1 from the
+packet-link and submits one NVB1 `FABRIC_PACKET`. It retains that radio receive
+loan until the host returns `ACCEPTED_LOCAL`. Only that result commits a
+pending compact-Receipt correlation. Link loss, timeout, `BUSY`, rejection or
+any mismatched result aborts that pending mapper token and drops the loan
+without committing or erasing the correlation; the remote Runtime remains the
+retry owner. No board-local retry loop or second packet copy is added.
+
+One owner step performs, in order, at most one prior USB completion, one NVB1
+bridge step, one radio progress unit and one new RF-to-USB handoff. It never
+loops until idle. USB disconnect fences that USB generation but does not
+fabricate RF success or erase an already active pair. Radio corruption,
+binding contradiction or a fenced provisioner fences the whole owner and
+prevents further RF admission. Physical USB/RF operation remains a separate
+HIL gate.
+
 ## Acceptance before Accepted
 
 1. NVB1 codec KATs cover all kinds/bounds, sequence consumption/fence and

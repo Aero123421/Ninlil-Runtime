@@ -28,8 +28,10 @@ add_library(ninlil_r7_frag_private STATIC EXCLUDE_FROM_ALL
     ${NINLIL_V1_LAB_RADIO_PATH_RELATIVE_SOURCES}
 )
 target_include_directories(ninlil_r7_frag_private PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
     ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
     ${CMAKE_CURRENT_SOURCE_DIR}/src/radio/r7_frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
     ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -338,6 +340,7 @@ if(TARGET ninlil_n6_store_testbuild)
         tests/support/in_memory_storage.c
         tests/support/platform_basic_fixtures.c
         tests/support/deterministic_entropy.c
+        tests/support/fake_byte_stream.c
         tests/support/sx1262_bus_spy.c
     )
     target_include_directories(
@@ -345,6 +348,7 @@ if(TARGET ninlil_n6_store_testbuild)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
         ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
         ${CMAKE_CURRENT_SOURCE_DIR}/src/radio/r7_frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
         ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
         ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
         ${CMAKE_CURRENT_SOURCE_DIR}/include

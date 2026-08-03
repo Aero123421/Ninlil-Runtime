@@ -128,6 +128,11 @@ ninlil_v1_lab_radio_mapping_status_t
 ninlil_v1_lab_radio_mapper_commit_received(
     ninlil_v1_lab_radio_mapper_t *mapper, uint32_t receipt_token);
 
+/* Releases a pending Receipt loan without consuming its correlation. */
+ninlil_v1_lab_radio_mapping_status_t
+ninlil_v1_lab_radio_mapper_abort_received(
+    ninlil_v1_lab_radio_mapper_t *mapper, uint32_t receipt_token);
+
 void ninlil_v1_lab_radio_mapper_clear(
     ninlil_v1_lab_radio_mapper_t *mapper);
 

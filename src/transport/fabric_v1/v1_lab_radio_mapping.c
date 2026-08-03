@@ -1232,6 +1232,31 @@ ninlil_v1_lab_radio_mapper_commit_received(
     return NINLIL_V1_LAB_RADIO_MAPPING_NOT_FOUND;
 }
 
+ninlil_v1_lab_radio_mapping_status_t
+ninlil_v1_lab_radio_mapper_abort_received(
+    ninlil_v1_lab_radio_mapper_t *mapper, uint32_t receipt_token)
+{
+    uint8_t i;
+
+    if (!mapper_valid(mapper) || receipt_token == 0u) {
+        return NINLIL_V1_LAB_RADIO_MAPPING_INVALID_ARGUMENT;
+    }
+    for (i = 0u; i < NINLIL_V1_LAB_RADIO_CORRELATION_MAX; ++i) {
+        ninlil_v1_lab_radio_correlation_t *correlation =
+            &mapper->correlations[i];
+        if (correlation->active == 0u
+            || correlation->receipt_pending == 0u
+            || correlation->receipt_token != receipt_token) {
+            continue;
+        }
+        correlation->receipt_pending = 0u;
+        correlation->pending_stage = 0u;
+        correlation->receipt_token = 0u;
+        return NINLIL_V1_LAB_RADIO_MAPPING_OK;
+    }
+    return NINLIL_V1_LAB_RADIO_MAPPING_NOT_FOUND;
+}
+
 void ninlil_v1_lab_radio_mapper_clear(
     ninlil_v1_lab_radio_mapper_t *mapper)
 {
