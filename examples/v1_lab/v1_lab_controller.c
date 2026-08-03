@@ -1,5 +1,6 @@
 #include "v1_lab_controller_platform.h"
 
+#include "fabric_private_api.h"
 #include "r7_crypto_openssl3.h"
 #include "v1_lab_binding.h"
 #include "v1_lab_fabric.h"
@@ -478,9 +479,17 @@ static int register_bindings(
                     secure_clear(paths, sizeof(paths));
                     return 0;
                 }
+                context->registration_count += 1u;
+                if (ninlil_fabric_private_rf_mapping_approve_v1(
+                        context->fabric,
+                        context->registrations[
+                            context->registration_count - 1u])
+                    != NINLIL_FABRIC_OK) {
+                    secure_clear(paths, sizeof(paths));
+                    return 0;
+                }
                 (void)memcpy(paths[path_count], row->selected_path_id, 16u);
                 path_count += 1u;
-                context->registration_count += 1u;
             }
             (void)memset(&policy, 0, sizeof(policy));
             (void)memset(&authority, 0, sizeof(authority));

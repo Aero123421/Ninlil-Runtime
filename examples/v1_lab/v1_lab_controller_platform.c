@@ -13,8 +13,7 @@
 
 #define CONTROLLER_PLATFORM_MAGIC UINT32_C(0x4e435031)
 #define CONTROLLER_PERMIT_LIFETIME_MS UINT64_C(5000)
-#define CONTROLLER_APPLICATION_BYTES_MAX UINT32_C(128)
-#define CONTROLLER_RECEIPT_BYTES_MAX UINT32_C(760)
+#define CONTROLLER_LOGICAL_MESSAGE_BYTES_MAX UINT32_C(760)
 
 struct ninlil_v1_lab_controller_platform {
     uint32_t magic;
@@ -196,10 +195,9 @@ static int request_valid(
         || !bytes_nonzero(now->clock_epoch_id.bytes, 16u)) {
         return 0;
     }
-    if (request->message_kind == NINLIL_BEARER_MESSAGE_APPLICATION) {
-        maximum = CONTROLLER_APPLICATION_BYTES_MAX;
-    } else if (request->message_kind == NINLIL_BEARER_MESSAGE_RECEIPT) {
-        maximum = CONTROLLER_RECEIPT_BYTES_MAX;
+    if (request->message_kind == NINLIL_BEARER_MESSAGE_APPLICATION
+        || request->message_kind == NINLIL_BEARER_MESSAGE_RECEIPT) {
+        maximum = CONTROLLER_LOGICAL_MESSAGE_BYTES_MAX;
     } else {
         return 0;
     }

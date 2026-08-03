@@ -152,7 +152,7 @@ static int run_platform_contract(void)
     fill_bytes(request.transaction_id.bytes, 16u, 0x10u);
     fill_bytes(request.attempt_id.bytes, 16u, 0x30u);
     request.message_kind = NINLIL_BEARER_MESSAGE_APPLICATION;
-    request.logical_bytes = 128u;
+    request.logical_bytes = 760u;
     (void)memset(&permit, 0, sizeof(permit));
     REQUIRE(ops->tx_gate->acquire(ops->tx_gate->user,
                 &request, &now, &permit)
@@ -162,7 +162,7 @@ static int run_platform_contract(void)
         && memcmp(permit.clock_epoch_id.bytes, now.clock_epoch_id.bytes, 16u)
             == 0
         && permit.expires_at_ms > now.now_ms);
-    request.logical_bytes = 129u;
+    request.logical_bytes = 761u;
     REQUIRE(ops->tx_gate->acquire(ops->tx_gate->user,
                 &request, &now, &permit)
         == NINLIL_TX_GATE_DENIED);
@@ -171,6 +171,10 @@ static int run_platform_contract(void)
     REQUIRE(ops->tx_gate->acquire(ops->tx_gate->user,
                 &request, &now, &permit)
         == NINLIL_TX_GATE_OK);
+    request.logical_bytes = 761u;
+    REQUIRE(ops->tx_gate->acquire(ops->tx_gate->user,
+                &request, &now, &permit)
+        == NINLIL_TX_GATE_DENIED);
 
     (void)memset(&origin_request, 0, sizeof(origin_request));
     origin_request.abi_version = NINLIL_ABI_VERSION;

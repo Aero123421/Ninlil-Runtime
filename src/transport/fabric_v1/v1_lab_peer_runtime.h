@@ -84,6 +84,11 @@ ninlil_v1_lab_peer_runtime_status_t ninlil_v1_lab_peer_runtime_service(
     uint8_t service_slot,
     ninlil_service_t **out_service);
 
+/* Borrow the active Runtime for existing public query/list operations. */
+ninlil_v1_lab_peer_runtime_status_t ninlil_v1_lab_peer_runtime_handle(
+    ninlil_v1_lab_peer_runtime_t *runtime,
+    ninlil_runtime_t **out_runtime);
+
 ninlil_v1_lab_peer_runtime_status_t ninlil_v1_lab_peer_runtime_close_begin(
     ninlil_v1_lab_peer_runtime_t *runtime);
 

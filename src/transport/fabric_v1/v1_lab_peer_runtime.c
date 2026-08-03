@@ -1,5 +1,6 @@
 #include "v1_lab_peer_runtime.h"
 
+#include "fabric_private_api.h"
 #include "v1_lab_fabric.h"
 
 #include <limits.h>
@@ -304,9 +305,8 @@ static int tx_request_valid(
         || !id_nonzero(now->clock_epoch_id.bytes)) {
         return 0;
     }
-    if (request->message_kind == NINLIL_BEARER_MESSAGE_APPLICATION) {
-        maximum = NINLIL_V1_LAB_APPLICATION_MAX;
-    } else if (request->message_kind == NINLIL_BEARER_MESSAGE_RECEIPT) {
+    if (request->message_kind == NINLIL_BEARER_MESSAGE_APPLICATION
+        || request->message_kind == NINLIL_BEARER_MESSAGE_RECEIPT) {
         maximum = NINLIL_V1_LAB_FABRIC_PACKET_MAX;
     } else {
         return 0;
@@ -662,9 +662,15 @@ static ninlil_v1_lab_peer_runtime_status_t activate_runtime(
                     != NINLIL_FABRIC_OK) {
                 return NINLIL_V1_LAB_PEER_RUNTIME_FABRIC;
             }
+            runtime->registration_count = flow_count + 1u;
+            if (ninlil_fabric_private_rf_mapping_approve_v1(
+                    runtime->fabric,
+                    runtime->registrations[flow_count])
+                != NINLIL_FABRIC_OK) {
+                return NINLIL_V1_LAB_PEER_RUNTIME_FABRIC;
+            }
             flows[flow_count] = row->flow;
             flow_count += 1u;
-            runtime->registration_count = flow_count;
         }
     }
 
@@ -847,6 +853,28 @@ ninlil_v1_lab_peer_runtime_status_t ninlil_v1_lab_peer_runtime_service(
         }
     }
     return NINLIL_V1_LAB_PEER_RUNTIME_SERVICE;
+}
+
+ninlil_v1_lab_peer_runtime_status_t ninlil_v1_lab_peer_runtime_handle(
+    ninlil_v1_lab_peer_runtime_t *runtime,
+    ninlil_runtime_t **out_runtime)
+{
+    ninlil_v1_lab_peer_runtime_impl_t *impl = peer_impl(runtime);
+
+    if (out_runtime != NULL) {
+        *out_runtime = NULL;
+    }
+    if (impl == NULL || impl->magic != PEER_RUNTIME_MAGIC
+        || out_runtime == NULL) {
+        return NINLIL_V1_LAB_PEER_RUNTIME_INVALID_ARGUMENT;
+    }
+    if (impl->state != PEER_RUNTIME_STATE_ACTIVE || impl->runtime == NULL) {
+        return impl->state == PEER_RUNTIME_STATE_FENCED
+            ? NINLIL_V1_LAB_PEER_RUNTIME_FENCED
+            : NINLIL_V1_LAB_PEER_RUNTIME_WAITING;
+    }
+    *out_runtime = impl->runtime;
+    return NINLIL_V1_LAB_PEER_RUNTIME_OK;
 }
 
 ninlil_v1_lab_peer_runtime_status_t ninlil_v1_lab_peer_runtime_close_begin(

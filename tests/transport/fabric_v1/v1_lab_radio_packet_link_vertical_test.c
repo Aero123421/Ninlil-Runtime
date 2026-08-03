@@ -304,9 +304,10 @@ static void fill_service(
         : NINLIL_DIRECTION_UPLINK;
     row->traffic_class = NINLIL_FABRIC_TRAFFIC_APPLICATION;
     row->evidence_grace_ms = family == NINLIL_FAMILY_DESIRED_STATE ? 500u : 0u;
-    fill_bytes(row->namespace_id, row->namespace_length, seed);
-    fill_bytes(row->service_id, row->service_length, (uint8_t)(seed + 8u));
-    fill_bytes(row->schema_id, row->schema_length, (uint8_t)(seed + 16u));
+    (void)memcpy(row->namespace_id, "lab", 3u);
+    (void)memcpy(row->service_id, "svc0", 4u);
+    row->service_id[3] = (uint8_t)('0' + slot);
+    (void)memcpy(row->schema_id, "v1", 2u);
 }
 
 static int make_binding(
@@ -926,6 +927,119 @@ static int verify_receipt(
     return 0;
 }
 
+#if TEST_PEER_RUNTIME_ENABLED
+static int verify_runtime_receipt(
+    const uint8_t *packet,
+    uint32_t packet_length)
+{
+    ninlil_fabric_private_nfl1_workspace_t workspace;
+    ninlil_fabric_private_nfl1_envelope_t envelope;
+    uint8_t expected_transaction_id[16];
+    uint32_t required = 0u;
+
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&envelope, 0, sizeof(envelope));
+    fill_bytes(expected_transaction_id, sizeof(expected_transaction_id), 0x01u);
+    REQUIRE(ninlil_fabric_private_nfl1_decode(packet, packet_length,
+                &workspace, &envelope, &required)
+        == NINLIL_FABRIC_PRIVATE_NFL1_OK);
+    REQUIRE(envelope.message_kind == NINLIL_BEARER_MESSAGE_RECEIPT);
+    REQUIRE(envelope.receipt_stage == NINLIL_EVIDENCE_VERIFIED);
+    REQUIRE(memcmp(envelope.transaction_id.bytes,
+                expected_transaction_id, 16u)
+        == 0);
+    return 0;
+}
+
+static int submit_peer_event(
+    ninlil_service_t *service,
+    const ninlil_v1_lab_binding_t *binding,
+    ninlil_submission_result_t *out_result)
+{
+    static const uint8_t idempotency_key[] = "peer-event-1";
+    uint8_t payload[8];
+    ninlil_concrete_target_t target;
+    ninlil_submission_t submission;
+
+    fill_bytes(payload, sizeof(payload), 0xe0u);
+    (void)memset(&target, 0, sizeof(target));
+    target.abi_version = NINLIL_ABI_VERSION;
+    target.struct_size = (uint16_t)sizeof(target);
+    (void)memcpy(target.target_runtime_id.bytes,
+        binding->endpoint_a.runtime_id, 16u);
+    (void)memcpy(target.target_application_instance_id.bytes,
+        binding->endpoint_a.application_id, 16u);
+    (void)memcpy(target.device_id.bytes,
+        binding->endpoint_a.device_id, 16u);
+    (void)memcpy(target.installation_id.bytes,
+        binding->endpoint_a.installation_id, 16u);
+    (void)memcpy(target.site_domain_id.bytes,
+        binding->endpoint_a.site_id, 16u);
+    target.binding_epoch = binding->endpoint_a.binding_epoch;
+    target.membership_epoch = binding->endpoint_a.membership_epoch;
+    target.flags = binding->endpoint_a.identity_flags;
+
+    (void)memset(&submission, 0, sizeof(submission));
+    submission.abi_version = NINLIL_ABI_VERSION;
+    submission.struct_size = (uint16_t)sizeof(submission);
+    submission.schema_major = binding->services[1].schema_major;
+    submission.targets = &target;
+    submission.target_count = 1u;
+    submission.required_evidence = NINLIL_EVIDENCE_APPLIED;
+    submission.effect_deadline_ms = NINLIL_NO_DEADLINE;
+    submission.evidence_grace_ms = 0u;
+    fill_bytes(submission.event_id.bytes, 16u, 0xc0u);
+    submission.generation = 0u;
+    submission.idempotency_key.data = idempotency_key;
+    submission.idempotency_key.length =
+        (uint32_t)(sizeof(idempotency_key) - 1u);
+    submission.payload.data = payload;
+    submission.payload.length = (uint32_t)sizeof(payload);
+    submission.content_digest.algorithm = NINLIL_DIGEST_SHA256;
+    REQUIRE(ninlil_r7_crypto_sha256(g_crypto, payload, sizeof(payload),
+                submission.content_digest.bytes)
+        == NINLIL_R7_CRYPTO_OK);
+
+    (void)memset(out_result, 0, sizeof(*out_result));
+    out_result->abi_version = NINLIL_ABI_VERSION;
+    out_result->struct_size = (uint16_t)sizeof(*out_result);
+    REQUIRE(ninlil_submit(service, &submission, out_result) == NINLIL_OK);
+    REQUIRE(out_result->kind == NINLIL_SUBMISSION_ADMITTED_READY);
+    return 0;
+}
+
+static int verify_peer_event(
+    const uint8_t *packet,
+    uint32_t packet_length,
+    const ninlil_v1_lab_binding_t *binding)
+{
+    ninlil_fabric_private_nfl1_workspace_t workspace;
+    ninlil_fabric_private_nfl1_envelope_t envelope;
+    uint8_t expected_payload[8];
+    uint32_t required = 0u;
+
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&envelope, 0, sizeof(envelope));
+    REQUIRE(ninlil_fabric_private_nfl1_decode(packet, packet_length,
+                &workspace, &envelope, &required)
+        == NINLIL_FABRIC_PRIVATE_NFL1_OK);
+    fill_bytes(expected_payload, sizeof(expected_payload), 0xe0u);
+    REQUIRE(envelope.message_kind == NINLIL_BEARER_MESSAGE_APPLICATION);
+    REQUIRE(envelope.family == NINLIL_FAMILY_EVENT_FACT);
+    REQUIRE(memcmp(envelope.source_runtime_id.bytes,
+                binding->endpoint_b.runtime_id, 16u)
+        == 0);
+    REQUIRE(memcmp(envelope.target_runtime_id.bytes,
+                binding->endpoint_a.runtime_id, 16u)
+        == 0);
+    REQUIRE(envelope.payload.length == sizeof(expected_payload));
+    REQUIRE(memcmp(envelope.payload.bytes, expected_payload,
+                sizeof(expected_payload))
+        == 0);
+    return 0;
+}
+#endif
+
 typedef struct host_capture {
     uint32_t count;
     uint32_t board_info_count;
@@ -1481,6 +1595,28 @@ static int run_peer_runtime_bootstrap(test_pcp_t *pcp)
     uint32_t i;
     int binding_done = 0;
     ninlil_v1_lab_peer_runtime_status_t peer_status;
+    ninlil_submission_result_t event_result;
+    ninlil_runtime_t *runtime_handle = NULL;
+    ninlil_transaction_snapshot_t event_snapshot;
+    ninlil_target_snapshot_t event_target;
+    uint8_t application[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    uint8_t receipt[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    uint8_t event[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    uint8_t downlink_frame[255];
+    uint8_t receipt_frame[255];
+    uint8_t event_frame[255];
+    uint32_t application_length = 0u;
+    uint32_t receipt_length = 0u;
+    uint32_t event_length = 0u;
+    uint8_t downlink_frame_length = 0u;
+    uint8_t receipt_frame_length = 0u;
+    uint8_t event_frame_length = 0u;
+    const uint8_t *downlink_path = NULL;
+    const uint8_t *uplink_path = NULL;
+    const ninlil_fabric_packet_link_ops_v1_t *downlink_ops = NULL;
+    const ninlil_fabric_packet_link_ops_v1_t *uplink_ops = NULL;
+    ninlil_fabric_packet_link_handle_t downlink_handle = NULL;
+    ninlil_fabric_packet_link_handle_t uplink_handle = NULL;
 
     (void)memset(&binding, 0, sizeof(binding));
     (void)memset(&peer_runtime, 0, sizeof(peer_runtime));
@@ -1572,6 +1708,149 @@ static int run_peer_runtime_bootstrap(test_pcp_t *pcp)
     REQUIRE(ninlil_v1_lab_peer_runtime_service(
                 &peer_runtime.runtime, 4u, &services[0])
         == NINLIL_V1_LAB_PEER_RUNTIME_SERVICE);
+    REQUIRE(ninlil_v1_lab_peer_runtime_handle(
+                &peer_runtime.runtime, &runtime_handle)
+        == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+
+    REQUIRE(setup_node(&g_node_b, &binding, encoded_binding, encoded_length,
+                NINLIL_V1_LAB_SIDE_A, pcp)
+        == 0);
+    REQUIRE(ninlil_v1_lab_radio_packet_link_path(&g_node_b.packet_link, 0u,
+                NINLIL_V1_LAB_FLOW_A_TO_B, &downlink_path, &downlink_ops)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    REQUIRE(ninlil_v1_lab_radio_packet_link_path(&g_node_b.packet_link, 0u,
+                NINLIL_V1_LAB_FLOW_B_TO_A, &uplink_path, &uplink_ops)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    REQUIRE(downlink_ops->open(downlink_ops->user, &downlink_handle)
+        == NINLIL_FABRIC_LINK_OK);
+    REQUIRE(uplink_ops->open(uplink_ops->user, &uplink_handle)
+        == NINLIL_FABRIC_LINK_OK);
+
+    REQUIRE(make_application(g_crypto, &binding, application,
+                &application_length)
+        == 0);
+    REQUIRE(send_frame(&g_node_b, downlink_ops, downlink_handle,
+                application, application_length, downlink_path, 77u, 0x71u,
+                0u, 0u, downlink_frame, &downlink_frame_length)
+        == 0);
+    for (i = 0u; i < 16u
+         && ninlil_sx1262_phy_state(g_node_a.phy)
+             != NINLIL_SX1262_PHY_STATE_RX_ACTIVE;
+         ++i, ++now) {
+        REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+    }
+    REQUIRE(ninlil_sx1262_phy_state(g_node_a.phy)
+        == NINLIL_SX1262_PHY_STATE_RX_ACTIVE);
+    g_node_a.bus.last_tx_payload_len = 0u;
+    g_node_a.bus.rx_payload_len = downlink_frame_length;
+    (void)memcpy(g_node_a.bus.rx_payload, downlink_frame,
+        downlink_frame_length);
+    g_node_a.bus.irq_status = 0x0002u;
+    for (i = 0u; i < 128u && receipt_frame_length == 0u; ++i, ++now) {
+        REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+        REQUIRE(ninlil_v1_lab_peer_runtime_step(&peer_runtime.runtime)
+            == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+        if (peer_runtime.delivery_count == 1u
+            && g_node_a.bus.last_tx_payload_len > 0u) {
+            receipt_frame_length = g_node_a.bus.last_tx_payload_len;
+            (void)memcpy(receipt_frame, g_node_a.bus.last_tx_payload,
+                receipt_frame_length);
+        }
+    }
+    if (peer_runtime.delivery_count != 1u || receipt_frame_length == 0u) {
+        (void)fprintf(stderr,
+            "peer downlink progress delivery=%u tx_bytes=%u tx_active=%u "
+            "radio_state=%u rx_active=%u rx_loaned=%u rx_port=%u "
+            "ports=%u/%u fenced=%d loops=%u\n",
+            (unsigned)peer_runtime.delivery_count,
+            (unsigned)g_node_a.bus.last_tx_payload_len,
+            (unsigned)g_board_owner.radio.tx.active,
+            (unsigned)ninlil_sx1262_phy_state(g_node_a.phy),
+            (unsigned)g_board_owner.radio.rx.active,
+            (unsigned)g_board_owner.radio.rx.loaned,
+            (unsigned)g_board_owner.radio.rx.port_index,
+            (unsigned)g_board_owner.radio.ports[0].open,
+            (unsigned)g_board_owner.radio.ports[1].open,
+            ninlil_v1_lab_board_owner_is_fenced(&g_board_owner),
+            (unsigned)i);
+    }
+    REQUIRE(peer_runtime.delivery_count == 1u
+        && receipt_frame_length > 0u);
+    REQUIRE(receive_frame(&g_node_b, downlink_ops, downlink_handle,
+                receipt_frame, receipt_frame_length, receipt,
+                &receipt_length)
+        == 0);
+    REQUIRE(verify_runtime_receipt(receipt, receipt_length) == 0);
+
+    for (i = 0u; i < 32u && g_board_owner.radio.tx.active != 0u;
+         ++i, ++now) {
+        REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+        REQUIRE(ninlil_v1_lab_peer_runtime_step(&peer_runtime.runtime)
+            == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+    }
+    REQUIRE(g_board_owner.radio.tx.active == 0u);
+    g_node_a.bus.last_tx_payload_len = 0u;
+    REQUIRE(submit_peer_event(services[1], &binding, &event_result) == 0);
+    for (i = 0u; i < 128u && event_frame_length == 0u; ++i, ++now) {
+        REQUIRE(ninlil_v1_lab_peer_runtime_step(&peer_runtime.runtime)
+            == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+        REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+        if (g_node_a.bus.last_tx_payload_len > 0u) {
+            event_frame_length = g_node_a.bus.last_tx_payload_len;
+            (void)memcpy(event_frame, g_node_a.bus.last_tx_payload,
+                event_frame_length);
+        }
+    }
+    if (event_frame_length == 0u) {
+        ninlil_status_t query_status;
+
+        (void)memset(&event_target, 0, sizeof(event_target));
+        event_target.abi_version = NINLIL_ABI_VERSION;
+        event_target.struct_size = (uint16_t)sizeof(event_target);
+        (void)memset(&event_snapshot, 0, sizeof(event_snapshot));
+        event_snapshot.abi_version = NINLIL_ABI_VERSION;
+        event_snapshot.struct_size = (uint16_t)sizeof(event_snapshot);
+        event_snapshot.targets = &event_target;
+        event_snapshot.target_capacity = 1u;
+        query_status = ninlil_transaction_query(runtime_handle,
+            &event_result.transaction_id, &event_snapshot);
+        (void)fprintf(stderr,
+            "peer event progress kind=%u entropy=%llu tx_active=%u "
+            "radio_state=%u rx_active=%u ports=%u/%u loops=%u "
+            "query=%d state=%u outcome=%u reason=%u target_state=%u "
+            "target_reason=%u attempts=%u cumulative=%llu revision=%llu\n",
+            (unsigned)event_result.kind,
+            (unsigned long long)ninlil_test_entropy_call_count(
+                peer_runtime.entropy),
+            (unsigned)g_board_owner.radio.tx.active,
+            (unsigned)ninlil_sx1262_phy_state(g_node_a.phy),
+            (unsigned)g_board_owner.radio.rx.active,
+            (unsigned)g_board_owner.radio.ports[0].open,
+            (unsigned)g_board_owner.radio.ports[1].open,
+            (unsigned)i,
+            (int)query_status,
+            (unsigned)event_snapshot.state,
+            (unsigned)event_snapshot.outcome,
+            (unsigned)event_snapshot.reason,
+            (unsigned)event_target.state,
+            (unsigned)event_target.reason,
+            (unsigned)event_target.attempt_in_cycle,
+            (unsigned long long)event_target.cumulative_attempts,
+            (unsigned long long)event_snapshot.record_revision);
+    }
+    REQUIRE(event_frame_length > 0u);
+    REQUIRE(receive_frame(&g_node_b, uplink_ops, uplink_handle,
+                event_frame, event_frame_length, event, &event_length)
+        == 0);
+    REQUIRE(verify_peer_event(event, event_length, &binding) == 0);
+
+    downlink_ops->close(downlink_ops->user, downlink_handle);
+    uplink_ops->close(uplink_ops->user, uplink_handle);
+    teardown_node(&g_node_b);
 
     REQUIRE(ninlil_v1_lab_peer_runtime_close_begin(&peer_runtime.runtime)
         == NINLIL_V1_LAB_PEER_RUNTIME_OK);

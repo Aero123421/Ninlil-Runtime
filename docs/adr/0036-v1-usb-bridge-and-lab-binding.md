@@ -515,6 +515,12 @@ durable Fabric attempt authority remains the one-shot replay authority; the
 adapter retains only its bounded live permit/token state and never mints a
 replacement permit.
 
+Each RF registration passes through Fabric's existing private volatile
+RF-mapping gate immediately after the exact binding-derived link is
+registered. Only those binding-derived path IDs are approved; registration or
+approval failure aborts activation. No public arbitrary-RF approval surface is
+added.
+
 There are at most four retained outbound USB operations and one inbound NFL1
 loan per distinct path. `ACCEPTED_LOCAL` becomes Fabric transport completion,
 not Application success. USB timeout, link fence or an unknown completion is
@@ -542,8 +548,11 @@ Host provider set is fixed to one owner thread, the existing SQLite port,
 OpenSSL 3 CSPRNG entropy and a monotonic clock view anchored to the USB
 parent's accepted `BOARD_INFO`. The clock keeps the parent's exact epoch and advances its sampled
 time only by local monotonic elapsed time; rollback, overflow or a changed
-anchor fails closed. Its LAB TxGate bounds ApplicationData to 1..128 bytes and
-Receipt wire data to the fixed 760-byte ceiling. The Controller diagnostic
+anchor fails closed. The V1 LAB mapping and diagnostic submission path require
+1..128-byte ApplicationData payloads, while the Service descriptor supplies
+the portable upper bound of 128 bytes. Its LAB TxGate validates the resulting
+complete logical bearer message against the fixed 760-byte packet ceiling for
+both Application and Receipt. The Controller diagnostic
 originates DesiredState only, so its required origin
 authorization provider rejects Controller-origin EventFact instead of adding a
 general policy engine. These are not installed providers or general policy
@@ -632,11 +641,13 @@ peer endpoint adopted by the provisioner. It registers:
   Service; and
 - one caller-supplied, application-neutral delivery callback table for those
   Services. The application may obtain a Service handle by its exact binding
-  slot to originate EventFact data.
+  slot to originate EventFact data, and may borrow the active Runtime handle
+  for the existing public query/list APIs. The peer object retains ownership;
+  neither borrow survives close.
 
 Service descriptors copy the binding's namespace, Service, schema, revision,
 digest, family and direction. Their remaining V1 contract is fixed: payload
-1..128 bytes, one target, application deduplication, required-evidence
+upper bound 128 bytes, one target, application deduplication, required-evidence
 custody, eight attempts per retry cycle and bounded 10-second admission. A
 DesiredState Service admits Controller-origin downlink and an EventFact
 Service admits peer-origin uplink; application-specific vocabulary is not part
@@ -644,8 +655,10 @@ of the descriptor builder. DesiredState's descriptor maximum evidence grace is
 the fixed 60000 ms binding ceiling, while EventFact keeps zero.
 
 The peer object supplies only the two missing fixed Runtime providers around
-the caller's allocator, execution, clock, entropy and Storage: a 1..128-byte
-Application/760-byte Receipt TxGate and a binding-scoped EventFact origin
+the caller's allocator, execution, clock, entropy and Storage: a fixed
+760-byte logical-message TxGate (the Service descriptor enforces the 128-byte
+upper bound; the binding-scoped origin grant also rejects zero-length
+EventFact payloads) and a binding-scoped EventFact origin
 grant. Both use the adopted endpoint and trusted boot clock; only the TxGate
 draws from the configured entropy provider. The binding-derived origin grant
 does not invent random policy state. Neither provider creates a general policy
@@ -704,7 +717,13 @@ retain that nonclaim.
    Fabric packet link through binding, outbound completion and inbound NFL1.
 5. Host vertical simulation covers two peers, the multi-Service node, both
    directions, APPLIED correlation, duplicate, timeout, tamper, wrong key,
-   wrong binding/Service and restart/reprovision.
+   wrong binding/Service and restart/reprovision. The happy path must use the
+   public Runtime surface rather than only hand-built NFL1: Controller
+   ApplicationData reaches the selected peer Service callback and the
+   callback-generated Receipt returns; an EventFact submitted through the
+   peer Service reaches the Controller side. Focused failure tests remain the
+   authority for the negative cases and are not duplicated in this vertical
+   test.
 6. The ESP32-S3 target compiles/links the same codec, owner and bridge in both
    USB-parent and generic-peer profiles, and the peer profile also links the
    fixed Runtime composition, with no test-only provenance or public ABI
