@@ -2,8 +2,10 @@
 
 #include "in_memory_storage.h"
 #include "n6_crypto_provider.h"
+#include "nfl1_codec.h"
 #include "r7_crypto_openssl3.h"
 #include "v1_lab_binding.h"
+#include "v1_lab_fabric.h"
 
 #include "ninlil/fabric_v1.h"
 
@@ -56,6 +58,9 @@ typedef struct test_n6 {
 typedef struct installed_state {
     uint32_t calls;
     uint64_t pair_generation;
+    uint32_t fabric_calls;
+    uint32_t packet_length;
+    uint8_t packet[NINLIL_V1_LAB_FABRIC_PACKET_MAX];
 } installed_state_t;
 
 static ninlil_byte_stream_status_t master_write(
@@ -140,7 +145,8 @@ static ninlil_byte_stream_status_t master_poll(
     if (result < 0 || (descriptor.revents & (POLLERR | POLLNVAL)) != 0) {
         return NINLIL_BYTE_STREAM_IO_ERROR;
     }
-    if ((descriptor.revents & POLLHUP) != 0) {
+    if ((descriptor.revents & POLLHUP) != 0
+        && (descriptor.revents & POLLIN) == 0) {
         master->link = NINLIL_BYTE_STREAM_LINK_DOWN;
         return NINLIL_BYTE_STREAM_ERR_LINK_DOWN;
     }
@@ -314,10 +320,128 @@ static void pair_installed(void *user, const uint8_t *binding,
 
 static uint32_t fabric_handoff(void *user, const uint8_t *packet, size_t length)
 {
-    (void)user;
-    (void)packet;
-    (void)length;
+    installed_state_t *state = (installed_state_t *)user;
+
+    if (state == NULL || packet == NULL || length == 0u
+        || length > sizeof(state->packet) || state->fabric_calls != 0u) {
+        return NINLIL_NVB1_STATUS_BUSY;
+    }
+    (void)memcpy(state->packet, packet, length);
+    state->packet_length = (uint32_t)length;
+    state->fabric_calls = 1u;
     return NINLIL_NVB1_STATUS_ACCEPTED_LOCAL;
+}
+
+static const ninlil_v1_lab_endpoint_t *test_controller_endpoint(
+    const ninlil_v1_lab_binding_t *binding)
+{
+    if (binding == NULL) {
+        return NULL;
+    }
+    return binding->controller_side == NINLIL_V1_LAB_SIDE_A
+        ? &binding->endpoint_a
+        : &binding->endpoint_b;
+}
+
+static const ninlil_v1_lab_endpoint_t *test_peer_endpoint(
+    const ninlil_v1_lab_binding_t *binding)
+{
+    if (binding == NULL) {
+        return NULL;
+    }
+    return binding->controller_side == NINLIL_V1_LAB_SIDE_A
+        ? &binding->endpoint_b
+        : &binding->endpoint_a;
+}
+
+static void set_receipt_source(
+    ninlil_fabric_private_nfl1_envelope_t *envelope,
+    const ninlil_v1_lab_endpoint_t *endpoint)
+{
+    (void)memcpy(envelope->source_runtime_id.bytes,
+        endpoint->runtime_id, 16u);
+    (void)memcpy(envelope->source_application_id.bytes,
+        endpoint->application_id, 16u);
+    (void)memcpy(envelope->source_device_id.bytes,
+        endpoint->device_id, 16u);
+    (void)memcpy(envelope->source_installation_id.bytes,
+        endpoint->installation_id, 16u);
+    (void)memcpy(envelope->source_site_id.bytes, endpoint->site_id, 16u);
+    envelope->source_binding_epoch = endpoint->binding_epoch;
+    envelope->source_membership_epoch = endpoint->membership_epoch;
+    envelope->source_flags = endpoint->identity_flags;
+}
+
+static void set_receipt_target(
+    ninlil_fabric_private_nfl1_envelope_t *envelope,
+    const ninlil_v1_lab_endpoint_t *endpoint)
+{
+    (void)memcpy(envelope->target_runtime_id.bytes,
+        endpoint->runtime_id, 16u);
+    (void)memcpy(envelope->target_application_id.bytes,
+        endpoint->application_id, 16u);
+    (void)memcpy(envelope->target_device_id.bytes,
+        endpoint->device_id, 16u);
+    (void)memcpy(envelope->target_installation_id.bytes,
+        endpoint->installation_id, 16u);
+    (void)memcpy(envelope->target_site_id.bytes, endpoint->site_id, 16u);
+    envelope->target_binding_epoch = endpoint->binding_epoch;
+    envelope->target_membership_epoch = endpoint->membership_epoch;
+    envelope->target_flags = endpoint->identity_flags;
+}
+
+static int make_verified_receipt(
+    const ninlil_v1_lab_binding_t *binding,
+    const installed_state_t *state,
+    uint8_t out[NINLIL_V1_LAB_FABRIC_PACKET_MAX],
+    uint32_t *out_length)
+{
+    static const uint8_t expected_payload[] = {0x01u, 0x02u, 0x03u, 0x04u};
+    const ninlil_v1_lab_endpoint_t *controller =
+        test_controller_endpoint(binding);
+    const ninlil_v1_lab_endpoint_t *peer = test_peer_endpoint(binding);
+    ninlil_fabric_private_nfl1_workspace_t workspace;
+    ninlil_fabric_private_nfl1_envelope_t envelope;
+    uint32_t required = 0u;
+
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&envelope, 0, sizeof(envelope));
+    if (binding == NULL || state == NULL || out == NULL || out_length == NULL
+        || controller == NULL || peer == NULL || state->fabric_calls != 1u
+        || ninlil_fabric_private_nfl1_decode(state->packet,
+               state->packet_length, &workspace, &envelope, &required)
+            != NINLIL_FABRIC_PRIVATE_NFL1_OK
+        || envelope.message_kind != NINLIL_BEARER_MESSAGE_APPLICATION
+        || envelope.family != NINLIL_FAMILY_DESIRED_STATE
+        || memcmp(envelope.source_runtime_id.bytes,
+               controller->runtime_id, 16u)
+            != 0
+        || memcmp(envelope.target_runtime_id.bytes,
+               peer->runtime_id, 16u)
+            != 0
+        || envelope.payload.length != sizeof(expected_payload)
+        || memcmp(envelope.payload.bytes, expected_payload,
+               sizeof(expected_payload))
+            != 0
+        || envelope.path_selection_epoch == UINT64_MAX) {
+        return 0;
+    }
+    envelope.message_kind = NINLIL_BEARER_MESSAGE_RECEIPT;
+    set_receipt_source(&envelope, peer);
+    set_receipt_target(&envelope, controller);
+    envelope.receipt_stage = NINLIL_EVIDENCE_VERIFIED;
+    envelope.payload.bytes = NULL;
+    envelope.payload.length = 0u;
+    envelope.evidence.bytes = NULL;
+    envelope.evidence.length = 0u;
+    (void)memcpy(envelope.evidence_time_clock_epoch_id.bytes,
+        peer->clock_epoch_id, 16u);
+    envelope.evidence_time_now_ms = 71200u;
+    envelope.evidence_time_trust = NINLIL_CLOCK_TRUSTED;
+    envelope.path_selection_epoch += 1u;
+    return ninlil_fabric_private_nfl1_encode(&envelope, out,
+               NINLIL_V1_LAB_FABRIC_PACKET_MAX, out_length)
+            == NINLIL_FABRIC_PRIVATE_NFL1_OK;
 }
 
 static void remove_database_files(const char *path)
@@ -342,7 +466,7 @@ static void remove_database_files(const char *path)
     }
 }
 
-static int run_test(const char *controller_path)
+static int run_test(const char *controller_path, int send_mode)
 {
     int passed = 0;
     int master_fd = -1;
@@ -365,6 +489,12 @@ static int run_test(const char *controller_path)
     ninlil_test_storage_config_t storage_config = {4u, 32u, 65536u};
     ninlil_test_storage_t *storage = NULL;
     installed_state_t installed;
+    ninlil_v1_usb_bridge_handle_t receipt_handle;
+    ninlil_v1_usb_bridge_completion_t receipt_completion;
+    uint8_t receipt[NINLIL_V1_LAB_FABRIC_PACKET_MAX];
+    uint32_t receipt_length = 0u;
+    int receipt_submitted = 0;
+    int receipt_completed = 0;
     uint64_t start;
 
     (void)memset(&master, 0, sizeof(master));
@@ -372,6 +502,9 @@ static int run_test(const char *controller_path)
     (void)memset(&binding, 0, sizeof(binding));
     (void)memset(&provisioner, 0, sizeof(provisioner));
     (void)memset(&installed, 0, sizeof(installed));
+    (void)memset(&receipt_handle, 0, sizeof(receipt_handle));
+    (void)memset(&receipt_completion, 0, sizeof(receipt_completion));
+    (void)memset(receipt, 0, sizeof(receipt));
     REQUIRE(controller_path != NULL && controller_path[0] == '/');
     REQUIRE(openpty(&master_fd, &slave_fd, slave_path, NULL, NULL) == 0);
     REQUIRE(fcntl(master_fd, F_SETFL,
@@ -407,7 +540,7 @@ static int run_test(const char *controller_path)
     clock_sample.exact_status = NINLIL_PCP_OK;
     (void)memcpy(clock_sample.sample_epoch_id,
         binding.endpoint_a.clock_epoch_id, 16u);
-    clock_sample.sample_now_ms = 1000u;
+    clock_sample.sample_now_ms = 70000u;
     REQUIRE(ninlil_v1_lab_provisioner_init(&provisioner, n6.n6,
         ninlil_test_storage_ops(storage), ninlil_n6_crypto_host_ops(),
         &crypto, binding.endpoint_a.runtime_id, &clock_sample)
@@ -427,11 +560,22 @@ static int run_test(const char *controller_path)
     if (child == 0) {
         (void)close(master_fd);
         (void)close(slave_fd);
-        (void)execl(controller_path, controller_path,
-            "--usb", slave_path,
-            "--database", database_path,
-            "--binding", binding_path,
-            "--timeout-ms", "5000", (char *)NULL);
+        if (send_mode != 0) {
+            (void)execl(controller_path, controller_path,
+                "--usb", slave_path,
+                "--database", database_path,
+                "--binding", binding_path,
+                "--timeout-ms", "5000",
+                "--send-binding", "1",
+                "--send-service", "1",
+                "--payload-hex", "01020304", (char *)NULL);
+        } else {
+            (void)execl(controller_path, controller_path,
+                "--usb", slave_path,
+                "--database", database_path,
+                "--binding", binding_path,
+                "--timeout-ms", "5000", (char *)NULL);
+        }
         _exit(127);
     }
     REQUIRE(wait_for_raw_mode(slave_fd, UINT64_C(5000)));
@@ -463,6 +607,36 @@ static int run_test(const char *controller_path)
             || status == NINLIL_V1_USB_BRIDGE_WOULD_BLOCK
             || (installed.calls == 1u
                 && status == NINLIL_V1_USB_BRIDGE_LINK_DOWN));
+        if (send_mode != 0 && installed.fabric_calls == 1u
+            && receipt_submitted == 0) {
+            ninlil_v1_usb_bridge_status_t submit_status;
+
+            REQUIRE(make_verified_receipt(
+                &binding, &installed, receipt, &receipt_length));
+            REQUIRE(now <= UINT64_MAX - TEST_TIMEOUT_MS);
+            submit_status = ninlil_v1_usb_bridge_submit_fabric(
+                &board_bridge, receipt, receipt_length,
+                now + TEST_TIMEOUT_MS, &receipt_handle);
+            REQUIRE(submit_status == NINLIL_V1_USB_BRIDGE_OK
+                || submit_status == NINLIL_V1_USB_BRIDGE_BUSY);
+            if (submit_status == NINLIL_V1_USB_BRIDGE_OK) {
+                receipt_submitted = 1;
+            }
+        }
+        if (receipt_submitted != 0 && receipt_completed == 0) {
+            ninlil_v1_usb_bridge_status_t completion_status =
+                ninlil_v1_usb_bridge_take_completion(&board_bridge,
+                    receipt_handle, &receipt_completion);
+            if (completion_status == NINLIL_V1_USB_BRIDGE_OK) {
+                REQUIRE(receipt_completion.reason
+                        == NINLIL_V1_USB_BRIDGE_COMPLETION_REMOTE_STATUS
+                    && receipt_completion.remote_status_code
+                        == NINLIL_NVB1_STATUS_ACCEPTED_LOCAL);
+                receipt_completed = 1;
+            } else {
+                REQUIRE(completion_status == NINLIL_V1_USB_BRIDGE_WOULD_BLOCK);
+            }
+        }
         waited = waitpid(child, &child_status, WNOHANG);
         REQUIRE(waited >= 0);
         if (waited == child) {
@@ -472,6 +646,9 @@ static int run_test(const char *controller_path)
     }
     REQUIRE(WIFEXITED(child_status) && WEXITSTATUS(child_status) == 0);
     REQUIRE(installed.calls == 1u && installed.pair_generation == 1u);
+    REQUIRE((send_mode == 0 && installed.fabric_calls == 0u)
+        || (send_mode != 0 && installed.fabric_calls == 1u
+            && receipt_submitted != 0 && receipt_completed == 1));
     passed = 1;
 
 cleanup:
@@ -504,10 +681,11 @@ cleanup:
 
 int main(int argc, char **argv)
 {
-    if (argc != 2 || !run_test(argv[1])) {
+    if (argc != 2 || !run_test(argv[1], 0) || !run_test(argv[1], 1)) {
         return 1;
     }
     (void)printf(
-        "v1_lab_controller_probe_test OK usb=pty binding=installed fabric=registered\n");
+        "v1_lab_controller_probe_test OK usb=pty binding=installed "
+        "runtime_submit=verified\n");
     return 0;
 }

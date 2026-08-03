@@ -339,6 +339,7 @@ if(TARGET ninlil_posix_usb_serial
         )
         target_link_libraries(ninlil_v1_lab_controller_probe_test PRIVATE
             ninlil_runtime_private
+            ninlil_fabric_v1
             ninlil
         )
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

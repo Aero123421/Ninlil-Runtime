@@ -532,12 +532,45 @@ slot. Backpressure returns `BUSY`/`WOULD_BLOCK` without another queue.
 The repository's completed V1 Controller executable is specified as a LAB
 diagnostic, not a daemon or deployment manager. It uses the existing
 Composition, POSIX USB serial and SQLite providers, consumes an exact
-application-neutral binding, and will report transaction/Receipt results. The
-current connection-probe slice stops after clock verification, binding apply,
-Composition creation and Fabric registration; it does not yet submit
-ApplicationData or report Receipts. Binding inventory or key-management UX
-remains an application concern and is not implemented as a second Ninlil
-framework.
+application-neutral binding, and reports transaction/Receipt results. Its
+default connection-probe mode stops after clock verification, binding apply,
+Composition creation and Fabric registration. Binding inventory or
+key-management UX remains an application concern and is not implemented as a
+second Ninlil framework.
+
+The same executable provides one optional diagnostic submission:
+
+```text
+--send-binding 1|2 --send-service SLOT --payload-hex HEX
+```
+
+The three options are all-or-none. The binding number is its one-based command
+line order; `SLOT` must identify one DesiredState row whose flow leaves the
+Controller; and `HEX` is an even-length 1..128-byte ApplicationData value. The
+default invocation remains the connection probe. Send mode registers only that
+exact Runtime Service, uses a CSPRNG idempotency key, generation 1, VERIFIED
+required evidence, and the existing bounded timeout as the public API's
+relative effect-deadline duration. It then drives the existing USB and
+Composition steps until the transaction is terminal. It exits successfully
+and prints a single
+application-neutral `SATISFIED` summary only for a satisfied transaction with
+VERIFIED evidence. Timeout, rejection, another terminal outcome or cleanup
+failure exits nonzero. It never prints the payload, binding, key material or
+derived secrets.
+
+The process-local wait bound uses the POSIX monotonic clock. After activation,
+USB/Fabric request deadlines and bridge steps use the Controller's anchored
+trusted clock, which is also the `TxPermit` clock; a request may not compare a
+deadline from one clock domain with `now` from the other. All pre-activation
+requests are complete before this transition. Before a successful one-shot
+process closes USB, it drains both the pending bridge response and the POSIX
+byte-stream TX ring so the peer can observe the terminal local status.
+
+This is deliberately a one-shot physical-path diagnostic. It is not a daemon,
+command language, application configuration layer, Service discovery system or
+deployment manager. Applications that need continuous submission, EventFact
+consumption or their own result presentation use the installed Runtime API and
+their own process lifecycle.
 
 The connection probe prints `READY` only after registered links are quiesced
 and Composition has completed its normative close/destroy sequence. A bounded
