@@ -736,6 +736,15 @@ generic peer gives the same flash ops to its fixed Composition, whose namespace
 is already scoped by the adopted Runtime ID. There is one flash binding, one
 wear-budget domain and no fallback store.
 
+The fixed Controller and peer Compositions use the exact 20-byte Runtime
+Storage namespace keys `NLC1 || controller_runtime_id` and
+`NLP1 || peer_runtime_id`, respectively. `NLC1` and `NLP1` are global Storage
+key prefixes owned by this profile; they are not wire records. `CPL1` and
+`NPR1` are only the Controller platform and peer Runtime objects' in-memory
+validity guards and are never emitted or stored. They are therefore explicit
+non-protocol exclusions in the global magic registry rather than assigned wire
+or Storage values.
+
 The optional `SESSION_LEDGER_DIAG` build remains available only for physical
 USB/RF bring-up before flash acceptance. In that explicit non-release profile,
 the provisioning and peer Runtime ledgers remain separate fixed PSRAM objects

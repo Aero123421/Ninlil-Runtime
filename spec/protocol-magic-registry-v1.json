@@ -1423,6 +1423,34 @@
       ]
     },
     {
+      "magic": "NLC1",
+      "owner": "RUNTIME",
+      "artifact": "KEY_PREFIX",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
+      "occurrences": [
+        {
+          "path": "examples/v1_lab/v1_lab_controller.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NLP1",
+      "owner": "RUNTIME",
+      "artifact": "KEY_PREFIX",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/v1_lab_peer_runtime.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
       "magic": "NLR1",
       "owner": "DOMAIN_STORE",
       "artifact": "DURABLE_RECORD",
@@ -3043,6 +3071,17 @@
       ]
     },
     {
+      "token": "CPL1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "examples/v1_lab/v1_lab_controller_platform.c",
+          "representation": "U32_BE",
+          "count": 1
+        }
+      ]
+    },
+    {
       "token": "CUEN",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
@@ -4315,6 +4354,17 @@
         {
           "path": "tools/route_relay_multiparent_spec_vector_gen.py",
           "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "NPR1",
+      "reason": "IN_MEMORY_OBJECT_GUARD",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/v1_lab_peer_runtime.c",
+          "representation": "U32_BE",
           "count": 1
         }
       ]
