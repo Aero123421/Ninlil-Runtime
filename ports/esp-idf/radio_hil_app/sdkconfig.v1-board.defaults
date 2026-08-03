@@ -1,7 +1,7 @@
-# Overlay for the default-off V1 USB parent diagnostic profile.
+# Overlay for the default-off V1 USB parent target candidate.
 # Build with SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.v1-board.defaults"
-# and a separate SDKCONFIG/build directory. This is session-only LAB evidence.
+# and a separate SDKCONFIG/build directory. The normal profile binds the
+# existing flash adapter and stays fail-closed while FULL is unattested.
 CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE=y
 CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH=y
-CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG=y
 CONFIG_NINLIL_RADIO_HIL_V1_BOARD=y

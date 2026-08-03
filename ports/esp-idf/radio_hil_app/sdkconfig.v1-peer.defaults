@@ -1,3 +1,3 @@
-# Generic peer uses the same diagnostic board owner source as USB parent.
+# Generic peer uses the same flash-backed board owner source as USB parent.
 # This one fixed bit selects the endpoint opposite controller_side.
 CONFIG_NINLIL_RADIO_HIL_V1_PEER=y

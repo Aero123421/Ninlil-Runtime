@@ -712,37 +712,43 @@ Composition step on the same owner task. Close unregisters the fixed paths
 before the normative Composition close/destroy sequence and never frees
 borrowed platform, radio or workspace storage early.
 
-### 8. ESP32-S3 diagnostic board profiles
+### 8. ESP32-S3 board profiles
 
-The repository provides two default-off `radio_hil_app` build profiles for
-physical USB/RF bring-up: `USB parent` and `generic peer`. They compile the same
-source and differ by one fixed Kconfig role bit; V1 does not add a dynamic role
-manager. Both enable the existing V1 LAB packet-link, open the native USB CDC
-control stream and drive exactly one fixed board owner from the `app_main` task.
-UART remains the diagnostic console. Neither image has a compiled Runtime ID,
-and neither admits RF traffic until section 2's first valid binding adoption.
-The peer profile additionally creates the fixed peer Runtime composition from
-section 7.1 after that adoption; the USB-parent profile does not create a
-second Runtime.
+The repository provides two default-off `radio_hil_app` build profiles for V1
+target wiring and eventual physical HIL: `USB parent` and `generic peer`. They
+compile the same source and differ by one fixed Kconfig role bit; V1 does not
+add a dynamic role manager. Both enable the existing V1 LAB packet-link, open
+the native USB CDC control stream and drive exactly one fixed board owner from
+the `app_main` task. UART remains the diagnostic console. Neither image has a
+compiled Runtime ID, and neither admits RF traffic until section 2's first
+valid binding adoption. The peer profile additionally creates the fixed peer
+Runtime composition from section 7.1 after that adoption; the USB-parent
+profile does not create a second Runtime.
 
-This profile deliberately uses session LAB Storage because the current ESP
-flash adapter does not attest a successful `FULL` commit. The USB-parent
-allocates one fixed provisioning ledger from PSRAM. The generic peer allocates
-that same provisioning ledger plus one separately namespaced Runtime/Fabric
-ledger; separating them prevents the fixed provisioning bounds from being
-silently consumed by application state. Each ledger has the same exact bounds:
-three namespaces, 32 entries per namespace, 48-byte keys and 1024-byte values.
-The provisioning ledger is sufficient for PCP, N6 and two NLB1 pair records;
-the peer ledger is sufficient for the one fixed Composition. Allocation or
-initialization failure is fail-closed. Neither ledger has a growth policy or
-fallback store.
+The default V1 board profiles bind the repository's existing ESP flash Storage
+adapter; they do not add another storage driver or persistence API. They use
+the production per-namespace entry, value, transaction, iterator and wear
+bounds, changing only `max_namespaces` from two to the existing hard maximum of
+four. Those four namespaces are the already-defined PCP authority state, fresh
+N6 context store, `NLB1` provisioning floor, and—on the generic peer—the fixed
+Runtime/Fabric ledger. The USB parent leaves the fourth namespace unused. The
+generic peer gives the same flash ops to its fixed Composition, whose namespace
+is already scoped by the adopted Runtime ID. There is one flash binding, one
+wear-budget domain and no fallback store.
 
-The profile is marked `session_diag`, is never a release or restart-durability
-claim and does not satisfy ADR-0034's flash-FULL acceptance requirement.
-Power-cycle reprovisioning is required. Its purpose is to close target wiring
-and enable physical USB/RF diagnosis while the independently gated flash-FULL
-proof remains pending; software or hardware evidence from this profile must
-retain that nonclaim.
+The optional `SESSION_LEDGER_DIAG` build remains available only for physical
+USB/RF bring-up before flash acceptance. In that explicit non-release profile,
+the provisioning and peer Runtime ledgers remain separate fixed PSRAM objects
+and power-cycle reprovisioning is required. The normal V1 board and peer build
+must not enable or link that session ledger.
+
+Target wiring and compile/link evidence do not attest `FULL`. The current ESP
+flash adapter continues to classify an unattested target commit as
+`COMMIT_UNKNOWN`, so the board fails closed before binding/RF activation until
+the existing storage power-cut acceptance and promotion authority are
+satisfied. No compile-time switch, magic value or V1-specific bypass may turn
+that result into `OK`. Physical USB/RF diagnosis may use the explicit session
+profile, but its evidence must retain the `session_diag` nonclaim.
 
 ## Acceptance before Accepted
 
@@ -772,7 +778,9 @@ retain that nonclaim.
 6. The ESP32-S3 target compiles/links the same codec, owner and bridge in both
    USB-parent and generic-peer profiles, and the peer profile also links the
    fixed Runtime composition, with no test-only provenance or public ABI
-   exposure.
+   exposure. Both normal profiles link the existing flash adapter with four
+   bounded namespaces and contain no session-ledger symbols. An unattested
+   target remains fail-closed at `COMMIT_UNKNOWN`.
 
 Physical USB/RF evidence remains `NOT_RUN` until ADR-0034's three-board run.
 

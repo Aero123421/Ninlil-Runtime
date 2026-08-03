@@ -76,23 +76,24 @@ menu "Ninlil SX1262 board profile (XIAO ESP32-S3 + Wio-SX1262)"
         default n
         depends on NINLIL_ENABLE_SX1262_R9
         help
-            Packages pcp_lab_session_ledger and permits radio_hil to use it.
-            Default OFF. V1 release radio_hil MUST use flash FULL only and
-            fail closed without it. Session ledger is diagnostic-only and must
-            not appear in release ELF evidence.
+            Packages pcp_lab_session_ledger and makes radio_hil use it instead
+            of flash. Default OFF. V1 release radio_hil MUST use flash only and
+            fail closed without accepted FULL durability. Session ledger is
+            diagnostic-only and must not appear in release ELF evidence.
 
             Do not enable for release HIL / power-cut recovery claims.
 
     config NINLIL_RADIO_HIL_V1_BOARD
-        bool "Diagnostic V1 USB/RF board owner (session-only)"
+        bool "V1 USB/RF board owner"
         default n
         depends on NINLIL_ENABLE_V1_LAB_RADIO_PATH
-        depends on NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG
         help
             Auto-start the fixed USB CDC + single-hop SX1262 V1 board owner.
-            This target uses session-only PSRAM storage and therefore requires
-            reprovisioning after reboot. It is for physical path bring-up, not
-            release, restart durability, legal or field evidence.
+            The normal target uses the existing flash storage adapter and
+            fails closed while FULL durability is unattested. Explicitly
+            enabling SESSION_LEDGER_DIAG selects non-durable PSRAM only for
+            physical USB/RF bring-up. Neither mode claims legal or field
+            acceptance.
 
     config NINLIL_RADIO_HIL_V1_PEER
         bool "Use generic peer role instead of USB parent"

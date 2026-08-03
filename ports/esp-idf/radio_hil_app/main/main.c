@@ -122,9 +122,8 @@ static const char *TAG = "radio_hil";
     "CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG is impossible under NINLIL_SX1262_PRODUCTION_BUILD (V1 release HIL)"
 #endif
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD) \
-    && (!defined(CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH) \
-        || !defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG))
-#error "V1 board mode requires the V1 LAB radio path and session ledger"
+    && !defined(CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH)
+#error "V1 board mode requires the V1 LAB radio path"
 #endif
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER) \
     && !defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
@@ -208,7 +207,9 @@ static ninlil_v1_lab_provisioner_t g_v1_provisioner;
 static ninlil_v1_lab_board_owner_t g_v1_board_owner;
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
 static ninlil_v1_lab_peer_runtime_t g_v1_peer_runtime;
+#if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
 static ninlil_pcp_lab_session_ledger_t *g_v1_peer_ledger;
+#endif
 static const ninlil_storage_ops_t *g_v1_peer_storage_ops;
 static void *g_v1_peer_composition_workspace;
 static ninlil_esp_idf_execution_t g_v1_peer_execution;
@@ -584,12 +585,12 @@ static int authority_init(void)
         return 1;
     }
 
-    /* Release mode requires flash FULL. V1 board bring-up is an explicit,
-     * default-off session-only diagnostic profile. */
+    /* Release mode requires flash FULL. Session storage is an explicit,
+     * default-off diagnostic profile only. */
     g_ledger_is_flash = 0;
     g_flash_binding = NULL;
     g_ledger_ops = NULL;
-#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+#if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
     if (session_ledger_init() != 0) {
         emit("ERR ledger_diag_psram");
         return 1;
@@ -599,25 +600,19 @@ static int authority_init(void)
     {
         ninlil_port_esp_storage_config_t scfg;
         ninlil_port_esp_storage_config_production(&scfg);
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+        scfg.max_namespaces =
+            NINLIL_PORT_ESP_STORAGE_HARD_MAX_NAMESPACES;
+#endif
         if (ninlil_port_esp_storage_flash_bind(
                 "ninlil_st", &scfg, &g_flash_binding, &g_ledger_ops)
                 != 0
             || g_ledger_ops == NULL) {
-#if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
-            /* Diagnostic-only path — not V1 release HIL. */
-            g_flash_binding = NULL;
-            if (session_ledger_init() != 0) {
-                emit("ERR ledger_diag_psram");
-                return 1;
-            }
-            emit("WARN ledger=session_diag not_release");
-#else
             /* V1 release HIL: flash FULL required; no session fallback. */
             g_flash_binding = NULL;
             g_ledger_ops = NULL;
             emit("ERR flash_full_required");
             return 1;
-#endif
         } else {
             g_ledger_is_flash = 1;
         }
@@ -990,14 +985,23 @@ static int v1_peer_runtime_prepare(void)
     uint32_t workspace_bytes = 0u;
     uint32_t workspace_alignment = 0u;
 
+#if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
     g_v1_peer_ledger = (ninlil_pcp_lab_session_ledger_t *)heap_caps_calloc(
         1u, sizeof(*g_v1_peer_ledger), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (g_v1_peer_ledger == NULL
         || ninlil_pcp_lab_session_ledger_init(
                g_v1_peer_ledger, &g_v1_peer_storage_ops)
             != 0
-        || g_v1_peer_storage_ops == NULL
-        || ninlil_composition_v1_workspace_required(
+        || g_v1_peer_storage_ops == NULL) {
+        return 1;
+    }
+#else
+    g_v1_peer_storage_ops = g_ledger_ops;
+    if (g_v1_peer_storage_ops == NULL || g_ledger_is_flash == 0) {
+        return 1;
+    }
+#endif
+    if (ninlil_composition_v1_workspace_required(
                NINLIL_COMPOSITION_PROFILE_1,
                &workspace_bytes,
                &workspace_alignment)
@@ -1141,13 +1145,20 @@ static int v1_board_init(void)
         return 1;
     }
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
-    emit("READY v1_board role=peer usb=control-cdc radio=single_hop "
-         "runtime=awaiting_binding ledger=session_diag "
-         "restart_durable=false peer_id=binding");
+    (void)printf(
+        "READY v1_board role=peer usb=control-cdc radio=single_hop "
+        "runtime=awaiting_binding ledger=%s restart_durable=%s "
+        "peer_id=binding\n",
+        g_ledger_is_flash != 0 ? "flash_full" : "session_diag",
+        g_ledger_is_flash != 0 ? "candidate" : "false");
 #else
-    emit("READY v1_board role=usb_parent usb=control-cdc radio=single_hop "
-         "ledger=session_diag restart_durable=false controller_id=binding");
+    (void)printf(
+        "READY v1_board role=usb_parent usb=control-cdc radio=single_hop "
+        "ledger=%s restart_durable=%s controller_id=binding\n",
+        g_ledger_is_flash != 0 ? "flash_full" : "session_diag",
+        g_ledger_is_flash != 0 ? "candidate" : "false");
 #endif
+    (void)fflush(stdout);
     return 0;
 }
 

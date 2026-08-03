@@ -811,9 +811,9 @@ python3 tools/sx1262_radio_hil_protocol.py not-run-evidence \
   --out-json ports/esp-idf/radio_hil_app/build/ninlil_radio_hil_physical.json
 echo "SX1262 radio_hil official amd64 compile/link + multi-chain stack gate OK"
 
-# Default-off V1 diagnostic board profile: compile the real USB + single-hop
-# owner in a separate build. This proves target wiring only; it is deliberately
-# session-backed and must not be confused with the release/power-cut profile.
+# Default-off V1 board profile: compile the real USB + single-hop owner with
+# the existing flash adapter in a separate build. This proves target wiring
+# only; it does not replace physical power-cut or USB/RF evidence.
 (
   cd ports/esp-idf/radio_hil_app
   idf.py -B build-v1-board \
@@ -828,25 +828,33 @@ test -s "${V1_BOARD_ELF}"
 for config in \
   CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE \
   CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH \
-  CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG \
   CONFIG_NINLIL_RADIO_HIL_V1_BOARD
 do
   grep -E "^${config}=y$" "${V1_BOARD_SDK}"
 done
+if grep -E '^CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG=y$' "${V1_BOARD_SDK}"; then
+  echo "V1 board target must not enable SESSION_LEDGER_DIAG" >&2
+  exit 1
+fi
 xtensa-esp32s3-elf-nm "${V1_BOARD_ELF}" > "${V1_BOARD_DIR}/ninlil_v1_board.nm.txt"
 for sym in \
   app_main \
   ninlil_esp_idf_usb_cdc_open \
-  ninlil_pcp_lab_session_ledger_init \
+  ninlil_port_esp_storage_config_production \
+  ninlil_port_esp_storage_flash_bind \
   ninlil_v1_lab_provisioner_init_controller \
   ninlil_v1_lab_board_owner_init \
   ninlil_v1_lab_board_owner_step
 do
   grep -E " [Tt] ${sym}$" "${V1_BOARD_DIR}/ninlil_v1_board.nm.txt"
 done
-echo "V1 diagnostic USB+SX1262 board target compile/link OK (session-only, not HIL)"
+if grep -E ' [Tt] ninlil_pcp_lab_session_ledger_' "${V1_BOARD_DIR}/ninlil_v1_board.nm.txt"; then
+  echo "V1 board target linked diagnostic session-ledger symbols" >&2
+  exit 1
+fi
+echo "V1 USB+SX1262 board target compile/link OK (flash candidate, not physical HIL)"
 
-# The generic peer is the same diagnostic owner with one fixed build-time role
+# The generic peer is the same board owner with one fixed build-time role
 # bit. Build it separately so peer adoption cannot exist only in Host tests.
 (
   cd ports/esp-idf/radio_hil_app
@@ -862,22 +870,30 @@ test -s "${V1_PEER_ELF}"
 for config in \
   CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE \
   CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH \
-  CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG \
   CONFIG_NINLIL_RADIO_HIL_V1_BOARD \
   CONFIG_NINLIL_RADIO_HIL_V1_PEER
 do
   grep -E "^${config}=y$" "${V1_PEER_SDK}"
 done
+if grep -E '^CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG=y$' "${V1_PEER_SDK}"; then
+  echo "V1 peer target must not enable SESSION_LEDGER_DIAG" >&2
+  exit 1
+fi
 xtensa-esp32s3-elf-nm "${V1_PEER_ELF}" > "${V1_PEER_DIR}/ninlil_v1_peer.nm.txt"
 for sym in \
   app_main \
   ninlil_esp_idf_usb_cdc_open \
-  ninlil_pcp_lab_session_ledger_init \
+  ninlil_port_esp_storage_config_production \
+  ninlil_port_esp_storage_flash_bind \
   ninlil_v1_lab_provisioner_init_peer \
   ninlil_v1_lab_board_owner_init \
   ninlil_v1_lab_board_owner_step
 do
   grep -E " [Tt] ${sym}$" "${V1_PEER_DIR}/ninlil_v1_peer.nm.txt"
 done
-echo "V1 generic peer USB+SX1262 target compile/link OK (session-only, not HIL)"
+if grep -E ' [Tt] ninlil_pcp_lab_session_ledger_' "${V1_PEER_DIR}/ninlil_v1_peer.nm.txt"; then
+  echo "V1 peer target linked diagnostic session-ledger symbols" >&2
+  exit 1
+fi
+echo "V1 generic peer USB+SX1262 target compile/link OK (flash candidate, not physical HIL)"
 NINLIL_ESP_CI
