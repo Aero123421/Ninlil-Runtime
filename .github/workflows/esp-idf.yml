@@ -94,6 +94,7 @@ jobs:
           test ! -f ports/esp-idf/hil_app/sdkconfig.old
           # Feature-ON overlays must exist (actual builds consume them).
           test -f ports/esp-idf/smoke_app/sdkconfig.defaults.r7_frag_on
+          test -f ports/esp-idf/smoke_app/sdkconfig.defaults.v1_lab_radio_path_on
           test -f ports/esp-idf/smoke_app/sdkconfig.defaults.mfdt_on
           test -f ports/esp-idf/smoke_app/sdkconfig.defaults.rrmp_on
           test -f ports/esp-idf/smoke_app/sdkconfig.defaults.domain_schema1_on
@@ -105,6 +106,8 @@ jobs:
           grep -F 'CONFIG_NINLIL_ENABLE_PRIVATE_WIFI_V1=y' \
             ports/esp-idf/smoke_app/sdkconfig.defaults.all_private_features_on
           grep -F 'CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=y' \
+            ports/esp-idf/smoke_app/sdkconfig.defaults.all_private_features_on
+          grep -F 'CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH=y' \
             ports/esp-idf/smoke_app/sdkconfig.defaults.all_private_features_on
           grep -F 'sdkconfig.defaults.all_private_features_on' \
             tools/esp_idf_ci_docker_run.sh
@@ -154,6 +157,8 @@ jobs:
           grep -E 'CONFIG_NINLIL_ENABLE_PRIVATE_WIFI_V1 1' \
             ports/esp-idf/smoke_app/build-all-private-features-on/config/sdkconfig.h
           grep -E 'CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1 1' \
+            ports/esp-idf/smoke_app/build-all-private-features-on/config/sdkconfig.h
+          grep -E 'CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH 1' \
             ports/esp-idf/smoke_app/build-all-private-features-on/config/sdkconfig.h
           # Individual overlays alone are not a substitute for the combined tree.
           test -d ports/esp-idf/smoke_app/build-mfdt-on

@@ -2,6 +2,7 @@
 #include "nfl1_codec.h"
 #include "r7_crypto_openssl3.h"
 #include "v1_lab_binding.h"
+#include "v1_lab_fabric.h"
 
 #include "ninlil/fabric_v1.h"
 #include "ninlil/platform.h"
@@ -23,6 +24,29 @@ static void fill_bytes(uint8_t *out, size_t length, uint8_t seed)
     for (i = 0u; i < length; ++i) {
         out[i] = (uint8_t)(seed + (uint8_t)i);
     }
+}
+
+static uint8_t hex_nibble(char value)
+{
+    if (value >= '0' && value <= '9') {
+        return (uint8_t)(value - '0');
+    }
+    return (uint8_t)(value - 'a' + 10);
+}
+
+static int matches_hex(
+    const uint8_t *bytes, size_t length, const char *expected)
+{
+    size_t i;
+
+    for (i = 0u; i < length; ++i) {
+        uint8_t high = hex_nibble(expected[i * 2u]);
+        uint8_t low = hex_nibble(expected[i * 2u + 1u]);
+        if (bytes[i] != (uint8_t)((high << 4u) | low)) {
+            return 0;
+        }
+    }
+    return expected[length * 2u] == '\0';
 }
 
 static void fill_endpoint(
@@ -93,6 +117,10 @@ static void fill_binding(
     binding->pair_generation = 3u;
     fill_endpoint(&binding->endpoint_a, 0x10u);
     fill_endpoint(&binding->endpoint_b, 0x30u);
+    (void)memcpy(
+        binding->endpoint_b.clock_epoch_id,
+        binding->endpoint_a.clock_epoch_id,
+        16u);
     fill_bytes(binding->radio_site_domain_id, 16u, 0x90u);
     binding->radio_membership_epoch = 11u;
     binding->a_to_b_hop_context_id = 1u;
@@ -139,7 +167,8 @@ static int verify_existing_canonical_helpers(
     policy.direction = NINLIL_FABRIC_POLICY_DIRECTION_FORWARD;
     policy.traffic_class = NINLIL_FABRIC_TRAFFIC_APPLICATION;
     policy.scope_selector = NINLIL_FABRIC_SCOPE_TARGET_RUNTIME;
-    policy.required_capability_flags = NINLIL_FABRIC_CAP_UNICAST
+    policy.required_capability_flags = NINLIL_FABRIC_CAP_SLEEP_COMPATIBLE
+        | NINLIL_FABRIC_CAP_UNICAST | NINLIL_FABRIC_CAP_RESERVATION
         | NINLIL_FABRIC_CAP_REGULATED_RF | NINLIL_FABRIC_CAP_EVIDENCE;
     policy.required_security_flags = NINLIL_FABRIC_SECURITY_INTEGRITY
         | NINLIL_FABRIC_SECURITY_CONFIDENTIALITY
@@ -279,12 +308,251 @@ static int test_rejection_is_atomic(ninlil_r7_crypto_provider *crypto)
     REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
         == NINLIL_V1_LAB_BINDING_SEMANTIC);
     fill_binding(&binding, 1u, 1u);
+    binding.endpoint_b.clock_epoch_id[0] ^= 1u;
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
+        == NINLIL_V1_LAB_BINDING_STRUCTURAL);
+    fill_binding(&binding, 1u, 1u);
     binding.endpoint_b.runtime_id[0] = 1u;
     REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
         == NINLIL_V1_LAB_BINDING_STRUCTURAL);
     ninlil_v1_lab_binding_clear(&binding);
     ninlil_v1_lab_binding_clear(&output);
     ninlil_v1_lab_binding_clear(&before);
+    return 0;
+}
+
+static int test_closed_fabric_builder(ninlil_r7_crypto_provider *crypto)
+{
+    ninlil_v1_lab_binding_t binding;
+    ninlil_fabric_link_descriptor_v1_t descriptor_a;
+    ninlil_fabric_link_descriptor_v1_t descriptor_b;
+    ninlil_fabric_link_state_v1_t state_a;
+    ninlil_fabric_link_state_v1_t state_b;
+    ninlil_fabric_path_policy_v1_t policy_0;
+    ninlil_fabric_path_policy_v1_t policy_0_b;
+    ninlil_fabric_path_policy_v1_t policy_2;
+    ninlil_fabric_authority_binding_v1_t authority_0;
+    ninlil_fabric_authority_binding_v1_t authority_0_b;
+    ninlil_fabric_authority_binding_v1_t authority_2;
+    ninlil_fabric_link_descriptor_v1_t descriptor_kat;
+    ninlil_fabric_link_descriptor_v1_t descriptor_before;
+    ninlil_fabric_link_state_v1_t state_before;
+
+    fill_binding(&binding, 3u, 16u);
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
+        == NINLIL_V1_LAB_BINDING_OK);
+    REQUIRE(memcmp(
+                binding.services[0].selected_path_id,
+                binding.services[2].selected_path_id,
+                16u)
+        == 0);
+    REQUIRE(ninlil_v1_lab_fabric_build_path(
+                crypto,
+                &binding,
+                binding.endpoint_a.runtime_id,
+                NINLIL_V1_LAB_FLOW_A_TO_B,
+                &descriptor_a,
+                &state_a)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(ninlil_v1_lab_fabric_build_path(
+                crypto,
+                &binding,
+                binding.endpoint_b.runtime_id,
+                NINLIL_V1_LAB_FLOW_A_TO_B,
+                &descriptor_b,
+                &state_b)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(memcmp(
+                descriptor_a.instance_id.bytes,
+                binding.services[0].selected_path_id,
+                16u)
+        == 0);
+    REQUIRE(memcmp(
+                descriptor_b.instance_id.bytes,
+                binding.services[0].selected_path_id,
+                16u)
+        == 0);
+    REQUIRE(memcmp(
+                descriptor_a.authenticated_peer_runtime_id.bytes,
+                binding.endpoint_b.runtime_id,
+                16u)
+        == 0);
+    REQUIRE(memcmp(
+                descriptor_b.authenticated_peer_runtime_id.bytes,
+                binding.endpoint_a.runtime_id,
+                16u)
+        == 0);
+    REQUIRE(memcmp(descriptor_a.descriptor_digest, descriptor_b.descriptor_digest, 32u)
+        != 0);
+    REQUIRE(descriptor_a.api_version == NINLIL_FABRIC_API_VERSION);
+    REQUIRE(descriptor_a.struct_size == sizeof(descriptor_a));
+    REQUIRE(descriptor_a.link_kind == NINLIL_FABRIC_LINK_KIND_RF);
+    REQUIRE(descriptor_a.direction_mask
+        == (NINLIL_FABRIC_LINK_DIRECTION_SEND
+            | NINLIL_FABRIC_LINK_DIRECTION_RECEIVE));
+    REQUIRE(descriptor_a.capability_flags
+        == (NINLIL_FABRIC_CAP_SLEEP_COMPATIBLE
+            | NINLIL_FABRIC_CAP_UNICAST | NINLIL_FABRIC_CAP_RESERVATION
+            | NINLIL_FABRIC_CAP_REGULATED_RF
+            | NINLIL_FABRIC_CAP_EVIDENCE));
+    REQUIRE(descriptor_a.security_capability_flags
+        == (NINLIL_FABRIC_SECURITY_INTEGRITY
+            | NINLIL_FABRIC_SECURITY_CONFIDENTIALITY
+            | NINLIL_FABRIC_SECURITY_REPLAY_PROTECTION
+            | NINLIL_FABRIC_SECURITY_SESSION_FRESHNESS));
+    REQUIRE(descriptor_a.maximum_packet_bytes
+        == NINLIL_V1_LAB_FABRIC_PACKET_MAX);
+    REQUIRE(descriptor_a.maximum_transfer_bytes
+        == NINLIL_V1_LAB_FABRIC_PACKET_MAX);
+    REQUIRE(descriptor_a.reservation_capacity == 1u);
+    REQUIRE(descriptor_a.peer_nfl1_version == 1u);
+    REQUIRE(descriptor_a.peer_fabric_capability_flags
+        == NINLIL_FABRIC_PEER_CAP_NFL1_V1);
+    REQUIRE(state_a.available == 1u && state_b.available == 1u);
+    REQUIRE(state_a.available_until_ms == UINT64_MAX);
+    REQUIRE(state_b.available_until_ms == UINT64_MAX);
+
+    REQUIRE(ninlil_v1_lab_fabric_build_service(
+                crypto,
+                &binding,
+                binding.endpoint_a.runtime_id,
+                0u,
+                &policy_0,
+                &authority_0)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(ninlil_v1_lab_fabric_build_service(
+                crypto,
+                &binding,
+                binding.endpoint_b.runtime_id,
+                0u,
+                &policy_0_b,
+                &authority_0_b)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(ninlil_v1_lab_fabric_build_service(
+                crypto,
+                &binding,
+                binding.endpoint_b.runtime_id,
+                2u,
+                &policy_2,
+                &authority_2)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(memcmp(
+                policy_0.candidates[0].instance_id.bytes,
+                policy_2.candidates[0].instance_id.bytes,
+                16u)
+        == 0);
+    REQUIRE(memcmp(policy_0.policy_id.bytes, policy_2.policy_id.bytes, 16u)
+        != 0);
+    REQUIRE(memcmp(&policy_0, &policy_0_b, sizeof(policy_0)) == 0);
+    REQUIRE(memcmp(&authority_0, &authority_0_b, sizeof(authority_0)) == 0);
+    REQUIRE(policy_0.direction == NINLIL_FABRIC_POLICY_DIRECTION_FORWARD);
+    REQUIRE(policy_0.traffic_class == NINLIL_FABRIC_TRAFFIC_APPLICATION);
+    REQUIRE(policy_0.scope_selector == NINLIL_FABRIC_SCOPE_TARGET_RUNTIME);
+    REQUIRE(policy_0.minimum_packet_bytes == 587u);
+    REQUIRE(policy_0.authority_mode
+        == NINLIL_FABRIC_AUTHORITY_MODE_BOUND_REQUIRED);
+    REQUIRE(policy_0.candidate_count == 1u);
+    REQUIRE(policy_0.candidates[0].rank == 1u);
+    REQUIRE(policy_0.candidates[0].reservation_units == 1u);
+    REQUIRE(memcmp(
+                authority_0.endpoint_runtime_id.bytes,
+                binding.endpoint_b.runtime_id,
+                16u)
+        == 0);
+    REQUIRE(memcmp(authority_0.target_runtime_id.bytes, binding.endpoint_b.runtime_id, 16u)
+        == 0);
+    REQUIRE(memcmp(
+                authority_0.target_application_id.bytes,
+                binding.endpoint_b.application_id,
+                16u)
+        == 0);
+    REQUIRE(memcmp(authority_0.owner_tuple_canonical, "NVO1", 4u) == 0);
+    REQUIRE(authority_0.owner_tuple_canonical[4] == 1u);
+    REQUIRE(authority_0.owner_tuple_canonical[5]
+        == NINLIL_V1_LAB_FLOW_A_TO_B);
+    REQUIRE(authority_0.owner_tuple_canonical[6] == 1u);
+    REQUIRE(authority_0.owner_tuple_canonical[7] == 0u);
+    REQUIRE(authority_0.authority_state == NINLIL_FABRIC_AUTHORITY_BOUND);
+    REQUIRE(authority_0.authority_term == binding.pair_generation);
+    REQUIRE(authority_0.assignment_epoch == binding.pair_generation);
+    REQUIRE(authority_0.assignment_revision == binding.pair_generation);
+    REQUIRE(authority_0.lease_expires_at_ms == UINT64_MAX);
+
+    descriptor_kat = descriptor_a;
+    (void)memset(&descriptor_a, 0xa5, sizeof(descriptor_a));
+    (void)memset(&state_a, 0x5a, sizeof(state_a));
+    descriptor_before = descriptor_a;
+    state_before = state_a;
+    REQUIRE(ninlil_v1_lab_fabric_build_path(
+                crypto,
+                &binding,
+                binding.endpoint_a.runtime_id,
+                0xffu,
+                &descriptor_a,
+                &state_a)
+        == NINLIL_V1_LAB_FABRIC_FLOW);
+    REQUIRE(memcmp(&descriptor_a, &descriptor_before, sizeof(descriptor_a))
+        == 0);
+    REQUIRE(memcmp(&state_a, &state_before, sizeof(state_a)) == 0);
+
+    REQUIRE(matches_hex(
+        binding.pair_id,
+        32u,
+        "7e0718528c0554488488ed01f7d5e76b6bc1f735c2f166adbebdf69d50c0b2a3"));
+    REQUIRE(matches_hex(
+        binding.pair_binding_digest,
+        32u,
+        "0391877581dc07bd25d34c396bca9cb3baded9d42e8926c92bc97e118a026725"));
+    REQUIRE(matches_hex(
+        binding.e2e_security_id,
+        32u,
+        "0efb78cccd9f100daf61813ff11bbbe84469494d1de1cda54686e237329ef36d"));
+    REQUIRE(matches_hex(
+        binding.services[0].selected_path_id,
+        16u,
+        "c8797b99bbfaff4acf0c4d9014f67536"));
+    REQUIRE(matches_hex(
+        descriptor_kat.descriptor_digest,
+        32u,
+        "1e9514d40c399426d26be888d86d927110549313cf4c18fdb445c82e82e4f31d"));
+    REQUIRE(matches_hex(
+        descriptor_kat.security_profile_id.bytes,
+        16u,
+        "0f14bb276f3ad9bb59a12e67a1e4b6ab"));
+    REQUIRE(matches_hex(
+        descriptor_kat.security_binding_digest,
+        32u,
+        "87c6cfcd3f1356eb93c2b6c7ef376b3f5f4fe0a8fa71a1b9d5bf3fa294ca42fe"));
+    REQUIRE(matches_hex(
+        descriptor_kat.attestation_digest,
+        32u,
+        "ea948352338fbab99b329546dcaa4420cce195252f59de8df7c5f049972d8964"));
+    REQUIRE(matches_hex(
+        descriptor_kat.configuration_digest,
+        32u,
+        "632edeeeb1931726a2f1d496978cb16756d79d7de0e3cf4b12cba548ddafaa96"));
+    REQUIRE(matches_hex(
+        policy_0.policy_id.bytes,
+        16u,
+        "87531761f36d0138502aac242b8c8dc6"));
+    REQUIRE(matches_hex(
+        binding.services[0].service_identity_digest,
+        32u,
+        "becfb5f291c7e53009fdf78b3bc9a67e162ca4d127f303fc7b0e602b3a5c7073"));
+    REQUIRE(matches_hex(
+        binding.services[0].path_policy_digest,
+        32u,
+        "1f5c94fe99194d6faf326ac612d538e354f8e94dc8a77a239086f9ea7706c052"));
+    REQUIRE(matches_hex(
+        authority_0.binding_id.bytes,
+        16u,
+        "277c2836b351f5f7fc21b43b378c0f0a"));
+    REQUIRE(matches_hex(
+        authority_0.owner_tuple_digest,
+        32u,
+        "bd823e8e42c4ca114314cfc8f908dbfff9ec710be397d9db08e7e73dc6fdfbf2"));
+
+    ninlil_v1_lab_binding_clear(&binding);
     return 0;
 }
 
@@ -297,6 +565,7 @@ int main(void)
     REQUIRE(test_minimum_round_trip(&crypto) == 0);
     REQUIRE(test_maximum_and_e2e_projection(&crypto) == 0);
     REQUIRE(test_rejection_is_atomic(&crypto) == 0);
+    REQUIRE(test_closed_fabric_builder(&crypto) == 0);
     (void)fprintf(stdout, "v1_lab_binding_test OK\n");
     return 0;
 }

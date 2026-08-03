@@ -335,6 +335,7 @@ static void fabric_v1_sel_vec_baseline(ninlil_fabric_private_select_snapshot_t *
     (void)memcpy(r->availability_clock_epoch_id, (const uint8_t[]){0xa1u, 0xa2u, 0xa3u, 0xa4u, 0xa5u, 0xa6u, 0xa7u, 0xa8u, 0xa9u, 0xaau, 0xabu, 0xacu, 0xadu, 0xaeu, 0xafu, 0xb0u}, 16u);
     r->availability_state = 1u;
     r->availability_expires_at_ms = 250000ull;
+    r->rf_mapping_approved = 1u;
 
     s->authority_count = 1u;
     a = &s->authorities[0];

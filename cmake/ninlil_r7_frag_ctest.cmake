@@ -25,10 +25,13 @@ endif()
 # Private static library — EXCLUDE_FROM_ALL, never installed.
 add_library(ninlil_r7_frag_private STATIC EXCLUDE_FROM_ALL
     ${NINLIL_R7_FRAG_PORTABLE_RELATIVE_SOURCES}
+    ${NINLIL_V1_LAB_RADIO_PATH_RELATIVE_SOURCES}
 )
 target_include_directories(ninlil_r7_frag_private PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
     ${CMAKE_CURRENT_SOURCE_DIR}/src/radio/r7_frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_compile_definitions(ninlil_r7_frag_private PRIVATE
@@ -37,6 +40,7 @@ target_compile_definitions(ninlil_r7_frag_private PRIVATE
 )
 target_link_libraries(ninlil_r7_frag_private PRIVATE
     ninlil_runtime_private
+    ninlil_sx1262
     ninlil
 )
 if(NINLIL_R7_HOST_CRYPTO_ENABLED)
@@ -327,6 +331,43 @@ if(TARGET ninlil_n6_store_testbuild)
     ninlil_apply_strict_warnings(ninlil_r7_frag_prod_integration_test)
     add_test(NAME nrw1_frag_prod_integration_private
         COMMAND ninlil_r7_frag_prod_integration_test)
+
+    add_executable(ninlil_v1_lab_radio_packet_link_vertical_test
+        EXCLUDE_FROM_ALL
+        tests/transport/fabric_v1/v1_lab_radio_packet_link_vertical_test.c
+        tests/support/in_memory_storage.c
+        tests/support/platform_basic_fixtures.c
+        tests/support/deterministic_entropy.c
+        tests/support/sx1262_bus_spy.c
+    )
+    target_include_directories(
+        ninlil_v1_lab_radio_packet_link_vertical_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio/r7_frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/drivers/sx126x
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(
+        ninlil_v1_lab_radio_packet_link_vertical_test PRIVATE
+        ninlil_r7_frag_private
+        ninlil_runtime_private
+        ninlil_sx1262
+        ninlil_fabric_v1
+        ninlil
+        OpenSSL::Crypto
+    )
+    set_target_properties(
+        ninlil_v1_lab_radio_packet_link_vertical_test PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+        NINLIL_TEST_ONLY_ARTIFACT TRUE
+    )
+    ninlil_apply_strict_warnings(
+        ninlil_v1_lab_radio_packet_link_vertical_test)
+    add_test(NAME v1_lab_radio_packet_link_vertical
+        COMMAND ninlil_v1_lab_radio_packet_link_vertical_test)
 endif()
 
 set(_r7_frag_test_tgts
@@ -353,6 +394,12 @@ endif()
 if(TARGET ninlil_r7_frag_prod_integration_test)
     list(APPEND _r7_frag_test_tgts ninlil_r7_frag_prod_integration_test)
     list(APPEND _r7_frag_test_names nrw1_frag_prod_integration_private)
+endif()
+if(TARGET ninlil_v1_lab_radio_packet_link_vertical_test)
+    list(APPEND _r7_frag_test_tgts
+        ninlil_v1_lab_radio_packet_link_vertical_test)
+    list(APPEND _r7_frag_test_names
+        v1_lab_radio_packet_link_vertical)
 endif()
 
 set_tests_properties(${_r7_frag_test_names}

@@ -68,6 +68,10 @@ static void fill_binding(
     binding->pair_generation = pair_generation;
     fill_endpoint(&binding->endpoint_a, 0x10u);
     fill_endpoint(&binding->endpoint_b, peer_seed);
+    (void)memcpy(
+        binding->endpoint_b.clock_epoch_id,
+        binding->endpoint_a.clock_epoch_id,
+        16u);
     fill_bytes(binding->radio_site_domain_id, 16u, 0x90u);
     binding->radio_membership_epoch = membership_epoch;
     binding->a_to_b_hop_context_id = context_id;

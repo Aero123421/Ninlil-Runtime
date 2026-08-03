@@ -123,7 +123,9 @@ typedef struct ninlil_sx1262_bus_spy {
     int cad_force_timeout;
     uint16_t irq_status; /* GetIrqStatus bytes 2..3 */
     uint8_t rx_payload_len;
-    uint8_t rx_payload[32];
+    uint8_t rx_payload[255];
+    uint8_t last_tx_payload_len;
+    uint8_t last_tx_payload[255];
     uint64_t ant_sw_set_calls;
     int last_ant_sw_active;
     uint64_t last_delay_us;

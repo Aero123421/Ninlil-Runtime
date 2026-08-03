@@ -333,6 +333,7 @@ def render() -> str:
         f"    r->availability_state = {int(reg['availability_state'])}u;\n"
         f"    r->availability_expires_at_ms = "
         f"{int(reg['availability_expires_at_ms'])}ull;\n"
+        "    r->rf_mapping_approved = 1u;\n"
         "\n"
         "    s->authority_count = 1u;\n"
         "    a = &s->authorities[0];\n"

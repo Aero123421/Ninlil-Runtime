@@ -102,6 +102,14 @@ if(CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE)
     )
 endif()
 
+# The V1 LAB packet-link is meaningful only with both R7 and the physical R9
+# path. Kconfig encodes that dependency; keep the source absent otherwise.
+if(CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH)
+    foreach(_rel IN LISTS NINLIL_V1_LAB_RADIO_PATH_RELATIVE_SOURCES)
+        list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+    endforeach()
+endif()
+
 # Default-OFF private MFDT (ADR-0021): production engine+crypto+wire+record.
 # Host in-memory lab store (mfdt_v1_store.c) is NEVER linked on ESP.
 # ESP links the storage_ops-backed FULL adapter; the application must bind a

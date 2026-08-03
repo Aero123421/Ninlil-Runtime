@@ -5,6 +5,7 @@
 
 #include "r7_frag_prod_orch.h"
 
+#include "airtime_calculator.h"
 #include "r7_crypto_provider.h"
 #include "r7_frag.h"
 #include "r7_frag_checked_issue.h"
@@ -822,11 +823,34 @@ static int32_t fill_issue_from_live(
     size_t outer_len,
     ninlil_pcp_issue_request_t *req)
 {
+    ninlil_airtime_lora_input_t airtime_input;
+    ninlil_airtime_result_t airtime_result;
     const ninlil_pcp_live_profile_t *live;
-    if (!bind->live_valid) {
+    if (!bind->live_valid || outer == NULL || outer_len == 0u
+        || outer_len > UINT8_MAX) {
         return NINLIL_R7_FRAG_PROD_UNBOUND;
     }
     live = &bind->live;
+    if (live->phy.coding_rate_denom < 5u
+        || live->phy.coding_rate_denom > 8u) {
+        return NINLIL_R7_FRAG_PROD_ADMISSION;
+    }
+    memset(&airtime_input, 0, sizeof(airtime_input));
+    airtime_input.sf = live->phy.spreading_factor;
+    airtime_input.cr = (uint8_t)(live->phy.coding_rate_denom - 4u);
+    airtime_input.header_implicit = NINLIL_AIRTIME_HEADER_EXPLICIT;
+    airtime_input.crc_on = NINLIL_AIRTIME_CRC_ON;
+    airtime_input.ldro = NINLIL_AIRTIME_LDRO_AUTO;
+    airtime_input.payload_len_bytes = (uint8_t)outer_len;
+    airtime_input.preamble_len_symbols = live->phy.preamble_symbols;
+    airtime_input.bw_hz = live->phy.bandwidth_hz;
+    memset(&airtime_result, 0, sizeof(airtime_result));
+    if (ninlil_airtime_lora_us(&airtime_input, &airtime_result)
+            != NINLIL_AIRTIME_OK
+        || airtime_result.airtime_us == 0u
+        || airtime_result.airtime_us > live->max_airtime_us) {
+        return NINLIL_R7_FRAG_PROD_ADMISSION;
+    }
     memset(req, 0, sizeof(*req));
     req->hardware_profile_id = live->hardware_profile_id;
     req->hardware_profile_rev = live->hardware_profile_rev;
@@ -838,14 +862,7 @@ static int32_t fill_issue_from_live(
     req->transmitter_id = live->transmitter_id;
     req->channel_id = live->channel_id;
     req->phy = live->phy;
-    req->max_airtime_us =
-        (live->max_airtime_us > 0u && live->max_airtime_us < 50000u)
-        ? live->max_airtime_us
-        : 50000u;
-    if (req->max_airtime_us > live->max_airtime_us
-        && live->max_airtime_us > 0u) {
-        req->max_airtime_us = live->max_airtime_us;
-    }
+    req->max_airtime_us = airtime_result.airtime_us;
     req->frame_byte_length = (uint32_t)outer_len;
     req->frame_digest_algorithm = 1u;
     /*
@@ -1375,6 +1392,38 @@ static int32_t issue_and_tx(
     return r1_tx_with_permit(
         bind, owner_token, candidate_token, slot, auth, &permit, outer_digest,
         out);
+}
+
+int32_t ninlil_r7_frag_prod_tx_resume_held(
+    ninlil_r7_frag_prod_bind_t *bind,
+    uint64_t owner_token,
+    uint64_t candidate_token,
+    ninlil_r7_frag_prod_tx_result_t *out)
+{
+    int32_t cg;
+
+    if (bind == NULL || out == NULL || owner_token == 0u
+        || candidate_token == 0u) {
+        return NINLIL_R7_FRAG_PROD_INVALID;
+    }
+    memset(out, 0, sizeof(*out));
+    if (!ninlil_r7_frag_prod_bind_is_inited(bind)
+        || bind->held_tx_live == 0u || bind->held_outer_len == 0u
+        || bind->held_outer_len > sizeof(out->outer)) {
+        out->cleanup_class = NINLIL_R7_FRAG_CLN_UNISSUED_DROP;
+        out->issue_l1_class = NINLIL_R7_L1_RETRYABLE_UNISSUED;
+        return NINLIL_R7_FRAG_PROD_ADMISSION;
+    }
+    cg = clock_gate(bind);
+    if (cg != NINLIL_R7_FRAG_PROD_OK) {
+        out->cleanup_class = NINLIL_R7_FRAG_CLN_ISSUED_DRAIN;
+        (void)ninlil_r7_frag_prod_cleanup(
+            bind, out->cleanup_class, bind->held_permit_sequence);
+        return NINLIL_R7_FRAG_PROD_CLOCK;
+    }
+    out->outer_len = bind->held_outer_len;
+    memcpy(out->outer, bind->held_outer, out->outer_len);
+    return issue_and_tx(bind, owner_token, candidate_token, out);
 }
 
 int32_t ninlil_r7_frag_prod_tx_single(

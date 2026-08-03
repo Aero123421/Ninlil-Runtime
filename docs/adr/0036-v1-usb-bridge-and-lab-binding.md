@@ -148,8 +148,11 @@ Foundation presence validation is reused exactly. Runtime/Application/clock
 IDs are non-zero and clock trust is TRUSTED or UNCERTAIN.
 
 Endpoint A has the lexicographically smaller Runtime ID; equal Runtime IDs are
-rejected. The USB board and host Controller process use the same endpoint
-identity. Service rows identify that endpoint consistently:
+rejected. Both endpoints use the same non-zero clock epoch ID. A different
+epoch is rejected because a reverse Receipt must echo the original deadline
+clock while Fabric admission, availability, attestation and authority checks
+use the local endpoint clock. The USB board and host Controller process use the
+same endpoint identity. Service rows identify that endpoint consistently:
 
 - DesiredState is DOWNLINK from Controller to peer; and
 - EventFact is UPLINK from peer to Controller.
@@ -211,16 +214,96 @@ existing canonical digest. IDs are deterministic:
 - policy ID: first 16 bytes of SHA-256(`NINLIL-V1-LAB-POLICY-ID` || the same
   common material || Service slot || Service identity digest).
 
-Policy revision/path epoch and authority term equal pair generation; assignment
-epoch is its exact u32 value. Authority ID is the Controller Runtime ID.
+Policy revision and authority term equal pair generation; assignment epoch is
+its exact u32 value. Authority ID is the Controller Runtime ID.
+
+`path_selection_epoch` is not binding metadata. It remains the sender Fabric's
+durable, monotonically allocated dispatch epoch. The compact NRA1 body does not
+carry it. An outbound Application correlation therefore copy-owns the complete
+NFL1, including its exact path-selection epoch. A peer reconstructs an inbound
+Application with the authenticated pair generation as a local canonical epoch;
+Fabric forward admission does not use that field as authority. If the peer
+later emits a Receipt, its compact Receipt is decoded at the original sender
+against that sender's retained NFL1, restoring the exact original epoch. No
+pair builder, USB payload or caller may set or predict a sender Fabric epoch.
 
 The policy and RF descriptor are closed rather than caller-selected:
 direction `FORWARD`, traffic class `APPLICATION`, scope `TARGET_RUNTIME`,
-capabilities `UNICAST | REGULATED_RF | EVIDENCE`, all four security flags,
-latency/cost class `0`, minimum packet bytes `587`, authority mode
-`BOUND_REQUIRED`, deadline guard `0`, and one candidate with rank `1`,
-reservation units `1`, flags/reserved `0`. Any differing value or canonical
-digest is rejected.
+capabilities `SLEEP_COMPATIBLE | UNICAST | RESERVATION | REGULATED_RF |
+EVIDENCE`, all four security flags, latency/cost class `0`, minimum packet
+bytes `587`, authority mode `BOUND_REQUIRED`, deadline guard `0`, and one
+candidate with rank `1`, reservation units `1`, flags/reserved `0`. The RF
+descriptor has send+receive directions, maximum packet/transfer bytes `760`,
+reservation capacity `1`, NFL1 peer version/capability `1`, and no custody or
+broadcast capability. Any differing value or canonical digest is rejected.
+
+There is one logical RF registration for each distinct flow present in a pair,
+not one registration per Service. Its instance ID is that flow's derived path
+ID. Rows with the same flow share the registration. The local descriptor pins
+the other endpoint as authenticated peer, the Controller Runtime as attachment
+authority, the logical E2E identity as attachment binding, and the local
+endpoint clock epoch for attestation and availability. Descriptor,
+configuration, security-profile, security-binding and attestation identities
+are deterministic SHA-256 domain-separated derivations of the exact binding
+digest, logical E2E identity, path ID, local Runtime ID and peer Runtime ID;
+their revisions/epochs equal pair generation and expiries are `UINT64_MAX` for
+this boot-only LAB attachment. The private builder is the sole implementation
+of those derivations and byte-exact KATs pin every result before acceptance.
+
+The common descriptor derivation input is the following exact concatenation:
+
+`pair_binding_digest[32] || e2e_security_id[32] || path_id[16] ||
+local_runtime_id[16] || peer_runtime_id[16] || pair_generation:u64be`.
+
+The descriptor digest, security binding digest, attestation digest and
+configuration digest are respectively SHA-256 of the ASCII tag
+`NINLIL-V1-LAB-RF-DESCRIPTOR`, `NINLIL-V1-LAB-RF-SECURITY-BINDING`,
+`NINLIL-V1-LAB-RF-ATTESTATION` or
+`NINLIL-V1-LAB-RF-CONFIGURATION`, followed by that common input. The security
+profile ID is the first 16 bytes of SHA-256 of
+`NINLIL-V1-LAB-RF-SECURITY-PROFILE` followed by the same input. Tags have no
+terminating NUL on input. `security_binding_digest` uses that derived value;
+`attachment_binding_digest` is the exact already-derived
+`e2e_security_id`. Configuration identity implicitly fixes ADR-0034's V1 LAB
+radio profile; changing that profile requires a new derivation tag/ADR rather
+than silently reusing this descriptor.
+
+Each Service gets one deterministic authority binding ID derived from the pair
+ID, pair generation, Service slot and Service identity digest. Its target is
+the forward-flow target endpoint, authority ID is the Controller Runtime,
+authority term/assignment epoch/revision are the exact pair generation, owner
+scope is the first 16 bytes of the stable pair ID, and its 200-byte canonical
+owner tuple is a fixed versioned projection of the binding, endpoints, flow,
+slot, policy and logical E2E identity with the unused tail zero. The local
+endpoint clock epoch and `UINT64_MAX` lease are used on both sides. A Receipt
+uses this retained original forward authority and policy; no reverse binding
+is synthesized.
+
+The authority binding ID is the first 16 bytes of SHA-256 over the non-NUL
+ASCII tag `NINLIL-V1-LAB-AUTHORITY-ID`, followed by `pair_id[32]`, pair
+generation u64be, Service slot u8 and Service identity digest `[32]`. The exact
+200-byte owner tuple is:
+
+| Offset | Bytes | Meaning |
+| ---: | ---: | --- |
+| 0 | 4 | ASCII `NVO1` |
+| 4 | 1 | version `1` |
+| 5 | 1 | original Application flow |
+| 6 | 1 | Service slot |
+| 7 | 1 | zero |
+| 8 | 8 | pair generation u64be |
+| 16 | 16 | Controller Runtime ID |
+| 32 | 16 | forward source Runtime ID |
+| 48 | 16 | forward target Runtime ID |
+| 64 | 16 | forward target Application ID |
+| 80 | 16 | policy ID |
+| 96 | 32 | canonical policy digest |
+| 128 | 32 | logical E2E security ID |
+| 160 | 32 | Service identity digest |
+| 192 | 8 | zero |
+
+The existing Fabric owner-tuple SHA-256 helper computes its digest; no second
+tuple encoding or product-selected owner bytes are allowed.
 
 R7 uses LAB, the explicit radio site/membership, the binding digest and pair
 generation. Hop and E2E stable IDs are the same Controller/peer Runtime pair.

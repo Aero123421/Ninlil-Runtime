@@ -2427,6 +2427,25 @@
       ]
     },
     {
+      "magic": "NVO1",
+      "owner": "FABRIC",
+      "artifact": "DURABLE_RECORD",
+      "status": "IMPLEMENTED",
+      "authority": "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
+      "occurrences": [
+        {
+          "path": "src/transport/fabric_v1/v1_lab_fabric.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "tests/transport/fabric_v1/v1_lab_binding_test.c",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
       "magic": "NWB1",
       "owner": "WIFI_BEARER",
       "artifact": "WIRE_RECORD",

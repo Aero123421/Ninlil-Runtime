@@ -20,6 +20,7 @@
 #define FABRIC_REG_ACTIVE 1u
 #define FABRIC_REG_DRAINING 2u
 #define FABRIC_REG_CONSUMED 3u
+#define FABRIC_RF_MAPPING_APPROVAL_MAX 4u
 
 /* Profile-1 index caps match schema maximum (ADR-0017). */
 #define FABRIC_RAM_POLICY_MAX NINLIL_FABRIC_POLICY_MAX
@@ -152,6 +153,8 @@ struct ninlil_fabric_v1 {
     uint32_t attempt_gc_cursor;
     uint32_t trigger_gc_cursor;
     uint32_t terminal_gc_prefer_trigger;
+    uint32_t rf_mapping_approved_count;
+    uint8_t rf_mapping_approved_ids[FABRIC_RF_MAPPING_APPROVAL_MAX][16];
     /* Exact-1 outer receive loan generation (ADR-0017). */
     uint32_t outer_rx_loan_generation;
     uint32_t outer_rx_loan_live; /* 0 = none; else generation of outstanding loan */
@@ -256,6 +259,73 @@ static ninlil_fabric_private_status_t owner_check(
         return st;
     }
     return owner_then_reentry(fabric);
+}
+
+static int fabric_rf_mapping_is_approved(
+    const ninlil_fabric_private_t *fabric, const uint8_t instance_id[16])
+{
+    uint32_t i;
+
+    if (fabric == NULL || instance_id == NULL
+        || fabric->rf_mapping_approved_count
+            > FABRIC_RF_MAPPING_APPROVAL_MAX) {
+        return 0;
+    }
+    for (i = 0u; i < fabric->rf_mapping_approved_count; ++i) {
+        if (ninlil_fabric_private_memeq(
+                fabric->rf_mapping_approved_ids[i], instance_id, 16u)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void fabric_rf_mapping_remove(
+    ninlil_fabric_private_t *fabric, const uint8_t instance_id[16])
+{
+    uint32_t i;
+    uint32_t j;
+
+    if (fabric == NULL || instance_id == NULL) {
+        return;
+    }
+    if (fabric->rf_mapping_approved_count
+        > FABRIC_RF_MAPPING_APPROVAL_MAX) {
+        fabric->rf_mapping_approved_count = 0u;
+        ninlil_fabric_private_memzero(
+            fabric->rf_mapping_approved_ids,
+            sizeof(fabric->rf_mapping_approved_ids));
+        return;
+    }
+    for (i = 0u; i < fabric->rf_mapping_approved_count; ++i) {
+        if (!ninlil_fabric_private_memeq(
+                fabric->rf_mapping_approved_ids[i], instance_id, 16u)) {
+            continue;
+        }
+        for (j = i + 1u; j < fabric->rf_mapping_approved_count; ++j) {
+            (void)memcpy(
+                fabric->rf_mapping_approved_ids[j - 1u],
+                fabric->rf_mapping_approved_ids[j],
+                16u);
+        }
+        fabric->rf_mapping_approved_count--;
+        ninlil_fabric_private_memzero(
+            fabric->rf_mapping_approved_ids
+                [fabric->rf_mapping_approved_count],
+            16u);
+        return;
+    }
+}
+
+static void fabric_rf_mapping_clear(ninlil_fabric_private_t *fabric)
+{
+    if (fabric == NULL) {
+        return;
+    }
+    fabric->rf_mapping_approved_count = 0u;
+    ninlil_fabric_private_memzero(
+        fabric->rf_mapping_approved_ids,
+        sizeof(fabric->rf_mapping_approved_ids));
 }
 
 /*
@@ -3140,6 +3210,67 @@ ninlil_fabric_private_status_t ninlil_fabric_private_register_link_v1(
     return NINLIL_FABRIC_PRIVATE_OK;
 }
 
+ninlil_fabric_private_status_t
+ninlil_fabric_private_rf_mapping_approve_v1(
+    ninlil_fabric_private_t *fabric,
+    ninlil_fabric_registration_private_t *registration)
+{
+    ninlil_fabric_private_status_t st;
+    fabric_reg_slot_t *slot;
+
+    if (registration == NULL || registration->magic != REG_MAGIC
+        || registration->slot_index >= NINLIL_FABRIC_REGISTRY_MAX) {
+        return NINLIL_FABRIC_PRIVATE_INVALID_ARGUMENT;
+    }
+    st = owner_check(fabric);
+    if (st != NINLIL_FABRIC_PRIVATE_OK) {
+        return st;
+    }
+    if (fabric->lifecycle != FABRIC_LIFECYCLE_OPEN) {
+        return NINLIL_FABRIC_PRIVATE_UNAVAILABLE;
+    }
+    if (registration->fabric != fabric) {
+        return NINLIL_FABRIC_PRIVATE_INVALID_ARGUMENT;
+    }
+    slot = &fabric->regs[registration->slot_index];
+    if (slot->used == 0u || slot->public_handle != registration
+        || slot->lifecycle != FABRIC_REG_ACTIVE) {
+        return NINLIL_FABRIC_PRIVATE_INVALID_ARGUMENT;
+    }
+    if (slot->descriptor.link_kind != NINLIL_FABRIC_LINK_KIND_RF) {
+        return NINLIL_FABRIC_PRIVATE_UNSUPPORTED;
+    }
+    if (fabric_rf_mapping_is_approved(
+            fabric, slot->descriptor.instance_id.bytes)) {
+        return NINLIL_FABRIC_PRIVATE_OK;
+    }
+    if (fabric->rf_mapping_approved_count
+        >= FABRIC_RF_MAPPING_APPROVAL_MAX) {
+        return NINLIL_FABRIC_PRIVATE_CAPACITY;
+    }
+    (void)memcpy(
+        fabric->rf_mapping_approved_ids[fabric->rf_mapping_approved_count],
+        slot->descriptor.instance_id.bytes,
+        16u);
+    fabric->rf_mapping_approved_count++;
+    return NINLIL_FABRIC_PRIVATE_OK;
+}
+
+ninlil_fabric_private_status_t
+ninlil_fabric_private_rf_mapping_clear_v1(ninlil_fabric_private_t *fabric)
+{
+    ninlil_fabric_private_status_t st = owner_check(fabric);
+
+    if (st != NINLIL_FABRIC_PRIVATE_OK) {
+        return st;
+    }
+    if (fabric->lifecycle != FABRIC_LIFECYCLE_OPEN) {
+        return NINLIL_FABRIC_PRIVATE_UNAVAILABLE;
+    }
+    fabric_rf_mapping_clear(fabric);
+    return NINLIL_FABRIC_PRIVATE_OK;
+}
+
 ninlil_fabric_private_status_t ninlil_fabric_private_unregister_begin_v1(
     ninlil_fabric_private_t *fabric,
     ninlil_fabric_registration_private_t *registration)
@@ -3168,6 +3299,7 @@ ninlil_fabric_private_status_t ninlil_fabric_private_unregister_begin_v1(
     if (slot->lifecycle != FABRIC_REG_ACTIVE) {
         return NINLIL_FABRIC_PRIVATE_CLOSED;
     }
+    fabric_rf_mapping_remove(fabric, slot->descriptor.instance_id.bytes);
     slot->lifecycle = FABRIC_REG_DRAINING;
     return NINLIL_FABRIC_PRIVATE_OK;
 }
@@ -4983,10 +5115,10 @@ static fabric_authority_slot_t *fabric_resolve_unique_tx_authority(
 static void fabric_fence_reg_instance(
     ninlil_fabric_private_t *fabric, fabric_reg_slot_t *reg)
 {
-    (void)fabric;
     if (reg == NULL || reg->used == 0u) {
         return;
     }
+    fabric_rf_mapping_remove(fabric, reg->descriptor.instance_id.bytes);
     /* Shape/output contradictions fence instance from further selection. */
     if (reg->lifecycle == FABRIC_REG_ACTIVE) {
         reg->lifecycle = FABRIC_REG_DRAINING;
@@ -6122,13 +6254,10 @@ static ninlil_bearer_status_t fabric_bearer_send(
         snap->query.requires_custody = 1u;
         snap->query.required_capability_flags |= NINLIL_FABRIC_CAP_CUSTODY;
     }
-    /*
-     * RF: v1 Host has no compact RF mapping acceptance — mark unsupported so
-     * RF candidates fail hard-filter RF_MAPPING_UNSUPPORTED (no fallback).
-     * Permit presence still gates RF_PERMIT for RF kinds that pass mapping.
-     */
+    /* RF requires both V1 mapping support and exact registered-path approval. */
     snap->query.rf_permit_valid = (permit != NULL) ? 1u : 0u;
-    snap->query.rf_mapping_accepted = 0u;
+    snap->query.rf_mapping_accepted =
+        fabric->rf_mapping_approved_count != 0u ? 1u : 0u;
     /*
      * Peer / Attachment pins: when exactly one ACTIVE registration exists,
      * pin its peer/attachment so mismatch is fail-closed (not first-row
@@ -6361,6 +6490,8 @@ static ninlil_bearer_status_t fabric_bearer_send(
             16u);
         row->availability_state = (uint8_t)r->state.available;
         row->availability_expires_at_ms = r->state.available_until_ms;
+        row->rf_mapping_approved = (uint32_t)fabric_rf_mapping_is_approved(
+            fabric, r->descriptor.instance_id.bytes);
     }
 
     /* Policy-matching authorities only (exact-1 join; not full 64 stack). */
@@ -6515,8 +6646,10 @@ static ninlil_bearer_status_t fabric_bearer_send(
         return NINLIL_BEARER_CORRUPT;
     }
 
-    /* RF mapping not accepted in v1. */
-    if (reg->descriptor.link_kind == NINLIL_FABRIC_LINK_KIND_RF) {
+    /* Defense in depth after pure selection: approval is exact-path only. */
+    if (reg->descriptor.link_kind == NINLIL_FABRIC_LINK_KIND_RF
+        && !fabric_rf_mapping_is_approved(
+            fabric, reg->descriptor.instance_id.bytes)) {
         return NINLIL_BEARER_DENIED;
     }
 
@@ -6779,6 +6912,10 @@ fabric_start_provider:
             if (ps != NINLIL_BEARER_OK) {
                 fail_st = ps;
             } else if (reg == NULL || reg->lifecycle != FABRIC_REG_ACTIVE
+                || (reg->descriptor.link_kind
+                        == NINLIL_FABRIC_LINK_KIND_RF
+                    && !fabric_rf_mapping_is_approved(
+                        fabric, reg->descriptor.instance_id.bytes))
                 || reg->state.available != 1u
                 || now2.now_ms >= reg->state.available_until_ms
                 || reg->state.availability_epoch
@@ -7649,6 +7786,11 @@ ninlil_fabric_private_status_t ninlil_fabric_private_step_v1(
         uint32_t idx;
         uint32_t pslot;
         if (reg->used == 0u || reg->lifecycle != FABRIC_REG_ACTIVE) {
+            continue;
+        }
+        if (reg->descriptor.link_kind == NINLIL_FABRIC_LINK_KIND_RF
+            && !fabric_rf_mapping_is_approved(
+                fabric, reg->descriptor.instance_id.bytes)) {
             continue;
         }
         if (fabric->rx_count >= NINLIL_FABRIC_SHARED_QUEUE_MAX) {
@@ -8549,6 +8691,7 @@ ninlil_fabric_private_status_t ninlil_fabric_private_close_begin_v1(
         return NINLIL_FABRIC_PRIVATE_CLOSED;
     }
     fabric->lifecycle = FABRIC_LIFECYCLE_CLOSING;
+    fabric_rf_mapping_clear(fabric);
     for (i = 0u; i < NINLIL_FABRIC_REGISTRY_MAX; ++i) {
         if (fabric->regs[i].used != 0u
             && fabric->regs[i].lifecycle == FABRIC_REG_ACTIVE) {

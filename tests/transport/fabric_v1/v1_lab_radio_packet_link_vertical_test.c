@@ -1,0 +1,899 @@
+#include "deterministic_entropy.h"
+#include "in_memory_storage.h"
+#include "n6_context_store.h"
+#include "n6_crypto_provider.h"
+#include "nfl1_codec.h"
+#include "pcp_authority.h"
+#include "platform_basic_fixtures.h"
+#include "r7_crypto_openssl3.h"
+#include "r7_frag_issue_coordinator.h"
+#include "radio_hal.h"
+#include "sx1262_bus_spy.h"
+#include "sx1262_r9_edge.h"
+#include "v1_lab_binding.h"
+#include "v1_lab_n6_owner.h"
+#include "v1_lab_radio_packet_link.h"
+
+#include "ninlil/fabric_v1.h"
+#include "ninlil/version.h"
+#include "ninlil_sx1262_backend.h"
+#include "ninlil_sx1262_phy.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#define REQUIRE(condition)                                                   \
+    do {                                                                     \
+        if (!(condition)) {                                                  \
+            (void)fprintf(stderr, "vertical failure %s:%d: %s\n",         \
+                __FILE__, __LINE__, #condition);                             \
+            return 1;                                                        \
+        }                                                                    \
+    } while (0)
+
+#define TEST_CONTEXT_SLOTS ((uint32_t)8u)
+#define TEST_N6_POOL_BYTES ((size_t)4096u)
+#define TEST_POLL_LIMIT ((uint32_t)12u)
+
+typedef struct test_pcp {
+    ninlil_pcp_object_t object;
+    ninlil_pcp_t *pcp;
+    ninlil_test_storage_t *storage;
+    ninlil_test_clock_t *clock;
+    ninlil_test_entropy_t *entropy;
+    ninlil_pcp_live_profile_t live;
+} test_pcp_t;
+
+typedef struct test_node {
+    _Alignas(NINLIL_N6_OBJECT_ALIGN) uint8_t
+        n6_object[NINLIL_N6_OBJECT_BYTES];
+    uint8_t n6_pool[TEST_N6_POOL_BYTES];
+    ninlil_n6_t *n6;
+    ninlil_test_storage_t *n6_storage;
+    ninlil_v1_lab_n6_owner_t n6_owner;
+    ninlil_v1_lab_n6_handles_t n6_handles;
+
+    ninlil_sx1262_bus_spy_t bus;
+    ninlil_sx1262_backend_object_t backend_object;
+    ninlil_sx1262_backend_t *backend;
+    ninlil_sx1262_phy_object_t phy_object;
+    ninlil_sx1262_phy_t *phy;
+    ninlil_sx1262_rf_profile_t rf_profile;
+    ninlil_sx1262_r9_edge_object_t edge_object;
+    ninlil_sx1262_r9_edge_t *edge;
+    const ninlil_radio_hal_edge_ops_t *edge_ops;
+    void *edge_context;
+    ninlil_radio_hal_object_t hal_object;
+    ninlil_radio_hal_t *hal;
+
+    ninlil_r7_frag_prod_bind_t a_to_b;
+    ninlil_r7_frag_prod_bind_t b_to_a;
+    ninlil_v1_lab_radio_packet_link_t packet_link;
+    uint8_t pair_slot;
+} test_node_t;
+
+static test_node_t g_node_a;
+static test_node_t g_node_b;
+static const ninlil_r7_crypto_provider *g_crypto;
+
+static void fill_bytes(uint8_t *out, size_t length, uint8_t seed)
+{
+    size_t i;
+    for (i = 0u; i < length; ++i) {
+        out[i] = (uint8_t)(seed + (uint8_t)i);
+    }
+}
+
+static void fill_epoch(uint8_t out[16])
+{
+    (void)memset(out, 0, 16u);
+    out[0] = 0xa0u;
+    out[15] = 0x01u;
+}
+
+static void fill_endpoint(ninlil_v1_lab_endpoint_t *endpoint, uint8_t seed)
+{
+    (void)memset(endpoint, 0, sizeof(*endpoint));
+    fill_bytes(endpoint->runtime_id, 16u, seed);
+    fill_bytes(endpoint->application_id, 16u, (uint8_t)(seed + 0x10u));
+    fill_bytes(endpoint->device_id, 16u, (uint8_t)(seed + 0x20u));
+    fill_bytes(endpoint->installation_id, 16u, (uint8_t)(seed + 0x30u));
+    fill_bytes(endpoint->site_id, 16u, (uint8_t)(seed + 0x40u));
+    endpoint->binding_epoch = 4u;
+    endpoint->membership_epoch = 9u;
+    endpoint->identity_flags = NINLIL_LOCAL_IDENTITY_HAS_DEVICE
+        | NINLIL_LOCAL_IDENTITY_HAS_INSTALLATION
+        | NINLIL_LOCAL_IDENTITY_HAS_SITE;
+    fill_epoch(endpoint->clock_epoch_id);
+    endpoint->clock_trust = NINLIL_CLOCK_TRUSTED;
+}
+
+static void fill_service(
+    ninlil_v1_lab_service_row_t *row,
+    uint8_t slot,
+    uint8_t flow,
+    uint32_t family,
+    uint8_t seed)
+{
+    (void)memset(row, 0, sizeof(*row));
+    row->slot = slot;
+    row->flow = flow;
+    row->namespace_length = 3u;
+    row->service_length = 4u;
+    row->schema_length = 2u;
+    row->descriptor_revision = (uint64_t)(20u + slot);
+    fill_bytes(row->descriptor_digest, 32u, seed);
+    row->schema_major = 1u;
+    row->family = family;
+    row->direction = family == NINLIL_FAMILY_DESIRED_STATE
+        ? NINLIL_DIRECTION_DOWNLINK
+        : NINLIL_DIRECTION_UPLINK;
+    row->traffic_class = NINLIL_FABRIC_TRAFFIC_APPLICATION;
+    row->evidence_grace_ms = family == NINLIL_FAMILY_DESIRED_STATE ? 500u : 0u;
+    fill_bytes(row->namespace_id, row->namespace_length, seed);
+    fill_bytes(row->service_id, row->service_length, (uint8_t)(seed + 8u));
+    fill_bytes(row->schema_id, row->schema_length, (uint8_t)(seed + 16u));
+}
+
+static int make_binding(
+    const ninlil_r7_crypto_provider *crypto,
+    ninlil_v1_lab_binding_t *binding,
+    uint8_t encoded[NINLIL_V1_LAB_BINDING_MAX_BYTES],
+    size_t *encoded_length)
+{
+    (void)memset(binding, 0, sizeof(*binding));
+    binding->service_count = 2u;
+    binding->pair_generation = 7u;
+    fill_endpoint(&binding->endpoint_a, 0x10u);
+    fill_endpoint(&binding->endpoint_b, 0x30u);
+    fill_bytes(binding->radio_site_domain_id, 16u, 0x90u);
+    binding->radio_membership_epoch = 11u;
+    /* Fresh N6 receiver namespaces each start at context ID one. */
+    binding->a_to_b_hop_context_id = 1u;
+    binding->a_to_b_e2e_context_id = 1u;
+    binding->b_to_a_hop_context_id = 1u;
+    binding->b_to_a_e2e_context_id = 1u;
+    fill_bytes(binding->a_to_b_hop_secret, 32u, 0xa0u);
+    fill_bytes(binding->a_to_b_e2e_secret, 32u, 0xb0u);
+    fill_bytes(binding->b_to_a_hop_secret, 32u, 0xc0u);
+    fill_bytes(binding->b_to_a_e2e_secret, 32u, 0xd0u);
+    fill_service(&binding->services[0], 1u, NINLIL_V1_LAB_FLOW_A_TO_B,
+        NINLIL_FAMILY_DESIRED_STATE, 0x70u);
+    fill_service(&binding->services[1], 2u, NINLIL_V1_LAB_FLOW_B_TO_A,
+        NINLIL_FAMILY_EVENT_FACT, 0x80u);
+    return ninlil_v1_lab_binding_finalize(crypto, binding)
+                == NINLIL_V1_LAB_BINDING_OK
+            && ninlil_v1_lab_binding_encode(crypto, binding, encoded,
+                   NINLIL_V1_LAB_BINDING_MAX_BYTES, encoded_length)
+                == NINLIL_V1_LAB_BINDING_OK
+        ? 0
+        : 1;
+}
+
+static void set_source(
+    ninlil_fabric_private_nfl1_envelope_t *envelope,
+    const ninlil_v1_lab_endpoint_t *endpoint)
+{
+    (void)memcpy(envelope->source_runtime_id.bytes, endpoint->runtime_id, 16u);
+    (void)memcpy(envelope->source_application_id.bytes,
+        endpoint->application_id, 16u);
+    (void)memcpy(envelope->source_device_id.bytes, endpoint->device_id, 16u);
+    (void)memcpy(envelope->source_installation_id.bytes,
+        endpoint->installation_id, 16u);
+    (void)memcpy(envelope->source_site_id.bytes, endpoint->site_id, 16u);
+    envelope->source_binding_epoch = endpoint->binding_epoch;
+    envelope->source_membership_epoch = endpoint->membership_epoch;
+    envelope->source_flags = endpoint->identity_flags;
+}
+
+static void set_target(
+    ninlil_fabric_private_nfl1_envelope_t *envelope,
+    const ninlil_v1_lab_endpoint_t *endpoint)
+{
+    (void)memcpy(envelope->target_runtime_id.bytes, endpoint->runtime_id, 16u);
+    (void)memcpy(envelope->target_application_id.bytes,
+        endpoint->application_id, 16u);
+    (void)memcpy(envelope->target_device_id.bytes, endpoint->device_id, 16u);
+    (void)memcpy(envelope->target_installation_id.bytes,
+        endpoint->installation_id, 16u);
+    (void)memcpy(envelope->target_site_id.bytes, endpoint->site_id, 16u);
+    envelope->target_binding_epoch = endpoint->binding_epoch;
+    envelope->target_membership_epoch = endpoint->membership_epoch;
+    envelope->target_flags = endpoint->identity_flags;
+}
+
+static int make_application(
+    const ninlil_r7_crypto_provider *crypto,
+    const ninlil_v1_lab_binding_t *binding,
+    uint8_t *out,
+    uint32_t *out_length)
+{
+    const ninlil_v1_lab_service_row_t *row = &binding->services[0];
+    ninlil_fabric_private_nfl1_envelope_t envelope;
+    uint8_t payload[32];
+    uint8_t digest[32];
+
+    fill_bytes(payload, sizeof(payload), 0x41u);
+    (void)memset(&envelope, 0, sizeof(envelope));
+    envelope.api_version = NINLIL_ABI_VERSION;
+    envelope.struct_size = (uint16_t)sizeof(envelope);
+    envelope.message_kind = NINLIL_BEARER_MESSAGE_APPLICATION;
+    fill_bytes(envelope.transaction_id.bytes, 16u, 0x01u);
+    fill_bytes(envelope.attempt_id.bytes, 16u, 0x21u);
+    set_source(&envelope, &binding->endpoint_a);
+    set_target(&envelope, &binding->endpoint_b);
+    (void)memcpy(
+        envelope.authority_id.bytes, binding->endpoint_a.runtime_id, 16u);
+    envelope.authority_term = binding->pair_generation;
+    envelope.assignment_epoch = (uint32_t)binding->pair_generation;
+    envelope.descriptor_revision = row->descriptor_revision;
+    envelope.descriptor_digest.algorithm = NINLIL_DIGEST_SHA256;
+    (void)memcpy(
+        envelope.descriptor_digest.bytes, row->descriptor_digest, 32u);
+    envelope.schema_major = row->schema_major;
+    envelope.schema_minor = row->schema_minor;
+    envelope.family = row->family;
+    envelope.content_digest.algorithm = NINLIL_DIGEST_SHA256;
+    if (ninlil_r7_crypto_sha256(
+            crypto, payload, sizeof(payload), digest)
+        != NINLIL_R7_CRYPTO_OK) {
+        return 1;
+    }
+    (void)memcpy(envelope.content_digest.bytes, digest, 32u);
+    envelope.generation = 42u;
+    (void)memcpy(envelope.deadline_clock_epoch_id.bytes,
+        binding->endpoint_a.clock_epoch_id, 16u);
+    envelope.absolute_effect_deadline_ms = 10000u;
+    envelope.evidence_grace_ms = row->evidence_grace_ms;
+    envelope.required_evidence = NINLIL_EVIDENCE_APPLIED;
+    (void)memcpy(envelope.route_policy_id.bytes, row->policy_id, 16u);
+    envelope.route_policy_revision = binding->pair_generation;
+    envelope.route_policy_digest.algorithm = NINLIL_DIGEST_SHA256;
+    (void)memcpy(envelope.route_policy_digest.bytes,
+        row->path_policy_digest, 32u);
+    (void)memcpy(
+        envelope.selected_path_id.bytes, row->selected_path_id, 16u);
+    envelope.path_selection_epoch = 77u;
+    envelope.namespace_id.bytes = row->namespace_id;
+    envelope.namespace_id.length = row->namespace_length;
+    envelope.service_id.bytes = row->service_id;
+    envelope.service_id.length = row->service_length;
+    envelope.schema_id.bytes = row->schema_id;
+    envelope.schema_id.length = row->schema_length;
+    envelope.payload.bytes = payload;
+    envelope.payload.length = (uint32_t)sizeof(payload);
+    return ninlil_fabric_private_nfl1_encode(&envelope, out,
+               NINLIL_V1_LAB_RADIO_NFL1_MAX, out_length)
+            == NINLIL_FABRIC_PRIVATE_NFL1_OK
+        ? 0
+        : 1;
+}
+
+static int make_receipt(
+    const ninlil_v1_lab_binding_t *binding,
+    const uint8_t *application,
+    uint32_t application_length,
+    uint8_t *out,
+    uint32_t *out_length)
+{
+    ninlil_fabric_private_nfl1_workspace_t workspace;
+    ninlil_fabric_private_nfl1_envelope_t envelope;
+    uint32_t required = 0u;
+
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&envelope, 0, sizeof(envelope));
+    if (ninlil_fabric_private_nfl1_decode(application, application_length,
+            &workspace, &envelope, &required)
+        != NINLIL_FABRIC_PRIVATE_NFL1_OK) {
+        return 1;
+    }
+    envelope.message_kind = NINLIL_BEARER_MESSAGE_RECEIPT;
+    set_source(&envelope, &binding->endpoint_b);
+    set_target(&envelope, &binding->endpoint_a);
+    envelope.receipt_stage = NINLIL_EVIDENCE_APPLIED;
+    envelope.payload.bytes = NULL;
+    envelope.payload.length = 0u;
+    (void)memcpy(envelope.evidence_time_clock_epoch_id.bytes,
+        binding->endpoint_b.clock_epoch_id, 16u);
+    envelope.evidence_time_now_ms = 1600u;
+    envelope.evidence_time_trust = NINLIL_CLOCK_TRUSTED;
+    envelope.path_selection_epoch = 91u;
+    return ninlil_fabric_private_nfl1_encode(&envelope, out,
+               NINLIL_V1_LAB_RADIO_NFL1_MAX, out_length)
+            == NINLIL_FABRIC_PRIVATE_NFL1_OK
+        ? 0
+        : 1;
+}
+
+static void fill_radio_id(ninlil_radio_hal_id_t *id, uint8_t seed)
+{
+    fill_bytes(id->bytes, sizeof(id->bytes), seed);
+}
+
+static void fill_live(ninlil_pcp_live_profile_t *live)
+{
+    (void)memset(live, 0, sizeof(*live));
+    fill_radio_id(&live->hardware_profile_id, 0x10u);
+    live->hardware_profile_rev = 1u;
+    fill_radio_id(&live->regulatory_profile_id, 0x20u);
+    live->regulatory_profile_rev = 1u;
+    fill_radio_id(&live->site_assignment_id, 0x30u);
+    live->site_assignment_rev = 1u;
+    live->site_assignment_epoch = 7u;
+    fill_radio_id(&live->transmitter_id, 0x40u);
+    live->channel_id = 2u;
+    live->phy.bandwidth_hz = 125000u;
+    live->phy.spreading_factor = 7u;
+    live->phy.coding_rate_denom = 5u;
+    live->phy.preamble_symbols = 8u;
+    live->phy.tx_power_mdb = 10000;
+    live->max_airtime_us = 2000000u;
+}
+
+static int setup_pcp(test_pcp_t *pcp)
+{
+    ninlil_test_storage_config_t config;
+    ninlil_pcp_instance_seed_t seed;
+    ninlil_pcp_error_t error;
+
+    (void)memset(pcp, 0, sizeof(*pcp));
+    pcp->object = (ninlil_pcp_object_t)NINLIL_PCP_OBJECT_INIT;
+    REQUIRE(ninlil_pcp_init_object(&pcp->object, &pcp->pcp)
+        == NINLIL_PCP_OK);
+    (void)memset(&config, 0, sizeof(config));
+    config.max_namespaces = 8u;
+    config.max_entries_per_namespace = 128u;
+    config.max_bytes_per_namespace = 131072u;
+    pcp->storage = ninlil_test_storage_create(&config);
+    pcp->clock = ninlil_test_clock_create();
+    pcp->entropy = ninlil_test_entropy_create(0xc0ffeeu, 1u);
+    REQUIRE(pcp->storage != NULL && pcp->clock != NULL
+        && pcp->entropy != NULL);
+    REQUIRE(ninlil_test_clock_advance(pcp->clock, 1000u) == 1);
+    REQUIRE(ninlil_pcp_bind_storage(pcp->pcp,
+                ninlil_test_storage_ops(pcp->storage), &error)
+        == NINLIL_PCP_OK);
+    REQUIRE(ninlil_pcp_bind_clock(
+                pcp->pcp, ninlil_test_clock_ops(pcp->clock), &error)
+        == NINLIL_PCP_OK);
+    REQUIRE(ninlil_pcp_bind_entropy(pcp->pcp,
+                ninlil_test_entropy_ops(pcp->entropy), &error)
+        == NINLIL_PCP_OK);
+    fill_live(&pcp->live);
+    REQUIRE(ninlil_pcp_bind_live_profile(pcp->pcp, &pcp->live, &error)
+        == NINLIL_PCP_OK);
+    fill_bytes(seed.bytes, sizeof(seed.bytes), 0x50u);
+    REQUIRE(ninlil_pcp_publish_initial_meta(pcp->pcp, &seed, &error)
+        == NINLIL_PCP_OK);
+    return 0;
+}
+
+static ninlil_radio_hal_status_t verify_digest(
+    void *user,
+    const ninlil_radio_hal_frame_view_t *frame,
+    const uint8_t digest[NINLIL_RADIO_HAL_DIGEST_BYTES],
+    uint32_t digest_algorithm,
+    ninlil_radio_hal_error_t *out_error)
+{
+    uint8_t computed[32];
+    (void)user;
+    if (frame == NULL || frame->bytes == NULL || frame->length == 0u
+        || digest == NULL || digest_algorithm != NINLIL_DIGEST_SHA256
+        || g_crypto == NULL
+        || ninlil_r7_crypto_sha256(
+               g_crypto, frame->bytes, frame->length, computed)
+            != NINLIL_R7_CRYPTO_OK
+        || memcmp(computed, digest, sizeof(computed)) != 0) {
+        if (out_error != NULL) {
+            (void)memset(out_error, 0, sizeof(*out_error));
+            out_error->status = NINLIL_RADIO_HAL_FRAME_MISMATCH;
+            out_error->stage = NINLIL_RADIO_HAL_STAGE_DIGEST;
+            out_error->reason = NINLIL_RADIO_HAL_REASON_DIGEST_MISMATCH;
+        }
+        return NINLIL_RADIO_HAL_FRAME_MISMATCH;
+    }
+    if (out_error != NULL) {
+        (void)memset(out_error, 0, sizeof(*out_error));
+    }
+    return NINLIL_RADIO_HAL_OK;
+}
+
+static const ninlil_radio_hal_digest_ops_t g_digest_ops = {
+    verify_digest,
+};
+
+static void fill_board(ninlil_sx1262_board_config_t *board)
+{
+    (void)memset(board, 0, sizeof(*board));
+    board->abi_version = NINLIL_SX1262_ABI_VERSION;
+    board->struct_size = (uint16_t)sizeof(*board);
+    board->pin_nss = 1001u;
+    board->pin_sck = 1002u;
+    board->pin_mosi = 1003u;
+    board->pin_miso = 1004u;
+    board->pin_reset = 1005u;
+    board->pin_busy = 1006u;
+    board->pin_dio1 = 1007u;
+    board->pin_ant_sw = NINLIL_SX1262_PIN_UNSET;
+    board->reset_pulse_us = 1000u;
+    board->busy_timeout_ms = 50u;
+    board->spi_busy_timeout_ms = 50u;
+    board->post_spi_busy_guard_us = 1u;
+    board->busy_poll_interval_us = 100u;
+    board->busy_poll_slack = 2u;
+    board->regulator_mode = NINLIL_SX1262_REG_MODE_LDO;
+}
+
+static int setup_radio(test_node_t *node, test_pcp_t *pcp)
+{
+    ninlil_sx1262_board_config_t board;
+    ninlil_sx1262_bus_ops_t bus_ops;
+    ninlil_sx1262_error_t sx_error;
+    ninlil_radio_hal_error_t hal_error;
+    ninlil_radio_hal_permit_ops_t permit_ops;
+
+    ninlil_sx1262_bus_spy_init(&node->bus);
+    node->bus.now_ms = 1000u;
+    fill_board(&board);
+    bus_ops = *ninlil_sx1262_bus_spy_ops();
+    node->backend_object =
+        (ninlil_sx1262_backend_object_t)NINLIL_SX1262_OBJECT_INIT;
+    REQUIRE(ninlil_sx1262_init(&node->backend_object, &board, &bus_ops,
+                &node->bus, &node->backend, &sx_error)
+        == NINLIL_SX1262_OK);
+    ninlil_sx1262_rf_profile_lab_default(&node->rf_profile);
+    node->phy_object =
+        (ninlil_sx1262_phy_object_t)NINLIL_SX1262_PHY_OBJECT_INIT;
+    REQUIRE(ninlil_sx1262_phy_init(&node->phy_object, node->backend,
+                &node->rf_profile, NULL, NULL, &node->phy, &sx_error)
+        == NINLIL_SX1262_OK);
+    node->edge_object = (ninlil_sx1262_r9_edge_object_t){0};
+    REQUIRE(ninlil_sx1262_r9_edge_init(&node->edge_object, node->phy,
+                &node->rf_profile, &node->edge, &node->edge_ops,
+                &node->edge_context, &hal_error)
+        == NINLIL_RADIO_HAL_OK);
+    node->hal_object = (ninlil_radio_hal_object_t)NINLIL_RADIO_HAL_OBJECT_INIT;
+    REQUIRE(ninlil_radio_hal_init_object(&node->hal_object, &node->hal)
+        == NINLIL_RADIO_HAL_OK);
+    REQUIRE(ninlil_radio_hal_bind_edge(
+                node->hal, node->edge_ops, node->edge_context, &hal_error)
+        == NINLIL_RADIO_HAL_OK);
+    ninlil_pcp_permit_ops(&permit_ops);
+    REQUIRE(ninlil_radio_hal_bind_permit_ops(
+                node->hal, &permit_ops, pcp->pcp, &hal_error)
+        == NINLIL_RADIO_HAL_OK);
+    REQUIRE(ninlil_radio_hal_bind_digest_ops(
+                node->hal, &g_digest_ops, NULL, &hal_error)
+        == NINLIL_RADIO_HAL_OK);
+    REQUIRE(ninlil_radio_hal_set_live_binding(
+                node->hal, &pcp->live, &hal_error)
+        == NINLIL_RADIO_HAL_OK);
+    return 0;
+}
+
+static void fill_class_d(
+    ninlil_r2_authority_clock_result_t *sample,
+    const uint8_t epoch[16])
+{
+    (void)memset(sample, 0, sizeof(*sample));
+    sample->typed_class = NINLIL_R2_SAMPLE_TRUSTED_SAME_EPOCH;
+    (void)memcpy(sample->sample_epoch_id, epoch, 16u);
+    sample->sample_now_ms = 1000u;
+    sample->sample_trust = NINLIL_CLOCK_TRUSTED;
+    sample->sample_fields_valid = 1u;
+    sample->result_catalog = NINLIL_R2_SAMPLE_RESULT_CATALOG_R2_PCP;
+    sample->exact_status = NINLIL_PCP_OK;
+}
+
+static void bind_r7(
+    ninlil_r7_frag_prod_bind_t *bind,
+    ninlil_n6_t *n6,
+    ninlil_n6_handle_t hop_handle,
+    ninlil_n6_handle_t e2e_handle,
+    test_node_t *node,
+    test_pcp_t *pcp,
+    int outbound)
+{
+    ninlil_r7_frag_prod_bind_reset(bind);
+    bind->n6 = n6;
+    bind->hop_data_handle = hop_handle;
+    bind->e2e_handle = e2e_handle;
+    bind->hop_data_context_id = 1u;
+    bind->e2e_context_id_pin = 1u;
+    bind->crypto = g_crypto;
+    bind->epoch_id_lo = 1u;
+    if (outbound != 0) {
+        bind->pcp = pcp->pcp;
+        bind->hal = node->hal;
+        (void)ninlil_r7_frag_prod_set_live(bind, &pcp->live);
+    }
+}
+
+static int setup_node(
+    test_node_t *node,
+    const ninlil_v1_lab_binding_t *binding,
+    const uint8_t *encoded_binding,
+    size_t encoded_length,
+    uint8_t local_side,
+    test_pcp_t *pcp)
+{
+    ninlil_test_storage_config_t config;
+    ninlil_n6_context_pool_t pool;
+    ninlil_r2_authority_clock_result_t sample;
+    const ninlil_v1_lab_endpoint_t *local = local_side == NINLIL_V1_LAB_SIDE_A
+        ? &binding->endpoint_a
+        : &binding->endpoint_b;
+    int a_to_b_outbound = local_side == NINLIL_V1_LAB_SIDE_A;
+
+    (void)memset(node, 0, sizeof(*node));
+    (void)memset(&config, 0, sizeof(config));
+    config.max_namespaces = 8u;
+    config.max_entries_per_namespace = 128u;
+    config.max_bytes_per_namespace = 262144u;
+    node->n6_storage = ninlil_test_storage_create(&config);
+    REQUIRE(node->n6_storage != NULL);
+    (void)memset(&pool, 0, sizeof(pool));
+    pool.max_slots = TEST_CONTEXT_SLOTS;
+    pool.bytes = node->n6_pool;
+    pool.bytes_size = ninlil_n6_context_pool_bytes(pool.max_slots);
+    REQUIRE(pool.bytes_size <= sizeof(node->n6_pool));
+    REQUIRE(ninlil_n6_init(node->n6_object, sizeof(node->n6_object), &pool,
+                &node->n6)
+        == NINLIL_N6_OK);
+    REQUIRE(ninlil_v1_lab_n6_owner_init(&node->n6_owner, node->n6,
+                ninlil_test_storage_ops(node->n6_storage),
+                ninlil_n6_crypto_host_ops(), g_crypto, local->runtime_id)
+        == NINLIL_N6_OK);
+    fill_class_d(&sample, local->clock_epoch_id);
+    REQUIRE(ninlil_v1_lab_n6_owner_boot_from_class_d(
+                &node->n6_owner, &sample)
+        == NINLIL_N6_OK);
+    REQUIRE(ninlil_v1_lab_n6_owner_install_pair(&node->n6_owner,
+                encoded_binding, encoded_length, &node->n6_handles)
+        == NINLIL_N6_OK);
+    REQUIRE(setup_radio(node, pcp) == 0);
+    bind_r7(&node->a_to_b, node->n6, node->n6_handles.a_to_b_hop,
+        node->n6_handles.a_to_b_e2e, node, pcp, a_to_b_outbound);
+    bind_r7(&node->b_to_a, node->n6, node->n6_handles.b_to_a_hop,
+        node->n6_handles.b_to_a_e2e, node, pcp, !a_to_b_outbound);
+    if (a_to_b_outbound != 0) {
+        REQUIRE(ninlil_r7_frag_prod_time_authority_mint(
+                    &node->a_to_b, NULL)
+            == NINLIL_R7_FRAG_PROD_OK);
+    } else {
+        REQUIRE(ninlil_r7_frag_prod_time_authority_mint(
+                    &node->b_to_a, NULL)
+            == NINLIL_R7_FRAG_PROD_OK);
+    }
+    REQUIRE(ninlil_v1_lab_radio_packet_link_init(&node->packet_link,
+                g_crypto, local->runtime_id,
+                ninlil_test_clock_ops(pcp->clock), node->phy)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    REQUIRE(ninlil_v1_lab_radio_packet_link_install_pair(&node->packet_link,
+                encoded_binding, encoded_length, &node->a_to_b,
+                &node->b_to_a, &node->pair_slot)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    REQUIRE(node->pair_slot == 0u);
+    return 0;
+}
+
+static void make_packet_view(
+    const uint8_t *bytes,
+    uint32_t length,
+    const uint8_t path_id[16],
+    uint64_t path_epoch,
+    uint8_t permit_seed,
+    ninlil_tx_permit_t *permit,
+    ninlil_fabric_packet_view_v1_t *view)
+{
+    (void)memset(permit, 0, sizeof(*permit));
+    permit->abi_version = NINLIL_ABI_VERSION;
+    permit->struct_size = (uint16_t)sizeof(*permit);
+    fill_bytes(permit->permit_id.bytes, 16u, permit_seed);
+    fill_bytes(permit->attempt_id.bytes, 16u, 0x21u);
+    fill_epoch(permit->clock_epoch_id.bytes);
+    permit->expires_at_ms = 60000u;
+
+    (void)memset(view, 0, sizeof(*view));
+    view->api_version = NINLIL_FABRIC_API_VERSION;
+    view->struct_size = (uint16_t)sizeof(*view);
+    view->bytes = bytes;
+    view->length = length;
+    fill_bytes(view->transaction_id.bytes, 16u, 0x01u);
+    fill_bytes(view->attempt_id.bytes, 16u, 0x21u);
+    (void)memcpy(view->selected_path_id.bytes, path_id, 16u);
+    view->path_selection_epoch = path_epoch;
+    view->permit = permit;
+}
+
+static int send_frame(
+    test_node_t *node,
+    const ninlil_fabric_packet_link_ops_v1_t *ops,
+    ninlil_fabric_packet_link_handle_t handle,
+    const uint8_t *bytes,
+    uint32_t length,
+    const uint8_t path_id[16],
+    uint64_t path_epoch,
+    uint8_t permit_seed,
+    uint64_t release_authority,
+    uint64_t release_sequence,
+    uint8_t out_frame[255],
+    uint8_t *out_length)
+{
+    ninlil_tx_permit_t permit;
+    ninlil_fabric_packet_view_v1_t view;
+    ninlil_fabric_packet_token_t token = NULL;
+    ninlil_fabric_link_completion_v1_t completion;
+    uint32_t i;
+
+    node->bus.irq_status = 0u;
+    node->bus.last_tx_payload_len = 0u;
+    make_packet_view(bytes, length, path_id, path_epoch, permit_seed,
+        &permit, &view);
+    REQUIRE(ops->start_send(ops->user, handle, &view, &token)
+        == NINLIL_FABRIC_LINK_RETAINED);
+    REQUIRE(token != NULL);
+    if (release_sequence != 0u) {
+        REQUIRE(node->packet_link.tx.r7_held != 0u);
+        REQUIRE(ninlil_r7_frag_issue_coordinator_complete(
+                    release_authority, release_sequence, NULL)
+            == NINLIL_R7_COORD_OK);
+    }
+    for (i = 0u; i < TEST_POLL_LIMIT; ++i) {
+        (void)memset(&completion, 0, sizeof(completion));
+        REQUIRE(ops->poll_send(ops->user, handle, token, &completion)
+            == NINLIL_FABRIC_LINK_OK);
+        if (completion.kind != NINLIL_FABRIC_LINK_COMPLETION_PENDING) {
+            break;
+        }
+    }
+    REQUIRE(completion.kind
+        == NINLIL_FABRIC_LINK_COMPLETION_TRANSPORT_DONE);
+    REQUIRE(node->bus.last_tx_payload_len > 0u);
+    *out_length = node->bus.last_tx_payload_len;
+    (void)memcpy(out_frame, node->bus.last_tx_payload, *out_length);
+    ops->release_send(ops->user, handle, token);
+    return 0;
+}
+
+static int receive_frame(
+    test_node_t *node,
+    const ninlil_fabric_packet_link_ops_v1_t *ops,
+    ninlil_fabric_packet_link_handle_t handle,
+    const uint8_t *frame,
+    uint8_t frame_length,
+    uint8_t *out,
+    uint32_t *out_length)
+{
+    const uint8_t *borrowed = NULL;
+    void *receive_token = NULL;
+    ninlil_fabric_link_status_t status;
+
+    REQUIRE(ninlil_v1_lab_radio_packet_link_step(&node->packet_link)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    REQUIRE(ninlil_sx1262_phy_state(node->phy)
+        == NINLIL_SX1262_PHY_STATE_RX_ACTIVE);
+    node->bus.rx_payload_len = frame_length;
+    (void)memcpy(node->bus.rx_payload, frame, frame_length);
+    node->bus.irq_status = 0x0002u;
+    status = ops->receive_next(ops->user, handle, &borrowed, out_length,
+        &receive_token);
+    REQUIRE(status == NINLIL_FABRIC_LINK_OK);
+    REQUIRE(borrowed != NULL && receive_token != NULL
+        && *out_length <= NINLIL_V1_LAB_RADIO_NFL1_MAX);
+    (void)memcpy(out, borrowed, *out_length);
+    ops->release_received(ops->user, handle, receive_token);
+    return 0;
+}
+
+static int duplicate_is_rejected(
+    test_node_t *node,
+    const ninlil_fabric_packet_link_ops_v1_t *ops,
+    ninlil_fabric_packet_link_handle_t handle,
+    const uint8_t *frame,
+    uint8_t frame_length)
+{
+    const uint8_t *borrowed = NULL;
+    uint32_t length = 0u;
+    void *receive_token = NULL;
+
+    REQUIRE(ninlil_v1_lab_radio_packet_link_step(&node->packet_link)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    node->bus.rx_payload_len = frame_length;
+    (void)memcpy(node->bus.rx_payload, frame, frame_length);
+    node->bus.irq_status = 0x0002u;
+    REQUIRE(ops->receive_next(ops->user, handle, &borrowed, &length,
+                &receive_token)
+        != NINLIL_FABRIC_LINK_OK);
+    REQUIRE(borrowed == NULL && length == 0u && receive_token == NULL);
+    return 0;
+}
+
+static int verify_application(
+    const uint8_t *packet, uint32_t packet_length, uint64_t expected_epoch)
+{
+    ninlil_fabric_private_nfl1_workspace_t workspace;
+    ninlil_fabric_private_nfl1_envelope_t envelope;
+    uint8_t expected_payload[32];
+    uint32_t required = 0u;
+
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&envelope, 0, sizeof(envelope));
+    REQUIRE(ninlil_fabric_private_nfl1_decode(packet, packet_length,
+                &workspace, &envelope, &required)
+        == NINLIL_FABRIC_PRIVATE_NFL1_OK);
+    fill_bytes(expected_payload, sizeof(expected_payload), 0x41u);
+    REQUIRE(envelope.message_kind == NINLIL_BEARER_MESSAGE_APPLICATION);
+    REQUIRE(envelope.path_selection_epoch == expected_epoch);
+    REQUIRE(envelope.payload.length == sizeof(expected_payload));
+    REQUIRE(memcmp(
+                envelope.payload.bytes, expected_payload, sizeof(expected_payload))
+        == 0);
+    return 0;
+}
+
+static int verify_receipt(
+    const uint8_t *packet, uint32_t packet_length, uint64_t expected_epoch)
+{
+    ninlil_fabric_private_nfl1_workspace_t workspace;
+    ninlil_fabric_private_nfl1_envelope_t envelope;
+    uint32_t required = 0u;
+
+    (void)memset(&workspace, 0, sizeof(workspace));
+    (void)memset(&envelope, 0, sizeof(envelope));
+    REQUIRE(ninlil_fabric_private_nfl1_decode(packet, packet_length,
+                &workspace, &envelope, &required)
+        == NINLIL_FABRIC_PRIVATE_NFL1_OK);
+    REQUIRE(envelope.message_kind == NINLIL_BEARER_MESSAGE_RECEIPT);
+    REQUIRE(envelope.receipt_stage == NINLIL_EVIDENCE_APPLIED);
+    REQUIRE(envelope.path_selection_epoch == expected_epoch);
+    return 0;
+}
+
+static void teardown_node(test_node_t *node)
+{
+    ninlil_sx1262_error_t sx_error;
+    ninlil_radio_hal_error_t hal_error;
+
+    ninlil_r7_frag_prod_bind_reset(&node->a_to_b);
+    ninlil_r7_frag_prod_bind_reset(&node->b_to_a);
+    ninlil_v1_lab_radio_packet_link_clear(&node->packet_link);
+    if (node->hal != NULL) {
+        (void)ninlil_radio_hal_shutdown(node->hal, &hal_error);
+    }
+    if (node->phy != NULL) {
+        (void)ninlil_sx1262_phy_shutdown(node->phy, &sx_error);
+    }
+    if (node->backend != NULL) {
+        (void)ninlil_sx1262_shutdown(node->backend, &sx_error);
+    }
+    ninlil_v1_lab_n6_owner_clear(&node->n6_owner);
+    if (node->n6_storage != NULL) {
+        ninlil_test_storage_destroy(node->n6_storage);
+    }
+}
+
+static void teardown_pcp(test_pcp_t *pcp)
+{
+    ninlil_pcp_error_t error;
+
+    if (pcp->pcp != NULL) {
+        (void)ninlil_pcp_shutdown(pcp->pcp, &error);
+    }
+    ninlil_test_storage_destroy(pcp->storage);
+    ninlil_test_clock_destroy(pcp->clock);
+    ninlil_test_entropy_destroy(pcp->entropy);
+}
+
+int main(void)
+{
+    ninlil_r7_crypto_provider crypto;
+    ninlil_v1_lab_binding_t binding;
+    test_pcp_t pcp;
+    uint8_t encoded_binding[NINLIL_V1_LAB_BINDING_MAX_BYTES];
+    uint8_t application[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    uint8_t peer_application[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    uint8_t receipt[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    uint8_t origin_receipt[NINLIL_V1_LAB_RADIO_NFL1_MAX];
+    uint8_t application_outer[255];
+    uint8_t receipt_outer[255];
+    uint32_t application_length = 0u;
+    uint32_t peer_application_length = 0u;
+    uint32_t receipt_length = 0u;
+    uint32_t origin_receipt_length = 0u;
+    size_t encoded_length = 0u;
+    uint8_t application_outer_length = 0u;
+    uint8_t receipt_outer_length = 0u;
+    const uint8_t *path_a = NULL;
+    const uint8_t *path_b = NULL;
+    const ninlil_fabric_packet_link_ops_v1_t *ops_a = NULL;
+    const ninlil_fabric_packet_link_ops_v1_t *ops_b = NULL;
+    ninlil_fabric_packet_link_handle_t handle_a = NULL;
+    ninlil_fabric_packet_link_handle_t handle_b = NULL;
+    ninlil_r7_coord_admit_t blocker;
+    uint64_t blocker_authority;
+    uint64_t blocker_sequence;
+
+    REQUIRE(ninlil_r7_crypto_openssl3_provider_init(&crypto)
+        == NINLIL_R7_CRYPTO_OK);
+    g_crypto = &crypto;
+    REQUIRE(make_binding(
+                &crypto, &binding, encoded_binding, &encoded_length)
+        == 0);
+    REQUIRE(setup_pcp(&pcp) == 0);
+    REQUIRE(setup_node(&g_node_a, &binding, encoded_binding, encoded_length,
+                NINLIL_V1_LAB_SIDE_A, &pcp)
+        == 0);
+    REQUIRE(setup_node(&g_node_b, &binding, encoded_binding, encoded_length,
+                NINLIL_V1_LAB_SIDE_B, &pcp)
+        == 0);
+    REQUIRE(ninlil_v1_lab_radio_packet_link_path(&g_node_a.packet_link, 0u,
+                NINLIL_V1_LAB_FLOW_A_TO_B, &path_a, &ops_a)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    REQUIRE(ninlil_v1_lab_radio_packet_link_path(&g_node_b.packet_link, 0u,
+                NINLIL_V1_LAB_FLOW_A_TO_B, &path_b, &ops_b)
+        == NINLIL_V1_LAB_RADIO_LINK_OK);
+    REQUIRE(memcmp(path_a, path_b, 16u) == 0);
+    REQUIRE(ops_a->open(ops_a->user, &handle_a) == NINLIL_FABRIC_LINK_OK);
+    REQUIRE(ops_b->open(ops_b->user, &handle_b) == NINLIL_FABRIC_LINK_OK);
+
+    REQUIRE(make_application(
+                &crypto, &binding, application, &application_length)
+        == 0);
+    /* Complete one send so the next issued sequence can queue behind a
+     * synthetic lower head owned by the same R2 authority. */
+    REQUIRE(send_frame(&g_node_a, ops_a, handle_a, application,
+                application_length, path_a, 77u, 0x51u, 0u, 0u,
+                application_outer, &application_outer_length)
+        == 0);
+    blocker_authority = (uint64_t)(uintptr_t)pcp.pcp;
+    blocker_sequence = g_node_a.a_to_b.last_completed_seq;
+    REQUIRE(blocker_authority != 0u && blocker_sequence != 0u);
+    (void)memset(&blocker, 0, sizeof(blocker));
+    blocker.authority_token = blocker_authority;
+    blocker.permit_sequence = blocker_sequence;
+    blocker.bind_token = (uintptr_t)&blocker;
+    blocker.outer_len = 1u;
+    blocker.outer_digest[0] = 0xa5u;
+    blocker.issue_now_ms = 1000u;
+    REQUIRE(ninlil_r7_frag_issue_coordinator_admit(&blocker)
+        == NINLIL_R7_COORD_OK);
+    REQUIRE(send_frame(&g_node_a, ops_a, handle_a, application,
+                application_length, path_a, 77u, 0x52u, blocker_authority,
+                blocker_sequence, application_outer,
+                &application_outer_length)
+        == 0);
+    REQUIRE(receive_frame(&g_node_b, ops_b, handle_b, application_outer,
+                application_outer_length, peer_application,
+                &peer_application_length)
+        == 0);
+    REQUIRE(verify_application(peer_application, peer_application_length,
+                binding.pair_generation)
+        == 0);
+
+    REQUIRE(make_receipt(&binding, peer_application, peer_application_length,
+                receipt, &receipt_length)
+        == 0);
+    REQUIRE(send_frame(&g_node_b, ops_b, handle_b, receipt, receipt_length,
+                path_b, 91u, 0x61u, 0u, 0u, receipt_outer,
+                &receipt_outer_length)
+        == 0);
+    REQUIRE(receive_frame(&g_node_a, ops_a, handle_a, receipt_outer,
+                receipt_outer_length, origin_receipt,
+                &origin_receipt_length)
+        == 0);
+    REQUIRE(verify_receipt(origin_receipt, origin_receipt_length, 77u) == 0);
+    REQUIRE(duplicate_is_rejected(&g_node_a, ops_a, handle_a, receipt_outer,
+                receipt_outer_length)
+        == 0);
+
+    ops_a->close(ops_a->user, handle_a);
+    ops_b->close(ops_b->user, handle_b);
+    teardown_node(&g_node_a);
+    teardown_node(&g_node_b);
+    teardown_pcp(&pcp);
+    ninlil_v1_lab_binding_clear(&binding);
+    g_crypto = NULL;
+    (void)fprintf(stdout, "v1_lab_radio_packet_link_vertical_test OK\n");
+    return 0;
+}

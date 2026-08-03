@@ -581,7 +581,9 @@ test -f "${ALLFEAT_OVERLAY}" \
   || { echo "false-green: missing combined all-private-features overlay" >&2; exit 1; }
 # Fail-closed: combined overlay must list every private feature flag (not a stub).
 for _k in \
+  CONFIG_NINLIL_ENABLE_SX1262_R9=y \
   CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE=y \
+  CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH=y \
   CONFIG_NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=y \
   CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE=y \
   CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=y \
@@ -605,7 +607,9 @@ test -f "${ALLFEAT_MAP}" && test -s "${ALLFEAT_MAP}"
 test -f "${ALLFEAT_ARC}"
 # Every private feature must actually be compiled ON in the combined tree.
 for _sym_h in \
+  'CONFIG_NINLIL_ENABLE_SX1262_R9 1' \
   'CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE 1' \
+  'CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH 1' \
   'CONFIG_NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING 1' \
   'CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE 1' \
   'CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1 1' \
@@ -629,6 +633,7 @@ done
 # Remaining private families must at least package into the component archive.
 for sym in \
   ninlil_domain_schema1_owner_run_storage_recovery \
+  ninlil_v1_lab_radio_packet_link_init \
   ninlil_wifi_esp_owner_step
 do
   grep -E "${sym}" /tmp/ninlil_allfeat_arc_nm.txt \

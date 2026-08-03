@@ -63,6 +63,13 @@ ninlil_fabric_private_status_t ninlil_fabric_private_register_link_v1(
     const ninlil_fabric_link_descriptor_v1_t *descriptor,
     const ninlil_fabric_packet_link_ops_v1_t *ops,
     ninlil_fabric_registration_private_t **out_registration);
+/* Volatile V1 RF gate; arbitrary public RF registration remains disabled. */
+ninlil_fabric_private_status_t
+ninlil_fabric_private_rf_mapping_approve_v1(
+    ninlil_fabric_private_t *fabric,
+    ninlil_fabric_registration_private_t *registration);
+ninlil_fabric_private_status_t
+ninlil_fabric_private_rf_mapping_clear_v1(ninlil_fabric_private_t *fabric);
 ninlil_fabric_private_status_t ninlil_fabric_private_unregister_begin_v1(
     ninlil_fabric_private_t *fabric,
     ninlil_fabric_registration_private_t *registration);

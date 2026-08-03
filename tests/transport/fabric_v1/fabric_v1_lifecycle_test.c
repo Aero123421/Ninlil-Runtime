@@ -772,6 +772,90 @@ static int fabric_boot(
     return 0;
 }
 
+static int test_rf_mapping_exact_private_gate(void)
+{
+    ninlil_storage_ops_t storage;
+    ninlil_clock_ops_t clock;
+    ninlil_execution_ops_t exec;
+    ninlil_fabric_config_v1_t config;
+    ninlil_fabric_private_t *fabric = NULL;
+    const ninlil_bearer_ops_t *bearer = NULL;
+    ninlil_fabric_link_descriptor_v1_t descriptor;
+    ninlil_fabric_packet_link_ops_v1_t ops;
+    ninlil_fabric_registration_private_t *registration = NULL;
+    uint32_t work = 0u;
+    uint32_t receive_before;
+    uint32_t done = 0u;
+
+    if (fabric_boot(
+            &fabric, &bearer, &storage, &clock, &exec, &config)
+        != 0) {
+        return 1;
+    }
+    (void)bearer;
+    fill_descriptor(&descriptor, 0x61u, 10u);
+    descriptor.link_kind = NINLIL_FABRIC_LINK_KIND_RF;
+    descriptor.capability_flags |= NINLIL_FABRIC_CAP_REGULATED_RF;
+    fabric_test_provider_ops(&ops, &g_provider);
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_register_link_v1(
+            fabric, &descriptor, &ops, &registration),
+        NINLIL_FABRIC_PRIVATE_OK);
+
+    /* Registration alone is inert for RF, including the receive direction. */
+    receive_before = g_provider.receive_calls;
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_step_v1(fabric, 8u, &work),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE(g_provider.receive_calls == receive_before);
+
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_rf_mapping_approve_v1(fabric, registration),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_rf_mapping_approve_v1(fabric, registration),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_step_v1(fabric, 8u, &work),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE(g_provider.receive_calls == receive_before + 1u);
+
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_rf_mapping_clear_v1(fabric),
+        NINLIL_FABRIC_PRIVATE_OK);
+    receive_before = g_provider.receive_calls;
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_step_v1(fabric, 8u, &work),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE(g_provider.receive_calls == receive_before);
+
+    /* Unregister removes a renewed approval before the provider drains. */
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_rf_mapping_approve_v1(fabric, registration),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_unregister_begin_v1(fabric, registration),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_unregister_poll_v1(
+            fabric, registration, &done),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE(done == 1u);
+
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_close_begin_v1(fabric),
+        NINLIL_FABRIC_PRIVATE_OK);
+    done = 0u;
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_close_poll_v1(fabric, &done),
+        NINLIL_FABRIC_PRIVATE_OK);
+    FABRIC_REQUIRE(done == 1u);
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_private_destroy_v1(fabric),
+        NINLIL_FABRIC_PRIVATE_OK);
+    return 0;
+}
+
 static int test_wifi_custody_rejected_before_provider_or_store(void)
 {
     ninlil_storage_ops_t storage;
@@ -7810,6 +7894,7 @@ int main(void)
     g_fabric_test_failures = 0;
     (void)test_enrich_project_lossless();
     (void)test_create_register_send_accept();
+    (void)test_rf_mapping_exact_private_gate();
     (void)test_wifi_custody_rejected_before_provider_or_store();
     (void)test_provider_would_block_retry();
     (void)test_provider_lost_unknown();

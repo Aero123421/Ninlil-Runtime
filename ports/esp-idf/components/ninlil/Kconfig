@@ -101,6 +101,18 @@ menu "Ninlil private candidates"
             not installed ABI, not RF/HIL/legal complete. Physical RF/HIL
             remains a separate gate.
 
+    config NINLIL_ENABLE_V1_LAB_RADIO_PATH
+        bool "Enable V1 LAB Fabric-to-SX1262 path (private)"
+        depends on NINLIL_ENABLE_R7_FRAG_PRIVATE && NINLIL_ENABLE_SX1262_R9
+        default n
+        help
+            Compile the fixed V1 LAB packet-link that maps one complete NFL1
+            ApplicationData or Receipt to NRA1, R7 SINGLE and the sole R9
+            SX1262 edge. Maximum two peer pairs and four logical paths.
+
+            This is a private LAB composition, not installed ABI, relay,
+            fragmentation, legal certification, or RF HIL evidence.
+
     config NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING
         bool "Enable private Domain schema1 Canonical startup (HOST_CANDIDATE)"
         default n

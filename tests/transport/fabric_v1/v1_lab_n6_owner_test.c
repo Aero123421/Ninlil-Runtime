@@ -53,6 +53,10 @@ static void fill_binding(
     binding->pair_generation = 3u;
     fill_endpoint(&binding->endpoint_a, 0x10u);
     fill_endpoint(&binding->endpoint_b, 0x30u);
+    (void)memcpy(
+        binding->endpoint_b.clock_epoch_id,
+        binding->endpoint_a.clock_epoch_id,
+        16u);
     fill_bytes(binding->radio_site_domain_id, 16u, 0x90u);
     binding->radio_membership_epoch = 11u;
     /* Fresh inbound allocator floor is one per receiver/layer namespace. */
@@ -332,6 +336,10 @@ static int test_failure_invalidates_prior_handles(
         == NINLIL_V1_LAB_BINDING_OK);
     fill_binding(&second, NINLIL_V1_LAB_SIDE_A);
     fill_endpoint(&second.endpoint_b, 0x50u);
+    (void)memcpy(
+        second.endpoint_b.clock_epoch_id,
+        second.endpoint_a.clock_epoch_id,
+        16u);
     second.pair_generation = 4u;
     second.b_to_a_hop_context_id = 2u;
     second.b_to_a_e2e_context_id = 2u;

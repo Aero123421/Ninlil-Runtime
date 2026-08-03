@@ -225,6 +225,10 @@ static void make_binding(ninlil_v1_lab_binding_t *binding)
     binding->pair_generation = 1u;
     fill_endpoint(&binding->endpoint_a, 0x10u);
     fill_endpoint(&binding->endpoint_b, 0x30u);
+    (void)memcpy(
+        binding->endpoint_b.clock_epoch_id,
+        binding->endpoint_a.clock_epoch_id,
+        16u);
     fill_bytes(binding->radio_site_domain_id, 16u, 0x90u);
     binding->radio_membership_epoch = 10u;
     binding->a_to_b_hop_context_id = 1u;

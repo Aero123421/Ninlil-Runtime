@@ -130,6 +130,29 @@ add_test(
     COMMAND ninlil_v1_lab_binding_test
 )
 
+add_executable(ninlil_v1_lab_radio_mapping_test
+    tests/transport/fabric_v1/v1_lab_radio_mapping_test.c
+)
+target_include_directories(ninlil_v1_lab_radio_mapping_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+)
+target_link_libraries(ninlil_v1_lab_radio_mapping_test PRIVATE
+    ninlil_runtime_private
+    ninlil_fabric_v1
+    ninlil
+)
+set_target_properties(ninlil_v1_lab_radio_mapping_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+ninlil_apply_strict_warnings(ninlil_v1_lab_radio_mapping_test)
+add_test(
+    NAME v1_lab_radio_mapping
+    COMMAND ninlil_v1_lab_radio_mapping_test
+)
+
 add_executable(ninlil_v1_lab_n6_owner_test
     tests/transport/fabric_v1/v1_lab_n6_owner_test.c
     tests/support/n6_mem_storage.c

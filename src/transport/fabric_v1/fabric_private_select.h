@@ -80,6 +80,7 @@ typedef struct ninlil_fabric_private_select_registry_row {
     uint8_t availability_clock_epoch_id[16];
     uint8_t availability_state;
     uint64_t availability_expires_at_ms;
+    uint32_t rf_mapping_approved;
 } ninlil_fabric_private_select_registry_row_t;
 
 typedef struct ninlil_fabric_private_select_authority_row {

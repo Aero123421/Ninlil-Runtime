@@ -257,7 +257,7 @@ static int pcp_setup(pcp_env_t *e)
         != NINLIL_PCP_OK) {
         return 1;
     }
-    fill_live(&e->live, 100000u);
+    fill_live(&e->live, 2000000u);
     if (ninlil_pcp_bind_live_profile(e->pcp, &e->live, &e->err)
         != NINLIL_PCP_OK) {
         return 1;

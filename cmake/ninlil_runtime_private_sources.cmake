@@ -47,6 +47,8 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/transport/fabric_v1/nra1_codec.c
     src/transport/fabric_v1/nvb1_codec.c
     src/transport/fabric_v1/v1_lab_binding.c
+    src/transport/fabric_v1/v1_lab_fabric.c
+    src/transport/fabric_v1/v1_lab_radio_mapping.c
     src/transport/fabric_v1/v1_lab_n6_owner.c
     src/transport/fabric_v1/v1_lab_provisioner.c
     src/transport/fabric_v1/v1_usb_bridge.c
@@ -66,6 +68,12 @@ set(NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES
 # R9 edge is optional on ESP (Kconfig); host always appends below.
 set(NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES
     src/radio/sx1262_r9_edge.c
+)
+
+# V1 LAB-only vertical adapter. It depends on both R7 and the R9 PHY, so the
+# host/ESP composition gates append it only when both dependencies are on.
+set(NINLIL_V1_LAB_RADIO_PATH_RELATIVE_SOURCES
+    src/transport/fabric_v1/v1_lab_radio_packet_link.c
 )
 
 # Exact N6 production private set — single authority (define once).
@@ -110,6 +118,8 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/transport/logical_session.c
     src/transport/fabric_v1/nvb1_codec.c
     src/transport/fabric_v1/v1_lab_binding.c
+    src/transport/fabric_v1/v1_lab_fabric.c
+    src/transport/fabric_v1/v1_lab_radio_mapping.c
     src/transport/fabric_v1/v1_lab_n6_owner.c
     src/transport/fabric_v1/v1_lab_provisioner.c
     src/transport/fabric_v1/v1_usb_bridge.c

@@ -115,7 +115,7 @@ retain every Foundation field omitted from NRA1:
 - deadline clock epoch and evidence grace;
 - evidence clock epoch and trust;
 - the closed Fabric authority tuple (`authority_id`, `authority_term`,
-  `assignment_epoch`) and complete route policy/path selection snapshot;
+  `assignment_epoch`), complete route policy and selected path ID;
 - the path-policy candidate rank and the Foundation semantic priority. The
   latter is not caller-selected: EventFact is exactly 3 and DesiredState is
   exactly 8, matching `ninlil_rt_v1_semantic_priority_for_family()`; and
@@ -147,10 +147,15 @@ resume.
 
 On Application encode, the adapter checks the full Fabric message against the
 selected immutable row, computes SHA-256 over the exact payload, and requires
-that result to equal the Fabric content digest. On decode it recomputes the
-same digest, reconstructs the complete message from the authenticated row and
-NRA1 fields, then submits that complete message to Fabric. It never zero-fills
-an unknown field or chooses a Service by payload contents.
+that result to equal the Fabric content digest. It also retains the complete
+encoded NFL1, including the sender Fabric's exact `path_selection_epoch`, in
+the correlation described below. On decode it recomputes the same digest,
+reconstructs the complete message from the authenticated row and NRA1 fields,
+and uses the authenticated pair generation as the local canonical
+`path_selection_epoch`. Forward ingress does not treat that field as authority.
+The adapter then submits the complete message to Fabric. It never zero-fills an
+unknown field, predicts a remote Fabric epoch or chooses a Service by payload
+contents.
 
 For a Receipt, the sender must retain the complete outbound correlation before
 RF transmission. The lookup key is pair binding generation, original forward
@@ -158,10 +163,33 @@ direction, service slot, transaction ID and attempt ID. The authenticated
 reverse child context determines the receive direction; the original forward
 direction is exactly its opposite, and the slot is resolved in that original
 forward directory namespace. A reverse child cannot remap a slot or select a
-different generation. The adapter reconstructs all echoed Foundation fields
-from that exact durable message and adds the received stage/time. An unknown,
+different generation. The adapter reconstructs all echoed Foundation fields,
+including the original sender's exact selected path and path-selection epoch,
+from that retained message and adds the received stage/time. An unknown,
 stale, mismatched or already-terminal correlation is rejected and cannot
 produce Application success.
+
+The V1 adapter is one fixed, caller-owned object, not a registry or plugin
+framework. One physical board owns at most two active pair slots, four
+Application correlations, one queued/in-flight RF transmit and one admitted
+receive packet awaiting its next local handoff. A peer uses one of the two pair
+slots; the USB parent may use both. Capacity is checked before N6 receive
+admission or a Fabric TxPermit is accepted. When the receive slot is occupied,
+the PHY is not re-armed until that exact packet is handed to Fabric or NVB1, so
+an already replay-admitted body is never silently overwritten.
+
+Each correlation copy-owns the complete encoded NFL1 Application and expires
+exactly 30,000 ms after first local acceptance, using the active endpoint's
+trusted monotonic clock. An Application whose `required_evidence` is `NONE`
+creates no correlation because no Receipt can consume it. Expiry overflow,
+clock-epoch change or rollback fences the pair. An exact duplicate correlation
+key is idempotent only when the whole NFL1 packet is byte-identical; different
+bytes are a conflict. A Receipt with stage greater than or equal to the
+retained `required_evidence` is terminal after its local handoff or RF transmit
+becomes definite; a lower stage keeps the correlation. Timeout removes only
+that correlation and causes a late Receipt to be rejected. Higher-level
+Runtime retry remains the sole recovery owner; the radio adapter does not
+invent a new attempt.
 
 ### 4. NRW1 and physical path
 
@@ -178,6 +206,42 @@ For every V1 Application and Receipt:
 - directional Hop/E2E context IDs and durable counter/replay state come only
   from the active V1 binding owner and existing N6 engine; and
 - every transmit uses the existing R1/R2/R5/R9 permit and physical sole edge.
+
+One `selected_path_id` represents one pair and original Application flow, not
+one Service and not a physical TX direction. All rows in the pair with the same
+flow share that path. An Application uses the row's A-to-B or B-to-A child;
+its Receipt keeps the same selected path and policy but uses the opposite
+cryptographic child. Consequently no reverse Receipt policy, duplicate
+descriptor or second physical radio object is created. A frame's
+unauthenticated outer Hop context ID only bounds the candidate set to matching
+installed receive children. Context IDs may repeat across N6 allocator
+namespaces, so the fixed adapter tries at most two matching inbound children
+and accepts only the child whose exact N6 ticket and AEAD authenticate the
+frame. A failed candidate cannot map or publish Application data.
+
+Fabric enables RF mapping per exact registered path, never with a process-wide
+boolean. The private V1 composition may approve at most four active path IDs
+after their closed descriptor and packet-link have registered successfully.
+The selector requires both V1 mapping support and approval on the selected
+registry row. Public registration of another RF descriptor therefore remains
+fail-closed. Unregister, reprovision fence and destroy remove the approval.
+
+The packet-link retains at most one transmit globally. `start_send` validates
+the borrowed Fabric TxPermit and checks capacity before copy-owning NFL1. While
+the token is retained it records the exact permit ID; the surrounding durable
+Fabric FBA1 and non-reissuing TxGate remain the permanent one-shot authority.
+The entry is cleared only after terminal `release_send`. USB-parent handoff is
+already authorized by that host-side packet-link and therefore does not create
+a second Fabric TxPermit; the board still obtains and consumes the independent
+R2/R5 radio permit through the normal R7 path.
+
+If R7 returns `ISSUED_HELD` before the physical edge, `start_send` still
+retains the Fabric token. A later owner step resumes the exact sealed outer and
+issued R2/R5 Permit held by that R7 bind; it must not call `tx_single` again or
+burn fresh N6 counters. Repeated held outcomes remain pending. Cancellation
+drains the held issued authority without entering the physical edge. A
+definite pre-edge resume failure completes as definite failure; a failure
+after possible edge entry completes as lost-unknown.
 
 An NRA1 parse result alone is never authenticated and never authorizes RF TX,
 Service dispatch, Receipt application or a counter mutation.

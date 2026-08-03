@@ -209,6 +209,25 @@ static int test_hard_filters(void)
     FABRIC_REQUIRE(
         strcmp(res.primary_rejection, "RF_MAPPING_UNSUPPORTED") == 0);
 
+    /* Mapping support is insufficient without exact registry-row approval. */
+    baseline_snapshot(&snap);
+    snap.registry[0].link_kind = 4u;
+    snap.registry[1].link_kind = 4u;
+    snap.query.rf_permit_valid = 1u;
+    snap.query.rf_mapping_accepted = 1u;
+    snap.registry[0].rf_mapping_approved = 0u;
+    snap.registry[1].rf_mapping_approved = 0u;
+    ninlil_fabric_private_select(&snap, &res);
+    FABRIC_REQUIRE(strcmp(res.primary_rejection, "RF_PATH_NOT_APPROVED") == 0);
+
+    /* Only the approved candidate is eligible, independent of better rank. */
+    snap.registry[0].rf_mapping_approved = 1u;
+    ninlil_fabric_private_select(&snap, &res);
+    FABRIC_REQUIRE_EQ_U32(
+        res.resolution, NINLIL_FABRIC_PRIVATE_SEL_SELECTED);
+    FABRIC_REQUIRE(ninlil_fabric_private_memeq(
+        res.selected_instance_id, snap.registry[0].instance_id, 16u));
+
     /* policy ambiguous */
     baseline_snapshot(&snap);
     snap.policy_count = 2u;

@@ -209,6 +209,18 @@ static int spy_spi_transfer(
             }
         }
     }
+    if (opcode == (uint8_t)0x0Eu && len >= 2u) {
+        size_t payload_len = len - 2u;
+        if (payload_len > sizeof(spy->last_tx_payload)) {
+            payload_len = sizeof(spy->last_tx_payload);
+        }
+        spy->last_tx_payload_len = (uint8_t)payload_len;
+        (void)memset(
+            spy->last_tx_payload, 0, sizeof(spy->last_tx_payload));
+        if (payload_len > 0u) {
+            (void)memcpy(spy->last_tx_payload, tx + 2u, payload_len);
+        }
+    }
     push_trace(spy, NINLIL_SX1262_SPY_EV_SPI, opcode, (uint32_t)len, tx, len);
 
     if (spy->short_spi != 0 && len > spy->short_spi_max) {

@@ -375,6 +375,8 @@ void ninlil_fabric_private_select(
                     reason = "RF_PERMIT";
                 } else if (q->rf_mapping_accepted == 0u) {
                     reason = "RF_MAPPING_UNSUPPORTED";
+                } else if (reg->rf_mapping_approved == 0u) {
+                    reason = "RF_PATH_NOT_APPROVED";
                 }
             }
 

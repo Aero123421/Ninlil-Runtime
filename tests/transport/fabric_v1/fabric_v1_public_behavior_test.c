@@ -145,6 +145,8 @@ static int test_public_ownership_reentry_close(void)
 
     g_exec_context = 1u;
     fill_descriptor(&descriptor);
+    descriptor.link_kind = NINLIL_FABRIC_LINK_KIND_RF;
+    descriptor.capability_flags |= NINLIL_FABRIC_CAP_REGULATED_RF;
     fabric_test_provider_ops(&link_ops, &g_provider);
     link_ops.open = reentry_open;
     g_reentry_status = NINLIL_FABRIC_OK;
@@ -156,6 +158,13 @@ static int test_public_ownership_reentry_close(void)
     FABRIC_REQUIRE(registration != NULL);
     FABRIC_REQUIRE_EQ_U32(g_reentry_status, NINLIL_FABRIC_REENTRANT);
     FABRIC_REQUIRE(g_reentry_no_effect == 1u);
+
+    /* Public RF registration alone never enables provider receive I/O. */
+    FABRIC_REQUIRE_EQ_U32(
+        ninlil_fabric_v1_step(g_reentry_fabric, 8u, &work),
+        NINLIL_FABRIC_OK);
+    FABRIC_REQUIRE(work == 0u);
+    FABRIC_REQUIRE(g_provider.receive_calls == 0u);
 
     FABRIC_REQUIRE_EQ_U32(
         ninlil_fabric_v1_close_begin(g_reentry_fabric),

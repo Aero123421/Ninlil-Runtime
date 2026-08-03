@@ -492,6 +492,16 @@ int32_t ninlil_r7_frag_prod_tx_single(
     ninlil_r7_frag_prod_tx_result_t *out);
 
 /*
+ * Resume the exact sealed outer and issued Permit retained after
+ * CLN_ISSUED_HELD. No N6 counter is burned and no new Permit is issued.
+ */
+int32_t ninlil_r7_frag_prod_tx_resume_held(
+    ninlil_r7_frag_prod_bind_t *bind,
+    uint64_t owner_token,
+    uint64_t candidate_token,
+    ninlil_r7_frag_prod_tx_result_t *out);
+
+/*
  * TX a pre-sealed E2E blob as OUTER (LINK/FRAG hop path): N6 hop DATA burn +
  * outer seal + L1/R2/R1. Used for same-E2E-body / fresh-hop retry after session
  * retains bit-identical E2E.
