@@ -237,7 +237,9 @@ static int row_shape_valid(const ninlil_v1_lab_service_row_t *r)
             && r->evidence_grace_ms == 0u;
     }
     if (r->family == NINLIL_FAMILY_DESIRED_STATE) {
-        return r->direction == NINLIL_DIRECTION_DOWNLINK;
+        return r->direction == NINLIL_DIRECTION_DOWNLINK
+            && r->evidence_grace_ms
+                <= NINLIL_V1_LAB_EVIDENCE_GRACE_MAX_MS;
     }
     return 0;
 }

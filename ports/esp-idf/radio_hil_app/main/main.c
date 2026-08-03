@@ -34,6 +34,7 @@
 #include "ninlil_esp_idf/clock.h"
 #include "ninlil_esp_idf/entropy.h"
 #include "ninlil_esp_idf/sx1262_bus.h"
+#include "radio_entropy_drbg.h"
 #include "ninlil_port/esp_storage.h"
 #include "ninlil_port/esp_storage_flash.h"
 #include "ninlil_sx1262_backend.h"
@@ -52,6 +53,11 @@
 #include "r7_frag/r7_r2_authority_clock.h"
 #include "v1_lab_board_owner.h"
 #include "v1_lab_provisioner.h"
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+#include "ninlil_esp_idf/execution.h"
+#include "v1_lab_fabric.h"
+#include "v1_lab_peer_runtime.h"
+#endif
 #endif
 
 /*
@@ -182,6 +188,8 @@ static ninlil_pcp_lab_session_ledger_t *g_session_ledger;
 #endif
 static ninlil_esp_idf_clock_t g_clock;
 static ninlil_esp_idf_entropy_t g_entropy;
+static ninlil_esp_idf_radio_drbg_t g_radio_drbg;
+static uint8_t g_radio_entropy_transition_attempted;
 static ninlil_r7_crypto_provider g_r7_crypto;
 static ninlil_radio_hal_permit_ops_t g_r5_permit_ops;
 static ninlil_radio_hal_digest_ops_t g_digest_ops;
@@ -198,6 +206,16 @@ static uint8_t g_v1_n6_pool[NINLIL_RADIO_HIL_V1_N6_POOL_BYTES];
 static ninlil_n6_t *g_v1_n6;
 static ninlil_v1_lab_provisioner_t g_v1_provisioner;
 static ninlil_v1_lab_board_owner_t g_v1_board_owner;
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+static ninlil_v1_lab_peer_runtime_t g_v1_peer_runtime;
+static ninlil_pcp_lab_session_ledger_t *g_v1_peer_ledger;
+static const ninlil_storage_ops_t *g_v1_peer_storage_ops;
+static void *g_v1_peer_composition_workspace;
+static ninlil_esp_idf_execution_t g_v1_peer_execution;
+static ninlil_allocator_ops_t g_v1_peer_allocator;
+static ninlil_platform_ops_t g_v1_peer_platform;
+static uint32_t g_v1_peer_delivery_count;
+#endif
 #endif
 
 static int g_inited;
@@ -444,10 +462,58 @@ static int session_ledger_init(void)
 }
 #endif
 
+static int radio_entropy_transition(const uint8_t clock_epoch_id[16])
+{
+    ninlil_pcp_error_t error;
+    const ninlil_entropy_ops_t *boot_entropy;
+    const ninlil_entropy_ops_t *runtime_entropy;
+    uint8_t material[32];
+    uint8_t digest[32];
+    uint8_t drbg_seeded = 0u;
+    int result = 1;
+
+    if (clock_epoch_id == NULL
+        || g_radio_entropy_transition_attempted != 0u) {
+        return 1;
+    }
+    g_radio_entropy_transition_attempted = 1u;
+    (void)memcpy(material, g_boot_id, 16u);
+    (void)memcpy(material + 16u, clock_epoch_id, 16u);
+    boot_entropy = ninlil_esp_idf_entropy_ops(&g_entropy);
+    if (!sha_frame(material, sizeof(material), digest)
+        || boot_entropy == NULL
+        || ninlil_esp_idf_radio_drbg_init(
+               &g_radio_drbg, boot_entropy, digest)
+            != 0) {
+        goto retire_boot_entropy;
+    }
+    drbg_seeded = 1u;
+
+retire_boot_entropy:
+    ninlil_esp_idf_entropy_shutdown(&g_entropy);
+    if (drbg_seeded == 0u
+        || ninlil_esp_idf_entropy_is_ready(&g_entropy) != 0) {
+        goto out;
+    }
+    runtime_entropy = ninlil_esp_idf_radio_drbg_ops(&g_radio_drbg);
+    if (runtime_entropy == NULL
+        || ninlil_pcp_bind_entropy(g_pcp, runtime_entropy, &error)
+            != NINLIL_PCP_OK) {
+        goto out;
+    }
+    result = 0;
+
+out:
+    (void)memset(material, 0, sizeof(material));
+    (void)memset(digest, 0, sizeof(digest));
+    return result;
+}
+
 static int authority_init(void)
 {
     ninlil_pcp_error_t perr;
     ninlil_r5_error_t rerr;
+    const ninlil_entropy_ops_t *authority_entropy;
     ninlil_pcp_instance_seed_t seed;
     ninlil_esp_idf_clock_config_t clock_cfg;
     ninlil_esp_idf_entropy_config_t ent_cfg;
@@ -455,6 +521,7 @@ static int authority_init(void)
     ninlil_r7_crypto_status rst;
     size_t i;
     uint32_t rnd;
+    uint8_t reuse_runtime_entropy;
 
     /* Fail closed without approved profile docs (compile-time embedded). */
     if (sizeof(k_ninlil_lab_approved_hw_v1) != 128u
@@ -473,27 +540,47 @@ static int authority_init(void)
         return 1;
     }
 
-    /* Clock + entropy (ESP ports). */
-    (void)memset(&g_clock, 0, sizeof(g_clock));
     (void)memset(&clock_cfg, 0, sizeof(clock_cfg));
-    clock_cfg.abi_version = NINLIL_ABI_VERSION;
-    clock_cfg.struct_size = (uint16_t)sizeof(clock_cfg);
-    rnd = esp_random();
-    for (i = 0u; i < 16u; ++i) {
-        clock_cfg.boot_epoch_id.bytes[i] =
-            (uint8_t)((rnd >> ((i % 4u) * 8u)) + (uint8_t)i + 1u);
-    }
-    if (ninlil_esp_idf_clock_init(&g_clock, &clock_cfg) != 0) {
-        emit("ERR clock");
-        return 1;
-    }
-    (void)memset(&g_entropy, 0, sizeof(g_entropy));
     (void)memset(&ent_cfg, 0, sizeof(ent_cfg));
-    ent_cfg.abi_version = NINLIL_ABI_VERSION;
-    ent_cfg.struct_size = (uint16_t)sizeof(ent_cfg);
-    ent_cfg.policy = NINLIL_ESP_IDF_ENTROPY_POLICY_BOOTLOADER_RNG;
-    if (ninlil_esp_idf_entropy_init(&g_entropy, &ent_cfg) != 0) {
-        emit("ERR entropy");
+    authority_entropy = ninlil_esp_idf_radio_drbg_ops(&g_radio_drbg);
+    if (g_radio_entropy_transition_attempted != 0u) {
+        if (authority_entropy == NULL) {
+            emit("ERR entropy_retired");
+            return 1;
+        }
+        reuse_runtime_entropy = 1u;
+    } else {
+        if (authority_entropy != NULL) {
+            emit("ERR entropy_phase");
+            return 1;
+        }
+        reuse_runtime_entropy = 0u;
+    }
+    if (reuse_runtime_entropy == 0u) {
+        /* First authority owner: mint the one boot clock and seed source. */
+        (void)memset(&g_clock, 0, sizeof(g_clock));
+        clock_cfg.abi_version = NINLIL_ABI_VERSION;
+        clock_cfg.struct_size = (uint16_t)sizeof(clock_cfg);
+        rnd = esp_random();
+        for (i = 0u; i < 16u; ++i) {
+            clock_cfg.boot_epoch_id.bytes[i] =
+                (uint8_t)((rnd >> ((i % 4u) * 8u)) + (uint8_t)i + 1u);
+        }
+        if (ninlil_esp_idf_clock_init(&g_clock, &clock_cfg) != 0) {
+            emit("ERR clock");
+            return 1;
+        }
+        (void)memset(&g_entropy, 0, sizeof(g_entropy));
+        ent_cfg.abi_version = NINLIL_ABI_VERSION;
+        ent_cfg.struct_size = (uint16_t)sizeof(ent_cfg);
+        ent_cfg.policy = NINLIL_ESP_IDF_ENTROPY_POLICY_BOOTLOADER_RNG;
+        if (ninlil_esp_idf_entropy_init(&g_entropy, &ent_cfg) != 0) {
+            emit("ERR entropy");
+            return 1;
+        }
+        authority_entropy = ninlil_esp_idf_entropy_ops(&g_entropy);
+    } else if (ninlil_esp_idf_clock_ops(&g_clock) == NULL) {
+        emit("ERR clock_reuse");
         return 1;
     }
 
@@ -545,8 +632,7 @@ static int authority_init(void)
     if (ninlil_pcp_bind_storage(g_pcp, g_ledger_ops, &perr) != NINLIL_PCP_OK
         || ninlil_pcp_bind_clock(g_pcp, ninlil_esp_idf_clock_ops(&g_clock), &perr)
             != NINLIL_PCP_OK
-        || ninlil_pcp_bind_entropy(
-               g_pcp, ninlil_esp_idf_entropy_ops(&g_entropy), &perr)
+        || ninlil_pcp_bind_entropy(g_pcp, authority_entropy, &perr)
             != NINLIL_PCP_OK) {
         emit("ERR pcp_bind");
         return 1;
@@ -619,6 +705,11 @@ static int authority_init(void)
             emit("ERR pcp_publish");
             return 1;
         }
+    }
+    if (reuse_runtime_entropy == 0u
+        && radio_entropy_transition(clock_cfg.boot_epoch_id.bytes) != 0) {
+        emit("ERR radio_entropy_transition");
+        return 1;
     }
     if (ninlil_r5_bind_pcp(g_r5, g_pcp, &rerr) != NINLIL_R5_OK) {
         emit("ERR r5_pcp");
@@ -817,6 +908,147 @@ static int v1_class_d_sample(
     return 0;
 }
 
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+static int v1_peer_power_of_two(uint32_t value)
+{
+    return value != 0u && (value & (value - 1u)) == 0u;
+}
+
+static void *v1_peer_allocate(
+    void *user, uint64_t size, uint32_t alignment)
+{
+    size_t actual_alignment;
+
+    (void)user;
+    if (size == 0u || size > SIZE_MAX || !v1_peer_power_of_two(alignment)) {
+        return NULL;
+    }
+    actual_alignment = alignment < (uint32_t)sizeof(void *)
+        ? sizeof(void *)
+        : (size_t)alignment;
+    return heap_caps_aligned_alloc(actual_alignment, (size_t)size,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+
+static void v1_peer_deallocate(
+    void *user,
+    void *pointer,
+    uint64_t size,
+    uint32_t alignment)
+{
+    (void)user;
+    (void)size;
+    (void)alignment;
+    if (pointer != NULL) {
+        heap_caps_free(pointer);
+    }
+}
+
+static ninlil_callback_action_t v1_peer_delivery(
+    void *user,
+    const ninlil_delivery_token_t *token,
+    const ninlil_delivery_view_t *delivery,
+    ninlil_application_result_t *out_result)
+{
+    (void)user;
+    (void)token;
+    if (delivery == NULL || out_result == NULL
+        || delivery->payload.data == NULL || delivery->payload.length == 0u
+        || delivery->payload.length > NINLIL_V1_LAB_APPLICATION_MAX) {
+        return NINLIL_CALLBACK_FATAL;
+    }
+    g_v1_peer_delivery_count += 1u;
+    (void)memset(out_result, 0, sizeof(*out_result));
+    out_result->abi_version = NINLIL_ABI_VERSION;
+    out_result->struct_size = (uint16_t)sizeof(*out_result);
+    out_result->kind = NINLIL_APP_RESULT_POSITIVE_EVIDENCE;
+    out_result->evidence_stage = NINLIL_EVIDENCE_VERIFIED;
+    return NINLIL_CALLBACK_COMPLETE;
+}
+
+static ninlil_reconcile_action_t v1_peer_reconcile(
+    void *user,
+    const ninlil_reconcile_view_t *delivery,
+    ninlil_application_result_t *out_result)
+{
+    (void)user;
+    if (delivery == NULL || out_result == NULL) {
+        return NINLIL_RECONCILE_OUTCOME_UNKNOWN;
+    }
+    (void)memset(out_result, 0, sizeof(*out_result));
+    out_result->abi_version = NINLIL_ABI_VERSION;
+    out_result->struct_size = (uint16_t)sizeof(*out_result);
+    out_result->kind = NINLIL_APP_RESULT_POSITIVE_EVIDENCE;
+    out_result->evidence_stage = NINLIL_EVIDENCE_VERIFIED;
+    return NINLIL_RECONCILE_KNOWN_RESULT;
+}
+
+static int v1_peer_runtime_prepare(void)
+{
+    ninlil_v1_lab_peer_runtime_config_t runtime_config;
+    ninlil_service_callbacks_t callbacks;
+    uint32_t workspace_bytes = 0u;
+    uint32_t workspace_alignment = 0u;
+
+    g_v1_peer_ledger = (ninlil_pcp_lab_session_ledger_t *)heap_caps_calloc(
+        1u, sizeof(*g_v1_peer_ledger), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (g_v1_peer_ledger == NULL
+        || ninlil_pcp_lab_session_ledger_init(
+               g_v1_peer_ledger, &g_v1_peer_storage_ops)
+            != 0
+        || g_v1_peer_storage_ops == NULL
+        || ninlil_composition_v1_workspace_required(
+               NINLIL_COMPOSITION_PROFILE_1,
+               &workspace_bytes,
+               &workspace_alignment)
+            != NINLIL_OK
+        || workspace_bytes == 0u || workspace_alignment == 0u) {
+        return 1;
+    }
+    g_v1_peer_composition_workspace = heap_caps_aligned_alloc(
+        workspace_alignment, workspace_bytes,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (g_v1_peer_composition_workspace == NULL
+        || ninlil_esp_idf_execution_init(&g_v1_peer_execution) != 0) {
+        return 1;
+    }
+
+    (void)memset(&g_v1_peer_allocator, 0, sizeof(g_v1_peer_allocator));
+    g_v1_peer_allocator.abi_version = NINLIL_ABI_VERSION;
+    g_v1_peer_allocator.struct_size =
+        (uint16_t)sizeof(g_v1_peer_allocator);
+    g_v1_peer_allocator.allocate = v1_peer_allocate;
+    g_v1_peer_allocator.deallocate = v1_peer_deallocate;
+    (void)memset(&g_v1_peer_platform, 0, sizeof(g_v1_peer_platform));
+    g_v1_peer_platform.abi_version = NINLIL_ABI_VERSION;
+    g_v1_peer_platform.struct_size = (uint16_t)sizeof(g_v1_peer_platform);
+    g_v1_peer_platform.allocator = &g_v1_peer_allocator;
+    g_v1_peer_platform.execution =
+        ninlil_esp_idf_execution_ops(&g_v1_peer_execution);
+    g_v1_peer_platform.clock = ninlil_esp_idf_clock_ops(&g_clock);
+    g_v1_peer_platform.entropy =
+        ninlil_esp_idf_radio_drbg_ops(&g_radio_drbg);
+    g_v1_peer_platform.storage = g_v1_peer_storage_ops;
+
+    (void)memset(&callbacks, 0, sizeof(callbacks));
+    callbacks.abi_version = NINLIL_ABI_VERSION;
+    callbacks.struct_size = (uint16_t)sizeof(callbacks);
+    callbacks.on_delivery = v1_peer_delivery;
+    callbacks.on_reconcile = v1_peer_reconcile;
+    (void)memset(&runtime_config, 0, sizeof(runtime_config));
+    runtime_config.crypto = &g_r7_crypto;
+    runtime_config.platform_template = &g_v1_peer_platform;
+    runtime_config.composition_workspace = g_v1_peer_composition_workspace;
+    runtime_config.composition_workspace_bytes = workspace_bytes;
+    runtime_config.desired_callbacks = &callbacks;
+    return ninlil_v1_lab_peer_runtime_prepare(
+               &g_v1_peer_runtime, &runtime_config)
+            == NINLIL_V1_LAB_PEER_RUNTIME_OK
+        ? 0
+        : 1;
+}
+#endif
+
 static int v1_board_init(void)
 {
     ninlil_n6_context_pool_t pool;
@@ -863,6 +1095,12 @@ static int v1_board_init(void)
         emit("ERR v1_provisioner");
         return 1;
     }
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+    if (v1_peer_runtime_prepare() != 0) {
+        emit("ERR v1_peer_runtime_prepare");
+        return 1;
+    }
+#endif
 
     (void)memset(&g_v1_usb_stream, 0, sizeof(g_v1_usb_stream));
     if (ninlil_esp_idf_usb_cdc_init_object(
@@ -889,6 +1127,14 @@ static int v1_board_init(void)
     owner_config.pcp = g_pcp;
     owner_config.hal = g_hal;
     owner_config.live = &g_live;
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+    owner_config.data_consumer =
+        NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC;
+    owner_config.pair_ready = ninlil_v1_lab_peer_runtime_pair_ready;
+    owner_config.pair_ready_user = &g_v1_peer_runtime;
+#else
+    owner_config.data_consumer = NINLIL_V1_LAB_BOARD_OWNER_DATA_USB;
+#endif
     if (ninlil_v1_lab_board_owner_init(&g_v1_board_owner, &owner_config)
         != NINLIL_V1_LAB_BOARD_OWNER_OK) {
         emit("ERR v1_board_owner");
@@ -896,7 +1142,8 @@ static int v1_board_init(void)
     }
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
     emit("READY v1_board role=peer usb=control-cdc radio=single_hop "
-         "ledger=session_diag restart_durable=false peer_id=binding");
+         "runtime=awaiting_binding ledger=session_diag "
+         "restart_durable=false peer_id=binding");
 #else
     emit("READY v1_board role=usb_parent usb=control-cdc radio=single_hop "
          "ledger=session_diag restart_durable=false controller_id=binding");
@@ -907,6 +1154,9 @@ static int v1_board_init(void)
 static void v1_board_run(void)
 {
     const ninlil_clock_ops_t *clock = ninlil_esp_idf_clock_ops(&g_clock);
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+    uint8_t runtime_ready_reported = 0u;
+#endif
 
     for (;;) {
         ninlil_time_sample_t sample;
@@ -927,6 +1177,26 @@ static void v1_board_run(void)
             (void)fflush(stdout);
             break;
         }
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_PEER)
+        {
+            ninlil_v1_lab_peer_runtime_status_t runtime_status =
+                ninlil_v1_lab_peer_runtime_step(&g_v1_peer_runtime);
+
+            if (runtime_status == NINLIL_V1_LAB_PEER_RUNTIME_OK) {
+                if (runtime_ready_reported == 0u) {
+                    emit("READY v1_peer_runtime services=binding "
+                         "fabric=single_hop");
+                    runtime_ready_reported = 1u;
+                }
+            } else if (runtime_status
+                != NINLIL_V1_LAB_PEER_RUNTIME_WAITING) {
+                (void)printf("ERR v1_peer_runtime_step status=%u\n",
+                    (unsigned)runtime_status);
+                (void)fflush(stdout);
+                break;
+            }
+        }
+#endif
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     for (;;) {

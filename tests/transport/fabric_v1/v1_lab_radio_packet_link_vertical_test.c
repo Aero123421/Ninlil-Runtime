@@ -14,6 +14,7 @@
 #include "v1_lab_binding.h"
 #include "v1_lab_board_owner.h"
 #include "v1_lab_n6_owner.h"
+#include "v1_lab_peer_runtime.h"
 #include "v1_lab_provisioner.h"
 #include "v1_lab_radio_packet_link.h"
 #include "v1_usb_bridge.h"
@@ -38,6 +39,13 @@
 #define TEST_CONTEXT_SLOTS ((uint32_t)8u)
 #define TEST_N6_POOL_BYTES ((size_t)4096u)
 #define TEST_POLL_LIMIT ((uint32_t)12u)
+
+#if !defined(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING) \
+    || (NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING == 0)
+#define TEST_PEER_RUNTIME_ENABLED 1
+#else
+#define TEST_PEER_RUNTIME_ENABLED 0
+#endif
 
 typedef struct test_pcp {
     ninlil_pcp_object_t object;
@@ -76,6 +84,23 @@ typedef struct test_node {
     uint8_t pair_slot;
 } test_node_t;
 
+#if TEST_PEER_RUNTIME_ENABLED
+typedef struct test_peer_runtime {
+    ninlil_v1_lab_peer_runtime_t runtime;
+    ninlil_test_allocator_t *allocator;
+    ninlil_test_execution_t *execution;
+    ninlil_test_entropy_t *entropy;
+    ninlil_test_storage_t *storage;
+    ninlil_platform_ops_t platform;
+    ninlil_service_callbacks_t callbacks;
+    void *workspace;
+    uint32_t workspace_bytes;
+    uint32_t workspace_alignment;
+    uint32_t prepared;
+    uint32_t delivery_count;
+} test_peer_runtime_t;
+#endif
+
 static test_node_t g_node_a;
 static test_node_t g_node_b;
 static ninlil_v1_lab_board_owner_t g_board_owner;
@@ -89,6 +114,149 @@ static void fill_bytes(uint8_t *out, size_t length, uint8_t seed)
         out[i] = (uint8_t)(seed + (uint8_t)i);
     }
 }
+
+#if TEST_PEER_RUNTIME_ENABLED
+static ninlil_callback_action_t peer_runtime_delivery(
+    void *user,
+    const ninlil_delivery_token_t *token,
+    const ninlil_delivery_view_t *delivery,
+    ninlil_application_result_t *out_result)
+{
+    test_peer_runtime_t *fixture = (test_peer_runtime_t *)user;
+
+    (void)token;
+    if (fixture == NULL || delivery == NULL || out_result == NULL
+        || delivery->payload.data == NULL || delivery->payload.length == 0u) {
+        return NINLIL_CALLBACK_FATAL;
+    }
+    fixture->delivery_count += 1u;
+    (void)memset(out_result, 0, sizeof(*out_result));
+    out_result->abi_version = NINLIL_ABI_VERSION;
+    out_result->struct_size = (uint16_t)sizeof(*out_result);
+    out_result->kind = NINLIL_APP_RESULT_POSITIVE_EVIDENCE;
+    out_result->evidence_stage = NINLIL_EVIDENCE_VERIFIED;
+    return NINLIL_CALLBACK_COMPLETE;
+}
+
+static ninlil_reconcile_action_t peer_runtime_reconcile(
+    void *user,
+    const ninlil_reconcile_view_t *delivery,
+    ninlil_application_result_t *out_result)
+{
+    (void)user;
+    if (delivery == NULL || out_result == NULL) {
+        return NINLIL_RECONCILE_OUTCOME_UNKNOWN;
+    }
+    (void)memset(out_result, 0, sizeof(*out_result));
+    out_result->abi_version = NINLIL_ABI_VERSION;
+    out_result->struct_size = (uint16_t)sizeof(*out_result);
+    out_result->kind = NINLIL_APP_RESULT_POSITIVE_EVIDENCE;
+    out_result->evidence_stage = NINLIL_EVIDENCE_VERIFIED;
+    return NINLIL_RECONCILE_KNOWN_RESULT;
+}
+
+static int setup_peer_runtime(
+    test_peer_runtime_t *fixture,
+    test_pcp_t *pcp)
+{
+    ninlil_test_storage_config_t storage_config;
+    ninlil_v1_lab_peer_runtime_config_t runtime_config;
+    ninlil_tx_gate_ops_t unexpected_tx_gate;
+    const ninlil_allocator_ops_t *allocator_ops;
+
+    (void)memset(fixture, 0, sizeof(*fixture));
+    (void)memset(&storage_config, 0, sizeof(storage_config));
+    storage_config.max_namespaces = 8u;
+    storage_config.max_entries_per_namespace = 256u;
+    storage_config.max_bytes_per_namespace = UINT64_C(1048576);
+    fixture->allocator = ninlil_test_allocator_create();
+    fixture->execution = ninlil_test_execution_create(1u);
+    fixture->entropy = ninlil_test_entropy_create(0x726f6c65u, 3u);
+    fixture->storage = ninlil_test_storage_create(&storage_config);
+    if (fixture->allocator == NULL || fixture->execution == NULL
+        || fixture->entropy == NULL || fixture->storage == NULL
+        || ninlil_composition_v1_workspace_required(
+               NINLIL_COMPOSITION_PROFILE_1,
+               &fixture->workspace_bytes,
+               &fixture->workspace_alignment)
+            != NINLIL_OK) {
+        return 1;
+    }
+    allocator_ops = ninlil_test_allocator_ops(fixture->allocator);
+    fixture->workspace = allocator_ops->allocate(allocator_ops->user,
+        fixture->workspace_bytes, fixture->workspace_alignment);
+    if (fixture->workspace == NULL) {
+        return 1;
+    }
+    fixture->platform.abi_version = NINLIL_ABI_VERSION;
+    fixture->platform.struct_size = (uint16_t)sizeof(fixture->platform);
+    fixture->platform.allocator = allocator_ops;
+    fixture->platform.execution =
+        ninlil_test_execution_ops(fixture->execution);
+    fixture->platform.clock = ninlil_test_clock_ops(pcp->clock);
+    fixture->platform.entropy = ninlil_test_entropy_ops(fixture->entropy);
+    fixture->platform.storage = ninlil_test_storage_ops(fixture->storage);
+    fixture->callbacks.abi_version = NINLIL_ABI_VERSION;
+    fixture->callbacks.struct_size = (uint16_t)sizeof(fixture->callbacks);
+    fixture->callbacks.user = fixture;
+    fixture->callbacks.on_delivery = peer_runtime_delivery;
+    fixture->callbacks.on_reconcile = peer_runtime_reconcile;
+    (void)memset(&runtime_config, 0, sizeof(runtime_config));
+    runtime_config.crypto = g_crypto;
+    runtime_config.platform_template = &fixture->platform;
+    runtime_config.composition_workspace = fixture->workspace;
+    runtime_config.composition_workspace_bytes = fixture->workspace_bytes;
+    runtime_config.desired_callbacks = &fixture->callbacks;
+    (void)memset(&unexpected_tx_gate, 0, sizeof(unexpected_tx_gate));
+    fixture->platform.tx_gate = &unexpected_tx_gate;
+    if (ninlil_v1_lab_peer_runtime_prepare(
+            &fixture->runtime, &runtime_config)
+        != NINLIL_V1_LAB_PEER_RUNTIME_INVALID_ARGUMENT) {
+        return 1;
+    }
+    fixture->platform.tx_gate = NULL;
+    if (ninlil_v1_lab_peer_runtime_prepare(
+            &fixture->runtime, &runtime_config)
+        != NINLIL_V1_LAB_PEER_RUNTIME_OK) {
+        return 1;
+    }
+    fixture->prepared = 1u;
+    return 0;
+}
+
+static int teardown_peer_runtime(test_peer_runtime_t *fixture)
+{
+    const ninlil_allocator_ops_t *allocator_ops = NULL;
+
+    if (fixture->prepared != 0u
+        && ninlil_v1_lab_peer_runtime_clear(&fixture->runtime)
+            != NINLIL_V1_LAB_PEER_RUNTIME_OK) {
+        return 1;
+    }
+    if (fixture->allocator != NULL) {
+        allocator_ops = ninlil_test_allocator_ops(fixture->allocator);
+    }
+    if (allocator_ops != NULL && fixture->workspace != NULL) {
+        allocator_ops->deallocate(allocator_ops->user, fixture->workspace,
+            fixture->workspace_bytes, fixture->workspace_alignment);
+    }
+    if (fixture->storage != NULL) {
+        ninlil_test_storage_destroy(fixture->storage);
+    }
+    if (fixture->entropy != NULL) {
+        ninlil_test_entropy_destroy(fixture->entropy);
+    }
+    if (fixture->execution != NULL) {
+        ninlil_test_execution_destroy(fixture->execution);
+    }
+    if (fixture->allocator != NULL
+        && ninlil_test_allocator_destroy(fixture->allocator) != 0u) {
+        return 1;
+    }
+    (void)memset(fixture, 0, sizeof(*fixture));
+    return 0;
+}
+#endif
 
 static void fill_epoch(uint8_t out[16])
 {
@@ -148,7 +316,7 @@ static int make_binding(
     size_t *encoded_length)
 {
     (void)memset(binding, 0, sizeof(*binding));
-    binding->service_count = 2u;
+    binding->service_count = 3u;
     binding->pair_generation = 7u;
     fill_endpoint(&binding->endpoint_a, 0x10u);
     fill_endpoint(&binding->endpoint_b, 0x30u);
@@ -167,6 +335,8 @@ static int make_binding(
         NINLIL_FAMILY_DESIRED_STATE, 0x70u);
     fill_service(&binding->services[1], 2u, NINLIL_V1_LAB_FLOW_B_TO_A,
         NINLIL_FAMILY_EVENT_FACT, 0x80u);
+    fill_service(&binding->services[2], 3u, NINLIL_V1_LAB_FLOW_A_TO_B,
+        NINLIL_FAMILY_DESIRED_STATE, 0x90u);
     return ninlil_v1_lab_binding_finalize(crypto, binding)
                 == NINLIL_V1_LAB_BINDING_OK
             && ninlil_v1_lab_binding_encode(crypto, binding, encoded,
@@ -815,7 +985,10 @@ static int setup_board_owner(
     const ninlil_v1_lab_binding_t *binding,
     test_pcp_t *pcp,
     ninlil_fake_byte_stream_t *stream,
-    uint8_t runtime_adopt_mode)
+    uint8_t runtime_adopt_mode,
+    uint8_t data_consumer,
+    ninlil_v1_lab_board_owner_pair_ready_fn pair_ready,
+    void *pair_ready_user)
 {
     ninlil_test_storage_config_t storage_config;
     ninlil_n6_context_pool_t pool;
@@ -874,6 +1047,9 @@ static int setup_board_owner(
     owner_config.pcp = pcp->pcp;
     owner_config.hal = node->hal;
     owner_config.live = &pcp->live;
+    owner_config.data_consumer = data_consumer;
+    owner_config.pair_ready = pair_ready;
+    owner_config.pair_ready_user = pair_ready_user;
     invalid_clock = *owner_config.clock;
     invalid_clock.now = NULL;
     owner_config.clock = &invalid_clock;
@@ -946,7 +1122,8 @@ static int run_board_owner_vertical(
     ninlil_fake_byte_stream_open_up(&host_stream, 1u);
     ninlil_fake_byte_stream_open_up(&board_stream, 1u);
     REQUIRE(setup_board_owner(&g_node_a, binding, pcp, &board_stream,
-                NINLIL_V1_LAB_ADOPT_CONTROLLER)
+                NINLIL_V1_LAB_ADOPT_CONTROLLER,
+                NINLIL_V1_LAB_BOARD_OWNER_DATA_USB, NULL, NULL)
         == 0);
     REQUIRE(setup_node(&g_node_b, binding, encoded_binding, encoded_length,
                 NINLIL_V1_LAB_SIDE_B, pcp)
@@ -1181,7 +1358,8 @@ static int run_peer_board_owner_bootstrap(test_pcp_t *pcp)
     ninlil_fake_byte_stream_open_up(&host_stream, 1u);
     ninlil_fake_byte_stream_open_up(&board_stream, 1u);
     REQUIRE(setup_board_owner(&g_node_a, &binding, pcp, &board_stream,
-                NINLIL_V1_LAB_ADOPT_PEER)
+                NINLIL_V1_LAB_ADOPT_PEER,
+                NINLIL_V1_LAB_BOARD_OWNER_DATA_USB, NULL, NULL)
         == 0);
 
     (void)memset(&host_config, 0, sizeof(host_config));
@@ -1283,6 +1461,138 @@ static int run_peer_board_owner_bootstrap(test_pcp_t *pcp)
     return 0;
 }
 
+#if TEST_PEER_RUNTIME_ENABLED
+static int run_peer_runtime_bootstrap(test_pcp_t *pcp)
+{
+    ninlil_v1_lab_binding_t binding;
+    test_peer_runtime_t peer_runtime;
+    ninlil_fake_byte_stream_t host_stream;
+    ninlil_fake_byte_stream_t board_stream;
+    ninlil_v1_usb_bridge_t host_bridge;
+    ninlil_v1_usb_bridge_config_t host_config;
+    ninlil_v1_usb_bridge_handle_t usb_handle;
+    ninlil_v1_usb_bridge_completion_t usb_completion;
+    host_capture_t capture;
+    ninlil_service_t *services[3];
+    uint8_t encoded_binding[NINLIL_V1_LAB_BINDING_MAX_BYTES];
+    size_t encoded_length = 0u;
+    uint64_t now = 1u;
+    uint32_t done = 0u;
+    uint32_t i;
+    int binding_done = 0;
+    ninlil_v1_lab_peer_runtime_status_t peer_status;
+
+    (void)memset(&binding, 0, sizeof(binding));
+    (void)memset(&peer_runtime, 0, sizeof(peer_runtime));
+    (void)memset(&capture, 0, sizeof(capture));
+    (void)memset(services, 0, sizeof(services));
+    REQUIRE(make_binding(
+                g_crypto, &binding, encoded_binding, &encoded_length)
+        == 0);
+    REQUIRE(setup_peer_runtime(&peer_runtime, pcp) == 0);
+    REQUIRE(ninlil_v1_lab_peer_runtime_step(&peer_runtime.runtime)
+        == NINLIL_V1_LAB_PEER_RUNTIME_WAITING);
+    REQUIRE(ninlil_v1_lab_peer_runtime_service(
+                &peer_runtime.runtime, 1u, &services[0])
+        == NINLIL_V1_LAB_PEER_RUNTIME_WAITING);
+
+    ninlil_fake_byte_stream_init(&host_stream);
+    ninlil_fake_byte_stream_init(&board_stream);
+    ninlil_fake_byte_stream_open_up(&host_stream, 1u);
+    ninlil_fake_byte_stream_open_up(&board_stream, 1u);
+    REQUIRE(setup_board_owner(&g_node_a, &binding, pcp, &board_stream,
+                NINLIL_V1_LAB_ADOPT_PEER,
+                NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC,
+                ninlil_v1_lab_peer_runtime_pair_ready,
+                &peer_runtime.runtime)
+        == 0);
+
+    (void)memset(&host_config, 0, sizeof(host_config));
+    host_config.role = NINLIL_V1_USB_BRIDGE_ROLE_HOST_CONTROLLER;
+    host_config.stream = &host_stream.view;
+    host_config.fabric_handoff = capture_host_packet;
+    host_config.board_info = capture_board_info;
+    host_config.callback_user = &capture;
+    REQUIRE(ninlil_v1_usb_bridge_init(&host_bridge, &host_config)
+        == NINLIL_V1_USB_BRIDGE_OK);
+    REQUIRE(ninlil_v1_usb_bridge_step(&host_bridge, now, 0u)
+        == NINLIL_V1_USB_BRIDGE_OK);
+    REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+        == NINLIL_V1_LAB_BOARD_OWNER_OK);
+    now += 1u;
+    for (i = 0u; i < 16u && capture.board_info_count == 0u; ++i, ++now) {
+        REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+        REQUIRE(transfer_fake_stream(&board_stream, &host_stream) == 0);
+        REQUIRE(ninlil_v1_usb_bridge_step(&host_bridge, now, 0u)
+            == NINLIL_V1_USB_BRIDGE_OK);
+    }
+    REQUIRE(capture.board_info_count == 1u);
+    REQUIRE(ninlil_v1_usb_bridge_submit_binding(&host_bridge,
+                encoded_binding, encoded_length, now + 1000u, &usb_handle)
+        == NINLIL_V1_USB_BRIDGE_OK);
+    for (i = 0u; i < 80u; ++i, ++now) {
+        REQUIRE(ninlil_v1_usb_bridge_step(&host_bridge, now, 0u)
+            == NINLIL_V1_USB_BRIDGE_OK);
+        REQUIRE(transfer_fake_stream(&host_stream, &board_stream) == 0);
+        REQUIRE(ninlil_v1_lab_board_owner_step(&g_board_owner, now, 0u)
+            == NINLIL_V1_LAB_BOARD_OWNER_OK);
+        REQUIRE(transfer_fake_stream(&board_stream, &host_stream) == 0);
+        if (ninlil_v1_usb_bridge_take_completion(
+                &host_bridge, usb_handle, &usb_completion)
+            == NINLIL_V1_USB_BRIDGE_OK) {
+            binding_done = 1;
+            break;
+        }
+    }
+    REQUIRE(binding_done != 0
+        && usb_completion.remote_status_code == NINLIL_NVB1_STATUS_INSTALLED
+        && g_board_owner.data_consumer
+            == NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC
+        && !ninlil_v1_lab_board_owner_is_fenced(&g_board_owner));
+
+    peer_status = ninlil_v1_lab_peer_runtime_step(&peer_runtime.runtime);
+    if (peer_status != NINLIL_V1_LAB_PEER_RUNTIME_OK) {
+        (void)fprintf(stderr, "peer runtime activation status=%u\n",
+            (unsigned int)peer_status);
+    }
+    REQUIRE(peer_status == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+    REQUIRE(ninlil_v1_lab_peer_runtime_service(
+                &peer_runtime.runtime, 1u, &services[0])
+        == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+    REQUIRE(ninlil_v1_lab_peer_runtime_service(
+                &peer_runtime.runtime, 2u, &services[1])
+        == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+    REQUIRE(ninlil_v1_lab_peer_runtime_service(
+                &peer_runtime.runtime, 3u, &services[2])
+        == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+    REQUIRE(services[0] != NULL && services[1] != NULL && services[2] != NULL
+        && services[0] != services[1] && services[0] != services[2]
+        && services[1] != services[2]);
+    REQUIRE(ninlil_v1_lab_peer_runtime_service(
+                &peer_runtime.runtime, 4u, &services[0])
+        == NINLIL_V1_LAB_PEER_RUNTIME_SERVICE);
+
+    REQUIRE(ninlil_v1_lab_peer_runtime_close_begin(&peer_runtime.runtime)
+        == NINLIL_V1_LAB_PEER_RUNTIME_OK);
+    for (i = 0u; i < 64u && done == 0u; ++i) {
+        ninlil_v1_lab_peer_runtime_status_t status =
+            ninlil_v1_lab_peer_runtime_close_step(
+                &peer_runtime.runtime, &done);
+        REQUIRE(status == NINLIL_V1_LAB_PEER_RUNTIME_OK
+            || status == NINLIL_V1_LAB_PEER_RUNTIME_CLOSING);
+    }
+    REQUIRE(done == 1u);
+    REQUIRE(teardown_peer_runtime(&peer_runtime) == 0);
+    REQUIRE(teardown_board_owner(&g_node_a) == 0);
+    ninlil_v1_usb_bridge_clear(&host_bridge);
+    ninlil_fake_byte_stream_close(&host_stream);
+    ninlil_fake_byte_stream_close(&board_stream);
+    ninlil_v1_lab_binding_clear(&binding);
+    return 0;
+}
+#endif
+
 static void teardown_node(test_node_t *node)
 {
     ninlil_sx1262_error_t sx_error;
@@ -1358,6 +1668,9 @@ int main(void)
                 &binding, encoded_binding, encoded_length, &pcp)
         == 0);
     REQUIRE(run_peer_board_owner_bootstrap(&pcp) == 0);
+#if TEST_PEER_RUNTIME_ENABLED
+    REQUIRE(run_peer_runtime_bootstrap(&pcp) == 0);
+#endif
     REQUIRE(setup_node(&g_node_a, &binding, encoded_binding, encoded_length,
                 NINLIL_V1_LAB_SIDE_A, &pcp)
         == 0);

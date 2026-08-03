@@ -75,6 +75,7 @@ set(NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES
 set(NINLIL_V1_LAB_RADIO_PATH_RELATIVE_SOURCES
     src/transport/fabric_v1/v1_lab_radio_packet_link.c
     src/transport/fabric_v1/v1_lab_board_owner.c
+    src/transport/fabric_v1/v1_lab_peer_runtime.c
 )
 
 # Exact N6 production private set — single authority (define once).

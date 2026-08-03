@@ -283,6 +283,15 @@ its state on close. It retains no callable pointer to a live bootloader entropy
 source after startup. A future Wi-Fi composition may replace this contract in
 a separate ADR; it does not silently change NRA1.
 
+A same-task authority reconstruction within the same boot reuses the already
+live clock and DRBG. It must not re-enable the bootloader-RNG adapter, reseed
+the DRBG or mint another boot clock epoch. This diagnostic reconstruction is
+not restart evidence and does not change the one-seed-per-boot contract. The
+owner records the one seed attempt before drawing from the boot source,
+independently of DRBG availability. A failed initialization retires the boot
+source and a later reconstruction fails permanently, just like a DRBG that
+retired after successful startup; neither case is treated as an unseeded boot.
+
 ### 6. Airtime and deterministic V1 schedule
 
 NRW1 SINGLE adds exactly 65 bytes around its application body. The repository

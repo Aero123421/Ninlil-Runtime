@@ -6,6 +6,7 @@
 #include "v1_lab_binding.h"
 
 #include "ninlil/fabric_v1.h"
+#include "ninlil/service.h"
 
 #include <stdint.h>
 
@@ -14,6 +15,9 @@ extern "C" {
 #endif
 
 #define NINLIL_V1_LAB_FABRIC_PACKET_MAX ((uint32_t)760u)
+#define NINLIL_V1_LAB_APPLICATION_MAX ((uint32_t)128u)
+#define NINLIL_V1_LAB_ADMISSION_WINDOW_MS ((uint32_t)10000u)
+#define NINLIL_V1_LAB_ADMISSIONS_PER_WINDOW ((uint32_t)10u)
 
 typedef uint32_t ninlil_v1_lab_fabric_status_t;
 #define NINLIL_V1_LAB_FABRIC_OK ((ninlil_v1_lab_fabric_status_t)0u)
@@ -40,6 +44,13 @@ ninlil_v1_lab_fabric_status_t ninlil_v1_lab_fabric_build_service(
     uint8_t row_index,
     ninlil_fabric_path_policy_v1_t *out_policy,
     ninlil_fabric_authority_binding_v1_t *out_authority);
+
+/* Fixed Foundation Service contract for one exact binding row. */
+ninlil_v1_lab_fabric_status_t ninlil_v1_lab_fabric_build_descriptor(
+    const ninlil_v1_lab_binding_t *binding,
+    const uint8_t local_runtime_id[16],
+    uint8_t row_index,
+    ninlil_service_descriptor_t *out_descriptor);
 
 #ifdef __cplusplus
 }

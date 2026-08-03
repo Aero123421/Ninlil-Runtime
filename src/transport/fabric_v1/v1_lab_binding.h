@@ -18,6 +18,7 @@ extern "C" {
 #define NINLIL_V1_LAB_SERVICE_FIXED_BYTES ((size_t)134u)
 #define NINLIL_V1_LAB_SERVICE_MAX ((uint8_t)3u)
 #define NINLIL_V1_LAB_TEXT_MAX ((uint8_t)16u)
+#define NINLIL_V1_LAB_EVIDENCE_GRACE_MAX_MS UINT64_C(60000)
 
 #define NINLIL_V1_LAB_FLOW_A_TO_B ((uint8_t)1u)
 #define NINLIL_V1_LAB_FLOW_B_TO_A ((uint8_t)2u)

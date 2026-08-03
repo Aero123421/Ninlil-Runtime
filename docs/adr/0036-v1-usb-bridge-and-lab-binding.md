@@ -224,7 +224,9 @@ by three 1..16-byte UTF-8/opaque text IDs:
 The decoder recomputes the existing Service identity digest and rejects
 duplicate identities/slots, unsorted rows, trailing bytes, unsupported
 family/direction/class, invalid endpoint shape, context ID 0/`UINT32_MAX` and
-zero secrets. EventFact evidence grace is zero; DesiredState grace is retained.
+zero secrets. EventFact evidence grace is zero. DesiredState grace is retained
+and is `0..60000` ms; its Runtime descriptor always advertises the fixed,
+non-zero 60000 ms maximum, including when the exact binding row selects zero.
 
 `pair_binding_digest` is SHA-256 of the exact binding payload. It is the
 provisioning/storage identity and the Hop `attachment_id` input. Fabric
@@ -605,6 +607,53 @@ binding contradiction or a fenced provisioner fences the whole owner and
 prevents further RF admission. Physical USB/RF operation remains a separate
 HIL gate.
 
+The owner has exactly two compile-time selected data consumers. A USB-parent
+uses the RF-to-USB behavior above. A generic peer uses `local Fabric`: USB is
+retained only for `BOARD_INFO` and exact binding installation, USB
+`FABRIC_PACKET` is rejected, and an installed RF receive loan is left for the
+peer's registered Fabric packet-link instead of being drained by the board
+owner. The selection is explicit at owner initialization and cannot change in
+the same boot. Local-Fabric mode requires one bounded pair-ready callback; a
+callback failure fences the owner after the already-durable binding rather
+than falling back to USB forwarding.
+
+### 7.1 Fixed peer Runtime composition
+
+The generic-peer image owns one private `V1 LAB peer Runtime` object. It is a
+fixed composition seam, not an installed API, role manager, plugin system or
+application framework. Before provisioning it owns no Runtime. The board
+owner's pair-ready callback copy-retains the first exact binding and the next
+caller-driven step creates one endpoint `ninlil_composition_v1_t` using the
+peer endpoint adopted by the provisioner. It registers:
+
+- one RF packet-link for each distinct binding flow (at most two);
+- the exact path policy and authority row already derived from the binding;
+- every Service row in that binding (one to three) as an independent Runtime
+  Service; and
+- one caller-supplied, application-neutral delivery callback table for those
+  Services. The application may obtain a Service handle by its exact binding
+  slot to originate EventFact data.
+
+Service descriptors copy the binding's namespace, Service, schema, revision,
+digest, family and direction. Their remaining V1 contract is fixed: payload
+1..128 bytes, one target, application deduplication, required-evidence
+custody, eight attempts per retry cycle and bounded 10-second admission. A
+DesiredState Service admits Controller-origin downlink and an EventFact
+Service admits peer-origin uplink; application-specific vocabulary is not part
+of the descriptor builder. DesiredState's descriptor maximum evidence grace is
+the fixed 60000 ms binding ceiling, while EventFact keeps zero.
+
+The peer object supplies only the two missing fixed Runtime providers around
+the caller's allocator, execution, clock, entropy and Storage: a 1..128-byte
+Application/760-byte Receipt TxGate and a binding-scoped EventFact origin
+grant. Both use the adopted endpoint and trusted boot clock; only the TxGate
+draws from the configured entropy provider. The binding-derived origin grant
+does not invent random policy state. Neither provider creates a general policy
+engine. Progress remains one board-owner step followed by one bounded
+Composition step on the same owner task. Close unregisters the fixed paths
+before the normative Composition close/destroy sequence and never frees
+borrowed platform, radio or workspace storage early.
+
 ### 8. ESP32-S3 diagnostic board profiles
 
 The repository provides two default-off `radio_hil_app` build profiles for
@@ -614,13 +663,21 @@ manager. Both enable the existing V1 LAB packet-link, open the native USB CDC
 control stream and drive exactly one fixed board owner from the `app_main` task.
 UART remains the diagnostic console. Neither image has a compiled Runtime ID,
 and neither admits RF traffic until section 2's first valid binding adoption.
+The peer profile additionally creates the fixed peer Runtime composition from
+section 7.1 after that adoption; the USB-parent profile does not create a
+second Runtime.
 
-This profile deliberately uses the session LAB Storage because the current ESP
-flash adapter does not attest a successful `FULL` commit. It allocates that one
-fixed Storage object from PSRAM at startup and fails closed if allocation or
-initialization fails. Its exact bounds are three namespaces, 32 entries per
-namespace, 48-byte keys and 1024-byte values, sufficient for PCP, N6 and two
-NLB1 pair records. It has no growth policy or fallback store.
+This profile deliberately uses session LAB Storage because the current ESP
+flash adapter does not attest a successful `FULL` commit. The USB-parent
+allocates one fixed provisioning ledger from PSRAM. The generic peer allocates
+that same provisioning ledger plus one separately namespaced Runtime/Fabric
+ledger; separating them prevents the fixed provisioning bounds from being
+silently consumed by application state. Each ledger has the same exact bounds:
+three namespaces, 32 entries per namespace, 48-byte keys and 1024-byte values.
+The provisioning ledger is sufficient for PCP, N6 and two NLB1 pair records;
+the peer ledger is sufficient for the one fixed Composition. Allocation or
+initialization failure is fail-closed. Neither ledger has a growth policy or
+fallback store.
 
 The profile is marked `session_diag`, is never a release or restart-durability
 claim and does not satisfy ADR-0034's flash-FULL acceptance requirement.
@@ -649,8 +706,9 @@ retain that nonclaim.
    directions, APPLIED correlation, duplicate, timeout, tamper, wrong key,
    wrong binding/Service and restart/reprovision.
 6. The ESP32-S3 target compiles/links the same codec, owner and bridge in both
-   USB-parent and generic-peer profiles with no test-only provenance or public
-   ABI exposure.
+   USB-parent and generic-peer profiles, and the peer profile also links the
+   fixed Runtime composition, with no test-only provenance or public ABI
+   exposure.
 
 Physical USB/RF evidence remains `NOT_RUN` until ADR-0034's three-board run.
 

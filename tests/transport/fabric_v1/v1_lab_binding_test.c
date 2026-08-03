@@ -379,6 +379,32 @@ static int test_distinct_endpoint_clock_epochs(
     return 0;
 }
 
+static int test_descriptor_evidence_grace_boundary(
+    ninlil_r7_crypto_provider *crypto)
+{
+    ninlil_v1_lab_binding_t binding;
+    ninlil_service_descriptor_t descriptor;
+
+    fill_binding(&binding, 1u, 4u);
+    binding.services[0].evidence_grace_ms = 0u;
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
+        == NINLIL_V1_LAB_BINDING_OK);
+    REQUIRE(ninlil_v1_lab_fabric_build_descriptor(&binding,
+                binding.endpoint_b.runtime_id, 0u, &descriptor)
+        == NINLIL_V1_LAB_FABRIC_OK);
+    REQUIRE(descriptor.maximum_evidence_grace_ms
+        == NINLIL_V1_LAB_EVIDENCE_GRACE_MAX_MS);
+    ninlil_v1_lab_binding_clear(&binding);
+
+    fill_binding(&binding, 1u, 4u);
+    binding.services[0].evidence_grace_ms =
+        NINLIL_V1_LAB_EVIDENCE_GRACE_MAX_MS + 1u;
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &binding)
+        == NINLIL_V1_LAB_BINDING_SEMANTIC);
+    ninlil_v1_lab_binding_clear(&binding);
+    return 0;
+}
+
 static int test_closed_fabric_builder(ninlil_r7_crypto_provider *crypto)
 {
     ninlil_v1_lab_binding_t binding;
@@ -624,6 +650,7 @@ int main(void)
     REQUIRE(test_maximum_and_e2e_projection(&crypto) == 0);
     REQUIRE(test_rejection_is_atomic(&crypto) == 0);
     REQUIRE(test_distinct_endpoint_clock_epochs(&crypto) == 0);
+    REQUIRE(test_descriptor_evidence_grace_boundary(&crypto) == 0);
     REQUIRE(test_closed_fabric_builder(&crypto) == 0);
     (void)fprintf(stdout, "v1_lab_binding_test OK\n");
     return 0;

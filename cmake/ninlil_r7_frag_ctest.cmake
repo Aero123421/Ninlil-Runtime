@@ -337,6 +337,7 @@ if(TARGET ninlil_n6_store_testbuild)
     add_executable(ninlil_v1_lab_radio_packet_link_vertical_test
         EXCLUDE_FROM_ALL
         tests/transport/fabric_v1/v1_lab_radio_packet_link_vertical_test.c
+        ${NINLIL_COMPOSITION_V1_RELATIVE_SOURCES}
         tests/support/in_memory_storage.c
         tests/support/platform_basic_fixtures.c
         tests/support/deterministic_entropy.c

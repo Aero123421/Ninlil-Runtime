@@ -19,6 +19,7 @@ idf_component_register(
     INCLUDE_DIRS "."
     PRIV_INCLUDE_DIRS ${NINLIL_RADIO_HIL_PRIV_INCLUDES}
     REQUIRES ninlil nvs_flash driver esp_timer
+    PRIV_REQUIRES mbedtls
 )
 
 # Stack-usage + frame ceiling on radio_hil composition (PCP/R5 path).

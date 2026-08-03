@@ -162,6 +162,14 @@ static void pair_installed(
     }
     owner->pair_count += 1u;
     ninlil_v1_lab_binding_clear(&binding);
+    if (owner->data_consumer
+            == NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC
+        && (owner->pair_ready == NULL
+            || owner->pair_ready(owner->pair_ready_user, &owner->radio,
+                   pair_slot, encoded_binding, encoded_length)
+                != 0)) {
+        owner_fence(owner);
+    }
 }
 
 static uint32_t fabric_handoff(
@@ -175,6 +183,10 @@ static uint32_t fabric_handoff(
         || owner->radio_ready == 0u || encoded_packet == NULL
         || encoded_length > UINT32_MAX) {
         return NINLIL_NVB1_STATUS_REJECTED;
+    }
+    if (owner->data_consumer
+        == NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC) {
+        return NINLIL_NVB1_STATUS_UNSUPPORTED;
     }
     status = ninlil_v1_lab_radio_packet_link_board_submit(
         &owner->radio, encoded_packet, (uint32_t)encoded_length);
@@ -208,6 +220,14 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_init(
         || !clock_ops_valid(config->clock) || config->phy == NULL
         || config->pcp == NULL || config->hal == NULL
         || config->live == NULL || config->provisioner->active == 0u
+        || (config->data_consumer != NINLIL_V1_LAB_BOARD_OWNER_DATA_USB
+            && config->data_consumer
+                != NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC)
+        || (config->data_consumer
+                    == NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC
+            && config->pair_ready == NULL)
+        || (config->data_consumer == NINLIL_V1_LAB_BOARD_OWNER_DATA_USB
+            && config->pair_ready != NULL)
         || ninlil_v1_lab_provisioner_is_fenced(config->provisioner)
         || (config->local_runtime_id == NULL
             && (config->provisioner->runtime_adopt_mode
@@ -231,6 +251,9 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_init(
     owner->crypto = *config->crypto;
     owner->clock = *config->clock;
     owner->live = *config->live;
+    owner->data_consumer = config->data_consumer;
+    owner->pair_ready = config->pair_ready;
+    owner->pair_ready_user = config->pair_ready_user;
     if (config->local_runtime_id != NULL) {
         if (ninlil_v1_lab_radio_packet_link_init(&owner->radio,
                 config->crypto, config->local_runtime_id, config->clock,
@@ -407,6 +430,10 @@ ninlil_v1_lab_board_owner_status_t ninlil_v1_lab_board_owner_step(
         return radio_status == NINLIL_V1_LAB_RADIO_LINK_PHY
             ? NINLIL_V1_LAB_BOARD_OWNER_RADIO
             : NINLIL_V1_LAB_BOARD_OWNER_FENCED;
+    }
+    if (owner->data_consumer
+        == NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC) {
+        return NINLIL_V1_LAB_BOARD_OWNER_OK;
     }
     if (owner->usb_receive_pending != 0u) {
         return NINLIL_V1_LAB_BOARD_OWNER_OK;

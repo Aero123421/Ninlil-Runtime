@@ -16,6 +16,9 @@ extern "C" {
 
 #define NINLIL_V1_LAB_BOARD_OWNER_USB_DEADLINE_MS ((uint64_t)5000u)
 
+#define NINLIL_V1_LAB_BOARD_OWNER_DATA_USB ((uint8_t)1u)
+#define NINLIL_V1_LAB_BOARD_OWNER_DATA_LOCAL_FABRIC ((uint8_t)2u)
+
 typedef uint32_t ninlil_v1_lab_board_owner_status_t;
 #define NINLIL_V1_LAB_BOARD_OWNER_OK \
     ((ninlil_v1_lab_board_owner_status_t)0u)
@@ -32,6 +35,13 @@ typedef uint32_t ninlil_v1_lab_board_owner_status_t;
 #define NINLIL_V1_LAB_BOARD_OWNER_USB \
     ((ninlil_v1_lab_board_owner_status_t)6u)
 
+typedef int (*ninlil_v1_lab_board_owner_pair_ready_fn)(
+    void *user,
+    ninlil_v1_lab_radio_packet_link_t *radio,
+    uint8_t pair_slot,
+    const uint8_t *encoded_binding,
+    size_t encoded_length);
+
 typedef struct ninlil_v1_lab_board_owner_config {
     ninlil_byte_stream_t *usb_stream;
     ninlil_v1_lab_provisioner_t *provisioner;
@@ -43,6 +53,9 @@ typedef struct ninlil_v1_lab_board_owner_config {
     ninlil_pcp_t *pcp;
     ninlil_radio_hal_t *hal;
     const ninlil_pcp_live_profile_t *live;
+    uint8_t data_consumer;
+    ninlil_v1_lab_board_owner_pair_ready_fn pair_ready;
+    void *pair_ready_user;
 } ninlil_v1_lab_board_owner_config_t;
 
 typedef struct ninlil_v1_lab_board_owner_pair {
@@ -57,7 +70,8 @@ typedef struct ninlil_v1_lab_board_owner {
     uint8_t pair_count;
     uint8_t usb_receive_pending;
     uint8_t radio_ready;
-    uint8_t reserved_state[3];
+    uint8_t data_consumer;
+    uint8_t reserved_state[2];
     ninlil_v1_lab_provisioner_t *provisioner;
     ninlil_pcp_t *pcp;
     ninlil_radio_hal_t *hal;
@@ -65,6 +79,8 @@ typedef struct ninlil_v1_lab_board_owner {
     ninlil_r7_crypto_provider crypto;
     ninlil_clock_ops_t clock;
     ninlil_pcp_live_profile_t live;
+    ninlil_v1_lab_board_owner_pair_ready_fn pair_ready;
+    void *pair_ready_user;
     ninlil_v1_usb_bridge_handle_t usb_receive_handle;
     void *radio_receive_token;
     ninlil_v1_usb_bridge_t bridge;

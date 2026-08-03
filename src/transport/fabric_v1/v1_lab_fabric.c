@@ -436,3 +436,93 @@ ninlil_v1_lab_fabric_status_t ninlil_v1_lab_fabric_build_service(
     clear_bytes(&authority, sizeof(authority));
     return NINLIL_V1_LAB_FABRIC_OK;
 }
+
+ninlil_v1_lab_fabric_status_t ninlil_v1_lab_fabric_build_descriptor(
+    const ninlil_v1_lab_binding_t *binding,
+    const uint8_t local_runtime_id[16],
+    uint8_t row_index,
+    ninlil_service_descriptor_t *out_descriptor)
+{
+    ninlil_service_descriptor_t descriptor;
+    const ninlil_v1_lab_endpoint_t *local;
+    const ninlil_v1_lab_service_row_t *row;
+    uint8_t local_side = 0u;
+
+    if (binding == NULL || local_runtime_id == NULL
+        || out_descriptor == NULL || row_index >= binding->service_count
+        || binding->service_count == 0u
+        || binding->service_count > NINLIL_V1_LAB_SERVICE_MAX
+        || ninlil_v1_lab_binding_local_side(
+               binding, local_runtime_id, &local_side)
+            != NINLIL_V1_LAB_BINDING_OK) {
+        return NINLIL_V1_LAB_FABRIC_INVALID_ARGUMENT;
+    }
+    local = endpoint_for_side(binding, local_side);
+    row = &binding->services[row_index];
+    if (local == NULL || row->namespace_length == 0u
+        || row->service_length == 0u || row->schema_length == 0u) {
+        return NINLIL_V1_LAB_FABRIC_BINDING;
+    }
+
+    (void)memset(&descriptor, 0, sizeof(descriptor));
+    descriptor.abi_version = NINLIL_ABI_VERSION;
+    descriptor.struct_size = (uint16_t)sizeof(descriptor);
+    descriptor.namespace_id.data = row->namespace_id;
+    descriptor.namespace_id.length = row->namespace_length;
+    descriptor.service_id.data = row->service_id;
+    descriptor.service_id.length = row->service_length;
+    descriptor.schema_id.data = row->schema_id;
+    descriptor.schema_id.length = row->schema_length;
+    descriptor.descriptor_revision = row->descriptor_revision;
+    descriptor.descriptor_digest.algorithm = NINLIL_DIGEST_SHA256;
+    (void)memcpy(descriptor.descriptor_digest.bytes,
+        row->descriptor_digest, sizeof(row->descriptor_digest));
+    (void)memcpy(descriptor.local_application_instance_id.bytes,
+        local->application_id, sizeof(local->application_id));
+    descriptor.schema_major = row->schema_major;
+    descriptor.schema_minor_min = row->schema_minor;
+    descriptor.schema_minor_max = row->schema_minor;
+    descriptor.family = row->family;
+    descriptor.direction = row->direction;
+    descriptor.admission_authority =
+        row->family == NINLIL_FAMILY_DESIRED_STATE
+        ? NINLIL_AUTHORITY_CONTROLLER_ONLY
+        : NINLIL_AUTHORITY_ORIGIN_WITH_GRANT;
+    descriptor.apply_contract = NINLIL_APPLY_APPLICATION_DEDUP;
+    descriptor.custody_policy = NINLIL_CUSTODY_UNTIL_REQUIRED_EVIDENCE;
+    descriptor.supported_evidence_mask =
+        NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_RECEIVED)
+        | NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_DURABLY_RECORDED)
+        | NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_APPLIED)
+        | NINLIL_EVIDENCE_MASK(NINLIL_EVIDENCE_VERIFIED);
+    descriptor.logical_payload_limit = NINLIL_V1_LAB_APPLICATION_MAX;
+    descriptor.target_limit = 1u;
+    descriptor.inflight_limit = 8u;
+    descriptor.max_attempts_per_target_per_cycle =
+        NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE;
+    descriptor.admission_window_ms = NINLIL_V1_LAB_ADMISSION_WINDOW_MS;
+    descriptor.max_admissions_per_window =
+        NINLIL_V1_LAB_ADMISSIONS_PER_WINDOW;
+    descriptor.max_payload_bytes_per_window =
+        NINLIL_V1_LAB_APPLICATION_MAX
+        * NINLIL_V1_LAB_ADMISSIONS_PER_WINDOW;
+    descriptor.attempt_receipt_timeout_ms = 1000u;
+    descriptor.retry_backoff_ms = 100u;
+    descriptor.application_completion_timeout_ms = 60000u;
+    descriptor.required_dedup_window_ms = 60000u;
+    if (row->family == NINLIL_FAMILY_DESIRED_STATE) {
+        descriptor.minimum_deadline_ms = 1u;
+        descriptor.maximum_deadline_ms = 60000u;
+        descriptor.maximum_evidence_grace_ms =
+            NINLIL_V1_LAB_EVIDENCE_GRACE_MAX_MS;
+    } else if (row->family == NINLIL_FAMILY_EVENT_FACT) {
+        descriptor.minimum_deadline_ms = NINLIL_NO_DEADLINE;
+        descriptor.maximum_deadline_ms = NINLIL_NO_DEADLINE;
+    } else {
+        clear_bytes(&descriptor, sizeof(descriptor));
+        return NINLIL_V1_LAB_FABRIC_BINDING;
+    }
+    *out_descriptor = descriptor;
+    clear_bytes(&descriptor, sizeof(descriptor));
+    return NINLIL_V1_LAB_FABRIC_OK;
+}
