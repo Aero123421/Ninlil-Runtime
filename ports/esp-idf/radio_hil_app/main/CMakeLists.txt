@@ -6,6 +6,8 @@ get_filename_component(NINLIL_RADIO_HIL_REPO_ROOT
 set(NINLIL_RADIO_HIL_PRIV_INCLUDES
     "${NINLIL_RADIO_HIL_REPO_ROOT}/src/radio"
     "${NINLIL_RADIO_HIL_REPO_ROOT}/src/model"
+    "${NINLIL_RADIO_HIL_REPO_ROOT}/src/transport"
+    "${NINLIL_RADIO_HIL_REPO_ROOT}/src/transport/fabric_v1"
     "${NINLIL_RADIO_HIL_REPO_ROOT}/drivers/sx126x"
     "${NINLIL_RADIO_HIL_REPO_ROOT}/ports/esp-idf/src"
     "${NINLIL_RADIO_HIL_REPO_ROOT}/ports/esp-idf/include"

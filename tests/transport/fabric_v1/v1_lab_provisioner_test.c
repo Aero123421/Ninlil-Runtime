@@ -2,6 +2,7 @@
 
 #include "in_memory_storage.h"
 #include "n6_crypto_provider.h"
+#include "pcp_lab_session_ledger.h"
 #include "r7_crypto_openssl3.h"
 #include "v1_lab_binding.h"
 
@@ -29,6 +30,8 @@ typedef struct test_n6 {
     uint8_t pool_bytes[4096u];
     ninlil_n6_t *n6;
 } test_n6_t;
+
+static ninlil_pcp_lab_session_ledger_t g_session_ledger;
 
 static void fill_bytes(uint8_t *out, size_t length, uint8_t seed)
 {
@@ -685,6 +688,61 @@ static int test_controller_identity_adoption(
     return 0;
 }
 
+static int test_session_ledger_v1_capacity(
+    const ninlil_r7_crypto_provider *crypto)
+{
+    static const uint8_t pcp_namespace[] = {
+        'n', 'i', 'n', 'l', 'i', 'l', '.', 'p', 'c', 'p'};
+    const ninlil_storage_ops_t *ops = NULL;
+    ninlil_storage_handle_t pcp_handle = NULL;
+    ninlil_bytes_view_t pcp_name;
+    test_n6_t n6;
+    ninlil_v1_lab_provisioner_t provisioner;
+    ninlil_v1_lab_binding_t first;
+    ninlil_v1_lab_binding_t second;
+    ninlil_v1_lab_n6_handles_t handles;
+    ninlil_r2_authority_clock_result_t sample;
+
+    REQUIRE(ninlil_pcp_lab_session_ledger_object_bytes()
+        <= sizeof(g_session_ledger));
+    REQUIRE(ninlil_pcp_lab_session_ledger_init(&g_session_ledger, &ops) == 0);
+    REQUIRE(ops != NULL);
+    pcp_name.data = pcp_namespace;
+    pcp_name.length = (uint32_t)sizeof(pcp_namespace);
+    REQUIRE(ops->open(ops->user, pcp_name, NINLIL_STORAGE_SCHEMA_M1A,
+                &pcp_handle)
+        == NINLIL_STORAGE_OK);
+    REQUIRE(pcp_handle != NULL);
+    ops->close(ops->user, pcp_handle);
+
+    fill_binding(&first, 0x30u, 1u, 10u, 1u, 0x11u);
+    fill_binding(&second, 0x50u, 2u, 10u, 2u, 0x51u);
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &first)
+        == NINLIL_V1_LAB_BINDING_OK);
+    REQUIRE(ninlil_v1_lab_binding_finalize(crypto, &second)
+        == NINLIL_V1_LAB_BINDING_OK);
+    fill_class_d(&sample, first.endpoint_a.clock_epoch_id);
+    REQUIRE(init_n6(&n6) == 0);
+    REQUIRE(ninlil_v1_lab_provisioner_init_controller(&provisioner,
+                n6.n6, ops, ninlil_n6_crypto_host_ops(), crypto, &sample)
+        == NINLIL_V1_LAB_PROVISION_OK);
+    REQUIRE(ninlil_v1_lab_provisioner_install_pair(&provisioner,
+                first.raw, first.raw_length, &handles)
+        == NINLIL_V1_LAB_PROVISION_OK);
+    REQUIRE(ninlil_v1_lab_provisioner_install_pair(&provisioner,
+                second.raw, second.raw_length, &handles)
+        == NINLIL_V1_LAB_PROVISION_OK);
+    REQUIRE(provisioner.active_pair_count == 2u
+        && provisioner.floor_count == 2u
+        && !ninlil_v1_lab_provisioner_is_fenced(&provisioner));
+
+    ninlil_v1_lab_provisioner_clear(&provisioner);
+    ninlil_v1_lab_binding_clear(&first);
+    ninlil_v1_lab_binding_clear(&second);
+    ninlil_pcp_lab_session_ledger_shutdown(&g_session_ledger);
+    return 0;
+}
+
 int main(void)
 {
     ninlil_r7_crypto_provider crypto;
@@ -698,6 +756,7 @@ int main(void)
     REQUIRE(test_publication_commit_unknown(&crypto, 0) == 0);
     REQUIRE(test_publication_commit_unknown(&crypto, 1) == 0);
     REQUIRE(test_controller_identity_adoption(&crypto) == 0);
+    REQUIRE(test_session_ledger_v1_capacity(&crypto) == 0);
     (void)fprintf(stdout, "v1_lab_provisioner_test OK\n");
     return 0;
 }

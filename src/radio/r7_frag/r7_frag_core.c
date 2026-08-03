@@ -700,7 +700,7 @@ ninlil_r7_frag_status ninlil_r7_frag_reasm_admit_cont(
     uint32_t offset;
     uint32_t expect_len;
     uint64_t new_idle;
-    uint64_t new_due;
+    uint64_t new_due = 0u;
     ninlil_r7_frag_status st;
 
     if (eng == NULL || provider == NULL || body == NULL || chunk == NULL

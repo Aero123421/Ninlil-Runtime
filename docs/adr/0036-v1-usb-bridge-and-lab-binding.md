@@ -527,6 +527,29 @@ binding contradiction or a fenced provisioner fences the whole owner and
 prevents further RF admission. Physical USB/RF operation remains a separate
 HIL gate.
 
+### 7. ESP32-S3 diagnostic board profile
+
+The repository provides one default-off `radio_hil_app` board profile for
+physical USB/RF bring-up. It enables the existing V1 LAB packet-link, opens the
+native USB CDC control stream and drives exactly one fixed board owner from the
+`app_main` task. UART remains the diagnostic console. The image has no compiled
+Controller Runtime ID and admits no RF traffic until section 2's first valid
+binding adoption.
+
+This profile deliberately uses the session LAB Storage because the current ESP
+flash adapter does not attest a successful `FULL` commit. It allocates that one
+fixed Storage object from PSRAM at startup and fails closed if allocation or
+initialization fails. Its exact bounds are three namespaces, 32 entries per
+namespace, 48-byte keys and 1024-byte values, sufficient for PCP, N6 and two
+NLB1 pair records. It has no growth policy or fallback store.
+
+The profile is marked `session_diag`, is never a release or restart-durability
+claim and does not satisfy ADR-0034's flash-FULL acceptance requirement.
+Power-cycle reprovisioning is required. Its purpose is to close target wiring
+and enable physical USB/RF diagnosis while the independently gated flash-FULL
+proof remains pending; software or hardware evidence from this profile must
+retain that nonclaim.
+
 ## Acceptance before Accepted
 
 1. NVB1 codec KATs cover all kinds/bounds, sequence consumption/fence and

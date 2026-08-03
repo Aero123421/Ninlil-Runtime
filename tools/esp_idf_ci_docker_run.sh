@@ -810,4 +810,39 @@ done
 python3 tools/sx1262_radio_hil_protocol.py not-run-evidence \
   --out-json ports/esp-idf/radio_hil_app/build/ninlil_radio_hil_physical.json
 echo "SX1262 radio_hil official amd64 compile/link + multi-chain stack gate OK"
+
+# Default-off V1 diagnostic board profile: compile the real USB + single-hop
+# owner in a separate build. This proves target wiring only; it is deliberately
+# session-backed and must not be confused with the release/power-cut profile.
+(
+  cd ports/esp-idf/radio_hil_app
+  idf.py -B build-v1-board \
+    -D SDKCONFIG=build-v1-board/sdkconfig.v1-board \
+    -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.v1-board.defaults" \
+    build
+)
+V1_BOARD_DIR=ports/esp-idf/radio_hil_app/build-v1-board
+V1_BOARD_ELF="${V1_BOARD_DIR}/ninlil_radio_hil.elf"
+V1_BOARD_SDK="${V1_BOARD_DIR}/sdkconfig.v1-board"
+test -s "${V1_BOARD_ELF}"
+for config in \
+  CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE \
+  CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH \
+  CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG \
+  CONFIG_NINLIL_RADIO_HIL_V1_BOARD
+do
+  grep -E "^${config}=y$" "${V1_BOARD_SDK}"
+done
+xtensa-esp32s3-elf-nm "${V1_BOARD_ELF}" > "${V1_BOARD_DIR}/ninlil_v1_board.nm.txt"
+for sym in \
+  app_main \
+  ninlil_esp_idf_usb_cdc_open \
+  ninlil_pcp_lab_session_ledger_init \
+  ninlil_v1_lab_provisioner_init_controller \
+  ninlil_v1_lab_board_owner_init \
+  ninlil_v1_lab_board_owner_step
+do
+  grep -E " [Tt] ${sym}$" "${V1_BOARD_DIR}/ninlil_v1_board.nm.txt"
+done
+echo "V1 diagnostic USB+SX1262 board target compile/link OK (session-only, not HIL)"
 NINLIL_ESP_CI

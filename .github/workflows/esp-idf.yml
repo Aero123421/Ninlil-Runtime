@@ -177,3 +177,6 @@ jobs:
             ports/esp-idf/radio_hil_app/build/ninlil_radio_hil_physical.json
           grep -F '"physical_powercut_pass": false' \
             ports/esp-idf/radio_hil_app/build/ninlil_radio_hil_physical.json
+          # Default-off V1 USB + single-hop diagnostic board image
+          test -s ports/esp-idf/radio_hil_app/build-v1-board/ninlil_radio_hil.elf
+          test -s ports/esp-idf/radio_hil_app/build-v1-board/ninlil_v1_board.nm.txt

@@ -64,9 +64,9 @@ _Static_assert(
     sizeof(((ninlil_pcp_lab_session_ledger_t *)0)->opaque)
         == NINLIL_PCP_LAB_SESSION_LEDGER_OPAQUE_BYTES,
     "lab session ledger opaque size must match OPAQUE_BYTES");
-/* Guard against silent BSS bloat: keep ceiling exact 24 KiB. */
+/* Guard against silent object bloat: keep the accepted diagnostic ceiling. */
 _Static_assert(
-    NINLIL_PCP_LAB_SESSION_LEDGER_OPAQUE_BYTES == 24576u,
+    NINLIL_PCP_LAB_SESSION_LEDGER_OPAQUE_BYTES == 176128u,
     "lab session ledger opaque ceiling drift");
 
 static ledger_impl_t *impl_of(void *user)

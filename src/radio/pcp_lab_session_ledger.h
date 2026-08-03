@@ -4,8 +4,8 @@
 /*
  * Production-private LAB session durable ledger for R2 PCP composition.
  *
- * Fixed BSS, no heap/VLA. Implements ninlil_storage_ops for PCP issue/consume
- * FIFO durability within a single boot session.
+ * Caller-owned fixed storage, no internal heap/VLA. Implements
+ * ninlil_storage_ops for PCP and bounded V1 LAB state within one boot session.
  *
  * Nonclaims: not power-cut HIL FULL, not flash-backed, not Japan legal.
  * Power-cut residual remains true until ESP flash FULL adapter is used.
@@ -20,24 +20,20 @@
 extern "C" {
 #endif
 
-#define NINLIL_PCP_LAB_LEDGER_MAX_NS ((uint32_t)2u)
-#define NINLIL_PCP_LAB_LEDGER_MAX_ENTRIES ((uint32_t)16u)
-#define NINLIL_PCP_LAB_LEDGER_MAX_KEY ((uint32_t)32u)
-#define NINLIL_PCP_LAB_LEDGER_MAX_VAL ((uint32_t)256u)
+#define NINLIL_PCP_LAB_LEDGER_MAX_NS ((uint32_t)3u)
+#define NINLIL_PCP_LAB_LEDGER_MAX_ENTRIES ((uint32_t)32u)
+#define NINLIL_PCP_LAB_LEDGER_MAX_KEY ((uint32_t)48u)
+#define NINLIL_PCP_LAB_LEDGER_MAX_VAL ((uint32_t)1024u)
 #define NINLIL_PCP_LAB_LEDGER_MAX_NS_NAME ((uint32_t)32u)
 
 /*
- * Opaque BSS object (no heap). Bound is exact ceiling for private
- * ledger_impl_t layout:
- *   entry ≈ 12 + KEY + VAL = 300
- *   ns    ≈ 2×16 entries + name + counters ≈ 4.8 KiB
- *   txn   ≈ 16 staging entries ≈ 4.8 KiB each × 2
- *   + iters + ninlil_storage_ops_t
- * Measured sizeof(ledger_impl_t) ≈ 19560 on C11 (AppleClang/arm64).
- * 24 KiB ceiling leaves alignment headroom across toolchains without
- * ballooning BSS. The .c unit static-asserts impl ≤ opaque.
+ * Opaque caller-owned object. The 172 KiB ceiling holds the exact bounded
+ * three-namespace/two-transaction implementation on 32- and 64-bit targets.
+ * ESP diagnostic composition allocates this object once from PSRAM; the
+ * implementation itself never allocates. The .c unit static-asserts
+ * impl <= opaque.
  */
-#define NINLIL_PCP_LAB_SESSION_LEDGER_OPAQUE_BYTES ((size_t)24576u)
+#define NINLIL_PCP_LAB_SESSION_LEDGER_OPAQUE_BYTES ((size_t)176128u)
 
 typedef struct ninlil_pcp_lab_session_ledger {
     uint8_t opaque[NINLIL_PCP_LAB_SESSION_LEDGER_OPAQUE_BYTES];

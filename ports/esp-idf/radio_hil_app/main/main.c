@@ -26,6 +26,8 @@
  * device evidence.
  */
 
+#include "sdkconfig.h"
+
 #include "airtime_calculator.h"
 #include "domain_store_codec.h"
 #include "lab_approved_rf_profiles.h"
@@ -43,12 +45,22 @@
 #include "r7_crypto_mbedtls.h"
 #include "sx1262_r9_edge.h"
 
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+#include "n6_context_store.h"
+#include "n6_crypto_provider.h"
+#include "ninlil_esp_idf/usb_cdc.h"
+#include "r7_frag/r7_r2_authority_clock.h"
+#include "v1_lab_board_owner.h"
+#include "v1_lab_provisioner.h"
+#endif
+
 /*
  * Session RAM ledger: only when Kconfig diagnostic is ON (default n).
  * Release radio_hil sdkconfig must keep it OFF; evidence gate forbids symbols.
  */
 #if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
 #include "pcp_lab_session_ledger.h"
+#include "esp_heap_caps.h"
 #endif
 
 #include "esp_attr.h"
@@ -57,8 +69,6 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "sdkconfig.h"
-
 #include <stdio.h>
 #include <string.h>
 
@@ -104,6 +114,11 @@ static const char *TAG = "radio_hil";
     && defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
 #error \
     "CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG is impossible under NINLIL_SX1262_PRODUCTION_BUILD (V1 release HIL)"
+#endif
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD) \
+    && (!defined(CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH) \
+        || !defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG))
+#error "V1 board mode requires the V1 LAB radio path and session ledger"
 #endif
 
 /* Release radio_hil must bind exact XIAO ESP32-S3 + Wio-SX1262 pins. */
@@ -159,14 +174,27 @@ static const ninlil_storage_ops_t *g_ledger_ops;
 static ninlil_port_esp_storage_flash_binding_t *g_flash_binding;
 static int g_ledger_is_flash;
 #if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
-static ninlil_pcp_lab_session_ledger_t g_session_ledger =
-    NINLIL_PCP_LAB_SESSION_LEDGER_INIT;
+static ninlil_pcp_lab_session_ledger_t *g_session_ledger;
 #endif
 static ninlil_esp_idf_clock_t g_clock;
 static ninlil_esp_idf_entropy_t g_entropy;
 static ninlil_r7_crypto_provider g_r7_crypto;
 static ninlil_radio_hal_permit_ops_t g_r5_permit_ops;
 static ninlil_radio_hal_digest_ops_t g_digest_ops;
+static ninlil_pcp_live_profile_t g_live;
+
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+#define NINLIL_RADIO_HIL_V1_N6_SLOTS ((uint32_t)8u)
+#define NINLIL_RADIO_HIL_V1_N6_POOL_BYTES ((size_t)4096u)
+static ninlil_esp_idf_usb_cdc_object_t g_v1_usb_object;
+static ninlil_byte_stream_t g_v1_usb_stream;
+static uint8_t g_v1_n6_object[NINLIL_N6_OBJECT_BYTES]
+    __attribute__((aligned(NINLIL_N6_OBJECT_ALIGN)));
+static uint8_t g_v1_n6_pool[NINLIL_RADIO_HIL_V1_N6_POOL_BYTES];
+static ninlil_n6_t *g_v1_n6;
+static ninlil_v1_lab_provisioner_t g_v1_provisioner;
+static ninlil_v1_lab_board_owner_t g_v1_board_owner;
+#endif
 
 static int g_inited;
 static int g_profile_loaded;
@@ -391,12 +419,32 @@ static void make_site_assignment(ninlil_r5_site_assignment_t *a)
     a->phy.phy_flags = 0u;
 }
 
+#if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
+static int session_ledger_init(void)
+{
+    if (g_session_ledger == NULL) {
+        g_session_ledger = (ninlil_pcp_lab_session_ledger_t *)heap_caps_calloc(
+            1u,
+            sizeof(*g_session_ledger),
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (g_session_ledger == NULL
+        || ninlil_pcp_lab_session_ledger_init(
+               g_session_ledger, &g_ledger_ops)
+            != 0
+        || g_ledger_ops == NULL) {
+        g_ledger_ops = NULL;
+        return 1;
+    }
+    return 0;
+}
+#endif
+
 static int authority_init(void)
 {
     ninlil_pcp_error_t perr;
     ninlil_r5_error_t rerr;
     ninlil_pcp_instance_seed_t seed;
-    ninlil_radio_hal_live_binding_t live;
     ninlil_esp_idf_clock_config_t clock_cfg;
     ninlil_esp_idf_entropy_config_t ent_cfg;
     ninlil_r5_site_assignment_t assign;
@@ -445,14 +493,18 @@ static int authority_init(void)
         return 1;
     }
 
-    /*
-     * V1 release HIL: flash FULL durable adapter is mandatory.
-     * Fail closed if flash bind fails. Session RAM ledger is only available
-     * under NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG (impossible in release).
-     */
+    /* Release mode requires flash FULL. V1 board bring-up is an explicit,
+     * default-off session-only diagnostic profile. */
     g_ledger_is_flash = 0;
     g_flash_binding = NULL;
     g_ledger_ops = NULL;
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+    if (session_ledger_init() != 0) {
+        emit("ERR ledger_diag_psram");
+        return 1;
+    }
+    emit("WARN ledger=session_diag restart_durable=false not_release");
+#else
     {
         ninlil_port_esp_storage_config_t scfg;
         ninlil_port_esp_storage_config_production(&scfg);
@@ -463,13 +515,8 @@ static int authority_init(void)
 #if defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
             /* Diagnostic-only path — not V1 release HIL. */
             g_flash_binding = NULL;
-            g_session_ledger =
-                (ninlil_pcp_lab_session_ledger_t)NINLIL_PCP_LAB_SESSION_LEDGER_INIT;
-            if (ninlil_pcp_lab_session_ledger_init(
-                    &g_session_ledger, &g_ledger_ops)
-                    != 0
-                || g_ledger_ops == NULL) {
-                emit("ERR ledger_diag");
+            if (session_ledger_init() != 0) {
+                emit("ERR ledger_diag_psram");
                 return 1;
             }
             emit("WARN ledger=session_diag not_release");
@@ -484,6 +531,7 @@ static int authority_init(void)
             g_ledger_is_flash = 1;
         }
     }
+#endif
 
     g_pcp_obj = (ninlil_pcp_object_t)NINLIL_PCP_OBJECT_INIT;
     if (ninlil_pcp_init_object(&g_pcp_obj, &g_pcp) != NINLIL_PCP_OK) {
@@ -534,11 +582,14 @@ static int authority_init(void)
         emit("ERR r5_assign");
         return 1;
     }
-    if (ninlil_r5_build_live_binding(g_r5, &live, &rerr) != NINLIL_R5_OK) {
+    (void)memset(&g_live, 0, sizeof(g_live));
+    if (ninlil_r5_build_live_binding(g_r5, &g_live, &rerr)
+        != NINLIL_R5_OK) {
         emit("ERR r5_live");
         return 1;
     }
-    if (ninlil_pcp_bind_live_profile(g_pcp, &live, &perr) != NINLIL_PCP_OK) {
+    if (ninlil_pcp_bind_live_profile(g_pcp, &g_live, &perr)
+        != NINLIL_PCP_OK) {
         emit("ERR pcp_live");
         return 1;
     }
@@ -581,7 +632,6 @@ static int cmd_init(void)
     ninlil_esp_idf_sx1262_bus_config_t bus_cfg;
     ninlil_sx1262_status_t st;
     ninlil_radio_hal_error_t herr;
-    ninlil_radio_hal_live_binding_t live;
     ninlil_sx1262_phy_irq_ops_t irq_ops;
     ninlil_r5_error_t rerr;
     char boot_hex[33];
@@ -694,8 +744,8 @@ static int cmd_init(void)
         emit("ERR hal_bind");
         return 1;
     }
-    if (ninlil_r5_build_live_binding(g_r5, &live, &rerr) != NINLIL_R5_OK
-        || ninlil_radio_hal_set_live_binding(g_hal, &live, &herr)
+    if (ninlil_r5_build_live_binding(g_r5, &g_live, &rerr) != NINLIL_R5_OK
+        || ninlil_radio_hal_set_live_binding(g_hal, &g_live, &herr)
             != NINLIL_RADIO_HAL_OK) {
         emit("ERR live_bind");
         return 1;
@@ -731,6 +781,140 @@ static int cmd_init(void)
     (void)fflush(stdout);
     return 0;
 }
+
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+static int v1_class_d_sample(
+    ninlil_r2_authority_clock_result_t *out_sample)
+{
+    ninlil_r2_authority_clock_baseline_result_t baseline;
+    ninlil_r2_authority_clock_request_t request;
+
+    (void)memset(&baseline, 0, sizeof(baseline));
+    if (ninlil_r2_private_load_authority_clock_baseline(g_pcp, &baseline)
+            != 0
+        || baseline.published == 0u
+        || baseline.trusted_baseline_valid == 0u) {
+        return 1;
+    }
+    (void)memset(&request, 0, sizeof(request));
+    (void)memcpy(request.expected_epoch_id,
+        baseline.last_trusted_epoch_id, 16u);
+    request.watermark_valid = 1u;
+    (void)memcpy(request.watermark_epoch_id,
+        baseline.last_trusted_epoch_id, 16u);
+    request.watermark_now_ms = baseline.last_trusted_now_ms;
+    (void)memset(out_sample, 0, sizeof(*out_sample));
+    if (ninlil_r2_private_sample_authority_clock(
+            g_pcp, &request, out_sample)
+            != 0
+        || !ninlil_r2_authority_clock_is_class_d(out_sample)) {
+        return 1;
+    }
+    return 0;
+}
+
+static int v1_board_init(void)
+{
+    ninlil_n6_context_pool_t pool;
+    ninlil_r2_authority_clock_result_t class_d;
+    ninlil_byte_stream_error_t usb_error;
+    ninlil_v1_lab_board_owner_config_t owner_config;
+    size_t pool_bytes;
+
+    if (cmd_init() != 0) {
+        return 1;
+    }
+    (void)memset(&pool, 0, sizeof(pool));
+    pool.max_slots = NINLIL_RADIO_HIL_V1_N6_SLOTS;
+    pool_bytes = ninlil_n6_context_pool_bytes(pool.max_slots);
+    if (pool_bytes == 0u || pool_bytes > sizeof(g_v1_n6_pool)) {
+        emit("ERR v1_n6_pool");
+        return 1;
+    }
+    pool.bytes = g_v1_n6_pool;
+    pool.bytes_size = pool_bytes;
+    (void)memset(g_v1_n6_object, 0, sizeof(g_v1_n6_object));
+    (void)memset(g_v1_n6_pool, 0, sizeof(g_v1_n6_pool));
+    if (ninlil_n6_init(g_v1_n6_object, sizeof(g_v1_n6_object),
+            &pool, &g_v1_n6)
+        != NINLIL_N6_OK) {
+        emit("ERR v1_n6_init");
+        return 1;
+    }
+    if (v1_class_d_sample(&class_d) != 0
+        || ninlil_v1_lab_provisioner_init_controller(&g_v1_provisioner,
+               g_v1_n6, g_ledger_ops, ninlil_n6_crypto_host_ops(),
+               &g_r7_crypto, &class_d)
+            != NINLIL_V1_LAB_PROVISION_OK) {
+        emit("ERR v1_provisioner");
+        return 1;
+    }
+
+    (void)memset(&g_v1_usb_stream, 0, sizeof(g_v1_usb_stream));
+    if (ninlil_esp_idf_usb_cdc_init_object(
+            &g_v1_usb_object, &g_v1_usb_stream)
+        != NINLIL_BYTE_STREAM_OK) {
+        emit("ERR v1_usb_init");
+        return 1;
+    }
+    (void)memset(&usb_error, 0, sizeof(usb_error));
+    if (ninlil_esp_idf_usb_cdc_open(
+            &g_v1_usb_stream, "control-cdc", &usb_error)
+        != NINLIL_BYTE_STREAM_OK) {
+        emit("ERR v1_usb_open");
+        return 1;
+    }
+
+    (void)memset(&owner_config, 0, sizeof(owner_config));
+    owner_config.usb_stream = &g_v1_usb_stream;
+    owner_config.provisioner = &g_v1_provisioner;
+    owner_config.crypto = &g_r7_crypto;
+    owner_config.local_runtime_id = NULL;
+    owner_config.clock = ninlil_esp_idf_clock_ops(&g_clock);
+    owner_config.phy = g_phy;
+    owner_config.pcp = g_pcp;
+    owner_config.hal = g_hal;
+    owner_config.live = &g_live;
+    if (ninlil_v1_lab_board_owner_init(&g_v1_board_owner, &owner_config)
+        != NINLIL_V1_LAB_BOARD_OWNER_OK) {
+        emit("ERR v1_board_owner");
+        return 1;
+    }
+    emit("READY v1_board usb=control-cdc radio=single_hop "
+         "ledger=session_diag restart_durable=false controller_id=binding");
+    return 0;
+}
+
+static void v1_board_run(void)
+{
+    const ninlil_clock_ops_t *clock = ninlil_esp_idf_clock_ops(&g_clock);
+
+    for (;;) {
+        ninlil_time_sample_t sample;
+        ninlil_v1_lab_board_owner_status_t status;
+
+        (void)memset(&sample, 0, sizeof(sample));
+        if (clock == NULL || clock->now == NULL
+            || clock->now(clock->user, &sample) != NINLIL_PORT_OK) {
+            emit("ERR v1_board_clock");
+            break;
+        }
+        status = ninlil_v1_lab_board_owner_step(
+            &g_v1_board_owner, sample.now_ms, 5u);
+        if (status != NINLIL_V1_LAB_BOARD_OWNER_OK
+            && status != NINLIL_V1_LAB_BOARD_OWNER_BUSY
+            && status != NINLIL_V1_LAB_BOARD_OWNER_LINK_DOWN) {
+            (void)printf("ERR v1_board_step status=%u\n", (unsigned)status);
+            (void)fflush(stdout);
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+#endif
 
 /*
  * Same-session PCP recover on the live g_pcp object.
@@ -1240,6 +1424,17 @@ void app_main(void)
 
     mint_boot_identity();
     hex16(g_boot_id, boot_hex);
+#if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
+    ESP_LOGI(TAG, "starting V1 USB parent diagnostic profile");
+    if (v1_board_init() != 0) {
+        emit("ERR v1_board_startup");
+        for (;;) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+    v1_board_run();
+    return;
+#endif
     ESP_LOGI(
         TAG,
         "radio_hil sole_edge R1+R2+R5+R9 RF_SOLE; stack sized for PCP/R5 path");
