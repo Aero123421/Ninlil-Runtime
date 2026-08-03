@@ -521,11 +521,40 @@ An inbound packet is copied only after NFL1 decode and exact active path match,
 then returned from `receive_next`; release zeroizes that path's one receive
 slot. Backpressure returns `BUSY`/`WOULD_BLOCK` without another queue.
 
-The repository's V1 Controller executable is a LAB diagnostic, not a daemon or
-deployment manager. It uses the existing Composition, POSIX USB serial and
-SQLite providers, consumes an exact application-neutral binding, and reports
-transaction/Receipt results. Binding inventory or key-management UX remains
-an application concern and is not implemented as a second Ninlil framework.
+The repository's completed V1 Controller executable is specified as a LAB
+diagnostic, not a daemon or deployment manager. It uses the existing
+Composition, POSIX USB serial and SQLite providers, consumes an exact
+application-neutral binding, and will report transaction/Receipt results. The
+current connection-probe slice stops after clock verification, binding apply,
+Composition creation and Fabric registration; it does not yet submit
+ApplicationData or report Receipts. Binding inventory or key-management UX
+remains an application concern and is not implemented as a second Ninlil
+framework.
+
+The connection probe prints `READY` only after registered links are quiesced
+and Composition has completed its normative close/destroy sequence. A bounded
+cleanup failure exits nonzero without releasing owner resources early.
+
+The executable does not use the tests-only POSIX LAB platform. Its private
+Host provider set is fixed to one owner thread, the existing SQLite port,
+OpenSSL 3 CSPRNG entropy and a monotonic clock view anchored to the USB
+parent's accepted `BOARD_INFO`. The clock keeps the parent's exact epoch and advances its sampled
+time only by local monotonic elapsed time; rollback, overflow or a changed
+anchor fails closed. Its LAB TxGate bounds ApplicationData to 1..128 bytes and
+Receipt wire data to the fixed 760-byte ceiling. The Controller diagnostic
+originates DesiredState only, so its required origin
+authorization provider rejects Controller-origin EventFact instead of adding a
+general policy engine. These are not installed providers or general policy
+APIs. This LAB executable uses the Foundation small-profile store and therefore
+requires the incomplete Domain schema 1 Runtime binding to remain disabled;
+the build rejects that unsupported option combination instead of failing later
+during Runtime creation.
+
+Because an exact binding contains traffic secrets, the diagnostic reads it
+only when the path's final component is a non-symlink regular file with one
+link, owned by the effective user and with no group/other permissions. It
+accepts only the exact binding size range and never prints binding contents or
+derived secrets.
 
 ### 7. Fixed board owner
 

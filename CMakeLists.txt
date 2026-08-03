@@ -35,6 +35,9 @@ endif()
 option(NINLIL_BUILD_POSIX_USB_SERIAL_V1
     "Build and install the experimental Linux/macOS POSIX USB serial port"
     ${_ninlil_posix_usb_serial_default})
+option(NINLIL_BUILD_V1_LAB_CONTROLLER
+    "Build the private Linux/macOS V1 USB Controller diagnostic"
+    OFF)
 set(NINLIL_POSIX_USB_SERIAL_ENABLED FALSE)
 if(NINLIL_BUILD_POSIX_USB_SERIAL_V1)
     if(NOT (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
@@ -1171,6 +1174,58 @@ if(NINLIL_POSIX_USB_SERIAL_ENABLED)
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     message(STATUS
         "POSIX USB serial v1 reference port: enabled (Linux/macOS software path)")
+endif()
+
+if(NINLIL_BUILD_V1_LAB_CONTROLLER)
+    if(NOT (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+        message(FATAL_ERROR
+            "NINLIL_BUILD_V1_LAB_CONTROLLER supports Linux and macOS only")
+    endif()
+    if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+        message(FATAL_ERROR
+            "NINLIL_BUILD_V1_LAB_CONTROLLER requires "
+            "NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=OFF")
+    endif()
+    foreach(_ninlil_controller_dependency IN ITEMS
+            ninlil_runtime
+            ninlil_fabric_v1
+            ninlil_posix_sqlite_storage
+            ninlil_posix_usb_serial)
+        if(NOT TARGET ${_ninlil_controller_dependency})
+            message(FATAL_ERROR
+                "NINLIL_BUILD_V1_LAB_CONTROLLER requires target "
+                "${_ninlil_controller_dependency}")
+        endif()
+    endforeach()
+    add_executable(ninlil_v1_lab_controller
+        examples/v1_lab/v1_lab_controller.c
+        examples/v1_lab/v1_lab_controller_platform.c
+        src/transport/fabric_v1/v1_usb_fabric_link.c
+    )
+    target_include_directories(ninlil_v1_lab_controller PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/v1_lab
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+    )
+    target_link_libraries(ninlil_v1_lab_controller PRIVATE
+        ninlil_runtime
+        ninlil_fabric_v1
+        ninlil_posix_sqlite_storage
+        ninlil_posix_usb_serial
+        ninlil
+        OpenSSL::Crypto
+        Threads::Threads
+    )
+    set_target_properties(ninlil_v1_lab_controller PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_posix_host_feature_macros(ninlil_v1_lab_controller)
+    ninlil_apply_strict_warnings(ninlil_v1_lab_controller)
 endif()
 
 # Generate the package only after all optional exported targets are known.

@@ -257,6 +257,38 @@ if(NINLIL_R7_HOST_CRYPTO_ENABLED)
         NAME v1_usb_fabric_link
         COMMAND ninlil_v1_usb_fabric_link_test
     )
+
+    if(TARGET ninlil_posix_sqlite_storage
+        AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+        find_package(Threads REQUIRED)
+        add_executable(ninlil_v1_lab_controller_platform_test
+            tests/transport/fabric_v1/v1_lab_controller_platform_test.c
+            examples/v1_lab/v1_lab_controller_platform.c
+        )
+        target_include_directories(ninlil_v1_lab_controller_platform_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/examples/v1_lab
+            ${CMAKE_CURRENT_SOURCE_DIR}/ports/posix/include
+        )
+        target_link_libraries(ninlil_v1_lab_controller_platform_test PRIVATE
+            ninlil_posix_sqlite_storage
+            ninlil
+            OpenSSL::Crypto
+            Threads::Threads
+        )
+        set_target_properties(ninlil_v1_lab_controller_platform_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_host_feature_macros(
+            ninlil_v1_lab_controller_platform_test)
+        ninlil_apply_strict_warnings(
+            ninlil_v1_lab_controller_platform_test)
+        add_test(
+            NAME v1_lab_controller_platform
+            COMMAND ninlil_v1_lab_controller_platform_test
+        )
+    endif()
 endif()
 
 if(TARGET ninlil_posix_usb_serial
@@ -292,6 +324,42 @@ if(TARGET ninlil_posix_usb_serial
         NAME v1_usb_bridge_pty
         COMMAND ninlil_v1_usb_bridge_pty_test
     )
+
+    if(TARGET ninlil_v1_lab_controller)
+        add_executable(ninlil_v1_lab_controller_probe_test
+            tests/transport/fabric_v1/v1_lab_controller_probe_test.c
+            tests/support/in_memory_storage.c
+        )
+        target_include_directories(ninlil_v1_lab_controller_probe_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+        )
+        target_link_libraries(ninlil_v1_lab_controller_probe_test PRIVATE
+            ninlil_runtime_private
+            ninlil
+        )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_link_libraries(
+                ninlil_v1_lab_controller_probe_test PRIVATE util)
+        endif()
+        set_target_properties(ninlil_v1_lab_controller_probe_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        ninlil_apply_posix_usb_serial_feature_macros(
+            ninlil_v1_lab_controller_probe_test)
+        ninlil_apply_strict_warnings(
+            ninlil_v1_lab_controller_probe_test)
+        add_test(
+            NAME v1_lab_controller_probe
+            COMMAND ninlil_v1_lab_controller_probe_test
+                $<TARGET_FILE:ninlil_v1_lab_controller>
+        )
+    endif()
 endif()
 
 add_test(
