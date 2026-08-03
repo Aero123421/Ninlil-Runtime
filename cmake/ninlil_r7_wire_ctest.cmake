@@ -229,6 +229,36 @@ add_test(
     COMMAND ninlil_v1_usb_bridge_test
 )
 
+if(NINLIL_R7_HOST_CRYPTO_ENABLED)
+    add_executable(ninlil_v1_usb_fabric_link_test
+        tests/transport/fabric_v1/v1_usb_fabric_link_test.c
+        src/transport/fabric_v1/v1_usb_fabric_link.c
+        tests/support/fake_byte_stream.c
+    )
+    target_include_directories(ninlil_v1_usb_fabric_link_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/fabric_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/support
+    )
+    target_link_libraries(ninlil_v1_usb_fabric_link_test PRIVATE
+        ninlil_runtime_private
+        ninlil_fabric_v1
+        ninlil
+    )
+    set_target_properties(ninlil_v1_usb_fabric_link_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_v1_usb_fabric_link_test)
+    add_test(
+        NAME v1_usb_fabric_link
+        COMMAND ninlil_v1_usb_fabric_link_test
+    )
+endif()
+
 if(TARGET ninlil_posix_usb_serial
     AND (APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
     add_executable(ninlil_v1_usb_bridge_pty_test

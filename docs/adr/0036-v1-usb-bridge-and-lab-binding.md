@@ -490,7 +490,44 @@ four copied N6 handles, copies any needed values before returning, and cannot
 reject or retain the borrowed binding pointer. A missing provisioner or
 installed-pair handoff returns `UNSUPPORTED` without provisioning.
 
-### 6. Fixed board owner
+### 6. Linux/macOS Controller adapter
+
+The Controller process uses one private, caller-owned USB Fabric adapter. It
+wraps the existing host-side NVB1 bridge and exposes one Fabric packet-link
+port for each distinct `selected_path_id` in the installed bindings. The V1
+bound is two direct peer bindings and four path ports, matching the fixed
+USB-board pair capacity. It does
+not create a second Runtime or Fabric, add an installed API, parse application
+configuration, start a background thread or turn USB into a new public Fabric
+kind. The Linux/macOS outer loop performs one bounded USB step and one bounded
+Composition step.
+
+The adapter is inactive until the host has accepted `BOARD_INFO`, submitted an
+exact binding and received `INSTALLED` for that binding. It then registers the
+descriptor, policy and authority records derived by the existing LAB Fabric
+builders. Runtime output enters the adapter only through the registered Fabric
+packet-link operation, with the original selected path and Foundation
+`TxPermit`. The adapter validates the permit against its trusted Controller
+clock and exact attempt before the NVB1 request is retained. The existing
+durable Fabric attempt authority remains the one-shot replay authority; the
+adapter retains only its bounded live permit/token state and never mints a
+replacement permit.
+
+There are at most four retained outbound USB operations and one inbound NFL1
+loan per distinct path. `ACCEPTED_LOCAL` becomes Fabric transport completion,
+not Application success. USB timeout, link fence or an unknown completion is
+lost/unknown; a definite remote rejection is a definite transport failure.
+An inbound packet is copied only after NFL1 decode and exact active path match,
+then returned from `receive_next`; release zeroizes that path's one receive
+slot. Backpressure returns `BUSY`/`WOULD_BLOCK` without another queue.
+
+The repository's V1 Controller executable is a LAB diagnostic, not a daemon or
+deployment manager. It uses the existing Composition, POSIX USB serial and
+SQLite providers, consumes an exact application-neutral binding, and reports
+transaction/Receipt results. Binding inventory or key-management UX remains
+an application concern and is not implemented as a second Ninlil framework.
+
+### 7. Fixed board owner
 
 The USB board has one private, caller-owned `V1 LAB board owner`. It owns the
 NVB1 bridge, the single SX1262 packet-link and two fixed pair slots. It does
@@ -539,7 +576,7 @@ binding contradiction or a fenced provisioner fences the whole owner and
 prevents further RF admission. Physical USB/RF operation remains a separate
 HIL gate.
 
-### 7. ESP32-S3 diagnostic board profiles
+### 8. ESP32-S3 diagnostic board profiles
 
 The repository provides two default-off `radio_hil_app` build profiles for
 physical USB/RF bring-up: `USB parent` and `generic peer`. They compile the same
@@ -577,7 +614,8 @@ retain that nonclaim.
    two-pair maximum-28-row bound, exact 32-row reset, Controller/peer identity
    adoption and fifth-record fence.
 4. A PTY test uses the installed POSIX USB port and the same private bridge as
-   ESP packaging.
+   ESP packaging. A Controller-adapter test additionally drives a registered
+   Fabric packet link through binding, outbound completion and inbound NFL1.
 5. Host vertical simulation covers two peers, the multi-Service node, both
    directions, APPLIED correlation, duplicate, timeout, tamper, wrong key,
    wrong binding/Service and restart/reprovision.
