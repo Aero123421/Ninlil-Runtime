@@ -115,10 +115,11 @@ static inline int ninlil_sx1262_cmd_status_is_fail(uint8_t cmd_status)
         || cmd_status == NINLIL_SX1262_CMD_STATUS_CMD_EXEC_FAILURE;
 }
 
-/* Mid-init accepted cmd_status set: {0, 2} only (not RFU=1 / TX_DONE=6). */
+/* Control-plane accepted cmd_status set: {0, 1, 2}; TX_DONE=6 remains rejected. */
 static inline int ninlil_sx1262_cmd_status_accepted_mid(uint8_t cmd_status)
 {
     return cmd_status == NINLIL_SX1262_CMD_STATUS_RESERVED
+        || cmd_status == NINLIL_SX1262_CMD_STATUS_RFU
         || cmd_status == NINLIL_SX1262_CMD_STATUS_DATA_AVAILABLE;
 }
 

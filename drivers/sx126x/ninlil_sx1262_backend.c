@@ -13,7 +13,11 @@ enum {
     LIFECYCLE_READY = 2,
     LIFECYCLE_FAILED = 3,
     LIFECYCLE_SHUTDOWN = 4,
-    SPI_XFER_CAP = 16
+    SPI_XFER_CAP = 16,
+    /* SX1262 needs settling after NRESET rises even when BUSY is already low. */
+    POST_RESET_SETTLE_US = 10000,
+    POST_RESET_BOOTSTRAP_ATTEMPTS = 100,
+    POST_RESET_BOOTSTRAP_RETRY_US = 10000
 };
 
 _Static_assert(NINLIL_SX1262_CMD_SET_TX == (uint8_t)0x83u, "SetTx ban");
@@ -523,17 +527,20 @@ static ninlil_sx1262_status_t decode_status_byte(
     be->last_cmd_status = cmd;
     sat_inc(&be->stats.status_checks);
 
-    if (ninlil_sx1262_cmd_status_is_fail(cmd)) {
-        set_error(be, out_error, NINLIL_SX1262_STATUS_INVALID,
-            NINLIL_SX1262_STAGE_STATUS, NINLIL_SX1262_REASON_BAD_CMD_STATUS,
-            "cmd_status 3/4/5");
-        return NINLIL_SX1262_STATUS_INVALID;
-    }
-    if (enforce_accepted_set != 0 && !cmd_status_accepted_mid(cmd)) {
-        set_error(be, out_error, NINLIL_SX1262_STATUS_INVALID,
-            NINLIL_SX1262_STAGE_STATUS, NINLIL_SX1262_REASON_BAD_CMD_STATUS,
-            "cmd_status not in accepted set");
-        return NINLIL_SX1262_STATUS_INVALID;
+    /* Initial post-reset status has no owned preceding command: record only. */
+    if (enforce_accepted_set != 0) {
+        if (cmd_status_hard_fail(cmd)) {
+            set_error(be, out_error, NINLIL_SX1262_STATUS_INVALID,
+                NINLIL_SX1262_STAGE_STATUS, NINLIL_SX1262_REASON_BAD_CMD_STATUS,
+                "cmd_status 3/4/5");
+            return NINLIL_SX1262_STATUS_INVALID;
+        }
+        if (!cmd_status_accepted_mid(cmd)) {
+            set_error(be, out_error, NINLIL_SX1262_STATUS_INVALID,
+                NINLIL_SX1262_STAGE_STATUS, NINLIL_SX1262_REASON_BAD_CMD_STATUS,
+                "cmd_status not in accepted set");
+            return NINLIL_SX1262_STATUS_INVALID;
+        }
     }
     if (require_stby_rc != 0 && mode != NINLIL_SX1262_CHIP_MODE_STBY_RC) {
         set_error(be, out_error, NINLIL_SX1262_STATUS_INVALID,
@@ -618,8 +625,7 @@ static ninlil_sx1262_status_t spi_xfer_allowlisted(
     }
     /*
      * DS Rev2.2 Table 10-1 / 13-85: rx[0]=RFU, rx[1]=Status.
-     * After first post-reset status: mid-init accepted set {0,2} only
-     * (rejects RFU=1, fail 3/4/5, TX_DONE=6).
+     * After bootstrap: control-plane accepted set {0,1,2}; reject 3/4/5,6.
      */
     if (len >= 2u && be->post_reset_status_seen != 0u) {
         uint8_t status_b = local_rx[1];
@@ -631,7 +637,7 @@ static ninlil_sx1262_status_t spi_xfer_allowlisted(
         if (cmd_status_hard_fail(prev_cmd) || !cmd_status_accepted_mid(prev_cmd)) {
             set_error(be, out_error, NINLIL_SX1262_STATUS_INVALID,
                 NINLIL_SX1262_STAGE_STATUS, NINLIL_SX1262_REASON_BAD_CMD_STATUS,
-                "rx[1] cmd_status not in mid-init accepted {0,2} after BUSY");
+                "rx[1] cmd_status not in control accepted {0,1,2} after BUSY");
             return NINLIL_SX1262_STATUS_INVALID;
         }
     }
@@ -747,8 +753,49 @@ static ninlil_sx1262_status_t cmd_set_standby_rc(
 
     tx[0] = NINLIL_SX1262_CMD_SET_STANDBY;
     tx[1] = NINLIL_SX1262_STANDBY_CFG_RC;
-    return cmd_write_then_verify(
-        be, tx, 2u, be->board.spi_busy_timeout_ms, out_error);
+    return spi_xfer_allowlisted(
+        be, tx, NULL, 2u, be->board.spi_busy_timeout_ms, out_error);
+}
+
+static ninlil_sx1262_status_t verify_standby_rc(
+    ninlil_sx1262_backend_t *be,
+    ninlil_sx1262_error_t *out_error)
+{
+    return cmd_get_status(
+        be, 1, 1, be->board.spi_busy_timeout_ms, out_error);
+}
+
+static ninlil_sx1262_status_t bootstrap_standby_rc(
+    ninlil_sx1262_backend_t *be,
+    ninlil_sx1262_error_t *out_error)
+{
+    ninlil_sx1262_status_t st;
+    uint32_t attempt;
+
+    for (attempt = 0u; attempt < POST_RESET_BOOTSTRAP_ATTEMPTS; ++attempt) {
+        st = cmd_set_standby_rc(be, out_error);
+        if (st != NINLIL_SX1262_OK) {
+            return st;
+        }
+        st = verify_standby_rc(be, out_error);
+        if (st == NINLIL_SX1262_OK) {
+            return NINLIL_SX1262_OK;
+        }
+        if (st != NINLIL_SX1262_STATUS_INVALID
+            || be->last_chip_mode != NINLIL_SX1262_CHIP_MODE_STBY_RC
+            || !cmd_status_hard_fail(be->last_cmd_status)
+            || attempt + 1u == POST_RESET_BOOTSTRAP_ATTEMPTS) {
+            return st;
+        }
+        if (be->bus_ops.delay_us(be->bus_ctx, POST_RESET_BOOTSTRAP_RETRY_US)
+            != 0) {
+            set_error(be, out_error, NINLIL_SX1262_BUS_ERROR,
+                NINLIL_SX1262_STAGE_STATUS, NINLIL_SX1262_REASON_SPI_FAIL,
+                "bootstrap retry delay");
+            return NINLIL_SX1262_BUS_ERROR;
+        }
+    }
+    return NINLIL_SX1262_STATUS_INVALID;
 }
 
 static ninlil_sx1262_status_t cmd_set_dio2(
@@ -800,7 +847,6 @@ static ninlil_sx1262_status_t run_init_sequence(
     uint16_t errors;
     uint32_t spi_ms;
     uint32_t tcxo_ms;
-    int first_status;
 
     spi_ms = be->board.spi_busy_timeout_ms;
     tcxo_ms = be->board.tcxo_busy_timeout_ms;
@@ -825,20 +871,28 @@ static ninlil_sx1262_status_t run_init_sequence(
             "reset_deassert");
         return NINLIL_SX1262_BUS_ERROR;
     }
+    if (be->bus_ops.delay_us(be->bus_ctx, POST_RESET_SETTLE_US) != 0) {
+        set_error(be, out_error, NINLIL_SX1262_BUS_ERROR,
+            NINLIL_SX1262_STAGE_RESET, NINLIL_SX1262_REASON_RESET_FAIL,
+            "post-reset settle");
+        return NINLIL_SX1262_BUS_ERROR;
+    }
 
     st = wait_busy_low(be, be->board.busy_timeout_ms, out_error);
     if (st != NINLIL_SX1262_OK) {
         return st;
     }
 
-    /* First GetStatus after reset: mode STBY_RC; cmd_status not closed-set. */
-    first_status = 1;
+    /* First GetStatus has no owned prior command: require STBY_RC and record raw. */
     st = cmd_get_status(be, 1, 0, spi_ms, out_error);
     if (st != NINLIL_SX1262_OK) {
         return st;
     }
+    st = bootstrap_standby_rc(be, out_error);
+    if (st != NINLIL_SX1262_OK) {
+        return st;
+    }
     be->post_reset_status_seen = 1u;
-    (void)first_status;
 
     st = cmd_get_device_errors(be, &errors, spi_ms, out_error);
     if (st != NINLIL_SX1262_OK) {
@@ -908,6 +962,10 @@ static ninlil_sx1262_status_t run_init_sequence(
     }
 
     st = cmd_set_standby_rc(be, out_error);
+    if (st != NINLIL_SX1262_OK) {
+        return st;
+    }
+    st = verify_standby_rc(be, out_error);
     if (st != NINLIL_SX1262_OK) {
         return st;
     }

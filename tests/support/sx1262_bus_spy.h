@@ -85,6 +85,11 @@ typedef struct ninlil_sx1262_bus_spy {
     /* After N GetStatus SPI calls, switch status_byte to poison. 0=off */
     int fail_status_after_n_gets;
     int get_status_count;
+    /* Override only the first GetStatus status byte (0=off). */
+    int first_get_status_override;
+    uint8_t first_get_status_byte;
+    /* Poison this many GetStatus calls after the initial diagnostic one. */
+    int fail_get_status_count_after_first;
     /* After N SPI of any opcode, poison status_byte (rx[1]). 0=off */
     int fail_status_after_n_spi;
     int spi_xfer_count_for_status;

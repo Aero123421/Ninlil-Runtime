@@ -174,6 +174,7 @@ struct ninlil_sx1262_backend {
     uint32_t lifecycle;
     uint32_t in_flight;
     uint32_t expected_cold_errors_latched; /* TCXO cold mask bits seen */
+    /* Set after the first owned command has an explicit GetStatus verification. */
     uint32_t post_reset_status_seen;
 
     ninlil_sx1262_bus_ops_t bus_ops;

@@ -1,0 +1,16 @@
+# Private ADR-0037 three-node automatic Join/relay LAB.
+# Append to sdkconfig.defaults through SDKCONFIG_DEFAULTS.
+CONFIG_NINLIL_RADIO_HIL_NJM1_LAB=y
+
+# LAB-only volatile diagnostics: ESP flash FULL can report COMMIT_UNKNOWN.
+# This is not release durability evidence.
+CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG=y
+
+# NJM1 USB console is separate from the shared V1 UART/TinyUSB defaults.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
+
+# Same image on every XIAO ESP32-S3. Role is selected at runtime over USB.
+# V1's compile-time USB-parent/peer profiles stay disabled.
+# CONFIG_NINLIL_RADIO_HIL_V1_BOARD is not set
+# CONFIG_NINLIL_RADIO_HIL_V1_PEER is not set

@@ -241,7 +241,14 @@ static int spy_spi_transfer(
         status_b = spy->status_byte;
         if (opcode == NINLIL_SX1262_CMD_GET_STATUS) {
             spy->get_status_count += 1;
-            if (spy->fail_status_after_n_gets != 0
+            if (spy->first_get_status_override != 0
+                && spy->get_status_count == 1) {
+                status_b = spy->first_get_status_byte;
+            } else if (spy->get_status_count > 1
+                && spy->fail_get_status_count_after_first > 0) {
+                status_b = spy->status_byte_poison;
+                spy->fail_get_status_count_after_first -= 1;
+            } else if (spy->fail_status_after_n_gets != 0
                 && spy->get_status_count >= spy->fail_status_after_n_gets) {
                 status_b = spy->status_byte_poison;
                 spy->status_byte = spy->status_byte_poison;

@@ -266,33 +266,36 @@ First init precondition: **`NINLIL_SX1262_OBJECT_INIT` sentinel**（`magic==0 &&
 ```text
 I0  validate config+ops — bus 0
 I1  INITING; in_flight=1
-I2  reset_assert → delay_us(reset_pulse_us **== 1000**) → reset_deassert
+I2  reset_assert → delay_us(reset_pulse_us **== 1000**) → reset_deassert → delay_us(**10000**) settle
     （失敗時も deassert 試行; 以降 SPI 禁止で FAILED）
 I3  wait BUSY low
-I4  GetStatus [0xC0,0x00] 2B — mode STBY_RC; cmd 3/4/5 fail; raw 保持
-I5  GetDeviceErrors 4B **Clear より前** — raw 保持
+I4  GetStatus [0xC0,0x00] 2B — mode STBY_RC のみ検査; previous cmd_status は未定義のため raw 保持のみ
+I5  bootstrap: SetStandby(RC) → GetStatus(STBY_RC, accepted `{0,1,2}`) を最大100回。cmd 3/4/5 + STBY_RC のみ10ms後再試行; 他の status/mode/transport/BUSY/delay failure は即 fail。成功後から embedded status も厳格
+I6  GetDeviceErrors 4B **Clear より前** — raw 保持、直後の明示 GetStatus で厳格 verify
       XTAL: errors!=0 → DEVICE_ERROR
       TCXO cold expected mask E = XOSC_START_ERR|IMG_CALIB_ERR (§9.2.1):
         (errors & ~E) != 0 → DEVICE_ERROR（他 bit 混在は fail）
         (errors & E) != 0 → expected_cold 記録（XOSC only / IMG only / both すべて可）
         errors == 0 → clear スキップ可
-I6  if expected_cold: ClearDeviceErrors 3B
-I7  SetRegulatorMode(LDO|DCDC)
-I8  optional DIO2
-I9  if TCXO:
+I7  if expected_cold: ClearDeviceErrors 3B
+I8  SetRegulatorMode(LDO|DCDC)
+I9  optional DIO2
+I10 if TCXO:
       SetDio3AsTcxoCtrl → verify GetStatus
       Calibrate(ALL=0x7F) → verify GetStatus
       GetStatus + GetDeviceErrors → verify GetStatus → **errors must be 0**
-I10 SetStandby(STDBY_RC) → **verify GetStatus** → **final GetStatus** STBY_RC only
+I11 SetStandby(STDBY_RC) → **verify GetStatus** → **final GetStatus** STBY_RC only
     （verify + final の **2 回** GetStatus; 実装と一致）
-I11 if ANT_SW_PRESENT: ant_sw_set(ctx, inactive=0) 安全初期 level
-I12 READY
+I12 if ANT_SW_PRESENT: ant_sw_set(ctx, inactive=0) 安全初期 level
+I13 READY
 ```
 
 **MUST:** allowlist = GetStatus / GetDeviceErrors / ClearDeviceErrors / SetRegulatorMode / Calibrate / SetDio2 / SetDio3 / SetStandby。
 **MUST:** 成功終端 **STBY_RC のみ**（旧「RC または XOSC」矛盾は **廃止**）。
 **MUST NOT:** Clear→Get で初回 error を隠す。
 **MUST NOT:** SetTx/SetRx/CW/CAD/FS/WriteBuffer 等 RF emission path。
+
+初回bootstrapの有界retryは、SX126xがreset直後の数commandを拒否することがあるという[RadioLibのSX126x reset実装](https://github.com/jgromes/RadioLib/blob/master/src/modules/SX126x/SX126x.cpp#L179-L211)を実機根拠として採用する。RadioLibは依存・正本にはせず、retry対象と回数をここで閉じる。
 
 ### 6.1 SPI framing（control; exact lengths）
 
@@ -361,10 +364,10 @@ loop:
 | SPI **transport fail** | post-BUSY **しない**（command 未開始の可能性）; portable 層に pending 無し; port は own SM |
 | SPI **成功** | **必ず** post_guard + post-BUSY → その後 `rx[1]` decode |
 | 各 xfer の **rx[0]** | **RFU** — status として decode **しない** |
-| 各 xfer の **rx[1]**（post-reset 後） | mid-init accepted **`{0,2}` のみ**（**RFU=1** / fail 3/4/5 / **TX_DONE=6** → STATUS_INVALID） |
+| 各 xfer の **rx[1]**（bootstrap後） | control accepted **`{0,1,2}`**（実チップのcmd=1を受理。fail 3/4/5 / **TX_DONE=6** → STATUS_INVALID） |
 | write 完了後 | 追加 GetStatus で当該 write 結果を再検査 |
 | GetDeviceErrors | data `rx[2..3]`; `rx[1]` 捨てない |
-| 初回 reset 直後 GetStatus のみ | previous 不定 → mode STBY_RC; cmd は **3/4/5 fail only**（accepted 非強制） |
+| 初回 reset 直後 GetStatus のみ | previous 不定 → mode STBY_RC のみ検査し、cmd は raw 記録のみ（判定しない） |
 
 **Host spy:** `miso_rfu_byte` / `status_byte` 独立。(a) bad RFU + good status → OK。(b) good RFU + bad status → fail **after** guard/BUSY 観測。
 
@@ -550,7 +553,7 @@ ant_sw_set(ctx, active)       optional
 | T13 | allowlist/schema/ban + **independent opcode pin** | `test_cmd_frame_schema` + `test_primary_opcode_pin` + gate |
 | T14 | object size/align | `test_object_size_align` |
 | T15 | SPI pending + drain 1..16 + REBOOT object lifetime | `test_spi_pending_ownership_sm` |
-| T16 | mid-status {0,2}; **event trace** SPI→GUARD→BUSY→fail | `test_mid_status_closed_set_after_busy` |
+| T16 | control status {0,1,2}; 3/4/5/6 reject、**event trace** SPI→GUARD→BUSY→fail | `test_mid_status_closed_set_after_busy` |
 | T17 | MISO rx[1] / RFU independent | `test_miso_status_byte_position` |
 | T18 | TCXO cold mask matrix | `test_tcxo_cold_*` |
 | T19 | ESP GPIO safe-init SM + polarity | `test_esp_gpio_safe_init_sm` |

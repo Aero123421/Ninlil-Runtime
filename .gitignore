@@ -1,5 +1,6 @@
 /build/
 /build-*/
+/dist/
 /tmp-v1*/
 __pycache__/
 *.py[cod]

@@ -291,7 +291,8 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Werror
     -Wvla
 )
-# Production ESP build: exclude legacy request_transmit_with_permit symbol.
+# Every ESP image excludes the legacy request_transmit_with_permit symbol.
+# Session ledger selection is independent of the sole-edge production guard.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     NINLIL_SX1262_PRODUCTION_BUILD=1
 )

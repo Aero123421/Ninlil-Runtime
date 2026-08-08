@@ -105,6 +105,18 @@ menu "Ninlil SX1262 board profile (XIAO ESP32-S3 + Wio-SX1262)"
             same source and adopt their Runtime ID at boot; this is not a
             dynamic role manager or automated Join.
 
+    config NINLIL_RADIO_HIL_NJM1_LAB
+        bool "NJM1 three-node automatic Join/relay LAB"
+        default n
+        depends on NINLIL_ENABLE_SX1262_R9 && !NINLIL_RADIO_HIL_V1_BOARD
+        help
+            Run the private ADR-0037 LAB state machine over the real R5/R1/R9
+            SX1262 path. One common image selects controller/node at runtime
+            and supports automatic LAB Join, relay and parent reselection.
+
+            NJM1 is unauthenticated LAB_ONLY traffic. It is not Production
+            Attachment, public ABI, RRMP physical acceptance, or legal proof.
+
 endmenu
 
 menu "Ninlil private candidates"

@@ -14,7 +14,7 @@
  *
  * Flash FULL is mandatory: fail closed if flash bind fails.
  * Session RAM ledger is diagnostic-only (NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
- * and is impossible under NINLIL_SX1262_PRODUCTION_BUILD.
+ * and does not relax the sole-edge production build guard.
  *
  * Recovery honesty:
  *   PCP_RECOVER_SAME_SESSION — in-process recover on live g_pcp (not reboot).
@@ -46,6 +46,10 @@
 #include "r7_crypto_mbedtls.h"
 #include "sx1262_r9_edge.h"
 
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+#include "mesh_lab.h"
+#endif
+
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD)
 #include "n6_context_store.h"
 #include "n6_crypto_provider.h"
@@ -71,11 +75,15 @@
 
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_random.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "radio_hil";
@@ -115,11 +123,6 @@ static const char *TAG = "radio_hil";
  */
 #if defined(NINLIL_SX1262_PRODUCTION_BUILD) && defined(NINLIL_RADIO_HIL_DIAG_MOCK)
 #error "NINLIL_RADIO_HIL_DIAG_MOCK is impossible under NINLIL_SX1262_PRODUCTION_BUILD"
-#endif
-#if defined(NINLIL_SX1262_PRODUCTION_BUILD) \
-    && defined(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
-#error \
-    "CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG is impossible under NINLIL_SX1262_PRODUCTION_BUILD (V1 release HIL)"
 #endif
 #if defined(CONFIG_NINLIL_RADIO_HIL_V1_BOARD) \
     && !defined(CONFIG_NINLIL_ENABLE_V1_LAB_RADIO_PATH)
@@ -174,6 +177,9 @@ static const ninlil_radio_hal_edge_ops_t *g_edge_ops;
 static void *g_edge_ctx;
 static ninlil_radio_hal_object_t g_hal_obj;
 static ninlil_radio_hal_t *g_hal;
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+static QueueHandle_t g_mesh_console_queue;
+#endif
 
 static ninlil_pcp_object_t g_pcp_obj = NINLIL_PCP_OBJECT_INIT;
 static ninlil_pcp_t *g_pcp;
@@ -224,6 +230,26 @@ static int g_profile_loaded;
 static int g_pcp_recovered;
 static int g_pcp_same_session_recover_ok;
 static uint8_t g_rx_frame[NINLIL_SX1262_PHY_MAX_FRAME];
+
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+/* ADR-0037 private LAB state. It is deliberately outside all public Runtime
+ * and production Attachment contracts. */
+enum { NJM1_CHANNEL_HZ = 923000000u };
+static ninlil_mesh_lab_t g_mesh_lab;
+static ninlil_mesh_lab_tx_t g_mesh_pending_tx;
+static ninlil_mesh_lab_tx_t g_mesh_response_tx;
+static ninlil_sx1262_rf_profile_t g_mesh_rx_profile;
+static uint8_t g_mesh_ready;
+static uint8_t g_mesh_pending;
+static uint8_t g_mesh_response_pending;
+static uint8_t g_mesh_pending_attempts;
+static uint64_t g_mesh_pending_retry_at_ms;
+static uint64_t g_mesh_response_not_before_ms;
+static uint64_t g_mesh_response_dwell_until_ms;
+
+static void mesh_start(void);
+static void mesh_service(void);
+#endif
 
 /* Per-boot identity (fresh after every reset; never reused across reboots). */
 static uint8_t g_boot_id[16];
@@ -463,6 +489,56 @@ static int session_ledger_init(void)
 }
 #endif
 
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+/* PCP clears its callback output to prove a complete sample. The ESP adapter
+ * requires a prefilled header, so bridge the two private contracts here. */
+static ninlil_port_status_t njm1_pcp_clock_now(
+    void *user,
+    ninlil_time_sample_t *out_sample)
+{
+    ninlil_esp_idf_clock_t *clock = (ninlil_esp_idf_clock_t *)user;
+    const ninlil_clock_ops_t *esp_ops;
+    ninlil_time_sample_t sample;
+    ninlil_port_status_t status;
+
+    if (clock == NULL || out_sample == NULL) {
+        return NINLIL_PORT_PERMANENT_FAILURE;
+    }
+    esp_ops = ninlil_esp_idf_clock_ops(clock);
+    if (esp_ops == NULL) {
+        return NINLIL_PORT_PERMANENT_FAILURE;
+    }
+    (void)memset(&sample, 0, sizeof(sample));
+    sample.abi_version = NINLIL_ABI_VERSION;
+    sample.struct_size = (uint16_t)sizeof(sample);
+    status = esp_ops->now(esp_ops->user, &sample);
+    if (status == NINLIL_PORT_OK) {
+        *out_sample = sample;
+    }
+    return status;
+}
+
+static const ninlil_clock_ops_t *njm1_pcp_clock_ops(void)
+{
+    static ninlil_clock_ops_t ops;
+
+    ops.abi_version = NINLIL_ABI_VERSION;
+    ops.struct_size = (uint16_t)sizeof(ops);
+    ops.user = &g_clock;
+    ops.now = njm1_pcp_clock_now;
+    return &ops;
+}
+#endif
+
+static const ninlil_clock_ops_t *authority_clock_ops(void)
+{
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    return njm1_pcp_clock_ops();
+#else
+    return ninlil_esp_idf_clock_ops(&g_clock);
+#endif
+}
+
 static int radio_entropy_transition(const uint8_t clock_epoch_id[16])
 {
     ninlil_pcp_error_t error;
@@ -625,7 +701,7 @@ static int authority_init(void)
         return 1;
     }
     if (ninlil_pcp_bind_storage(g_pcp, g_ledger_ops, &perr) != NINLIL_PCP_OK
-        || ninlil_pcp_bind_clock(g_pcp, ninlil_esp_idf_clock_ops(&g_clock), &perr)
+        || ninlil_pcp_bind_clock(g_pcp, authority_clock_ops(), &perr)
             != NINLIL_PCP_OK
         || ninlil_pcp_bind_entropy(g_pcp, authority_entropy, &perr)
             != NINLIL_PCP_OK) {
@@ -696,8 +772,16 @@ static int authority_init(void)
         }
     }
     if (g_pcp->published == 0u) {
-        if (ninlil_pcp_publish_initial_meta(g_pcp, &seed, &perr) != NINLIL_PCP_OK) {
-            emit("ERR pcp_publish");
+        ninlil_pcp_status_t pst =
+            ninlil_pcp_publish_initial_meta(g_pcp, &seed, &perr);
+        if (pst != NINLIL_PCP_OK) {
+            (void)printf(
+                "ERR pcp_publish status=%u stage=%u reason=%u hint=%s\n",
+                (unsigned)pst,
+                (unsigned)perr.stage,
+                (unsigned)perr.reason,
+                perr.hint);
+            (void)fflush(stdout);
             return 1;
         }
     }
@@ -724,6 +808,7 @@ static int cmd_init(void)
     ninlil_radio_hal_error_t herr;
     ninlil_sx1262_phy_irq_ops_t irq_ops;
     ninlil_r5_error_t rerr;
+    const ninlil_sx1262_rf_profile_t *phy_profile;
     char boot_hex[33];
 
     if (authority_init() != 0) {
@@ -774,7 +859,16 @@ static int cmd_init(void)
         &g_be,
         &err);
     if (st != NINLIL_SX1262_OK) {
-        emit("ERR backend_init");
+        (void)printf(
+            "ERR backend_init status=%u stage=%u reason=%u hint=%s raw=0x%02X chip_mode=%u cmd_status=%u\n",
+            (unsigned)st,
+            (unsigned)err.stage,
+            (unsigned)err.reason,
+            err.hint,
+            (unsigned)g_be_obj.last_status_byte,
+            (unsigned)g_be_obj.last_chip_mode,
+            (unsigned)g_be_obj.last_cmd_status);
+        (void)fflush(stdout);
         return 1;
     }
     if (ninlil_esp_idf_sx1262_bus_grant_rf_sole_capability(&g_bus) != 0) {
@@ -787,11 +881,28 @@ static int cmd_init(void)
         return 1;
     }
     ninlil_sx1262_rf_profile_lab_default(&g_prof);
-    /* Align RF profile bounds with approved R5 reg window. */
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    /* NJM1 LAB RF plan: channel 2 maps to exactly 923.0 MHz. This is a
+     * constrained laboratory profile, not a legal deployment assertion. */
+    g_prof.freq_hz_min = 922800000u;
+    g_prof.freq_hz_max = 923400000u;
+#endif
     g_prof.sf_min = 7u;
     g_prof.sf_max = 9u;
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    g_prof.tx_power_mdb_max = 10000;
+#else
     g_prof.tx_power_mdb_max = 14000;
+#endif
     g_prof.max_airtime_us_ceiling = 2000000u;
+    phy_profile = &g_prof;
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    /* TX channel 2 is 922.8 + 200 kHz = 923.0 MHz; RX must match it. */
+    g_mesh_rx_profile = g_prof;
+    g_mesh_rx_profile.freq_hz_min = NJM1_CHANNEL_HZ;
+    g_mesh_rx_profile.freq_hz_max = NJM1_CHANNEL_HZ;
+    phy_profile = &g_mesh_rx_profile;
+#endif
 
     (void)memset(&irq_ops, 0, sizeof(irq_ops));
     irq_ops.dio1_is_high = ninlil_esp_idf_sx1262_bus_dio1_is_high;
@@ -799,7 +910,7 @@ static int cmd_init(void)
     st = ninlil_sx1262_phy_init(
         &g_phy_obj,
         g_be,
-        &g_prof,
+        phy_profile,
         &irq_ops,
         ninlil_esp_idf_sx1262_bus_ctx(&g_bus),
         &g_phy,
@@ -845,6 +956,9 @@ static int cmd_init(void)
         return 1;
     }
     g_inited = 1;
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    mesh_start();
+#endif
     hex16(g_boot_id, boot_hex);
     (void)printf(
         "OK init sole_edge=r1_r2_r5_r9 rf_cap=1 authority=pcp_r5 ledger=%s "
@@ -1436,11 +1550,32 @@ static int cmd_complete_two_boot(const char *prev_boot_hex)
     return 0;
 }
 
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+static int mesh_gc_consumed_permit(uint64_t sequence)
+{
+    ninlil_pcp_error_t perr;
+    ninlil_pcp_status_t pst = ninlil_pcp_gc_terminal_records(
+        g_pcp, &sequence, 1u, &perr);
+
+    if (pst != NINLIL_PCP_OK) {
+        (void)printf(
+            "ERR pcp_gc status=%u stage=%u reason=%u seq=%llu\n",
+            (unsigned)pst,
+            (unsigned)perr.stage,
+            (unsigned)perr.reason,
+            (unsigned long long)sequence);
+        return 1;
+    }
+    return 0;
+}
+#endif
+
 static int cmd_tx_data(const uint8_t *frame, uint32_t len)
 {
     ninlil_r5_issue_plan_t plan;
     ninlil_r5_bind_plan_t full;
     ninlil_radio_hal_permit_snapshot_t permit;
+    ninlil_pcp_live_profile_t live;
     ninlil_radio_hal_frame_view_t fv;
     ninlil_radio_hal_error_t herr;
     ninlil_radio_hal_status_t st;
@@ -1462,8 +1597,9 @@ static int cmd_tx_data(const uint8_t *frame, uint32_t len)
         return 1;
     }
 
-    if (ninlil_esp_idf_clock_ops(&g_clock)->now(
-            ninlil_esp_idf_clock_ops(&g_clock)->user, &sample)
+    if (authority_clock_ops() == NULL
+        || authority_clock_ops()->now(
+            authority_clock_ops()->user, &sample)
         != NINLIL_PORT_OK) {
         emit("ERR clock_sample");
         return 1;
@@ -1509,11 +1645,32 @@ static int cmd_tx_data(const uint8_t *frame, uint32_t len)
             (unsigned)rerr.bind_item);
         return 1;
     }
+    live = g_live;
+    live.max_airtime_us = permit.max_airtime_us;
+    if (ninlil_radio_hal_set_live_binding(g_hal, &live, &herr)
+        != NINLIL_RADIO_HAL_OK) {
+        (void)printf(
+            "ERR live_bind status=%u stage=%u reason=%u permit_airtime=%u\n",
+            (unsigned)herr.status,
+            (unsigned)herr.stage,
+            (unsigned)herr.reason,
+            (unsigned)permit.max_airtime_us);
+        return 1;
+    }
 
     fv.bytes = frame;
     fv.length = len;
     st = ninlil_radio_hal_transmit_with_permit(g_hal, &permit, &fv, &herr);
     if (st != NINLIL_RADIO_HAL_OK) {
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+        /* R1 invokes its edge only after successful PCP/R5 consume. Thus an
+         * EDGE failure (including LBT busy) is terminal and safe to reclaim;
+         * permit-validate/consume failures are deliberately not reclaimed. */
+        if (st == NINLIL_RADIO_HAL_EDGE_ERROR
+            && herr.stage == NINLIL_RADIO_HAL_STAGE_EDGE) {
+            (void)mesh_gc_consumed_permit(permit.permit_sequence);
+        }
+#endif
         (void)printf(
             "ERR tx status=%u stage=%u reason=%u\n",
             (unsigned)st,
@@ -1521,9 +1678,434 @@ static int cmd_tx_data(const uint8_t *frame, uint32_t len)
             (unsigned)herr.reason);
         return 1;
     }
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    /* R1 has consumed this one-shot permit before arming the sole RF edge.
+     * The session ledger keeps terminal PCP records until this explicit GC;
+     * without it its fixed diagnostic store fills after a few dozen beacons. */
+    if (mesh_gc_consumed_permit(permit.permit_sequence) != 0) {
+        return 1;
+    }
+#endif
     emit("OK tx_armed sole_edge authority=r5_pcp lbt=1");
     return 0;
 }
+
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+static uint64_t mesh_now_ms(void)
+{
+    return (uint64_t)(esp_timer_get_time() / 1000);
+}
+
+static int mesh_hex_value(char c)
+{
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
+static int mesh_parse_hex(const char *text, uint8_t *out, size_t length)
+{
+    size_t i;
+    if (text == NULL || out == NULL) {
+        return 0;
+    }
+    for (i = 0u; i < length; ++i) {
+        int hi = mesh_hex_value(text[i * 2u]);
+        int lo = mesh_hex_value(text[i * 2u + 1u]);
+        if (hi < 0 || lo < 0) {
+            return 0;
+        }
+        out[i] = (uint8_t)((hi << 4) | lo);
+    }
+    return text[length * 2u] == '\0';
+}
+
+static void mesh_hex_id(const uint8_t id[8], char out[17])
+{
+    static const char digits[] = "0123456789abcdef";
+    size_t i;
+    for (i = 0u; i < 8u; ++i) {
+        out[i * 2u] = digits[id[i] >> 4u];
+        out[i * 2u + 1u] = digits[id[i] & 0x0fu];
+    }
+    out[16] = '\0';
+}
+
+static void mesh_emit_status(void)
+{
+    ninlil_mesh_lab_snapshot_t snapshot;
+    char node[17];
+    char site[17];
+    char controller[17];
+    char parent[17];
+    uint64_t now;
+    uint64_t lease_ms = 0u;
+
+    if (g_mesh_ready == 0u) {
+        emit("MESH state=not_initialized lab_only=true");
+        return;
+    }
+    ninlil_mesh_lab_snapshot(&g_mesh_lab, &snapshot);
+    mesh_hex_id(snapshot.node_id, node);
+    mesh_hex_id(snapshot.site_id, site);
+    mesh_hex_id(snapshot.controller_id, controller);
+    mesh_hex_id(snapshot.parent_id, parent);
+    now = mesh_now_ms();
+    if (snapshot.lease_until_ms != UINT64_MAX && snapshot.lease_until_ms > now) {
+        lease_ms = snapshot.lease_until_ms - now;
+    }
+    (void)printf(
+        "MESH node=%s role=%s joined=%u joining=%u site=%s epoch=%u "
+        "controller=%s parent=%s hops=%u lease_ms=%llu tx=%u rx=%u "
+        "relay=%u duplicate=%u route_changes=%u lab_only=true\n",
+        node,
+        snapshot.controller != 0u ? "controller" : "node",
+        (unsigned)snapshot.joined,
+        (unsigned)snapshot.joining,
+        site,
+        (unsigned)snapshot.site_epoch,
+        controller,
+        parent,
+        (unsigned)snapshot.hops,
+        (unsigned long long)lease_ms,
+        (unsigned)snapshot.tx_count,
+        (unsigned)snapshot.rx_count,
+        (unsigned)snapshot.relay_count,
+        (unsigned)snapshot.duplicate_count,
+        (unsigned)snapshot.route_change_count);
+    (void)fflush(stdout);
+}
+
+static void mesh_emit_event(const ninlil_mesh_lab_event_t *event,
+    int16_t rssi_dbm, int8_t snr_db)
+{
+    char source[17];
+    if (event == NULL || event->kind == NINLIL_MESH_LAB_EVENT_NONE) {
+        return;
+    }
+    mesh_hex_id(event->source, source);
+    (void)printf(
+        "MESH event=%u source=%s payload_len=%u rssi=%d snr=%d lab_only=true\n",
+        (unsigned)event->kind,
+        source,
+        (unsigned)event->payload_length,
+        (int)rssi_dbm,
+        (int)snr_db);
+    (void)fflush(stdout);
+}
+
+static void mesh_emit_join_frame(const char *direction,
+    const uint8_t *frame, uint16_t length)
+{
+    char origin[17];
+    char sender[17];
+    char next[17];
+    char destination[17];
+    uint32_t sequence;
+    uint8_t kind;
+
+    if (direction == NULL || frame == NULL || length < 64u
+        || memcmp(frame, "NJM1", 4u) != 0) {
+        return;
+    }
+    kind = frame[5];
+    if (kind < 2u || kind > 5u) {
+        return; /* No beacon chatter: bounded control/data LAB diagnosis. */
+    }
+    sequence = ((uint32_t)frame[20] << 24) | ((uint32_t)frame[21] << 16)
+        | ((uint32_t)frame[22] << 8) | (uint32_t)frame[23];
+    mesh_hex_id(frame + 24u, origin);
+    mesh_hex_id(frame + 32u, sender);
+    mesh_hex_id(frame + 40u, next);
+    mesh_hex_id(frame + 48u, destination);
+    (void)printf(
+        "MESH frame=%s kind=%u seq=%u origin=%s sender=%s next=%s dst=%s lab_only=true\n",
+        direction, (unsigned)kind, (unsigned)sequence, origin, sender, next,
+        destination);
+    (void)fflush(stdout);
+}
+
+static int mesh_queue_tx(const ninlil_mesh_lab_tx_t *tx, uint64_t not_before_ms)
+{
+    if (tx == NULL || tx->length == 0u) {
+        return 1;
+    }
+    if (g_mesh_pending != 0u) {
+        emit("MESH error=tx_queue_full lab_only=true");
+        return 0;
+    }
+    g_mesh_pending_tx = *tx;
+    g_mesh_pending = 1u;
+    g_mesh_pending_attempts = 0u;
+    g_mesh_pending_retry_at_ms = not_before_ms;
+    mesh_emit_join_frame("queue", tx->bytes, tx->length);
+    return 1;
+}
+
+static void mesh_clear_pending(void)
+{
+    g_mesh_pending = 0u;
+    g_mesh_pending_attempts = 0u;
+    g_mesh_pending_retry_at_ms = 0u;
+}
+
+static void mesh_clear_response(void)
+{
+    g_mesh_response_pending = 0u;
+    g_mesh_response_not_before_ms = 0u;
+}
+
+static int mesh_queue_response(const ninlil_mesh_lab_tx_t *tx,
+    uint64_t not_before_ms)
+{
+    if (tx == NULL || tx->length == 0u) {
+        return 1;
+    }
+    if (g_mesh_response_pending != 0u) {
+        emit("MESH response_drop=slot_full lab_only=true");
+        return 0;
+    }
+    g_mesh_response_tx = *tx;
+    g_mesh_response_pending = 1u;
+    g_mesh_response_not_before_ms = not_before_ms;
+    mesh_emit_join_frame("queue", tx->bytes, tx->length);
+    return 1;
+}
+
+static void mesh_drop_pending_if_membership_lost(void)
+{
+    static const uint8_t no_site[NINLIL_MESH_LAB_NODE_ID_BYTES] = {0};
+
+    if (g_mesh_lab.controller == 0u
+        && memcmp(g_mesh_lab.site_id, no_site, sizeof(no_site)) == 0) {
+        if (g_mesh_pending != 0u) {
+            mesh_clear_pending();
+            emit("MESH tx_drop reason=membership_expired lab_only=true");
+        }
+        if (g_mesh_response_pending != 0u) {
+            mesh_clear_response();
+            emit("MESH response_drop=membership_expired lab_only=true");
+        }
+        return;
+    }
+    if (g_mesh_pending != 0u
+        && ninlil_mesh_lab_tx_requires_ack(&g_mesh_lab, &g_mesh_pending_tx)
+        && g_mesh_lab.controller == 0u && g_mesh_lab.joined == 0u) {
+        mesh_clear_pending();
+        emit("MESH data_drop reason=membership_lost lab_only=true");
+    }
+}
+
+static void mesh_start(void)
+{
+    uint8_t mac[6];
+    uint8_t node_id[8] = {0};
+    char node[17];
+
+    if (esp_efuse_mac_get_default(mac) != ESP_OK) {
+        emit("MESH error=mac_unavailable lab_only=true");
+        return;
+    }
+    (void)memcpy(node_id, mac, sizeof(mac));
+    node_id[6] = 0x4eu; /* "N" + factory MAC = stable private LAB ID. */
+    node_id[7] = 0x31u; /* "1" */
+    ninlil_mesh_lab_init(&g_mesh_lab, node_id);
+    g_mesh_pending = 0u;
+    g_mesh_response_pending = 0u;
+    g_mesh_pending_attempts = 0u;
+    g_mesh_pending_retry_at_ms = 0u;
+    g_mesh_response_not_before_ms = 0u;
+    g_mesh_response_dwell_until_ms = 0u;
+    g_mesh_ready = 1u;
+    mesh_hex_id(node_id, node);
+    (void)printf(
+        "MESH ready node=%s role=node tx_hz=%u rx_hz=%u lab_only=true\n",
+        node, (unsigned)NJM1_CHANNEL_HZ, (unsigned)NJM1_CHANNEL_HZ);
+    (void)fflush(stdout);
+}
+
+static void mesh_make_site(uint8_t site[8], uint32_t *epoch)
+{
+    size_t i;
+    uint32_t random = esp_random();
+    for (i = 0u; i < 8u; ++i) {
+        if ((i % 4u) == 0u) {
+            random = esp_random();
+        }
+        site[i] = (uint8_t)(random >> ((i % 4u) * 8u));
+    }
+    if (site[0] == 0u && site[1] == 0u && site[2] == 0u && site[3] == 0u
+        && site[4] == 0u && site[5] == 0u && site[6] == 0u && site[7] == 0u) {
+        site[0] = 1u;
+    }
+    *epoch = esp_random();
+    if (*epoch == 0u) {
+        *epoch = 1u;
+    }
+}
+
+static void mesh_service(void)
+{
+    ninlil_sx1262_phy_state_t before;
+    ninlil_sx1262_phy_state_t after;
+    ninlil_sx1262_error_t error;
+    ninlil_sx1262_status_t status;
+    ninlil_sx1262_rx_meta_t meta;
+    ninlil_mesh_lab_tx_t tx;
+    ninlil_mesh_lab_event_t event;
+    uint64_t now;
+
+    if (g_mesh_ready == 0u || g_inited == 0 || g_phy == NULL) {
+        return;
+    }
+    now = mesh_now_ms();
+    ninlil_mesh_lab_maintain(&g_mesh_lab, now);
+    mesh_drop_pending_if_membership_lost();
+    before = ninlil_sx1262_phy_state(g_phy);
+    if (before == NINLIL_SX1262_PHY_STATE_TX_ACTIVE
+        || before == NINLIL_SX1262_PHY_STATE_RX_ACTIVE) {
+        (void)memset(&error, 0, sizeof(error));
+        status = ninlil_sx1262_phy_poll(g_phy, &error);
+        if (status != NINLIL_SX1262_OK) {
+            (void)printf("MESH error=phy_poll status=%u stage=%u reason=%u lab_only=true\n",
+                (unsigned)status, (unsigned)error.stage, (unsigned)error.reason);
+            return;
+        }
+        after = ninlil_sx1262_phy_state(g_phy);
+        if (before == NINLIL_SX1262_PHY_STATE_RX_ACTIVE
+            && after != NINLIL_SX1262_PHY_STATE_RX_ACTIVE) {
+            (void)memset(&meta, 0, sizeof(meta));
+            (void)memset(&error, 0, sizeof(error));
+            status = ninlil_sx1262_phy_take_rx(
+                g_phy, g_rx_frame, (uint32_t)sizeof(g_rx_frame), &meta, &error);
+            if (status == NINLIL_SX1262_OK
+                && meta.classification == NINLIL_SX1262_RX_OK && meta.length != 0u) {
+                (void)memset(&tx, 0, sizeof(tx));
+                (void)memset(&event, 0, sizeof(event));
+                mesh_emit_join_frame("rx", g_rx_frame, (uint16_t)meta.length);
+                if (ninlil_mesh_lab_receive(&g_mesh_lab, g_rx_frame, meta.length,
+                        meta.rssi_dbm, meta.snr_db, now, &tx, &event)) {
+                    mesh_emit_event(&event, meta.rssi_dbm, meta.snr_db);
+                    if (g_mesh_pending != 0u && g_mesh_pending_attempts == 0u
+                        && ninlil_mesh_lab_tx_requires_ack(
+                            &g_mesh_lab, &g_mesh_pending_tx)
+                        && ninlil_mesh_lab_selected_parent_beacon(&g_mesh_lab,
+                            g_rx_frame, meta.length)) {
+                        g_mesh_pending_retry_at_ms =
+                            ninlil_mesh_lab_data_after_parent_not_before(now);
+                        emit("MESH data_stage=parent_rx lab_only=true");
+                    }
+                    if (g_mesh_pending != 0u
+                        && ninlil_mesh_lab_ack_matches_tx(
+                            &g_mesh_pending_tx, &event)) {
+                        (void)printf("MESH data_ack attempts=%u lab_only=true\n",
+                            (unsigned)g_mesh_pending_attempts);
+                        (void)fflush(stdout);
+                        mesh_clear_pending();
+                    }
+                    (void)mesh_queue_response(&tx,
+                        ninlil_mesh_lab_response_not_before(now));
+                }
+            }
+        }
+    }
+
+    if (ninlil_sx1262_phy_state(g_phy) == NINLIL_SX1262_PHY_STATE_IDLE
+        && g_mesh_pending == 0u
+        && g_mesh_response_pending == 0u
+        && ninlil_mesh_lab_periodic_tx_due(now,
+            g_mesh_response_dwell_until_ms)) {
+        (void)memset(&tx, 0, sizeof(tx));
+        if (ninlil_mesh_lab_tick(&g_mesh_lab, now, &tx)) {
+            (void)mesh_queue_tx(&tx, 0u);
+        }
+    }
+    if (g_mesh_response_pending != 0u
+        && ninlil_sx1262_phy_state(g_phy) == NINLIL_SX1262_PHY_STATE_IDLE
+        && ninlil_mesh_lab_tx_due(now, g_mesh_response_not_before_ms)) {
+        mesh_emit_join_frame("tx", g_mesh_response_tx.bytes,
+            g_mesh_response_tx.length);
+        if (cmd_tx_data(g_mesh_response_tx.bytes, g_mesh_response_tx.length) != 0) {
+            emit("MESH response_drop=tx_failed lab_only=true");
+        } else {
+            /* Keep periodic beacons out of the downstream forwarding window.
+             * RX stays armed, so this does not delay incoming traffic. */
+            g_mesh_response_dwell_until_ms =
+                ninlil_mesh_lab_response_dwell_until(&g_mesh_response_tx, now);
+        }
+        mesh_clear_response();
+        return;
+    }
+    if (g_mesh_pending != 0u
+        && g_mesh_response_pending == 0u
+        && ninlil_sx1262_phy_state(g_phy) == NINLIL_SX1262_PHY_STATE_IDLE
+        && ninlil_mesh_lab_tx_due(now, g_mesh_pending_retry_at_ms)) {
+        ninlil_mesh_lab_tx_t retry;
+        if (ninlil_mesh_lab_tx_requires_ack(&g_mesh_lab, &g_mesh_pending_tx)
+            && g_mesh_pending_attempts >= 3u) {
+            mesh_clear_pending();
+            emit("MESH data_drop attempts=3 reason=ack_timeout lab_only=true");
+            return;
+        }
+        if (ninlil_mesh_lab_tx_requires_ack(&g_mesh_lab, &g_mesh_pending_tx)
+            && g_mesh_pending_attempts != 0u) {
+            if (!ninlil_mesh_lab_retry_data(
+                    &g_mesh_lab, &g_mesh_pending_tx, now, &retry)) {
+                mesh_clear_pending();
+                emit("MESH data_drop reason=no_route lab_only=true");
+                return;
+            }
+            g_mesh_pending_tx = retry;
+        }
+        g_mesh_pending_attempts += 1u;
+        mesh_emit_join_frame("tx", g_mesh_pending_tx.bytes,
+            g_mesh_pending_tx.length);
+        if (cmd_tx_data(g_mesh_pending_tx.bytes, g_mesh_pending_tx.length) == 0) {
+            g_mesh_response_dwell_until_ms =
+                ninlil_mesh_lab_response_dwell_until(&g_mesh_pending_tx, now);
+            if (ninlil_mesh_lab_tx_requires_ack(
+                    &g_mesh_lab, &g_mesh_pending_tx)) {
+                g_mesh_pending_retry_at_ms =
+                    ninlil_mesh_lab_data_ack_retry_at(g_mesh_lab.node_id,
+                        ((uint32_t)g_mesh_pending_tx.bytes[20] << 24)
+                            | ((uint32_t)g_mesh_pending_tx.bytes[21] << 16)
+                            | ((uint32_t)g_mesh_pending_tx.bytes[22] << 8)
+                            | (uint32_t)g_mesh_pending_tx.bytes[23],
+                        g_mesh_pending_attempts, now);
+            } else {
+                mesh_clear_pending();
+            }
+        } else if (g_mesh_pending_attempts >= 3u) {
+            mesh_clear_pending();
+            emit("MESH tx_drop attempts=3 lab_only=true");
+        } else {
+            g_mesh_pending_retry_at_ms = now
+                + (uint64_t)g_mesh_pending_attempts * 250u;
+        }
+        return;
+    }
+    if ((g_mesh_pending == 0u
+            || (ninlil_mesh_lab_tx_requires_ack(
+                    &g_mesh_lab, &g_mesh_pending_tx)
+                && now < g_mesh_pending_retry_at_ms))
+        && g_mesh_response_pending == 0u
+        && ninlil_sx1262_phy_state(g_phy) == NINLIL_SX1262_PHY_STATE_IDLE) {
+        (void)memset(&error, 0, sizeof(error));
+        status = ninlil_sx1262_phy_start_rx(g_phy, 1000u, &error);
+        if (status != NINLIL_SX1262_OK) {
+            (void)printf("MESH error=rx_arm status=%u stage=%u reason=%u lab_only=true\n",
+                (unsigned)status, (unsigned)error.stage, (unsigned)error.reason);
+        }
+    }
+}
+#endif
 
 static void handle_line(char *line)
 {
@@ -1535,6 +2117,111 @@ static void handle_line(char *line)
         (void)cmd_init();
         return;
     }
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    if (strcmp(line, "MESH STATUS") == 0) {
+        mesh_emit_status();
+        return;
+    }
+    if (strcmp(line, "MESH CONTROLLER") == 0) {
+        uint8_t site[8];
+        uint32_t epoch;
+        if (g_mesh_ready == 0u) {
+            emit("MESH error=not_initialized lab_only=true");
+            return;
+        }
+        mesh_make_site(site, &epoch);
+        mesh_clear_pending();
+        mesh_clear_response();
+        if (!ninlil_mesh_lab_become_controller(
+                &g_mesh_lab, site, epoch, mesh_now_ms())) {
+            emit("MESH error=controller_start lab_only=true");
+            return;
+        }
+        mesh_emit_status();
+        return;
+    }
+    if (strcmp(line, "MESH NODE") == 0) {
+        if (g_mesh_ready == 0u) {
+            emit("MESH error=not_initialized lab_only=true");
+            return;
+        }
+        mesh_clear_pending();
+        mesh_clear_response();
+        ninlil_mesh_lab_become_node(&g_mesh_lab);
+        mesh_emit_status();
+        return;
+    }
+    if (strcmp(line, "MESH LEAVE") == 0) {
+        if (g_mesh_ready == 0u) {
+            emit("MESH error=not_initialized lab_only=true");
+            return;
+        }
+        mesh_clear_pending();
+        mesh_clear_response();
+        ninlil_mesh_lab_leave(&g_mesh_lab);
+        mesh_emit_status();
+        return;
+    }
+    if (strncmp(line, "MESH PENALTY ", 13) == 0) {
+        char node_text[17];
+        char extra;
+        unsigned penalty;
+        uint8_t node[8];
+        if (g_mesh_ready == 0u
+            || sscanf(line + 13, "%16s %u %c", node_text, &penalty, &extra) != 2
+            || penalty > 200u || !mesh_parse_hex(node_text, node, sizeof(node))) {
+            emit("MESH error=bad_penalty lab_only=true");
+            return;
+        }
+        if (!ninlil_mesh_lab_set_test_penalty(
+                &g_mesh_lab, node, (uint8_t)penalty)) {
+            emit("MESH error=bad_penalty lab_only=true");
+            return;
+        }
+        (void)printf("MESH penalty node=%s value=%u mode=%s lab_only=true\n",
+            node_text, penalty, penalty == 200u ? "exclude" : "score");
+        (void)fflush(stdout);
+        mesh_emit_status();
+        return;
+    }
+    if (strncmp(line, "MESH SEND ", 10) == 0) {
+        char destination_text[17];
+        char payload_text[129];
+        char extra;
+        uint8_t destination[8];
+        uint8_t payload[NINLIL_MESH_LAB_PAYLOAD_MAX];
+        ninlil_mesh_lab_tx_t tx;
+        size_t payload_length;
+        if (g_mesh_ready == 0u
+            || sscanf(line + 10, "%16s %128s %c", destination_text,
+                payload_text, &extra) != 2
+            || !mesh_parse_hex(destination_text, destination, sizeof(destination))) {
+            emit("MESH error=bad_send lab_only=true");
+            return;
+        }
+        payload_length = strlen(payload_text);
+        if (payload_length == 0u || (payload_length % 2u) != 0u
+            || payload_length > NINLIL_MESH_LAB_PAYLOAD_MAX * 2u
+            || !mesh_parse_hex(payload_text, payload, payload_length / 2u)) {
+            emit("MESH error=bad_send lab_only=true");
+            return;
+        }
+        if (g_mesh_pending != 0u
+            || !ninlil_mesh_lab_send_data(&g_mesh_lab, destination, payload,
+                (uint8_t)(payload_length / 2u), mesh_now_ms(), &tx)
+            || !mesh_queue_tx(&tx,
+                g_mesh_lab.controller != 0u ? 0u : UINT64_MAX)) {
+            emit("MESH error=no_route_or_tx_busy lab_only=true");
+            return;
+        }
+        emit("MESH send=queued lab_only=true");
+        return;
+    }
+    if (strncmp(line, "MESH ", 5) == 0) {
+        emit("MESH error=unknown_command lab_only=true");
+        return;
+    }
+#endif
     if (strcmp(line, "POLL") == 0) {
         ninlil_sx1262_error_t err;
         ninlil_sx1262_status_t st;
@@ -1716,6 +2403,40 @@ static void handle_line(char *line)
     emit("ERR unknown");
 }
 
+static int console_read_nonblocking(void)
+{
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    char byte;
+
+    if (xQueueReceive(g_mesh_console_queue, &byte, 0u) == pdTRUE) {
+        return (unsigned char)byte;
+    }
+    return EOF;
+#else
+    return getchar();
+#endif
+}
+
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+static void mesh_console_reader_task(void *arg)
+{
+    char byte;
+    int c;
+
+    (void)arg;
+    for (;;) {
+        c = getchar();
+        if (c == EOF) {
+            clearerr(stdin);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+        byte = (char)c;
+        (void)xQueueSend(g_mesh_console_queue, &byte, portMAX_DELAY);
+    }
+}
+#endif
+
 void app_main(void)
 {
     char line[256];
@@ -1754,8 +2475,30 @@ void app_main(void)
         boot_hex,
         (unsigned)g_reset_reason);
     (void)fflush(stdout);
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+    g_mesh_console_queue = xQueueCreate(256u, sizeof(char));
+    if (g_mesh_console_queue == NULL
+        || xTaskCreate(mesh_console_reader_task, "mesh_console", 3072u,
+            NULL, tskIDLE_PRIORITY + 1u, NULL) != pdPASS) {
+        emit("ERR mesh_console_start lab_only=true");
+        for (;;) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+    /* The browser console deliberately exposes only MESH controls. LAB setup
+     * therefore has no hidden prerequisite command after reset. */
+    if (cmd_init() != 0) {
+        emit("ERR mesh_auto_init_failed lab_only=true");
+        for (;;) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+#endif
     for (;;) {
-        int c = getchar();
+#if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
+        mesh_service();
+#endif
+        int c = console_read_nonblocking();
         if (c == EOF) {
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;

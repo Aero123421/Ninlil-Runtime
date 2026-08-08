@@ -5933,6 +5933,7 @@ else:
     # Does not claim legal/R3/HIL/re-review GO. Docs gate alone is not completion.
     add_executable(ninlil_pcp_r2_authority_test
         tests/radio/pcp_r2_authority_test.c
+        src/radio/pcp_lab_session_ledger.c
         tests/support/in_memory_storage.c
         tests/support/platform_basic_fixtures.c
         tests/support/deterministic_entropy.c
@@ -7155,6 +7156,26 @@ else:
     add_test(
         NAME esp_idf_port_logic
         COMMAND ninlil_esp_idf_port_logic_test
+    )
+
+    # ADR-0037 private NJM1 LAB state machine. This is host simulation only;
+    # it does not make the portable Runtime depend on ESP-IDF or radio LAB code.
+    add_executable(ninlil_mesh_lab_test
+        tests/host/mesh_lab_test.c
+        ports/esp-idf/radio_hil_app/main/mesh_lab.c
+    )
+    target_include_directories(ninlil_mesh_lab_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ports/esp-idf/radio_hil_app/main
+    )
+    set_target_properties(ninlil_mesh_lab_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    ninlil_apply_strict_warnings(ninlil_mesh_lab_test)
+    add_test(
+        NAME mesh_lab
+        COMMAND ninlil_mesh_lab_test
     )
 
     add_executable(ninlil_v1_esp_provider_availability_test

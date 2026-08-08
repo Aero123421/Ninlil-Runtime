@@ -671,14 +671,18 @@ def check_test_present() -> None:
     for tok in (
         "k_xtal_ok",
         "test_error_before_clear",
-        "test_cmd_status_fail_first",
+        "test_cmd_status_first_raw_accepted",
+        "test_post_reset_settle",
         "test_cmd_status_fail_after_write",
+        "test_bootstrap_standby_retries",
+        "test_bootstrap_standby_retry_bounds",
+        "test_bootstrap_standby_transport_fails_once",
         "test_frozen_clock_poll_cap",
         "test_clock_wrap",
         "test_delayed_busy",
         "test_calc_polls_overflow",
         "test_esp_ticks_overflow",
-        "test_rfu_and_tx_done_reject",
+        "test_cmd_status_one_and_tx_done_reject",
         "test_miso_status_byte_position",
         "test_esp_bus_trans_storage_align",
         "test_tcxo_cold_img_only",
@@ -876,16 +880,16 @@ def check(root: pathlib.Path | None = None) -> None:
     # Backend must not decode status before post-BUSY (ordering heuristic).
     be = read_text(BACKEND_C)
     # After SPI success, post guard / wait_busy must appear before STATUS_INVALID
-    # for mid-init rx[1] path.
+    # for post-bootstrap control rx[1] path.
     if "after BUSY" not in be and "after BUSY" not in be:
         if "post_spi_busy_guard" not in be:
             fail("backend missing post_spi_busy_guard")
     idx_guard = be.find("post_spi_busy_guard_us")
-    idx_decode = be.find("rx[1] cmd_status not in mid-init accepted")
+    idx_decode = be.find("rx[1] cmd_status not in control accepted")
     if idx_guard < 0 or idx_decode < 0 or idx_decode < idx_guard:
-        # soft: require busy wait call before mid-init accepted error string region
-        if "mid-init accepted {0,2} after BUSY" not in be:
-            fail("backend must decode mid-init status only after BUSY sync")
+        # soft: require busy wait call before the accepted-set error region
+        if "control accepted {0,1,2} after BUSY" not in be:
+            fail("backend must decode control status only after BUSY sync")
     # Single-TU C11 -Werror compile of pending_logic (stddef/NULL).
     import subprocess
     import tempfile as _tf

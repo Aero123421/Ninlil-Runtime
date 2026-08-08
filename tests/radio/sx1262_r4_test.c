@@ -59,6 +59,8 @@ enum {
 /* Independent golden SPI sequences (not production macros). */
 static const uint8_t k_xtal_ok[] = {
     SX126X_GOLDEN_GET_STATUS,
+    SX126X_GOLDEN_SET_STANDBY,
+    SX126X_GOLDEN_GET_STATUS, /* bootstrap Standby(RC) verify */
     SX126X_GOLDEN_GET_DEVICE_ERRORS,
     SX126X_GOLDEN_GET_STATUS, /* verify after GetErrors */
     SX126X_GOLDEN_SET_REGULATOR_MODE,
@@ -413,7 +415,7 @@ static int test_error_before_clear(void)
     return 0;
 }
 
-static int test_cmd_status_fail_first(void)
+static int test_cmd_status_first_raw_accepted(void)
 {
     ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
     ninlil_sx1262_backend_t *be = NULL;
@@ -423,11 +425,50 @@ static int test_cmd_status_fail_first(void)
 
     ninlil_sx1262_bus_spy_init(&spy);
     fill_valid_board(&cfg);
-    spy.status_byte = (uint8_t)(0x20u | (3u << 1));
+    spy.first_get_status_override = 1;
+    spy.first_get_status_byte = 0x2Au; /* STBY_RC + undefined prior cmd=5. */
     REQUIRE(
         ninlil_sx1262_init(
             &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
-        == NINLIL_SX1262_STATUS_INVALID);
+        == NINLIL_SX1262_OK);
+    return 0;
+}
+
+/* Reset deassert must settle for a bounded 10 ms before any BUSY/SPI access. */
+static int test_post_reset_settle(void)
+{
+    ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
+    ninlil_sx1262_backend_t *be = NULL;
+    ninlil_sx1262_bus_spy_t spy;
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+    size_t i;
+
+    ninlil_sx1262_bus_spy_init(&spy);
+    fill_valid_board(&cfg);
+    REQUIRE(ninlil_sx1262_init(
+                &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
+        == NINLIL_SX1262_OK);
+    for (i = 0u; i + 1u < spy.trace_len; ++i) {
+        if (spy.trace[i].event == NINLIL_SX1262_SPY_EV_RESET_DEASSERT) {
+            REQUIRE(spy.trace[i + 1u].event == NINLIL_SX1262_SPY_EV_DELAY);
+            REQUIRE(spy.trace[i + 1u].opcode == 10000u);
+            break;
+        }
+    }
+    REQUIRE(i + 1u < spy.trace_len);
+
+    obj = (ninlil_sx1262_backend_object_t)NINLIL_SX1262_OBJECT_INIT;
+    ninlil_sx1262_bus_spy_init(&spy);
+    fill_valid_board(&cfg);
+    spy.fail_delay_us_eq = 10000u;
+    REQUIRE(ninlil_sx1262_init(
+                &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
+        == NINLIL_SX1262_BUS_ERROR);
+    REQUIRE(err.stage == NINLIL_SX1262_STAGE_RESET);
+    REQUIRE(err.reason == NINLIL_SX1262_REASON_RESET_FAIL);
+    REQUIRE(strcmp(err.hint, "post-reset settle") == 0);
+    REQUIRE(spy.spi_calls == 0u);
     return 0;
 }
 
@@ -441,15 +482,83 @@ static int test_cmd_status_fail_after_write(void)
 
     ninlil_sx1262_bus_spy_init(&spy);
     fill_valid_board(&cfg);
-    /* After first GetStatus OK, poison status for subsequent GetStatus verify */
+    /* Bootstrap verifies first; later explicit GetStatus must fail closed on 5. */
+    spy.first_get_status_override = 1;
+    spy.first_get_status_byte = 0x2Au;
     spy.status_byte =
         (uint8_t)(NINLIL_SX1262_CHIP_MODE_STBY_RC << NINLIL_SX1262_CHIP_MODES_POS);
-    spy.fail_status_after_n_gets = 2; /* second GetStatus (verify after GetErrors) */
+    spy.fail_status_after_n_gets = 3; /* verify after GetDeviceErrors */
     spy.status_byte_poison = (uint8_t)(0x20u | (5u << 1));
     REQUIRE(
         ninlil_sx1262_init(
             &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
         == NINLIL_SX1262_STATUS_INVALID);
+    REQUIRE(spy.get_status_count == 3);
+    REQUIRE(be->last_cmd_status == 5u);
+    return 0;
+}
+
+static int test_bootstrap_standby_retries(void)
+{
+    ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
+    ninlil_sx1262_backend_t *be = NULL;
+    ninlil_sx1262_bus_spy_t spy;
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+
+    ninlil_sx1262_bus_spy_init(&spy);
+    fill_valid_board(&cfg);
+    spy.status_byte_poison = 0x2Au; /* STBY_RC + cmd_status=5 */
+    spy.fail_get_status_count_after_first = 3;
+    REQUIRE(ninlil_sx1262_init(
+                &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
+        == NINLIL_SX1262_OK);
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)SX126X_GOLDEN_SET_STANDBY)
+        == 5u); /* four bootstrap attempts plus terminal standby */
+    REQUIRE(spy.get_status_count == 9u);
+    return 0;
+}
+
+static int test_bootstrap_standby_retry_bounds(void)
+{
+    ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
+    ninlil_sx1262_backend_t *be = NULL;
+    ninlil_sx1262_bus_spy_t spy;
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+
+    ninlil_sx1262_bus_spy_init(&spy);
+    fill_valid_board(&cfg);
+    spy.status_byte_poison = 0x2Au;
+    spy.fail_get_status_count_after_first = 100;
+    REQUIRE(ninlil_sx1262_init(
+                &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
+        == NINLIL_SX1262_STATUS_INVALID);
+    REQUIRE(spy.get_status_count == 101);
+    REQUIRE(spy.spi_calls == 201u); /* initial GetStatus + 100 bounded pairs */
+    REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
+                &spy, (uint8_t)SX126X_GOLDEN_SET_REGULATOR_MODE)
+        == 0u);
+    return 0;
+}
+
+static int test_bootstrap_standby_transport_fails_once(void)
+{
+    ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
+    ninlil_sx1262_backend_t *be = NULL;
+    ninlil_sx1262_bus_spy_t spy;
+    ninlil_sx1262_board_config_t cfg;
+    ninlil_sx1262_error_t err;
+
+    ninlil_sx1262_bus_spy_init(&spy);
+    fill_valid_board(&cfg);
+    spy.fail_spi_on_n = 2; /* first bootstrap SetStandby */
+    REQUIRE(ninlil_sx1262_init(
+                &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
+        == NINLIL_SX1262_SPI_ERROR);
+    REQUIRE(spy.spi_calls == 2u);
+    REQUIRE(spy.get_status_count == 1);
     return 0;
 }
 
@@ -653,13 +762,13 @@ static int test_miso_status_byte_position(void)
         == NINLIL_SX1262_OK);
     REQUIRE(be->last_status_byte == healthy);
 
-    /* (b) GetDeviceErrors (2nd SPI after reset GetStatus): poison rx[1] only */
+    /* (b) GetDeviceErrors after bootstrap: poison its embedded rx[1]. */
     obj = (ninlil_sx1262_backend_object_t)NINLIL_SX1262_OBJECT_INIT;
     ninlil_sx1262_bus_spy_init(&spy);
     fill_valid_board(&cfg);
     spy.miso_rfu_byte = 0u;
     spy.status_byte = healthy;
-    spy.fail_status_after_n_spi = 2; /* GetDeviceErrors xfer */
+    spy.fail_status_after_n_spi = 4; /* GetDeviceErrors xfer */
     spy.status_byte_poison = fail5;
     REQUIRE(
         ninlil_sx1262_init(
@@ -682,7 +791,7 @@ static int test_miso_status_byte_position(void)
     fill_valid_board(&cfg);
     spy.miso_rfu_byte = fail5; /* still ignored */
     spy.status_byte = healthy;
-    spy.fail_status_after_n_gets = 2;
+    spy.fail_status_after_n_gets = 3;
     spy.status_byte_poison = fail5;
     REQUIRE(
         ninlil_sx1262_init(
@@ -708,7 +817,7 @@ static int test_esp_bus_trans_storage_align(void)
     return 0;
 }
 
-static int test_rfu_and_tx_done_reject(void)
+static int test_cmd_status_one_and_tx_done_reject(void)
 {
     ninlil_sx1262_backend_object_t obj = NINLIL_SX1262_OBJECT_INIT;
     ninlil_sx1262_backend_t *be = NULL;
@@ -716,24 +825,24 @@ static int test_rfu_and_tx_done_reject(void)
     ninlil_sx1262_board_config_t cfg;
     ninlil_sx1262_error_t err;
 
-    /* RFU=1 on mid-init GetStatus verify after GetErrors */
+    /* cmd_status=1 on post-bootstrap control GetStatus is accepted. */
     ninlil_sx1262_bus_spy_init(&spy);
     fill_valid_board(&cfg);
     spy.status_byte =
         (uint8_t)(NINLIL_SX1262_CHIP_MODE_STBY_RC << NINLIL_SX1262_CHIP_MODES_POS);
-    spy.fail_status_after_n_gets = 2;
-    spy.status_byte_poison = (uint8_t)(0x20u | (1u << 1)); /* RFU */
+    spy.fail_status_after_n_gets = 3;
+    spy.status_byte_poison = (uint8_t)(0x20u | (1u << 1));
     REQUIRE(
         ninlil_sx1262_init(
             &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
-        == NINLIL_SX1262_STATUS_INVALID);
+        == NINLIL_SX1262_OK);
 
     obj = (ninlil_sx1262_backend_object_t)NINLIL_SX1262_OBJECT_INIT;
     ninlil_sx1262_bus_spy_init(&spy);
     fill_valid_board(&cfg);
     spy.status_byte =
         (uint8_t)(NINLIL_SX1262_CHIP_MODE_STBY_RC << NINLIL_SX1262_CHIP_MODES_POS);
-    spy.fail_status_after_n_gets = 2;
+    spy.fail_status_after_n_gets = 3;
     spy.status_byte_poison = (uint8_t)(0x20u | (6u << 1)); /* TX_DONE */
     REQUIRE(
         ninlil_sx1262_init(
@@ -930,6 +1039,8 @@ static int test_feature_mismatches(void)
 /* XTAL golden SPI count (verify+final GetStatus). */
 /* Independent golden: TCXO+DIO2+XOSC cold (verify after each write + post-cal). */
 static const uint8_t k_tcxo_dio2_xosc[] = {
+    SX126X_GOLDEN_GET_STATUS,
+    SX126X_GOLDEN_SET_STANDBY,
     SX126X_GOLDEN_GET_STATUS,
     SX126X_GOLDEN_GET_DEVICE_ERRORS,
     SX126X_GOLDEN_GET_STATUS,
@@ -1553,14 +1664,14 @@ static int test_spi_pending_ownership_sm(void)
 }
 
 /*
- * A: mid-init rx[1] {0,2}; reject 1/3/4/5/6.
+ * A: post-bootstrap rx[1] accepts {0,1,2}; rejects 3/4/5/6.
  * Exact ordering via spy event trace (not string heuristics):
- *   2nd SPI → GUARD delay (us==post_spi_busy_guard) → BUSY_POLL → fail
+ *   4th SPI (GetDeviceErrors after bootstrap) → GUARD → BUSY_POLL → fail
  *   (no further SPI / no SetRegulator).
  */
 static int test_mid_status_closed_set_after_busy(void)
 {
-    const uint8_t codes[] = {1u, 3u, 4u, 5u, 6u};
+    const uint8_t codes[] = {3u, 4u, 5u, 6u};
     size_t i;
     const uint8_t healthy =
         (uint8_t)(NINLIL_SX1262_CHIP_MODE_STBY_RC << NINLIL_SX1262_CHIP_MODES_POS);
@@ -1571,7 +1682,7 @@ static int test_mid_status_closed_set_after_busy(void)
         ninlil_sx1262_bus_spy_t spy;
         ninlil_sx1262_board_config_t cfg;
         ninlil_sx1262_error_t err;
-        size_t spi2;
+        size_t spi3;
         size_t j;
         int saw_guard = 0;
         int saw_busy = 0;
@@ -1579,22 +1690,23 @@ static int test_mid_status_closed_set_after_busy(void)
         ninlil_sx1262_bus_spy_init(&spy);
         fill_valid_board(&cfg);
         spy.status_byte = healthy;
-        spy.fail_status_after_n_spi = 2; /* GetDeviceErrors */
+        /* GetDeviceErrors embedded status is strict after bootstrap. */
+        spy.fail_status_after_n_spi = 4;
         spy.status_byte_poison =
             (uint8_t)(0x20u | (uint8_t)(codes[i] << 1));
         REQUIRE(
             ninlil_sx1262_init(
                 &obj, &cfg, ninlil_sx1262_bus_spy_ops(), &spy, &be, &err)
             == NINLIL_SX1262_STATUS_INVALID);
-        REQUIRE(ninlil_sx1262_bus_spy_spi_event_count(&spy) == 2u);
+        REQUIRE(ninlil_sx1262_bus_spy_spi_event_count(&spy) == 4u);
         REQUIRE(ninlil_sx1262_bus_spy_count_opcode(
                     &spy, (uint8_t)SX126X_GOLDEN_SET_REGULATOR_MODE)
             == 0u);
-        spi2 = ninlil_sx1262_bus_spy_nth_spi_index(&spy, 1u);
-        REQUIRE(spi2 != (size_t)-1);
-        for (j = spi2 + 1u; j < spy.trace_len; ++j) {
+        spi3 = ninlil_sx1262_bus_spy_nth_spi_index(&spy, 3u);
+        REQUIRE(spi3 != (size_t)-1);
+        for (j = spi3 + 1u; j < spy.trace_len; ++j) {
             if (spy.trace[j].event == NINLIL_SX1262_SPY_EV_SPI) {
-                REQUIRE(0); /* no SPI after 2nd until fail */
+                REQUIRE(0); /* no SPI after explicit verification fails */
             }
             if (spy.trace[j].event == NINLIL_SX1262_SPY_EV_DELAY
                 && spy.trace[j].opcode == cfg.post_spi_busy_guard_us) {
@@ -1779,14 +1891,16 @@ static int test_primary_opcode_pin(void)
     /* Sequence vectors built only from golden (not production macros) */
     REQUIRE(sizeof(k_xtal_ok) >= 8u);
     REQUIRE(k_xtal_ok[0] == (uint8_t)SX126X_GOLDEN_GET_STATUS);
-    REQUIRE(k_xtal_ok[1] == (uint8_t)SX126X_GOLDEN_GET_DEVICE_ERRORS);
-    REQUIRE(k_xtal_ok[3] == (uint8_t)SX126X_GOLDEN_SET_REGULATOR_MODE);
-    REQUIRE(k_xtal_ok[5] == (uint8_t)SX126X_GOLDEN_SET_STANDBY);
+    REQUIRE(k_xtal_ok[1] == (uint8_t)SX126X_GOLDEN_SET_STANDBY);
+    REQUIRE(k_xtal_ok[3] == (uint8_t)SX126X_GOLDEN_GET_DEVICE_ERRORS);
+    REQUIRE(k_xtal_ok[5] == (uint8_t)SX126X_GOLDEN_SET_REGULATOR_MODE);
+    REQUIRE(k_xtal_ok[7] == (uint8_t)SX126X_GOLDEN_SET_STANDBY);
     REQUIRE(k_tcxo_dio2_xosc[0] == (uint8_t)SX126X_GOLDEN_GET_STATUS);
-    REQUIRE(k_tcxo_dio2_xosc[3] == (uint8_t)SX126X_GOLDEN_CLR_DEVICE_ERRORS);
-    REQUIRE(k_tcxo_dio2_xosc[7] == (uint8_t)SX126X_GOLDEN_SET_DIO2_RF_SWITCH);
-    REQUIRE(k_tcxo_dio2_xosc[9] == (uint8_t)SX126X_GOLDEN_SET_DIO3_TCXO);
-    REQUIRE(k_tcxo_dio2_xosc[11] == (uint8_t)SX126X_GOLDEN_CALIBRATE);
+    REQUIRE(k_tcxo_dio2_xosc[3] == (uint8_t)SX126X_GOLDEN_GET_DEVICE_ERRORS);
+    REQUIRE(k_tcxo_dio2_xosc[5] == (uint8_t)SX126X_GOLDEN_CLR_DEVICE_ERRORS);
+    REQUIRE(k_tcxo_dio2_xosc[9] == (uint8_t)SX126X_GOLDEN_SET_DIO2_RF_SWITCH);
+    REQUIRE(k_tcxo_dio2_xosc[11] == (uint8_t)SX126X_GOLDEN_SET_DIO3_TCXO);
+    REQUIRE(k_tcxo_dio2_xosc[13] == (uint8_t)SX126X_GOLDEN_CALIBRATE);
     return 0;
 }
 
@@ -1998,11 +2112,16 @@ int main(void)
         || test_tcxo_cold_img_only() != 0 || test_tcxo_cold_both() != 0
         || test_tcxo_cold_zero() != 0 || test_tcxo_cold_mixed_negative() != 0
         || test_ant_sw_contracts() != 0
-        || test_error_before_clear() != 0 || test_cmd_status_fail_first() != 0
+        || test_error_before_clear() != 0
+        || test_cmd_status_first_raw_accepted() != 0
+        || test_post_reset_settle() != 0
         || test_cmd_status_fail_after_write() != 0
+        || test_bootstrap_standby_retries() != 0
+        || test_bootstrap_standby_retry_bounds() != 0
+        || test_bootstrap_standby_transport_fails_once() != 0
         || test_miso_status_byte_position() != 0
         || test_esp_bus_trans_storage_align() != 0
-        || test_rfu_and_tx_done_reject() != 0
+        || test_cmd_status_one_and_tx_done_reject() != 0
         || test_frozen_clock_poll_cap() != 0 || test_clock_wrap() != 0
         || test_delayed_busy() != 0 || test_tx_deny_and_failed_zero_spi() != 0
         || test_config_bounds() != 0 || test_shutdown_reinit() != 0

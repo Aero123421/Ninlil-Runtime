@@ -15,7 +15,7 @@ set(NINLIL_RADIO_HIL_PRIV_INCLUDES
 )
 
 idf_component_register(
-    SRCS "main.c"
+    SRCS "main.c" "mesh_lab.c"
     INCLUDE_DIRS "."
     PRIV_INCLUDE_DIRS ${NINLIL_RADIO_HIL_PRIV_INCLUDES}
     REQUIRES ninlil nvs_flash driver esp_timer
@@ -27,14 +27,13 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -fstack-usage
     -Wframe-larger-than=4096
 )
-# V1 release HIL: PRODUCTION_BUILD always when session DIAG is off.
-# Session RAM ledger is a separate diagnostic-only profile (not release evidence).
+# Session RAM ledger is diagnostic-only (not release evidence), but it never
+# re-enables the legacy direct-permit RF path.
 if(CONFIG_NINLIL_RADIO_HIL_SESSION_LEDGER_DIAG)
     message(WARNING
         "radio_hil SESSION_LEDGER_DIAG enabled: not a V1 release HIL profile "
         "(flash FULL fail-closed + evidence path require DIAG off)")
-else()
-    target_compile_definitions(${COMPONENT_LIB} PRIVATE
-        NINLIL_SX1262_PRODUCTION_BUILD=1
-    )
 endif()
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    NINLIL_SX1262_PRODUCTION_BUILD=1
+)

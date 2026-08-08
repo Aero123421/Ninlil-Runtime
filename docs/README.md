@@ -124,6 +124,8 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 32 | [R7 T1 NRW1 SINGLE wire codec](32-r7-t1-nrw1-single-wire-codec.md) | DATA/SINGLE private pure codec（[ADR-0012](adr/0012-r7-t1-nrw1-single-wire-codec.md) Accepted; **state/W1/HIL/legal未完**） |
 | 33 | [R7 T1b context binding and HKDF](33-r7-t1b-context-binding-hkdf.md) | byte-exact private stateless binding + verified typed key schedule（[ADR-0013](adr/0013-r7-t1b-context-binding-hkdf.md) Accepted; [review](reviews/2026-07-19-r7-t1b-context-binding-hkdf-accepted.md); **AcceptedはT1b候補のみ。state/W1/HIL/legal/R7 full未完**） |
 | 34 | [R7 T1c authenticated Hop fresh-install owner](34-r7-t1c-authenticated-hop-fresh-install-owner.md) | M4 Hop token one-shot → T1b verified → N6 Hop fresh 4-key FULL の stateful private owner（[ADR-0014](adr/0014-r7-t1c-authenticated-hop-fresh-install-owner.md) **Proposed docs-only**; **implementation / vectors / ESP target crypto KAT / Accepted 未。E2E/resume/M5/W1/RF・USB・LoRa HIL/legal/R7 full 非claim**） |
+| 35 | [Production Attachment over EDHOC](35-production-attachment-edhoc-profile.md) | Production Site Membershipの認証境界。private LAB Joinの証拠を昇格させない |
+| 36 | [Three-node automatic Join and relay LAB](36-three-node-auto-join-relay-lab.md) | 同一ESP32-S3＋SX1262 3台のprivate NJM1自動Join、論理2-hop、DATA/ACK、reroute、site relocation HIL |
 | V2 | [Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md) | 10段階完成条件、version/bounds、NFL1、Wi-Fi、Relay、Multi-parent、multi-frame custody、OSS 1.0 gate（[ADR-0017〜0021](adr/README.md) **Proposed docs-only**） |
 
 ## 実装開始条件

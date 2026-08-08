@@ -83,13 +83,15 @@ peer Runtimeが生成したVERIFIED Receiptを同じ経路で返して`SATISFIED
 | Multi-frame durable transfer | **SPEC_ACCEPTED / Host software候補** | private MFDT protocol v1、revision 2 OPEN、Host 4-slot coordinator、Runtimeごとのsidecar、1〜4 target admission/restart reconciliationを実装。公開`ninlil_submit()`から2つのHost Runtimeを通常の`ninlil_runtime_step()`だけで駆動し、927〜32768 byteの分割・再構成・digest検証、Application Service apply、positive evidence、handoff、既存Receipt、durable closure、terminal/content releaseまで通常・ASan/UBSanで合格。READY、HANDED_OFF、Receipt closed、retained terminalのcold restartと不一致fail-closedも確認済み。残件はinstalled module/package受入、ESP exact-1 owner、MF-O08 target promotion、物理Wi-Fi/RF/power-cut HIL |
 | V1 composition | **SPEC_ACCEPTED / Host・ESP package候補** | ADR-0032の公開`composition_v1` base owner（workspace/create、Runtime/Fabric借用、bounded step、terminal release、close/destroy）を実装。tests-OFF install後の公開APIだけで2つのCompositionを駆動するApplicationData→Receipt E2Eを通常・ASan/UBSanで確認。HostとESP-IDFは同じFabric/Composition source authorityを使用し、ESP32-S3 component archiveのexact-one、最終ELF symbol/map、公開headerだけのtarget翻訳単位を確認済み。target上のdurable create/step/close、Bearer前sidecar recovery、MFDT/FRAG/relay/multi-parent接続とlarge-data/relay受入は未完。8-module制度や汎用plugin frameworkはV1非対象 |
 | V1 functional LAB vertical slice | **PROPOSED / Host・target候補** | ADR-0034でLinux/macOS→USB親機→単一hop SX1262→指定peer/Service→APPLIED ReceiptをV1の実機完成線としてAccepted。NRA1/NVB1 codec、exact LAB binding、fresh N6接続owner、`NLB1` FULL保存・cold-restart floor・fresh reset/fence、固定上限NCG1 bridgeは通常Host試験とESP packaging gateに合格。公開POSIX USB portの実PTYでbinding、双方向packet、close/reopenを確認。固定board ownerを使うHost模擬E2EでUSB→NRA1/NRW1/R7/R9/SX1262 spy→peerと逆向きAPPLIED Receipt→USBを確認し、通常・ASan/UBSanに合格。同じESP sourceからUSB親機／汎用peerの2 imageを生成し、既存Flash adapter・4 namespaceを接続、session-ledger symbolなしでtarget compile/link済み。未検証FULLは`COMMIT_UNKNOWN`のままです。別clock epochと両roleのidentity adoptionはHostで確認済み。PC側private adapterは固定2 peer binding／4 path、送受信、backpressure、切断時lost/unknownを通常・ASan/UBSanで確認済み。Controller診断は実process＋PTYでclock照合、binding適用、SQLite Composition、Fabric登録に加え、公開submit→実PTY→USB親機owner→NRA1/NRW1/R7/R9/SX1262 spy→peer Runtime callback→逆向きVERIFIED Receipt→SATISFIEDの一続きのHost縦断が通常・ASan/UBSanで合格。generic peerは初回bindingから固定Compositionを起動し、同一Runtimeに最大3 Serviceを登録するHost lifecycle試験とESP target buildに合格。peer公開submit→EventFact上りも通常・Sanitizerで合格。残件はFlash power-cut受入と昇格、実機起動・物理3台HIL。20件/10秒はV2 |
+| Three-node NJM1 automatic Join / relay LAB | **LAB_HIL_VERIFIED / private** | 同一ESP32-S3＋SX1262 imageを3台へ書き込み、共有机上で自動Join、論理2-hop、4-byte DATA＋相関ACK、親消失時のdirect reroute、旧site lease満了後の別site再Joinを実RFで確認。Mac LAB Consoleも実3 portを検出。これはunauthenticated NJM1 private LABだけの証拠で、上記V1 NRA1/NRW1 slice、RRMP、Production Attachment、RF隔離、距離、法規適合、10件/10秒、soakを昇格しない。詳細は[36章](docs/36-three-node-auto-join-relay-lab.md)と[実機証跡](docs/work/2026-08-09-three-node-njm1-rf-hil.md) |
 | OSS package / docs / release CI | **HOST_CANDIDATE** | actionlint・全shellcheck・固定OpenSSL authorityは合格。commit-tree dry run、公開asset照合、独立review（`RELEASE_SUPPORTED`は未昇格） |
 
 OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost software候補を
 意味します。Portable Coreや各transport機能の完成、remote release成功、物理HIL、
 法規適合をまとめて主張する状態ではありません。
 
-物理USB、SX1262 RF、flash power-cut、実AP、24時間soakは、対応機材を接続して得た
+private NJM1 3-board LABだけは物理SX1262 RF evidenceを取得済みです。物理USBを含む
+V1 ApplicationData vertical slice、RRMP、flash power-cut、実AP、24時間soakは、対応する
 再現可能なartifactが揃うまで`HIL_VERIFIED`へ進めません。現在の詳細な依存順と
 完成条件は[34章](docs/34-v2-runtime-fabric-completion.md)を正本とします。
 
@@ -113,7 +115,8 @@ ADR-0034により、項目4の大型データ・relay統合はV2へ移しまし�
 | --- | --- |
 | **Host software evidenceあり** | Portable Core、POSIX SQLite、service、durable retry/dedupe、公開Fabric、公開POSIX TCP/TLSの2プロセスrestart E2E、公開POSIX USB serialのPTY E2E、private V1 USB bridgeの永続binding・双方向packet・再接続PTY、固定2 peer／4 pathのPC USB→Fabric adapter、Controller別processの公開submit→実PTY→USB親機owner→NRA1/NRW1/R7/R9/SX1262 spy→peer Runtime callback→逆向きVERIFIED Receipt→SATISFIEDの一続きの縦断、初回bindingから最大3 Serviceを登録し公開submit EventFactも通すpeer固定Composition、private relay/multi-parent、公開submitからApplication Receiptまでのprivate multi-frame Host経路、`composition_v1` base owner。ESP実行と実機経路は未完であり、機能ごとの正式状態は上表を優先します |
 | **ESP compile/link evidence** | ESP-IDF v5.5.3 compile/link/map、PSRAM/stack/resource gate、Wi-Fi/SX1262/USBのtarget adapter、公開Fabric/Compositionとprivate V1 radio packet-link・固定board ownerのcomponent packaging。全private機能の同時ONに加え、USB CDC・SX1262・clock・既存Flash Storage、RF開始前のboot entropy→DRBG切替、peer固定Compositionを接続したUSB親機／peer imageの最終ELFまで合格。通常profileにsession-ledger symbolはありません。target実行と物理経路は未確認なので、platform状態は`SPEC_ACCEPTED`のままです |
-| **物理HIL待ち** | ESP flash、実AP、USB CDC、SX1262 TX/RX、2/3-hop、multi-parent failover、電源断、長時間soak。SX1262は2台双方向raw RF runnerまで用意済みですが、機材未接続のため一律`NOT_RUN`です |
+| **private NJM1物理HIL** | 同一imageのESP32-S3＋SX1262 3台で、923.0 MHz / BW125 / SF7 / CR4/5 / 10 dBm、既存CAD/LBT＋R5 permit pathを使用。自動Join、共有机上の論理2-hop、4-byte DATA/ACK、親消失reroute、旧site expiry後の別site再Joinを確認済み。Production Attachment、RRMP、法規適合、距離、RF隔離、負荷・soakの証拠ではありません |
+| **残る物理HIL** | V1 USB CDC→NRA1/NRW1 ApplicationData縦断、10件/10秒、実AP、multi-parent、電源断、長時間soakは`NOT_RUN`。private NJM1のPASSをこれらへ代用しません |
 
 ## アーキテクチャ
 

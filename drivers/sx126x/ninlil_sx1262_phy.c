@@ -690,7 +690,11 @@ static ninlil_sx1262_status_t configure_lora(
     f[1] = (uint8_t)((permit->preamble_symbols >> 8) & 0xffu);
     f[2] = (uint8_t)(permit->preamble_symbols & 0xffu);
     f[3] = 0x00u; /* explicit header */
-    f[4] = (uint8_t)frame_len;
+    /* In explicit-header RX, configure the full variable-length ceiling.
+     * TX still seals the exact payload length into PacketParams. */
+    f[4] = for_tx != 0
+        ? (uint8_t)frame_len
+        : (uint8_t)NINLIL_SX1262_PHY_MAX_FRAME;
     f[5] = 0x01u; /* CRC on */
     f[6] = 0x00u; /* standard IQ */
     st = cmd_n(phy, f, 7u, out_error);

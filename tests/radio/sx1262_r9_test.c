@@ -751,6 +751,7 @@ static int test_ant_sw_tx_rx(void)
     ninlil_radio_hal_permit_snapshot_t permit;
     ninlil_radio_hal_frame_view_t frame;
     ninlil_radio_hal_error_t herr;
+    size_t trace_before_rx;
     uint8_t bytes[4] = {0xAAu, 0xBBu, 0xCCu, 0xDDu};
 
     (void)memset(&e, 0, sizeof(e));
@@ -830,8 +831,25 @@ static int test_ant_sw_tx_rx(void)
     REQUIRE(ninlil_sx1262_phy_poll(e.phy, &err) == NINLIL_SX1262_OK);
     REQUIRE(e.spy.last_ant_sw_active == 0);
 
+    e.spy.trace_len = 0u;
+    e.spy.trace_seq = 0u;
+    trace_before_rx = 0u;
     REQUIRE(ninlil_sx1262_phy_start_rx(e.phy, 1000u, &err) == NINLIL_SX1262_OK);
     REQUIRE(e.spy.last_ant_sw_active == 1);
+    {
+        size_t i;
+        int saw_rx_packet_params = 0;
+        for (i = trace_before_rx; i < e.spy.trace_len; ++i) {
+            if (e.spy.trace[i].event == NINLIL_SX1262_SPY_EV_SPI
+                && e.spy.trace[i].opcode == 0x8Cu
+                && e.spy.trace[i].sample_len >= 5u) {
+                saw_rx_packet_params = 1;
+                REQUIRE(e.spy.trace[i].sample[3] == 0x00u);
+                REQUIRE(e.spy.trace[i].sample[4] == 0xFFu);
+            }
+        }
+        REQUIRE(saw_rx_packet_params == 1);
+    }
     return 0;
 }
 

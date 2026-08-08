@@ -58,6 +58,7 @@
       "docs/adr/0030-posix-tls-fabric-reference-port.md",
       "docs/adr/0035-v1-compact-radio-mapping.md",
       "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
+      "docs/adr/0037-three-node-auto-join-relay-lab.md",
       "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
       "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
       "src/radio/n6_record_codec.h",
@@ -1381,6 +1382,25 @@
           "path": "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
           "representation": "U32_LE",
           "count": 1
+        }
+      ]
+    },
+    {
+      "magic": "NJM1",
+      "owner": "ROUTE_RELAY",
+      "artifact": "WIRE_RECORD",
+      "status": "PROPOSED",
+      "authority": "docs/adr/0037-three-node-auto-join-relay-lab.md",
+      "occurrences": [
+        {
+          "path": "ports/esp-idf/radio_hil_app/main/main.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
+          "path": "ports/esp-idf/radio_hil_app/main/mesh_lab.c",
+          "representation": "QUOTED",
+          "count": 2
         }
       ]
     },
@@ -4837,6 +4857,17 @@
       "occurrences": [
         {
           "path": "tools/radio_usb_boundary_docs_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "token": "POST",
+      "reason": "NON_MAGIC_ENUM_OR_LABEL",
+      "occurrences": [
+        {
+          "path": "tools/ninlil_lab_console.py",
           "representation": "QUOTED",
           "count": 1
         }

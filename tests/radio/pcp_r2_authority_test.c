@@ -7,6 +7,7 @@
  */
 
 #include "pcp_authority.h"
+#include "pcp_lab_session_ledger.h"
 #include "radio_hal.h"
 
 #include "deterministic_entropy.h"
@@ -50,6 +51,8 @@ typedef struct env {
     ninlil_test_entropy_t *entropy;
     ninlil_pcp_error_t err;
 } env_t;
+
+static ninlil_pcp_lab_session_ledger_t g_session_ledger;
 
 static void fill_id(ninlil_radio_hal_id_t *id, uint8_t tag)
 {
@@ -675,6 +678,73 @@ static int test_gc_terminal(void)
     CHECK(st == NINLIL_PCP_INVALID_ARGUMENT);
 
     env_teardown(&e);
+    return 0;
+}
+
+/* NJM1's diagnostic ledger is fixed at 32 entries. A consumed permit is
+ * terminal, but remains durable until the owner explicitly invokes PCP GC. */
+static int test_session_ledger_edge_busy_gc_201(void)
+{
+    const ninlil_storage_ops_t *ops = NULL;
+    ninlil_pcp_object_t object = NINLIL_PCP_OBJECT_INIT;
+    ninlil_pcp_t *pcp = NULL;
+    ninlil_test_clock_t *clock = NULL;
+    ninlil_test_entropy_t *entropy = NULL;
+    ninlil_pcp_error_t perr;
+    ninlil_pcp_live_profile_t live;
+    ninlil_pcp_instance_seed_t seed;
+    ninlil_pcp_issue_request_t req;
+    ninlil_radio_hal_permit_snapshot_t permit;
+    ninlil_radio_hal_frame_view_t frame;
+    ninlil_radio_hal_error_t herr;
+    ninlil_pcp_r2_stats_t stats;
+    uint8_t bytes[20];
+    uint32_t i;
+
+    CHECK(ninlil_pcp_lab_session_ledger_init(&g_session_ledger, &ops) == 0);
+    CHECK(ops != NULL);
+    CHECK_ST(ninlil_pcp_init_object(&object, &pcp), NINLIL_PCP_OK);
+    clock = ninlil_test_clock_create();
+    entropy = ninlil_test_entropy_create(0xFACEu, 1u);
+    CHECK(clock != NULL && entropy != NULL);
+    CHECK_ST(ninlil_pcp_bind_storage(pcp, ops, &perr), NINLIL_PCP_OK);
+    CHECK_ST(ninlil_pcp_bind_clock(
+        pcp, ninlil_test_clock_ops(clock), &perr), NINLIL_PCP_OK);
+    CHECK_ST(ninlil_pcp_bind_entropy(
+        pcp, ninlil_test_entropy_ops(entropy), &perr), NINLIL_PCP_OK);
+    fill_live(&live, 100000u);
+    CHECK_ST(ninlil_pcp_bind_live_profile(pcp, &live, &perr), NINLIL_PCP_OK);
+    for (i = 0u; i < sizeof(seed.bytes); ++i) {
+        seed.bytes[i] = (uint8_t)(0x60u + i);
+    }
+    CHECK_ST(ninlil_pcp_publish_initial_meta(pcp, &seed, &perr), NINLIL_PCP_OK);
+    (void)memset(bytes, 0x5Au, sizeof(bytes));
+    frame.bytes = bytes;
+    frame.length = (uint32_t)sizeof(bytes);
+
+    for (i = 0u; i < 201u; ++i) {
+        uint64_t seq;
+
+        fill_request(&req, &live, 1000u, 0u, 600000u);
+        CHECK_ST(ninlil_pcp_issue(pcp, &req, &permit, &perr), NINLIL_PCP_OK);
+        CHECK(ninlil_pcp_validate(pcp, &permit, &frame, &herr)
+            == NINLIL_RADIO_HAL_OK);
+        CHECK(ninlil_pcp_consume(pcp, &permit, &frame, &herr)
+            == NINLIL_RADIO_HAL_OK);
+        /* R1 calls its edge only after the successful consume above. Simulate
+         * an LBT/CAD busy edge failure: the terminal PCP record is GC-safe. */
+        seq = permit.permit_sequence;
+        CHECK_ST(ninlil_pcp_gc_terminal_records(pcp, &seq, 1u, &perr),
+            NINLIL_PCP_OK);
+    }
+    ninlil_pcp_stats(pcp, &stats);
+    CHECK(stats.issue_ok == 201u && stats.consume_ok == 201u
+        && stats.gc_erased == 201u);
+
+    CHECK_ST(ninlil_pcp_shutdown(pcp, &perr), NINLIL_PCP_OK);
+    ninlil_test_clock_destroy(clock);
+    ninlil_test_entropy_destroy(entropy);
+    ninlil_pcp_lab_session_ledger_shutdown(&g_session_ledger);
     return 0;
 }
 
@@ -2257,6 +2327,9 @@ int main(void)
     }
     if (test_gc_terminal() != 0) {
         return 11;
+    }
+    if (test_session_ledger_edge_busy_gc_201() != 0) {
+        return 29;
     }
     if (test_clock_fence_and_temp() != 0) {
         return 12;
