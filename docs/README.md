@@ -126,6 +126,7 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 34 | [R7 T1c authenticated Hop fresh-install owner](34-r7-t1c-authenticated-hop-fresh-install-owner.md) | M4 Hop token one-shot → T1b verified → N6 Hop fresh 4-key FULL の stateful private owner（[ADR-0014](adr/0014-r7-t1c-authenticated-hop-fresh-install-owner.md) **Proposed docs-only**; **implementation / vectors / ESP target crypto KAT / Accepted 未。E2E/resume/M5/W1/RF・USB・LoRa HIL/legal/R7 full 非claim**） |
 | 35 | [Production Attachment over EDHOC](35-production-attachment-edhoc-profile.md) | Production Site Membershipの認証境界。private LAB Joinの証拠を昇格させない |
 | 36 | [Three-node automatic Join and relay LAB](36-three-node-auto-join-relay-lab.md) | 同一ESP32-S3＋SX1262 3台のprivate NJM1自動Join、論理2-hop、DATA/ACK、reroute、site relocation HIL |
+| 37 | [Ninlil Runtime 1.0 integration program](37-runtime-1.0-integration-program.md) | V1 LABを不変のまま、正式Attachment→Fabric→secure radio→relay→multi-parent→M1b/M2→1.0を一つのRuntimeへ統合する依存順（Proposed） |
 | V2 | [Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md) | 10段階完成条件、version/bounds、NFL1、Wi-Fi、Relay、Multi-parent、multi-frame custody、OSS 1.0 gate（[ADR-0017〜0021](adr/README.md) **Proposed docs-only**） |
 
 ## 実装開始条件

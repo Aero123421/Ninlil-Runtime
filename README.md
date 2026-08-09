@@ -13,8 +13,10 @@ storage portをinstallできます。relay、multi-parent、multi-frame transfer
 内部engineは、V1の小さなcomposition APIから利用できる形にするまで個別のpublic
 ABIとしてexportしません。
 
-完成判定は[Compatibility matrix](compatibility-matrix.json)と
-[V2 Runtime Fabric Completion Contract](docs/34-v2-runtime-fabric-completion.md)で行います。
+機能状態の正本は[Compatibility matrix](compatibility-matrix.json)です。
+[V2 Runtime Fabric Completion Contract](docs/34-v2-runtime-fabric-completion.md)は
+Runtime 1.0のProposed完成契約候補であり、関連ADRとともに`SPEC_ACCEPTED`になるまでは
+単独の実装・完成判定authorityにしません。
 仕様、実装、Host試験、ESP target build、実機HIL、配布証拠を別々に管理し、
 テスト件数や概算パーセントだけで完成扱いにしません。
 
@@ -92,8 +94,17 @@ OSS行の`HOST_CANDIDATE`は、公開install/package/release機構のHost softwa
 
 private NJM1 3-board LABだけは物理SX1262 RF evidenceを取得済みです。物理USBを含む
 V1 ApplicationData vertical slice、RRMP、flash power-cut、実AP、24時間soakは、対応する
-再現可能なartifactが揃うまで`HIL_VERIFIED`へ進めません。現在の詳細な依存順と
-完成条件は[34章](docs/34-v2-runtime-fabric-completion.md)を正本とします。
+再現可能なartifactが揃うまで`HIL_VERIFIED`へ進めません。現行状態はCompatibility
+matrix、V1 scopeはADR-0034を正本とします。[34章](docs/34-v2-runtime-fabric-completion.md)は
+Runtime 1.0のProposed完成契約候補です。
+
+V1 LAB後にNinlil Runtime 1.0へ進む作業順は
+[37章](docs/37-runtime-1.0-integration-program.md)と
+[ADR-0038](docs/adr/0038-runtime-1.0-integration-program.md)で提案しています。
+private NJM1を製品扱いせず、Production Attachment、Fabric、secure radio、RRMP、
+Wi-Fi、multi-frame、残るApplication contractを同じRuntime/Compositionへ統合します。
+ADR-0034のV1 LAB scopeと`HIL_VERIFIED` ceilingは変更せず、このProposed計画文書
+自体も実装や完成状態を昇格しません。
 
 ### V1ソフトウェア完成までの順序
 
