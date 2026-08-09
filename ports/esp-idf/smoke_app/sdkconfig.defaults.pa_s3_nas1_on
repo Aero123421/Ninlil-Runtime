@@ -1,0 +1,2 @@
+# Private PA-S3a NAS1 direct-stream compile/link/stack candidate only.
+CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1=y

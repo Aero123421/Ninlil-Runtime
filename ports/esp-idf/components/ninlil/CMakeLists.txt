@@ -94,14 +94,14 @@ endforeach()
 # Default-OFF private FRAG: PRODUCTION sources only (never lab session/durable).
 # Lab TUs (session + test durable) stay host-only — DRAM / claim isolation.
 set(NINLIL_R7_FRAG_PRIV_INCLUDES "")
-set(NINLIL_PA_S1_EDHOC_PRIV_INCLUDES "")
+set(NINLIL_PA_PRIV_INCLUDES "")
 if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
     foreach(_rel IN LISTS NINLIL_PA_S1_EDHOC_RELATIVE_SOURCES)
         list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
     endforeach()
     list(APPEND NINLIL_COMPONENT_SRCS
         "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s1_edhoc_allocator.c")
-    list(APPEND NINLIL_PA_S1_EDHOC_PRIV_INCLUDES
+    list(APPEND NINLIL_PA_PRIV_INCLUDES
         "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1"
         "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/libedhoc"
         "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/zcbor")
@@ -109,6 +109,12 @@ endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
     list(APPEND NINLIL_COMPONENT_SRCS
         "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s2_edhoc_crypto.c")
+endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1)
+    list(APPEND NINLIL_COMPONENT_SRCS
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s3_nas1_stream.c")
+    list(APPEND NINLIL_PA_PRIV_INCLUDES
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1")
 endif()
 if(CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE)
     foreach(_rel IN LISTS NINLIL_R7_FRAG_PRODUCTION_RELATIVE_SOURCES)
@@ -275,7 +281,7 @@ idf_component_register(
         "${NINLIL_REPO_ROOT}/src/transport/fabric_v1"
         "${NINLIL_REPO_ROOT}/src/radio"
         ${NINLIL_R7_FRAG_PRIV_INCLUDES}
-        ${NINLIL_PA_S1_EDHOC_PRIV_INCLUDES}
+        ${NINLIL_PA_PRIV_INCLUDES}
         ${NINLIL_MFDT_V1_PRIV_INCLUDES}
         ${NINLIL_DOMAIN_SCHEMA1_PRIV_INCLUDES}
         ${NINLIL_WIFI_V1_PRIV_INCLUDES}
@@ -361,6 +367,11 @@ endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
         NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256=1)
+endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1)
+    set_source_files_properties(
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s3_nas1_stream.c"
+        PROPERTIES COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048")
 endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_FABRIC_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE

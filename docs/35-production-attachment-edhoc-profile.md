@@ -375,6 +375,22 @@ single readと`1/6/5/79/rest`のpartial readsを同じ1 deliveryへ収束させ�
 1-byte trailing、future version、inner carrierだけを変更してinner CRCを修復したrecordは
 それぞれconnection closeかつdelivery 0である。完成前にinner recordをpublishしない。
 
+### 6.1 PA-S3a private NAS1 direct-stream candidate boundary
+
+PA-S3aは上記NAS1 lifecycleとNAC1 structural validationだけを実装する
+private/default-OFF/uninstalled候補である。1 ownerはcaller-owned 612-byte fixed bufferを持ち、
+exact owner context上で直列化した`feed`、EOF、closeだけを受け付ける。single readまたは
+複数のpartial readがexact 1 wrapperを完成し、wrapper、inner NAC1、expected
+carrier/session/exchange generation/kind/sequence/bindingがすべて一致した場合だけ、inner
+recordをcaller-owned outputへexact 1回copyする。完成前またはclose outcomeではoutput
+bytesを変更せずlength 0とし、magic rescanや同じownerでの次wrapper受理を行わない。
+closeはowner全体をzeroizeする。
+
+本候補はUSB/Wi-Fi socket、accepted carrier admission、Factory Identity/Site Membership、
+credential resolver、local static-DH、EDHOC message owner、NAR1/cookie/radio、Composition、
+NIAF、availability、JoinまたはHILを接続しない。PA-S2、PA-S3およびADR-0023はOPEN/
+Proposedのままであり、ESP compile/link/stackはtarget executionの代替ではない。
+
 ## 7. NAR1 compact-radio fragments
 
 NAR1はpre-attachment direct one-hop packetで、relayしない。packet最大192 bytes、

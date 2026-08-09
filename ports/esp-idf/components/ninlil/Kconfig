@@ -151,6 +151,14 @@ menu "Ninlil private candidates"
             resolution, static DH, message cleanup owner, target KAT, and PA-S2
             remain open.
 
+    config NINLIL_ENABLE_PRIVATE_PA_S3_NAS1
+        bool "Enable private PA-S3a NAS1 direct-stream candidate"
+        default n
+        help
+            Compile/link the fixed 612-byte NAS1 receive buffer and NAC1
+            structural validator. This is private compile/link/stack evidence
+            only; no socket, credential, EDHOC state, radio, Join, or HIL claim.
+
     config NINLIL_ENABLE_R7_FRAG_PRIVATE
         bool "Enable private NRW1 LINK/FRAG candidate (not public ABI)"
         default n

@@ -826,6 +826,11 @@
       "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
       "occurrences": [
         {
+          "path": "src/runtime/production_attachment_v1/pa_s3_nas1_stream.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
           "path": "tests/radio/production_attachment_edhoc_vector_test.c",
           "representation": "QUOTED",
           "count": 3
@@ -971,6 +976,11 @@
       "status": "PROPOSED",
       "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
       "occurrences": [
+        {
+          "path": "src/runtime/production_attachment_v1/pa_s3_nas1_stream.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
         {
           "path": "tests/radio/production_attachment_edhoc_vector_test.c",
           "representation": "QUOTED",
