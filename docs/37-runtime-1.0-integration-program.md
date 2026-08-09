@@ -91,17 +91,22 @@ consumer実装を始める前に、次を同じspec changeで閉じる。
    [ADR-0028](adr/0028-composable-public-runtime-modules.md) section 1.1の
    identity-precondition contractを、S1〜S6の仕様レビューとspec KATで
    `SPEC_ACCEPTED`にする。このsubsetのAccepted化はconsumer実装の完了を意味しない。
+   NIAF S5 amendmentは[専用のfresh review](reviews/2026-08-10-identity-attachment-precondition-niaf-s5-amendment-review.md)で同じ状態へ昇格し、旧reviewは歴史記録として残す。
 2. `compatibility-matrix.json`の`identity-attachment-session-install`は、ADR-0039が
    Acceptedになっても`PROPOSED`のままにする。PA-S1〜S6、consumer 2x2、C5〜C8の
    実装・Host・target・HIL evidenceが実際に揃った時だけ状態とceilingを更新する。
 3. `resolve -> validate -> subscribe -> publish`、admission/send前再validation、
    invalidation drain、provider-owned non-exporting key handle、restart floor、release順を固定する。
-4. Domain Storeをsole writerから外すなら、実装で迂回せずADR-0028、manifest、matrixを
-   spec-firstで改訂する。外さない限り308-byte restart floorとsingle-writer契約を維持する。
+4. Core/Foundation Domain Store NIAF standalone ownerをsole writerから外すなら、実装で
+   迂回せずADR-0028、manifest、matrixをspec-firstで改訂する。外さない限り308-byte
+   restart floorとcaller-authoritative namespaceのsingle-writer契約を維持する。
 
 ADR-0039後のprivate consumer kernelは、provider descriptor copy、
 `resolve -> validate -> subscribe`、invalidation fence、unsubscribe/release順だけを
-Host候補として検証する。NIAF writer、Composition activation/injection、availability publish、
+Host候補として検証する。NIAFはCore/Foundation Domain Store durability authority配下の
+caller-authoritative dedicated namespaceで、canonical Domain schema-1 catalogとは独立する。
+そのstandalone ownerを先に実装し、Compositionへのlocator injectionはその後のprivate seamとする。
+NIAF writer、Composition activation/injection、availability publish、
 PA-S1〜S6、Join、ESP target execution、HILは未完であり、Production Attachmentの証拠にしない。
 
 ## 6. 既存trancheへの依存順

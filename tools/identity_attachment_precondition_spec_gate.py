@@ -98,6 +98,57 @@ def niaf_record() -> bytes:
     return bytes(out)
 
 
+NIAF_STORAGE_KEY_PREFIX = bytes.fromhex("4e4941462d4b3100")
+NIAF_STORAGE_KEY_FIELD_OFFSETS = [
+    ["prefix", 0],
+    ["realm_id", 8],
+    ["runtime_instance_id", 24],
+    ["runtime_generation_le", 40],
+    ["module_instance_id", 48],
+    ["module_generation_le", 64],
+]
+NIAF_STORAGE_KEY_GOLDEN_TUPLE = {
+    "realm_id": bytes(range(0x00, 0x10)),
+    "runtime_instance_id": bytes(range(0x10, 0x20)),
+    "runtime_generation": 0x0102030405060708,
+    "module_instance_id": bytes(range(0x20, 0x30)),
+    "module_generation": 0x1112131415161718,
+}
+
+
+def niaf_storage_key_for(
+    prefix: bytes,
+    identity: dict[str, int | bytes],
+) -> bytes:
+    """Independent fixed-width storage-key reconstruction for one golden tuple."""
+    identifiers = ("realm_id", "runtime_instance_id", "module_instance_id")
+    if len(prefix) != 8 or any(
+        not isinstance(identity[name], bytes) or len(identity[name]) != 16
+        for name in identifiers
+    ):
+        raise GateError("internal NIAF key identifier shape drift")
+    generations = ("runtime_generation", "module_generation")
+    if any(
+        not isinstance(identity[name], int)
+        or not 0 <= identity[name] <= 0xFFFFFFFFFFFFFFFF
+        for name in generations
+    ):
+        raise GateError("internal NIAF key generation shape drift")
+    out = bytearray(prefix)
+    out.extend(identity["realm_id"])
+    out.extend(identity["runtime_instance_id"])
+    out.extend(struct.pack("<Q", identity["runtime_generation"]))
+    out.extend(identity["module_instance_id"])
+    out.extend(struct.pack("<Q", identity["module_generation"]))
+    if len(out) != 72:
+        raise GateError("internal NIAF key size drift")
+    return bytes(out)
+
+
+def niaf_storage_key() -> bytes:
+    return niaf_storage_key_for(NIAF_STORAGE_KEY_PREFIX, NIAF_STORAGE_KEY_GOLDEN_TUPLE)
+
+
 NIAF_RECORD_FIELD_ORDER = [
     "uint8_t magic[4]",
     "uint16_t schema_version",
@@ -138,6 +189,97 @@ NIAF_FIELD_OFFSETS = [
         strict=True,
     )
 ]
+
+NIAF_STORAGE_CONTRACT = {
+    "canonical_key": "realm_id/runtime_instance_id/runtime_generation/module_instance_id/module_generation",
+    "writer": "CORE_FOUNDATION_DOMAIN_STORE_NIAF_STANDALONE_OWNER_SINGLE_WRITER_FENCED_TO_RUNTIME_AND_MODULE_GENERATIONS",
+    "storage_namespace": {
+        "kind": "CORE_FOUNDATION_DOMAIN_STORE_NIAF_DEDICATED_CALLER_AUTHORITATIVE",
+        "locator": "EXACT_CALLER_SUPPLIED_BYTES",
+        "default_policy": "FORBIDDEN",
+        "auto_prefix_policy": "FORBIDDEN",
+        "domain_catalog_cohabitation": "FORBIDDEN",
+        "lab_profile_reuse": "FORBIDDEN",
+    },
+    "locator_shape": {
+        "encoding": "OPAQUE_EXACT_BYTES",
+        "length_min_bytes": 1,
+        "length_max_bytes": 255,
+        "data_pointer_rule": "NON_NULL_FOR_LENGTH_1_TO_255",
+        "normalization": "FORBIDDEN",
+        "owner_copy": "DEEP_COPY_BEFORE_OPEN",
+        "invalid_shape": "REJECT_BEFORE_OPEN",
+    },
+    "storage_open": {
+        "expected_schema": 1,
+        "owner": "CORE_FOUNDATION_DOMAIN_STORE_NIAF_STANDALONE_OWNER",
+        "ownership": "OWNER_OPENS_AND_CLOSES_EXACT_LOCATOR_ONLY",
+        "lease": "ONE_OWNER_EXECUTION_CONTEXT_EXCLUSIVE_SINGLE_WRITER_UNTIL_CLOSE",
+        "transaction_scope": "FULL_ONLY",
+    },
+    "storage_key": {
+        "encoding": "FIXED_WIDTH_BINARY",
+        "key_prefix_hex": "4e4941462d4b3100",
+        "field_order": [
+            "uint8_t prefix[8]",
+            "uint8_t realm_id[16]",
+            "uint8_t runtime_instance_id[16]",
+            "uint64_t runtime_generation_le",
+            "uint8_t module_instance_id[16]",
+            "uint64_t module_generation_le",
+        ],
+        "key_size_bytes": 72,
+        "generation_byte_order": "LITTLE_ENDIAN",
+        "trailing_bytes": "FORBIDDEN",
+    },
+    "atomic_write": "ONE_FULL_RECORD_ONE_ATOMIC_CORE_FOUNDATION_DOMAIN_STORE_COMMIT_NO_MULTI_KEY_PARTIAL_CHECKPOINT",
+    "commit_unknown_recovery": "AUTHORITATIVE_READ_EXACT_LOCATOR_AND_KEY_ACCEPT_ONLY_EXACT_OLD_OR_NEW_BYTES_GENERATION_AND_DIGEST_THIRD_FENCES",
+    "commit_unknown_reopen": {
+        "transaction_after_commit_unknown": "INVALID",
+        "close": "CLOSE_HANDLE_BEFORE_RECOVERY",
+        "reopen": "SAME_EXACT_LOCATOR_AND_SCHEMA_1",
+        "scan": "FRESH_READ_ONLY_ZERO_PREFIX_FULL_SCAN",
+        "same_handle_read": "FORBIDDEN",
+    },
+    "recovery_classification": {
+        "empty": "NO_CHECKPOINT_FRESH_RESOLUTION_REQUIRED_AVAILABILITY_ZERO",
+        "current": "EXACTLY_ONE_EXACT_KEY_RECORD_WITH_MATCHING_KEY_AND_RECORD_IDENTITIES",
+        "existing": "ONLY_EXACT_CURRENT_OR_EXACT_COMMIT_UNKNOWN_OLD_NEW_IS_ACCEPTABLE",
+        "unknown": "FENCE_AVAILABILITY_AND_KEY_USE",
+        "multiple": "FENCE_AVAILABILITY_AND_KEY_USE",
+        "corrupt": "FENCE_AVAILABILITY_AND_KEY_USE",
+    },
+    "recovery_scan": {
+        "scan": "FRESH_READ_ONLY_ZERO_PREFIX_FULL_SCAN",
+        "empty": "TOTAL_RECORDS_ZERO_ONLY",
+        "current": "TOTAL_RECORDS_ONE_AND_EXACT_72_BYTE_KEY_AND_EXACT_308_BYTE_VALID_VALUE_AND_MATCHING_KEY_IDENTITIES",
+        "second": "FENCE_AVAILABILITY_AND_KEY_USE",
+        "unknown": "FENCE_AVAILABILITY_AND_KEY_USE",
+        "oversize": "FENCE_AVAILABILITY_AND_KEY_USE",
+        "iterator_error": "FENCE_AVAILABILITY_AND_KEY_USE",
+        "other_key": "FENCE_AVAILABILITY_AND_KEY_USE",
+    },
+    "commit_unknown_classification": {
+        "read": "AUTHORITATIVE_READ_EXACT_LOCATOR_AND_EXACT_KEY",
+        "old": "EXACT_EMPTY_OR_LAST_PROVEN_FULL_RECORD",
+        "new": "EXACT_PROPOSED_FULL_RECORD_BYTES_GENERATION_AND_DIGEST",
+        "third": "FENCE_AVAILABILITY_AND_KEY_USE",
+    },
+    "checkpoint_generation": {
+        "fresh_first_full": 1,
+        "accepted_floor_advance": "CHECKED_PLUS_1",
+        "no_op": "NO_WRITE_AND_NO_CHECKPOINT_GENERATION_ADVANCE",
+        "maximum": "UINT64_MAX_FENCES_AVAILABILITY_AND_KEY_USE",
+        "rollback_wrap_or_nonmonotonic": "FENCE_AVAILABILITY_AND_KEY_USE",
+    },
+    "floor_transition": "EVERY_NEW_FLOOR_GREATER_THAN_OR_EQUAL_TO_OLD_OR_FENCE",
+    "composition_injection": {
+        "public_abi": "NO_NEW_PUBLIC_API_OR_DTO",
+        "current": "NOT_AVAILABLE_WITHOUT_A_PRIVATE_PROVIDER_AND_CALLER_AUTHORITATIVE_LOCATOR_SOURCE",
+        "standalone_owner_tranche": "REQUIRED_BEFORE_COMPOSITION_INJECTION",
+        "later": "PRIVATE_COMPOSITION_INJECTION_AFTER_STANDALONE_OWNER_ACCEPTANCE",
+    },
+}
 
 
 U32 = "u32"
@@ -234,6 +376,7 @@ def layout(name: str, profile: dict[str, int], cache: dict[str, dict[str, Any]])
 
 def expected_vector() -> dict[str, Any]:
     record = niaf_record()
+    key = niaf_storage_key()
     abi: dict[str, Any] = {}
     for profile_name, profile in PROFILES.items():
         cache: dict[str, dict[str, Any]] = {}
@@ -247,8 +390,47 @@ def expected_vector() -> dict[str, Any]:
             "sha256": hashlib.sha256(record).hexdigest(),
             "crc32c": crc32c(record[:304]),
         },
+        "storage_key": {
+            "field_offsets": NIAF_STORAGE_KEY_FIELD_OFFSETS,
+            "key_hex": key.hex(),
+            "sha256": hashlib.sha256(key).hexdigest(),
+        },
         "provider_abi": abi,
     }
+
+
+def validate_storage_key_oracle(vector: dict[str, Any]) -> None:
+    key = niaf_storage_key()
+    expected = {
+        "field_offsets": NIAF_STORAGE_KEY_FIELD_OFFSETS,
+        "key_hex": key.hex(),
+        "sha256": hashlib.sha256(key).hexdigest(),
+    }
+    if vector.get("storage_key") != expected:
+        raise GateError("spec vector differs from independent NIAF key oracle")
+    if key[40:48] == struct.pack(">Q", NIAF_STORAGE_KEY_GOLDEN_TUPLE["runtime_generation"]):
+        raise GateError("internal NIAF key endian drift")
+    if len(key + b"\x00") == 72:
+        raise GateError("internal NIAF key trailing-byte drift")
+    altered_prefix = bytes([NIAF_STORAGE_KEY_PREFIX[0] ^ 1]) + NIAF_STORAGE_KEY_PREFIX[1:]
+    if niaf_storage_key_for(altered_prefix, NIAF_STORAGE_KEY_GOLDEN_TUPLE) == key:
+        raise GateError("internal NIAF key prefix collision")
+    for name in ("realm_id", "runtime_instance_id", "module_instance_id"):
+        altered = dict(NIAF_STORAGE_KEY_GOLDEN_TUPLE)
+        value = altered[name]
+        if not isinstance(value, bytes):
+            raise GateError("internal NIAF key identity fixture drift")
+        altered[name] = bytes([value[0] ^ 1]) + value[1:]
+        if niaf_storage_key_for(NIAF_STORAGE_KEY_PREFIX, altered) == key:
+            raise GateError("internal NIAF key identity collision")
+    for name in ("runtime_generation", "module_generation"):
+        altered = dict(NIAF_STORAGE_KEY_GOLDEN_TUPLE)
+        value = altered[name]
+        if not isinstance(value, int):
+            raise GateError("internal NIAF key generation fixture drift")
+        altered[name] = value ^ 1
+        if niaf_storage_key_for(NIAF_STORAGE_KEY_PREFIX, altered) == key:
+            raise GateError("internal NIAF key generation collision")
 
 
 def validate_manifest(manifest: dict[str, Any]) -> None:
@@ -266,6 +448,10 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         raise GateError("manifest NIAF coverage drift")
     if checkpoint.get("record_field_order") != NIAF_RECORD_FIELD_ORDER:
         raise GateError("manifest NIAF record field order drift")
+    if {
+        name: checkpoint.get(name) for name in NIAF_STORAGE_CONTRACT
+    } != NIAF_STORAGE_CONTRACT:
+        raise GateError("manifest NIAF locator/recovery contract drift")
     port = contract.get("provider_port")
     if not isinstance(port, dict) or port.get("id") != "ninlil_identity_attachment_provider_v1" or port.get("abi_version") != 1:
         raise GateError("manifest provider ABI identity drift")
@@ -318,6 +504,7 @@ def check(
     adr_text: str | None = None,
     magic_registry: dict[str, Any] | None = None,
 ) -> None:
+    validate_storage_key_oracle(vector)
     if vector != expected_vector():
         raise GateError("spec vector differs from independent NIAF/ABI oracle")
     validate_manifest(manifest)
@@ -347,6 +534,14 @@ def main() -> int:
                 pass
             else:
                 raise GateError("self-test accepted NIAF byte mutation")
+            bad = copy.deepcopy(vector)
+            bad["storage_key"]["key_hex"] = "00" + bad["storage_key"]["key_hex"][2:]
+            try:
+                check(bad, manifest)
+            except GateError:
+                pass
+            else:
+                raise GateError("self-test accepted NIAF key mutation")
             bad_manifest = copy.deepcopy(manifest)
             bad_manifest["identity_attachment_precondition_contract"]["required_module_ids"].pop(0)
             try:
@@ -363,6 +558,26 @@ def main() -> int:
                 pass
             else:
                 raise GateError("self-test accepted NIAF field order mutation")
+            bad_manifest = copy.deepcopy(manifest)
+            bad_manifest["identity_attachment_precondition_contract"][
+                "restart_checkpoint_contract"
+            ]["storage_namespace"]["auto_prefix_policy"] = "ALLOWED"
+            try:
+                check(vector, bad_manifest)
+            except GateError:
+                pass
+            else:
+                raise GateError("self-test accepted NIAF locator mutation")
+            bad_manifest = copy.deepcopy(manifest)
+            bad_manifest["identity_attachment_precondition_contract"][
+                "restart_checkpoint_contract"
+            ]["commit_unknown_reopen"]["same_handle_read"] = "ALLOWED"
+            try:
+                check(vector, bad_manifest)
+            except GateError:
+                pass
+            else:
+                raise GateError("self-test accepted NIAF reopen mutation")
             adr_text = ADR_PATH.read_text(encoding="utf-8")
             registry = load_json(MAGIC_REGISTRY_PATH)
             bad_registry = copy.deepcopy(registry)
@@ -394,6 +609,19 @@ def main() -> int:
                 pass
             else:
                 raise GateError("self-test accepted Proposed/SPEC_ACCEPTED NIAF drift")
+            proposed_registry = copy.deepcopy(registry)
+            for entry in proposed_registry["entries"]:
+                if entry.get("magic") == "NIAF":
+                    entry["status"] = "PROPOSED"
+                    break
+            check(
+                vector,
+                manifest,
+                adr_text=adr_text.replace(
+                    "- Status: **Accepted**", "- Status: **Proposed**", 1
+                ),
+                magic_registry=proposed_registry,
+            )
     except GateError as exc:
         print(f"identity attachment precondition spec gate: FAIL: {exc}", file=sys.stderr)
         return 1

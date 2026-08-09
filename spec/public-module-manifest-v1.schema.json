@@ -1301,12 +1301,90 @@
             "uint32_t crc32c"
           ],
           "canonical_key": "realm_id/runtime_instance_id/runtime_generation/module_instance_id/module_generation",
-          "writer": "CORE_FOUNDATION_DOMAIN_STORE_SINGLE_WRITER_FENCED_TO_RUNTIME_AND_MODULE_GENERATIONS",
-          "atomic_write": "ONE_FULL_RECORD_ONE_ATOMIC_DOMAIN_STORE_COMMIT_NO_MULTI_KEY_PARTIAL_CHECKPOINT",
-          "commit_unknown_recovery": "AUTHORITATIVE_READ_EXACT_KEY_ACCEPT_ONLY_EXACT_GENERATION_AND_DIGEST_ELSE_RETRY_FROM_LAST_PROVEN_FULL_RECORD",
+          "storage_namespace": {
+            "kind": "CORE_FOUNDATION_DOMAIN_STORE_NIAF_DEDICATED_CALLER_AUTHORITATIVE",
+            "locator": "EXACT_CALLER_SUPPLIED_BYTES",
+            "default_policy": "FORBIDDEN",
+            "auto_prefix_policy": "FORBIDDEN",
+            "domain_catalog_cohabitation": "FORBIDDEN",
+            "lab_profile_reuse": "FORBIDDEN"
+          },
+          "locator_shape": {
+            "encoding": "OPAQUE_EXACT_BYTES",
+            "length_min_bytes": 1,
+            "length_max_bytes": 255,
+            "data_pointer_rule": "NON_NULL_FOR_LENGTH_1_TO_255",
+            "normalization": "FORBIDDEN",
+            "owner_copy": "DEEP_COPY_BEFORE_OPEN",
+            "invalid_shape": "REJECT_BEFORE_OPEN"
+          },
+          "storage_open": {
+            "expected_schema": 1,
+            "owner": "CORE_FOUNDATION_DOMAIN_STORE_NIAF_STANDALONE_OWNER",
+            "ownership": "OWNER_OPENS_AND_CLOSES_EXACT_LOCATOR_ONLY",
+            "lease": "ONE_OWNER_EXECUTION_CONTEXT_EXCLUSIVE_SINGLE_WRITER_UNTIL_CLOSE",
+            "transaction_scope": "FULL_ONLY"
+          },
+          "storage_key": {
+            "encoding": "FIXED_WIDTH_BINARY",
+            "key_prefix_hex": "4e4941462d4b3100",
+            "field_order": [
+              "uint8_t prefix[8]",
+              "uint8_t realm_id[16]",
+              "uint8_t runtime_instance_id[16]",
+              "uint64_t runtime_generation_le",
+              "uint8_t module_instance_id[16]",
+              "uint64_t module_generation_le"
+            ],
+            "key_size_bytes": 72,
+            "generation_byte_order": "LITTLE_ENDIAN",
+            "trailing_bytes": "FORBIDDEN"
+          },
+          "writer": "CORE_FOUNDATION_DOMAIN_STORE_NIAF_STANDALONE_OWNER_SINGLE_WRITER_FENCED_TO_RUNTIME_AND_MODULE_GENERATIONS",
+          "atomic_write": "ONE_FULL_RECORD_ONE_ATOMIC_CORE_FOUNDATION_DOMAIN_STORE_COMMIT_NO_MULTI_KEY_PARTIAL_CHECKPOINT",
+          "commit_unknown_recovery": "AUTHORITATIVE_READ_EXACT_LOCATOR_AND_KEY_ACCEPT_ONLY_EXACT_OLD_OR_NEW_BYTES_GENERATION_AND_DIGEST_THIRD_FENCES",
+          "commit_unknown_reopen": {
+            "transaction_after_commit_unknown": "INVALID",
+            "close": "CLOSE_HANDLE_BEFORE_RECOVERY",
+            "reopen": "SAME_EXACT_LOCATOR_AND_SCHEMA_1",
+            "scan": "FRESH_READ_ONLY_ZERO_PREFIX_FULL_SCAN",
+            "same_handle_read": "FORBIDDEN"
+          },
+          "recovery_classification": {
+            "empty": "NO_CHECKPOINT_FRESH_RESOLUTION_REQUIRED_AVAILABILITY_ZERO",
+            "current": "EXACTLY_ONE_EXACT_KEY_RECORD_WITH_MATCHING_KEY_AND_RECORD_IDENTITIES",
+            "existing": "ONLY_EXACT_CURRENT_OR_EXACT_COMMIT_UNKNOWN_OLD_NEW_IS_ACCEPTABLE",
+            "unknown": "FENCE_AVAILABILITY_AND_KEY_USE",
+            "multiple": "FENCE_AVAILABILITY_AND_KEY_USE",
+            "corrupt": "FENCE_AVAILABILITY_AND_KEY_USE"
+          },
+          "recovery_scan": {
+            "scan": "FRESH_READ_ONLY_ZERO_PREFIX_FULL_SCAN",
+            "empty": "TOTAL_RECORDS_ZERO_ONLY",
+            "current": "TOTAL_RECORDS_ONE_AND_EXACT_72_BYTE_KEY_AND_EXACT_308_BYTE_VALID_VALUE_AND_MATCHING_KEY_IDENTITIES",
+            "second": "FENCE_AVAILABILITY_AND_KEY_USE",
+            "unknown": "FENCE_AVAILABILITY_AND_KEY_USE",
+            "oversize": "FENCE_AVAILABILITY_AND_KEY_USE",
+            "iterator_error": "FENCE_AVAILABILITY_AND_KEY_USE",
+            "other_key": "FENCE_AVAILABILITY_AND_KEY_USE"
+          },
+          "commit_unknown_classification": {
+            "read": "AUTHORITATIVE_READ_EXACT_LOCATOR_AND_EXACT_KEY",
+            "old": "EXACT_EMPTY_OR_LAST_PROVEN_FULL_RECORD",
+            "new": "EXACT_PROPOSED_FULL_RECORD_BYTES_GENERATION_AND_DIGEST",
+            "third": "FENCE_AVAILABILITY_AND_KEY_USE"
+          },
           "torn_or_corrupt_policy": "CRC_SIZE_DIGEST_OR_REQUIRED_FIELD_FAILURE_FENCES_AVAILABILITY_AND_KEY_USE_UNTIL_OPERATOR_RECOVERY",
           "ambiguous_recovery_policy": "MULTIPLE_CURRENT_CANDIDATES_GENERATION_WRAP_OR_COMMIT_UNKNOWN_WITHOUT_AUTHORITATIVE_READ_FAILS_CLOSED",
           "unknown_policy": "UNKNOWN_MAGIC_SCHEMA_OR_RECORD_SIZE_ANY_TRAILING_BYTE_OR_FIELD_FAILS_CLOSED",
+          "checkpoint_generation": {
+            "fresh_first_full": 1,
+            "accepted_floor_advance": "CHECKED_PLUS_1",
+            "no_op": "NO_WRITE_AND_NO_CHECKPOINT_GENERATION_ADVANCE",
+            "maximum": "UINT64_MAX_FENCES_AVAILABILITY_AND_KEY_USE",
+            "rollback_wrap_or_nonmonotonic": "FENCE_AVAILABILITY_AND_KEY_USE"
+          },
+          "floor_transition": "EVERY_NEW_FLOOR_GREATER_THAN_OR_EQUAL_TO_OLD_OR_FENCE",
           "secret_exclusions": [
             "provider_context",
             "binding_handle",
@@ -1317,7 +1395,13 @@
             "private_scalar",
             "raw_session_key"
           ],
-          "startup_sequence": "RECOVER_AND_VALIDATE_FULL_CHECKPOINT_INSTALL_MONOTONIC_FLOORS_FRESH_RESOLVE_VALIDATE_SUBSCRIBE_THEN_PUBLISH_AVAILABLE"
+          "startup_sequence": "RECOVER_AND_VALIDATE_FULL_CHECKPOINT_INSTALL_MONOTONIC_FLOORS_FRESH_RESOLVE_VALIDATE_SUBSCRIBE_THEN_PUBLISH_AVAILABLE",
+          "composition_injection": {
+            "public_abi": "NO_NEW_PUBLIC_API_OR_DTO",
+            "current": "NOT_AVAILABLE_WITHOUT_A_PRIVATE_PROVIDER_AND_CALLER_AUTHORITATIVE_LOCATOR_SOURCE",
+            "standalone_owner_tranche": "REQUIRED_BEFORE_COMPOSITION_INJECTION",
+            "later": "PRIVATE_COMPOSITION_INJECTION_AFTER_STANDALONE_OWNER_ACCEPTANCE"
+          }
         },
         "binding_rules": {
           "identity_tuple": "STABLE_ID_CREDENTIAL_REVISION_BINDING_DIGEST",
@@ -1331,7 +1415,7 @@
           "invalidation_policy": "REVOCATION_EXPIRY_OR_EPOCH_CHANGE_FENCES_NEW_AND_INFLIGHT_USE_BEFORE_CALLBACK_RETURN",
           "forward_gap_policy": "ALLOW_ONLY_AFTER_FRESH_PROVIDER_RESOLVE_AND_INVALIDATE_ALL_OLD_HANDLES",
           "restart_persistence": "NONSECRET_IDS_DIGESTS_AND_MONOTONIC_FLOORS_ONLY_NO_CONTEXT_OR_HANDLE",
-          "restart_storage_owner": "CORE_FOUNDATION_DOMAIN_STORE_SINGLE_WRITER_NOT_MODULE_PRIVATE_STORE",
+          "restart_storage_owner": "CORE_FOUNDATION_DOMAIN_STORE_NIAF_STANDALONE_OWNER_SINGLE_WRITER_NOT_MODULE_PRIVATE_STORE",
           "restart_resolution": "DURABLE_RECOVERY_THEN_FRESH_RESOLVE_OLD_HANDLES_ALWAYS_INVALID",
           "monotonic_floors": [
             "credential_revision",

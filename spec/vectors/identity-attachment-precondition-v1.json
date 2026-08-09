@@ -716,5 +716,35 @@
       "u64_alignment": 8
     }
   },
-  "schema": "ninlil-identity-attachment-precondition-spec-kat-v1"
+  "schema": "ninlil-identity-attachment-precondition-spec-kat-v1",
+  "storage_key": {
+    "field_offsets": [
+      [
+        "prefix",
+        0
+      ],
+      [
+        "realm_id",
+        8
+      ],
+      [
+        "runtime_instance_id",
+        24
+      ],
+      [
+        "runtime_generation_le",
+        40
+      ],
+      [
+        "module_instance_id",
+        48
+      ],
+      [
+        "module_generation_le",
+        64
+      ]
+    ],
+    "key_hex": "4e4941462d4b3100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f0807060504030201202122232425262728292a2b2c2d2e2f1817161514131211",
+    "sha256": "b731f16d3d1b2a6594eb54546c80e801172a599f45c433ab10fec06364f35aca"
+  }
 }

@@ -275,8 +275,11 @@ IDENTITY_PRECONDITION_ADR_PATH = (
 IDENTITY_PRECONDITION_ADR_H1 = (
     "# ADR-0039: Identity / Attachment precondition gate"
 )
+IDENTITY_PRECONDITION_AMENDMENT_REVIEW_PATH = (
+    "docs/reviews/2026-08-10-identity-attachment-precondition-niaf-s5-amendment-review.md"
+)
 EXPECTED_IDENTITY_ATTACHMENT_PRECONDITION_SHA256 = (
-    "d13789404303a839e3b27fc7493ad3db209f2c54b0e21e1dfb6a4f4af895c599"
+    "2aacd200cd923265ef75ac512c2cf6732aeff0330f3e7a46fc88d7cb93ae4a8c"
 )
 EXPECTED_FABRIC_SELECTION_PORT_SHA256 = (
     "a09bdb413788773f95a495a1c3b45156921bb9b05e85bbe1a964a3a780f98d30"
@@ -910,12 +913,12 @@ def canonical_single_metadata(
 
 
 def canonical_identity_attachment_precondition_review_result(text: str) -> None:
-    """Require the small, live-only review record that permits ADR-0039."""
-    label = "ADR-0039 independent review"
+    """Require the dedicated live-only S5 amendment review for promotion."""
+    label = "ADR-0039 NIAF S5 amendment review"
     lines = text.splitlines()
     if (
         len(lines) < 2
-        or lines[0] != "# Identity / Attachment precondition specification review"
+        or lines[0] != "# Identity / Attachment precondition NIAF S5 amendment review"
         or lines[1] != ""
     ):
         raise GateError(f"{label}: canonical H1/preamble required")
@@ -942,10 +945,17 @@ def canonical_identity_attachment_precondition_review_result(text: str) -> None:
         raise GateError(f"{label}: unterminated comment/code fence")
 
     required = [
-        ("Reviewer:", r"(- Reviewer: \*\*Independent\*\*)"),
         (
             "Scope:",
-            r"(- Scope: \*\*ADR-0039 S1-S6 specification acceptance\*\*)",
+            r"(- Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment)",
+        ),
+        (
+            "Reviewed identity contract SHA-256:",
+            (
+                r"(- Reviewed identity contract SHA-256: "
+                + re.escape(EXPECTED_IDENTITY_ATTACHMENT_PRECONDITION_SHA256)
+                + r")"
+            ),
         ),
         *[
             (f"S{index}:", rf"(- S{index}: \*\*CONFIRMED\*\*)")
@@ -3676,9 +3686,9 @@ def check(
         raise GateError(f"ADR-0039 status {identity_status} is unsupported")
     if identity_status == "Accepted":
         if identity_precondition_review_text is None:
-            review_path = ROOT / "docs/reviews/2026-08-10-identity-attachment-precondition-spec-review.md"
+            review_path = ROOT / IDENTITY_PRECONDITION_AMENDMENT_REVIEW_PATH
             if not review_path.is_file():
-                raise GateError("ADR-0039 Accepted requires an independent review artifact")
+                raise GateError("ADR-0039 Accepted requires the dedicated NIAF S5 amendment review artifact")
             review = review_path.read_text(encoding="utf-8")
         else:
             review = identity_precondition_review_text
@@ -4944,15 +4954,38 @@ def self_test(
         require_exists=True,
         require_file=True,
     ).read_text(encoding="utf-8")
-    accepted_identity_adr = identity_adr.replace(
+    proposed_identity_adr = identity_adr.replace(
+        "- Status: **Accepted**",
+        "- Status: **Proposed**",
+        1,
+    )
+    accepted_identity_adr = proposed_identity_adr.replace(
         "- Status: **Proposed**",
         "- Status: **Accepted**",
         1,
     )
+    old_review = (
+        ROOT
+        / "docs/reviews/2026-08-10-identity-attachment-precondition-spec-review.md"
+    ).read_text(encoding="utf-8")
+    try:
+        check(
+            copy.deepcopy(manifest),
+            copy.deepcopy(matrix),
+            copy.deepcopy(schema),
+            identity_precondition_adr_text=accepted_identity_adr,
+            identity_precondition_review_text=old_review,
+        )
+    except GateError:
+        pass
+    else:
+        raise GateError("self-test ADR-0039 Accepted old review path false green")
     exact_review = (
-        "# Identity / Attachment precondition specification review\n\n"
-        "- Reviewer: **Independent**\n"
-        "- Scope: **ADR-0039 S1-S6 specification acceptance**\n"
+        "# Identity / Attachment precondition NIAF S5 amendment review\n\n"
+        "- Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment\n"
+        "- Reviewed identity contract SHA-256: "
+        + EXPECTED_IDENTITY_ATTACHMENT_PRECONDITION_SHA256
+        + "\n"
         "- S1: **CONFIRMED**\n"
         "- S2: **CONFIRMED**\n"
         "- S3: **CONFIRMED**\n"
@@ -4970,8 +5003,61 @@ def self_test(
     )
     for name, review in (
         (
+            "wrong digest",
+            exact_review.replace(
+                EXPECTED_IDENTITY_ATTACHMENT_PRECONDITION_SHA256,
+                "0" * 64,
+                1,
+            ),
+        ),
+        (
+            "stale scope",
+            exact_review.replace(
+                "ADR-0039 NIAF S5 namespace/key/recovery amendment",
+                "ADR-0039 S1-S6 specification acceptance",
+                1,
+            ),
+        ),
+        (
+            "missing scope",
+            exact_review.replace(
+                "- Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment\n",
+                "",
+                1,
+            ),
+        ),
+        (
+            "duplicate scope",
+            exact_review
+            + "- Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment\n",
+        ),
+        (
+            "HTML comment scope",
+            exact_review.replace(
+                "- Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment",
+                "<!-- - Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment -->",
+                1,
+            ),
+        ),
+        (
+            "sole code-fence scope",
+            exact_review.replace(
+                "- Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment",
+                "```markdown\n- Scope: ADR-0039 NIAF S5 namespace/key/recovery amendment\n```",
+                1,
+            ),
+        ),
+        (
             "NO-GO with zero counts",
             exact_review.replace("**GO —", "**NO-GO —", 1),
+        ),
+        (
+            "missing result",
+            exact_review.replace(
+                "- Result: **GO — P0=0 / P1=0 / P2=0 / P3=0**\n",
+                "",
+                1,
+            ),
         ),
         ("duplicate GO", exact_review + exact_review),
         (
