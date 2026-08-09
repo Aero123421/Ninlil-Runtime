@@ -630,7 +630,7 @@ cross-provider KATでreal ciphertextへ置換し、同じreview unitでstatusを
 
 | tranche | required result | current |
 | --- | --- | --- |
-| PA-S0 | Proposed docs + canonical vectors + 3-language gates | repair candidate complete; fresh independent re-review pending |
+| PA-S0 | Proposed docs + canonical vectors + 3-language gates | software closure reviewed GO (P0=P1=P2=P3=0); ADR remains Proposed |
 | PA-S1 | dependency/source/license/allocator acceptance | OPEN |
 | PA-S2 | suite2/3 Host+ESP crypto、peer credential resolver、local static-DH key operator | OPEN |
 | PA-S3 | NAS1/NAR1 owner + EDHOC state owner | OPEN |

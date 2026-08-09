@@ -2217,7 +2217,7 @@
             }
           }
         },
-        "failure_matrix": {
+        "local_static_dh_transitions": {
           "_t": "arr",
           "item": {
             "_t": "obj",
@@ -2225,23 +2225,35 @@
               "id": {
                 "_t": "str"
               },
-              "status": {
-                "_t": "str"
+              "input": {
+                "_t": "obj",
+                "k": {
+                  "factory_stable_id_digest_hex": {"_t": "str"},
+                  "descriptor_local_role": {"_t": "int"},
+                  "requested_local_role": {"_t": "int"},
+                  "curve": {"_t": "str"},
+                  "public_private_binding": {"_t": "str"},
+                  "credential_set_revision": {"_t": "int"},
+                  "credential_set_revision_floor": {"_t": "int"},
+                  "provider_generation": {"_t": "int"},
+                  "provider_generation_floor": {"_t": "int"},
+                  "opaque_key_reference_hex": {"_t": "str"},
+                  "provider_reentry": {"_t": "bool"},
+                  "provider_output_bytes": {"_t": "int"}
+                }
               },
-              "wire_records": {
-                "_t": "int"
-              },
-              "exporter_calls": {
-                "_t": "int"
-              },
-              "ecdh_output_published_bytes": {
-                "_t": "int"
-              },
-              "zeroized_output_bytes": {
-                "_t": "int"
-              },
-              "private_key_bytes_exported": {
-                "_t": "int"
+              "expected": {
+                "_t": "obj",
+                "k": {
+                  "status": {"_t": "str"},
+                  "terminal": {"_t": "bool"},
+                  "wire_records": {"_t": "int"},
+                  "exporter_calls": {"_t": "int"},
+                  "ecdh_write_count": {"_t": "int"},
+                  "ecdh_output_published_bytes": {"_t": "int"},
+                  "zeroized_output_bytes": {"_t": "int"},
+                  "private_key_bytes_exported": {"_t": "int"}
+                }
               }
             }
           }

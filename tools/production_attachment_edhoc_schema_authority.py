@@ -384,7 +384,7 @@ def mutate_all_metadata_coherent(document: dict[str, Any]) -> None:
 # Hard-coded closed key schema path (authored independently of vector body).
 CLOSED_KEY_SCHEMA_RELPATH = "tools/production_attachment_edhoc_closed_key_schema.json"
 # Exhaustive object-path count pin (unknown-key mutation coverage).
-OBJECT_PATH_COUNT_EXACT = 829
+OBJECT_PATH_COUNT_EXACT = 850
 AUDIT_UNKNOWN_KEY = "__audit_unknown_key__"
 
 

@@ -350,7 +350,8 @@ def assert_prerequisite_authority(document: dict[str, Any]) -> None:
         or port["after_prk_action"] != "ZEROIZE32"
     ):
         raise AuthorityError("local static DH port")
-    failure_ids = [
+    transition_ids = [
+        "VALID_BASELINE",
         "WRONG_FACTORY_IDENTITY",
         "WRONG_ROLE",
         "WRONG_CURVE",
@@ -361,18 +362,113 @@ def assert_prerequisite_authority(document: dict[str, Any]) -> None:
         "PROVIDER_REENTRY",
         "PARTIAL_OUTPUT",
     ]
-    if [row["id"] for row in block["failure_matrix"]] != failure_ids:
-        raise AuthorityError("local key failure IDs")
-    for row in block["failure_matrix"]:
-        if (
-            row["status"] != "TERMINAL_AUTHENTICATION_FAILURE"
-            or row["wire_records"] != 0
-            or row["exporter_calls"] != 0
-            or row["ecdh_output_published_bytes"] != 0
-            or row["zeroized_output_bytes"] != 32
-            or row["private_key_bytes_exported"] != 0
-        ):
-            raise AuthorityError(f"local key failure {row['id']}")
+    transitions = block["local_static_dh_transitions"]
+
+    # This is intentionally a transition derivation, not an ID/counter
+    # comparison.  Every row is evaluated as a concrete local credential +
+    # provider call.  The first failing typed predicate owns the terminal
+    # result; output is always scrubbed before it can be observed.
+    baseline = {
+        "factory_stable_id_digest_hex": seeds.INITIATOR_STABLE_DIGEST.hex(),
+        "descriptor_local_role": 1,
+        "requested_local_role": 1,
+        "curve": "P-256",
+        "public_private_binding": "MATCH",
+        "credential_set_revision": 19,
+        "credential_set_revision_floor": 19,
+        "provider_generation": 23,
+        "provider_generation_floor": 23,
+        "opaque_key_reference_hex": "494b524546303031",
+        "provider_reentry": False,
+        "provider_output_bytes": 32,
+    }
+
+    def derived_expected(input_row: dict[str, Any]) -> dict[str, Any]:
+        valid = (
+            input_row["factory_stable_id_digest_hex"]
+            == baseline["factory_stable_id_digest_hex"]
+            and input_row["descriptor_local_role"]
+            == input_row["requested_local_role"] == 1
+            and input_row["curve"] == "P-256"
+            and input_row["public_private_binding"] == "MATCH"
+            and input_row["credential_set_revision"]
+            >= input_row["credential_set_revision_floor"]
+            and input_row["provider_generation"]
+            >= input_row["provider_generation_floor"]
+            and input_row["opaque_key_reference_hex"]
+            == baseline["opaque_key_reference_hex"]
+            and input_row["provider_reentry"] is False
+            and input_row["provider_output_bytes"] == 32
+        )
+        if valid:
+            return {
+                "status": "SUCCESS", "terminal": False, "wire_records": 0,
+                "exporter_calls": 0, "ecdh_write_count": 1,
+                "ecdh_output_published_bytes": 32,
+                "zeroized_output_bytes": 32,
+                "private_key_bytes_exported": 0,
+            }
+        return {
+            "status": "TERMINAL_AUTHENTICATION_FAILURE", "terminal": True,
+            "wire_records": 0, "exporter_calls": 0, "ecdh_write_count": 0,
+            "ecdh_output_published_bytes": 0, "zeroized_output_bytes": 32,
+            "private_key_bytes_exported": 0,
+        }
+
+    failure_delta = {
+        "WRONG_FACTORY_IDENTITY": (
+            "factory_stable_id_digest_hex", "00" * 32
+        ),
+        "WRONG_ROLE": ("requested_local_role", 2),
+        "WRONG_CURVE": ("curve", "X25519"),
+        "PUBLIC_PRIVATE_KEY_MISMATCH": (
+            "public_private_binding", "MISMATCH"
+        ),
+        "CREDENTIAL_REVISION_ROLLBACK": ("credential_set_revision", 18),
+        "PROVIDER_GENERATION_ROLLBACK": ("provider_generation", 22),
+        "UNKNOWN_OPAQUE_KEY_REFERENCE": (
+            "opaque_key_reference_hex", "554e4b4e4f574e31"
+        ),
+        "PROVIDER_REENTRY": ("provider_reentry", True),
+        "PARTIAL_OUTPUT": ("provider_output_bytes", 31),
+    }
+
+    def validate_transitions(rows: list[dict[str, Any]]) -> None:
+        if [row["id"] for row in rows] != transition_ids:
+            raise AuthorityError("local static-DH transition IDs")
+        for index, row in enumerate(rows):
+            input_row = row["input"]
+            expected = derived_expected(input_row)
+            if row["expected"] != expected:
+                raise AuthorityError(f"local static-DH transition {row['id']}")
+            deltas = {
+                key: value for key, value in input_row.items()
+                if baseline[key] != value
+            }
+            required = {} if index == 0 else {
+                failure_delta[row["id"]][0]: failure_delta[row["id"]][1]
+            }
+            if input_row.keys() != baseline.keys() or deltas != required:
+                raise AuthorityError(
+                    f"local static-DH ID/delta binding {row['id']}"
+                )
+
+    validate_transitions(transitions)
+    # Keep IDs and expected terminal effects fixed while moving coherent
+    # one-delta inputs.  A validator that only checks ordering + one delta
+    # would falsely accept both probes.
+    swap = [dict(row, input=dict(row["input"])) for row in transitions]
+    swap[2]["input"], swap[3]["input"] = swap[3]["input"], swap[2]["input"]
+    rotate = [dict(row, input=dict(row["input"])) for row in transitions]
+    rotate[2]["input"], rotate[3]["input"], rotate[4]["input"] = (
+        rotate[3]["input"], rotate[4]["input"], rotate[2]["input"]
+    )
+    for probe in (swap, rotate):
+        try:
+            validate_transitions(probe)
+        except AuthorityError:
+            continue
+        raise AuthorityError("local static-DH ID/input mutant accepted")
 
 
 def assert_edhoc_attempt_authority(document: dict[str, Any]) -> None:
@@ -410,21 +506,59 @@ def assert_edhoc_attempt_authority(document: dict[str, Any]) -> None:
             ):
                 raise AuthorityError(f"EDHOC {name} message {stage}")
     ead = block["ead_nonempty_terminal_matrix"]
-    if [row["id"] for row in ead] != [
-        "EAD_1_NONEMPTY",
-        "EAD_2_NONEMPTY",
-        "EAD_3_NONEMPTY",
-        "EAD_4_NONEMPTY",
-    ]:
-        raise AuthorityError("EAD IDs")
-    for row in ead:
-        if (
-            row["outcome"] != "TERMINAL_REJECT"
-            or row["exporter_calls"] != 0
-            or row["automatic_retry_count"] != 0
-            or row["wire_records_after_reject"] != 0
-        ):
-            raise AuthorityError(f"EAD terminal {row['id']}")
+
+    def validate_ead_rows(rows: list[dict[str, Any]]) -> None:
+        # The id, stage and consumed octets form one closed bijection.  This
+        # deliberately rejects the all-empty, all-stage-1, duplicate and
+        # swapped-byte variants even if their result counters are followed.
+        if len(rows) != 4:
+            raise AuthorityError("EAD row cardinality")
+        by_stage: dict[int, dict[str, Any]] = {}
+        consumed: set[bytes] = set()
+        for row in rows:
+            stage = row["stage"]
+            ead_bytes = _hx(row["ead_hex"])
+            if (
+                type(stage) is not int
+                or stage not in (1, 2, 3, 4)
+                or stage in by_stage
+                or row["id"] != f"EAD_{stage}_NONEMPTY"
+                or not ead_bytes
+                or ead_bytes != bytes([stage])
+                or ead_bytes in consumed
+                or row["outcome"] != "TERMINAL_REJECT"
+                or row["exporter_calls"] != 0
+                or row["automatic_retry_count"] != 0
+                or row["wire_records_after_reject"] != 0
+            ):
+                raise AuthorityError("EAD bijection/consumption")
+            by_stage[stage] = row
+            consumed.add(ead_bytes)
+        if set(by_stage) != {1, 2, 3, 4} or len(consumed) != 4:
+            raise AuthorityError("EAD stage coverage")
+
+    validate_ead_rows(ead)
+    # Independent coherent negative probes; neither row IDs nor expected
+    # counters are the acceptance oracle.
+    probes: list[list[dict[str, Any]]] = []
+    all_empty = [dict(row, ead_hex="") for row in ead]
+    probes.append(all_empty)
+    all_stage1 = [dict(row, stage=1, id="EAD_1_NONEMPTY") for row in ead]
+    probes.append(all_stage1)
+    duplicate = [dict(row) for row in ead]
+    duplicate[1]["ead_hex"] = duplicate[0]["ead_hex"]
+    probes.append(duplicate)
+    swapped = [dict(row) for row in ead]
+    swapped[0]["ead_hex"], swapped[1]["ead_hex"] = (
+        swapped[1]["ead_hex"], swapped[0]["ead_hex"]
+    )
+    probes.append(swapped)
+    for probe in probes:
+        try:
+            validate_ead_rows(probe)
+        except AuthorityError:
+            continue
+        raise AuthorityError("EAD coherent mutant accepted")
     if block["downgrade_failure"] != {
         "initial_pinned_suite": 2,
         "suggested_other_suite": 3,

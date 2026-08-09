@@ -3393,17 +3393,81 @@ def build_prerequisite_contract(
             key_ref=b"RKREF001",
         ),
     }
-    failures = [
-        "WRONG_FACTORY_IDENTITY",
-        "WRONG_ROLE",
-        "WRONG_CURVE",
-        "PUBLIC_PRIVATE_KEY_MISMATCH",
-        "CREDENTIAL_REVISION_ROLLBACK",
-        "PROVIDER_GENERATION_ROLLBACK",
-        "UNKNOWN_OPAQUE_KEY_REFERENCE",
-        "PROVIDER_REENTRY",
-        "PARTIAL_OUTPUT",
-    ]
+    # A concrete, typed local-key invocation matrix.  The expected terminal
+    # transition is deliberately emitted as data, but every authority derives
+    # it from these inputs rather than trusting the ID or a pre-filled count.
+    # Keeping all non-selected inputs valid makes each negative a coherent
+    # single-cause mutant of the baseline call.
+    baseline_input = {
+        "factory_stable_id_digest_hex": hex_bytes(
+            descriptor_fields["initiator_stable_digest"]
+        ),
+        "descriptor_local_role": 1,
+        "requested_local_role": 1,
+        "curve": "P-256",
+        "public_private_binding": "MATCH",
+        "credential_set_revision": int(
+            descriptor_fields["credential_set_revision"]
+        ),
+        "credential_set_revision_floor": int(
+            descriptor_fields["credential_set_revision"]
+        ),
+        "provider_generation": 23,
+        "provider_generation_floor": 23,
+        "opaque_key_reference_hex": "494b524546303031",
+        "provider_reentry": False,
+        "provider_output_bytes": 32,
+    }
+
+    def terminal_expected() -> dict[str, Any]:
+        return {
+            "status": "TERMINAL_AUTHENTICATION_FAILURE",
+            "terminal": True,
+            "wire_records": 0,
+            "exporter_calls": 0,
+            "ecdh_write_count": 0,
+            "ecdh_output_published_bytes": 0,
+            "zeroized_output_bytes": 32,
+            "private_key_bytes_exported": 0,
+        }
+
+    transitions = [{
+        "id": "VALID_BASELINE",
+        "input": baseline_input,
+        "expected": {
+            "status": "SUCCESS",
+            "terminal": False,
+            "wire_records": 0,
+            "exporter_calls": 0,
+            "ecdh_write_count": 1,
+            "ecdh_output_published_bytes": 32,
+            "zeroized_output_bytes": 32,
+            "private_key_bytes_exported": 0,
+        },
+    }]
+    mutations = (
+        ("WRONG_FACTORY_IDENTITY", "factory_stable_id_digest_hex", "00" * 32),
+        ("WRONG_ROLE", "requested_local_role", 2),
+        ("WRONG_CURVE", "curve", "X25519"),
+        ("PUBLIC_PRIVATE_KEY_MISMATCH", "public_private_binding", "MISMATCH"),
+        (
+            "CREDENTIAL_REVISION_ROLLBACK",
+            "credential_set_revision",
+            baseline_input["credential_set_revision"] - 1,
+        ),
+        ("PROVIDER_GENERATION_ROLLBACK", "provider_generation", 22),
+        ("UNKNOWN_OPAQUE_KEY_REFERENCE", "opaque_key_reference_hex", "554e4b4e4f574e31"),
+        ("PROVIDER_REENTRY", "provider_reentry", True),
+        ("PARTIAL_OUTPUT", "provider_output_bytes", 31),
+    )
+    for failure_id, field, value in mutations:
+        candidate = dict(baseline_input)
+        candidate[field] = value
+        transitions.append({
+            "id": failure_id,
+            "input": candidate,
+            "expected": terminal_expected(),
+        })
     return {
         "dependency_readiness": {
             "factory_identity": "UPSTREAM_ACCEPTANCE_NOT_ESTABLISHED",
@@ -3463,18 +3527,7 @@ def build_prerequisite_contract(
             "private_key_bytes_exported": 0,
             "real_provider_kat_claimed": False,
         },
-        "failure_matrix": [
-            {
-                "id": failure,
-                "status": "TERMINAL_AUTHENTICATION_FAILURE",
-                "wire_records": 0,
-                "exporter_calls": 0,
-                "ecdh_output_published_bytes": 0,
-                "zeroized_output_bytes": 32,
-                "private_key_bytes_exported": 0,
-            }
-            for failure in failures
-        ],
+        "local_static_dh_transitions": transitions,
     }
 
 
@@ -3664,7 +3717,10 @@ def build_edhoc_attempt_matrix(
         {
             "id": f"EAD_{stage}_NONEMPTY",
             "stage": stage,
-            "ead_hex": "01",
+            # Stage-distinct bytes make consumption observable and make a
+            # swapped EAD payload a rejected coherent mutant, not just a
+            # metadata mismatch.
+            "ead_hex": f"{stage:02x}",
             "outcome": "TERMINAL_REJECT",
             "wire_records_after_reject": 0,
             "exporter_calls": 0,
@@ -5084,7 +5140,7 @@ def emit_c_fixture(document: dict[str, Any], output: Path) -> None:
         f"#define NINLIL_PA_PREAUTH_BRANCH_COUNT "
         f"{len(preauth['required_branch_names'])}u",
         f"#define NINLIL_PA_LOCAL_KEY_FAILURE_COUNT "
-        f"{len(document['prerequisites']['failure_matrix'])}u",
+        f"{len(document['prerequisites']['local_static_dh_transitions'])}u",
         f"#define NINLIL_PA_LOCAL_DH_OUTPUT_BYTES "
         f"{int(document['prerequisites']['local_static_dh_port']['output_bytes_exact'])}u",
         f"#define NINLIL_PA_LOCAL_DH_WRITE_COUNT "
@@ -5186,15 +5242,30 @@ def emit_c_fixture(document: dict[str, Any], output: Path) -> None:
         "    const char *name;",
         "    uint32_t count;",
         "} ninlil_pa_branch_expectation_t;",
-        "typedef struct ninlil_pa_local_key_failure {",
+        "typedef struct ninlil_pa_local_static_dh_transition {",
         "    const char *id;",
-        "    const char *status;",
+        "    const uint8_t *factory_stable_id_digest; /* 32 */",
+        "    uint8_t descriptor_local_role;",
+        "    uint8_t requested_local_role;",
+        "    uint8_t curve_p256;",
+        "    uint8_t public_private_binding_match;",
+        "    uint64_t credential_set_revision;",
+        "    uint64_t credential_set_revision_floor;",
+        "    uint32_t provider_generation;",
+        "    uint32_t provider_generation_floor;",
+        "    const uint8_t *opaque_key_reference;",
+        "    size_t opaque_key_reference_size;",
+        "    uint8_t provider_reentry;",
+        "    uint8_t provider_output_bytes;",
+        "    const char *expected_status;",
+        "    uint8_t expected_terminal;",
         "    uint8_t wire_records;",
         "    uint8_t exporter_calls;",
+        "    uint8_t ecdh_write_count;",
         "    uint8_t ecdh_output_published_bytes;",
         "    uint8_t zeroized_output_bytes;",
         "    uint8_t private_key_bytes_exported;",
-        "} ninlil_pa_local_key_failure_t;",
+        "} ninlil_pa_local_static_dh_transition_t;",
         "typedef struct ninlil_pa_ead_failure {",
         "    const char *id;",
         "    uint8_t stage;",
@@ -5237,6 +5308,22 @@ def emit_c_fixture(document: dict[str, Any], output: Path) -> None:
             c_array(
                 f"ninlil_pa_ead_failure_bytes_{index}",
                 bytes.fromhex(row["ead_hex"]),
+            )
+        )
+    for index, row in enumerate(
+        document["prerequisites"]["local_static_dh_transitions"]
+    ):
+        input_row = row["input"]
+        lines.extend(
+            c_array(
+                f"ninlil_pa_local_dh_factory_{index}",
+                bytes.fromhex(input_row["factory_stable_id_digest_hex"]),
+            )
+        )
+        lines.extend(
+            c_array(
+                f"ninlil_pa_local_dh_ref_{index}",
+                bytes.fromhex(input_row["opaque_key_reference_hex"]),
             )
         )
     lines.append(
@@ -5317,17 +5404,36 @@ def emit_c_fixture(document: dict[str, Any], output: Path) -> None:
         )
     lines.append("};")
     lines.append(
-        "static const ninlil_pa_local_key_failure_t "
-        "ninlil_pa_local_key_failures[NINLIL_PA_LOCAL_KEY_FAILURE_COUNT] = {"
+        "static const ninlil_pa_local_static_dh_transition_t "
+        "ninlil_pa_local_static_dh_transitions[NINLIL_PA_LOCAL_KEY_FAILURE_COUNT] = {"
     )
-    for row in document["prerequisites"]["failure_matrix"]:
+    for index, row in enumerate(
+        document["prerequisites"]["local_static_dh_transitions"]
+    ):
+        input_row = row["input"]
+        expected = row["expected"]
         lines.append(
             "    { "
-            f"\"{row['id']}\", \"{row['status']}\", "
-            f"{row['wire_records']}u, {row['exporter_calls']}u, "
-            f"{row['ecdh_output_published_bytes']}u, "
-            f"{row['zeroized_output_bytes']}u, "
-            f"{row['private_key_bytes_exported']}u"
+            f"\"{row['id']}\", ninlil_pa_local_dh_factory_{index}, "
+            f"{input_row['descriptor_local_role']}u, "
+            f"{input_row['requested_local_role']}u, "
+            f"{1 if input_row['curve'] == 'P-256' else 0}u, "
+            f"{1 if input_row['public_private_binding'] == 'MATCH' else 0}u, "
+            f"{input_row['credential_set_revision']}ull, "
+            f"{input_row['credential_set_revision_floor']}ull, "
+            f"{input_row['provider_generation']}u, "
+            f"{input_row['provider_generation_floor']}u, "
+            f"ninlil_pa_local_dh_ref_{index}, "
+            f"{len(bytes.fromhex(input_row['opaque_key_reference_hex']))}u, "
+            f"{1 if input_row['provider_reentry'] else 0}u, "
+            f"{input_row['provider_output_bytes']}u, "
+            f"\"{expected['status']}\", "
+            f"{1 if expected['terminal'] else 0}u, "
+            f"{expected['wire_records']}u, {expected['exporter_calls']}u, "
+            f"{expected['ecdh_write_count']}u, "
+            f"{expected['ecdh_output_published_bytes']}u, "
+            f"{expected['zeroized_output_bytes']}u, "
+            f"{expected['private_key_bytes_exported']}u"
             " },"
         )
     lines.append("};")

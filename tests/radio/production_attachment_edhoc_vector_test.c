@@ -4342,29 +4342,77 @@ static int pa_preauth_transition_machine(void)
     return 1;
 }
 
+static int pa_local_key_id_delta_matches(
+    const ninlil_pa_local_static_dh_transition_t *row,
+    int code,
+    unsigned int delta_count)
+{
+    static const uint8_t unknown_ref[8] = {
+        'U', 'N', 'K', 'N', 'O', 'W', 'N', '1'
+    };
+    if (row == NULL) {
+        return 0;
+    }
+    switch (code) {
+    case 0:
+        return delta_count == 0u;
+    case 1:
+        return delta_count == 1u
+               && !pa_any_nonzero(row->factory_stable_id_digest, 32u);
+    case 2:
+        return delta_count == 1u && row->requested_local_role == 2u;
+    case 3:
+        return delta_count == 1u && row->curve_p256 == 0u;
+    case 4:
+        return delta_count == 1u
+               && row->public_private_binding_match == 0u;
+    case 5:
+        return delta_count == 1u && row->credential_set_revision == 18u;
+    case 6:
+        return delta_count == 1u && row->provider_generation == 22u;
+    case 7:
+        return delta_count == 1u
+               && row->opaque_key_reference_size == sizeof(unknown_ref)
+               && memcmp(
+                      row->opaque_key_reference,
+                      unknown_ref,
+                      sizeof(unknown_ref)) == 0;
+    case 8:
+        return delta_count == 1u && row->provider_reentry == 1u;
+    case 9:
+        return delta_count == 1u && row->provider_output_bytes == 31u;
+    default:
+        return 0;
+    }
+}
+
 static int pa_local_key_failure_machine(void)
 {
-    static const char *const expected_ids[9] = {
-        "WRONG_FACTORY_IDENTITY",
-        "WRONG_ROLE",
-        "WRONG_CURVE",
-        "PUBLIC_PRIVATE_KEY_MISMATCH",
-        "CREDENTIAL_REVISION_ROLLBACK",
-        "PROVIDER_GENERATION_ROLLBACK",
-        "UNKNOWN_OPAQUE_KEY_REFERENCE",
-        "PROVIDER_REENTRY",
-        "PARTIAL_OUTPUT"
+    static const char *const expected_ids[10] = {
+        "VALID_BASELINE",
+        "WRONG_FACTORY_IDENTITY", "WRONG_ROLE", "WRONG_CURVE",
+        "PUBLIC_PRIVATE_KEY_MISMATCH", "CREDENTIAL_REVISION_ROLLBACK",
+        "PROVIDER_GENERATION_ROLLBACK", "UNKNOWN_OPAQUE_KEY_REFERENCE",
+        "PROVIDER_REENTRY", "PARTIAL_OUTPUT"
+    };
+    static const uint8_t expected_ref[8] = {
+        'I', 'K', 'R', 'E', 'F', '0', '0', '1'
     };
     uint16_t seen = 0u;
     size_t index;
     for (index = 0u; index < NINLIL_PA_LOCAL_KEY_FAILURE_COUNT; ++index) {
-        const ninlil_pa_local_key_failure_t *row =
-            &ninlil_pa_local_key_failures[index];
+        const ninlil_pa_local_static_dh_transition_t *row =
+            &ninlil_pa_local_static_dh_transitions[index];
         uint8_t output[32];
+        uint8_t expected_factory[32];
         size_t byte_index;
         int code = -1;
+        unsigned int delta_count = 0u;
+        int valid;
         (void)memset(output, 0xa5, sizeof(output));
-        for (byte_index = 0u; byte_index < 9u; ++byte_index) {
+        pa_sha256(
+            (const uint8_t *)"initiator-stable-id", 19u, expected_factory);
+        for (byte_index = 0u; byte_index < 10u; ++byte_index) {
             if (strcmp(row->id, expected_ids[byte_index]) == 0) {
                 code = (int)byte_index;
                 break;
@@ -4374,24 +4422,135 @@ static int pa_local_key_failure_machine(void)
             return 0;
         }
         seen = (uint16_t)(seen | (uint16_t)(1u << (unsigned int)code));
-        /* Every enumerated mismatch is a transition to terminal auth failure.
-         * The output workspace is zeroized regardless of failure stage. */
+        delta_count += memcmp(
+                           row->factory_stable_id_digest,
+                           expected_factory,
+                           sizeof(expected_factory)) != 0;
+        delta_count += row->descriptor_local_role != 1u;
+        delta_count += row->requested_local_role != 1u;
+        delta_count += row->curve_p256 != 1u;
+        delta_count += row->public_private_binding_match != 1u;
+        delta_count += row->credential_set_revision != 19u;
+        delta_count += row->credential_set_revision_floor != 19u;
+        delta_count += row->provider_generation != 23u;
+        delta_count += row->provider_generation_floor != 23u;
+        delta_count += row->opaque_key_reference_size != sizeof(expected_ref)
+                       || memcmp(
+                              row->opaque_key_reference,
+                              expected_ref,
+                              sizeof(expected_ref)) != 0;
+        delta_count += row->provider_reentry != 0u;
+        delta_count += row->provider_output_bytes != 32u;
+        valid = memcmp(
+                    row->factory_stable_id_digest,
+                    expected_factory,
+                    sizeof(expected_factory)) == 0
+                && row->descriptor_local_role == 1u
+                && row->requested_local_role == 1u
+                && row->curve_p256 == 1u
+                && row->public_private_binding_match == 1u
+                && row->credential_set_revision
+                    >= row->credential_set_revision_floor
+                && row->provider_generation >= row->provider_generation_floor
+                && row->opaque_key_reference_size == sizeof(expected_ref)
+                && memcmp(
+                       row->opaque_key_reference,
+                       expected_ref,
+                       sizeof(expected_ref)) == 0
+                && row->provider_reentry == 0u
+                && row->provider_output_bytes == 32u;
+        /* The caller-owned secret workspace is scrubbed on both the failed
+         * transition and successful post-PRK handoff. */
         (void)memset(output, 0, sizeof(output));
-        if (strcmp(row->status, "TERMINAL_AUTHENTICATION_FAILURE") != 0
+        if ((index == 0u && !valid) || (index > 0u && valid)
+            || !pa_local_key_id_delta_matches(
+                   row, code, delta_count)
+            || strcmp(
+                   row->expected_status,
+                   valid ? "SUCCESS" : "TERMINAL_AUTHENTICATION_FAILURE") != 0
+            || row->expected_terminal != (uint8_t)(valid ? 0u : 1u)
             || row->wire_records != 0u || row->exporter_calls != 0u
-            || row->ecdh_output_published_bytes != 0u
+            || row->ecdh_write_count != (uint8_t)(valid ? 1u : 0u)
+            || row->ecdh_output_published_bytes != (uint8_t)(valid ? 32u : 0u)
             || row->zeroized_output_bytes != sizeof(output)
             || row->private_key_bytes_exported != 0u
             || pa_any_nonzero(output, sizeof(output))) {
             return 0;
         }
     }
-    return seen == UINT16_C(0x01ff);
+    /* IDs and expected effects stay fixed while coherent one-delta inputs
+     * are swapped/rotated.  A one-delta-only validator would accept these. */
+    {
+        ninlil_pa_local_static_dh_transition_t mutation;
+        mutation = ninlil_pa_local_static_dh_transitions[2];
+        mutation.requested_local_role = 1u;
+        mutation.curve_p256 = 0u;
+        if (pa_local_key_id_delta_matches(&mutation, 2, 1u)) {
+            return 0;
+        }
+        mutation = ninlil_pa_local_static_dh_transitions[3];
+        mutation.curve_p256 = 1u;
+        mutation.requested_local_role = 2u;
+        if (pa_local_key_id_delta_matches(&mutation, 3, 1u)) {
+            return 0;
+        }
+        mutation = ninlil_pa_local_static_dh_transitions[3];
+        mutation.curve_p256 = 1u;
+        mutation.public_private_binding_match = 0u;
+        if (pa_local_key_id_delta_matches(&mutation, 3, 1u)) {
+            return 0;
+        }
+        mutation = ninlil_pa_local_static_dh_transitions[4];
+        mutation.public_private_binding_match = 1u;
+        mutation.requested_local_role = 2u;
+        if (pa_local_key_id_delta_matches(&mutation, 4, 1u)) {
+            return 0;
+        }
+    }
+    return seen == UINT16_C(0x03ff);
+}
+
+static int pa_ead_bijection_and_consumption(
+    const ninlil_pa_ead_failure_t *rows,
+    size_t count)
+{
+    uint8_t stages = 0u;
+    uint8_t consumed[4] = { 0u, 0u, 0u, 0u };
+    size_t index;
+    if (rows == NULL || count != 4u) {
+        return 0;
+    }
+    for (index = 0u; index < count; ++index) {
+        const ninlil_pa_ead_failure_t *row = &rows[index];
+        const uint8_t expected_byte = (uint8_t)(index + 1u);
+        const uint8_t bit = (uint8_t)(1u << index);
+        if (row->stage != expected_byte
+            || strcmp(row->id, expected_byte == 1u ? "EAD_1_NONEMPTY"
+                              : expected_byte == 2u ? "EAD_2_NONEMPTY"
+                              : expected_byte == 3u ? "EAD_3_NONEMPTY"
+                                                    : "EAD_4_NONEMPTY") != 0
+            || (stages & bit) != 0u || row->ead == NULL || row->ead_size == 0u
+            || row->ead_size != 1u || row->ead[0] != expected_byte
+            || consumed[expected_byte - 1u] != 0u
+            || strcmp(row->outcome, "TERMINAL_REJECT") != 0
+            || row->exporter_calls != 0u || row->automatic_retry_count != 0u
+            || row->wire_records_after_reject != 0u) {
+            return 0;
+        }
+        stages = (uint8_t)(stages | bit);
+        consumed[expected_byte - 1u] = 1u;
+    }
+    return stages == 0x0fu && consumed[0] && consumed[1] && consumed[2]
+           && consumed[3];
 }
 
 static int pa_edhoc_failure_transition_machines(void)
 {
     size_t index;
+    if (!pa_ead_bijection_and_consumption(
+            ninlil_pa_ead_failures, NINLIL_PA_EDHOC_EAD_FAILURE_COUNT)) {
+        return 0;
+    }
     for (index = 0u; index < NINLIL_PA_EDHOC_EAD_FAILURE_COUNT; ++index) {
         const ninlil_pa_ead_failure_t *row = &ninlil_pa_ead_failures[index];
         uint8_t state = 1u;
@@ -4430,6 +4589,30 @@ static int pa_edhoc_failure_transition_machines(void)
             || strcmp(row->outcome, "TERMINAL_REJECT") != 0) {
             return 0;
         }
+    }
+    /* C-owned coherent mutants: all empty, all stage 1, duplicate consumed
+     * bytes and swapped consumed bytes are each rejected by the same machine. */
+    {
+        ninlil_pa_ead_failure_t rows[4];
+        (void)memcpy(rows, ninlil_pa_ead_failures, sizeof(rows));
+        rows[0].ead_size = 0u;
+        rows[1].ead_size = 0u;
+        rows[2].ead_size = 0u;
+        rows[3].ead_size = 0u;
+        if (pa_ead_bijection_and_consumption(rows, 4u)) return 0;
+        (void)memcpy(rows, ninlil_pa_ead_failures, sizeof(rows));
+        rows[1].stage = 1u; rows[1].id = "EAD_1_NONEMPTY";
+        rows[2].stage = 1u; rows[2].id = "EAD_1_NONEMPTY";
+        rows[3].stage = 1u; rows[3].id = "EAD_1_NONEMPTY";
+        if (pa_ead_bijection_and_consumption(rows, 4u)) return 0;
+        (void)memcpy(rows, ninlil_pa_ead_failures, sizeof(rows));
+        rows[1].ead = rows[0].ead; rows[1].ead_size = rows[0].ead_size;
+        if (pa_ead_bijection_and_consumption(rows, 4u)) return 0;
+        (void)memcpy(rows, ninlil_pa_ead_failures, sizeof(rows));
+        { const uint8_t *ead = rows[0].ead; size_t size = rows[0].ead_size;
+          rows[0].ead = rows[1].ead; rows[0].ead_size = rows[1].ead_size;
+          rows[1].ead = ead; rows[1].ead_size = size; }
+        if (pa_ead_bijection_and_consumption(rows, 4u)) return 0;
     }
     {
         uint8_t terminal = 0u;
@@ -4609,7 +4792,7 @@ static int pa_repaired_contracts(void)
         return 0;
     }
     pa_exec(PA_CASE_PREREQUISITES);
-    if (NINLIL_PA_LOCAL_KEY_FAILURE_COUNT != 9u
+    if (NINLIL_PA_LOCAL_KEY_FAILURE_COUNT != 10u
         || !pa_local_key_failure_machine()) {
         return 0;
     }

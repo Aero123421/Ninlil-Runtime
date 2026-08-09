@@ -743,7 +743,7 @@ function mutateAllMetadataCoherent(document) {
   };
 }
 
-const PA_OBJECT_PATH_COUNT_EXACT = 829;
+const PA_OBJECT_PATH_COUNT_EXACT = 850;
 const PA_CLOSED_KEY_SCHEMA_PATH = path.join(
   here,
   "production_attachment_edhoc_closed_key_schema.json",
@@ -2482,7 +2482,8 @@ function assertPrerequisites(document, executed) {
   ) {
     fail("PA local static-DH port");
   }
-  const failureIds = [
+  const transitionIds = [
+    "VALID_BASELINE",
     "WRONG_FACTORY_IDENTITY",
     "WRONG_ROLE",
     "WRONG_CURVE",
@@ -2493,23 +2494,80 @@ function assertPrerequisites(document, executed) {
     "PROVIDER_REENTRY",
     "PARTIAL_OUTPUT",
   ];
-  if (
-    JSON.stringify(block.failure_matrix.map((row) => row.id)) !==
-    JSON.stringify(failureIds)
-  ) {
-    fail("PA local key failure IDs");
+  const transitions = block.local_static_dh_transitions;
+  const baseline = {
+    factory_stable_id_digest_hex: iff.initiator_stable_digest,
+    descriptor_local_role: 1,
+    requested_local_role: 1,
+    curve: "P-256",
+    public_private_binding: "MATCH",
+    credential_set_revision: iff.credential_set_revision,
+    credential_set_revision_floor: iff.credential_set_revision,
+    provider_generation: 23,
+    provider_generation_floor: 23,
+    opaque_key_reference_hex: "494b524546303031",
+    provider_reentry: false,
+    provider_output_bytes: 32,
+  };
+  function deriveLocalStaticDh(input) {
+    const valid =
+      input.factory_stable_id_digest_hex === baseline.factory_stable_id_digest_hex &&
+      input.descriptor_local_role === 1 && input.requested_local_role === 1 &&
+      input.curve === "P-256" && input.public_private_binding === "MATCH" &&
+      input.credential_set_revision >= input.credential_set_revision_floor &&
+      input.provider_generation >= input.provider_generation_floor &&
+      input.opaque_key_reference_hex === baseline.opaque_key_reference_hex &&
+      input.provider_reentry === false && input.provider_output_bytes === 32;
+    return valid
+      ? { status: "SUCCESS", terminal: false, wire_records: 0, exporter_calls: 0,
+          ecdh_write_count: 1, ecdh_output_published_bytes: 32,
+          zeroized_output_bytes: 32, private_key_bytes_exported: 0 }
+      : { status: "TERMINAL_AUTHENTICATION_FAILURE", terminal: true,
+          wire_records: 0, exporter_calls: 0, ecdh_write_count: 0,
+          ecdh_output_published_bytes: 0, zeroized_output_bytes: 32,
+          private_key_bytes_exported: 0 };
   }
-  for (const row of block.failure_matrix) {
-    if (
-      row.status !== "TERMINAL_AUTHENTICATION_FAILURE" ||
-      row.wire_records !== 0 ||
-      row.exporter_calls !== 0 ||
-      row.ecdh_output_published_bytes !== 0 ||
-      row.zeroized_output_bytes !== 32 ||
-      row.private_key_bytes_exported !== 0
-    ) {
-      fail(`PA local key failure ${row.id}`);
+  const failureDelta = new Map([
+    ["WRONG_FACTORY_IDENTITY", ["factory_stable_id_digest_hex", "00".repeat(32)]],
+    ["WRONG_ROLE", ["requested_local_role", 2]],
+    ["WRONG_CURVE", ["curve", "X25519"]],
+    ["PUBLIC_PRIVATE_KEY_MISMATCH", ["public_private_binding", "MISMATCH"]],
+    ["CREDENTIAL_REVISION_ROLLBACK", ["credential_set_revision", 18]],
+    ["PROVIDER_GENERATION_ROLLBACK", ["provider_generation", 22]],
+    ["UNKNOWN_OPAQUE_KEY_REFERENCE", ["opaque_key_reference_hex", "554e4b4e4f574e31"]],
+    ["PROVIDER_REENTRY", ["provider_reentry", true]],
+    ["PARTIAL_OUTPUT", ["provider_output_bytes", 31]],
+  ]);
+  function validateLocalStaticDhTransitions(rows) {
+    if (JSON.stringify(rows.map((row) => row.id)) !== JSON.stringify(transitionIds)) {
+      fail("PA local static-DH transition IDs");
     }
+    rows.forEach((row, index) => {
+      const keys = Object.keys(baseline);
+      const deltaKeys = keys.filter((key) => row.input[key] !== baseline[key]);
+      const derived = deriveLocalStaticDh(row.input);
+      const expectedMatches = Object.keys(derived).length === Object.keys(row.expected).length &&
+        Object.keys(derived).every((key) => derived[key] === row.expected[key]);
+      const required = index === 0 ? null : failureDelta.get(row.id);
+      const deltaMatches = index === 0
+        ? deltaKeys.length === 0
+        : required !== undefined && deltaKeys.length === 1 &&
+          deltaKeys[0] === required[0] && row.input[required[0]] === required[1];
+      if (Object.keys(row.input).length !== keys.length || !expectedMatches || !deltaMatches) {
+        fail(`PA local static-DH ID/delta binding ${row.id}`);
+      }
+    });
+  }
+  validateLocalStaticDhTransitions(transitions);
+  const swap = transitions.map((row) => ({ ...row, input: { ...row.input } }));
+  [swap[2].input, swap[3].input] = [swap[3].input, swap[2].input];
+  const rotate = transitions.map((row) => ({ ...row, input: { ...row.input } }));
+  [rotate[2].input, rotate[3].input, rotate[4].input] =
+    [rotate[3].input, rotate[4].input, rotate[2].input];
+  for (const probe of [swap, rotate]) {
+    let rejected = false;
+    try { validateLocalStaticDhTransitions(probe); } catch (error) { rejected = true; }
+    if (!rejected) fail("PA local static-DH ID/input mutant accepted");
   }
   executed.add("PA-PREREQ-FACTORY-MEMBERSHIP-LOCAL-KEY");
   executed.add("PA-LOCAL-KEY-MISMATCH-ROLLBACK-REENTRY");
@@ -2560,28 +2618,38 @@ function assertEdhocAttempts(document, executed) {
     });
     executed.add(caseId);
   }
-  const expectedEadIds = [
-    "EAD_1_NONEMPTY",
-    "EAD_2_NONEMPTY",
-    "EAD_3_NONEMPTY",
-    "EAD_4_NONEMPTY",
-  ];
-  if (
-    JSON.stringify(block.ead_nonempty_terminal_matrix.map((row) => row.id)) !==
-    JSON.stringify(expectedEadIds)
-  ) {
-    fail("EDHOC EAD failure IDs");
-  }
-  for (const row of block.ead_nonempty_terminal_matrix) {
-    if (
-      row.outcome !== "TERMINAL_REJECT" ||
-      row.ead_hex === "" ||
-      row.exporter_calls !== 0 ||
-      row.automatic_retry_count !== 0 ||
-      row.wire_records_after_reject !== 0
-    ) {
-      fail(`EDHOC EAD terminal ${row.id}`);
+  function validateEadRows(rows) {
+    if (!Array.isArray(rows) || rows.length !== 4) fail("EDHOC EAD cardinality");
+    const stages = new Set();
+    const consumed = new Set();
+    for (const row of rows) {
+      const bytes = hex(row.ead_hex, "EDHOC EAD bytes");
+      if (!Number.isInteger(row.stage) || row.stage < 1 || row.stage > 4 ||
+          stages.has(row.stage) || row.id !== `EAD_${row.stage}_NONEMPTY` ||
+          bytes.length === 0 || !equal(bytes, Buffer.from([row.stage])) ||
+          consumed.has(bytes.toString("hex")) || row.outcome !== "TERMINAL_REJECT" ||
+          row.exporter_calls !== 0 || row.automatic_retry_count !== 0 ||
+          row.wire_records_after_reject !== 0) {
+        fail("EDHOC EAD bijection/consumption");
+      }
+      stages.add(row.stage);
+      consumed.add(bytes.toString("hex"));
     }
+    if (stages.size !== 4 || consumed.size !== 4) fail("EDHOC EAD stage coverage");
+  }
+  const eadRows = block.ead_nonempty_terminal_matrix;
+  validateEadRows(eadRows);
+  const eadMutants = [
+    eadRows.map((row) => ({ ...row, ead_hex: "" })),
+    eadRows.map((row) => ({ ...row, stage: 1, id: "EAD_1_NONEMPTY" })),
+    eadRows.map((row, index) => index === 1 ? { ...row, ead_hex: eadRows[0].ead_hex } : { ...row }),
+    eadRows.map((row, index) => index === 0 ? { ...row, ead_hex: eadRows[1].ead_hex } :
+      index === 1 ? { ...row, ead_hex: eadRows[0].ead_hex } : { ...row }),
+  ];
+  for (const mutant of eadMutants) {
+    let rejected = false;
+    try { validateEadRows(mutant); } catch (error) { rejected = true; }
+    if (!rejected) fail("EDHOC EAD coherent mutant accepted");
   }
   executed.add("PA-EDHOC-EAD1-EAD4-TERMINAL");
   if (

@@ -1225,7 +1225,7 @@
       },
       {
         "automatic_retry_count": 0,
-        "ead_hex": "01",
+        "ead_hex": "02",
         "exporter_calls": 0,
         "id": "EAD_2_NONEMPTY",
         "outcome": "TERMINAL_REJECT",
@@ -1234,7 +1234,7 @@
       },
       {
         "automatic_retry_count": 0,
-        "ead_hex": "01",
+        "ead_hex": "03",
         "exporter_calls": 0,
         "id": "EAD_3_NONEMPTY",
         "outcome": "TERMINAL_REJECT",
@@ -1243,7 +1243,7 @@
       },
       {
         "automatic_retry_count": 0,
-        "ead_hex": "01",
+        "ead_hex": "04",
         "exporter_calls": 0,
         "id": "EAD_4_NONEMPTY",
         "outcome": "TERMINAL_REJECT",
@@ -9965,89 +9965,6 @@
       "required_state": "PROVISIONED",
       "stable_id_digest_bytes": 32
     },
-    "failure_matrix": [
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "WRONG_FACTORY_IDENTITY",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "WRONG_ROLE",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "WRONG_CURVE",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "PUBLIC_PRIVATE_KEY_MISMATCH",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "CREDENTIAL_REVISION_ROLLBACK",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "PROVIDER_GENERATION_ROLLBACK",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "UNKNOWN_OPAQUE_KEY_REFERENCE",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "PROVIDER_REENTRY",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      },
-      {
-        "ecdh_output_published_bytes": 0,
-        "exporter_calls": 0,
-        "id": "PARTIAL_OUTPUT",
-        "private_key_bytes_exported": 0,
-        "status": "TERMINAL_AUTHENTICATION_FAILURE",
-        "wire_records": 0,
-        "zeroized_output_bytes": 32
-      }
-    ],
     "local_credential_descriptors": {
       "initiator_local_role_1": {
         "canonical_ccs_hex": "a108a101a501020244c1c2c3c420012158206b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2962258204fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
@@ -10103,6 +10020,278 @@
       "provider_serialization": "NO_REENTRY",
       "write_count_exact": 1
     },
+    "local_static_dh_transitions": [
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 32,
+          "ecdh_write_count": 1,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "SUCCESS",
+          "terminal": false,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "VALID_BASELINE",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "WRONG_FACTORY_IDENTITY",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "WRONG_ROLE",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 2
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "WRONG_CURVE",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "X25519",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "PUBLIC_PRIVATE_KEY_MISMATCH",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MISMATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "CREDENTIAL_REVISION_ROLLBACK",
+        "input": {
+          "credential_set_revision": 18,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "PROVIDER_GENERATION_ROLLBACK",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 22,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "UNKNOWN_OPAQUE_KEY_REFERENCE",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "554e4b4e4f574e31",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "PROVIDER_REENTRY",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 32,
+          "provider_reentry": true,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      },
+      {
+        "expected": {
+          "ecdh_output_published_bytes": 0,
+          "ecdh_write_count": 0,
+          "exporter_calls": 0,
+          "private_key_bytes_exported": 0,
+          "status": "TERMINAL_AUTHENTICATION_FAILURE",
+          "terminal": true,
+          "wire_records": 0,
+          "zeroized_output_bytes": 32
+        },
+        "id": "PARTIAL_OUTPUT",
+        "input": {
+          "credential_set_revision": 19,
+          "credential_set_revision_floor": 19,
+          "curve": "P-256",
+          "descriptor_local_role": 1,
+          "factory_stable_id_digest_hex": "10940bf968d8b258f780da59c4b7cc7dc3799e8fca9b6ae5efad738d53ec356a",
+          "opaque_key_reference_hex": "494b524546303031",
+          "provider_generation": 23,
+          "provider_generation_floor": 23,
+          "provider_output_bytes": 31,
+          "provider_reentry": false,
+          "public_private_binding": "MATCH",
+          "requested_local_role": 1
+        }
+      }
+    ],
     "positive_model": {
       "ecdh_output_bytes_written": 32,
       "ecdh_write_count": 1,
