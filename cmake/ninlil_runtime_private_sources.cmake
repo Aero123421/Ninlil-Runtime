@@ -43,6 +43,7 @@ set(NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES
     src/runtime/v1_durable_allowlist.c
     src/runtime/v1_durable_restart.c
     src/runtime/storage_canonical_plan.c
+    src/runtime/identity_attachment_v1/niaf_owner.c
     src/transport/control_session.c
     src/transport/fabric_v1/nra1_codec.c
     src/transport/fabric_v1/nvb1_codec.c
@@ -112,6 +113,7 @@ set(NINLIL_RUNTIME_PRIVATE_VLA_RELATIVE_SOURCES
     src/runtime/stage5_empty_metadata.c
     src/runtime/runtime_store_orchestrator.c
     src/runtime/storage_canonical_plan.c
+    src/runtime/identity_attachment_v1/niaf_owner.c
     src/transport/control_session.c
     src/radio/airtime_calculator.c
     src/radio/radio_hal.c

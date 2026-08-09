@@ -994,6 +994,14 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
             APPEND PROPERTY COMPILE_OPTIONS ${_n6_compile_opts}
         )
     endforeach()
+    # ADR-0039 private NIAF owner: 308-byte record scratch is caller-owned;
+    # retain stack-usage evidence and the same task-frame ceiling on Host.
+    set(_niaf_compile_opts -fstack-usage)
+    if(NOT _ninlil_any_sanitizer_active)
+        list(APPEND _niaf_compile_opts -Wframe-larger-than=2048)
+    endif()
+    set_property(SOURCE src/runtime/identity_attachment_v1/niaf_owner.c
+        APPEND PROPERTY COMPILE_OPTIONS ${_niaf_compile_opts})
     # R7 portable wrapper: docs/31 §11.6 candidate static-frame ceiling.
     # Adapter call-chain/task stack sufficiency remains a separate ESP gate.
     # Native GNU x86: share -maccumulate-outgoing-args with N6 so AES-GCM
@@ -7126,6 +7134,42 @@ else:
         add_test(
             NAME composition_v1_lifecycle
             COMMAND ninlil_composition_v1_lifecycle_test)
+    endif()
+
+    if(NINLIL_HOST_RUNTIME_ENABLED)
+        add_executable(ninlil_niaf_owner_v1_test
+            tests/runtime/niaf_owner_test.c)
+        target_link_libraries(ninlil_niaf_owner_v1_test PRIVATE
+            ninlil_runtime
+            ninlil_test_storage_fixture)
+        target_include_directories(ninlil_niaf_owner_v1_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/support)
+        set_target_properties(ninlil_niaf_owner_v1_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_niaf_owner_v1_test)
+        add_test(
+            NAME niaf_owner_v1
+            COMMAND ninlil_niaf_owner_v1_test)
+        if(NOT _ninlil_any_sanitizer_active)
+            add_test(
+                NAME niaf_owner_stack_gate_filter_self_test
+                COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_stack_gate.py
+                    --self-test)
+            add_test(
+                NAME niaf_owner_host_stack_gate
+                COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_stack_gate.py
+                    --require-su
+                    --require-source niaf_owner.c
+                    --only-source niaf_owner.c
+                    ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ninlil_runtime.dir)
+            set_tests_properties(niaf_owner_host_stack_gate PROPERTIES
+                DEPENDS ninlil_niaf_owner_v1_test)
+        endif()
     endif()
 
     add_executable(ninlil_platform_basic_fixtures_test

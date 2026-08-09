@@ -14,7 +14,9 @@ from __future__ import annotations
 import argparse
 import pathlib
 import re
+import subprocess
 import sys
+import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 HEADER = REPO / "ports/esp-idf/storage/include/ninlil_port/esp_storage.h"
@@ -51,6 +53,50 @@ def collect_su(paths: list[pathlib.Path]) -> list[pathlib.Path]:
         elif p.is_dir():
             files.extend(sorted(p.rglob("*.su")))
     return files
+
+
+def matches_source(path: str, su: pathlib.Path, source: str) -> bool:
+    return pathlib.PurePath(path).name == source or su.name == f"{source}.su"
+
+
+def self_test() -> None:
+    with tempfile.TemporaryDirectory() as raw:
+        root = pathlib.Path(raw)
+        (root / "niaf_owner.c.su").write_text(
+            "niaf_owner.c:1:1:owner\t32\tstatic\n", encoding="utf-8"
+        )
+        (root / "other.c.su").write_text(
+            "other.c:1:1:other\t9999\tstatic\n", encoding="utf-8"
+        )
+        filtered = subprocess.run(
+            [sys.executable, __file__, "--require-su", "--require-source",
+             "niaf_owner.c", "--only-source", "niaf_owner.c", str(root)],
+            capture_output=True, text=True, check=False,
+        )
+        unfiltered = subprocess.run(
+            [sys.executable, __file__, "--require-su", "--require-source",
+             "niaf_owner.c", str(root)],
+            capture_output=True, text=True, check=False,
+        )
+        missing = subprocess.run(
+            [sys.executable, __file__, "--require-su", "--require-source",
+             "niaf_owner.c", "--only-source", "typo.c", str(root)],
+            capture_output=True, text=True, check=False,
+        )
+        lookalike_dir = root / "lookalike"
+        lookalike_dir.mkdir()
+        (lookalike_dir / "not_niaf_owner.c.su").write_text(
+            "not_niaf_owner.c:1:1:owner\t32\tstatic\n", encoding="utf-8"
+        )
+        lookalike = subprocess.run(
+            [sys.executable, __file__, "--require-su", "--require-source",
+             "niaf_owner.c", "--only-source", "niaf_owner.c", str(lookalike_dir)],
+            capture_output=True, text=True, check=False,
+        )
+        if (filtered.returncode != 0 or unfiltered.returncode == 0
+                or missing.returncode == 0 or lookalike.returncode == 0):
+            fail("--only-source filter self-test")
+    print("esp_storage_stack_gate self-test OK")
 
 
 def parse_su(path: pathlib.Path) -> list[tuple[str, str, int]]:
@@ -91,11 +137,27 @@ def main() -> None:
         help="require at least one .su covering esp_storage_model.c",
     )
     ap.add_argument(
+        "--require-source",
+        action="append",
+        default=[],
+        help="require at least one .su row for this exact source basename",
+    )
+    ap.add_argument(
+        "--only-source",
+        action="append",
+        default=[],
+        help="apply the frame limit only to rows from this source basename",
+    )
+    ap.add_argument(
         "--compiler-skip",
         default="",
         help="record an unsupported host compiler; ESP-IDF GCC remains authoritative",
     )
+    ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
+    if args.self_test:
+        self_test()
+        return
     if args.compiler_skip:
         print(
             "esp_storage_stack_gate SKIP: compiler="
@@ -120,13 +182,24 @@ def main() -> None:
 
     worst: list[tuple[int, str, str]] = []
     parsed_rows = 0
-    model_rows = 0
+    filtered_rows = 0
+    required_sources = list(args.require_source)
+    if args.require_model:
+        required_sources.append("esp_storage_model.c")
+    source_rows = {source: 0 for source in required_sources}
     for su in su_files:
         rows = parse_su(su)
         parsed_rows += len(rows)
         for path, func, size in rows:
-            if "esp_storage_model" in path or "esp_storage_model" in str(su):
-                model_rows += 1
+            for source in source_rows:
+                if matches_source(path, su, source):
+                    source_rows[source] += 1
+            if args.only_source and not any(
+                matches_source(path, su, source)
+                for source in args.only_source
+            ):
+                continue
+            filtered_rows += 1
             worst.append((size, func, f"{su}:{path}"))
             if size > max_bytes:
                 fail(
@@ -136,8 +209,11 @@ def main() -> None:
 
     if args.require_su and parsed_rows == 0:
         fail(".su files exist but contain no parseable frame rows")
-    if args.require_model and model_rows == 0:
-        fail("no parsed .su frame coverage for esp_storage_model.c")
+    if args.only_source and filtered_rows == 0:
+        fail("no parsed .su rows matched --only-source")
+    for source, rows in source_rows.items():
+        if rows == 0:
+            fail(f"no parsed .su frame coverage for {source}")
 
     worst.sort(reverse=True)
     top = ", ".join(f"{fn}={sz}B" for sz, fn, _ in worst[:5])

@@ -1356,6 +1356,11 @@
       "authority": "docs/adr/0039-identity-attachment-precondition-gate.md",
       "occurrences": [
         {
+          "path": "src/runtime/identity_attachment_v1/niaf_owner.c",
+          "representation": "CHAR_ARRAY",
+          "count": 1
+        },
+        {
           "path": "tools/identity_attachment_precondition_spec_gate.py",
           "representation": "QUOTED",
           "count": 5

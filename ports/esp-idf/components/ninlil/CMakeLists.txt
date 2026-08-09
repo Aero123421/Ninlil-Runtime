@@ -306,6 +306,12 @@ endforeach()
 set_source_files_properties(${_ninlil_composition_v1_srcs} PROPERTIES
     COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048"
 )
+# ADR-0039 NIAF owner keeps its 308-byte codec buffers in caller workspace.
+# Collect its target frame evidence alongside the ESP component build.
+set_source_files_properties(
+    "${NINLIL_REPO_ROOT}/src/runtime/identity_attachment_v1/niaf_owner.c"
+    PROPERTIES COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048"
+)
 if(CONFIG_NINLIL_ENABLE_PRIVATE_WIFI_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
         NINLIL_ENABLE_PRIVATE_WIFI_V1=1)

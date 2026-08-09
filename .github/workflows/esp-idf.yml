@@ -132,6 +132,9 @@ jobs:
           test -s ports/esp-idf/smoke_app/build/ninlil_su_list.txt
           python3 tools/esp_storage_stack_gate.py --require-su --require-model \
             ports/esp-idf/smoke_app/build
+          python3 tools/esp_storage_stack_gate.py --require-su \
+            --require-source niaf_owner.c --only-source niaf_owner.c \
+            ports/esp-idf/smoke_app/build
 
       - name: Feature-ON ESP evidence present (fail-closed, not dry-run)
         run: |
