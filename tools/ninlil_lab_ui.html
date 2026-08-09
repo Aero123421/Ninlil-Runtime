@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ninlil Mesh Lab</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1017;
+      --panel: #101822;
+      --panel-2: #141e29;
+      --panel-3: #0d151e;
+      --line: #263545;
+      --line-soft: #1b2937;
+      --ink: #e9eef3;
+      --muted: #92a2b3;
+      --quiet: #637487;
+      --healthy: #4fd1b5;
+      --healthy-soft: #173d39;
+      --warning: #f2b84b;
+      --warning-soft: #45351d;
+      --danger: #f06a6a;
+      --danger-soft: #482326;
+      --selected: #5f94ff;
+      --selected-soft: #1b3157;
+      --radius: 12px;
+      --shadow: 0 14px 42px rgba(0, 0, 0, .22);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: var(--bg); color: var(--ink); }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    .mono, .metric-value, .node-metric, time { font-variant-numeric: tabular-nums; }
+
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 72px minmax(0, 1fr); }
+    .rail { position: sticky; top: 0; height: 100vh; border-right: 1px solid var(--line-soft); background: #0d141c; display: flex; flex-direction: column; align-items: center; padding: 18px 10px; gap: 10px; z-index: 4; }
+    .brand-mark { width: 40px; height: 40px; display: grid; place-items: center; color: var(--healthy); margin-bottom: 15px; }
+    .rail-button { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--quiet); cursor: pointer; position: relative; }
+    .rail-button:hover { color: var(--ink); background: var(--panel-2); }
+    .rail-button.active { color: #81aaff; background: var(--selected-soft); border-color: #294c7c; }
+    .rail-button::after { content: attr(data-label); position: absolute; left: 58px; opacity: 0; pointer-events: none; white-space: nowrap; color: var(--ink); background: #172230; border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; transition: .15s; }
+    .rail-button:hover::after { opacity: 1; }
+    .rail-spacer { flex: 1; }
+
+    .workspace { min-width: 0; }
+    .topbar { height: 70px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 22px; padding: 0 22px; background: rgba(11, 16, 23, .96); position: sticky; top: 0; z-index: 3; }
+    .title-block { min-width: 190px; display: flex; align-items: center; gap: 10px; }
+    h1 { font-size: 17px; line-height: 1; margin: 0; letter-spacing: -.01em; }
+    .mode-pill { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--warning); border: 1px solid #604a22; background: var(--warning-soft); border-radius: 999px; padding: 4px 7px; }
+    .summary { display: flex; flex: 1; align-items: stretch; overflow: auto; scrollbar-width: none; }
+    .summary::-webkit-scrollbar { display: none; }
+    .metric { min-width: 140px; padding: 0 20px; border-left: 1px solid var(--line-soft); display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+    .metric:first-child { border-left: 0; }
+    .metric-label { color: var(--muted); font-size: 11px; }
+    .metric-value { font-weight: 680; font-size: 14px; white-space: nowrap; }
+    .status-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; background: var(--healthy); margin-right: 7px; box-shadow: 0 0 0 3px rgba(79, 209, 181, .12); }
+    .radio-profile { margin-left: auto; white-space: nowrap; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-3); padding: 9px 12px; color: #cbd6df; font-size: 12px; }
+
+    .content { padding: 18px; display: grid; grid-template-columns: minmax(560px, 1fr) 318px; grid-template-rows: minmax(580px, calc(100vh - 292px)) 184px; gap: 12px; }
+    .panel { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; overflow: hidden; }
+    .panel-head { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 17px; border-bottom: 1px solid var(--line-soft); }
+    .panel-title { font-size: 14px; font-weight: 690; margin: 0; }
+    .panel-kicker { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .head-actions { display: flex; gap: 7px; align-items: center; }
+    .btn { border: 1px solid var(--line); background: var(--panel-3); border-radius: 7px; padding: 8px 11px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+    .btn:hover { border-color: #526a82; }
+    .btn.primary { color: #071712; background: var(--healthy); border-color: var(--healthy); font-weight: 720; }
+    .btn.blue { background: #2c61cd; border-color: #4e7fe4; font-weight: 670; }
+    .btn.danger { color: #ffb6b6; border-color: #613438; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .icon-button { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; }
+
+    .topology-panel { display: flex; flex-direction: column; }
+    .canvas-wrap { flex: 1; min-height: 430px; position: relative; background-color: #0e161f; background-image: radial-gradient(#253443 1px, transparent 1px); background-size: 22px 22px; }
+    #topology { width: 100%; height: 100%; min-height: 430px; display: block; }
+    .route-line { fill: none; stroke: #53cda9; stroke-width: 2; opacity: .84; }
+    .route-line.degraded { stroke: var(--warning); }
+    .route-line.disconnected { stroke: var(--danger); stroke-dasharray: 6 6; opacity: .6; }
+    .flow-dot { fill: var(--healthy); filter: drop-shadow(0 0 3px rgba(79,209,181,.7)); }
+    .node-svg { cursor: pointer; }
+    .node-card { fill: #17222d; stroke: #3a4b5c; stroke-width: 1.2; transition: .15s; }
+    .node-svg:hover .node-card { fill: #1b2935; stroke: #61758a; }
+    .node-svg.selected .node-card { stroke: var(--selected); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(95,148,255,.35)); }
+    .node-svg.degraded .node-card { stroke: #876a2d; }
+    .node-svg.disconnected .node-card { stroke: #754045; opacity: .75; }
+    .health-ring { fill: none; stroke: var(--healthy); stroke-width: 3; }
+    .degraded .health-ring { stroke: var(--warning); }
+    .disconnected .health-ring { stroke: var(--danger); stroke-dasharray: 4 3; }
+    .node-name { fill: var(--ink); font-size: 16px; font-weight: 760; }
+    .node-role { fill: #b9c6d2; font-size: 10px; }
+    .node-metric { fill: var(--muted); font-size: 9px; }
+    .node-rtt { fill: #79a4ff; }
+    .topology-empty { position: absolute; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); }
+    .topology-empty.visible { display: grid; }
+    .empty-icon { font-size: 30px; display: block; margin-bottom: 10px; }
+    .legend { min-height: 42px; border-top: 1px solid var(--line-soft); display: flex; align-items: center; gap: 17px; padding: 0 16px; color: var(--muted); font-size: 10px; overflow: auto; white-space: nowrap; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--healthy); border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+    .legend .amber { border-color: var(--warning); }
+    .legend .red { border-color: var(--danger); }
+    .legend .line { width: 18px; height: 0; border: 0; border-top: 2px solid var(--healthy); border-radius: 0; vertical-align: 3px; }
+
+    .inspector { display: flex; flex-direction: column; }
+    .inspector-body { padding: 15px 17px; overflow: auto; }
+    .node-heading { display: flex; align-items: center; gap: 11px; margin-bottom: 17px; }
+    .node-avatar { width: 42px; height: 42px; border: 3px solid var(--healthy); border-radius: 50%; display: grid; place-items: center; font-weight: 800; }
+    .node-heading strong { display: block; font-size: 16px; }
+    .node-heading span { color: var(--muted); font-size: 11px; }
+    .health-pill { margin-left: auto; border-radius: 999px; color: var(--healthy); background: var(--healthy-soft); padding: 5px 8px; font-size: 10px; font-weight: 700; }
+    .health-pill.degraded { color: var(--warning); background: var(--warning-soft); }
+    .health-pill.disconnected { color: var(--danger); background: var(--danger-soft); }
+    .facts { display: grid; grid-template-columns: 94px minmax(0, 1fr); gap: 9px 10px; font-size: 12px; }
+    .facts dt { color: var(--muted); }
+    .facts dd { margin: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+    .route { color: #82aaff; font-weight: 680; }
+    .divider { height: 1px; background: var(--line-soft); margin: 16px 0; }
+    .chart-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+    #sparkline { width: 100%; height: 86px; display: block; margin: 7px 0; }
+    .chart-grid { stroke: #273544; stroke-width: 1; }
+    .chart-line { fill: none; stroke: var(--selected); stroke-width: 2; }
+    .inspector-actions { display: grid; gap: 8px; margin-top: 16px; }
+    .inspector-actions .btn { padding: 10px; }
+
+    .run-panel { grid-column: 1; }
+    .run-body { height: 100%; display: grid; grid-template-columns: 190px minmax(0, 1fr); }
+    .run-cta { border-right: 1px solid var(--line-soft); padding: 16px; display: flex; flex-direction: column; justify-content: space-between; }
+    .run-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .09em; }
+    .run-phase { font-size: 17px; font-weight: 720; margin-top: 5px; }
+    .run-progress { padding: 16px 18px; }
+    .progress-meta { display: flex; justify-content: space-between; gap: 15px; font-size: 11px; color: var(--muted); }
+    .progress-meta strong { color: var(--ink); font-size: 14px; }
+    .progress-track { height: 7px; background: #273340; border-radius: 999px; margin: 12px 0; overflow: hidden; }
+    .progress-track > i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--healthy); transition: width .25s; }
+    .node-checks { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 13px; }
+    .node-check { display: flex; gap: 5px; align-items: center; color: var(--muted); font-size: 10px; }
+    .node-check i { width: 16px; height: 16px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; font-style: normal; }
+    .node-check.ok i { color: #092018; background: var(--healthy); border-color: var(--healthy); }
+
+    .timeline-panel { grid-column: 2; }
+    .timeline { height: calc(100% - 49px); overflow: auto; }
+    .event { display: grid; grid-template-columns: 58px 10px 55px 1fr; gap: 7px; padding: 7px 12px; border-bottom: 1px solid var(--line-soft); font-size: 10px; align-items: center; }
+    .event time { color: var(--muted); }
+    .event-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--healthy); }
+    .event.warn .event-dot { background: var(--warning); }
+    .event.error .event-dot { background: var(--danger); }
+    .event-kind { color: #c8d3dc; font-weight: 670; }
+    .event-detail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .drawer { position: fixed; inset: 70px 0 0 72px; z-index: 5; background: rgba(5, 8, 12, .78); display: none; align-items: flex-start; justify-content: flex-end; }
+    .drawer.open { display: flex; }
+    .drawer-card { width: min(620px, 100%); height: 100%; background: #101821; border-left: 1px solid var(--line); padding: 18px; overflow: auto; }
+    .drawer-card h2 { margin: 0; font-size: 17px; }
+    .connection-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; margin: 14px 0; }
+    select, input { color: var(--ink); background: var(--panel-3); border: 1px solid var(--line); border-radius: 7px; padding: 9px; min-width: 0; }
+    .port-list { margin-top: 13px; display: grid; gap: 7px; }
+    .port-row { border: 1px solid var(--line-soft); background: var(--panel-3); border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; }
+    pre { color: #abbaca; background: #080d12; border: 1px solid var(--line-soft); border-radius: 8px; padding: 11px; height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .toast { position: fixed; right: 22px; bottom: 22px; max-width: 370px; border: 1px solid var(--line); border-left: 3px solid var(--warning); border-radius: 8px; background: #17212c; padding: 11px 14px; box-shadow: var(--shadow); font-size: 12px; transform: translateY(120px); opacity: 0; transition: .2s; z-index: 8; }
+    .toast.visible { transform: translateY(0); opacity: 1; }
+
+    @media (max-width: 1100px) {
+      .content { grid-template-columns: 1fr 285px; }
+      .metric:nth-child(n+4) { display: none; }
+    }
+    @media (max-width: 820px) {
+      .shell { grid-template-columns: 1fr; }
+      .rail { position: fixed; bottom: 0; top: auto; height: 62px; width: 100%; flex-direction: row; justify-content: center; border: 0; border-top: 1px solid var(--line); padding: 6px; }
+      .brand-mark, .rail-spacer, .rail-button:nth-of-type(n+5) { display: none; }
+      .rail-button::after { display: none; }
+      .workspace { padding-bottom: 62px; }
+      .topbar { padding: 0 13px; gap: 8px; }
+      .title-block { min-width: auto; }
+      h1 { font-size: 14px; }
+      .summary .metric:not(:first-child) { display: none; }
+      .radio-profile { font-size: 0; padding: 9px; }
+      .radio-profile::after { content: "923.0 MHz"; font-size: 11px; }
+      .content { padding: 10px; grid-template-columns: 1fr; grid-template-rows: 540px auto 220px auto; }
+      .inspector { grid-row: 2; }
+      .run-panel, .timeline-panel { grid-column: 1; }
+      .run-body { grid-template-columns: 1fr; }
+      .run-cta { border: 0; border-bottom: 1px solid var(--line-soft); gap: 12px; }
+      .drawer { inset: 70px 0 62px 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="rail" aria-label="Primary">
+      <div class="brand-mark" aria-label="Ninlil">
+        <svg viewBox="0 0 32 32" width="30" aria-hidden="true"><circle cx="16" cy="5" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="25" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="26" cy="25" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 7.5 7.5 22M17.5 7.5 24.5 22M9 25h14" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+      <button class="rail-button active" data-label="Topology" aria-label="Topology" onclick="$('topology').scrollIntoView({behavior:'smooth',block:'center'})">⌘</button>
+      <button class="rail-button" data-label="Test runs" aria-label="Test runs" onclick="$('runPanel').scrollIntoView({behavior:'smooth',block:'center'})">▶</button>
+      <button class="rail-button" data-label="Events" aria-label="Events" onclick="openDrawer('logs')">≡</button>
+      <button class="rail-button" data-label="Connections" aria-label="Connections" onclick="openDrawer('connections')">⌁</button>
+      <div class="rail-spacer"></div>
+      <button class="rail-button" data-label="Settings" aria-label="Settings" onclick="openDrawer('connections')">⚙</button>
+    </nav>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="title-block"><h1>Ninlil Mesh Lab</h1><span id="modePill" class="mode-pill">DEMO</span></div>
+        <div class="summary">
+          <div class="metric"><span class="metric-label">Network</span><span class="metric-value"><i class="status-dot"></i><span id="onlineMetric">0 / 0 online</span></span></div>
+          <div class="metric"><span class="metric-label">Topology</span><span class="metric-value" id="stabilityMetric">Waiting for nodes</span></div>
+          <div class="metric"><span class="metric-label">p95 RTT</span><span class="metric-value" id="rttMetric">—</span></div>
+          <div class="metric"><span class="metric-label">Delivery</span><span class="metric-value" id="deliveryMetric">—</span></div>
+          <div class="metric"><span class="metric-label">Connections</span><span class="metric-value" id="connectionMetric">0 USB</span></div>
+        </div>
+        <button class="radio-profile" onclick="openDrawer('connections')">923.0 MHz · SF7 · 10 dBm · LAB</button>
+      </header>
+
+      <main class="content">
+        <section class="panel topology-panel">
+          <div class="panel-head">
+            <div><h2 class="panel-title">Live topology</h2><div class="panel-kicker"><span id="lastUpdate">Not updated</span> · <span style="color:var(--healthy)">● live</span></div></div>
+            <div class="head-actions"><button class="btn" onclick="openDrawer('connections')">USB setup</button></div>
+          </div>
+          <div class="canvas-wrap">
+            <svg id="topology" viewBox="0 0 900 540" role="img" aria-label="Live mesh topology"></svg>
+            <div id="topologyEmpty" class="topology-empty"><div><span class="empty-icon">⌁</span><strong>No topology yet</strong><br><small>Attach boards or enable Demo mode.</small></div></div>
+          </div>
+          <div class="legend"><strong>Legend</strong><span><i></i>Healthy</span><span><i class="amber"></i>Degraded</span><span><i class="red"></i>Disconnected</span><span><i class="line"></i>Active parent</span><span>RTT = DATA → correlated ACK</span></div>
+        </section>
+
+        <aside class="panel inspector">
+          <div class="panel-head"><h2 class="panel-title">Node inspector</h2><button class="btn icon-button" onclick="clearSelection()" aria-label="Clear selection">×</button></div>
+          <div id="inspector" class="inspector-body"></div>
+        </aside>
+
+        <section class="panel run-panel" id="runPanel">
+          <div class="run-body">
+            <div class="run-cta">
+              <div><div class="run-label">Current phase</div><div class="run-phase" id="runPhase">Ready</div></div>
+              <button class="btn primary" id="runButton" onclick="runTest()">Run 8-node test</button>
+            </div>
+            <div class="run-progress">
+              <div class="progress-meta"><span>Topology discovery → 7 sequential Ping/Pong probes</span><strong id="progressText">0%</strong></div>
+              <div class="progress-track"><i id="progressBar"></i></div>
+              <div class="panel-kicker" id="runDetail">Attach all eight boards, then run the guided LAB sequence.</div>
+              <div class="node-checks" id="nodeChecks"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel timeline-panel">
+          <div class="panel-head" style="min-height:49px;padding:11px 13px"><h2 class="panel-title">Event timeline</h2><button class="btn" onclick="openDrawer('logs')">Raw log</button></div>
+          <div id="timeline" class="timeline"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="drawer" class="drawer" onclick="drawerBackdrop(event)">
+    <section class="drawer-card">
+      <div class="panel-head" style="padding:0 0 14px"><div><h2 id="drawerTitle">Connections</h2><div class="panel-kicker">USB is the LAB observability plane; LoRa remains the tested data plane.</div></div><button class="btn icon-button" onclick="closeDrawer()">×</button></div>
+      <div id="connectionPanel">
+        <div class="connection-row"><select id="portSelect"></select><button class="btn" onclick="connectSelected()">Attach selected</button></div>
+        <div class="head-actions"><button class="btn primary" onclick="attachAll()">Attach all detected</button><button class="btn" onclick="disconnectAll()">Disconnect all</button><button class="btn" onclick="setDemo(!demo)">Toggle Demo</button></div>
+        <div id="portList" class="port-list"></div>
+      </div>
+      <div id="logPanel" hidden><pre id="rawLog"></pre></div>
+    </section>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const token = __TOKEN__;
+    const $ = id => document.getElementById(id);
+    const ZERO = '0000000000000000';
+    let snapshot = {nodes:{},connections:{},events:[],probes:[],ports:[],log:[]};
+    let selected = null;
+    let demo = new URLSearchParams(location.search).get('demo') === '1';
+    let refreshing = false;
+    const aliases = {};
+
+    const demoNodes = {
+      'a000000000000001': {name:'A',role:'controller',joined:'1',parent:ZERO,hops:'0',rtt_ms:612,rssi:-48,snr:9.6,health:'healthy',last_seen_ms:90,tx:'128',rx:'141',relay:'0',route_changes:'0'},
+      'b000000000000002': {name:'B',role:'relay',joined:'1',parent:'a000000000000001',hops:'1',rtt_ms:701,rssi:-52,snr:8.3,health:'healthy',last_seen_ms:210,tx:'124',rx:'133',relay:'44',route_changes:'1'},
+      'c000000000000003': {name:'C',role:'relay',joined:'1',parent:'a000000000000001',hops:'1',rtt_ms:732,rssi:-55,snr:7.4,health:'healthy',last_seen_ms:330,tx:'119',rx:'127',relay:'39',route_changes:'0'},
+      'd000000000000004': {name:'D',role:'node',joined:'1',parent:'b000000000000002',hops:'2',rtt_ms:812,rssi:-58,snr:6.7,health:'healthy',last_seen_ms:480,tx:'82',rx:'91',relay:'0',route_changes:'1'},
+      'e000000000000005': {name:'E',role:'relay',joined:'1',parent:'b000000000000002',hops:'2',rtt_ms:842,rssi:-60,snr:6.1,health:'healthy',last_seen_ms:250,tx:'124',rx:'123',relay:'21',route_changes:'2'},
+      'f000000000000006': {name:'F',role:'node',joined:'1',parent:'c000000000000003',hops:'2',rtt_ms:765,rssi:-54,snr:7.6,health:'healthy',last_seen_ms:520,tx:'71',rx:'77',relay:'0',route_changes:'0'},
+      'g000000000000007': {name:'G',role:'node',joined:'1',parent:'c000000000000003',hops:'2',rtt_ms:873,rssi:-59,snr:6.3,health:'degraded',last_seen_ms:1400,tx:'68',rx:'64',relay:'0',route_changes:'3'},
+      'h000000000000008': {name:'H',role:'node',joined:'1',parent:'e000000000000005',hops:'3',rtt_ms:948,rssi:-63,snr:5.3,health:'healthy',last_seen_ms:710,tx:'54',rx:'59',relay:'0',route_changes:'1'}
+    };
+    const demoEvents = [
+      {time:'10:24:31',kind:'Probe',detail:'Pong E → B → A · RTT 842 ms'},
+      {time:'10:24:26',kind:'Probe',detail:'Pong G → C → A · RTT 873 ms'},
+      {time:'10:24:21',kind:'Route',detail:'E route confirmed A → B → E'},
+      {time:'10:18:02',kind:'Join',detail:'E joined through B'},
+      {time:'10:17:58',kind:'Join',detail:'H joined through E'}
+    ];
+
+    function normalizeState(raw) {
+      const nodes = raw.nodes || {};
+      for (const [id, node] of Object.entries(nodes)) {
+        node.id ||= id;
+        node.name ||= node.label || '';
+        node.rtt_ms = numberOr(node.rtt_ms ?? node.rtt, null);
+        node.rssi = numberOr(node.rssi, null);
+        node.snr = numberOr(node.snr, null);
+        if (node.last_seen_ms === undefined && Number.isFinite(Number(node.last_seen))) {
+          node.last_seen_ms = Math.max(0, Date.now() - Number(node.last_seen));
+        }
+      }
+      const probes=raw.probes||[];
+      for(const probe of probes){if(probe.state==='ack'&&nodes[probe.destination])nodes[probe.destination].rtt_ms=numberOr(probe.rtt_ms,null)}
+      for(const node of Object.values(nodes))node.health ||= healthOf(node);
+      const events=(raw.events||[]).map(e=>{
+        if(e.detail||e.message)return e;
+        let detail='';
+        if(e.kind==='probe_result')detail=e.state==='ack'?`Pong · RTT ${e.rtt_ms} ms · ${e.attempts??'—'} attempt(s)`:`Probe ${e.state} after ${e.elapsed_ms??'—'} ms`;
+        else if(e.kind==='probe')detail=`Probe queued for ${String(e.destination||'').slice(-4).toUpperCase()}`;
+        else if(e.kind==='serial')detail=`${e.direction==='tx'?'Sent':'Received'} ${e.line||''}`;
+        else if(e.kind==='attach')detail=`Attached ${String(e.path||'').split('/').pop()}`;
+        else if(e.kind==='disconnect')detail=`Disconnected ${String(e.path||'').split('/').pop()}`;
+        else if(e.kind==='join')detail=`${String(e.node||'').slice(-4).toUpperCase()} joined via ${String(e.parent||'').slice(-4).toUpperCase()} · hop ${e.hops}`;
+        else if(e.kind==='route_change')detail=`${String(e.node||'').slice(-4).toUpperCase()} parent ${String(e.previous_parent||'').slice(-4).toUpperCase()} → ${String(e.parent||'').slice(-4).toUpperCase()}`;
+        else detail=Object.entries(e).filter(([k])=>!['kind','at'].includes(k)).map(([k,v])=>`${k}=${v}`).join(' ');
+        return {...e,time:e.at?new Date(e.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}):undefined,detail};
+      });
+      return {...raw,nodes,events,probes,connections:raw.connections||{},ports:raw.ports||[],log:raw.log||[]};
+    }
+    function numberOr(value, fallback) { const n = Number(value); return Number.isFinite(n) ? n : fallback; }
+    function truthy(value) { return value === true || value === 1 || value === '1' || value === 'true'; }
+    function healthOf(node) {
+      if (!truthy(node.joined) && node.role !== 'controller') return 'disconnected';
+      const age = numberOr(node.last_seen_ms, 0), rtt = numberOr(node.rtt_ms, 0);
+      if (age > 12000) return 'disconnected';
+      if (age > 5000 || rtt > 1600 || numberOr(node.snr, 8) < 2) return 'degraded';
+      return 'healthy';
+    }
+    function routeFor(id, nodes=snapshot.nodes) {
+      const route=[], seen=new Set(); let cursor=id;
+      while (cursor && cursor !== ZERO && nodes[cursor] && !seen.has(cursor)) {
+        seen.add(cursor); route.unshift(cursor); cursor=nodes[cursor].parent;
+      }
+      return route;
+    }
+    function label(id) { return snapshot.nodes[id]?.name || id?.slice(-4).toUpperCase() || '—'; }
+    function formatRtt(v) { return Number.isFinite(v) ? `${Math.round(v)} ms` : '—'; }
+    function formatSignal(v, unit) { return Number.isFinite(v) ? `${v} ${unit}` : '—'; }
+    function aliasNodes(nodes) {
+      const ordered = Object.entries(nodes).sort((a,b) => numberOr(a[1].hops,99)-numberOr(b[1].hops,99) || a[0].localeCompare(b[0]));
+      const letters='ABCDEFGHJKLMNPQRSTUVWXYZ';
+      for (const [id,node] of ordered) {
+        if (node.name && node.name.length <= 4) { aliases[id] = node.name; continue; }
+        if (!aliases[id]) aliases[id] = letters.find(letter => !Object.values(aliases).includes(letter)) || id.slice(-4).toUpperCase();
+        node.name = aliases[id];
+      }
+    }
+
+    function layoutNodes(nodes) {
+      const ids=Object.keys(nodes); if(!ids.length)return {};
+      const byHop=new Map(); ids.forEach(id=>{const h=Math.max(0,Math.min(4,numberOr(nodes[id].hops,0)));if(!byHop.has(h))byHop.set(h,[]);byHop.get(h).push(id)});
+      const positions={};
+      for(const [hop,row] of [...byHop.entries()].sort((a,b)=>a[0]-b[0])){
+        row.sort((a,b)=>(nodes[a].parent||'').localeCompare(nodes[b].parent||'')||a.localeCompare(b));
+        const width=Math.min(720,Math.max(180,row.length*170));
+        row.forEach((id,i)=>{positions[id]={x:450-width/2+(i+.5)*width/row.length,y:55+hop*125}});
+      }
+      return positions;
+    }
+    function svgEl(tag, attrs={}) { const e=document.createElementNS('http://www.w3.org/2000/svg',tag); Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v)); return e; }
+    function renderTopology() {
+      const svg=$('topology'), nodes=snapshot.nodes, ids=Object.keys(nodes); svg.replaceChildren();
+      $('topologyEmpty').classList.toggle('visible',!ids.length); if(!ids.length)return;
+      aliasNodes(nodes); const pos=layoutNodes(nodes);
+      const defs=svgEl('defs');
+      const marker=svgEl('marker',{id:'arrow',viewBox:'0 0 10 10',refX:'8',refY:'5',markerWidth:'6',markerHeight:'6',orient:'auto-start-reverse'});
+      marker.append(svgEl('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#53cda9'})); defs.append(marker); svg.append(defs);
+      for(const id of ids){const n=nodes[id], p=pos[n.parent]; if(!p||!pos[id])continue; const c=pos[id]; const d=`M ${p.x} ${p.y+43} C ${p.x} ${p.y+82}, ${c.x} ${c.y-64}, ${c.x} ${c.y-43}`; svg.append(svgEl('path',{d,class:`route-line ${n.health||''}`,'marker-end':'url(#arrow)'}));}
+      for(const id of ids){const n=nodes[id], p=pos[id]; if(!p)continue; const g=svgEl('g',{class:`node-svg ${n.health||''} ${selected===id?'selected':''}`,transform:`translate(${p.x-66} ${p.y-43})`,role:'button',tabindex:'0'}); g.addEventListener('click',()=>selectNode(id)); g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectNode(id)}}); const rect=svgEl('rect',{class:'node-card',width:132,height:86,rx:10}); const ring=svgEl('circle',{class:'health-ring',cx:22,cy:22,r:12}); const name=svgEl('text',{class:'node-name',x:42,y:20}); name.textContent=n.name; const role=svgEl('text',{class:'node-role',x:42,y:35}); role.textContent=n.role==='controller'?'Controller':(numberOr(n.relay,0)>0?'Relay':'Node'); const hop=svgEl('text',{class:'node-metric',x:13,y:54});hop.textContent=`Hop ${n.hops??'—'}`;const rtt=svgEl('text',{class:'node-metric node-rtt',x:68,y:54});rtt.textContent=`RTT ${formatRtt(n.rtt_ms)}`;const sig=svgEl('text',{class:'node-metric',x:13,y:70});sig.textContent=`${formatSignal(n.rssi,'dBm')} · ${formatSignal(n.snr,'dB')}`; g.append(rect,ring,name,role,hop,rtt,sig); svg.append(g);}
+    }
+
+    function selectNode(id){selected=id;renderTopology();renderInspector();}
+    function clearSelection(){selected=null;renderTopology();renderInspector();}
+    function renderInspector(){
+      const box=$('inspector'), ids=Object.keys(snapshot.nodes); if(!selected||!snapshot.nodes[selected])selected=ids[0]||null;
+      if(!selected){box.innerHTML='<div class="panel-kicker">Select a node from the topology.</div>';return}
+      const n=snapshot.nodes[selected], route=routeFor(selected), health=n.health||healthOf(n), last=numberOr(n.last_seen_ms,null);
+      box.innerHTML=`
+        <div class="node-heading"><div class="node-avatar">${escapeHtml(n.name)}</div><div><strong>Node ${escapeHtml(n.name)}</strong><span>${escapeHtml(selected)}</span></div><b class="health-pill ${health}">${health}</b></div>
+        <dl class="facts"><dt>Role</dt><dd>${escapeHtml(n.role||'node')}</dd><dt>Joined</dt><dd>${truthy(n.joined)||n.role==='controller'?'Yes':'No'}</dd><dt>Parent</dt><dd>${escapeHtml(label(n.parent))} · Hop ${escapeHtml(String(n.hops??'—'))}</dd><dt>Route</dt><dd class="route">${route.map(label).map(escapeHtml).join(' → ')||'—'}</dd><dt>Site</dt><dd class="mono">${escapeHtml((n.site||'—').slice(0,8))}</dd><dt>Lease</dt><dd>${n.lease_ms?`${Math.round(Number(n.lease_ms)/1000)} s`:'—'}</dd></dl>
+        <div class="divider"></div><div class="chart-head"><span>Ping/Pong RTT</span><strong>${formatRtt(n.rtt_ms)}</strong></div>
+        <svg id="sparkline" viewBox="0 0 260 86" aria-label="Measured RTT history"><path class="chart-grid" d="M0 20H260 M0 43H260 M0 66H260"/>${sparkPlot(selected)}</svg>
+        <dl class="facts"><dt>USB seen</dt><dd>${last===null?'—':last<1000?'just now':`${(last/1000).toFixed(1)} s ago`}</dd><dt>TX / RX</dt><dd>${escapeHtml(String(n.tx??'—'))} / ${escapeHtml(String(n.rx??'—'))}</dd><dt>Relayed</dt><dd>${escapeHtml(String(n.relay??'—'))}</dd><dt>Route changes</dt><dd>${escapeHtml(String(n.route_changes??'—'))}</dd><dt>Last RX signal</dt><dd>${formatSignal(n.rssi,'dBm')} / ${formatSignal(n.snr,'dB')}</dd></dl>
+        <div class="inspector-actions"><button class="btn blue" onclick="pingSelected()">Ping / Pong</button><button class="btn" onclick="sendNodeCommand('status')">Refresh node</button><button class="btn" onclick="sendNodeCommand('${n.role==='controller'?'node':'controller'}')">${n.role==='controller'?'Reset as node':'Make Controller'}</button><button class="btn" onclick="sendNodeCommand('leave')">Leave site</button><button class="btn danger" onclick="excludeSelected()">Exclude current parent</button></div>`;
+    }
+    function sparkPlot(id){const values=(snapshot.probes||[]).filter(p=>p.destination===id&&p.state==='ack'&&Number.isFinite(Number(p.rtt_ms))).slice(-18).map(p=>Number(p.rtt_ms));if(!values.length)return '<text x="130" y="47" text-anchor="middle" fill="#637487" font-size="10">Run Ping to collect RTT</text>';if(values.length===1)return `<circle cx="130" cy="43" r="3" fill="#5f94ff"/>`;const low=Math.min(...values),high=Math.max(...values),span=Math.max(1,high-low);const points=values.map((value,i)=>`${i*260/(values.length-1)},${70-(value-low)*50/span}`).join(' ');return `<polyline class="chart-line" points="${points}"/>`}
+
+    function renderSummary(){
+      const nodes=Object.values(snapshot.nodes), online=nodes.filter(n=>n.health!=='disconnected').length, rtts=(snapshot.probes||[]).filter(p=>p.state==='ack').map(p=>numberOr(p.rtt_ms,null)).filter(Number.isFinite).sort((a,b)=>a-b);
+      const fallback=nodes.map(n=>n.rtt_ms).filter(Number.isFinite).sort((a,b)=>a-b), values=rtts.length?rtts:fallback;
+      const p95=values.length?values[Math.min(values.length-1,Math.floor(values.length*.95))]:null;
+      $('onlineMetric').textContent=`${online} / ${nodes.length} online`;
+      $('stabilityMetric').textContent=!nodes.length?'Waiting for nodes':nodes.some(n=>n.health==='disconnected')?'Route attention':nodes.some(n=>n.health==='degraded')?'Degraded link':'Topology stable';
+      $('rttMetric').textContent=formatRtt(p95);
+      const probes=snapshot.probes||[], completed=probes.filter(p=>p.state!=='waiting_ack'),success=completed.filter(p=>p.success===true||p.state==='ack').length;
+      $('deliveryMetric').textContent=completed.length?`${(success/completed.length*100).toFixed(1)}%`:'—';
+      const connections=Object.keys(snapshot.connections||{}).length || (snapshot.connected?1:0);
+      $('connectionMetric').textContent=`${connections} USB`;
+      $('modePill').textContent=demo?'DEMO':'LIVE LAB'; $('modePill').style.color=demo?'var(--warning)':'var(--healthy)';
+      $('lastUpdate').textContent=`Updated ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+    }
+    function renderTimeline(){const all=snapshot.events?.length?snapshot.events:[],events=all.filter(e=>e.kind!=='serial').slice(-30).reverse(),box=$('timeline');box.replaceChildren();if(!events.length){box.innerHTML='<div class="panel-kicker" style="padding:16px">Join, route and probe events appear here.</div>';return}for(const e of events){const row=document.createElement('div');const level=e.level==='error'?'error':e.level==='warning'?'warn':'';row.className=`event ${level}`;const time=e.time||new Date(e.timestamp||Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});row.innerHTML=`<time>${escapeHtml(time)}</time><i class="event-dot"></i><span class="event-kind">${escapeHtml(e.kind||e.event||'Mesh')}</span><span class="event-detail">${escapeHtml(e.detail||e.message||'')}</span>`;box.append(row)}}
+    function renderChecks(){const box=$('nodeChecks');box.replaceChildren();for(const n of Object.values(snapshot.nodes)){const s=document.createElement('span');s.className=`node-check ${n.health!=='disconnected'?'ok':''}`;s.innerHTML=`<i>${n.health!=='disconnected'?'✓':'!'}</i>${escapeHtml(n.name)}`;box.append(s)}}
+    function renderConnections(){const ports=snapshot.ports||[], con=snapshot.connections||{}, select=$('portSelect'), old=select.value;select.replaceChildren(...ports.map(p=>new Option(p,p)));select.value=old||ports[0]||'';const list=$('portList');list.replaceChildren();if(!ports.length)list.innerHTML='<div class="panel-kicker">No USB serial boards detected.</div>';for(const port of ports){const c=con[port], row=document.createElement('div');row.className='port-row';row.innerHTML=`<span><strong>${escapeHtml(port.split('/').pop())}</strong><br><span style="color:var(--muted)">${c?`${escapeHtml(c.node||'identifying')} · connected`:'available'}</span></span><span style="color:${c?'var(--healthy)':'var(--quiet)'}">●</span>`;list.append(row)}$('rawLog').textContent=(snapshot.log||[]).join('\n')}
+    function renderRun(){const run=snapshot.run||{}, progress=numberOr(run.progress,0);$('runPhase').textContent=run.phase||'Ready';$('progressText').textContent=`${Math.round(progress)}%`;$('progressBar').style.width=`${Math.max(0,Math.min(100,progress))}%`;$('runDetail').textContent=run.detail||'Attach all eight boards, then run the guided LAB sequence.';$('runButton').disabled=run.active===true}
+    function render(){aliasNodes(snapshot.nodes);renderSummary();renderTopology();renderInspector();renderTimeline();renderChecks();renderConnections();renderRun()}
+
+    function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+    function toast(message){const t=$('toast');t.textContent=message;t.classList.add('visible');clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove('visible'),3500)}
+    async function api(path, body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-Ninlil-Token':token}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
+    async function refresh(){if(refreshing||demo)return;refreshing=true;try{snapshot=normalizeState(await api('/api/state'));render()}catch(e){toast(e.message)}finally{refreshing=false}}
+    async function action(path,body){try{await api(path,body);await refresh()}catch(e){toast(e.message)}}
+    function copy(value){return JSON.parse(JSON.stringify(value))}
+    function setDemo(enabled){demo=enabled;if(demo){snapshot=normalizeState({nodes:copy(demoNodes),events:copy(demoEvents),probes:Object.entries(demoNodes).map(([destination,n])=>({destination,rtt_ms:n.rtt_ms,state:'ack'})),ports:[],connections:{},log:['DEMO: no serial commands are sent']});selected='e000000000000005';}else{snapshot=normalizeState({nodes:{},events:[],probes:[],ports:[],connections:{},log:[]});refresh()}render()}
+    async function attachAll(){if(demo)setDemo(false);await action('/api/attach-all',{})}
+    async function connectSelected(){const port=$('portSelect').value;if(!port)return toast('Select a USB port first.');await action('/api/connect',{port})}
+    async function disconnectAll(){await action('/api/disconnect-all',{})}
+    async function sendNodeCommand(actionName){if(!selected)return;if(demo)return toast('Demo mode sends no commands.');await action('/api/command',{action:actionName,target:selected,values:{}})}
+    async function pingSelected(){if(!selected)return;if(demo){const n=snapshot.nodes[selected],rtt=Math.max(380,Math.round(n.rtt_ms+(Math.random()-.5)*120));n.rtt_ms=rtt;snapshot.probes.push({destination:selected,rtt_ms:rtt,state:'ack'});snapshot.events.push({kind:'Probe',detail:`Pong ${routeFor(selected).map(label).reverse().join(' → ')} · RTT ${rtt} ms`});render();return}await action('/api/probe',{destination:selected})}
+    async function excludeSelected(){if(!selected)return;if(demo)return toast('Demo mode sends no commands.');const n=snapshot.nodes[selected];if(n.role==='controller'||!n.parent||n.parent===ZERO)return toast('This node has no parent to exclude.');await action('/api/command',{action:'penalty',target:selected,values:{node:n.parent,score:200}})}
+    async function runTest(){if(demo){let p=0;$('runButton').disabled=true;const timer=setInterval(()=>{p+=12;snapshot.run={active:p<100,phase:p<24?'DISCOVERY':p<100?'PING / PONG':'COMPLETE',progress:Math.min(100,p),detail:p<100?'Running one bounded probe at a time across discovered routes.':'Demo test complete. Connect boards for RF evidence.'};if(p>=100){clearInterval(timer);$('runButton').disabled=false}snapshot.events.push({kind:'Test',detail:`${snapshot.run.phase} · ${Math.min(100,p)}%`});render()},320);return}await action('/api/run-test',{})}
+    function openDrawer(which){$('drawer').classList.add('open');$('drawerTitle').textContent=which==='logs'?'Serial event log':'USB connections';$('connectionPanel').hidden=which==='logs';$('logPanel').hidden=which!=='logs'}
+    function closeDrawer(){$('drawer').classList.remove('open')}
+    function drawerBackdrop(e){if(e.target===$('drawer'))closeDrawer()}
+    setDemo(demo); if(!demo)refresh(); setInterval(refresh,800);
+  </script>
+</body>
+</html>

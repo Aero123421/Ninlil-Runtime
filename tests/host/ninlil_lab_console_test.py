@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import http.client
 from pathlib import Path
+import threading
 import unittest
 
 
@@ -52,6 +54,60 @@ class NinlilLabConsoleTest(unittest.TestCase):
             with self.subTest(action=action, values=values):
                 with self.assertRaises(ValueError):
                     MODULE.build_command(action, values)
+
+    def test_demo_query_loads_the_ui(self) -> None:
+        app = MODULE.LabApplication()
+        server = MODULE.ThreadingHTTPServer(
+            ("127.0.0.1", 0), MODULE.make_handler(app, "test-token")
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=2
+            )
+            connection.request("GET", "/?demo=1")
+            response = connection.getresponse()
+            body = response.read()
+            self.assertEqual(response.status, 200)
+            self.assertIn(b"Ninlil Mesh Lab", body)
+            self.assertIn(b"test-token", body)
+            connection.close()
+
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=2
+            )
+            connection.request(
+                "POST", "/api/attach-all", body=b"{}",
+                headers={"Content-Type": "application/json",
+                         "X-Ninlil-Token": "wrong"},
+            )
+            self.assertEqual(connection.getresponse().status, 403)
+            connection.close()
+
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=2
+            )
+            connection.request(
+                "POST", "/api/attach-all", body=b"x" * 4097,
+                headers={"Content-Type": "application/json",
+                         "X-Ninlil-Token": "test-token"},
+            )
+            self.assertEqual(connection.getresponse().status, 400)
+            connection.close()
+
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", server.server_port, timeout=2
+            )
+            connection.putrequest("GET", "/", skip_host=True)
+            connection.putheader("Host", "example.invalid")
+            connection.endheaders()
+            self.assertEqual(connection.getresponse().status, 403)
+            connection.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
 
 if __name__ == "__main__":

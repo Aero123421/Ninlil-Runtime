@@ -17,6 +17,8 @@ if [ -e "$APP" ]; then
 fi
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 install -m 0755 "$ROOT/tools/ninlil_lab_console.py" "$CONTENTS/Resources/ninlil_lab_console.py"
+install -m 0644 "$ROOT/tools/ninlil_lab_backend.py" "$CONTENTS/Resources/ninlil_lab_backend.py"
+install -m 0644 "$ROOT/tools/ninlil_lab_ui.html" "$CONTENTS/Resources/ninlil_lab_ui.html"
 
 cat >"$CONTENTS/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

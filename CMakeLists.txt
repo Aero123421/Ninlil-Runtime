@@ -7177,6 +7177,16 @@ else:
         NAME mesh_lab
         COMMAND ninlil_mesh_lab_test
     )
+    add_test(
+        NAME ninlil_lab_backend
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/host/ninlil_lab_backend_test.py
+    )
+    add_test(
+        NAME ninlil_lab_console
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/host/ninlil_lab_console_test.py
+    )
 
     add_executable(ninlil_v1_esp_provider_availability_test
         tests/port/v1_esp_provider_availability_test.c

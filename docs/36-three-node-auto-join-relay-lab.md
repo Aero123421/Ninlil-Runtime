@@ -185,17 +185,42 @@ received frame counters, selected parents, hop counts, RSSI/SNR, Join state,
 route changes, and RF configuration. A shared-desk logical topology is reported
 as such and is not range or obstruction evidence.
 
-## 7. macOS LAB Console
+## 7. macOS Mesh LAB Console
 
-The private Python console scans `/dev/cu.usbmodem*`, connects to one board at
-115200 baud, displays Join/topology counters, changes the LAB role, sends
-opaque ApplicationData, and exposes the test-only candidate penalty. Its HTTP
-server binds only to `127.0.0.1`.
+The private dependency-free Python console scans `/dev/cu.usbmodem*` and can
+attach all eight LAB boards at 115200 baud. USB is an observation and command
+plane: once per second it requests `MESH STATUS` from each attached board and
+uses each board's local parent snapshot to draw the live tree. This does not
+add topology chatter to the RF channel. The HTTP server binds only to
+`127.0.0.1` and state-changing requests require a process-local token.
+
+The UI includes:
+
+1. live parent edges, hop depth, Join state, lease and route-change counters;
+2. node health, last USB observation, and the most recently reported RX
+   RSSI/SNR;
+3. one-at-a-time controller-to-node Ping/Pong probes, where Pong is the
+   existing correlated DATA ACK and RTT includes queueing, RF transmission,
+   relay forwarding, ACK forwarding, and retries;
+4. a bounded eight-node sweep that requires one visible Controller and seven
+   joined nodes before it starts;
+5. an explicit Demo mode (`--demo`) that sends no serial or RF commands.
+
+The route displayed for a probe is inferred from contemporaneous parent
+snapshots; it is not an on-wire packet trace. Per-hop RTT, RF-only last-seen,
+channel occupancy, automatic SF/channel/power tuning, and eight-board HIL
+evidence are not claimed by this console.
 
 Run from source:
 
 ```sh
 python3 tools/ninlil_lab_console.py
+```
+
+Preview the deterministic eight-node UI without hardware:
+
+```sh
+python3 tools/ninlil_lab_console.py --demo
 ```
 
 Or generate the local macOS application bundle:
