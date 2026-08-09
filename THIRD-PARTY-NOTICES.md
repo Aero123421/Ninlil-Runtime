@@ -92,6 +92,26 @@ Mbed TLS is a bundled ESP-IDF dependency:
   ([PyYAML LICENSE](https://github.com/yaml/pyyaml/blob/master/LICENSE);
   also at `tools/_vendor/pyyaml-6.0.2.dist-info/licenses/LICENSE`).
 
+## libedhoc 1.15.1 (private PA-S1a candidate)
+
+- **Machine ID:** `libedhoc`
+- **Version:** `1.15.1`
+- **Component hash:** `75e49a0f740fd619b89727ef10325cfb7be71b43f256dfedd1e2fed5e4b6e980`
+- **Source path:** `third_party/production_attachment_edhoc/libedhoc`
+- **Use:** exact eight core and generated CBOR translation units for the
+  default-OFF, uninstalled Production Attachment PA-S1a dependency candidate.
+- **License:** `MIT` ([upstream LICENSE](third_party/production_attachment_edhoc/libedhoc/LICENSE)).
+
+## zcbor d3093b5684f62268c7f27f8a5079f166772619de (private PA-S1a transitive candidate)
+
+- **Machine ID:** `zcbor`
+- **Version:** `d3093b5684f62268c7f27f8a5079f166772619de`
+- **Component hash:** `c57f5db29b9dcfcf8b3dae0503496d83066a920160e65c6118aa059655b4efce`
+- **Source path:** `third_party/production_attachment_edhoc/zcbor`
+- **Use:** exact three CBOR runtime translation units required by the private,
+  default-OFF PA-S1a candidate.
+- **License:** `Apache-2.0` ([upstream LICENSE](third_party/production_attachment_edhoc/zcbor/LICENSE)).
+
 ## Scope boundary
 
 This notice inventory does not replace a legal review. The release gate checks

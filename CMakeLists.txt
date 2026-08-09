@@ -72,6 +72,9 @@ option(NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1
 option(NINLIL_ENABLE_MFDT_V1_PRIVATE
     "Build private ADR-0021 MFDT candidate (default OFF; not installed; not public ABI)"
     OFF)
+option(NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC
+    "Build private PA-S1a EDHOC dependency candidate (default OFF; not installed)"
+    OFF)
 
 if(NINLIL_WIFI_OPENSSL_AUTHORITY)
     if(NOT NINLIL_ENABLE_PRIVATE_WIFI_V1)
@@ -659,6 +662,42 @@ add_library(ninlil_runtime_private STATIC EXCLUDE_FROM_ALL
     ${NINLIL_SX1262_R9_EDGE_RELATIVE_SOURCES}
     ${NINLIL_PCP_LAB_SESSION_LEDGER_RELATIVE_SOURCES}
 )
+# Kept separate from ninlil_runtime_private until the full Attachment feature
+# has its own accepted implementation and package boundary.
+if(NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
+    include(cmake/ninlil_pa_s1_edhoc_sources.cmake)
+    add_library(ninlil_pa_s1_edhoc_private STATIC EXCLUDE_FROM_ALL
+        ${NINLIL_PA_S1_EDHOC_RELATIVE_SOURCES}
+        src/runtime/production_attachment_v1/pa_s1_edhoc_allocator.c)
+    target_include_directories(ninlil_pa_s1_edhoc_private PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/production_attachment_v1
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/production_attachment_edhoc/libedhoc
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/production_attachment_edhoc/zcbor)
+    set_target_properties(ninlil_pa_s1_edhoc_private PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+        C_VISIBILITY_PRESET hidden)
+    ninlil_apply_strict_warnings(ninlil_pa_s1_edhoc_private)
+    target_compile_options(ninlil_pa_s1_edhoc_private PRIVATE -Wvla -fstack-usage)
+    # Upstream zcbor uses intentional float/integer representation punning.
+    # Keep -Werror for every adopted TU; disable only this compiler alias rule.
+    set_source_files_properties(
+        third_party/production_attachment_edhoc/zcbor/zcbor_common.c
+        PROPERTIES COMPILE_OPTIONS "-fno-strict-aliasing")
+    if(NINLIL_BUILD_TESTS)
+        add_executable(ninlil_pa_s1_edhoc_allocator_test
+            tests/runtime/production_attachment_v1_edhoc_allocator_test.c)
+        target_link_libraries(ninlil_pa_s1_edhoc_allocator_test PRIVATE
+            ninlil_pa_s1_edhoc_private)
+        target_include_directories(ninlil_pa_s1_edhoc_allocator_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/production_attachment_v1
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/production_attachment_edhoc/libedhoc)
+        set_target_properties(ninlil_pa_s1_edhoc_allocator_test PROPERTIES
+            C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_pa_s1_edhoc_allocator_test)
+        add_test(NAME pa_s1_edhoc_allocator
+            COMMAND ninlil_pa_s1_edhoc_allocator_test)
+    endif()
+endif()
 if(NINLIL_R7_HOST_CRYPTO_ENABLED)
     target_sources(ninlil_runtime_private PRIVATE
         ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES})
@@ -1882,6 +1921,15 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/third_party_notice_gate.py
             self-test
     )
+    if(NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC AND NINLIL_BUILD_HOST_RUNTIME)
+        add_test(
+            NAME pa_s1_edhoc_private_symbol_boundary
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vendor_gate.py
+                check
+                --private-archive $<TARGET_FILE:ninlil_pa_s1_edhoc_private>
+                --public-archive $<TARGET_FILE:ninlil_runtime>)
+    endif()
     add_test(
         NAME release_workflow_identity_gate
         COMMAND ${Python3_EXECUTABLE}
@@ -2105,6 +2153,18 @@ if(NINLIL_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vector_gen.py
             --check
+    )
+    add_test(
+        NAME production_attachment_edhoc_vendor_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vendor_gate.py
+            check
+    )
+    add_test(
+        NAME production_attachment_edhoc_vendor_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vendor_gate.py
+            self-test
     )
     add_test(
         NAME production_attachment_edhoc_vector_oracle_self_test

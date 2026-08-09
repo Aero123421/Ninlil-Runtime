@@ -47,7 +47,49 @@ EXPECTED_VENDORED = [
             "Vendored pure-Python PyYAML for release workflow YAML semantic "
             "gates (tools/_vendor)."
         ),
-    }
+    },
+    {
+        "id": "libedhoc",
+        "name": "libedhoc",
+        "version": "1.15.1",
+        "spdx_license": "MIT",
+        "relationship": "DIRECT",
+        "source_path": "third_party/production_attachment_edhoc/libedhoc",
+        "download_location": (
+            "https://github.com/kamil-kielbasa/libedhoc/tree/"
+            "008ce0584e6cfa41aa6319f530b6c254c8abfc3e"
+        ),
+        "component_hash": (
+            "75e49a0f740fd619b89727ef10325cfb7be71b43f256dfedd1e2fed5e4b6e980"
+        ),
+        "supplier": "Organization: libedhoc project",
+        "syft_names": ["libedhoc", "edhoc"],
+        "comment": (
+            "Private PA-S1a dependency candidate: exact core and generated CBOR "
+            "sources only; not installed or a PA-S2 crypto claim."
+        ),
+    },
+    {
+        "id": "zcbor",
+        "name": "zcbor",
+        "version": "d3093b5684f62268c7f27f8a5079f166772619de",
+        "spdx_license": "Apache-2.0",
+        "relationship": "TRANSITIVE",
+        "source_path": "third_party/production_attachment_edhoc/zcbor",
+        "download_location": (
+            "https://github.com/NordicSemiconductor/zcbor/tree/"
+            "d3093b5684f62268c7f27f8a5079f166772619de"
+        ),
+        "component_hash": (
+            "c57f5db29b9dcfcf8b3dae0503496d83066a920160e65c6118aa059655b4efce"
+        ),
+        "supplier": "Organization: Nordic Semiconductor ASA",
+        "syft_names": ["zcbor"],
+        "comment": (
+            "Private PA-S1a dependency candidate: exact three runtime source files "
+            "only; not installed."
+        ),
+    },
 ]
 EXPECTED_LOCK_COMPONENTS = [
     {
@@ -406,7 +448,7 @@ def assert_vendored_git_tracked(rel_path: str, package_id: str) -> None:
             f"{package_id}: {rel_path} must be git-tracked so source archives "
             f"(git archive) include the vendored tree; currently untracked"
         )
-    # Require pure-Python yaml package + license for PyYAML.
+    # Require each vendored component's authoritative license text.
     if package_id == "pyyaml":
         required_suffixes = (
             "yaml/__init__.py",
@@ -479,9 +521,12 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
                 f"{item['id']}: vendored tree hash drift at {source_path}: "
                 f"{actual_hash} != {item['component_hash']}"
             )
-        license_file = ROOT / source_path / "pyyaml-6.0.2.dist-info" / "licenses" / "LICENSE"
-        if item["id"] == "pyyaml" and not license_file.is_file():
-            raise GateError("vendored PyYAML LICENSE file missing under dist-info")
+        license_file = (
+            ROOT / source_path / "pyyaml-6.0.2.dist-info" / "licenses" / "LICENSE"
+            if item["id"] == "pyyaml" else ROOT / source_path / "LICENSE"
+        )
+        if not license_file.is_file():
+            raise GateError(f"{item['id']}: vendored LICENSE file missing")
         # Source tag archives use `git archive`; untracked vendor trees are omitted.
         assert_vendored_git_tracked(source_path, str(item["id"]))
 

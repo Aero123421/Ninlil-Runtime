@@ -121,6 +121,16 @@ endmenu
 
 menu "Ninlil private candidates"
 
+    config NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC
+        bool "Enable private PA-S1a EDHOC dependency candidate (not public ABI)"
+        default n
+        help
+            Compile the exact vendored libedhoc/zcbor core slice and the
+            bounded explicit-owner allocator. This is default-OFF, private,
+            and compile-only on ESP32-S3. No EDHOC crypto provider, carrier,
+            credential resolver, Attachment install, Composition connection,
+            or HIL claim is included.
+
     config NINLIL_ENABLE_R7_FRAG_PRIVATE
         bool "Enable private NRW1 LINK/FRAG candidate (not public ABI)"
         default n

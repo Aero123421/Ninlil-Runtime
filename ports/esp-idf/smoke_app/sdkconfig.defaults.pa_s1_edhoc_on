@@ -1,0 +1,2 @@
+# Explicit opt-in only: private PA-S1a dependency candidate, compile/link evidence.
+CONFIG_NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC=y

@@ -46,6 +46,7 @@ include("${NINLIL_REPO_ROOT}/cmake/ninlil_composition_v1_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_r7_frag_sources.cmake")
 # MFDT source authority only — do not auto-append; gated by Kconfig below.
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_mfdt_v1_sources.cmake")
+include("${NINLIL_REPO_ROOT}/cmake/ninlil_pa_s1_edhoc_sources.cmake")
 
 set(NINLIL_COMPONENT_SRCS "")
 foreach(_rel IN LISTS NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES)
@@ -93,6 +94,18 @@ endforeach()
 # Default-OFF private FRAG: PRODUCTION sources only (never lab session/durable).
 # Lab TUs (session + test durable) stay host-only — DRAM / claim isolation.
 set(NINLIL_R7_FRAG_PRIV_INCLUDES "")
+set(NINLIL_PA_S1_EDHOC_PRIV_INCLUDES "")
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
+    foreach(_rel IN LISTS NINLIL_PA_S1_EDHOC_RELATIVE_SOURCES)
+        list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+    endforeach()
+    list(APPEND NINLIL_COMPONENT_SRCS
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s1_edhoc_allocator.c")
+    list(APPEND NINLIL_PA_S1_EDHOC_PRIV_INCLUDES
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1"
+        "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/libedhoc"
+        "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/zcbor")
+endif()
 if(CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE)
     foreach(_rel IN LISTS NINLIL_R7_FRAG_PRODUCTION_RELATIVE_SOURCES)
         list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
@@ -258,6 +271,7 @@ idf_component_register(
         "${NINLIL_REPO_ROOT}/src/transport/fabric_v1"
         "${NINLIL_REPO_ROOT}/src/radio"
         ${NINLIL_R7_FRAG_PRIV_INCLUDES}
+        ${NINLIL_PA_S1_EDHOC_PRIV_INCLUDES}
         ${NINLIL_MFDT_V1_PRIV_INCLUDES}
         ${NINLIL_DOMAIN_SCHEMA1_PRIV_INCLUDES}
         ${NINLIL_WIFI_V1_PRIV_INCLUDES}
@@ -315,6 +329,23 @@ set_source_files_properties(
 if(CONFIG_NINLIL_ENABLE_PRIVATE_WIFI_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
         NINLIL_ENABLE_PRIVATE_WIFI_V1=1)
+endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC=1)
+    set(_ninlil_pa_s1_edhoc_srcs "")
+    foreach(_rel IN LISTS NINLIL_PA_S1_EDHOC_RELATIVE_SOURCES)
+        list(APPEND _ninlil_pa_s1_edhoc_srcs "${NINLIL_REPO_ROOT}/${_rel}")
+    endforeach()
+    list(APPEND _ninlil_pa_s1_edhoc_srcs
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s1_edhoc_allocator.c")
+    set_source_files_properties(${_ninlil_pa_s1_edhoc_srcs} PROPERTIES
+        COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048")
+    # Upstream zcbor uses intentional float/integer representation punning.
+    set_source_files_properties(
+        "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/zcbor/zcbor_common.c"
+        PROPERTIES COMPILE_OPTIONS
+            "-fstack-usage;-Wframe-larger-than=2048;-fno-strict-aliasing")
 endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_FABRIC_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE

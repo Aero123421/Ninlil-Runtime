@@ -6,3 +6,8 @@
 # source distributions may intentionally retain CRLF or upstream whitespace,
 # while their text still remains visible for review.
 tools/_vendor/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
+
+# PA-S1a keeps the reviewed libedhoc/zcbor bytes exactly as upstream provides
+# them; its SHA allow-list, rather than local whitespace normalization, is the
+# integrity authority.
+third_party/production_attachment_edhoc/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
