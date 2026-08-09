@@ -19,4 +19,6 @@ set(NINLIL_FABRIC_V1_PUBLIC_RELATIVE_SOURCES
 
 set(NINLIL_COMPOSITION_V1_RELATIVE_SOURCES
     src/runtime/composition_v1.c
+    # Private ADR-0039 consumer kernel.  No Composition activation/injection.
+    src/runtime/identity_attachment_v1/identity_attachment_v1_consumer.c
 )

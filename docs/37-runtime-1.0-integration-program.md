@@ -25,7 +25,7 @@ S1〜S6を満たして`SPEC_ACCEPTED`にならなければならない。
 | Portable Runtime | 複数Service、DesiredState、EventFact、期限、再送、dedupe、Receipt、query/listはHost候補 | M1a/M1b exit gateとimmutable release evidence |
 | LatestState / Measurement / Transfer / Config | public enumは予約のみで、登録は`UNSUPPORTED` | M2仕様、Accepted unfreeze、ABI/storage/backpressure/Host/ESP受入 |
 | Fabric / Composition | 公開experimental packageとbase ownerは実装済み | Accepted internal enginesを同じbounded ownerへ接続 |
-| Production Attachment | docs/35とADR-0023はProposed、PA-S1〜S6はOPEN | real EDHOC owner、durable install、restart/revoke、carrier HIL |
+| Production Attachment | docs/35とADR-0023はProposed。private consumer kernelはHost候補だが常時fenced | real EDHOC owner、NIAF durable install、Composition activation、restart/revoke、carrier HIL |
 | SX1262 data path | R5 permit→R1→R9の物理候補とprivate packet linkがある | Accepted mapping、Attachment binding、Fabric provider、実機E2E |
 | Relay / multi-parent | Accepted designとprivate software候補 | M8/M9のComposition接続、simulation、HIL、failover受入 |
 | Multi-frame / Wi-Fi | private software候補 | M7と関連ADR、MFDT contract、実AP/large-data/restart HIL |
@@ -99,7 +99,10 @@ consumer実装を始める前に、次を同じspec changeで閉じる。
 4. Domain Storeをsole writerから外すなら、実装で迂回せずADR-0028、manifest、matrixを
    spec-firstで改訂する。外さない限り308-byte restart floorとsingle-writer契約を維持する。
 
-このgate前のconsumer code、Host fixture、LAB bindingはProduction Attachmentの証拠にならない。
+ADR-0039後のprivate consumer kernelは、provider descriptor copy、
+`resolve -> validate -> subscribe`、invalidation fence、unsubscribe/release順だけを
+Host候補として検証する。NIAF writer、Composition activation/injection、availability publish、
+PA-S1〜S6、Join、ESP target execution、HILは未完であり、Production Attachmentの証拠にしない。
 
 ## 6. 既存trancheへの依存順
 

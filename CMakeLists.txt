@@ -7050,6 +7050,32 @@ else:
     ninlil_apply_strict_warnings(ninlil_test_platform_fixtures)
 
     if(NINLIL_HOST_RUNTIME_ENABLED AND TARGET ninlil_fabric_v1)
+        add_executable(ninlil_identity_attachment_consumer_v1_test
+            tests/runtime/identity_attachment_v1_consumer_test.c)
+        target_link_libraries(ninlil_identity_attachment_consumer_v1_test PRIVATE
+            ninlil_runtime
+            ninlil_fabric_v1)
+        target_include_directories(ninlil_identity_attachment_consumer_v1_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime)
+        set_target_properties(ninlil_identity_attachment_consumer_v1_test PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_identity_attachment_consumer_v1_test)
+        add_test(
+            NAME identity_attachment_consumer_v1
+            COMMAND ninlil_identity_attachment_consumer_v1_test)
+        add_test(
+            NAME identity_attachment_consumer_v1_layout_freshness
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/identity_attachment_v1_layout_freshness_test.py
+                check)
+        add_test(
+            NAME identity_attachment_consumer_v1_layout_freshness_self_test
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime/identity_attachment_v1_layout_freshness_test.py
+                self-test)
+
         add_executable(ninlil_composition_v1_create_test
             tests/runtime/composition_v1_create_test.c)
         target_link_libraries(ninlil_composition_v1_create_test PRIVATE
