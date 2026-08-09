@@ -323,6 +323,11 @@ FEATURE_AUTHORITY = {
             ev("normative-spec", "docs/03-identity-and-join.md", "Identity"),
             ev("roadmap", "docs/09-roadmap.md", "Roadmap"),
             ev("normative-spec", "docs/30-r6-secure-radio-wire.md", "Secure"),
+            ev(
+                "normative-spec",
+                "docs/adr/0039-identity-attachment-precondition-gate.md",
+                "identity_attachment_precondition_contract",
+            ),
         ],
     },
     "fabric-bearer-nfl1-path-registry": {

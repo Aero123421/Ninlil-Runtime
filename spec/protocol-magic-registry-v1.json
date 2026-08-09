@@ -59,6 +59,7 @@
       "docs/adr/0035-v1-compact-radio-mapping.md",
       "docs/adr/0036-v1-usb-bridge-and-lab-binding.md",
       "docs/adr/0037-three-node-auto-join-relay-lab.md",
+      "docs/adr/0039-identity-attachment-precondition-gate.md",
       "ports/esp-idf/storage/include/ninlil_port/esp_storage.h",
       "ports/posix/loopback_bearer/ninlil_posix_loopback_bearer_wire.h",
       "src/radio/n6_record_codec.h",
@@ -1344,6 +1345,20 @@
           "path": "tools/wifi_bearer_spec_vector_gen.py",
           "representation": "QUOTED",
           "count": 2
+        }
+      ]
+    },
+    {
+      "magic": "NIAF",
+      "owner": "DOMAIN_STORE",
+      "artifact": "DURABLE_RECORD",
+      "status": "SPEC_ACCEPTED",
+      "authority": "docs/adr/0039-identity-attachment-precondition-gate.md",
+      "occurrences": [
+        {
+          "path": "tools/identity_attachment_precondition_spec_gate.py",
+          "representation": "QUOTED",
+          "count": 4
         }
       ]
     },
@@ -4867,9 +4882,9 @@
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
         {
-          "path": "tools/ninlil_lab_console.py",
+          "path": "tests/host/ninlil_lab_console_test.py",
           "representation": "QUOTED",
-          "count": 1
+          "count": 2
         }
       ]
     },

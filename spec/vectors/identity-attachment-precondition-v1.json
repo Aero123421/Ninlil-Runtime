@@ -1,0 +1,720 @@
+{
+  "niaf": {
+    "crc32c": 3092966839,
+    "field_offsets": [
+      [
+        "uint8_t magic[4]",
+        0
+      ],
+      [
+        "uint16_t schema_version",
+        4
+      ],
+      [
+        "uint16_t record_size",
+        6
+      ],
+      [
+        "uint8_t realm_id[16]",
+        8
+      ],
+      [
+        "uint8_t runtime_instance_id[16]",
+        24
+      ],
+      [
+        "uint64_t runtime_generation",
+        40
+      ],
+      [
+        "uint8_t module_instance_id[16]",
+        48
+      ],
+      [
+        "uint64_t module_generation",
+        64
+      ],
+      [
+        "uint8_t provider_instance_id[16]",
+        72
+      ],
+      [
+        "uint64_t provider_generation_floor",
+        88
+      ],
+      [
+        "uint8_t stable_identity_id[16]",
+        96
+      ],
+      [
+        "uint64_t credential_revision_floor",
+        112
+      ],
+      [
+        "uint8_t membership_authority_id[16]",
+        120
+      ],
+      [
+        "uint64_t membership_epoch_floor",
+        136
+      ],
+      [
+        "uint8_t attachment_id[16]",
+        144
+      ],
+      [
+        "uint64_t attachment_generation_floor",
+        160
+      ],
+      [
+        "uint8_t session_id[16]",
+        168
+      ],
+      [
+        "uint64_t session_generation_floor",
+        184
+      ],
+      [
+        "uint8_t security_context_id[16]",
+        192
+      ],
+      [
+        "uint64_t security_epoch_floor",
+        208
+      ],
+      [
+        "uint8_t expiry_authority_id[16]",
+        216
+      ],
+      [
+        "uint64_t expiry_epoch_floor",
+        232
+      ],
+      [
+        "uint64_t invalidation_epoch_floor",
+        240
+      ],
+      [
+        "uint64_t binding_handle_generation_floor",
+        248
+      ],
+      [
+        "uint64_t key_generation_floor",
+        256
+      ],
+      [
+        "uint64_t checkpoint_generation",
+        264
+      ],
+      [
+        "uint8_t payload_digest[32]",
+        272
+      ],
+      [
+        "uint32_t crc32c",
+        304
+      ]
+    ],
+    "record_field_order": [
+      "uint8_t magic[4]",
+      "uint16_t schema_version",
+      "uint16_t record_size",
+      "uint8_t realm_id[16]",
+      "uint8_t runtime_instance_id[16]",
+      "uint64_t runtime_generation",
+      "uint8_t module_instance_id[16]",
+      "uint64_t module_generation",
+      "uint8_t provider_instance_id[16]",
+      "uint64_t provider_generation_floor",
+      "uint8_t stable_identity_id[16]",
+      "uint64_t credential_revision_floor",
+      "uint8_t membership_authority_id[16]",
+      "uint64_t membership_epoch_floor",
+      "uint8_t attachment_id[16]",
+      "uint64_t attachment_generation_floor",
+      "uint8_t session_id[16]",
+      "uint64_t session_generation_floor",
+      "uint8_t security_context_id[16]",
+      "uint64_t security_epoch_floor",
+      "uint8_t expiry_authority_id[16]",
+      "uint64_t expiry_epoch_floor",
+      "uint64_t invalidation_epoch_floor",
+      "uint64_t binding_handle_generation_floor",
+      "uint64_t key_generation_floor",
+      "uint64_t checkpoint_generation",
+      "uint8_t payload_digest[32]",
+      "uint32_t crc32c"
+    ],
+    "record_hex": "4e49414601003401000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f0807060504030201202122232425262728292a2b2c2d2e2f1817161514131211303132333435363738393a3b3c3d3e3f2827262524232221404142434445464748494a4b4c4d4e4f3837363534333231505152535455565758595a5b5c5d5e5f4847464544434241606162636465666768696a6b6c6d6e6f5857565554535251707172737475767778797a7b7c7d7e7f6867666564636261808182838485868788898a8b8c8d8e8f7877767574737271909192939495969798999a9b9c9d9e9f88878685848382819897969594939291a8a7a6a5a4a3a2a1b8b7b6b5b4b3b2b1c8c7c6c5c4c3c2c18f94ab7f65d6f18a481234637a5a146b3ff5a6c173b16018356cd4dd8685d5c7b7ed5ab8",
+    "sha256": "068f3a583cb7637a163bcf9389a44931b36f9c21bf14c56f6f08cb5838bdb3e7"
+  },
+  "provider_abi": {
+    "ESP32S3_XTENSA_ILP32": {
+      "function_pointer_alignment": 4,
+      "function_pointer_bytes": 4,
+      "layouts": {
+        "binding_handle": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            96,
+            104
+          ],
+          "size": 136
+        },
+        "binding_snapshot": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            96,
+            104,
+            136,
+            152,
+            160,
+            192,
+            208,
+            216,
+            232,
+            240,
+            256,
+            264,
+            280,
+            288,
+            296,
+            304
+          ],
+          "size": 312
+        },
+        "invalidation_event": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            148,
+            152,
+            160,
+            168,
+            176,
+            184,
+            188
+          ],
+          "size": 192
+        },
+        "key_handle": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            84,
+            88
+          ],
+          "size": 120
+        },
+        "key_operation_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            264,
+            268,
+            272,
+            276,
+            280,
+            284,
+            288,
+            292,
+            296,
+            300,
+            304
+          ],
+          "size": 312
+        },
+        "key_operation_result": {
+          "align": 4,
+          "offsets": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            20,
+            24,
+            28,
+            32
+          ],
+          "size": 36
+        },
+        "provider": {
+          "align": 4,
+          "offsets": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            20,
+            24,
+            28,
+            32
+          ],
+          "size": 36
+        },
+        "release_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            148
+          ],
+          "size": 152
+        },
+        "release_result": {
+          "align": 4,
+          "offsets": [
+            0,
+            4,
+            8,
+            12
+          ],
+          "size": 16
+        },
+        "resolve_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            84,
+            88,
+            104,
+            112,
+            116
+          ],
+          "size": 120
+        },
+        "resolve_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            328,
+            464
+          ],
+          "size": 584
+        },
+        "subscribe_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            148,
+            152,
+            156
+          ],
+          "size": 160
+        },
+        "subscribe_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            120,
+            128,
+            132
+          ],
+          "size": 136
+        },
+        "subscription_handle": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80
+          ],
+          "size": 112
+        },
+        "unsubscribe_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            120,
+            124
+          ],
+          "size": 128
+        },
+        "unsubscribe_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            16,
+            20
+          ],
+          "size": 24
+        },
+        "validate_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            148,
+            152,
+            184
+          ],
+          "size": 192
+        },
+        "validate_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            24
+          ],
+          "size": 32
+        }
+      },
+      "pointer_alignment": 4,
+      "pointer_bytes": 4,
+      "u64_alignment": 8
+    },
+    "LP64_SYSV": {
+      "function_pointer_alignment": 8,
+      "function_pointer_bytes": 8,
+      "layouts": {
+        "binding_handle": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            96,
+            104
+          ],
+          "size": 136
+        },
+        "binding_snapshot": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            96,
+            104,
+            136,
+            152,
+            160,
+            192,
+            208,
+            216,
+            232,
+            240,
+            256,
+            264,
+            280,
+            288,
+            296,
+            304
+          ],
+          "size": 312
+        },
+        "invalidation_event": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            148,
+            152,
+            160,
+            168,
+            176,
+            184,
+            188
+          ],
+          "size": 192
+        },
+        "key_handle": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            84,
+            88
+          ],
+          "size": 120
+        },
+        "key_operation_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            264,
+            268,
+            272,
+            280,
+            288,
+            296,
+            304,
+            312,
+            320,
+            328,
+            336
+          ],
+          "size": 344
+        },
+        "key_operation_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            24,
+            28,
+            32,
+            36
+          ],
+          "size": 40
+        },
+        "provider": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            16,
+            24,
+            32,
+            40,
+            48,
+            56
+          ],
+          "size": 64
+        },
+        "release_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            148
+          ],
+          "size": 152
+        },
+        "release_result": {
+          "align": 4,
+          "offsets": [
+            0,
+            4,
+            8,
+            12
+          ],
+          "size": 16
+        },
+        "resolve_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80,
+            84,
+            88,
+            104,
+            112,
+            116
+          ],
+          "size": 120
+        },
+        "resolve_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            328,
+            464
+          ],
+          "size": 584
+        },
+        "subscribe_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            152,
+            160,
+            164
+          ],
+          "size": 168
+        },
+        "subscribe_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            120,
+            128,
+            132
+          ],
+          "size": 136
+        },
+        "subscription_handle": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            24,
+            32,
+            48,
+            56,
+            72,
+            80
+          ],
+          "size": 112
+        },
+        "unsubscribe_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            120,
+            124
+          ],
+          "size": 128
+        },
+        "unsubscribe_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            16,
+            20
+          ],
+          "size": 24
+        },
+        "validate_request": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            144,
+            148,
+            152,
+            184
+          ],
+          "size": 192
+        },
+        "validate_result": {
+          "align": 8,
+          "offsets": [
+            0,
+            4,
+            8,
+            12,
+            16,
+            24
+          ],
+          "size": 32
+        }
+      },
+      "pointer_alignment": 8,
+      "pointer_bytes": 8,
+      "u64_alignment": 8
+    }
+  },
+  "schema": "ninlil-identity-attachment-precondition-spec-kat-v1"
+}

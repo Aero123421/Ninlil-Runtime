@@ -190,7 +190,8 @@
       "evidence": [
         {"class": "normative-spec", "path": "docs/03-identity-and-join.md", "contains": "Identity"},
         {"class": "roadmap", "path": "docs/09-roadmap.md", "contains": "Roadmap"},
-        {"class": "normative-spec", "path": "docs/30-r6-secure-radio-wire.md", "contains": "Secure"}
+        {"class": "normative-spec", "path": "docs/30-r6-secure-radio-wire.md", "contains": "Secure"},
+        {"class": "normative-spec", "path": "docs/adr/0039-identity-attachment-precondition-gate.md", "contains": "identity_attachment_precondition_contract"}
       ]
     },
     {

@@ -83,7 +83,7 @@ EXPECTED_EXACT_CONTRACT_DIGESTS = {
         "4c5b9aed0cd3fceb4e1e35287ba3f60e8f4cdfaa75247222630fdbb8ee32119b"
     ),
     "acceptance_ledger_sha256": (
-        "6a885314e71b93fa7873fd40bdf01e1ee36e30b989f4f360d2b90abd738da118"
+        "6977db32075ed1fa3ad47b7fd6b6c588d9a6bde7bddb7901530f9c356abab673"
     ),
 }
 EXPECTED_COMPLETION_DOMAIN = {
@@ -267,7 +267,14 @@ IDENTITY_PRECONDITION_MODULES = [
     "radio_fabric_adapter_v1",
     "mfdt_v1",
 ]
+IDENTITY_ACCEPTANCE_MODULES = ["fabric_v1", *IDENTITY_PRECONDITION_MODULES]
 IDENTITY_ACCEPTANCE_ID = "PM-IDENTITY-PRECONDITION-2X2-01"
+IDENTITY_PRECONDITION_ADR_PATH = (
+    "docs/adr/0039-identity-attachment-precondition-gate.md"
+)
+IDENTITY_PRECONDITION_ADR_H1 = (
+    "# ADR-0039: Identity / Attachment precondition gate"
+)
 EXPECTED_IDENTITY_ATTACHMENT_PRECONDITION_SHA256 = (
     "d13789404303a839e3b27fc7493ad3db209f2c54b0e21e1dfb6a4f4af895c599"
 )
@@ -900,6 +907,59 @@ def canonical_single_metadata(
     if len(matches) != 1 or len(values) != 1:
         raise GateError(f"{label}: canonical {field} line required exactly once")
     return values[0]
+
+
+def canonical_identity_attachment_precondition_review_result(text: str) -> None:
+    """Require the small, live-only review record that permits ADR-0039."""
+    label = "ADR-0039 independent review"
+    lines = text.splitlines()
+    if (
+        len(lines) < 2
+        or lines[0] != "# Identity / Attachment precondition specification review"
+        or lines[1] != ""
+    ):
+        raise GateError(f"{label}: canonical H1/preamble required")
+
+    live_indexes: set[int] = set()
+    in_fence = False
+    in_comment = False
+    for index, line in enumerate(lines):
+        if re.match(r"^[ \t]*(`{3,}|~{3,})", line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if in_comment:
+            if "-->" in line:
+                in_comment = False
+            continue
+        if "<!--" in line:
+            if "-->" not in line:
+                in_comment = True
+            continue
+        live_indexes.add(index)
+    if in_fence or in_comment:
+        raise GateError(f"{label}: unterminated comment/code fence")
+
+    required = [
+        ("Reviewer:", r"(- Reviewer: \*\*Independent\*\*)"),
+        (
+            "Scope:",
+            r"(- Scope: \*\*ADR-0039 S1-S6 specification acceptance\*\*)",
+        ),
+        *[
+            (f"S{index}:", rf"(- S{index}: \*\*CONFIRMED\*\*)")
+            for index in range(1, 7)
+        ],
+        ("Result:", r"- Result: \*\*(GO — P0=0 / P1=0 / P2=0 / P3=0)\*\*"),
+    ]
+    for field, pattern in required:
+        canonical_single_metadata(text, label, field, pattern)
+        matching_index = next(
+            index for index, line in enumerate(lines) if re.fullmatch(pattern, line)
+        )
+        if matching_index not in live_indexes:
+            raise GateError(f"{label}: {field} must be a live Markdown line")
 
 
 def executable_text_without_comments(text: str, *, cmake: bool) -> str:
@@ -2309,11 +2369,11 @@ def validate_cross_module_acceptance(
             ),
         },
         IDENTITY_ACCEPTANCE_ID: {
-            "covered": IDENTITY_PRECONDITION_MODULES,
+            "covered": IDENTITY_ACCEPTANCE_MODULES,
             "test_path": (
                 "tests/public_modules/identity_attachment_precondition_2x2.c"
             ),
-            "requirement": "for every identity/session-dependent module, two Runtime plus two distinct module and provider instances; valid binding success plus cross/stale/expired/revoked/rollback/restart-old-handle, unknown key usage or flag bits, subscribe failure release order, unsubscribe drain order, and torn/corrupt/ambiguous checkpoint fail-closed negatives with no key export",
+            "requirement": "for Fabric and every identity/session-dependent module, two Runtime plus two distinct module and provider instances; valid binding success plus cross/stale/expired/revoked/rollback/restart-old-handle, unknown key usage or flag bits, subscribe failure release order, unsubscribe drain order, and torn/corrupt/ambiguous checkpoint fail-closed negatives with no key export",
             "tokens": (
                 "two Runtime",
                 "two distinct module and provider instances",
@@ -3410,6 +3470,8 @@ def check(
     matrix: dict[str, Any],
     schema: dict[str, Any],
     adr_text: str | None = None,
+    identity_precondition_adr_text: str | None = None,
+    identity_precondition_review_text: str | None = None,
 ) -> None:
     validate_boolean_locations(
         manifest,
@@ -3594,6 +3656,47 @@ def check(
             )
     elif adr_status != "Accepted":
         raise GateError(f"ADR-0028 decision status {adr_status} forbids publication")
+
+    identity_adr = (
+        repo_path(
+            IDENTITY_PRECONDITION_ADR_PATH,
+            "ADR-0039 path",
+            require_exists=True,
+            require_file=True,
+        ).read_text(encoding="utf-8")
+        if identity_precondition_adr_text is None
+        else identity_precondition_adr_text
+    )
+    identity_status = canonical_markdown_status(
+        identity_adr,
+        "ADR-0039",
+        expected_h1=IDENTITY_PRECONDITION_ADR_H1,
+    )
+    if identity_status not in ("Proposed", "Accepted"):
+        raise GateError(f"ADR-0039 status {identity_status} is unsupported")
+    if identity_status == "Accepted":
+        if identity_precondition_review_text is None:
+            review_path = ROOT / "docs/reviews/2026-08-10-identity-attachment-precondition-spec-review.md"
+            if not review_path.is_file():
+                raise GateError("ADR-0039 Accepted requires an independent review artifact")
+            review = review_path.read_text(encoding="utf-8")
+        else:
+            review = identity_precondition_review_text
+        canonical_identity_attachment_precondition_review_result(review)
+    for token in (
+        "public-module-manifest.json#/identity_attachment_precondition_contract",
+        "identity-attachment-session-install` at `PROPOSED`",
+        "Extracts/accepts only: ADR-0028 section 1.1 exact contract",
+        "Related: ADR-0022, ADR-0023, ADR-0032, ADR-0038",
+        "already-manifested provider ABI as specification only",
+        "`resolve -> validate -> subscribe -> publish`",
+        "`NIAF` schema-1, 308-byte FULL checkpoint",
+        "`PM-IDENTITY-PRECONDITION-2X2-01`",
+        "No PA-S item is complete merely because this ADR exists.",
+        "leaves `identity-attachment-session-install` **PROPOSED**",
+    ):
+        if token not in identity_adr:
+            raise GateError(f"ADR-0039 missing required precondition fence: {token}")
 
 
 def self_test(
@@ -4834,6 +4937,79 @@ def self_test(
         ),
         reason="exact H1 title mismatch",
     )
+
+    identity_adr = repo_path(
+        IDENTITY_PRECONDITION_ADR_PATH,
+        "ADR-0039 path",
+        require_exists=True,
+        require_file=True,
+    ).read_text(encoding="utf-8")
+    accepted_identity_adr = identity_adr.replace(
+        "- Status: **Proposed**",
+        "- Status: **Accepted**",
+        1,
+    )
+    exact_review = (
+        "# Identity / Attachment precondition specification review\n\n"
+        "- Reviewer: **Independent**\n"
+        "- Scope: **ADR-0039 S1-S6 specification acceptance**\n"
+        "- S1: **CONFIRMED**\n"
+        "- S2: **CONFIRMED**\n"
+        "- S3: **CONFIRMED**\n"
+        "- S4: **CONFIRMED**\n"
+        "- S5: **CONFIRMED**\n"
+        "- S6: **CONFIRMED**\n"
+        "- Result: **GO — P0=0 / P1=0 / P2=0 / P3=0**\n"
+    )
+    check(
+        copy.deepcopy(manifest),
+        copy.deepcopy(matrix),
+        copy.deepcopy(schema),
+        identity_precondition_adr_text=accepted_identity_adr,
+        identity_precondition_review_text=exact_review,
+    )
+    for name, review in (
+        (
+            "NO-GO with zero counts",
+            exact_review.replace("**GO —", "**NO-GO —", 1),
+        ),
+        ("duplicate GO", exact_review + exact_review),
+        (
+            "stale GO",
+            exact_review
+            + "- Historical Result: **GO — P0=0 / P1=0 / P2=0 / P3=0**\n",
+        ),
+        (
+            "HTML comment GO",
+            exact_review.replace(
+                "- Result: **GO — P0=0 / P1=0 / P2=0 / P3=0**",
+                "<!-- - Result: **GO — P0=0 / P1=0 / P2=0 / P3=0** -->",
+                1,
+            ),
+        ),
+        (
+            "sole code-fence GO",
+            exact_review.replace(
+                "- Result: **GO — P0=0 / P1=0 / P2=0 / P3=0**",
+                "```markdown\n- Result: **GO — P0=0 / P1=0 / P2=0 / P3=0**\n```",
+                1,
+            ),
+        ),
+    ):
+        try:
+            check(
+                copy.deepcopy(manifest),
+                copy.deepcopy(matrix),
+                copy.deepcopy(schema),
+                identity_precondition_adr_text=accepted_identity_adr,
+                identity_precondition_review_text=review,
+            )
+        except GateError:
+            pass
+        else:
+            raise GateError(
+                f"self-test ADR-0039 Accepted {name} false green"
+            )
 
 
 def validate_ctest_catalog(

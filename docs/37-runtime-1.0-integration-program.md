@@ -87,10 +87,13 @@ Activation DTO、raw secret、QR由来boolean、LAB bindingを正式側へ追加
 
 consumer実装を始める前に、次を同じspec changeで閉じる。
 
-1. [ADR-0028](adr/0028-composable-public-runtime-modules.md)のidentity-precondition subset、
-   または同じexact contractを抽出した専用ADRを`SPEC_ACCEPTED`にする。
-2. `compatibility-matrix.json`の`identity-attachment-session-install`を、実際に揃った
-   S1〜S6 evidenceに対応する状態とceilingへ更新する。
+1. [ADR-0039](adr/0039-identity-attachment-precondition-gate.md)が抽出する
+   [ADR-0028](adr/0028-composable-public-runtime-modules.md) section 1.1の
+   identity-precondition contractを、S1〜S6の仕様レビューとspec KATで
+   `SPEC_ACCEPTED`にする。このsubsetのAccepted化はconsumer実装の完了を意味しない。
+2. `compatibility-matrix.json`の`identity-attachment-session-install`は、ADR-0039が
+   Acceptedになっても`PROPOSED`のままにする。PA-S1〜S6、consumer 2x2、C5〜C8の
+   実装・Host・target・HIL evidenceが実際に揃った時だけ状態とceilingを更新する。
 3. `resolve -> validate -> subscribe -> publish`、admission/send前再validation、
    invalidation drain、provider-owned non-exporting key handle、restart floor、release順を固定する。
 4. Domain Storeをsole writerから外すなら、実装で迂回せずADR-0028、manifest、matrixを

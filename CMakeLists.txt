@@ -1839,6 +1839,18 @@ if(NINLIL_BUILD_TESTS)
             self-test
     )
     add_test(
+        NAME identity_attachment_precondition_spec_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/identity_attachment_precondition_spec_gate.py
+            check
+    )
+    add_test(
+        NAME identity_attachment_precondition_spec_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/identity_attachment_precondition_spec_gate.py
+            self-test
+    )
+    add_test(
         NAME domain_store_schema1_review_manifest_gate
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_review_manifest_gate.py

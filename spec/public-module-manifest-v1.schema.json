@@ -43,7 +43,7 @@
     "exact_contract_digests": {
       "const": {
         "module_wire_storage_namespace_sha256": "4c5b9aed0cd3fceb4e1e35287ba3f60e8f4cdfaa75247222630fdbb8ee32119b",
-          "acceptance_ledger_sha256": "6a885314e71b93fa7873fd40bdf01e1ee36e30b989f4f360d2b90abd738da118"
+          "acceptance_ledger_sha256": "6977db32075ed1fa3ad47b7fd6b6c588d9a6bde7bddb7901530f9c356abab673"
       }
     },
     "module_api_states": {
