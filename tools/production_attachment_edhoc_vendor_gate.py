@@ -20,7 +20,7 @@ EXPECTED_LIBEDHOC = "008ce0584e6cfa41aa6319f530b6c254c8abfc3e"
 EXPECTED_ZCBOR = "d3093b5684f62268c7f27f8a5079f166772619de"
 PUBLIC_FORBIDDEN_PREFIXES = (
     "edhoc_", "zcbor_", "cbor_encode_", "cbor_decode_",
-    "ninlil_pa_s1_edhoc_",
+    "ninlil_pa_s1_edhoc_", "ninlil_pa_s2_edhoc_",
 )
 
 
@@ -130,7 +130,7 @@ def defined_symbols(output: str) -> list[str]:
 def reject_public_symbol_leaks(output: str) -> None:
     if any(symbol.startswith(PUBLIC_FORBIDDEN_PREFIXES)
            for symbol in defined_symbols(output)):
-        raise GateError("PA-S1 symbols leaked into installed Runtime archive")
+        raise GateError("private Production Attachment symbols leaked into installed Runtime archive")
 
 
 def reject_archive_overlap(private_output: str, public_output: str) -> None:
@@ -190,6 +190,13 @@ def self_test() -> None:
         pass
     else:
         raise GateError("private PA-S1 symbol leak was accepted")
+    try:
+        reject_public_symbol_leaks(
+            "0000 T ninlil_pa_s2_edhoc_crypto_owner_v1_begin\n")
+    except GateError:
+        pass
+    else:
+        raise GateError("private PA-S2 symbol leak was accepted")
     try:
         reject_public_symbol_leaks("0000 T _cbor_decode_message_1\n")
     except GateError:

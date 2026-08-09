@@ -3662,6 +3662,11 @@
           "path": "src/radio/r7_crypto_openssl3.c",
           "representation": "QUOTED",
           "count": 2
+        },
+        {
+          "path": "src/runtime/production_attachment_v1/pa_s2_edhoc_crypto.c",
+          "representation": "QUOTED",
+          "count": 2
         }
       ]
     },

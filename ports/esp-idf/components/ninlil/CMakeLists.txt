@@ -106,6 +106,10 @@ if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
         "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/libedhoc"
         "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/zcbor")
 endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
+    list(APPEND NINLIL_COMPONENT_SRCS
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s2_edhoc_crypto.c")
+endif()
 if(CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE)
     foreach(_rel IN LISTS NINLIL_R7_FRAG_PRODUCTION_RELATIVE_SOURCES)
         list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
@@ -346,6 +350,13 @@ if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
         "${NINLIL_REPO_ROOT}/third_party/production_attachment_edhoc/zcbor/zcbor_common.c"
         PROPERTIES COMPILE_OPTIONS
             "-fstack-usage;-Wframe-larger-than=2048;-fno-strict-aliasing")
+endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO=1)
+    set_source_files_properties(
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s2_edhoc_crypto.c"
+        PROPERTIES COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048")
 endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_FABRIC_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE

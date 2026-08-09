@@ -164,6 +164,31 @@ fresh policy revisionとfresh session generationを要求する。
 `ALGORITHM_REFERENCE_ONLY_NOT_PROFILE_NEGOTIATION_POSITIVE`である。real provider KAT、
 AEAD ciphertext correctness、相互運用性はPA-S2のOPEN evidenceに残す。
 
+### 3.1 PA-S2a private symmetric/hash candidate boundary
+
+PA-S2aはPA-S2を完了させず、vendored libedhocのexact callback shapeへ接続する
+private/default-OFF/uninstalledなsymmetric/hash候補だけを閉じる。1 ownerは開始時にsuite 2
+または3のexact 1つへ固定し、実行中のsuite変更やfallbackを受理しない。
+
+- `edhoc_keys.import_key` / `destroy_key`はexact 4-byte opaque key idを使う。key idは
+  fixed slotとnon-zero/non-wrapping slot generationを表し、caller-owned bounded slotへ
+  raw transient keyをcopyする。closed key typeは`EXTRACT`、`EXPAND`、`ENCRYPT`、
+  `DECRYPT`だけである。destroyとowner closeはslot全体をzeroizeし、callback failureは
+  candidate outputをpublishせず一時workspaceをzeroizeする。PA ownerのterminal closeは
+  後続owner trancheで接続する。
+- `edhoc_crypto`のうちSHA-256、HKDF-SHA-256 extract/expand、AEAD encrypt/decryptだけを
+  candidate対象とする。suite 2はAES-CCM-16-64-128（key 16、nonce 13、tag 8）、
+  suite 3はChaCha20-Poly1305（key 32、nonce 12、tag 16）である。
+  `make_key_pair`、`key_agreement`、`signature`、`verify` callbackはnon-NULLだが
+  fail-closed `NOT_SUPPORTED`だけを返す。このstubをEDHOC handshake証拠に数えない。
+- Host OpenSSL 3 KATとESP-IDF v5.5.3 supplied mbedTLSのexplicit opt-in compile/link/stack
+  は別証拠である。ESP targetで同じKAT bytesを実行するまではHost/ESP equality、suite 3
+  target correctness、real EDHOC/provider interoperabilityを`NOT_RUN`のままにする。
+- PA-S2aはpeer credential resolver、Factory Identity/Site Membership live authority、
+  local P-256 static-DH opaque-key operator、message 1..4、message 4、exporter、carrier、
+  Composition/NIAF接続を含まない。既存R7 crypto ABIを拡張またはPA用に流用しない。
+  よってPA-O03、PA-O04、PA-S2全体はPA-S2a後も`OPEN`である。
+
 ## 4. Carrier binding
 
 carrier classは`1 USB_STREAM`、`2 WIFI_STREAM`、`3 COMPACT_RADIO`のclosed set。
@@ -632,7 +657,7 @@ cross-provider KATでreal ciphertextへ置換し、同じreview unitでstatusを
 | --- | --- | --- |
 | PA-S0 | Proposed docs + canonical vectors + 3-language gates | software closure reviewed GO (P0=P1=P2=P3=0); ADR remains Proposed |
 | PA-S1 | dependency/source/license/allocator acceptance | PA-S1a private dependency/allocator candidate reviewed GO; PA-S1 overall OPEN |
-| PA-S2 | suite2/3 Host+ESP crypto、peer credential resolver、local static-DH key operator | OPEN |
+| PA-S2 | suite2/3 Host+ESP crypto、peer credential resolver、local static-DH key operator | PA-S2a private Host KAT + ESP compile/link/stack candidate; ESP target KAT/equality、P-256、credentials、PA-S2 overall OPEN |
 | PA-S3 | NAS1/NAR1 owner + EDHOC state owner | OPEN |
 | PA-S4 | protected exchange + sole 15-key N6 batch owner | OPEN |
 | PA-S5 | restart/rotation/revocation/join-storm/fault matrices | OPEN |

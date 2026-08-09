@@ -26,6 +26,11 @@
 #include "r7_context_binding.h"
 #include "r7_wire_codec.h"
 #include "sdkconfig.h"
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
+#include "edhoc_values.h"
+#include "pa_s2_edhoc_crypto.h"
+#endif
 #if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
     && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
 #include "mfdt_v1.h"
@@ -93,6 +98,10 @@ static uint32_t s_prod_full;
 static ninlil_r7_crypto_provider s_r7_crypto_provider;
 static ninlil_multi_service_node_profile_t s_multi_service_profile;
 static ninlil_multi_service_node_state_t s_multi_service_state;
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
+static ninlil_pa_s2_edhoc_crypto_owner_v1_t s_pa_s2_crypto_owner;
+#endif
 
 
 #if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
@@ -134,6 +143,37 @@ static int smoke_r7_crypto_link(void)
         "device KAT/HIL pending");
     return 0;
 }
+
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
+static int smoke_pa_s2_crypto_link(void)
+{
+    struct edhoc_keys keys;
+    struct edhoc_crypto crypto;
+
+    (void)memset(&s_pa_s2_crypto_owner, 0, sizeof(s_pa_s2_crypto_owner));
+    (void)memset(&keys, 0, sizeof(keys));
+    (void)memset(&crypto, 0, sizeof(crypto));
+    if (ninlil_pa_s2_edhoc_crypto_owner_v1_begin(
+            &s_pa_s2_crypto_owner, NINLIL_PA_S2_EDHOC_SUITE_2)
+            != EDHOC_SUCCESS
+        || ninlil_pa_s2_edhoc_crypto_owner_v1_bindings(
+               &s_pa_s2_crypto_owner, &keys, &crypto)
+            != EDHOC_SUCCESS
+        || keys.import_key == NULL || keys.destroy_key == NULL
+        || crypto.hash == NULL || crypto.extract == NULL
+        || crypto.expand == NULL || crypto.encrypt == NULL
+        || crypto.decrypt == NULL
+        || ninlil_pa_s2_edhoc_crypto_owner_v1_end(&s_pa_s2_crypto_owner)
+            != EDHOC_SUCCESS) {
+        ESP_LOGE(TAG, "PA-S2a mbedTLS callback link failed");
+        return -1;
+    }
+    ESP_LOGI(TAG,
+        "PA-S2a mbedTLS callback link OK; target KAT/equality/PA-S2 pending");
+    return 0;
+}
+#endif
 
 /*
  * Compile, link, and execute the same role-neutral four-Service application
@@ -1231,6 +1271,12 @@ void app_main(void)
     if (smoke_r7_crypto_link() != 0) {
         fail = 1;
     }
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
+    if (smoke_pa_s2_crypto_link() != 0) {
+        fail = 1;
+    }
+#endif
     /* Binding after provider init, before wire smoke (docs/33 dependency). */
     if (smoke_r7_t1b_binding_link() != 0) {
         fail = 1;

@@ -17,6 +17,12 @@ if(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE)
         "${NINLIL_SMOKE_REPO_ROOT}/src/runtime/mfdt_v1"
     )
 endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
+    list(APPEND NINLIL_SMOKE_PRIV_INCLUDES
+        "${NINLIL_SMOKE_REPO_ROOT}/src/runtime/production_attachment_v1"
+        "${NINLIL_SMOKE_REPO_ROOT}/third_party/production_attachment_edhoc/libedhoc"
+    )
+endif()
 
 idf_component_register(
     SRCS

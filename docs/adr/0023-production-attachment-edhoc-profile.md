@@ -170,6 +170,14 @@ RELEASE_SUPPORTEDへ変更しない。
 | PA-O09 | field/legal未完 | separate deployment evidence; protocol acceptanceから自動導出しない |
 | PA-O10 | independent acceptance review未実施 | Proposed snapshot固定後P0=P1=P2=0 |
 
+PA-S2aはPA-O03を分解するprivate candidateであり、PA-S2を完了しない。exact libedhoc
+`edhoc_keys`の4-byte opaque key id、fixed raw-key slot、closed suite 2/3 contextを通じて、
+SHA-256、HKDF-SHA-256、suite 2 AES-CCM-16-64-128、suite 3
+ChaCha20-Poly1305だけを検証する。ECDH/signature callbacksはnon-NULL fail-closed stubで、
+credential resolver/local static-DH/EDHOC handshakeの証拠ではない。Host KAT、ESP compile、
+ESP target KATは別statusであり、target KAT前にHost/ESP equalityまたはsuite 3 target
+correctnessを主張しない。既存R7 crypto ABIは変更・流用しない。
+
 ## Non-claims
 
 本ADRとmachine-readable vectorは、dependency adoption、実装、public ABI、EDHOC
