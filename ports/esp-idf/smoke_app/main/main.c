@@ -157,6 +157,12 @@ static int smoke_pa_s2_crypto_link(void)
     if (ninlil_pa_s2_edhoc_crypto_owner_v1_begin(
             &s_pa_s2_crypto_owner, NINLIL_PA_S2_EDHOC_SUITE_2)
             != EDHOC_SUCCESS
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+        || ninlil_pa_s2_edhoc_crypto_owner_v1_bind_entropy(
+               &s_pa_s2_crypto_owner,
+               ninlil_esp_idf_entropy_ops(&s_entropy)) != EDHOC_SUCCESS
+#endif
         || ninlil_pa_s2_edhoc_crypto_owner_v1_bindings(
                &s_pa_s2_crypto_owner, &keys, &crypto)
             != EDHOC_SUCCESS
@@ -166,11 +172,11 @@ static int smoke_pa_s2_crypto_link(void)
         || crypto.decrypt == NULL
         || ninlil_pa_s2_edhoc_crypto_owner_v1_end(&s_pa_s2_crypto_owner)
             != EDHOC_SUCCESS) {
-        ESP_LOGE(TAG, "PA-S2a mbedTLS callback link failed");
+        ESP_LOGE(TAG, "PA-S2 private callback link failed");
         return -1;
     }
     ESP_LOGI(TAG,
-        "PA-S2a mbedTLS callback link OK; target KAT/equality/PA-S2 pending");
+        "PA-S2 private callback link OK; target KAT/equality/PA-S2 pending");
     return 0;
 }
 #endif

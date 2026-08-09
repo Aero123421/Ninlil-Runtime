@@ -78,12 +78,21 @@ option(NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC
 option(NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
     "Build private PA-S2a EDHOC symmetric/hash candidate (default OFF; not installed)"
     OFF)
+option(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+    "Build private PA-S2b1 ephemeral P-256 candidate (default OFF; not installed)"
+    OFF)
 
 if(NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
         AND NOT NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
     message(FATAL_ERROR
         "NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO requires "
         "NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC=ON")
+endif()
+if(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+        AND NOT NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
+    message(FATAL_ERROR
+        "NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256 requires "
+        "NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO=ON")
 endif()
 
 if(NINLIL_WIFI_OPENSSL_AUTHORITY)
@@ -717,6 +726,7 @@ if(NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
     add_library(ninlil_pa_s2_edhoc_crypto_private STATIC EXCLUDE_FROM_ALL
         src/runtime/production_attachment_v1/pa_s2_edhoc_crypto.c)
     target_include_directories(ninlil_pa_s2_edhoc_crypto_private PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/production_attachment_v1
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/production_attachment_edhoc/libedhoc)
     target_link_libraries(ninlil_pa_s2_edhoc_crypto_private PRIVATE
@@ -727,6 +737,10 @@ if(NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
     ninlil_apply_strict_warnings(ninlil_pa_s2_edhoc_crypto_private)
     target_compile_options(ninlil_pa_s2_edhoc_crypto_private PRIVATE
         -Wvla -fstack-usage)
+    if(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256)
+        target_compile_definitions(ninlil_pa_s2_edhoc_crypto_private PRIVATE
+            NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256=1)
+    endif()
     if(NINLIL_BUILD_TESTS)
         add_executable(ninlil_pa_s2_edhoc_crypto_test
             tests/runtime/production_attachment_v1_edhoc_crypto_test.c)
@@ -734,11 +748,16 @@ if(NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
             ninlil_pa_s2_edhoc_crypto_private
             ninlil_pa_s1_edhoc_private)
         target_include_directories(ninlil_pa_s2_edhoc_crypto_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/production_attachment_v1
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/production_attachment_edhoc/libedhoc)
         set_target_properties(ninlil_pa_s2_edhoc_crypto_test PROPERTIES
             C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
         ninlil_apply_strict_warnings(ninlil_pa_s2_edhoc_crypto_test)
+        if(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256)
+            target_compile_definitions(ninlil_pa_s2_edhoc_crypto_test PRIVATE
+                NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256=1)
+        endif()
         add_test(NAME pa_s2_edhoc_crypto
             COMMAND ninlil_pa_s2_edhoc_crypto_test)
     endif()

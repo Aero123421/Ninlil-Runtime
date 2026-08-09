@@ -9,6 +9,11 @@
 #if defined(ESP_PLATFORM)
 #include "mbedtls/ccm.h"
 #include "mbedtls/chachapoly.h"
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+#include "mbedtls/ecdh.h"
+#include "mbedtls/ecp.h"
+#endif
 #include "mbedtls/hkdf.h"
 #include "mbedtls/md.h"
 #include "mbedtls/platform_util.h"
@@ -18,7 +23,19 @@
     || !defined(MBEDTLS_POLY1305_C) || !defined(MBEDTLS_CHACHAPOLY_C)
 #error "PA-S2a requires ESP-IDF mbedTLS CCM, ChaCha20, Poly1305, and ChaChaPoly"
 #endif
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256 \
+    && (!defined(MBEDTLS_ECP_C) || !defined(MBEDTLS_ECDH_C) \
+        || !defined(MBEDTLS_ECP_DP_SECP256R1_ENABLED))
+#error "PA-S2b1 requires ESP-IDF mbedTLS ECP, ECDH, and secp256r1"
+#endif
 #else
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+#include <openssl/bn.h>
+#include <openssl/ec.h>
+#include <openssl/obj_mac.h>
+#endif
 #include <openssl/core_names.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
@@ -39,6 +56,23 @@
 #define PA_S2_SUITE3_NONCE_BYTES ((size_t)12u)
 #define PA_S2_SUITE3_TAG_BYTES ((size_t)16u)
 #define PA_S2_KEY_GENERATION_MAX ((uint32_t)0x00ffffffu)
+
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+#define PA_S2B1_P256_BYTES ((size_t)32u)
+#define PA_S2B1_P256_COMPACT_BYTES ((size_t)33u)
+#define PA_S2B1_EPHEMERAL_BYTES ((size_t)64u)
+#define PA_S2B1_TOKEN_OFFSET ((size_t)32u)
+#define PA_S2B1_DRAW_ATTEMPTS ((uint32_t)8u)
+#define PA_S2B1_BACKING_KEY_TYPE UINT32_C(0xffffffff)
+
+static const uint8_t PA_S2B1_P256_ORDER[PA_S2B1_P256_BYTES] = {
+    0xffu, 0xffu, 0xffu, 0xffu, 0x00u, 0x00u, 0x00u, 0x00u,
+    0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+    0xbcu, 0xe6u, 0xfau, 0xadu, 0xa7u, 0x17u, 0x9eu, 0x84u,
+    0xf3u, 0xb9u, 0xcau, 0xc2u, 0xfcu, 0x63u, 0x25u, 0x51u,
+};
+#endif
 
 _Static_assert(CONFIG_LIBEDHOC_KEY_ID_LEN == 4,
     "PA-S2a requires libedhoc exact four-byte key identifiers");
@@ -89,6 +123,105 @@ static int external_span_ok(
     return owner != NULL && pointer_valid(pointer, size)
         && !ranges_overlap(owner, sizeof(*owner), pointer, size);
 }
+
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+static int constant_time_equal(
+    const uint8_t *left, const uint8_t *right, size_t size)
+{
+    uint8_t difference = 0u;
+    size_t index;
+
+    for (index = 0u; index < size; ++index) {
+        difference |= (uint8_t)(left[index] ^ right[index]);
+    }
+    return difference == 0u;
+}
+
+static int all_zero(const uint8_t *bytes, size_t size)
+{
+    uint8_t aggregate = 0u;
+    size_t index;
+
+    for (index = 0u; index < size; ++index) {
+        aggregate |= bytes[index];
+    }
+    return aggregate == 0u;
+}
+
+static int scalar_valid(const uint8_t scalar[PA_S2B1_P256_BYTES])
+{
+    size_t index;
+
+    if (all_zero(scalar, PA_S2B1_P256_BYTES)) {
+        return 0;
+    }
+    for (index = 0u; index < PA_S2B1_P256_BYTES; ++index) {
+        if (scalar[index] < PA_S2B1_P256_ORDER[index]) {
+            return 1;
+        }
+        if (scalar[index] > PA_S2B1_P256_ORDER[index]) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static int entropy_fill(
+    ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    uint8_t output[PA_S2B1_P256_BYTES])
+{
+    ninlil_port_status_t status;
+
+    secure_zero(output, PA_S2B1_P256_BYTES);
+    if (owner->entropy.fill == NULL) {
+        return 0;
+    }
+    status = owner->entropy.fill(
+        owner->entropy.user, output, (uint32_t)PA_S2B1_P256_BYTES);
+    if (status != NINLIL_PORT_OK) {
+        secure_zero(output, PA_S2B1_P256_BYTES);
+        return 0;
+    }
+    return 1;
+}
+
+static int draw_scalar(ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    uint8_t scalar[PA_S2B1_P256_BYTES])
+{
+    uint32_t attempt;
+
+    for (attempt = 0u; attempt < PA_S2B1_DRAW_ATTEMPTS; ++attempt) {
+        if (!entropy_fill(owner, scalar)) {
+            return 0;
+        }
+        if (scalar_valid(scalar)) {
+            return 1;
+        }
+        secure_zero(scalar, PA_S2B1_P256_BYTES);
+    }
+    return 0;
+}
+
+static int draw_token(ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    const uint8_t scalar[PA_S2B1_P256_BYTES],
+    uint8_t token[PA_S2B1_P256_BYTES])
+{
+    uint32_t attempt;
+
+    for (attempt = 0u; attempt < PA_S2B1_DRAW_ATTEMPTS; ++attempt) {
+        if (!entropy_fill(owner, token)) {
+            return 0;
+        }
+        if (!all_zero(token, PA_S2B1_P256_BYTES)
+            && !constant_time_equal(token, scalar, PA_S2B1_P256_BYTES)) {
+            return 1;
+        }
+        secure_zero(token, PA_S2B1_P256_BYTES);
+    }
+    return 0;
+}
+#endif
 
 static int suite_valid(uint32_t suite)
 {
@@ -183,6 +316,142 @@ static ninlil_pa_s2_edhoc_key_slot_v1_t *lookup_key(
 }
 
 #if defined(ESP_PLATFORM)
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+static int pa_s2b1_mbedtls_rng(
+    void *context, unsigned char *output, size_t output_size)
+{
+    ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner =
+        (ninlil_pa_s2_edhoc_crypto_owner_v1_t *)context;
+
+    if (owner == NULL || output == NULL || output_size == 0u
+        || output_size > UINT32_MAX || owner->entropy.fill == NULL
+        || owner->entropy.fill(owner->entropy.user, output,
+               (uint32_t)output_size) != NINLIL_PORT_OK) {
+        if (output != NULL) {
+            secure_zero(output, output_size);
+        }
+        return -1;
+    }
+    return 0;
+}
+
+static int platform_p256_public_from_scalar(
+    ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    const uint8_t scalar[PA_S2B1_P256_BYTES],
+    uint8_t public_x[PA_S2B1_P256_BYTES])
+{
+    uint8_t compact[PA_S2B1_P256_COMPACT_BYTES];
+    mbedtls_ecp_group group;
+    mbedtls_ecp_point point;
+    mbedtls_mpi private_value;
+    size_t compact_size = 0u;
+    int status;
+    int ok = 0;
+
+    secure_zero(public_x, PA_S2B1_P256_BYTES);
+    secure_zero(compact, sizeof(compact));
+    mbedtls_ecp_group_init(&group);
+    mbedtls_ecp_point_init(&point);
+    mbedtls_mpi_init(&private_value);
+    status = mbedtls_ecp_group_load(&group, MBEDTLS_ECP_DP_SECP256R1);
+    if (status == 0) {
+        status = mbedtls_mpi_read_binary(
+            &private_value, scalar, PA_S2B1_P256_BYTES);
+    }
+    if (status == 0) {
+        status = mbedtls_ecp_check_privkey(&group, &private_value);
+    }
+    if (status == 0) {
+        status = mbedtls_ecp_mul(&group, &point, &private_value, &group.G,
+            pa_s2b1_mbedtls_rng, owner);
+    }
+    if (status == 0) {
+        status = mbedtls_ecp_check_pubkey(&group, &point);
+    }
+    if (status == 0) {
+        status = mbedtls_ecp_point_write_binary(&group, &point,
+            MBEDTLS_ECP_PF_COMPRESSED, &compact_size,
+            compact, sizeof(compact));
+    }
+    if (status == 0 && compact_size == sizeof(compact)
+        && (compact[0] == 0x02u || compact[0] == 0x03u)) {
+        (void)memcpy(public_x, compact + 1u, PA_S2B1_P256_BYTES);
+    } else if (status == 0) {
+        status = -1;
+    }
+    if (status == 0) {
+        ok = 1;
+    }
+    mbedtls_mpi_free(&private_value);
+    mbedtls_ecp_point_free(&point);
+    mbedtls_ecp_group_free(&group);
+    secure_zero(compact, sizeof(compact));
+    if (!ok) {
+        secure_zero(public_x, PA_S2B1_P256_BYTES);
+    }
+    return ok;
+}
+
+static int platform_p256_shared(
+    ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    const uint8_t scalar[PA_S2B1_P256_BYTES],
+    const uint8_t peer_x[PA_S2B1_P256_BYTES],
+    uint8_t shared[PA_S2B1_P256_BYTES])
+{
+    uint8_t compact[PA_S2B1_P256_COMPACT_BYTES];
+    mbedtls_ecp_group group;
+    mbedtls_ecp_point peer;
+    mbedtls_mpi private_value;
+    mbedtls_mpi secret;
+    int status;
+    int ok = 0;
+
+    secure_zero(shared, PA_S2B1_P256_BYTES);
+    compact[0] = 0x02u;
+    (void)memcpy(compact + 1u, peer_x, PA_S2B1_P256_BYTES);
+    mbedtls_ecp_group_init(&group);
+    mbedtls_ecp_point_init(&peer);
+    mbedtls_mpi_init(&private_value);
+    mbedtls_mpi_init(&secret);
+    status = mbedtls_ecp_group_load(&group, MBEDTLS_ECP_DP_SECP256R1);
+    if (status == 0) {
+        status = mbedtls_mpi_read_binary(
+            &private_value, scalar, PA_S2B1_P256_BYTES);
+    }
+    if (status == 0) {
+        status = mbedtls_ecp_check_privkey(&group, &private_value);
+    }
+    if (status == 0) {
+        status = mbedtls_ecp_point_read_binary(
+            &group, &peer, compact, sizeof(compact));
+    }
+    if (status == 0) {
+        status = mbedtls_ecp_check_pubkey(&group, &peer);
+    }
+    if (status == 0) {
+        status = mbedtls_ecdh_compute_shared(&group, &secret, &peer,
+            &private_value, pa_s2b1_mbedtls_rng, owner);
+    }
+    if (status == 0) {
+        status = mbedtls_mpi_write_binary(
+            &secret, shared, PA_S2B1_P256_BYTES);
+    }
+    if (status == 0) {
+        ok = 1;
+    }
+    mbedtls_mpi_free(&secret);
+    mbedtls_mpi_free(&private_value);
+    mbedtls_ecp_point_free(&peer);
+    mbedtls_ecp_group_free(&group);
+    secure_zero(compact, sizeof(compact));
+    if (!ok) {
+        secure_zero(shared, PA_S2B1_P256_BYTES);
+    }
+    return ok;
+}
+#endif
+
 static int platform_sha256(const uint8_t *input, size_t input_size,
     uint8_t output[PA_S2_SHA256_BYTES])
 {
@@ -300,6 +569,118 @@ static int platform_open(uint32_t suite, const uint8_t *key,
     return status == 0;
 }
 #else
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+static int platform_p256_public_from_scalar(
+    ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    const uint8_t scalar[PA_S2B1_P256_BYTES],
+    uint8_t public_x[PA_S2B1_P256_BYTES])
+{
+    EC_GROUP *group = NULL;
+    EC_POINT *point = NULL;
+    BN_CTX *context = NULL;
+    BIGNUM *private_value = NULL;
+    BIGNUM *x = NULL;
+    int ok = 0;
+
+    (void)owner;
+    secure_zero(public_x, PA_S2B1_P256_BYTES);
+    group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
+    if (group != NULL) {
+        point = EC_POINT_new(group);
+    }
+    context = BN_CTX_new();
+    private_value = BN_bin2bn(
+        scalar, (int)PA_S2B1_P256_BYTES, NULL);
+    x = BN_new();
+    if (private_value != NULL) {
+        BN_set_flags(private_value, BN_FLG_CONSTTIME);
+    }
+    if (group != NULL && point != NULL && context != NULL
+        && private_value != NULL && x != NULL
+        && EC_POINT_mul(group, point, private_value, NULL, NULL, context) > 0
+        && EC_POINT_is_at_infinity(group, point) == 0
+        && EC_POINT_get_affine_coordinates(group, point, x, NULL, context) > 0
+        && BN_bn2binpad(x, public_x, (int)PA_S2B1_P256_BYTES)
+            == (int)PA_S2B1_P256_BYTES) {
+        ok = 1;
+    }
+    BN_clear_free(x);
+    BN_clear_free(private_value);
+    BN_CTX_free(context);
+    EC_POINT_clear_free(point);
+    EC_GROUP_free(group);
+    if (!ok) {
+        secure_zero(public_x, PA_S2B1_P256_BYTES);
+    }
+    return ok;
+}
+
+static int platform_p256_shared(
+    ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    const uint8_t scalar[PA_S2B1_P256_BYTES],
+    const uint8_t peer_x[PA_S2B1_P256_BYTES],
+    uint8_t shared[PA_S2B1_P256_BYTES])
+{
+    uint8_t compact[PA_S2B1_P256_COMPACT_BYTES];
+    EC_GROUP *group = NULL;
+    EC_POINT *peer = NULL;
+    EC_POINT *shared_point = NULL;
+    BN_CTX *context = NULL;
+    BIGNUM *private_value = NULL;
+    BIGNUM *x = NULL;
+    BIGNUM *prime = NULL;
+    int ok = 0;
+
+    (void)owner;
+    secure_zero(shared, PA_S2B1_P256_BYTES);
+    compact[0] = 0x02u;
+    (void)memcpy(compact + 1u, peer_x, PA_S2B1_P256_BYTES);
+    group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
+    if (group != NULL) {
+        peer = EC_POINT_new(group);
+        shared_point = EC_POINT_new(group);
+    }
+    context = BN_CTX_new();
+    private_value = BN_bin2bn(
+        scalar, (int)PA_S2B1_P256_BYTES, NULL);
+    x = BN_bin2bn(peer_x, (int)PA_S2B1_P256_BYTES, NULL);
+    prime = BN_new();
+    if (private_value != NULL) {
+        BN_set_flags(private_value, BN_FLG_CONSTTIME);
+    }
+    if (group != NULL && peer != NULL && shared_point != NULL
+        && context != NULL && private_value != NULL && x != NULL
+        && prime != NULL && EC_GROUP_get_curve(group, prime, NULL, NULL, context) > 0
+        && BN_cmp(x, prime) < 0
+        && EC_POINT_oct2point(
+               group, peer, compact, sizeof(compact), context) > 0
+        && EC_POINT_is_on_curve(group, peer, context) == 1
+        && EC_POINT_is_at_infinity(group, peer) == 0
+        && EC_POINT_mul(
+               group, shared_point, NULL, peer, private_value, context) > 0
+        && EC_POINT_is_at_infinity(group, shared_point) == 0
+        && EC_POINT_get_affine_coordinates(
+               group, shared_point, x, NULL, context) > 0
+        && BN_bn2binpad(x, shared, (int)PA_S2B1_P256_BYTES)
+            == (int)PA_S2B1_P256_BYTES) {
+        ok = 1;
+    }
+    BN_clear_free(prime);
+    BN_clear_free(x);
+    BN_clear_free(private_value);
+    BN_CTX_free(context);
+    EC_POINT_clear_free(shared_point);
+    EC_POINT_clear_free(peer);
+    EC_GROUP_free(group);
+    secure_zero(compact, sizeof(compact));
+    if (!ok) {
+        secure_zero(shared, PA_S2B1_P256_BYTES);
+    }
+    return ok;
+}
+#endif
+
 static int platform_sha256(const uint8_t *input, size_t input_size,
     uint8_t output[PA_S2_SHA256_BYTES])
 {
@@ -545,27 +926,102 @@ static int pa_import_key(void *context, enum edhoc_key_type key_type,
     uint32_t index;
     uint32_t generation;
     int status;
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+    int make_pair_handle = 0;
+#endif
 
     secure_zero(candidate_id, sizeof(candidate_id));
     status = enter_owner(owner);
     if (status != EDHOC_SUCCESS) {
         return status;
     }
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+    if (key_type == EDHOC_KT_KEY_AGREEMENT) {
+        ninlil_pa_s2_edhoc_key_slot_v1_t *match = NULL;
+        uint32_t match_index = 0u;
+
+        if (raw_key == NULL || raw_key_length != PA_S2B1_P256_BYTES
+            || key_id == NULL
+            || !external_span_ok(owner, raw_key, raw_key_length)
+            || !external_span_ok(
+                owner, key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES)
+            || ranges_overlap(raw_key, raw_key_length, key_id,
+                NINLIL_PA_S2_EDHOC_KEY_ID_BYTES)) {
+            status = EDHOC_ERROR_INVALID_ARGUMENT;
+            goto done;
+        }
+        for (index = 0u; index < NINLIL_PA_S2_EDHOC_KEY_SLOTS; ++index) {
+            ninlil_pa_s2_edhoc_key_slot_v1_t *candidate =
+                &owner->key_slots[index];
+            if (candidate->live == 1u
+                && candidate->key_type == PA_S2B1_BACKING_KEY_TYPE
+                && candidate->bytes_used == PA_S2B1_EPHEMERAL_BYTES
+                && constant_time_equal(candidate->bytes + PA_S2B1_TOKEN_OFFSET,
+                    raw_key, PA_S2B1_P256_BYTES)) {
+                if (match != NULL) {
+                    status = EDHOC_ERROR_BAD_STATE;
+                    goto done;
+                }
+                match = candidate;
+                match_index = index;
+            }
+        }
+        if (match == NULL || match->operation_live != 0u
+            || match->use_count >= 2u || match->generation == 0u
+            || match->generation > PA_S2_KEY_GENERATION_MAX - 2u) {
+            status = EDHOC_ERROR_BAD_STATE;
+            goto done;
+        }
+        generation = match->generation + match->use_count + 1u;
+        match->operation_generation = generation;
+        match->operation_live = 1u;
+        match->operation_used = 0u;
+        match->use_count += 1u;
+        encode_key_id(match_index, generation, candidate_id);
+        (void)memcpy(key_id, candidate_id, sizeof(candidate_id));
+        status = EDHOC_SUCCESS;
+        goto done;
+    }
+    if (key_type == EDHOC_KT_MAKE_KEY_PAIR) {
+        if (raw_key != NULL || raw_key_length != 0u || key_id == NULL
+            || owner->entropy.fill == NULL
+            || !external_span_ok(
+                owner, key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES)) {
+            status = EDHOC_ERROR_INVALID_ARGUMENT;
+            goto done;
+        }
+        make_pair_handle = 1;
+    } else
+#endif
     if (key_type != EDHOC_KT_EXTRACT && key_type != EDHOC_KT_EXPAND
         && key_type != EDHOC_KT_ENCRYPT && key_type != EDHOC_KT_DECRYPT) {
         status = EDHOC_ERROR_NOT_SUPPORTED;
         goto done;
     }
-    if (raw_key == NULL || key_id == NULL || raw_key_length == 0u
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+    if (!make_pair_handle &&
+#else
+    if (
+#endif
+        (raw_key == NULL || key_id == NULL || raw_key_length == 0u
         || raw_key_length > NINLIL_PA_S2_EDHOC_KEY_BYTES_MAX
         || !external_span_ok(owner, raw_key, raw_key_length)
         || !external_span_ok(
             owner, key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES)
         || ranges_overlap(raw_key, raw_key_length, key_id,
-            NINLIL_PA_S2_EDHOC_KEY_ID_BYTES)) {
+            NINLIL_PA_S2_EDHOC_KEY_ID_BYTES))) {
         status = EDHOC_ERROR_INVALID_ARGUMENT;
         goto done;
     }
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+    if (make_pair_handle) {
+        expected = 0u;
+    } else
+#endif
     if (key_type == EDHOC_KT_EXTRACT) {
         expected = raw_key_length;
     } else if (key_type == EDHOC_KT_EXPAND) {
@@ -595,7 +1051,13 @@ static int pa_import_key(void *context, enum edhoc_key_type key_type,
     owner->next_generation = generation == PA_S2_KEY_GENERATION_MAX
         ? 0u : generation + 1u;
     secure_zero(&owner->key_slots[index], sizeof(owner->key_slots[index]));
-    (void)memcpy(owner->key_slots[index].bytes, raw_key, raw_key_length);
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+    if (!make_pair_handle)
+#endif
+    {
+        (void)memcpy(owner->key_slots[index].bytes, raw_key, raw_key_length);
+    }
     owner->key_slots[index].bytes_used = (uint32_t)raw_key_length;
     owner->key_slots[index].generation = generation;
     owner->key_slots[index].key_type = (uint32_t)key_type;
@@ -624,8 +1086,30 @@ static int pa_destroy_key(void *context, void *key_id)
     if (!external_span_ok(
             owner, key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES)
         || !decode_key_id((const uint8_t *)key_id, &index, &generation)
-        || owner->key_slots[index].live != 1u
-        || owner->key_slots[index].generation != generation) {
+        || owner->key_slots[index].live != 1u) {
+        status = EDHOC_ERROR_BAD_STATE;
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+    } else if (owner->key_slots[index].key_type == PA_S2B1_BACKING_KEY_TYPE) {
+        ninlil_pa_s2_edhoc_key_slot_v1_t *slot = &owner->key_slots[index];
+        if (slot->operation_live != 1u
+            || slot->operation_generation != generation
+            || slot->use_count == 0u || slot->use_count > 2u) {
+            status = EDHOC_ERROR_BAD_STATE;
+        } else if (slot->operation_used != 1u) {
+            secure_zero(slot, sizeof(*slot));
+            status = EDHOC_ERROR_BAD_STATE;
+        } else if (slot->use_count == 2u) {
+            secure_zero(slot, sizeof(*slot));
+            status = EDHOC_SUCCESS;
+        } else {
+            slot->operation_generation = 0u;
+            slot->operation_live = 0u;
+            slot->operation_used = 0u;
+            status = EDHOC_SUCCESS;
+        }
+#endif
+    } else if (owner->key_slots[index].generation != generation) {
         status = EDHOC_ERROR_BAD_STATE;
     } else {
         secure_zero(&owner->key_slots[index], sizeof(owner->key_slots[index]));
@@ -658,17 +1142,33 @@ static int pa_make_key_pair(void *context, const void *key_id,
                 public_key, public_key_size)
             || ranges_overlap(private_key, private_key_size,
                 private_key_length, sizeof(*private_key_length))
+            || ranges_overlap(private_key, private_key_size,
+                public_key_length, sizeof(*public_key_length))
             || ranges_overlap(public_key, public_key_size,
                 public_key_length, sizeof(*public_key_length))
+            || ranges_overlap(public_key, public_key_size,
+                private_key_length, sizeof(*private_key_length))
             || ranges_overlap(private_key_length, sizeof(*private_key_length),
                 public_key_length, sizeof(*public_key_length))
             || ranges_overlap(key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES,
                 private_key_length, sizeof(*private_key_length))
             || ranges_overlap(key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES,
-                public_key_length, sizeof(*public_key_length))) {
+                public_key_length, sizeof(*public_key_length))
+            || ranges_overlap(key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES,
+                private_key, private_key_size)
+            || ranges_overlap(key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES,
+                public_key, public_key_size)) {
             leave_owner(owner);
             return EDHOC_ERROR_INVALID_ARGUMENT;
         }
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+        if (private_key_size < PA_S2B1_P256_BYTES
+            || public_key_size < PA_S2B1_P256_BYTES) {
+            leave_owner(owner);
+            return EDHOC_ERROR_BUFFER_TOO_SMALL;
+        }
+#endif
         *private_key_length = 0u;
         *public_key_length = 0u;
         if (private_key != NULL) {
@@ -677,8 +1177,86 @@ static int pa_make_key_pair(void *context, const void *key_id,
         if (public_key != NULL) {
             secure_zero(public_key, public_key_size);
         }
-        leave_owner(owner);
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+        {
+            uint8_t scalar[PA_S2B1_P256_BYTES];
+            uint8_t token[PA_S2B1_P256_BYTES];
+            uint8_t public_x[PA_S2B1_P256_BYTES];
+            uint32_t handle_index;
+            uint32_t handle_generation;
+            uint32_t backing_index;
+            uint32_t backing_generation;
+            ninlil_pa_s2_edhoc_key_slot_v1_t *handle;
+            ninlil_pa_s2_edhoc_key_slot_v1_t *backing = NULL;
+
+            secure_zero(scalar, sizeof(scalar));
+            secure_zero(token, sizeof(token));
+            secure_zero(public_x, sizeof(public_x));
+            if (!decode_key_id((const uint8_t *)key_id,
+                    &handle_index, &handle_generation)) {
+                status = EDHOC_ERROR_BAD_STATE;
+                goto make_done;
+            }
+            handle = &owner->key_slots[handle_index];
+            if (handle->live != 1u
+                || handle->generation != handle_generation
+                || handle->key_type != (uint32_t)EDHOC_KT_MAKE_KEY_PAIR
+                || handle->bytes_used != 0u || handle->use_count != 0u) {
+                status = EDHOC_ERROR_BAD_STATE;
+                goto make_done;
+            }
+            for (backing_index = 0u;
+                 backing_index < NINLIL_PA_S2_EDHOC_KEY_SLOTS;
+                 ++backing_index) {
+                if (owner->key_slots[backing_index].live == 0u) {
+                    backing = &owner->key_slots[backing_index];
+                    break;
+                }
+            }
+            if (backing == NULL) {
+                status = EDHOC_ERROR_NOT_ENOUGH_MEMORY;
+                goto make_done;
+            }
+            if (owner->next_generation == 0u
+                || owner->next_generation > PA_S2_KEY_GENERATION_MAX - 2u) {
+                status = EDHOC_ERROR_BAD_STATE;
+                goto make_done;
+            }
+            if (!draw_scalar(owner, scalar) || !draw_token(owner, scalar, token)
+                || !platform_p256_public_from_scalar(
+                    owner, scalar, public_x)) {
+                status = EDHOC_ERROR_CRYPTO_FAILURE;
+                goto make_done;
+            }
+            backing_generation = owner->next_generation;
+            owner->next_generation =
+                backing_generation == PA_S2_KEY_GENERATION_MAX - 2u
+                ? 0u : backing_generation + 3u;
+            secure_zero(backing, sizeof(*backing));
+            (void)memcpy(backing->bytes, scalar, PA_S2B1_P256_BYTES);
+            (void)memcpy(backing->bytes + PA_S2B1_TOKEN_OFFSET,
+                token, PA_S2B1_P256_BYTES);
+            backing->bytes_used = (uint32_t)PA_S2B1_EPHEMERAL_BYTES;
+            backing->generation = backing_generation;
+            backing->key_type = PA_S2B1_BACKING_KEY_TYPE;
+            backing->live = 1u;
+            handle->use_count = 1u;
+            (void)memcpy(private_key, token, PA_S2B1_P256_BYTES);
+            (void)memcpy(public_key, public_x, PA_S2B1_P256_BYTES);
+            *private_key_length = PA_S2B1_P256_BYTES;
+            *public_key_length = PA_S2B1_P256_BYTES;
+            status = EDHOC_SUCCESS;
+
+make_done:
+            secure_zero(scalar, sizeof(scalar));
+            secure_zero(token, sizeof(token));
+            secure_zero(public_x, sizeof(public_x));
+        }
+#else
         status = EDHOC_ERROR_NOT_SUPPORTED;
+#endif
+        leave_owner(owner);
     }
     return status;
 }
@@ -703,19 +1281,79 @@ static int pa_key_agreement(void *context, const void *key_id,
             || !external_span_ok(owner, shared_secret, shared_secret_size)
             || ranges_overlap(peer_public_key, peer_public_key_length,
                 shared_secret, shared_secret_size)
+            || ranges_overlap(peer_public_key, peer_public_key_length,
+                shared_secret_length, sizeof(*shared_secret_length))
             || ranges_overlap(shared_secret, shared_secret_size,
                 shared_secret_length, sizeof(*shared_secret_length))
+            || ranges_overlap(key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES,
+                peer_public_key, peer_public_key_length)
+            || ranges_overlap(key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES,
+                shared_secret, shared_secret_size)
             || ranges_overlap(key_id, NINLIL_PA_S2_EDHOC_KEY_ID_BYTES,
                 shared_secret_length, sizeof(*shared_secret_length))) {
             leave_owner(owner);
             return EDHOC_ERROR_INVALID_ARGUMENT;
         }
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+        if (peer_public_key_length != PA_S2B1_P256_BYTES
+            || shared_secret_size < PA_S2B1_P256_BYTES) {
+            leave_owner(owner);
+            return peer_public_key_length != PA_S2B1_P256_BYTES
+                ? EDHOC_ERROR_INVALID_ARGUMENT : EDHOC_ERROR_BUFFER_TOO_SMALL;
+        }
+#endif
         *shared_secret_length = 0u;
         if (shared_secret != NULL) {
             secure_zero(shared_secret, shared_secret_size);
         }
-        leave_owner(owner);
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+        {
+            uint8_t candidate[PA_S2B1_P256_BYTES];
+            uint32_t slot_index;
+            uint32_t operation_generation;
+            ninlil_pa_s2_edhoc_key_slot_v1_t *slot;
+
+            secure_zero(candidate, sizeof(candidate));
+            if (!decode_key_id((const uint8_t *)key_id,
+                    &slot_index, &operation_generation)) {
+                status = EDHOC_ERROR_BAD_STATE;
+            } else {
+                slot = &owner->key_slots[slot_index];
+                if (slot->live != 1u
+                    || slot->key_type != PA_S2B1_BACKING_KEY_TYPE
+                    || slot->bytes_used != PA_S2B1_EPHEMERAL_BYTES
+                    || slot->operation_live != 1u
+                    || slot->operation_generation != operation_generation
+                    || slot->operation_used != 0u
+                    || slot->use_count == 0u || slot->use_count > 2u) {
+                    if (slot->live == 1u
+                        && slot->key_type == PA_S2B1_BACKING_KEY_TYPE
+                        && slot->operation_live == 1u
+                        && slot->operation_generation == operation_generation
+                        && slot->operation_used != 0u) {
+                        secure_zero(slot, sizeof(*slot));
+                    }
+                    status = EDHOC_ERROR_BAD_STATE;
+                } else if (!platform_p256_shared(owner, slot->bytes,
+                               peer_public_key, candidate)) {
+                    secure_zero(slot, sizeof(*slot));
+                    status = EDHOC_ERROR_CRYPTO_FAILURE;
+                } else {
+                    (void)memcpy(
+                        shared_secret, candidate, PA_S2B1_P256_BYTES);
+                    *shared_secret_length = PA_S2B1_P256_BYTES;
+                    slot->operation_used = 1u;
+                    status = EDHOC_SUCCESS;
+                }
+            }
+            secure_zero(candidate, sizeof(candidate));
+        }
+#else
         status = EDHOC_ERROR_NOT_SUPPORTED;
+#endif
+        leave_owner(owner);
     }
     return status;
 }
@@ -1120,6 +1758,35 @@ int ninlil_pa_s2_edhoc_crypto_owner_v1_bindings(
     leave_owner(owner);
     return EDHOC_SUCCESS;
 }
+
+#if defined(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256) \
+    && NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+int ninlil_pa_s2_edhoc_crypto_owner_v1_bind_entropy(
+    ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner,
+    const ninlil_entropy_ops_t *entropy)
+{
+    int status = enter_owner(owner);
+
+    if (status != EDHOC_SUCCESS) {
+        return status;
+    }
+    if (entropy == NULL || entropy->abi_version != NINLIL_ABI_VERSION
+        || entropy->struct_size < sizeof(*entropy) || entropy->fill == NULL
+        || !external_span_ok(owner, entropy, sizeof(*entropy))
+        || (entropy->user != NULL
+            && ranges_overlap(owner, sizeof(*owner), entropy->user, 1u))) {
+        leave_owner(owner);
+        return EDHOC_ERROR_INVALID_ARGUMENT;
+    }
+    if (owner->entropy.fill != NULL) {
+        leave_owner(owner);
+        return EDHOC_ERROR_BAD_STATE;
+    }
+    owner->entropy = *entropy;
+    leave_owner(owner);
+    return EDHOC_SUCCESS;
+}
+#endif
 
 int ninlil_pa_s2_edhoc_crypto_owner_v1_end(
     ninlil_pa_s2_edhoc_crypto_owner_v1_t *owner)

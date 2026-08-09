@@ -178,6 +178,17 @@ credential resolver/local static-DH/EDHOC handshakeの証拠ではない。Host 
 ESP target KATは別statusであり、target KAT前にHost/ESP equalityまたはsuite 3 target
 correctnessを主張しない。既存R7 crypto ABIは変更・流用しない。
 
+PA-S2b1もPA-O03を完了しないprivate/default-OFF/uninstalled候補である。既存PA-S2a
+ownerの2 x 64-byte slotと`ninlil_entropy_ops_t`を再利用し、ephemeral P-256
+`MAKE_KEY_PAIR` / `KEY_AGREEMENT`だけを追加する。libedhocへはscalarでなく別entropy
+callで得たopaque 32-byte tokenを渡し、internal scalar/token backingと各agreement
+operation handleを分離する。method 3のexact 2-use後、crypto failure、またはowner endで
+backingをzeroizeし、stale/replay/3回目を拒否する。backingと2 operationのgenerationは
+make成功時にatomicに予約し、他key importはその予約を消費しない。RFC 9529 section 3はalgorithm KAT
+だけに使い、credential resolver、local static-DH、upstream identity authority、message
+owner、ESP target KAT、full PA-S2はOPENに残す。message途中failure時のautomatic cleanupは
+PA-S3 ownerなしには主張しない。
+
 ## Non-claims
 
 本ADRとmachine-readable vectorは、dependency adoption、実装、public ABI、EDHOC

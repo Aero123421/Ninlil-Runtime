@@ -189,6 +189,41 @@ private/default-OFF/uninstalledなsymmetric/hash候補だけを閉じる。1 own
   Composition/NIAF接続を含まない。既存R7 crypto ABIを拡張またはPA用に流用しない。
   よってPA-O03、PA-O04、PA-S2全体はPA-S2a後も`OPEN`である。
 
+### 3.2 PA-S2b1 private ephemeral P-256 candidate boundary
+
+PA-S2b1はPA-S2aを前提に、vendored libedhocのexact
+`MAKE_KEY_PAIR` / `KEY_AGREEMENT` callbackへephemeral P-256だけを接続する
+private/default-OFF/uninstalled候補である。credential resolver、local static-DH、
+Factory Identity、Site Membership、message ownerを含まず、PA-S2を完了しない。
+
+- `MAKE_KEY_PAIR` handle、ephemeral scalar/token backing、各`KEY_AGREEMENT`
+  operation handleは別generation/stateである。既存fixed 2 x 64-byte slotを再利用し、
+  scalar 32 bytesとopaque token 32 bytesを1 backingへ保持する。libedhocの
+  `private_key` bufferへ返すのはtokenだけで、scalar/backend pointerは返さない。
+- scalarとtokenはcopy済み`ninlil_entropy_ops_t`から別々の32-byte callで得る。
+  scalarはbounded exact 8 attemptsで`1 <= d < n`を要求し、tokenもbounded exact 8
+  attemptsでnon-zeroかつscalarと異なる値だけを受理する。entropyのnon-OK（途中まで
+  書かれたbufferを含む）、上限到達、reentryではcandidate outputを0 bytesへ閉じ、
+  backingをzeroizeする。`NINLIL_PORT_OK`はentropy port contractどおりexact fillとして扱い、
+  consumerがwritten lengthを推定しない。
+- method 3で同じephemeral scalarを使うagreementはexact 2回だけ許可する。各importは
+  fresh operation generationを返す。backingと2 operationの3 generationはmake成功時に
+  atomicに予約し、途中の別key importは予約値を消費しない。同時operation、順序外、
+  stale/wrong token、3回目をoutput 0で拒否する。1回目のoperation destroyはbackingを保持し、2回目のdestroy、
+  crypto failure、owner endはscalar/tokenを全zeroizeする。0-use/1-useのowner endも同じ。
+- compact P-256 public keyはexact 32-byte Xだけを受理する。`X < p`とcurve pointを検証し、
+  RFC 9528 Appendix Bどおり`0x02 || X`へ復元してshared affine Xをexact 32 bytes返す。
+  make callbackはprivate capacity 48/public capacity 32を受理して両lengthをexact 32とする。
+- RFC 9529 section 3の`X/G_X`、`Y/G_Y`、`G_XY`、`G_RX`、`G_IY`をalgorithm-only
+  independent KATとする。これは同traceがsuite 6からsuite 2へretryする事実を変えず、
+  profile negotiation-positive、full EDHOC、Host/ESP equalityの証拠には数えない。
+
+libedhocはmessage途中のfailureをcrypto callbackへ必ず通知しないため、2-use完了前の
+自動cleanupはPA-S2b1のclaimではない。後続PA-S3 ownerはterminal exchange exitと全
+error/timeout/cancelでowner endを保証し、正常な途中message returnでは継続backingを
+保持しなければならない。それまでreal handshake、availability、production resource
+ceilingを主張しない。
+
 ## 4. Carrier binding
 
 carrier classは`1 USB_STREAM`、`2 WIFI_STREAM`、`3 COMPACT_RADIO`のclosed set。
@@ -657,7 +692,7 @@ cross-provider KATでreal ciphertextへ置換し、同じreview unitでstatusを
 | --- | --- | --- |
 | PA-S0 | Proposed docs + canonical vectors + 3-language gates | software closure reviewed GO (P0=P1=P2=P3=0); ADR remains Proposed |
 | PA-S1 | dependency/source/license/allocator acceptance | PA-S1a private dependency/allocator candidate reviewed GO; PA-S1 overall OPEN |
-| PA-S2 | suite2/3 Host+ESP crypto、peer credential resolver、local static-DH key operator | PA-S2a private Host KAT + ESP compile/link/stack candidate; ESP target KAT/equality、P-256、credentials、PA-S2 overall OPEN |
+| PA-S2 | suite2/3 Host+ESP crypto、peer credential resolver、local static-DH key operator | PA-S2a reviewed Host KAT + ESP compile/link/stack candidate; PA-S2b1 ephemeral P-256/opaque-token Host KAT + ESP compile/link/stack candidate is review-pending; ESP target KAT/equality、credentials、static-DH、message owner、PA-S2 overall OPEN |
 | PA-S3 | NAS1/NAR1 owner + EDHOC state owner | OPEN |
 | PA-S4 | protected exchange + sole 15-key N6 batch owner | OPEN |
 | PA-S5 | restart/rotation/revocation/join-storm/fault matrices | OPEN |

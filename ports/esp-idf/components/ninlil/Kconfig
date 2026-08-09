@@ -141,6 +141,16 @@ menu "Ninlil private candidates"
             This is compile/link/stack evidence only. ESP target KAT,
             Host/ESP equality, P-256 ECDH, credentials, and PA-S2 remain open.
 
+    config NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
+        bool "Enable private PA-S2b1 ephemeral P-256 candidate"
+        depends on NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
+        default n
+        help
+            Compile the exact libedhoc ephemeral P-256 callbacks and opaque
+            token bridge. This is compile/link/stack evidence only. Credential
+            resolution, static DH, message cleanup owner, target KAT, and PA-S2
+            remain open.
+
     config NINLIL_ENABLE_R7_FRAG_PRIVATE
         bool "Enable private NRW1 LINK/FRAG candidate (not public ABI)"
         default n

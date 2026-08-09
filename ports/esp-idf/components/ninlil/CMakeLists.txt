@@ -358,6 +358,10 @@ if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO)
         "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s2_edhoc_crypto.c"
         PROPERTIES COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048")
 endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256=1)
+endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_FABRIC_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
         NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
