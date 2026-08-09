@@ -3,8 +3,8 @@
 - Date: 2026-08-09 JST
 - Scope: ADR-0037 private LAB only
 - Result: `PASS`
-- Firmware: `build-njm1-v37/ninlil_radio_hil.bin`
-- Firmware SHA-256: `5bcc568cd91cbeb87ab7b9c86bc3830bc43ae2da59dfe9770d1dbe6878027c6e`
+- Firmware: `build-njm1-topology-review2/ninlil_radio_hil.bin`
+- Firmware SHA-256: `4c315365b5fd5e49bc634a2ca717c14deee01b20df62e263863db53baceaf20e`
 - Build: ESP-IDF v5.5.3, NJM1 LAB + diagnostic session ledger + USB Serial/JTAG
 
 ## Physical inventory
@@ -101,6 +101,48 @@ values and are not expected to repeat in another run.
 
 The final run contained no session-ledger capacity failure.
 
+## Controller-only USB topology and reroute follow-up
+
+The follow-up run passed with the LAB Console opening only A's USB device.
+B and C remained powered and transmitted over RF, but their serial devices
+were disconnected from the host backend.
+
+1. C excluded direct A with the HIL-only score `200`, then automatically
+   joined through B. The initial RF tree was A <- B <- C.
+2. After B/C USB detach, the backend retained exactly one connection
+   (`/dev/cu.usbmodem1101`). A exported RF-only rows showing B at hop 1 and C
+   at hop 2 through B, including each selected-parent RSSI/SNR.
+3. A -> C Ping/Pong completed with a correlated ACK in 6,764 ms on attempt 2.
+4. The topology stayed visible beyond the former 30-second route lifetime.
+   Periodic reports refreshed the reverse routes; a second A -> C probe
+   completed in 2,698 ms on attempt 1.
+5. C's direct-A score was changed to `199` (eligible but unattractive), and B
+   was held in the ESP ROM bootloader. C detected parent loss, automatically
+   rejoined A at hop 1, and exported the changed edge to the one-USB UI. The
+   post-reroute probe completed in 1,327 ms on attempt 1.
+6. B was reset into the application, automatically rejoined A at hop 1, and
+   resumed fresh RF topology reports. The final Console snapshot still had
+   one USB connection and two RF-only remote rows.
+
+Private NJM1 `TOPOLOGY=6` carries the chosen parent, original hop depth, and
+selected-parent RSSI/SNR toward the Controller one second after Join/reparent
+and then every 20,000..20,700 ms. Existing relay forwarding refreshes the
+controller's reverse route. The Controller exports bounded rows as
+`MESH TOPOLOGY` after `MESH STATUS`; the backend discards them immediately
+when its Controller observer/site/epoch is lost.
+
+Host coverage additionally proves invalid topology rejection before route or
+dedupe mutation, old-route expiry followed by refresh, both DATA/ACK
+directions, stale failure, reparent replacement, RSSI saturation, and one
+Controller plus seven RF rows completing seven sequential ACK probes. The
+eight-board physical HIL remains **NOT_RUN**.
+
+For the 75-byte frame at this fixed SF7/125 kHz profile, the approximate
+airtime is 133 ms. Seven remote nodes each traversing three legs would be at
+most 21 legs per 20-second window, about 14% raw airtime before CAD/LBT and
+other LAB traffic. It is not a capacity, duty-cycle, range, or production-MAC
+claim.
+
 ## Reproduction gates completed on the final source
 
 - fresh ESP-IDF v5.5.3 NJM1 build: pass
@@ -115,15 +157,17 @@ The final run contained no session-ledger capacity failure.
 - three-board RF scenario: direct Join, two-hop Join, four-byte DATA/ACK,
   parent-loss reroute, old-site expiry and new-site Join all pass
 
-The HIL runner returned every board to the ESP ROM bootloader after the run,
-so the verified LAB firmware is present but no board remains transmitting.
+At handoff all three boards were running the verified LAB image. The Console
+opened only A; B and C were RF-only from the application's point of view.
 
 ## Mac LAB Console
 
 `tools/ninlil_lab_console.py` was started on loopback HTTP and its live state
-endpoint detected all three `/dev/cu.usbmodem*` ports. Its parser/command unit
-test passed, and `tools/package_ninlil_lab_console_macos.sh` produced a valid
-macOS application bundle whose `Info.plist` passed `plutil -lint`.
+showed three online nodes from one attached Controller USB. The topology,
+selected-parent edges, RF report age, parent-link RSSI/SNR, correlated Ping
+history and reroute were rendered in the macOS UI without console warnings.
+Backend/console tests passed, and `tools/package_ninlil_lab_console_macos.sh`
+produced a valid application bundle whose `Info.plist` passed `plutil -lint`.
 
 ## Non-claims and remaining work
 

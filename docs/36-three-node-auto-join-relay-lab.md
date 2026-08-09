@@ -158,26 +158,55 @@ All integers are big-endian. Total length is 64..128 bytes.
 | 60 | n | payload |
 | 60+n | 4 | CRC32C of all preceding bytes |
 
-Kinds are `BEACON=1`, `JOIN_REQUEST=2`, `JOIN_ACCEPT=3`, `DATA=4`, and
-`ACK=5`. Receivers reject invalid version, flags, reserved bytes, length, CRC,
-zero mandatory IDs, wrong site/epoch, wrong next hop, duplicate tuple, or
-exhausted hop count before mutating route state.
+Kinds are `BEACON=1`, `JOIN_REQUEST=2`, `JOIN_ACCEPT=3`, `DATA=4`, `ACK=5`,
+and private `TOPOLOGY=6`. Receivers reject invalid version, flags, reserved
+bytes, length, CRC, zero mandatory IDs, wrong site/epoch, wrong next hop,
+duplicate tuple, or exhausted hop count before mutating route state.
 
 Every accepted non-beacon frame learns `original source -> current
 transmitter` as a bounded reverse route. A relay changes only `current
 transmitter`, `next hop`, and remaining hops. It does not change source,
 destination, sequence, site, epoch, or payload.
 
+`TOPOLOGY` is an uplink-only private LAB payload of 11 bytes:
+`chosen_parent[8]`, original `hop_depth[1]`, signed parent-link RSSI dBm
+`[1]`, and signed parent-link SNR dB `[1]`. A joined node sends it one second
+after `JOIN_ACCEPT`/reparent completion and thereafter every
+20,000..20,700 ms from a stable-ID/sequence deterministic jitter. Relays use
+the ordinary bounded reverse route and do not alter this payload. At the
+controller, the report is retained in a fixed eight-row table only if its
+declared parent differs from its origin and
+`declared_hop_depth + arriving_remaining_hops == 4`; at every receiver the
+destination MUST be that receiver's current controller and
+`declared_hop_depth + arriving_remaining_hops == 4 + receiver_hops`. These
+checks occur before duplicate or reverse-route mutation. At the first
+receiver (`remaining_hops == 3`), the declared parent MUST also equal that
+receiver. This preserves the source's direct parent and original depth through
+a relay.
+
+The reverse-route and topology stale TTLs are both 60 seconds. Since twice the
+maximum heartbeat interval is 41.4 seconds, one lost heartbeat is boundedly
+tolerated; after TTL, DATA routing fails closed and the USB export marks the
+row stale. A 75-byte `TOPOLOGY` frame is about 133 ms at the fixed SF7/125 kHz
+profile. Seven remote nodes at the three-hop ceiling are at most 21 RF legs
+per 20-second heartbeat window, about 14% raw airtime before CAD/LBT, Join,
+DATA, retries, or loss. It is deliberately a small private LAB observation
+mechanism, not a capacity, duty-cycle, or production-MAC claim.
+
 ## 6. Acceptance
 
 Host simulation must show:
 
 1. controller + relay + endpoint automatic Join;
-2. endpoint uplink and controller downlink through the relay;
-3. duplicate suppression and hop-limit rejection;
-4. relay loss followed by automatic direct-parent selection;
-5. old-site lease expiry followed by Join to a different site.
-6. a hop-1 relay rejecting a hop-2 endpoint as a parent while the endpoint
+2. controller-only USB observation retaining B(parent=A,hops=1) and
+   C(parent=B,hops=2) from relayed topology reports;
+3. endpoint uplink and controller downlink, including the matching ACK,
+   through the relay after a prior route reaches its TTL;
+4. bounded stale route failure and a reparent report replacing C's parent;
+5. duplicate suppression and hop-limit rejection;
+6. relay loss followed by automatic direct-parent selection;
+7. old-site lease expiry followed by Join to a different site.
+8. a hop-1 relay rejecting a hop-2 endpoint as a parent while the endpoint
    remains allowed to select that relay.
 
 Hardware evidence must record three distinct board IDs, transmitted and
@@ -187,29 +216,37 @@ as such and is not range or obstruction evidence.
 
 ## 7. macOS Mesh LAB Console
 
-The private dependency-free Python console scans `/dev/cu.usbmodem*` and can
-attach all eight LAB boards at 115200 baud. USB is an observation and command
-plane: once per second it requests `MESH STATUS` from each attached board and
-uses each board's local parent snapshot to draw the live tree. This does not
-add topology chatter to the RF channel. The HTTP server binds only to
-`127.0.0.1` and state-changing requests require a process-local token.
+The private dependency-free Python console can attach only the Controller at
+115200 baud. Once per second it requests `MESH STATUS`; a Controller appends
+one `MESH TOPOLOGY` line for every fixed-table remote row. The UI accepts a
+remote row only when its site/epoch matches that USB Controller, records it as
+`source=rf` with `observer_port=<controller port>`, and never binds that row
+as a USB-controllable node. A controller reboot/site change discards all of
+its RF rows. This adds the bounded RF heartbeat described above; it does not
+change application DATA wire format.
 
 The UI includes:
 
 1. live parent edges, hop depth, Join state, lease and route-change counters;
-2. node health, last USB observation, and the most recently reported RX
-   RSSI/SNR;
+2. node health, remote RF-report age/stale state, and each joined node's
+   reported selected-parent RSSI/SNR;
 3. one-at-a-time controller-to-node Ping/Pong probes, where Pong is the
    existing correlated DATA ACK and RTT includes queueing, RF transmission,
    relay forwarding, ACK forwarding, and retries;
-4. a bounded eight-node sweep that requires one visible Controller and seven
-   joined nodes before it starts;
+4. a bounded eight-node sweep that requires one freshly USB-observed
+Controller and seven non-stale joined rows; probes always originate at the
+Controller and target an RF remote;
 5. an explicit Demo mode (`--demo`) that sends no serial or RF commands.
 
-The route displayed for a probe is inferred from contemporaneous parent
-snapshots; it is not an on-wire packet trace. Per-hop RTT, RF-only last-seen,
-channel occupancy, automatic SF/channel/power tuning, and eight-board HIL
-evidence are not claimed by this console.
+RF-only topology rows contain parent/link evidence, not remote TX/RX, relay,
+duplicate, or route-change counters; those fields are deliberately unknown in
+the UI. A node with reported children is labelled `Relay (inferred)`, which is
+an edge-derived label rather than a measured relay counter. Remote
+role/leave/penalty/refresh controls are disabled because they have no USB
+command path; Ping remains Controller-to-remote DATA/ACK. The route displayed
+for a probe is inferred from contemporaneous reports, not an on-wire packet
+trace. Per-hop RTT, channel occupancy, automatic
+SF/channel/power tuning, and eight-board HIL evidence are not claimed.
 
 Run from source:
 

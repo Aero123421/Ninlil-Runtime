@@ -123,7 +123,7 @@ class LabApplication:
             return value
         state = self.backend.snapshot()
         controllers = [node_id for node_id, node in state["nodes"].items()
-                       if node.get("role") == "controller"]
+                       if node.get("role") == "controller" and node.get("local")]
         if len(controllers) != 1:
             raise ValueError("select a source or expose exactly one controller")
         return controllers[0]

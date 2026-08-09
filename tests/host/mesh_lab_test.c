@@ -14,6 +14,25 @@ static const uint8_t SITE[8] = {9, 8, 7, 6, 5, 4, 3, 2};
 static const uint8_t B_SAME_SEQ[8] = {2, 2, 2, 2, 7, 7, 7, 7};
 static const uint8_t C_SAME_SEQ[8] = {3, 3, 3, 3, 7, 7, 7, 7};
 
+static void refresh_crc(ninlil_mesh_lab_tx_t *tx)
+{
+    uint32_t crc = UINT32_MAX;
+    size_t i;
+    uint8_t bit;
+
+    for (i = 0u; i + 4u < tx->length; ++i) {
+        crc ^= tx->bytes[i];
+        for (bit = 0u; bit < 8u; ++bit) {
+            crc = (crc >> 1) ^ ((crc & 1u) ? 0x82f63b78u : 0u);
+        }
+    }
+    crc = ~crc;
+    tx->bytes[tx->length - 4u] = (uint8_t)(crc >> 24);
+    tx->bytes[tx->length - 3u] = (uint8_t)(crc >> 16);
+    tx->bytes[tx->length - 2u] = (uint8_t)(crc >> 8);
+    tx->bytes[tx->length - 1u] = (uint8_t)crc;
+}
+
 static void deliver(ninlil_mesh_lab_t *to, const ninlil_mesh_lab_tx_t *tx,
     uint64_t now, ninlil_mesh_lab_tx_t *reply, ninlil_mesh_lab_event_t *event)
 {
@@ -224,6 +243,25 @@ static void test_membership_expiry_clears_pending_state(void)
     assert(!node.joined && !node.joining);
 }
 
+static void test_parent_rssi_saturates_before_topology_payload(void)
+{
+    ninlil_mesh_lab_t a, b;
+    ninlil_mesh_lab_tx_t beacon, unused;
+    ninlil_mesh_lab_event_t event;
+
+    ninlil_mesh_lab_init(&a, A);
+    ninlil_mesh_lab_init(&b, B);
+    assert(ninlil_mesh_lab_become_controller(&a, SITE, 1u, 0u));
+    assert(ninlil_mesh_lab_tick(&a, 0u, &beacon));
+    assert(ninlil_mesh_lab_receive(&b, beacon.bytes, beacon.length,
+        -140, 3, 0u, &unused, &event));
+    assert(ninlil_mesh_lab_tick(&a, 3000u, &beacon));
+    assert(ninlil_mesh_lab_receive(&b, beacon.bytes, beacon.length,
+        -140, 3, 3000u, &unused, &event));
+    assert(ninlil_mesh_lab_tick(&b, 10000u, &unused));
+    assert(b.parent_rssi_dbm == INT8_MIN && b.parent_snr_db == 3);
+}
+
 static void test_hil_beacon_dephase_and_relay_stability(void)
 {
     ninlil_mesh_lab_t a, b, c;
@@ -282,6 +320,11 @@ static void test_hil_beacon_dephase_and_relay_stability(void)
             a_active = 1u;
         }
         if (ninlil_mesh_lab_tick(&b, now, &beacon)) {
+            if (beacon.bytes[5] == 6u) {
+                /* Route/topology heartbeats coexist with relay beacons. */
+                deliver(&a, &beacon, now, &request, &event);
+                continue;
+            }
             assert(beacon.bytes[5] == 1u); /* Relay must not rejoin. */
             b_pending = beacon;
             b_until = now + 250u;
@@ -299,6 +342,144 @@ static void test_hil_beacon_dephase_and_relay_stability(void)
     ninlil_mesh_lab_snapshot(&b, &snap);
     assert(snap.joined && !snap.joining && snap.hops == 1u
         && memcmp(snap.parent_id, HIL_A, 8u) == 0);
+}
+
+/* Controller is the only USB observer. B/C independently announce their
+ * current parent link; the existing reverse-route learning refreshes both
+ * the downlink DATA and returning ACK path before the bounded TTL. */
+static void test_controller_topology_and_route_refresh(void)
+{
+    ninlil_mesh_lab_t a, b, c;
+    ninlil_mesh_lab_tx_t tx, relay, reply, bad, downlink;
+    ninlil_mesh_lab_event_t event;
+    ninlil_mesh_lab_topology_t rows[NINLIL_MESH_LAB_TOPOLOGY_MAX];
+    uint8_t payload[1] = {0x42u};
+    size_t count;
+    size_t i;
+    uint8_t found_b = 0u;
+    uint8_t found_c = 0u;
+
+    ninlil_mesh_lab_init(&a, A);
+    ninlil_mesh_lab_init(&b, B);
+    ninlil_mesh_lab_init(&c, C);
+    assert(ninlil_mesh_lab_become_controller(&a, SITE, 1u, 0u));
+    b.joined = c.joined = 1u;
+    memcpy(b.site_id, SITE, 8u);
+    memcpy(c.site_id, SITE, 8u);
+    memcpy(b.controller_id, A, 8u);
+    memcpy(c.controller_id, A, 8u);
+    memcpy(b.parent_id, A, 8u);
+    memcpy(c.parent_id, B, 8u);
+    b.site_epoch = c.site_epoch = 1u;
+    b.hops = 1u;
+    c.hops = 2u;
+    b.lease_until_ms = c.lease_until_ms = UINT64_MAX;
+    b.parent_rssi_dbm = -51;
+    b.parent_snr_db = 8;
+    c.parent_rssi_dbm = -67;
+    c.parent_snr_db = 3;
+
+    assert(2u * NINLIL_MESH_LAB_TOPOLOGY_HEARTBEAT_MAX_MS
+        < NINLIL_MESH_LAB_ROUTE_TTL_MS);
+
+    assert(ninlil_mesh_lab_tick(&b, 0u, &tx) && tx.bytes[5] == 6u);
+    deliver(&a, &tx, 0u, &reply, &event);
+    assert(ninlil_mesh_lab_tick(&c, 1u, &tx) && tx.bytes[5] == 6u);
+    /* A topology frame is controller-bound at every hop.  Invalid frames
+     * must not consume the valid sequence or teach B a reverse route. */
+    bad = tx;
+    memcpy(bad.bytes + 48u, B, 8u);
+    refresh_crc(&bad);
+    assert(!ninlil_mesh_lab_receive(&b, bad.bytes, bad.length,
+        -55, 8, 1u, &reply, &event));
+    assert(!b.seen[0].active && !b.routes[0].active);
+    bad = tx;
+    memcpy(bad.bytes + 60u, A, 8u);
+    refresh_crc(&bad);
+    assert(!ninlil_mesh_lab_receive(&b, bad.bytes, bad.length,
+        -55, 8, 1u, &reply, &event));
+    assert(!b.seen[0].active && !b.routes[0].active && !b.topology[0].active);
+    bad = tx;
+    bad.bytes[68u] = 1u;
+    refresh_crc(&bad);
+    assert(!ninlil_mesh_lab_receive(&b, bad.bytes, bad.length,
+        -55, 8, 1u, &reply, &event));
+    assert(!b.seen[0].active && !b.routes[0].active);
+    deliver(&b, &tx, 1u, &relay, &event);
+    assert(relay.bytes[5] == 6u);
+    bad = relay;
+    memcpy(bad.bytes + 60u, C, 8u); /* A topology origin cannot parent itself. */
+    refresh_crc(&bad);
+    assert(!ninlil_mesh_lab_receive(&a, bad.bytes, bad.length,
+        -55, 8, 2u, &reply, &event));
+    bad = relay;
+    bad.bytes[68u] = 1u; /* hop depth + forwarded TTL must equal four. */
+    refresh_crc(&bad);
+    assert(!ninlil_mesh_lab_receive(&a, bad.bytes, bad.length,
+        -55, 8, 2u, &reply, &event));
+    deliver(&a, &relay, 2u, &reply, &event);
+    count = ninlil_mesh_lab_topology_snapshot(&a, 2u, rows,
+        NINLIL_MESH_LAB_TOPOLOGY_MAX);
+    for (i = 0u; i < count; ++i) {
+        if (memcmp(rows[i].node_id, B, 8u) == 0) {
+            found_b = rows[i].hops == 1u && memcmp(rows[i].parent_id, A, 8u) == 0;
+        }
+        if (memcmp(rows[i].node_id, C, 8u) == 0) {
+            found_c = rows[i].hops == 2u && memcmp(rows[i].parent_id, B, 8u) == 0
+                && rows[i].link_rssi_dbm == -67 && rows[i].link_snr_db == 3;
+        }
+    }
+    assert(found_b && found_c);
+
+    /* Both directions work after the previous 30-second reverse route would
+     * have expired: C's heartbeat renews A->C and B->C route rows. */
+    assert(!ninlil_mesh_lab_send_data(&a, C, payload, sizeof(payload), 60003u, &tx));
+    c.parent_last_seen_ms = 60003u; /* Parent beacons kept membership alive. */
+    c.next_topology_ms = 60003u;
+    assert(ninlil_mesh_lab_tick(&c, 60003u, &tx) && tx.bytes[5] == 6u);
+    assert(c.next_topology_ms - 60003u
+        <= NINLIL_MESH_LAB_TOPOLOGY_HEARTBEAT_MAX_MS);
+    deliver(&b, &tx, 60003u, &relay, &event);
+    deliver(&a, &relay, 60004u, &reply, &event);
+    assert(ninlil_mesh_lab_send_data(&a, C, payload, sizeof(payload), 60005u, &tx));
+    downlink = tx;
+    deliver(&b, &tx, 60006u, &relay, &event);
+    deliver(&c, &relay, 60007u, &reply, &event);
+    assert(event.kind == NINLIL_MESH_LAB_EVENT_DATA);
+    deliver(&b, &reply, 60008u, &relay, &event);
+    deliver(&a, &relay, 60009u, &tx, &event);
+    assert(event.kind == NINLIL_MESH_LAB_EVENT_ACK
+        && ninlil_mesh_lab_ack_matches_tx(&downlink, &event));
+    assert(ninlil_mesh_lab_send_data(&c, A, payload, sizeof(payload), 60008u, &tx));
+    deliver(&b, &tx, 60010u, &relay, &event);
+    deliver(&a, &relay, 60011u, &reply, &event);
+    assert(event.kind == NINLIL_MESH_LAB_EVENT_DATA);
+    deliver(&b, &reply, 60012u, &relay, &event);
+    deliver(&c, &relay, 60013u, &tx, &event);
+    assert(event.kind == NINLIL_MESH_LAB_EVENT_ACK);
+
+    /* Stale routes fail closed; a reparent announce replaces C's row. */
+    assert(!ninlil_mesh_lab_send_data(&a, C, payload, sizeof(payload), 120012u, &tx));
+    c.joining = 1u; /* Join request/reparent is not externally committed yet. */
+    c.parent_last_seen_ms = 120010u;
+    c.next_topology_ms = 120010u;
+    assert(!ninlil_mesh_lab_tick(&c, 120010u, &tx));
+    c.joining = 0u;
+    memcpy(c.parent_id, A, 8u);
+    c.hops = 1u;
+    c.parent_rssi_dbm = -48;
+    c.parent_snr_db = 9;
+    c.parent_last_seen_ms = 120012u;
+    c.next_topology_ms = 120012u;
+    assert(ninlil_mesh_lab_tick(&c, 120012u, &tx) && tx.bytes[5] == 6u);
+    deliver(&a, &tx, 120013u, &reply, &event);
+    count = ninlil_mesh_lab_topology_snapshot(&a, 120013u, rows,
+        NINLIL_MESH_LAB_TOPOLOGY_MAX);
+    for (i = 0u; i < count; ++i) {
+        if (memcmp(rows[i].node_id, C, 8u) == 0) {
+            assert(rows[i].hops == 1u && memcmp(rows[i].parent_id, A, 8u) == 0);
+        }
+    }
 }
 
 /* PENALTY 200 is an explicit HIL candidate exclusion. It never falls back to
@@ -452,8 +633,10 @@ int main(void)
     test_half_duplex_turnaround_guard();
     test_response_receive_dwell();
     test_membership_expiry_clears_pending_state();
+    test_parent_rssi_saturates_before_topology_payload();
     test_hil_beacon_dephase_and_relay_stability();
     test_initial_parent_discovery_window();
+    test_controller_topology_and_route_refresh();
     puts("mesh_lab_test OK");
     return 0;
 }

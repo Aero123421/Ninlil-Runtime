@@ -13,6 +13,10 @@
 #define NINLIL_MESH_LAB_DATA_ACK_WAIT_MS 3000u
 #define NINLIL_MESH_LAB_DATA_ACK_RETRY_JITTER_MS 701u
 #define NINLIL_MESH_LAB_RELAY_BEACON_DELAY_MS 500u
+#define NINLIL_MESH_LAB_TOPOLOGY_MAX 8u
+#define NINLIL_MESH_LAB_TOPOLOGY_STALE_MS 60000u
+#define NINLIL_MESH_LAB_ROUTE_TTL_MS 60000u
+#define NINLIL_MESH_LAB_TOPOLOGY_HEARTBEAT_MAX_MS 20700u
 
 typedef enum ninlil_mesh_lab_event_kind {
     NINLIL_MESH_LAB_EVENT_NONE = 0,
@@ -44,6 +48,8 @@ typedef struct ninlil_mesh_lab_candidate {
     uint16_t score;
     uint8_t advertised_hops;
     uint8_t observations;
+    int8_t rssi_dbm;
+    int8_t snr_db;
     uint64_t last_seen_ms;
 } ninlil_mesh_lab_candidate_t;
 
@@ -60,6 +66,16 @@ typedef struct ninlil_mesh_lab_seen {
     uint8_t origin[8];
     uint32_t sequence;
 } ninlil_mesh_lab_seen_t;
+
+typedef struct ninlil_mesh_lab_topology {
+    uint8_t active;
+    uint8_t node_id[8];
+    uint8_t parent_id[8];
+    uint8_t hops;
+    int8_t link_rssi_dbm;
+    int8_t link_snr_db;
+    uint64_t last_seen_ms;
+} ninlil_mesh_lab_topology_t;
 
 typedef struct ninlil_mesh_lab {
     uint8_t node_id[8];
@@ -81,6 +97,9 @@ typedef struct ninlil_mesh_lab {
     uint64_t lease_until_ms;
     uint64_t next_beacon_ms;
     uint64_t next_join_ms;
+    uint64_t next_topology_ms;
+    int8_t parent_rssi_dbm;
+    int8_t parent_snr_db;
     uint32_t tx_count;
     uint32_t rx_count;
     uint32_t relay_count;
@@ -89,6 +108,7 @@ typedef struct ninlil_mesh_lab {
     ninlil_mesh_lab_candidate_t candidates[6];
     ninlil_mesh_lab_route_t routes[8];
     ninlil_mesh_lab_seen_t seen[12];
+    ninlil_mesh_lab_topology_t topology[NINLIL_MESH_LAB_TOPOLOGY_MAX];
 } ninlil_mesh_lab_t;
 
 typedef struct ninlil_mesh_lab_snapshot {
@@ -147,6 +167,8 @@ uint64_t ninlil_mesh_lab_response_dwell_until(
 int ninlil_mesh_lab_periodic_tx_due(uint64_t now_ms, uint64_t dwell_until_ms);
 uint32_t ninlil_mesh_lab_beacon_interval_ms(
     const uint8_t node_id[NINLIL_MESH_LAB_NODE_ID_BYTES], uint32_t sequence);
+size_t ninlil_mesh_lab_topology_snapshot(const ninlil_mesh_lab_t *mesh,
+    uint64_t now_ms, ninlil_mesh_lab_topology_t *out, size_t out_count);
 void ninlil_mesh_lab_snapshot(const ninlil_mesh_lab_t *mesh,
     ninlil_mesh_lab_snapshot_t *out);
 

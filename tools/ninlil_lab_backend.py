@@ -60,6 +60,8 @@ class _Connection:
         self.io_lock = threading.RLock()
         self.input = bytearray()
         self.node_id: str | None = None
+        self.site = ""
+        self.epoch: int | None = None
         self.next_status_at = next_status_at
         self.error = ""
         self.last_seen = 0
@@ -105,7 +107,7 @@ class LabBackend:
             "active": False,
             "phase": "Ready",
             "progress": 0,
-            "detail": "Attach eight boards and wait for topology discovery.",
+            "detail": "Attach one Controller USB and wait for RF topology discovery.",
         }
         self._test_targets: list[str] = []
         self._test_source = ""
@@ -178,6 +180,11 @@ class LabBackend:
             with self._lock:
                 if self._connections.get(path) is not connection:
                     return
+                observer = self._nodes.get(connection.node_id or "")
+                if connection.site or (observer and observer.get("role") == "controller"):
+                    self._drop_remote_for_observer(path)
+                    if connection.node_id:
+                        self._nodes.pop(connection.node_id, None)
                 self._connections.pop(path)
             try:
                 os.close(connection.fd)
@@ -286,13 +293,17 @@ class LabBackend:
                 raise ValueError("a LAB test is already running")
             attached = set(self._connections)
             fresh_after = int((self._wall_clock() - 5.0) * 1000)
+            controllers = [node_id for node_id, node in self._nodes.items()
+                           if node.get("role") == "controller"
+                           and node.get("local")
+                           and node.get("port") in attached
+                           and int(node.get("last_seen", 0)) >= fresh_after]
             nodes = {
                 node_id: node for node_id, node in self._nodes.items()
-                if node.get("port") in attached
-                and int(node.get("last_seen", 0)) >= fresh_after
+                if ((node.get("local") and node.get("port") in attached
+                     and int(node.get("last_seen", 0)) >= fresh_after)
+                    or (node.get("source") == "rf" and not node.get("stale")))
             }
-            controllers = [node_id for node_id, node in nodes.items()
-                           if node.get("role") == "controller"]
             if len(nodes) < expected_nodes:
                 raise ValueError(
                     f"discover {expected_nodes} nodes before starting the test "
@@ -301,7 +312,8 @@ class LabBackend:
             if len(controllers) != 1:
                 raise ValueError("the test requires exactly one visible controller")
             targets = [node_id for node_id, node in nodes.items()
-                       if node_id != controllers[0] and node.get("joined")]
+                       if node_id != controllers[0] and node.get("joined")
+                       and not node.get("stale")]
             if len(targets) < expected_nodes - 1:
                 raise ValueError("all non-controller nodes must be joined")
             targets.sort(key=lambda node_id: (
@@ -335,24 +347,40 @@ class LabBackend:
                 return
             connection.last_seen = now_ms
             node_id = fields.get("node")
-            if node_id and HEX64.fullmatch(node_id):
+            if label == "TOPOLOGY":
+                self._ingest_topology(connection, path, fields, now_ms)
+            elif node_id and HEX64.fullmatch(node_id):
                 node_id = node_id.lower()
                 connection.node_id = node_id
                 known_node = node_id in self._nodes
                 node = self._nodes.setdefault(node_id, self._new_node(node_id, path))
                 previous_joined = bool(node.get("joined"))
                 previous_parent = str(node.get("parent", ""))
-                previous_route_changes = int(node.get("route_changes", 0))
                 node["port"] = path
+                node["observer_port"] = path
+                node["source"] = "usb"
+                node["local"] = True
+                node["stale"] = False
                 node["last_seen"] = now_ms
                 self._apply_status(node, fields)
+                site = fields.get("site", "").lower()
+                epoch = self._as_int(fields.get("epoch"))
+                if fields.get("role") == "controller" and site and epoch is not None:
+                    if (connection.site and (connection.site != site
+                            or connection.epoch != epoch)):
+                        self._drop_remote_for_observer(path)
+                    connection.site = site
+                    connection.epoch = epoch
+                elif connection.site or connection.epoch is not None:
+                    self._drop_remote_for_observer(path)
+                    connection.site = ""
+                    connection.epoch = None
                 if not previous_joined and node["joined"]:
                     self._event(
                         "join", node=node_id, parent=node["parent"],
                         hops=node["hops"],
                     )
-                if known_node and ((previous_parent and node["parent"] != previous_parent)
-                        or node["route_changes"] > previous_route_changes):
+                if known_node and previous_parent and node["parent"] != previous_parent:
                     self._event(
                         "route_change", node=node_id,
                         previous_parent=previous_parent,
@@ -395,7 +423,8 @@ class LabBackend:
         return {"node_id": node_id, "port": path, "role": "unknown", "joined": False,
                 "joining": False, "parent": "", "hops": 0, "lease_ms": 0,
                 "tx": 0, "rx": 0, "relay": 0, "duplicate": 0,
-                "route_changes": 0, "last_seen": 0}
+                "route_changes": 0, "last_seen": 0, "observer_port": path,
+                "source": "usb", "local": True, "stale": False}
 
     @staticmethod
     def _as_int(value: str | None) -> int | None:
@@ -407,7 +436,7 @@ class LabBackend:
     def _apply_status(self, node: dict[str, Any], fields: dict[str, str]) -> None:
         text_fields = ("role", "parent", "site", "controller")
         int_fields = ("hops", "lease_ms", "tx", "rx", "relay", "duplicate",
-                      "route_changes", "epoch")
+                      "route_changes", "epoch", "link_rssi", "link_snr", "age_ms")
         for key in text_fields:
             if key in fields:
                 node[key] = fields[key].lower() if key == "parent" else fields[key]
@@ -418,6 +447,51 @@ class LabBackend:
         for key in ("joined", "joining"):
             if key in fields:
                 node[key] = fields[key] == "1"
+        if "stale" in fields:
+            node["stale"] = fields["stale"] == "1"
+
+    def _ingest_topology(self, connection: _Connection, path: str,
+                         fields: dict[str, str], now_ms: int) -> None:
+        """Accept only an RF report from this attached controller/site."""
+        node_id = fields.get("node", "").lower()
+        epoch = self._as_int(fields.get("epoch"))
+        if (not HEX64.fullmatch(node_id) or not connection.node_id
+                or connection.site != fields.get("site", "").lower()
+                or connection.epoch is None or connection.epoch != epoch):
+            self._event("topology_ignored", path=path, reason="site_boundary")
+            return
+        node = self._nodes.setdefault(node_id, self._new_node(node_id, ""))
+        # A direct USB status remains authoritative; RF never steals its port.
+        if node.get("local") and node.get("port") in self._connections:
+            return
+        previous_parent = str(node.get("parent", ""))
+        node["port"] = ""
+        node["observer_port"] = path
+        node["source"] = "rf"
+        node["local"] = False
+        node["role"] = "node"
+        # Topology frames observe only parent/link data.  Do not turn absent
+        # per-node counters into plausible-looking zero measurements.
+        for key in ("tx", "rx", "relay", "duplicate", "route_changes"):
+            node[key] = None
+        self._apply_status(node, fields)
+        node["rssi"] = node.get("link_rssi")
+        node["snr"] = node.get("link_snr")
+        age_ms = self._as_int(fields.get("age_ms"))
+        node["last_seen"] = now_ms if age_ms is None or age_ms < 0 else max(0, now_ms - age_ms)
+        if previous_parent and previous_parent != node["parent"]:
+            self._event("route_change", node=node_id, previous_parent=previous_parent,
+                        parent=node["parent"], hops=node["hops"])
+
+    def _drop_remote_for_observer(self, path: str) -> None:
+        removed = [node_id for node_id, node in self._nodes.items()
+                   if node.get("source") == "rf" and node.get("observer_port") == path]
+        for node_id in removed:
+            self._nodes.pop(node_id)
+        if self._test_run["active"]:
+            self._test_run.update({"active": False, "phase": "ATTENTION",
+                                   "detail": "Controller observation changed; RF topology was discarded."})
+        self._event("topology_reset", path=path)
 
     def service(self) -> None:
         """Drain all attached ports, issue periodic STATUS, and expire probes."""
@@ -591,8 +665,10 @@ class LabBackend:
             if target in self._connections:
                 return target
             node = self._nodes.get(target.lower())
-            if node and node["port"] in self._connections:
+            if node and node.get("local") and node["port"] in self._connections:
                 return str(node["port"])
+            if node and node.get("source") == "rf":
+                raise ValueError("RF-only remote has no USB control path")
         raise ValueError("target is not attached")
 
     def _probe(self, probe_id: int) -> dict[str, Any] | None:

@@ -1783,6 +1783,41 @@ static void mesh_emit_status(void)
     (void)fflush(stdout);
 }
 
+static void mesh_emit_topology(void)
+{
+    ninlil_mesh_lab_topology_t rows[NINLIL_MESH_LAB_TOPOLOGY_MAX];
+    size_t count;
+    size_t i;
+    uint64_t now;
+
+    if (g_mesh_ready == 0u || g_mesh_lab.controller == 0u) {
+        return;
+    }
+    now = mesh_now_ms();
+    count = ninlil_mesh_lab_topology_snapshot(&g_mesh_lab, now, rows,
+        NINLIL_MESH_LAB_TOPOLOGY_MAX);
+    for (i = 0u; i < count; ++i) {
+        char node[17];
+        char parent[17];
+        char site[17];
+        uint64_t age_ms = now >= rows[i].last_seen_ms
+            ? now - rows[i].last_seen_ms : UINT64_MAX;
+        uint8_t stale = age_ms > NINLIL_MESH_LAB_TOPOLOGY_STALE_MS;
+        mesh_hex_id(rows[i].node_id, node);
+        mesh_hex_id(rows[i].parent_id, parent);
+        mesh_hex_id(g_mesh_lab.site_id, site);
+        (void)printf(
+            "MESH TOPOLOGY node=%s role=node joined=%u stale=%u parent=%s "
+            "hops=%u link_rssi=%d link_snr=%d age_ms=%llu site=%s epoch=%u "
+            "lab_only=true\n",
+            node, (unsigned)(stale == 0u), (unsigned)stale, parent,
+            (unsigned)rows[i].hops, (int)rows[i].link_rssi_dbm,
+            (int)rows[i].link_snr_db, (unsigned long long)age_ms, site,
+            (unsigned)g_mesh_lab.site_epoch);
+    }
+    (void)fflush(stdout);
+}
+
 static void mesh_emit_event(const ninlil_mesh_lab_event_t *event,
     int16_t rssi_dbm, int8_t snr_db)
 {
@@ -1816,7 +1851,7 @@ static void mesh_emit_join_frame(const char *direction,
         return;
     }
     kind = frame[5];
-    if (kind < 2u || kind > 5u) {
+    if (kind < 2u || kind > 6u) {
         return; /* No beacon chatter: bounded control/data LAB diagnosis. */
     }
     sequence = ((uint32_t)frame[20] << 24) | ((uint32_t)frame[21] << 16)
@@ -2120,6 +2155,11 @@ static void handle_line(char *line)
 #if defined(CONFIG_NINLIL_RADIO_HIL_NJM1_LAB)
     if (strcmp(line, "MESH STATUS") == 0) {
         mesh_emit_status();
+        mesh_emit_topology();
+        return;
+    }
+    if (strcmp(line, "MESH TOPOLOGY") == 0) {
+        mesh_emit_topology();
         return;
     }
     if (strcmp(line, "MESH CONTROLLER") == 0) {

@@ -9,13 +9,17 @@ enum {
     NJM1_JOIN_ACCEPT = 3,
     NJM1_DATA = 4,
     NJM1_ACK = 5,
+    NJM1_TOPOLOGY = 6,
     NJM1_HEADER_BYTES = 60,
     NJM1_CRC_BYTES = 4,
     NJM1_MAX_HOPS = 3,
     NJM1_BEACON_MS = 2000,
     NJM1_BEACON_JITTER_MS = 701,
     NJM1_CANDIDATE_MS = 12000,
-    NJM1_ROUTE_MS = 30000,
+    NJM1_ROUTE_MS = NINLIL_MESH_LAB_ROUTE_TTL_MS,
+    NJM1_TOPOLOGY_MS = 20000,
+    NJM1_TOPOLOGY_JITTER_MS = 701,
+    NJM1_TOPOLOGY_STALE_MS = NINLIL_MESH_LAB_TOPOLOGY_STALE_MS,
     NJM1_LEASE_MS = 20000,
     NJM1_DISCOVERY_MS = 10000,
     NJM1_JOIN_RETRY_MS = 3000,
@@ -107,6 +111,14 @@ static uint32_t join_retry_delay_ms(const ninlil_mesh_lab_t *mesh,
     return NJM1_JOIN_RETRY_MS + (mix % NJM1_JOIN_RETRY_JITTER_MS);
 }
 
+static uint32_t topology_delay_ms(const ninlil_mesh_lab_t *mesh,
+    uint32_t sequence)
+{
+    return NJM1_TOPOLOGY_MS
+        + (ninlil_mesh_lab_beacon_interval_ms(mesh->node_id, sequence)
+            % NJM1_TOPOLOGY_JITTER_MS);
+}
+
 uint32_t ninlil_mesh_lab_beacon_interval_ms(const uint8_t node_id[8],
     uint32_t sequence)
 {
@@ -129,7 +141,7 @@ static int encode(ninlil_mesh_lab_t *mesh, uint8_t kind, uint8_t hops,
     uint8_t payload_length, uint8_t load, ninlil_mesh_lab_tx_t *out)
 {
     size_t length;
-    if (mesh == NULL || out == NULL || kind < NJM1_BEACON || kind > NJM1_ACK
+    if (mesh == NULL || out == NULL || kind < NJM1_BEACON || kind > NJM1_TOPOLOGY
         || payload_length > NINLIL_MESH_LAB_PAYLOAD_MAX
         || (payload_length != 0u && payload == NULL)) {
         return 0;
@@ -165,7 +177,7 @@ static int decode(const uint8_t *frame, size_t length, njm1_view_t *view)
     if (frame == NULL || view == NULL || length < 64u
         || length > NINLIL_MESH_LAB_FRAME_MAX
         || memcmp(frame, "NJM1", 4u) != 0 || frame[4] != 1u
-        || frame[5] < NJM1_BEACON || frame[5] > NJM1_ACK
+        || frame[5] < NJM1_BEACON || frame[5] > NJM1_TOPOLOGY
         || frame[6] != 0u || frame[58] != 0u || frame[59] != 0u) {
         return 0;
     }
@@ -198,6 +210,13 @@ static int decode(const uint8_t *frame, size_t length, njm1_view_t *view)
             && id_zero(view->destination) && view->payload_length == 8u
             && !id_zero(view->payload);
     }
+    if (view->kind == NJM1_TOPOLOGY) {
+        return view->hops > 0u && view->hops <= NJM1_MAX_HOPS
+            && !id_zero(view->next) && !id_zero(view->destination)
+            && view->payload_length == 11u && !id_zero(view->payload)
+            && !id_equal(view->payload, view->origin)
+            && view->payload[8] > 0u && view->payload[8] <= NJM1_MAX_HOPS;
+    }
     return view->hops > 0u && view->hops <= NJM1_MAX_HOPS
         && !id_zero(view->next) && !id_zero(view->destination);
 }
@@ -210,6 +229,7 @@ static void clear_membership(ninlil_mesh_lab_t *mesh)
     memset(mesh->candidates, 0, sizeof(mesh->candidates));
     memset(mesh->routes, 0, sizeof(mesh->routes));
     memset(mesh->seen, 0, sizeof(mesh->seen));
+    memset(mesh->topology, 0, sizeof(mesh->topology));
     mesh->route_cursor = 0u;
     mesh->seen_cursor = 0u;
     mesh->site_epoch = 0u;
@@ -221,6 +241,7 @@ static void clear_membership(ninlil_mesh_lab_t *mesh)
     mesh->lease_until_ms = 0u;
     mesh->next_beacon_ms = 0u;
     mesh->next_join_ms = 0u;
+    mesh->next_topology_ms = 0u;
 }
 
 void ninlil_mesh_lab_init(ninlil_mesh_lab_t *mesh, const uint8_t node_id[8])
@@ -408,6 +429,9 @@ static ninlil_mesh_lab_candidate_t *candidate_update(ninlil_mesh_lab_t *mesh,
     mesh->candidates[slot].score = candidate_score(
         mesh, view->sender, view->hops, rssi, snr, view->load);
     mesh->candidates[slot].advertised_hops = view->hops;
+    mesh->candidates[slot].rssi_dbm = rssi < INT8_MIN ? INT8_MIN
+        : (rssi > INT8_MAX ? INT8_MAX : (int8_t)rssi);
+    mesh->candidates[slot].snr_db = snr;
     if (mesh->candidates[slot].observations < UINT8_MAX) {
         mesh->candidates[slot].observations += 1u;
     }
@@ -463,6 +487,8 @@ static int join_via(ninlil_mesh_lab_t *mesh,
     mesh->site_epoch = candidate->site_epoch;
     mesh->hops = (uint8_t)(candidate->advertised_hops + 1u);
     mesh->parent_score = candidate->score;
+    mesh->parent_rssi_dbm = candidate->rssi_dbm;
+    mesh->parent_snr_db = candidate->snr_db;
     mesh->parent_last_seen_ms = now_ms;
     mesh->joining = 1u;
     mesh->next_beacon_ms = 0u;
@@ -474,6 +500,28 @@ static int join_via(ninlil_mesh_lab_t *mesh,
     return encode(mesh, NJM1_JOIN_REQUEST, NJM1_MAX_HOPS, mesh->node_id,
         mesh->node_id, mesh->parent_id, mesh->controller_id,
         sequence, NULL, 0u, 0u, out);
+}
+
+static int topology_announce(ninlil_mesh_lab_t *mesh, uint64_t now_ms,
+    ninlil_mesh_lab_tx_t *out)
+{
+    uint8_t payload[11];
+    uint8_t next_hop[8];
+    uint32_t sequence;
+
+    if (!route_to(mesh, mesh->controller_id, now_ms, next_hop)) {
+        mesh->next_topology_ms = now_ms + 1000u;
+        return 0;
+    }
+    memcpy(payload, mesh->parent_id, 8u);
+    payload[8] = mesh->hops;
+    payload[9] = (uint8_t)mesh->parent_rssi_dbm;
+    payload[10] = (uint8_t)mesh->parent_snr_db;
+    sequence = next_sequence(mesh);
+    mesh->next_topology_ms = now_ms + topology_delay_ms(mesh, sequence);
+    return encode(mesh, NJM1_TOPOLOGY, NJM1_MAX_HOPS, mesh->node_id,
+        mesh->node_id, next_hop, mesh->controller_id, sequence,
+        payload, sizeof(payload), 0u, out);
 }
 
 int ninlil_mesh_lab_tick(ninlil_mesh_lab_t *mesh, uint64_t now_ms,
@@ -509,7 +557,40 @@ int ninlil_mesh_lab_tick(ninlil_mesh_lab_t *mesh, uint64_t now_ms,
             mesh->node_id, zero, zero, sequence,
             mesh->controller_id, 8u, 0u, out);
     }
+    if (!mesh->controller && mesh->joined && !mesh->joining
+        && now_ms >= mesh->next_topology_ms) {
+        return topology_announce(mesh, now_ms, out);
+    }
     return 0;
+}
+
+static void topology_update(ninlil_mesh_lab_t *mesh, const njm1_view_t *view,
+    uint64_t now_ms)
+{
+    size_t i;
+    size_t slot = NINLIL_MESH_LAB_TOPOLOGY_MAX;
+
+    for (i = 0u; i < NINLIL_MESH_LAB_TOPOLOGY_MAX; ++i) {
+        if (mesh->topology[i].active
+            && id_equal(mesh->topology[i].node_id, view->origin)) {
+            slot = i;
+            break;
+        }
+        if (!mesh->topology[i].active
+            || now_ms - mesh->topology[i].last_seen_ms > NJM1_TOPOLOGY_STALE_MS) {
+            slot = i;
+        }
+    }
+    if (slot == NINLIL_MESH_LAB_TOPOLOGY_MAX) {
+        return; /* Eight remote rows are the LAB UI ceiling. */
+    }
+    mesh->topology[slot].active = 1u;
+    memcpy(mesh->topology[slot].node_id, view->origin, 8u);
+    memcpy(mesh->topology[slot].parent_id, view->payload, 8u);
+    mesh->topology[slot].hops = view->payload[8];
+    mesh->topology[slot].link_rssi_dbm = (int8_t)view->payload[9];
+    mesh->topology[slot].link_snr_db = (int8_t)view->payload[10];
+    mesh->topology[slot].last_seen_ms = now_ms;
 }
 
 static int forward(ninlil_mesh_lab_t *mesh, const njm1_view_t *view,
@@ -556,6 +637,8 @@ int ninlil_mesh_lab_receive(ninlil_mesh_lab_t *mesh,
         if (candidate != NULL && id_equal(candidate->node_id, mesh->parent_id)) {
             mesh->parent_last_seen_ms = now_ms;
             mesh->parent_score = candidate->score;
+            mesh->parent_rssi_dbm = candidate->rssi_dbm;
+            mesh->parent_snr_db = candidate->snr_db;
             /* A valid beacon from the selected parent proves the current
              * site remains reachable; keep its Join lease alive. */
             if (mesh->joined) {
@@ -579,6 +662,17 @@ int ninlil_mesh_lab_receive(ninlil_mesh_lab_t *mesh,
             return join_via(mesh, candidate, now_ms, out);
         }
         return 1;
+    }
+    /* Topology is only an uplink to this site's controller.  Check the
+     * immutable end-to-end shape before touching dedupe or reverse routes:
+     * a relay's local depth accounts for the hop it has yet to forward. */
+    if (view.kind == NJM1_TOPOLOGY
+        && (!id_equal(view.destination, mesh->controller_id)
+            || (view.hops == NJM1_MAX_HOPS
+                && !id_equal(view.payload, mesh->node_id))
+            || (uint8_t)(view.payload[8] + view.hops)
+                != NJM1_MAX_HOPS + 1u + mesh->hops)) {
+        return 0;
     }
     if (!id_equal(view.next, mesh->node_id)
         || !id_equal(view.site, mesh->site_id) || view.epoch != mesh->site_epoch
@@ -616,7 +710,12 @@ int ninlil_mesh_lab_receive(ninlil_mesh_lab_t *mesh,
         mesh->joining = 0u;
         mesh->lease_until_ms = now_ms + (uint64_t)seconds * 1000u;
         mesh->next_beacon_ms = now_ms + NINLIL_MESH_LAB_RELAY_BEACON_DELAY_MS;
+        mesh->next_topology_ms = now_ms + 1000u;
         event->kind = NINLIL_MESH_LAB_EVENT_JOINED;
+        return 1;
+    }
+    if (view.kind == NJM1_TOPOLOGY && mesh->controller) {
+        topology_update(mesh, &view, now_ms);
         return 1;
     }
     if (view.kind == NJM1_DATA) {
@@ -745,6 +844,24 @@ uint64_t ninlil_mesh_lab_response_dwell_until(
 int ninlil_mesh_lab_periodic_tx_due(uint64_t now_ms, uint64_t dwell_until_ms)
 {
     return now_ms >= dwell_until_ms;
+}
+
+size_t ninlil_mesh_lab_topology_snapshot(const ninlil_mesh_lab_t *mesh,
+    uint64_t now_ms, ninlil_mesh_lab_topology_t *out, size_t out_count)
+{
+    size_t i;
+    size_t count = 0u;
+    (void)now_ms;
+    if (mesh == NULL || out == NULL || !mesh->controller) {
+        return 0u;
+    }
+    for (i = 0u; i < NINLIL_MESH_LAB_TOPOLOGY_MAX && count < out_count; ++i) {
+        if (mesh->topology[i].active) {
+            out[count] = mesh->topology[i];
+            count += 1u;
+        }
+    }
+    return count;
 }
 
 void ninlil_mesh_lab_snapshot(const ninlil_mesh_lab_t *mesh,

@@ -218,9 +218,9 @@
             <div><h2 class="panel-title">Live topology</h2><div class="panel-kicker"><span id="lastUpdate">Not updated</span> · <span style="color:var(--healthy)">● live</span></div></div>
             <div class="head-actions"><button class="btn" onclick="openDrawer('connections')">USB setup</button></div>
           </div>
-          <div class="canvas-wrap">
+            <div class="canvas-wrap">
             <svg id="topology" viewBox="0 0 900 540" role="img" aria-label="Live mesh topology"></svg>
-            <div id="topologyEmpty" class="topology-empty"><div><span class="empty-icon">⌁</span><strong>No topology yet</strong><br><small>Attach boards or enable Demo mode.</small></div></div>
+            <div id="topologyEmpty" class="topology-empty"><div><span class="empty-icon">⌁</span><strong>No topology yet</strong><br><small>Attach the Controller USB or enable Demo mode.</small></div></div>
           </div>
           <div class="legend"><strong>Legend</strong><span><i></i>Healthy</span><span><i class="amber"></i>Degraded</span><span><i class="red"></i>Disconnected</span><span><i class="line"></i>Active parent</span><span>RTT = DATA → correlated ACK</span></div>
         </section>
@@ -239,7 +239,7 @@
             <div class="run-progress">
               <div class="progress-meta"><span>Topology discovery → 7 sequential Ping/Pong probes</span><strong id="progressText">0%</strong></div>
               <div class="progress-track"><i id="progressBar"></i></div>
-              <div class="panel-kicker" id="runDetail">Attach all eight boards, then run the guided LAB sequence.</div>
+              <div class="panel-kicker" id="runDetail">Attach one Controller USB; seven joined RF reports complete discovery.</div>
               <div class="node-checks" id="nodeChecks"></div>
             </div>
           </div>
@@ -257,8 +257,8 @@
     <section class="drawer-card">
       <div class="panel-head" style="padding:0 0 14px"><div><h2 id="drawerTitle">Connections</h2><div class="panel-kicker">USB is the LAB observability plane; LoRa remains the tested data plane.</div></div><button class="btn icon-button" onclick="closeDrawer()">×</button></div>
       <div id="connectionPanel">
-        <div class="connection-row"><select id="portSelect"></select><button class="btn" onclick="connectSelected()">Attach selected</button></div>
-        <div class="head-actions"><button class="btn primary" onclick="attachAll()">Attach all detected</button><button class="btn" onclick="disconnectAll()">Disconnect all</button><button class="btn" onclick="setDemo(!demo)">Toggle Demo</button></div>
+        <div class="connection-row"><select id="portSelect"></select><button class="btn primary" onclick="connectSelected()">Attach Controller USB</button></div>
+        <div class="head-actions"><button class="btn" onclick="disconnectAll()">Disconnect Controller</button><button class="btn" onclick="setDemo(!demo)">Toggle Demo</button></div>
         <div id="portList" class="port-list"></div>
       </div>
       <div id="logPanel" hidden><pre id="rawLog"></pre></div>
@@ -277,14 +277,14 @@
     const aliases = {};
 
     const demoNodes = {
-      'a000000000000001': {name:'A',role:'controller',joined:'1',parent:ZERO,hops:'0',rtt_ms:612,rssi:-48,snr:9.6,health:'healthy',last_seen_ms:90,tx:'128',rx:'141',relay:'0',route_changes:'0'},
-      'b000000000000002': {name:'B',role:'relay',joined:'1',parent:'a000000000000001',hops:'1',rtt_ms:701,rssi:-52,snr:8.3,health:'healthy',last_seen_ms:210,tx:'124',rx:'133',relay:'44',route_changes:'1'},
-      'c000000000000003': {name:'C',role:'relay',joined:'1',parent:'a000000000000001',hops:'1',rtt_ms:732,rssi:-55,snr:7.4,health:'healthy',last_seen_ms:330,tx:'119',rx:'127',relay:'39',route_changes:'0'},
-      'd000000000000004': {name:'D',role:'node',joined:'1',parent:'b000000000000002',hops:'2',rtt_ms:812,rssi:-58,snr:6.7,health:'healthy',last_seen_ms:480,tx:'82',rx:'91',relay:'0',route_changes:'1'},
-      'e000000000000005': {name:'E',role:'relay',joined:'1',parent:'b000000000000002',hops:'2',rtt_ms:842,rssi:-60,snr:6.1,health:'healthy',last_seen_ms:250,tx:'124',rx:'123',relay:'21',route_changes:'2'},
-      'f000000000000006': {name:'F',role:'node',joined:'1',parent:'c000000000000003',hops:'2',rtt_ms:765,rssi:-54,snr:7.6,health:'healthy',last_seen_ms:520,tx:'71',rx:'77',relay:'0',route_changes:'0'},
-      'g000000000000007': {name:'G',role:'node',joined:'1',parent:'c000000000000003',hops:'2',rtt_ms:873,rssi:-59,snr:6.3,health:'degraded',last_seen_ms:1400,tx:'68',rx:'64',relay:'0',route_changes:'3'},
-      'h000000000000008': {name:'H',role:'node',joined:'1',parent:'e000000000000005',hops:'3',rtt_ms:948,rssi:-63,snr:5.3,health:'healthy',last_seen_ms:710,tx:'54',rx:'59',relay:'0',route_changes:'1'}
+      'a000000000000001': {name:'A',role:'controller',source:'usb',local:true,joined:'1',parent:ZERO,hops:'0',rtt_ms:612,rssi:-48,snr:9.6,health:'healthy',last_seen_ms:90,tx:'128',rx:'141',relay:'0',route_changes:'0'},
+      'b000000000000002': {name:'B',role:'node',source:'rf',local:false,joined:'1',parent:'a000000000000001',hops:'1',rtt_ms:701,rssi:-52,snr:8.3,health:'healthy',last_seen_ms:210},
+      'c000000000000003': {name:'C',role:'node',source:'rf',local:false,joined:'1',parent:'a000000000000001',hops:'1',rtt_ms:732,rssi:-55,snr:7.4,health:'healthy',last_seen_ms:330},
+      'd000000000000004': {name:'D',role:'node',source:'rf',local:false,joined:'1',parent:'b000000000000002',hops:'2',rtt_ms:812,rssi:-58,snr:6.7,health:'healthy',last_seen_ms:480},
+      'e000000000000005': {name:'E',role:'node',source:'rf',local:false,joined:'1',parent:'b000000000000002',hops:'2',rtt_ms:842,rssi:-60,snr:6.1,health:'healthy',last_seen_ms:250},
+      'f000000000000006': {name:'F',role:'node',source:'rf',local:false,joined:'1',parent:'c000000000000003',hops:'2',rtt_ms:765,rssi:-54,snr:7.6,health:'healthy',last_seen_ms:520},
+      'g000000000000007': {name:'G',role:'node',source:'rf',local:false,joined:'1',parent:'c000000000000003',hops:'2',rtt_ms:873,rssi:-59,snr:6.3,health:'degraded',last_seen_ms:1400},
+      'h000000000000008': {name:'H',role:'node',source:'rf',local:false,joined:'1',parent:'e000000000000005',hops:'3',rtt_ms:948,rssi:-63,snr:5.3,health:'healthy',last_seen_ms:710}
     };
     const demoEvents = [
       {time:'10:24:31',kind:'Probe',detail:'Pong E → B → A · RTT 842 ms'},
@@ -313,12 +313,12 @@
         if(e.detail||e.message)return e;
         let detail='';
         if(e.kind==='probe_result')detail=e.state==='ack'?`Pong · RTT ${e.rtt_ms} ms · ${e.attempts??'—'} attempt(s)`:`Probe ${e.state} after ${e.elapsed_ms??'—'} ms`;
-        else if(e.kind==='probe')detail=`Probe queued for ${String(e.destination||'').slice(-4).toUpperCase()}`;
+        else if(e.kind==='probe')detail=`Probe queued for ${shortId(e.destination)}`;
         else if(e.kind==='serial')detail=`${e.direction==='tx'?'Sent':'Received'} ${e.line||''}`;
         else if(e.kind==='attach')detail=`Attached ${String(e.path||'').split('/').pop()}`;
         else if(e.kind==='disconnect')detail=`Disconnected ${String(e.path||'').split('/').pop()}`;
-        else if(e.kind==='join')detail=`${String(e.node||'').slice(-4).toUpperCase()} joined via ${String(e.parent||'').slice(-4).toUpperCase()} · hop ${e.hops}`;
-        else if(e.kind==='route_change')detail=`${String(e.node||'').slice(-4).toUpperCase()} parent ${String(e.previous_parent||'').slice(-4).toUpperCase()} → ${String(e.parent||'').slice(-4).toUpperCase()}`;
+        else if(e.kind==='join')detail=`${shortId(e.node)} joined via ${shortId(e.parent)} · hop ${e.hops}`;
+        else if(e.kind==='route_change')detail=`${shortId(e.node)} parent ${shortId(e.previous_parent)} → ${shortId(e.parent)}`;
         else detail=Object.entries(e).filter(([k])=>!['kind','at'].includes(k)).map(([k,v])=>`${k}=${v}`).join(' ');
         return {...e,time:e.at?new Date(e.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}):undefined,detail};
       });
@@ -329,6 +329,11 @@
     function healthOf(node) {
       if (!truthy(node.joined) && node.role !== 'controller') return 'disconnected';
       const age = numberOr(node.last_seen_ms, 0), rtt = numberOr(node.rtt_ms, 0);
+      if (node.source === 'rf') {
+        if (truthy(node.stale) || age > 60000) return 'disconnected';
+        if (age > 30000 || rtt > 1600 || numberOr(node.snr, 8) < 2) return 'degraded';
+        return 'healthy';
+      }
       if (age > 12000) return 'disconnected';
       if (age > 5000 || rtt > 1600 || numberOr(node.snr, 8) < 2) return 'degraded';
       return 'healthy';
@@ -340,7 +345,8 @@
       }
       return route;
     }
-    function label(id) { return snapshot.nodes[id]?.name || id?.slice(-4).toUpperCase() || '—'; }
+    function shortId(id) { return String(id||'').slice(-8).toUpperCase() || '—'; }
+    function label(id) { return snapshot.nodes[id]?.name || shortId(id); }
     function formatRtt(v) { return Number.isFinite(v) ? `${Math.round(v)} ms` : '—'; }
     function formatSignal(v, unit) { return Number.isFinite(v) ? `${v} ${unit}` : '—'; }
     function aliasNodes(nodes) {
@@ -348,7 +354,7 @@
       const letters='ABCDEFGHJKLMNPQRSTUVWXYZ';
       for (const [id,node] of ordered) {
         if (node.name && node.name.length <= 4) { aliases[id] = node.name; continue; }
-        if (!aliases[id]) aliases[id] = letters.find(letter => !Object.values(aliases).includes(letter)) || id.slice(-4).toUpperCase();
+        if (!aliases[id]) aliases[id] = Array.from(letters).find(letter => !Object.values(aliases).includes(letter)) || id.slice(-4).toUpperCase();
         node.name = aliases[id];
       }
     }
@@ -365,6 +371,7 @@
       return positions;
     }
     function svgEl(tag, attrs={}) { const e=document.createElementNS('http://www.w3.org/2000/svg',tag); Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v)); return e; }
+    function roleLabel(id,node) { return node.role==='controller' ? 'Controller' : Object.values(snapshot.nodes).some(child=>child.parent===id) ? 'Relay (inferred)' : 'Node'; }
     function renderTopology() {
       const svg=$('topology'), nodes=snapshot.nodes, ids=Object.keys(nodes); svg.replaceChildren();
       $('topologyEmpty').classList.toggle('visible',!ids.length); if(!ids.length)return;
@@ -373,7 +380,7 @@
       const marker=svgEl('marker',{id:'arrow',viewBox:'0 0 10 10',refX:'8',refY:'5',markerWidth:'6',markerHeight:'6',orient:'auto-start-reverse'});
       marker.append(svgEl('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#53cda9'})); defs.append(marker); svg.append(defs);
       for(const id of ids){const n=nodes[id], p=pos[n.parent]; if(!p||!pos[id])continue; const c=pos[id]; const d=`M ${p.x} ${p.y+43} C ${p.x} ${p.y+82}, ${c.x} ${c.y-64}, ${c.x} ${c.y-43}`; svg.append(svgEl('path',{d,class:`route-line ${n.health||''}`,'marker-end':'url(#arrow)'}));}
-      for(const id of ids){const n=nodes[id], p=pos[id]; if(!p)continue; const g=svgEl('g',{class:`node-svg ${n.health||''} ${selected===id?'selected':''}`,transform:`translate(${p.x-66} ${p.y-43})`,role:'button',tabindex:'0'}); g.addEventListener('click',()=>selectNode(id)); g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectNode(id)}}); const rect=svgEl('rect',{class:'node-card',width:132,height:86,rx:10}); const ring=svgEl('circle',{class:'health-ring',cx:22,cy:22,r:12}); const name=svgEl('text',{class:'node-name',x:42,y:20}); name.textContent=n.name; const role=svgEl('text',{class:'node-role',x:42,y:35}); role.textContent=n.role==='controller'?'Controller':(numberOr(n.relay,0)>0?'Relay':'Node'); const hop=svgEl('text',{class:'node-metric',x:13,y:54});hop.textContent=`Hop ${n.hops??'—'}`;const rtt=svgEl('text',{class:'node-metric node-rtt',x:68,y:54});rtt.textContent=`RTT ${formatRtt(n.rtt_ms)}`;const sig=svgEl('text',{class:'node-metric',x:13,y:70});sig.textContent=`${formatSignal(n.rssi,'dBm')} · ${formatSignal(n.snr,'dB')}`; g.append(rect,ring,name,role,hop,rtt,sig); svg.append(g);}
+      for(const id of ids){const n=nodes[id], p=pos[id]; if(!p)continue; const g=svgEl('g',{class:`node-svg ${n.health||''} ${selected===id?'selected':''}`,transform:`translate(${p.x-66} ${p.y-43})`,role:'button',tabindex:'0'}); g.addEventListener('click',()=>selectNode(id)); g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectNode(id)}}); const rect=svgEl('rect',{class:'node-card',width:132,height:86,rx:10}); const ring=svgEl('circle',{class:'health-ring',cx:22,cy:22,r:12}); const name=svgEl('text',{class:'node-name',x:42,y:20}); name.textContent=n.name; const role=svgEl('text',{class:'node-role',x:42,y:35}); role.textContent=roleLabel(id,n); const hop=svgEl('text',{class:'node-metric',x:13,y:54});hop.textContent=`Hop ${n.hops??'—'}`;const rtt=svgEl('text',{class:'node-metric node-rtt',x:68,y:54});rtt.textContent=`RTT ${formatRtt(n.rtt_ms)}`;const sig=svgEl('text',{class:'node-metric',x:13,y:70});sig.textContent=`${formatSignal(n.rssi,'dBm')} · ${formatSignal(n.snr,'dB')}`; g.append(rect,ring,name,role,hop,rtt,sig); svg.append(g);}
     }
 
     function selectNode(id){selected=id;renderTopology();renderInspector();}
@@ -381,14 +388,17 @@
     function renderInspector(){
       const box=$('inspector'), ids=Object.keys(snapshot.nodes); if(!selected||!snapshot.nodes[selected])selected=ids[0]||null;
       if(!selected){box.innerHTML='<div class="panel-kicker">Select a node from the topology.</div>';return}
-      const n=snapshot.nodes[selected], route=routeFor(selected), health=n.health||healthOf(n), last=numberOr(n.last_seen_ms,null);
+      const n=snapshot.nodes[selected], route=routeFor(selected), health=n.health||healthOf(n), last=numberOr(n.last_seen_ms,null), remote=n.source==='rf';
+      const actions=remote
+        ? `<button class="btn blue" onclick="pingSelected()">Ping / Pong</button><div class="panel-kicker">RF-only remote: USB role, leave, refresh and exclude controls are unavailable.</div>`
+        : `<button class="btn" onclick="sendNodeCommand('status')">Refresh node</button><button class="btn" onclick="sendNodeCommand('${n.role==='controller'?'node':'controller'}')">${n.role==='controller'?'Reset as node':'Make Controller'}</button><button class="btn" onclick="sendNodeCommand('leave')">Leave site</button><button class="btn danger" onclick="excludeSelected()">Exclude current parent</button>`;
       box.innerHTML=`
         <div class="node-heading"><div class="node-avatar">${escapeHtml(n.name)}</div><div><strong>Node ${escapeHtml(n.name)}</strong><span>${escapeHtml(selected)}</span></div><b class="health-pill ${health}">${health}</b></div>
-        <dl class="facts"><dt>Role</dt><dd>${escapeHtml(n.role||'node')}</dd><dt>Joined</dt><dd>${truthy(n.joined)||n.role==='controller'?'Yes':'No'}</dd><dt>Parent</dt><dd>${escapeHtml(label(n.parent))} · Hop ${escapeHtml(String(n.hops??'—'))}</dd><dt>Route</dt><dd class="route">${route.map(label).map(escapeHtml).join(' → ')||'—'}</dd><dt>Site</dt><dd class="mono">${escapeHtml((n.site||'—').slice(0,8))}</dd><dt>Lease</dt><dd>${n.lease_ms?`${Math.round(Number(n.lease_ms)/1000)} s`:'—'}</dd></dl>
+        <dl class="facts"><dt>Role</dt><dd>${escapeHtml(roleLabel(selected,n))}</dd><dt>Joined</dt><dd>${truthy(n.joined)||n.role==='controller'?'Yes':'No'}</dd><dt>Parent</dt><dd>${escapeHtml(label(n.parent))} · Hop ${escapeHtml(String(n.hops??'—'))}</dd><dt>Route</dt><dd class="route">${route.map(label).map(escapeHtml).join(' → ')||'—'}</dd><dt>Site</dt><dd class="mono">${escapeHtml((n.site||'—').slice(0,8))}</dd><dt>Lease</dt><dd>${n.lease_ms?`${Math.round(Number(n.lease_ms)/1000)} s`:'—'}</dd></dl>
         <div class="divider"></div><div class="chart-head"><span>Ping/Pong RTT</span><strong>${formatRtt(n.rtt_ms)}</strong></div>
         <svg id="sparkline" viewBox="0 0 260 86" aria-label="Measured RTT history"><path class="chart-grid" d="M0 20H260 M0 43H260 M0 66H260"/>${sparkPlot(selected)}</svg>
-        <dl class="facts"><dt>USB seen</dt><dd>${last===null?'—':last<1000?'just now':`${(last/1000).toFixed(1)} s ago`}</dd><dt>TX / RX</dt><dd>${escapeHtml(String(n.tx??'—'))} / ${escapeHtml(String(n.rx??'—'))}</dd><dt>Relayed</dt><dd>${escapeHtml(String(n.relay??'—'))}</dd><dt>Route changes</dt><dd>${escapeHtml(String(n.route_changes??'—'))}</dd><dt>Last RX signal</dt><dd>${formatSignal(n.rssi,'dBm')} / ${formatSignal(n.snr,'dB')}</dd></dl>
-        <div class="inspector-actions"><button class="btn blue" onclick="pingSelected()">Ping / Pong</button><button class="btn" onclick="sendNodeCommand('status')">Refresh node</button><button class="btn" onclick="sendNodeCommand('${n.role==='controller'?'node':'controller'}')">${n.role==='controller'?'Reset as node':'Make Controller'}</button><button class="btn" onclick="sendNodeCommand('leave')">Leave site</button><button class="btn danger" onclick="excludeSelected()">Exclude current parent</button></div>`;
+        <dl class="facts"><dt>${remote?'RF report age':'USB seen'}</dt><dd>${last===null?'—':last<1000?'just now':`${(last/1000).toFixed(1)} s ago`}</dd><dt>TX / RX</dt><dd>${escapeHtml(String(n.tx??'—'))} / ${escapeHtml(String(n.rx??'—'))}</dd><dt>Relayed</dt><dd>${escapeHtml(String(n.relay??'—'))}</dd><dt>Route changes</dt><dd>${escapeHtml(String(n.route_changes??'—'))}</dd><dt>${remote?'Parent link':'Last RX'} signal</dt><dd>${formatSignal(n.rssi,'dBm')} / ${formatSignal(n.snr,'dB')}</dd></dl>
+        <div class="inspector-actions">${actions}</div>`;
     }
     function sparkPlot(id){const values=(snapshot.probes||[]).filter(p=>p.destination===id&&p.state==='ack'&&Number.isFinite(Number(p.rtt_ms))).slice(-18).map(p=>Number(p.rtt_ms));if(!values.length)return '<text x="130" y="47" text-anchor="middle" fill="#637487" font-size="10">Run Ping to collect RTT</text>';if(values.length===1)return `<circle cx="130" cy="43" r="3" fill="#5f94ff"/>`;const low=Math.min(...values),high=Math.max(...values),span=Math.max(1,high-low);const points=values.map((value,i)=>`${i*260/(values.length-1)},${70-(value-low)*50/span}`).join(' ');return `<polyline class="chart-line" points="${points}"/>`}
 
@@ -409,7 +419,7 @@
     function renderTimeline(){const all=snapshot.events?.length?snapshot.events:[],events=all.filter(e=>e.kind!=='serial').slice(-30).reverse(),box=$('timeline');box.replaceChildren();if(!events.length){box.innerHTML='<div class="panel-kicker" style="padding:16px">Join, route and probe events appear here.</div>';return}for(const e of events){const row=document.createElement('div');const level=e.level==='error'?'error':e.level==='warning'?'warn':'';row.className=`event ${level}`;const time=e.time||new Date(e.timestamp||Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});row.innerHTML=`<time>${escapeHtml(time)}</time><i class="event-dot"></i><span class="event-kind">${escapeHtml(e.kind||e.event||'Mesh')}</span><span class="event-detail">${escapeHtml(e.detail||e.message||'')}</span>`;box.append(row)}}
     function renderChecks(){const box=$('nodeChecks');box.replaceChildren();for(const n of Object.values(snapshot.nodes)){const s=document.createElement('span');s.className=`node-check ${n.health!=='disconnected'?'ok':''}`;s.innerHTML=`<i>${n.health!=='disconnected'?'✓':'!'}</i>${escapeHtml(n.name)}`;box.append(s)}}
     function renderConnections(){const ports=snapshot.ports||[], con=snapshot.connections||{}, select=$('portSelect'), old=select.value;select.replaceChildren(...ports.map(p=>new Option(p,p)));select.value=old||ports[0]||'';const list=$('portList');list.replaceChildren();if(!ports.length)list.innerHTML='<div class="panel-kicker">No USB serial boards detected.</div>';for(const port of ports){const c=con[port], row=document.createElement('div');row.className='port-row';row.innerHTML=`<span><strong>${escapeHtml(port.split('/').pop())}</strong><br><span style="color:var(--muted)">${c?`${escapeHtml(c.node||'identifying')} · connected`:'available'}</span></span><span style="color:${c?'var(--healthy)':'var(--quiet)'}">●</span>`;list.append(row)}$('rawLog').textContent=(snapshot.log||[]).join('\n')}
-    function renderRun(){const run=snapshot.run||{}, progress=numberOr(run.progress,0);$('runPhase').textContent=run.phase||'Ready';$('progressText').textContent=`${Math.round(progress)}%`;$('progressBar').style.width=`${Math.max(0,Math.min(100,progress))}%`;$('runDetail').textContent=run.detail||'Attach all eight boards, then run the guided LAB sequence.';$('runButton').disabled=run.active===true}
+    function renderRun(){const run=snapshot.run||{}, progress=numberOr(run.progress,0);$('runPhase').textContent=run.phase||'Ready';$('progressText').textContent=`${Math.round(progress)}%`;$('progressBar').style.width=`${Math.max(0,Math.min(100,progress))}%`;$('runDetail').textContent=run.detail||'Attach one Controller USB, then wait for seven joined RF reports.';$('runButton').disabled=run.active===true}
     function render(){aliasNodes(snapshot.nodes);renderSummary();renderTopology();renderInspector();renderTimeline();renderChecks();renderConnections();renderRun()}
 
     function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -422,9 +432,9 @@
     async function attachAll(){if(demo)setDemo(false);await action('/api/attach-all',{})}
     async function connectSelected(){const port=$('portSelect').value;if(!port)return toast('Select a USB port first.');await action('/api/connect',{port})}
     async function disconnectAll(){await action('/api/disconnect-all',{})}
-    async function sendNodeCommand(actionName){if(!selected)return;if(demo)return toast('Demo mode sends no commands.');await action('/api/command',{action:actionName,target:selected,values:{}})}
-    async function pingSelected(){if(!selected)return;if(demo){const n=snapshot.nodes[selected],rtt=Math.max(380,Math.round(n.rtt_ms+(Math.random()-.5)*120));n.rtt_ms=rtt;snapshot.probes.push({destination:selected,rtt_ms:rtt,state:'ack'});snapshot.events.push({kind:'Probe',detail:`Pong ${routeFor(selected).map(label).reverse().join(' → ')} · RTT ${rtt} ms`});render();return}await action('/api/probe',{destination:selected})}
-    async function excludeSelected(){if(!selected)return;if(demo)return toast('Demo mode sends no commands.');const n=snapshot.nodes[selected];if(n.role==='controller'||!n.parent||n.parent===ZERO)return toast('This node has no parent to exclude.');await action('/api/command',{action:'penalty',target:selected,values:{node:n.parent,score:200}})}
+    async function sendNodeCommand(actionName){if(!selected)return;if(demo)return toast('Demo mode sends no commands.');if(snapshot.nodes[selected]?.source==='rf')return toast('RF-only remotes have no USB command path.');await action('/api/command',{action:actionName,target:selected,values:{}})}
+    async function pingSelected(){if(!selected)return;const n=snapshot.nodes[selected];if(!demo&&n?.source!=='rf')return toast('Select an RF remote; the Controller is the Ping source.');if(demo){const rtt=Math.max(380,Math.round(n.rtt_ms+(Math.random()-.5)*120));n.rtt_ms=rtt;snapshot.probes.push({destination:selected,rtt_ms:rtt,state:'ack'});snapshot.events.push({kind:'Probe',detail:`Pong ${routeFor(selected).map(label).reverse().join(' → ')} · RTT ${rtt} ms`});render();return}await action('/api/probe',{destination:selected})}
+    async function excludeSelected(){if(!selected)return;if(demo)return toast('Demo mode sends no commands.');const n=snapshot.nodes[selected];if(n.source==='rf')return toast('RF-only remotes have no USB command path.');if(n.role==='controller'||!n.parent||n.parent===ZERO)return toast('This node has no parent to exclude.');await action('/api/command',{action:'penalty',target:selected,values:{node:n.parent,score:200}})}
     async function runTest(){if(demo){let p=0;$('runButton').disabled=true;const timer=setInterval(()=>{p+=12;snapshot.run={active:p<100,phase:p<24?'DISCOVERY':p<100?'PING / PONG':'COMPLETE',progress:Math.min(100,p),detail:p<100?'Running one bounded probe at a time across discovered routes.':'Demo test complete. Connect boards for RF evidence.'};if(p>=100){clearInterval(timer);$('runButton').disabled=false}snapshot.events.push({kind:'Test',detail:`${snapshot.run.phase} · ${Math.min(100,p)}%`});render()},320);return}await action('/api/run-test',{})}
     function openDrawer(which){$('drawer').classList.add('open');$('drawerTitle').textContent=which==='logs'?'Serial event log':'USB connections';$('connectionPanel').hidden=which==='logs';$('logPanel').hidden=which!=='logs'}
     function closeDrawer(){$('drawer').classList.remove('open')}

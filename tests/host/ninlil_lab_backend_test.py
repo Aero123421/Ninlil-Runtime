@@ -112,6 +112,189 @@ class NinlilLabBackendTest(unittest.TestCase):
             (False, "COMPLETE", 100),
         )
 
+    def test_controller_only_topology_keeps_remote_rf_only(self) -> None:
+        self.backend.attach("/dev/demo-a")
+        self.backend.ingest(
+            "/dev/demo-a",
+            "MESH node=0000000000000001 role=controller joined=1 "
+            "site=0102030405060708 epoch=9 parent=0000000000000000 hops=0",
+        )
+        self.backend.ingest(
+            "/dev/demo-a",
+            "MESH TOPOLOGY node=0000000000000002 role=node joined=1 stale=0 "
+            "parent=0000000000000001 hops=1 link_rssi=-55 link_snr=7 age_ms=120 "
+            "site=0102030405060708 epoch=9 lab_only=true",
+        )
+        self.backend.ingest(
+            "/dev/demo-a",
+            "MESH TOPOLOGY node=0000000000000003 role=node joined=1 stale=0 "
+            "parent=0000000000000002 hops=2 link_rssi=-67 link_snr=3 age_ms=250 "
+            "site=0102030405060708 epoch=9 lab_only=true",
+        )
+        state = self.backend.snapshot()
+        remote = state["nodes"]["0000000000000003"]
+        self.assertEqual(
+            (state["connections"]["/dev/demo-a"]["node"], remote["port"],
+             remote["observer_port"], remote["source"], remote["hops"]),
+            ("0000000000000001", "", "/dev/demo-a", "rf", 2),
+        )
+        self.assertEqual(remote["last_seen"], 1_724_999_999_750)
+        self.assertEqual((remote["rssi"], remote["snr"]), (-67, 3))
+        self.assertEqual(
+            tuple(remote[key] for key in ("tx", "rx", "relay", "duplicate", "route_changes")),
+            (None, None, None, None, None),
+        )
+        with self.assertRaisesRegex(ValueError, "RF-only remote"):
+            self.backend.command("0000000000000003", "MESH LEAVE")
+        self.backend.start_test(expected_nodes=3)
+        self.backend.service()
+        self.assertIn(
+            b"MESH SEND 0000000000000002 70696e67",
+            self.peers["/dev/demo-a"].recv(256),
+        )
+        self.backend.ingest(
+            "/dev/demo-a", "MESH data_ack attempts=1 lab_only=true"
+        )
+        self.backend.service()
+        self.assertIn(
+            b"MESH SEND 0000000000000003 70696e67",
+            self.peers["/dev/demo-a"].recv(256),
+        )
+        # A new controller site fails closed: old RF rows cannot be operated.
+        self.backend.ingest(
+            "/dev/demo-a",
+            "MESH node=0000000000000001 role=controller joined=1 "
+            "site=1112131415161718 epoch=10 parent=0000000000000000 hops=0",
+        )
+        reset = self.backend.snapshot()
+        self.assertNotIn("0000000000000003", reset["nodes"])
+        self.assertEqual((reset["run"]["active"], reset["run"]["phase"]),
+                         (False, "ATTENTION"))
+
+    def test_controller_only_eight_node_sweep_completes_all_rf_routes(self) -> None:
+        self.backend.attach("/dev/demo-a")
+        controller = "0000000000000001"
+        site = "0102030405060708"
+        self.backend.ingest(
+            "/dev/demo-a",
+            f"MESH node={controller} role=controller joined=1 site={site} epoch=9 "
+            "parent=0000000000000000 hops=0",
+        )
+        for value in range(2, 9):
+            node = f"{value:016x}"
+            parent = controller if value < 4 else f"{value - 2:016x}"
+            hops = 1 if value < 4 else 2
+            self.backend.ingest(
+                "/dev/demo-a",
+                f"MESH TOPOLOGY node={node} role=node joined=1 stale=0 parent={parent} "
+                f"hops={hops} link_rssi=-55 link_snr=7 age_ms=0 site={site} epoch=9 "
+                "lab_only=true",
+            )
+        self.backend.start_test(expected_nodes=8)
+        for value in range(2, 9):
+            self.backend.service()
+            sent = self.peers["/dev/demo-a"].recv(1024)
+            self.assertIn(f"MESH SEND {value:016x} 70696e67".encode(), sent)
+            self.now[0] += 0.1
+            self.wall[0] += 0.1
+            self.backend.ingest(
+                "/dev/demo-a", "MESH data_ack attempts=1 lab_only=true"
+            )
+        self.backend.service()
+        run = self.backend.snapshot()["run"]
+        self.assertEqual((run["active"], run["phase"], run["detail"]),
+                         (False, "COMPLETE", "7 / 7 routes returned a correlated ACK."))
+
+    def test_usb_status_promotes_rf_row_without_topology_event_noise(self) -> None:
+        controller = "0000000000000001"
+        remote = "0000000000000002"
+        site = "0102030405060708"
+        self.backend.attach("/dev/demo-a")
+        self.backend.attach("/dev/demo-b")
+        self.backend.ingest(
+            "/dev/demo-a",
+            f"MESH node={controller} role=controller joined=1 site={site} epoch=9 "
+            "parent=0000000000000000 hops=0",
+        )
+        topology = (
+            f"MESH TOPOLOGY node={remote} role=node joined=1 stale=1 parent={controller} "
+            f"hops=1 link_rssi=-55 link_snr=7 age_ms=0 site={site} epoch=9 lab_only=true"
+        )
+        self.backend.ingest("/dev/demo-a", topology)
+        self.backend.ingest(
+            "/dev/demo-b",
+            f"MESH node={remote} role=node joined=1 parent={controller} hops=1 "
+            "tx=3 rx=4 relay=1 duplicate=2 route_changes=5",
+        )
+        node = self.backend.snapshot()["nodes"][remote]
+        self.assertEqual(
+            (node["source"], node["local"], node["port"], node["stale"],
+             node["tx"], node["rx"], node["relay"], node["duplicate"], node["route_changes"]),
+            ("usb", True, "/dev/demo-b", False, 3, 4, 1, 2, 5),
+        )
+        self.assertNotIn("route_change", [event["kind"] for event in self.backend.snapshot()["events"]])
+        before = len(self.backend.snapshot()["events"])
+        self.backend.ingest("/dev/demo-a", topology)
+        events = self.backend.snapshot()["events"]
+        self.assertEqual(len(events), before + 1)  # serial observation only
+        self.assertNotIn("topology_ignored", [event["kind"] for event in events])
+
+    def test_controller_observer_loss_discards_rf_rows_immediately(self) -> None:
+        self.backend.attach("/dev/demo-a")
+        controller = "0000000000000001"
+        remote = "0000000000000002"
+        self.backend.ingest(
+            "/dev/demo-a",
+            f"MESH node={controller} role=controller joined=1 "
+            "site=0102030405060708 epoch=9 parent=0000000000000000 hops=0",
+        )
+        self.backend.ingest(
+            "/dev/demo-a",
+            f"MESH TOPOLOGY node={remote} role=node joined=1 stale=0 "
+            f"parent={controller} hops=1 link_rssi=-55 link_snr=7 age_ms=0 "
+            "site=0102030405060708 epoch=9 lab_only=true",
+        )
+        self.backend.start_test(expected_nodes=2)
+        self.backend._detach_path("/dev/demo-a")
+        state = self.backend.snapshot()
+        self.assertNotIn(controller, state["nodes"])
+        self.assertNotIn(remote, state["nodes"])
+        self.assertEqual((state["run"]["active"], state["run"]["phase"]),
+                         (False, "ATTENTION"))
+
+    def test_controller_role_or_site_loss_discards_rf_rows_immediately(self) -> None:
+        self.backend.attach("/dev/demo-a")
+        controller = "0000000000000001"
+        remote = "0000000000000002"
+
+        def observe() -> None:
+            self.backend.ingest(
+                "/dev/demo-a",
+                f"MESH node={controller} role=controller joined=1 "
+                "site=0102030405060708 epoch=9 parent=0000000000000000 hops=0",
+            )
+            self.backend.ingest(
+                "/dev/demo-a",
+                f"MESH TOPOLOGY node={remote} role=node joined=1 stale=0 "
+                f"parent={controller} hops=1 link_rssi=-55 link_snr=7 age_ms=0 "
+                "site=0102030405060708 epoch=9 lab_only=true",
+            )
+
+        observe()
+        self.backend.ingest(
+            "/dev/demo-a",
+            f"MESH node={controller} role=node joined=0 parent=0000000000000000 hops=0",
+        )
+        self.assertNotIn(remote, self.backend.snapshot()["nodes"])
+        observe()
+        self.backend.ingest(
+            "/dev/demo-a",
+            f"MESH node={controller} role=controller joined=1 parent=0000000000000000 hops=0",
+        )
+        state = self.backend.snapshot()
+        self.assertNotIn(remote, state["nodes"])
+        self.assertEqual(state["nodes"][controller]["role"], "controller")
+
     def test_generic_send_and_probe_cannot_share_ack_correlation(self) -> None:
         self.backend.attach("/dev/demo-a")
         self.backend.ingest(
