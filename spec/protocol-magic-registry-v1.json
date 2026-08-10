@@ -826,6 +826,11 @@
       "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
       "occurrences": [
         {
+          "path": "src/runtime/production_attachment_v1/pa_s3_nar1_reassembly.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
           "path": "src/runtime/production_attachment_v1/pa_s3_nas1_stream.c",
           "representation": "QUOTED",
           "count": 1
@@ -834,6 +839,11 @@
           "path": "tests/radio/production_attachment_edhoc_vector_test.c",
           "representation": "QUOTED",
           "count": 3
+        },
+        {
+          "path": "tests/runtime/production_attachment_v1_nar1_reassembly_test.c",
+          "representation": "QUOTED",
+          "count": 1
         },
         {
           "path": "tools/production_attachment_edhoc_closed_key_schema.json",
@@ -933,9 +943,19 @@
       "authority": "docs/adr/0023-production-attachment-edhoc-profile.md",
       "occurrences": [
         {
+          "path": "src/runtime/production_attachment_v1/pa_s3_nar1_reassembly.c",
+          "representation": "QUOTED",
+          "count": 1
+        },
+        {
           "path": "tests/radio/production_attachment_edhoc_vector_test.c",
           "representation": "QUOTED",
-          "count": 3
+          "count": 4
+        },
+        {
+          "path": "tests/runtime/production_attachment_v1_nar1_reassembly_test.c",
+          "representation": "QUOTED",
+          "count": 1
         },
         {
           "path": "tools/production_attachment_edhoc_closed_key_schema.json",
@@ -950,7 +970,7 @@
         {
           "path": "tools/production_attachment_edhoc_gate.mjs",
           "representation": "QUOTED",
-          "count": 2
+          "count": 3
         },
         {
           "path": "tools/production_attachment_edhoc_gate.py",
@@ -960,7 +980,7 @@
         {
           "path": "tools/production_attachment_edhoc_independent_authority.py",
           "representation": "QUOTED",
-          "count": 2
+          "count": 3
         },
         {
           "path": "tools/protocol_magic_registry_gate.py",

@@ -53,7 +53,7 @@ _EXPECTED_VECTOR = (
 # Updated only after generator output and independent semantics are reviewed.
 # This pin deliberately lives outside the composition/generator modules.
 EXPECTED_VECTOR_SHA256 = (
-    "ba5ed7fa643679d21f399f505af3102dc500b693b108ce1a0cee27b9b3f8089e"
+    "95639924765712d34d5667ab48efe32aeb2d2d5cb6e7af27180d3c8480184fac"
 )
 
 

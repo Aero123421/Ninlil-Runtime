@@ -1,0 +1,2 @@
+# Private PA-S3b1 NAR1 post-admission compile/link/stack candidate only.
+CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1=y

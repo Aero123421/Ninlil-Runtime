@@ -419,6 +419,22 @@ def fragment_nar1(record: bytes) -> list[bytes]:
     return packets
 
 
+def _nar1_fragment_shape_ok(
+    complete_len: int, index: int, count: int, payload_len: int
+) -> bool:
+    if not NAC1_HEADER_BYTES <= complete_len <= NAC1_RECORD_MAX:
+        return False
+    expected_count = (complete_len + NAR1_PAYLOAD_MAX - 1) // NAR1_PAYLOAD_MAX
+    if count != expected_count or not 0 <= index < count:
+        return False
+    expected_payload = (
+        NAR1_PAYLOAD_MAX
+        if index + 1 < count
+        else complete_len - index * NAR1_PAYLOAD_MAX
+    )
+    return 1 <= payload_len <= NAR1_PAYLOAD_MAX and payload_len == expected_payload
+
+
 def _nar1_parse(packet: bytes) -> dict[str, Any]:
     if not NAR1_HEADER_BYTES <= len(packet) <= NAR1_PACKET_MAX:
         raise ValueError("NAR length")
@@ -437,16 +453,10 @@ def _nar1_parse(packet: bytes) -> dict[str, Any]:
     index, count = packet[42], packet[43]
     complete_len = struct.unpack(">H", packet[40:42])[0]
     offset = struct.unpack(">I", packet[60:64])[0]
-    if not 1 <= count <= 5 or index >= count:
-        raise ValueError("NAR index/count")
+    if not _nar1_fragment_shape_ok(complete_len, index, count, payload_len):
+        raise ValueError("NAR canonical fragment shape")
     if offset != index * NAR1_PAYLOAD_MAX:
         raise ValueError("NAR gap/overlap")
-    if index + 1 < count and payload_len != NAR1_PAYLOAD_MAX:
-        raise ValueError("NAR non-final length")
-    if offset + payload_len > complete_len:
-        raise ValueError("NAR payload overrun")
-    if index + 1 == count and offset + payload_len != complete_len:
-        raise ValueError("NAR final gap")
     return {
         "source_tuple": (
             packet[12:28],
@@ -5750,6 +5760,19 @@ def main() -> int:
         or len(cookie["response_radio_fragments"]) != 2
     ):
         print("self-test failed: cookie response exact length 159")
+        return 1
+    for row in cookie["response_radio_fragments"]:
+        short = bytearray.fromhex(row["hex"])
+        del short[-1]
+        short[8:10] = len(short).to_bytes(2, "big")
+        short[10:12] = (len(short) - 68).to_bytes(2, "big")
+        short[64:68] = bytes(4)
+        short[64:68] = crc32c(bytes(short)).to_bytes(4, "big")
+        try:
+            _nar1_parse(bytes(short))
+        except ValueError:
+            continue
+        print("self-test failed: short NAR payload accepted")
         return 1
     if cookie["time_bucket_seconds"] != COOKIE_TIME_BUCKET_SECONDS:
         print("self-test failed: cookie time_bucket_seconds pin")

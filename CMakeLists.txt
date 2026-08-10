@@ -84,6 +84,9 @@ option(NINLIL_ENABLE_PRIVATE_PA_S2B1_EDHOC_P256
 option(NINLIL_ENABLE_PRIVATE_PA_S3_NAS1
     "Build private PA-S3a NAS1 direct-stream candidate (default OFF; not installed)"
     OFF)
+option(NINLIL_ENABLE_PRIVATE_PA_S3_NAR1
+    "Build private PA-S3b1 NAR1 reassembly candidate (default OFF; not installed)"
+    OFF)
 
 if(NINLIL_ENABLE_PRIVATE_PA_S2_EDHOC_CRYPTO
         AND NOT NINLIL_ENABLE_PRIVATE_PA_S1_EDHOC)
@@ -776,6 +779,20 @@ if(NINLIL_ENABLE_PRIVATE_PA_S3_NAS1)
         C_VISIBILITY_PRESET hidden)
     ninlil_apply_strict_warnings(ninlil_pa_s3_nas1_private)
     target_compile_options(ninlil_pa_s3_nas1_private PRIVATE
+        -Wvla -fstack-usage)
+endif()
+if(NINLIL_ENABLE_PRIVATE_PA_S3_NAR1)
+    add_library(ninlil_pa_s3_nar1_private STATIC EXCLUDE_FROM_ALL
+        src/runtime/production_attachment_v1/pa_s3_nar1_reassembly.c)
+    target_include_directories(ninlil_pa_s3_nar1_private PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/production_attachment_v1)
+    set_target_properties(ninlil_pa_s3_nar1_private PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+        C_VISIBILITY_PRESET hidden)
+    ninlil_apply_strict_warnings(ninlil_pa_s3_nar1_private)
+    target_compile_options(ninlil_pa_s3_nar1_private PRIVATE
         -Wvla -fstack-usage)
 endif()
 if(NINLIL_R7_HOST_CRYPTO_ENABLED)
@@ -2018,6 +2035,14 @@ if(NINLIL_BUILD_TESTS)
                 check
                 --public-archive $<TARGET_FILE:ninlil_runtime>)
     endif()
+    if(NINLIL_ENABLE_PRIVATE_PA_S3_NAR1 AND NINLIL_BUILD_HOST_RUNTIME)
+        add_test(
+            NAME pa_s3_nar1_public_symbol_boundary
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/production_attachment_edhoc_vendor_gate.py
+                check
+                --public-archive $<TARGET_FILE:ninlil_runtime>)
+    endif()
     add_test(
         NAME release_workflow_identity_gate
         COMMAND ${Python3_EXECUTABLE}
@@ -2412,6 +2437,22 @@ if(NINLIL_BUILD_TESTS)
         ninlil_apply_strict_warnings(ninlil_pa_s3_nas1_stream_test)
         add_test(NAME pa_s3_nas1_stream
             COMMAND ninlil_pa_s3_nas1_stream_test)
+    endif()
+    if(NINLIL_ENABLE_PRIVATE_PA_S3_NAR1 AND NINLIL_BUILD_HOST_RUNTIME)
+        add_executable(ninlil_pa_s3_nar1_reassembly_test
+            tests/runtime/production_attachment_v1_nar1_reassembly_test.c)
+        target_link_libraries(ninlil_pa_s3_nar1_reassembly_test PRIVATE
+            ninlil_pa_s3_nar1_private
+            ninlil_runtime)
+        target_include_directories(ninlil_pa_s3_nar1_reassembly_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/production_attachment_v1)
+        set_target_properties(ninlil_pa_s3_nar1_reassembly_test PROPERTIES
+            C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+        ninlil_apply_strict_warnings(ninlil_pa_s3_nar1_reassembly_test)
+        add_test(NAME pa_s3_nar1_reassembly
+            COMMAND ninlil_pa_s3_nar1_reassembly_test)
     endif()
     add_executable(ninlil_production_attachment_edhoc_vector_test
         tests/radio/production_attachment_edhoc_vector_test.c

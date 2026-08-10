@@ -35,6 +35,10 @@
     && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1
 #include "pa_s3_nas1_stream.h"
 #endif
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1
+#include "pa_s3_nar1_reassembly.h"
+#endif
 #if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
     && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
 #include "mfdt_v1.h"
@@ -110,6 +114,11 @@ static ninlil_pa_s2_edhoc_crypto_owner_v1_t s_pa_s2_crypto_owner;
     && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1
 static ninlil_pa_s3_nas1_owner_v1_t s_pa_s3_nas1_owner;
 static uint8_t s_pa_s3_nas1_output[NINLIL_PA_S3_NAC1_RECORD_BYTES_MAX];
+#endif
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1
+static ninlil_pa_s3_nar1_owner_v1_t s_pa_s3_nar1_owner;
+static uint8_t s_pa_s3_nar1_output[NINLIL_PA_S3_NAR1_RECORD_BYTES_MAX];
 #endif
 
 
@@ -220,6 +229,36 @@ static int smoke_pa_s3_nas1_link(void)
         return -1;
     }
     ESP_LOGI(TAG, "PA-S3a NAS1 link OK; target execution/HIL pending");
+    return 0;
+}
+#endif
+
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1
+static int smoke_pa_s3_nar1_link(void)
+{
+    ninlil_pa_s3_nar1_config_v1_t config;
+    ninlil_pa_s3_nar1_outcome_v1_t outcome = 0u;
+    uint8_t malformed_packet = 0u;
+    size_t output_size = 1u;
+
+    (void)memset(&config, 0, sizeof(config));
+    (void)memset(&s_pa_s3_nar1_owner, 0, sizeof(s_pa_s3_nar1_owner));
+    config.owner_context_id = 1u;
+    config.source_locator_digest[0] = 1u;
+    if (ninlil_pa_s3_nar1_owner_v1_init(&s_pa_s3_nar1_owner, &config)
+            != NINLIL_OK
+        || ninlil_pa_s3_nar1_owner_v1_feed(&s_pa_s3_nar1_owner, 1u,
+               config.source_locator_digest, &malformed_packet, 1u,
+               s_pa_s3_nar1_output, sizeof(s_pa_s3_nar1_output),
+               &output_size, &outcome) != NINLIL_OK
+        || outcome != NINLIL_PA_S3_NAR1_TERMINAL || output_size != 0u
+        || ninlil_pa_s3_nar1_owner_v1_close(&s_pa_s3_nar1_owner, 1u)
+            != NINLIL_OK) {
+        ESP_LOGE(TAG, "PA-S3b1 private NAR1 link failed");
+        return -1;
+    }
+    ESP_LOGI(TAG, "PA-S3b1 NAR1 link OK; target execution/HIL pending");
     return 0;
 }
 #endif
@@ -1329,6 +1368,12 @@ void app_main(void)
 #if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1) \
     && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1
     if (smoke_pa_s3_nas1_link() != 0) {
+        fail = 1;
+    }
+#endif
+#if defined(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1) \
+    && CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1
+    if (smoke_pa_s3_nar1_link() != 0) {
         fail = 1;
     }
 #endif

@@ -116,6 +116,12 @@ if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1)
     list(APPEND NINLIL_PA_PRIV_INCLUDES
         "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1")
 endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1)
+    list(APPEND NINLIL_COMPONENT_SRCS
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s3_nar1_reassembly.c")
+    list(APPEND NINLIL_PA_PRIV_INCLUDES
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1")
+endif()
 if(CONFIG_NINLIL_ENABLE_R7_FRAG_PRIVATE)
     foreach(_rel IN LISTS NINLIL_R7_FRAG_PRODUCTION_RELATIVE_SOURCES)
         list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
@@ -371,6 +377,11 @@ endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAS1)
     set_source_files_properties(
         "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s3_nas1_stream.c"
+        PROPERTIES COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048")
+endif()
+if(CONFIG_NINLIL_ENABLE_PRIVATE_PA_S3_NAR1)
+    set_source_files_properties(
+        "${NINLIL_REPO_ROOT}/src/runtime/production_attachment_v1/pa_s3_nar1_reassembly.c"
         PROPERTIES COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048")
 endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_FABRIC_V1)

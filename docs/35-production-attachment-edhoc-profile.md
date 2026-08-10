@@ -427,6 +427,30 @@ conflicting duplicate、1-fragment loss後のidle timeout、offset overlap、mix
 outer/inner generation mismatch、source locator mismatchはterminal discardかつ
 published bytes 0である。
 
+### 7.1 PA-S3b1 strict NAR1 codec / admitted reassembly candidate boundary
+
+PA-S3b1はcookie検証とcarrier admissionの**後段だけ**を対象にする
+private/default-OFF/uninstalled候補である。NAR1 codecはcomplete NAC1 lengthを
+`88..600` bytes、fragment countをexact `ceil(length / 124)`（`1..5`）に固定する。
+各fragmentは`offset = index * 124`、non-final payloadはexact 124 bytes、final payloadは
+exact `length - offset`かつ`1..124` bytesでなければならない。したがって、124-byte
+recordをcount 2としたzero-length final fragment、159-byte recordをcount 3とした
+coherent header/CRC mutationはpacket受理前に拒否する。
+
+候補ownerはcaller-owned 600-byte record bufferと5-bit received maskだけを持ち、192-byte
+packetをslotごとに保存しない。exact 1 owner tupleだけを直列化し、canonical orderと逆順を
+同じ1 recordへ収束させ、same duplicateはno-progress、conflict、mixed tuple、gap、overlap、
+digestまたはinner NAC1 mismatchはpublication 0でterminalとする。完成前はNAC1 bytesを
+publishせず、完成時だけexact recordを将来のNAC1 consumerへ1回渡せる。private C candidateは
+full raw packetをowner mutation前にparseし、600-byte record bufferへcanonical offsetで直接copy
+する。packet slot、heap、VLA、task、storeは持たない。これはHost/ESP compile候補であり、
+live handoff、timeout owner、retry、message lifecycleを実装または完了扱いしない。
+
+live source locator、cookie secret/bucket/HMAC、challenge、anti-amplification quota、RF ingress/TX、
+Join、physical HILは本候補のauthorityではない。oracleが使うcaller-supplied
+`source_locator_digest32`はHost test-only identityであり、production ingress contractではない。
+NJM1、NRA1、RRMP、NRW1またはLAB実装を流用せず、cold multi-hop capabilityを主張しない。
+
 ## 8. Stateless cookie
 
 compact radioのunknown peerは必須。cookie secretはcontroller RAMにcurrent/previous各32 bytes、

@@ -122,6 +122,14 @@ RFC 9528 EDHOCと候補実装を調査したが、依存採用もproduction完�
     current/previous/older cookie bucketを含む31 transitions / 17 branchesを固定し、
     全branch countをnon-zeroにする。older bucketは既存scratchもterminal releaseし、
     cookie成功前のidentity allocation/credential resolver callは常に0とする。
+16. PA-S3b1はcookie検証・carrier admission後のprivate/default-OFF/uninstalled候補として
+    strict NAR1 codecとexact 1-record reassemblyだけを隔離する。complete lengthは88..600、
+    countはexact `ceil(length / 124)`（1..5）、offsetは`index * 124`、non-final payloadは
+    124、final payloadは1..124の残長exactとする。候補ownerは600-byte buffer＋5-bit maskで
+    packet slotsを保存しない。仕様・oracle checkpointではlive source locator、cookie/HMAC、
+    challenge、quota、timeout/retry、message owner、RF、NAC1 live handoff、Join/HILを接続せず、
+    oracleのsource digestはHost test-onlyとする。これによりPA-S3、PA-O05および本ADRは
+    OPEN/Proposedのままである。
 
 ## Dependency direction
 

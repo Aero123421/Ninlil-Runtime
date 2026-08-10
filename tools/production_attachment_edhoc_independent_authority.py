@@ -85,15 +85,20 @@ def _nar_parse(packet: bytes) -> dict[str, Any]:
     payload_len = len(packet) - 68
     offset = int.from_bytes(packet[60:64], "big")
     complete_len = int.from_bytes(packet[40:42], "big")
+    expected_count = (complete_len + 123) // 124
+    expected_payload = (
+        124 if index + 1 < count else complete_len - index * 124
+    )
     if (
-        not 1 <= count <= 5
+        not 88 <= complete_len <= 600
+        or count != expected_count
+        or not 1 <= count <= 5
         or index >= count
         or offset != index * 124
-        or (index + 1 < count and payload_len != 124)
-        or offset + payload_len > complete_len
-        or (index + 1 == count and offset + payload_len != complete_len)
+        or not 1 <= payload_len <= 124
+        or payload_len != expected_payload
     ):
-        raise AuthorityError("nar gap/overlap")
+        raise AuthorityError("nar canonical fragment shape")
     return {
         "tuple": (
             packet[12:28],
@@ -173,7 +178,56 @@ def _recrc_nar(packet: bytes) -> bytes:
     return bytes(out)
 
 
+def _nar_shape_packet(
+    complete_len: int, index: int, count: int, payload_len: int
+) -> bytes:
+    packet = bytearray(68 + payload_len)
+    packet[:4] = b"NAR1"
+    packet[4:8] = b"\x12\x01\x00\x44"
+    packet[8:10] = len(packet).to_bytes(2, "big")
+    packet[10:12] = payload_len.to_bytes(2, "big")
+    packet[12:28] = bytes(range(1, 17))
+    packet[28:36] = (1).to_bytes(8, "big")
+    packet[40:42] = complete_len.to_bytes(2, "big")
+    packet[42] = index
+    packet[43] = count
+    packet[44:60] = bytes(range(17, 33))
+    packet[60:64] = (index * 124).to_bytes(4, "big")
+    packet[68:] = bytes((value & 0xFF) for value in range(payload_len))
+    return _recrc_nar(bytes(packet))
+
+
+def _assert_nar_fragment_shape_authority() -> None:
+    accepted = (
+        (88, 0, 1, 88),
+        (124, 0, 1, 124),
+        (125, 0, 2, 124),
+        (125, 1, 2, 1),
+        (159, 1, 2, 35),
+        (600, 4, 5, 104),
+    )
+    rejected = (
+        (87, 0, 1, 87),
+        (601, 4, 5, 105),
+        (124, 0, 2, 124),
+        (124, 1, 2, 0),
+        (159, 0, 3, 124),
+        (159, 1, 3, 35),
+        (159, 0, 2, 123),
+        (159, 1, 2, 34),
+    )
+    for shape in accepted:
+        _nar_parse(_nar_shape_packet(*shape))
+    for shape in rejected:
+        try:
+            _nar_parse(_nar_shape_packet(*shape))
+        except AuthorityError:
+            continue
+        raise AuthorityError(f"nar coherent shape mutant accepted: {shape}")
+
+
 def assert_nar_authority(document: dict[str, Any]) -> None:
+    _assert_nar_fragment_shape_authority()
     fragments = [_hx(row["hex"]) for row in document["compact_radio_fragments"]]
     source = _hx(document["preauth_owner"]["source_locator_digest_hex"])
     conflict = bytearray(fragments[0])

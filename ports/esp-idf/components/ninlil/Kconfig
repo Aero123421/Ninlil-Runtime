@@ -159,6 +159,14 @@ menu "Ninlil private candidates"
             structural validator. This is private compile/link/stack evidence
             only; no socket, credential, EDHOC state, radio, Join, or HIL claim.
 
+    config NINLIL_ENABLE_PRIVATE_PA_S3_NAR1
+        bool "Enable private PA-S3b1 NAR1 post-admission candidate"
+        default n
+        help
+            Compile/link the fixed 600-byte NAR1 single-record reassembler.
+            This is private compile/link/stack evidence only; live locator,
+            cookie admission, RF ingress, EDHOC state, Join, and HIL are open.
+
     config NINLIL_ENABLE_R7_FRAG_PRIVATE
         bool "Enable private NRW1 LINK/FRAG candidate (not public ABI)"
         default n

@@ -48,6 +48,7 @@ const requiredCases = new Set([
   "NAR1-OFFSET-MUTATION",
   "NAR1-DIGEST-MUTATION",
   "NAR1-REORDER-DUPLICATE-LOSS",
+  "NAR1-CANONICAL-FRAGMENT-SHAPE",
   "NAR1-SESSION-GENERATION-BINDING-DIVERGENCE",
   "NAR1-MIXED-FRAGMENT-TUPLE",
   "CARRIER-BINDING-DERIVATION-PINNED",
@@ -198,6 +199,12 @@ function validateNpa(record, field, kind, sequence, carrier) {
 }
 
 function validateNpr(packet, field) {
+  const payload = packet.length >= 12 ? u16(packet, 10) : 0;
+  const complete = packet.length >= 44 ? u16(packet, 40) : 0;
+  const index = packet.length >= 44 ? packet[42] : 0;
+  const count = packet.length >= 44 ? packet[43] : 0;
+  const expectedCount = Math.ceil(complete / 124);
+  const expectedPayload = index + 1 < count ? 124 : complete - index * 124;
   if (
     packet.length < 68 ||
     packet.length > 192 ||
@@ -207,20 +214,76 @@ function validateNpr(packet, field) {
     u16(packet, 6) !== 68 ||
     u16(packet, 8) !== packet.length ||
     u16(packet, 10) !== packet.length - 68 ||
-    packet[43] < 1 ||
-    packet[43] > 5 ||
-    packet[42] >= packet[43] ||
-    u32(packet, 60) !== packet[42] * 124
+    complete < 88 ||
+    complete > 600 ||
+    count !== expectedCount ||
+    count < 1 ||
+    count > 5 ||
+    index >= count ||
+    payload < 1 ||
+    payload > 124 ||
+    payload !== expectedPayload ||
+    u32(packet, 60) !== index * 124
   ) {
     fail(`${field}: NAR fields`);
-  }
-  if (packet[42] + 1 < packet[43] && u16(packet, 10) !== 124) {
-    fail(`${field}: NAR non-final length`);
   }
   const scratch = Buffer.from(packet);
   const stored = u32(packet, 64);
   scratch.fill(0, 64, 68);
   if (crc32c(scratch) !== stored) fail(`${field}: NAR CRC`);
+}
+
+function narShapePacket(complete, index, count, payload) {
+  const packet = Buffer.alloc(68 + payload);
+  packet.write("NAR1", 0, "ascii");
+  packet.set([0x12, 0x01, 0x00, 0x44], 4);
+  packet.writeUInt16BE(packet.length, 8);
+  packet.writeUInt16BE(payload, 10);
+  for (let value = 0; value < 16; value += 1) packet[12 + value] = value + 1;
+  packet.writeBigUInt64BE(1n, 28);
+  packet.writeUInt16BE(complete, 40);
+  packet[42] = index;
+  packet[43] = count;
+  for (let value = 0; value < 16; value += 1) packet[44 + value] = value + 17;
+  packet.writeUInt32BE(index * 124, 60);
+  for (let value = 0; value < payload; value += 1) packet[68 + value] = value;
+  packet.writeUInt32BE(crc32c(packet), 64);
+  return packet;
+}
+
+function assertNarFragmentShapeAuthority(executed) {
+  const accepted = [
+    [88, 0, 1, 88],
+    [124, 0, 1, 124],
+    [125, 0, 2, 124],
+    [125, 1, 2, 1],
+    [159, 1, 2, 35],
+    [600, 4, 5, 104],
+  ];
+  const rejected = [
+    [87, 0, 1, 87],
+    [601, 4, 5, 105],
+    [124, 0, 2, 124],
+    [124, 1, 2, 0],
+    [159, 0, 3, 124],
+    [159, 1, 3, 35],
+    [159, 0, 2, 123],
+    [159, 1, 2, 34],
+  ];
+  for (const shape of accepted) {
+    validateNpr(narShapePacket(...shape), `nar shape positive ${shape}`);
+  }
+  for (const shape of rejected) {
+    let rejectedShape = false;
+    try {
+      validateNpr(narShapePacket(...shape), `nar shape negative ${shape}`);
+    } catch (error) {
+      if (!(error instanceof GateError)) throw error;
+      rejectedShape = true;
+    }
+    if (!rejectedShape) fail(`NAR coherent shape mutant accepted: ${shape}`);
+  }
+  executed.add("NAR1-CANONICAL-FRAGMENT-SHAPE");
 }
 
 
@@ -4230,6 +4293,8 @@ function validate(document) {
     }
   }
   executed.add("CONTROL-NONCE-SEQUENCE-DIRECTION-EXACT");
+
+  assertNarFragmentShapeAuthority(executed);
 
   const fragments = document.compact_radio_fragments.map((item, index) => {
     const packet = hex(item.hex, `fragment ${index}`);

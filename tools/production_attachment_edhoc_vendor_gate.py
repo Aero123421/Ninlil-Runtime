@@ -21,6 +21,7 @@ EXPECTED_ZCBOR = "d3093b5684f62268c7f27f8a5079f166772619de"
 PUBLIC_FORBIDDEN_PREFIXES = (
     "edhoc_", "zcbor_", "cbor_encode_", "cbor_decode_",
     "ninlil_pa_s1_edhoc_", "ninlil_pa_s2_edhoc_", "ninlil_pa_s3_nas1_",
+    "ninlil_pa_s3_nar1_",
 )
 
 
@@ -204,6 +205,13 @@ def self_test() -> None:
         pass
     else:
         raise GateError("private PA-S3 symbol leak was accepted")
+    try:
+        reject_public_symbol_leaks(
+            "0000 T ninlil_pa_s3_nar1_owner_v1_init\n")
+    except GateError:
+        pass
+    else:
+        raise GateError("private PA-S3 NAR1 symbol leak was accepted")
     try:
         reject_public_symbol_leaks("0000 T _cbor_decode_message_1\n")
     except GateError:

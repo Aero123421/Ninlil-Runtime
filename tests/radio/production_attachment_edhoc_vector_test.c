@@ -37,6 +37,7 @@ enum {
     PA_CASE_COOKIE_LEN_159,
     PA_CASE_PROTECTED_SEQ,
     PA_CASE_INSTALL_FRAG,
+    PA_CASE_NAR_CANONICAL_SHAPE,
     PA_CASE_NAC_CRC,
     PA_CASE_NAC_RESERVED,
     PA_CASE_NAC_LENGTH,
@@ -111,6 +112,7 @@ static const char *const g_pa_case_names[PA_CASE_COUNT] = {
     "COOKIE-RESPONSE-EXACT-LENGTH-159",
     "PROTECTED-PROPOSE-INSTALL-DUAL-CONFIRM-SEQUENCE",
     "NAC1-INSTALL-MAX-RADIO-FRAGMENTATION",
+    "NAR1-CANONICAL-FRAGMENT-SHAPE",
     "NAC1-CRC-MUTATION",
     "NAC1-RESERVED-MUTATION",
     "NAC1-LENGTH-MUTATION",
@@ -495,6 +497,8 @@ static int pa_nar_validate(const uint8_t *packet, size_t size)
     uint16_t complete_bytes;
     uint8_t index;
     uint8_t count;
+    uint8_t expected_count;
+    uint16_t expected_payload;
     uint32_t offset;
     uint32_t stored_crc;
 
@@ -509,12 +513,18 @@ static int pa_nar_validate(const uint8_t *packet, size_t size)
     index = packet[42];
     count = packet[43];
     offset = pa_u32(packet + 60u);
-    if ((size_t)payload_bytes != size - 68u || count < 1u || count > 5u
-        || index >= count || offset != (uint32_t)index * 124u
-        || (index + 1u < count && payload_bytes != 124u)
-        || offset + (uint32_t)payload_bytes > (uint32_t)complete_bytes
-        || (index + 1u == count
-            && offset + (uint32_t)payload_bytes != (uint32_t)complete_bytes)) {
+    if ((size_t)payload_bytes != size - 68u || complete_bytes < 88u
+        || complete_bytes > 600u || payload_bytes < 1u
+        || payload_bytes > 124u || count < 1u || count > 5u
+        || index >= count) {
+        return 0;
+    }
+    expected_count = (uint8_t)(((uint32_t)complete_bytes + 123u) / 124u);
+    expected_payload = index + 1u < count
+        ? 124u
+        : (uint16_t)(complete_bytes - (uint16_t)((uint16_t)index * 124u));
+    if (count != expected_count || payload_bytes != expected_payload
+        || offset != (uint32_t)index * 124u) {
         return 0;
     }
     (void)memcpy(scratch, packet, size);
@@ -533,6 +543,80 @@ static void pa_recompute_nar_crc(uint8_t *packet, size_t size)
 {
     (void)memset(packet + 64u, 0, 4u);
     pa_put_u32(packet + 64u, pa_crc32c(packet, size));
+}
+
+typedef struct pa_nar_shape_case {
+    uint16_t complete_bytes;
+    uint8_t index;
+    uint8_t count;
+    uint16_t payload_bytes;
+} pa_nar_shape_case_t;
+
+static size_t pa_make_nar_shape_packet(
+    uint8_t packet[192], const pa_nar_shape_case_t *shape)
+{
+    size_t index;
+    const size_t packet_size = 68u + (size_t)shape->payload_bytes;
+
+    (void)memset(packet, 0, 192u);
+    (void)memcpy(packet, "NAR1", 4u);
+    packet[4] = 0x12u;
+    packet[5] = 1u;
+    pa_put_u16(packet + 6u, 68u);
+    pa_put_u16(packet + 8u, (uint16_t)packet_size);
+    pa_put_u16(packet + 10u, shape->payload_bytes);
+    for (index = 0u; index < 16u; ++index) {
+        packet[12u + index] = (uint8_t)(index + 1u);
+        packet[44u + index] = (uint8_t)(index + 17u);
+    }
+    pa_put_u64(packet + 28u, 1u);
+    pa_put_u16(packet + 40u, shape->complete_bytes);
+    packet[42] = shape->index;
+    packet[43] = shape->count;
+    pa_put_u32(packet + 60u, (uint32_t)shape->index * 124u);
+    for (index = 0u; index < (size_t)shape->payload_bytes; ++index) {
+        packet[68u + index] = (uint8_t)index;
+    }
+    pa_recompute_nar_crc(packet, packet_size);
+    return packet_size;
+}
+
+static int pa_nar_fragment_shape_authority(void)
+{
+    static const pa_nar_shape_case_t accepted[] = {
+        {88u, 0u, 1u, 88u},
+        {124u, 0u, 1u, 124u},
+        {125u, 0u, 2u, 124u},
+        {125u, 1u, 2u, 1u},
+        {159u, 1u, 2u, 35u},
+        {600u, 4u, 5u, 104u},
+    };
+    static const pa_nar_shape_case_t rejected[] = {
+        {87u, 0u, 1u, 87u},
+        {601u, 4u, 5u, 105u},
+        {124u, 0u, 2u, 124u},
+        {124u, 1u, 2u, 0u},
+        {159u, 0u, 3u, 124u},
+        {159u, 1u, 3u, 35u},
+        {159u, 0u, 2u, 123u},
+        {159u, 1u, 2u, 34u},
+    };
+    uint8_t packet[192];
+    size_t index;
+
+    for (index = 0u; index < sizeof(accepted) / sizeof(accepted[0]); ++index) {
+        const size_t size = pa_make_nar_shape_packet(packet, &accepted[index]);
+        if (!pa_nar_validate(packet, size)) {
+            return 0;
+        }
+    }
+    for (index = 0u; index < sizeof(rejected) / sizeof(rejected[0]); ++index) {
+        const size_t size = pa_make_nar_shape_packet(packet, &rejected[index]);
+        if (pa_nar_validate(packet, size)) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static void pa_recompute_n6at_crc(uint8_t *value)
@@ -3108,6 +3192,10 @@ static int pa_positive(void)
         }
     }
     pa_exec(PA_CASE_INSTALL_FRAG);
+    if (!pa_nar_fragment_shape_authority()) {
+        return 0;
+    }
+    pa_exec(PA_CASE_NAR_CANONICAL_SHAPE);
     pa_exec(PA_CASE_NAR_GENERATION);
 
     /*

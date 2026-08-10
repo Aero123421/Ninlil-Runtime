@@ -66,6 +66,7 @@ REQUIRED_CASES = {
     "NAR1-OFFSET-MUTATION",
     "NAR1-DIGEST-MUTATION",
     "NAR1-REORDER-DUPLICATE-LOSS",
+    "NAR1-CANONICAL-FRAGMENT-SHAPE",
     "NAR1-SESSION-GENERATION-BINDING-DIVERGENCE",
     "NAR1-EXCHANGE-GENERATION-BINDING",
     "NAR1-MIXED-FRAGMENT-TUPLE",
@@ -1479,12 +1480,23 @@ def validate_nar(packet: bytes, field: str) -> None:
         fail(f"{field}: NAR profile")
     if u16(packet, 8) != len(packet) or u16(packet, 10) != len(packet) - 68:
         fail(f"{field}: NAR packet length")
-    if not 1 <= packet[43] <= 5 or packet[42] >= packet[43]:
+    payload = u16(packet, 10)
+    complete = u16(packet, 40)
+    index = packet[42]
+    count = packet[43]
+    expected_count = (complete + 123) // 124
+    expected_payload = 124 if index + 1 < count else complete - index * 124
+    if (
+        not 88 <= complete <= 600
+        or count != expected_count
+        or not 1 <= count <= 5
+        or index >= count
+        or not 1 <= payload <= 124
+        or payload != expected_payload
+    ):
         fail(f"{field}: NAR index/count")
-    if u32(packet, 60) != packet[42] * 124:
+    if u32(packet, 60) != index * 124:
         fail(f"{field}: NAR offset")
-    if packet[42] + 1 < packet[43] and u16(packet, 10) != 124:
-        fail(f"{field}: NAR non-final payload")
     scratch = bytearray(packet)
     stored = u32(packet, 64)
     scratch[64:68] = bytes(4)
@@ -2776,6 +2788,7 @@ def validate(document: dict[str, Any]) -> set[str]:
             "PA-NAR-REORDER-SUCCESS",
             "PA-NAR-DUPLICATE-NO-PROGRESS",
             "PA-NAR-CONFLICT-GAP-OVERLAP-MIXED-TIMEOUT",
+            "NAR1-CANONICAL-FRAGMENT-SHAPE",
             "PA-PREAUTH-SOURCE-QUOTA-IDLE-BUCKET",
             "PA-MAGIC-GLOBAL-UNIQUE",
             "PA-NAS-PARTIAL-SHORT-TRAILING-FUTURE-INNER",
