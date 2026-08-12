@@ -292,7 +292,7 @@ jobs:
       - name: Test full matrix
         run: >-
           ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
-          --output-junit build/ci-ubuntu-dyn/ctest-junit.xml
+          --output-junit ctest-junit.xml
       - name: Traceability registration coverage V2 (baseline)
         run: |
           python3 tools/traceability_complete_coverage_gate.py --self-test
@@ -1794,14 +1794,12 @@ jobs:
             echo "false-green: partial private tree registered all-private Host tests" >&2
             exit 1
           fi
-      - name: Traceability registration coverage V2 (all-private)
+      - name: Prepare traceability registration coverage V2 (all-private)
         run: |
           set -euo pipefail
           # The aggregate above proves the six-feature integration surface,
           # but the traceability manifest cites additional focused CTests.
-          # Build the configured tree, execute the exact all-private cited set,
-          # and let the gate reject any extraction omission via missing JUnit
-          # PASS evidence.
+          # Build the configured tree and materialize the exact cited set.
           cmake --build build/host-completion-allfeat --parallel 2
           python3 - <<'PY' \
             > build/host-completion-allfeat/traceability-cited.regex
@@ -1828,11 +1826,14 @@ jobs:
               raise SystemExit("all-private traceability cited set is empty")
           print("^(" + "|".join(re.escape(name) for name in sorted(tests)) + ")$")
           PY
+      - name: Produce traceability JUnit V2 (all-private)
+        run: >-
           ctest --test-dir build/host-completion-allfeat \
             --output-on-failure --no-tests=error \
-            --output-junit \
-              traceability-cited-junit.xml \
+            --output-junit traceability-cited-junit.xml \
             -R "$(cat build/host-completion-allfeat/traceability-cited.regex)"
+      - name: Verify traceability registration coverage V2 (all-private)
+        run: |
           python3 tools/traceability_complete_coverage_gate.py --self-test
           python3 tools/traceability_complete_coverage_gate.py --check \
             --profile all-private=build/host-completion-allfeat \

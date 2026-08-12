@@ -601,18 +601,50 @@ def validate_all_private_traceability_job(ci: str) -> None:
     job = jobs.get("host-completion-integrated-e2e")
     if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
         raise GateError("CI all-private traceability: owner job is absent")
-    matches = [
-        step
-        for step in job["steps"]
-        if isinstance(step, dict)
-        and step.get("name")
-        == "Traceability registration coverage V2 (all-private)"
-    ]
-    if len(matches) != 1 or set(matches[0]) != {"name", "run"}:
+    if set(job) != {
+        "name",
+        "runs-on",
+        "timeout-minutes",
+        "defaults",
+        "steps",
+    }:
+        raise GateError("CI all-private traceability: owner job fields are not closed")
+    if (
+        job.get("name") != "Host all-private coexistence + canonical actual E2E"
+        or job.get("runs-on") != "ubuntu-24.04"
+        or job.get("timeout-minutes") != 45
+        or job.get("defaults")
+        != {"run": {"shell": "bash --noprofile --norc -euo pipefail {0}"}}
+    ):
         raise GateError(
-            "CI all-private traceability: exact evidence step is not closed"
+            "CI all-private traceability: owner job execution authority drift"
         )
-    commands = logical_shell_commands(matches[0].get("run", ""))
+    step_names = (
+        "Prepare traceability registration coverage V2 (all-private)",
+        "Produce traceability JUnit V2 (all-private)",
+        "Verify traceability registration coverage V2 (all-private)",
+    )
+    matches: list[tuple[int, dict[Any, Any]]] = []
+    for name in step_names:
+        named = [
+            (index, step)
+            for index, step in enumerate(job["steps"])
+            if isinstance(step, dict) and step.get("name") == name
+        ]
+        if len(named) != 1 or set(named[0][1]) != {"name", "run"}:
+            raise GateError(
+                "CI all-private traceability: exact preparation/producer/"
+                "evidence steps are not closed"
+            )
+        matches.append(named[0])
+    prepare_index, _ = matches[0]
+    producer_index, producer_step = matches[1]
+    evidence_index, evidence_step = matches[2]
+    if producer_index != prepare_index + 1 or evidence_index != producer_index + 1:
+        raise GateError(
+            "CI all-private traceability: preparation, JUnit production, and "
+            "evidence check must be adjacent"
+        )
     expected_ctest = (
         "ctest --test-dir build/host-completion-allfeat --output-on-failure "
         "--no-tests=error --output-junit traceability-cited-junit.xml "
@@ -623,9 +655,94 @@ def validate_all_private_traceability_job(ci: str) -> None:
         "--profile all-private=build/host-completion-allfeat --junit "
         "all-private=build/host-completion-allfeat/traceability-cited-junit.xml"
     )
-    if commands.count(expected_ctest) != 1 or commands.count(expected_gate) != 1:
+    expected_self_test = (
+        "python3 tools/traceability_complete_coverage_gate.py --self-test"
+    )
+    if logical_shell_commands(producer_step.get("run", "")) != [expected_ctest]:
         raise GateError(
-            "CI all-private traceability: CTest JUnit producer/consumer path drift"
+            "CI all-private traceability: exact CTest JUnit producer path drift"
+        )
+    if logical_shell_commands(evidence_step.get("run", "")) != [
+        expected_self_test,
+        expected_gate,
+    ]:
+        raise GateError(
+            "CI all-private traceability: evidence commands must be exactly "
+            "self-test then JUnit consumer"
+        )
+
+
+def validate_baseline_traceability_job(ci: str) -> None:
+    """Bind baseline JUnit production to CTest's --test-dir path rules."""
+    doc = parse_workflow(ci, "CI baseline traceability")
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict):
+        raise GateError("CI baseline traceability: jobs are absent")
+    job = jobs.get("ubuntu-dynamic-strict")
+    if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+        raise GateError("CI baseline traceability: owner job is absent")
+    if set(job) != {
+        "name",
+        "runs-on",
+        "timeout-minutes",
+        "defaults",
+        "steps",
+    }:
+        raise GateError("CI baseline traceability: owner job fields are not closed")
+    if (
+        job.get("name") != "Ubuntu dynamic SQLite strict full"
+        or job.get("runs-on") != "ubuntu-24.04"
+        or job.get("timeout-minutes") != 40
+        or job.get("defaults")
+        != {"run": {"shell": "bash --noprofile --norc -euo pipefail {0}"}}
+    ):
+        raise GateError("CI baseline traceability: owner job execution authority drift")
+    test_steps = [
+        (index, step)
+        for index, step in enumerate(job["steps"])
+        if isinstance(step, dict) and step.get("name") == "Test full matrix"
+    ]
+    evidence_steps = [
+        (index, step)
+        for index, step in enumerate(job["steps"])
+        if isinstance(step, dict)
+        and step.get("name") == "Traceability registration coverage V2 (baseline)"
+    ]
+    if (
+        len(test_steps) != 1
+        or set(test_steps[0][1]) != {"name", "run"}
+        or len(evidence_steps) != 1
+        or set(evidence_steps[0][1]) != {"name", "run"}
+    ):
+        raise GateError("CI baseline traceability: evidence steps are not closed")
+    test_index, test_step = test_steps[0]
+    evidence_index, evidence_step = evidence_steps[0]
+    if evidence_index != test_index + 1:
+        raise GateError(
+            "CI baseline traceability: evidence check must immediately follow "
+            "the JUnit producer step"
+        )
+    expected_ctest = (
+        "ctest --test-dir build/ci-ubuntu-dyn --output-on-failure "
+        "--output-junit ctest-junit.xml"
+    )
+    expected_gate = (
+        "python3 tools/traceability_complete_coverage_gate.py --check "
+        "--profile baseline=build/ci-ubuntu-dyn --junit "
+        "baseline=build/ci-ubuntu-dyn/ctest-junit.xml"
+    )
+    expected_self_test = (
+        "python3 tools/traceability_complete_coverage_gate.py --self-test"
+    )
+    if logical_shell_commands(test_step.get("run", "")) != [expected_ctest]:
+        raise GateError("CI baseline traceability: CTest JUnit producer path drift")
+    if logical_shell_commands(evidence_step.get("run", "")) != [
+        expected_self_test,
+        expected_gate,
+    ]:
+        raise GateError(
+            "CI baseline traceability: evidence commands must be exactly "
+            "self-test then JUnit consumer"
         )
 
 
@@ -1774,6 +1891,7 @@ def validate(inputs: Inputs) -> None:
     validate_reusable(inputs.ci, "CI")
     validate_reusable(inputs.esp, "ESP-IDF")
     validate_all_private_traceability_job(inputs.ci)
+    validate_baseline_traceability_job(inputs.ci)
     validate_clang_release_r7_job(inputs.ci)
     validate_linter(inputs.ci)
     validate_decoder_fuzz_job(inputs.ci)
@@ -1819,13 +1937,232 @@ def self_test() -> None:
     reject("mutable CI checkout", mutable_ci)
 
     nested_all_private_junit = copy.deepcopy(baseline)
+    all_private_junit_path = "--output-junit traceability-cited-junit.xml"
+    if nested_all_private_junit.ci.count(all_private_junit_path) != 1:
+        raise GateError("self-test fixture missing all-private JUnit producer path")
     nested_all_private_junit.ci = nested_all_private_junit.ci.replace(
-        "--output-junit \\\n              traceability-cited-junit.xml \\",
-        "--output-junit \\\n"
-        "              build/host-completion-allfeat/traceability-cited-junit.xml \\",
+        all_private_junit_path,
+        "--output-junit "
+        "build/host-completion-allfeat/traceability-cited-junit.xml",
         1,
     )
     reject("all-private JUnit path nested below --test-dir", nested_all_private_junit)
+
+    nested_baseline_junit = copy.deepcopy(baseline)
+    nested_baseline_junit.ci = nested_baseline_junit.ci.replace(
+        "--output-junit ctest-junit.xml",
+        "--output-junit build/ci-ubuntu-dyn/ctest-junit.xml",
+        1,
+    )
+    reject("baseline JUnit path nested below --test-dir", nested_baseline_junit)
+
+    missing_baseline_junit = copy.deepcopy(baseline)
+    missing_baseline_junit.ci = missing_baseline_junit.ci.replace(
+        " --output-junit ctest-junit.xml",
+        "",
+        1,
+    )
+    reject("baseline JUnit producer removed", missing_baseline_junit)
+
+    overwritten_all_private_junit = copy.deepcopy(baseline)
+    all_private_body = job_body(
+        overwritten_all_private_junit.ci,
+        "host-completion-integrated-e2e",
+    )
+    all_private_self_test = (
+        "          python3 tools/traceability_complete_coverage_gate.py "
+        "--self-test\n"
+    )
+    if all_private_body.count(all_private_self_test) != 1:
+        raise GateError("self-test fixture missing all-private evidence self-test")
+    overwritten_all_private_body = all_private_body.replace(
+        all_private_self_test,
+        "          printf forged > "
+        "build/host-completion-allfeat/traceability-cited-junit.xml\n"
+        + all_private_self_test,
+        1,
+    )
+    overwritten_all_private_junit.ci = overwritten_all_private_junit.ci.replace(
+        all_private_body,
+        overwritten_all_private_body,
+        1,
+    )
+    reject(
+        "all-private JUnit overwritten after production",
+        overwritten_all_private_junit,
+    )
+
+    intermediate_all_private_overwrite = copy.deepcopy(baseline)
+    all_private_body = job_body(
+        intermediate_all_private_overwrite.ci,
+        "host-completion-integrated-e2e",
+    )
+    all_private_evidence_step = (
+        "      - name: Verify traceability registration coverage V2 (all-private)\n"
+    )
+    if all_private_body.count(all_private_evidence_step) != 1:
+        raise GateError("self-test fixture missing all-private evidence step")
+    intermediate_all_private_body = all_private_body.replace(
+        all_private_evidence_step,
+        "      - name: Overwrite all-private JUnit\n"
+        "        run: printf forged > "
+        "build/host-completion-allfeat/traceability-cited-junit.xml\n"
+        + all_private_evidence_step,
+        1,
+    )
+    intermediate_all_private_overwrite.ci = (
+        intermediate_all_private_overwrite.ci.replace(
+            all_private_body,
+            intermediate_all_private_body,
+            1,
+        )
+    )
+    reject(
+        "all-private JUnit overwritten in an intermediate step",
+        intermediate_all_private_overwrite,
+    )
+
+    hijacked_all_private_commands = copy.deepcopy(baseline)
+    all_private_body = job_body(
+        hijacked_all_private_commands.ci,
+        "host-completion-integrated-e2e",
+    )
+    all_private_producer_prefix = (
+        "      - name: Produce traceability JUnit V2 (all-private)\n"
+        "        run: >-\n"
+        "          ctest --test-dir build/host-completion-allfeat \\\n"
+    )
+    if all_private_body.count(all_private_producer_prefix) != 1:
+        raise GateError("self-test fixture missing all-private producer command")
+    hijacked_all_private_body = all_private_body.replace(
+        all_private_producer_prefix,
+        "      - name: Produce traceability JUnit V2 (all-private)\n"
+        "        run: >-\n"
+        "          ctest() { printf forged > "
+        "build/host-completion-allfeat/traceability-cited-junit.xml; };\n"
+        "          python3() { return 0; };\n"
+        "          ctest --test-dir build/host-completion-allfeat \\\n",
+        1,
+    )
+    hijacked_all_private_commands.ci = hijacked_all_private_commands.ci.replace(
+        all_private_body,
+        hijacked_all_private_body,
+        1,
+    )
+    reject("all-private evidence commands shadowed", hijacked_all_private_commands)
+
+    missing_all_private_self_test = copy.deepcopy(baseline)
+    all_private_body = job_body(
+        missing_all_private_self_test.ci,
+        "host-completion-integrated-e2e",
+    )
+    if all_private_body.count(all_private_self_test) != 1:
+        raise GateError("self-test fixture missing all-private evidence self-test")
+    missing_all_private_self_test.ci = missing_all_private_self_test.ci.replace(
+        all_private_body,
+        all_private_body.replace(all_private_self_test, "", 1),
+        1,
+    )
+    reject("all-private evidence self-test removed", missing_all_private_self_test)
+
+    overwritten_baseline_junit = copy.deepcopy(baseline)
+    baseline_body = job_body(overwritten_baseline_junit.ci, "ubuntu-dynamic-strict")
+    baseline_self_test = (
+        "          python3 tools/traceability_complete_coverage_gate.py "
+        "--self-test\n"
+    )
+    if baseline_body.count(baseline_self_test) != 1:
+        raise GateError("self-test fixture missing baseline evidence self-test")
+    overwritten_baseline_body = baseline_body.replace(
+        baseline_self_test,
+        baseline_self_test
+        + "          printf forged > build/ci-ubuntu-dyn/ctest-junit.xml\n",
+        1,
+    )
+    overwritten_baseline_junit.ci = overwritten_baseline_junit.ci.replace(
+        baseline_body,
+        overwritten_baseline_body,
+        1,
+    )
+    reject(
+        "baseline JUnit overwritten before evidence check",
+        overwritten_baseline_junit,
+    )
+
+    intermediate_baseline_overwrite = copy.deepcopy(baseline)
+    baseline_body = job_body(
+        intermediate_baseline_overwrite.ci,
+        "ubuntu-dynamic-strict",
+    )
+    baseline_evidence_step = (
+        "      - name: Traceability registration coverage V2 (baseline)\n"
+    )
+    if baseline_body.count(baseline_evidence_step) != 1:
+        raise GateError("self-test fixture missing baseline evidence step")
+    intermediate_baseline_body = baseline_body.replace(
+        baseline_evidence_step,
+        "      - name: Overwrite baseline JUnit\n"
+        "        run: printf forged > build/ci-ubuntu-dyn/ctest-junit.xml\n"
+        + baseline_evidence_step,
+        1,
+    )
+    intermediate_baseline_overwrite.ci = intermediate_baseline_overwrite.ci.replace(
+        baseline_body,
+        intermediate_baseline_body,
+        1,
+    )
+    reject(
+        "baseline JUnit overwritten in an intermediate step",
+        intermediate_baseline_overwrite,
+    )
+
+    missing_baseline_self_test = copy.deepcopy(baseline)
+    baseline_body = job_body(missing_baseline_self_test.ci, "ubuntu-dynamic-strict")
+    if baseline_body.count(baseline_self_test) != 1:
+        raise GateError("self-test fixture missing baseline evidence self-test")
+    missing_baseline_self_test.ci = missing_baseline_self_test.ci.replace(
+        baseline_body,
+        baseline_body.replace(baseline_self_test, "", 1),
+        1,
+    )
+    reject("baseline evidence self-test removed", missing_baseline_self_test)
+
+    non_blocking_baseline_job = copy.deepcopy(baseline)
+    baseline_body = job_body(non_blocking_baseline_job.ci, "ubuntu-dynamic-strict")
+    timeout_line = "    timeout-minutes: 40\n"
+    if baseline_body.count(timeout_line) != 1:
+        raise GateError("self-test fixture missing baseline job timeout")
+    non_blocking_baseline_body = baseline_body.replace(
+        timeout_line,
+        timeout_line + "    continue-on-error: true\n",
+        1,
+    )
+    non_blocking_baseline_job.ci = non_blocking_baseline_job.ci.replace(
+        baseline_body,
+        non_blocking_baseline_body,
+        1,
+    )
+    reject("baseline evidence job made non-blocking", non_blocking_baseline_job)
+
+    non_blocking_all_private_job = copy.deepcopy(baseline)
+    all_private_body = job_body(
+        non_blocking_all_private_job.ci,
+        "host-completion-integrated-e2e",
+    )
+    timeout_line = "    timeout-minutes: 45\n"
+    if all_private_body.count(timeout_line) != 1:
+        raise GateError("self-test fixture missing all-private job timeout")
+    non_blocking_all_private_body = all_private_body.replace(
+        timeout_line,
+        timeout_line + "    continue-on-error: true\n",
+        1,
+    )
+    non_blocking_all_private_job.ci = non_blocking_all_private_job.ci.replace(
+        all_private_body,
+        non_blocking_all_private_body,
+        1,
+    )
+    reject("all-private evidence job made non-blocking", non_blocking_all_private_job)
 
     short_clang_release = copy.deepcopy(baseline)
     clang_release_body = job_body(
