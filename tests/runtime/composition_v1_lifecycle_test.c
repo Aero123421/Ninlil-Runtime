@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "composition_v1_test_fixture.h"
 #include "runtime_internal.h"
 

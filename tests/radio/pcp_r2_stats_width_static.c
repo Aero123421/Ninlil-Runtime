@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Static TU: include private PCP header only to force all 24 stats field
  * width/offset _Static_assert contracts. Used by docs-gate self-test under

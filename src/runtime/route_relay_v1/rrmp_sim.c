@@ -1,10 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_sim.h"
 #include "rrmp_codec.h"
 #include "rrmp_util.h"
 
 #include <string.h>
 
-enum { RRMP_SIM_WS = 512 * 1024 };
+enum { RRMP_SIM_WS = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES };
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_sim_ws_ep[RRMP_SIM_WS];
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_sim_ws_pa[RRMP_SIM_WS];
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_sim_ws_pb[RRMP_SIM_WS];
@@ -100,6 +101,7 @@ static void sim_authority_tuple_encode(
 }
 
 static int sim_bootstrap_assignment(
+    ninlil_rrmp_owner_t *owner,
     const uint8_t owner_scope_id[16],
     const uint8_t path_policy_id[16],
     const uint8_t parent_set_digest32[32],
@@ -157,7 +159,7 @@ static int sim_bootstrap_assignment(
         return 0;
     }
     memcpy(prepare.handoff_token_digest32, token, 32u);
-    if (ninlil_parent_owner_prepare_v2(&prepare, out) !=
+    if (ninlil_parent_owner_prepare_v2(owner, &prepare, out) !=
         NINLIL_PARENT_OK) {
         return 0;
     }
@@ -226,7 +228,7 @@ static int sim_bootstrap_assignment(
         commit_preimage,
         off,
         commit.authority_commit_digest32);
-    if (ninlil_parent_authority_commit_v2(&commit, out) !=
+    if (ninlil_parent_authority_commit_v2(owner, &commit, out) !=
         NINLIL_PARENT_OK) {
         return 0;
     }
@@ -240,7 +242,7 @@ static int sim_bootstrap_assignment(
         commit.authority_commit_digest32,
         32u);
     activate.now_ms = 1000000u;
-    return ninlil_parent_owner_activate(&activate, out) ==
+    return ninlil_parent_owner_activate(owner, &activate, out) ==
         NINLIL_PARENT_OK;
 }
 
@@ -296,7 +298,7 @@ int ninlil_rrmp_sim_run_bounded_driver(ninlil_rrmp_sim_t *sim)
     fill_nrm1(&nrm, 1u, 1u, 1u);
     (void)ninlil_rrmp_encode_nrm1(&nrm, raw);
     memcpy(install.entries, raw, sizeof(raw));
-    st = ninlil_route_install_batch(&install, &rout);
+    st = ninlil_route_install_batch(sim->endpoint_relay, &install, &rout);
     push(sim, 1u, st, 0u);
 
     ninlil_rrmp_memzero(&act, sizeof(act));
@@ -306,7 +308,7 @@ int ninlil_rrmp_sim_run_bounded_driver(ninlil_rrmp_sim_t *sim)
     act.route_handle = 1u;
     act.route_generation = 1u;
     act.now_ms = 1000000u;
-    st = ninlil_route_activate(&act, &rout);
+    st = ninlil_route_activate(sim->endpoint_relay, &act, &rout);
     push(sim, 2u, st, 0u);
 
     ninlil_rrmp_memzero(&admit, sizeof(admit));
@@ -322,7 +324,7 @@ int ninlil_rrmp_sim_run_bounded_driver(ninlil_rrmp_sim_t *sim)
     admit.admission_now_ms = 1000000u;
     admit.priority_class = NINLIL_RRMP_PRIO_NORMAL;
     admit.caller_item_token = 1u;
-    st = ninlil_route_forward_admit(&admit, &rout);
+    st = ninlil_route_forward_admit(sim->endpoint_relay, &admit, &rout);
     push(sim, 3u, st, rout.hop_remaining_out);
 
     st = ninlil_rrmp_core_forward_service_once(sim->endpoint_relay, &rout);
@@ -342,16 +344,17 @@ int ninlil_rrmp_sim_run_bounded_driver(ninlil_rrmp_sim_t *sim)
     memcpy(pset.parent_runtime_id[1], pids[1].bytes, 16u);
     (void)ninlil_rrmp_parent_set_digest(pids, 2u, &dig);
     memcpy(pset.parent_set_digest32, dig.bytes, 32u);
-    st = ninlil_parent_set_install(&pset, &pout);
+    st = ninlil_parent_set_install(sim->endpoint_relay, &pset, &pout);
     push(sim, 6u, st, 2u);
     if (st != NINLIL_PARENT_OK ||
         !sim_bootstrap_assignment(
+            sim->endpoint_relay,
             sim->scope,
             pset.path_policy_id,
             pset.parent_set_digest32,
             pset.parent_set_count,
             &pout)) {
-        ninlil_rrmp_owner_unbind();
+        ninlil_rrmp_owner_unbind(sim->endpoint_relay);
         return 0;
     }
     push(sim, 5u, NINLIL_PARENT_OK, pout.handoff_step);
@@ -378,7 +381,7 @@ int ninlil_rrmp_sim_run_bounded_driver(ninlil_rrmp_sim_t *sim)
         push(sim, 10u, st, ninlil_rrmp_owner_downlink_tx_allowed(sim->endpoint_relay));
     }
 
-    ninlil_rrmp_owner_unbind();
+    ninlil_rrmp_owner_unbind(sim->endpoint_relay);
     return 1;
 }
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "n6_crypto_provider.h"
 #include "n6_mem_storage.h"
 #include "r7_context_binding.h"

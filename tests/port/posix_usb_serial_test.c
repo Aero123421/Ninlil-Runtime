@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * U1 host tests: POSIX USB/serial byte-stream adapter.
  * Deterministic PTY + syscall seam. No timing-flaky sleeps.

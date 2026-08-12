@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production-path FRAG L1 orchestrator: real N6 + R7 AEAD + R2 issue + R1 edge
  * + issued FIFO ledger (cap 2) + §15.3.8 cleanup.
@@ -28,6 +29,16 @@ static void spy(ninlil_r7_frag_prod_bind_t *b, uint8_t ev)
     if (b != NULL && b->spy != NULL) {
         ninlil_r7_frag_spy_push(b->spy, ev);
     }
+}
+
+static ninlil_r7_r5_issue_registry_t *bind_issue_registry(
+    ninlil_r7_frag_prod_bind_t *bind)
+{
+    if (bind == NULL) {
+        return NULL;
+    }
+    return bind->issue_registry != NULL ? bind->issue_registry
+                                        : &bind->issue_registry_owned;
 }
 
 /* Real SHA-256 only; NULL provider / NULL sha256 / backend fail ⇒ nonzero. */
@@ -126,7 +137,8 @@ int32_t ninlil_r7_frag_prod_bind_reinit(ninlil_r7_frag_prod_bind_t *bind)
     {
         uint64_t auth = bind_authority_token(bind);
         if (auth != 0u) {
-            ninlil_r7_frag_issue_coordinator_complete_all_authority(auth);
+            ninlil_r7_frag_issue_coordinator_complete_all_authority(
+                &bind->issue_coordinator, auth);
         }
     }
     held_tx_clear(bind);
@@ -744,31 +756,15 @@ int32_t ninlil_r7_frag_prod_cleanup(
         {
             uint64_t auth = bind_authority_token(bind);
             if (auth != 0u) {
-                ninlil_r7_frag_issue_coordinator_complete_all_authority(auth);
+                ninlil_r7_frag_issue_coordinator_complete_all_authority(
+                    &bind->issue_coordinator, auth);
             }
-            if (bind->issue_registry != NULL) {
-                ninlil_r7_r5_issue_registry_clear(bind->issue_registry);
-            } else {
-                /* Process-static registry: drop every live row. */
-                ninlil_r7_r5_issue_registry_t *def = NULL;
-                (void)def;
-                /* release each ledger seq; full clear via default init path */
-                for (i = 0u; i < NINLIL_R7_FRAG_L1_ISSUED_CAP; i++) {
-                    if (bind->ledger[i].permit_sequence != 0u) {
-                        ninlil_r7_r5_issue_registry_release_default(
-                            bind->ledger[i].permit_sequence);
-                    }
-                }
-                if (permit_sequence != 0u) {
-                    ninlil_r7_r5_issue_registry_release_default(permit_sequence);
-                }
-            }
+            ninlil_r7_r5_issue_registry_clear(bind_issue_registry(bind));
         }
         held_tx_clear(bind);
         for (i = 0u; i < NINLIL_R7_FRAG_L1_ISSUED_CAP; i++) {
             if (bind->ledger[i].live != 0u) {
-                if (bind->ledger[i].permit_sequence != 0u
-                    && bind->issue_registry != NULL) {
+                if (bind->ledger[i].permit_sequence != 0u) {
                     r5_release_seq(bind, bind->ledger[i].permit_sequence);
                 }
                 ledger_release_slot(bind, i, cleanup_class);
@@ -801,13 +797,9 @@ int32_t ninlil_r7_frag_prod_cleanup(
                         bind->ledger[i].permit_sequence;
                 }
                 /* Free R5 registry row so later issues are not CAPACITY-starved. */
-                if (bind->issue_registry != NULL) {
-                    ninlil_r7_r5_issue_registry_release(
-                        bind->issue_registry, bind->ledger[i].permit_sequence);
-                } else {
-                    ninlil_r7_r5_issue_registry_release_default(
-                        bind->ledger[i].permit_sequence);
-                }
+                ninlil_r7_r5_issue_registry_release(
+                    bind_issue_registry(bind),
+                    bind->ledger[i].permit_sequence);
                 ledger_release_slot(bind, i, cleanup_class);
             }
         }
@@ -935,11 +927,7 @@ static void r5_release_seq(ninlil_r7_frag_prod_bind_t *bind, uint64_t seq)
     if (bind == NULL || seq == 0u) {
         return;
     }
-    if (bind->issue_registry != NULL) {
-        ninlil_r7_r5_issue_registry_release(bind->issue_registry, seq);
-    } else {
-        ninlil_r7_r5_issue_registry_release_default(seq);
-    }
+    ninlil_r7_r5_issue_registry_release(bind_issue_registry(bind), seq);
 }
 
 /* Coordinator complete + R5 release + L1 cleanup (same identity). */
@@ -949,7 +937,8 @@ static int32_t coord_finish(
     uint64_t seq,
     uint8_t cln)
 {
-    (void)ninlil_r7_frag_issue_coordinator_complete(auth, seq, NULL);
+    (void)ninlil_r7_frag_issue_coordinator_complete(
+        &bind->issue_coordinator, auth, seq, NULL);
     r5_release_seq(bind, seq);
     held_tx_clear(bind);
     return ninlil_r7_frag_prod_cleanup(bind, cln, seq);
@@ -975,7 +964,8 @@ static int32_t r1_tx_with_permit(
         bind->ledger[slot].permit_sequence = permit->permit_sequence;
     }
 
-    cst = ninlil_r7_frag_issue_coordinator_begin_tx(auth, permit->permit_sequence);
+    cst = ninlil_r7_frag_issue_coordinator_begin_tx(
+        &bind->issue_coordinator, auth, permit->permit_sequence);
     if (cst != NINLIL_R7_COORD_OK) {
         /* Not head / busy: keep identity held, do not re-issue. */
         held_tx_store(
@@ -1027,7 +1017,7 @@ static int32_t r1_tx_with_permit(
     if (hst == NINLIL_RADIO_HAL_NOT_BEFORE
         || herr.reason == NINLIL_RADIO_HAL_REASON_NOT_BEFORE) {
         if (ninlil_r7_frag_issue_coordinator_hold_retry(
-                auth, permit->permit_sequence)
+                &bind->issue_coordinator, auth, permit->permit_sequence)
             != NINLIL_R7_COORD_OK) {
             out->cleanup_class = NINLIL_R7_FRAG_CLN_ISSUED_DRAIN;
             (void)coord_finish(
@@ -1047,7 +1037,7 @@ static int32_t r1_tx_with_permit(
     if (hst == NINLIL_RADIO_HAL_BUSY
         || herr.reason == NINLIL_RADIO_HAL_REASON_REENTRANT) {
         if (ninlil_r7_frag_issue_coordinator_hold_retry(
-                auth, permit->permit_sequence)
+                &bind->issue_coordinator, auth, permit->permit_sequence)
             == NINLIL_R7_COORD_OK) {
             held_tx_store(
                 bind, auth, permit->permit_sequence, slot, 0u, outer_digest,
@@ -1150,7 +1140,8 @@ static int32_t issue_and_tx(
         && bind->held_outer_len == (uint32_t)out->outer_len
         && memcmp(bind->held_outer_digest, outer_digest, 32u) == 0
         && ninlil_r7_frag_issue_coordinator_outer_matches(
-            auth, bind->held_permit_sequence, outer_digest,
+            &bind->issue_coordinator, auth, bind->held_permit_sequence,
+            outer_digest,
             (uint32_t)out->outer_len)) {
         /* Restore sealed outer bytes if caller re-presented prepared path. */
         if (out->outer_len == bind->held_outer_len
@@ -1163,17 +1154,20 @@ static int32_t issue_and_tx(
         slot = bind->held_tx_slot;
         if (bind->held_tx_queued != 0u
             && !ninlil_r7_frag_issue_coordinator_is_head(
-                auth, bind->held_permit_sequence)) {
+                &bind->issue_coordinator, auth,
+                bind->held_permit_sequence)) {
             out->issue_l1_class = NINLIL_R7_L1_FIFO_OUT_OF_ORDER;
             out->cleanup_class = NINLIL_R7_FRAG_CLN_ISSUED_HELD;
             return NINLIL_R7_FRAG_PROD_ADMISSION;
         }
         /* HELD → resume_tx; HEAD queued → begin_tx via same helper. */
         if (ninlil_r7_frag_issue_coordinator_slot_state(
-                auth, bind->held_permit_sequence)
+                &bind->issue_coordinator, auth,
+                bind->held_permit_sequence)
             == NINLIL_R7_COORD_ST_HELD) {
             cst = ninlil_r7_frag_issue_coordinator_resume_tx(
-                auth, bind->held_permit_sequence);
+                &bind->issue_coordinator, auth,
+                bind->held_permit_sequence);
             if (cst != NINLIL_R7_COORD_OK) {
                 out->issue_l1_class = NINLIL_R7_L1_FIFO_OUT_OF_ORDER;
                 out->cleanup_class = NINLIL_R7_FRAG_CLN_ISSUED_HELD;
@@ -1207,7 +1201,8 @@ static int32_t issue_and_tx(
                 if (hst == NINLIL_RADIO_HAL_NOT_BEFORE
                     || hst == NINLIL_RADIO_HAL_EXPIRED) {
                     (void)ninlil_r7_frag_issue_coordinator_hold_retry(
-                        auth, bind->held_permit_sequence);
+                        &bind->issue_coordinator, auth,
+                        bind->held_permit_sequence);
                     out->cleanup_class = NINLIL_R7_FRAG_CLN_ISSUED_HELD;
                     (void)ninlil_r7_frag_l1w1_emit(
                         bind->bus, bind->spy, NINLIL_R7_FRAG_EV_TX_RESULT,
@@ -1304,7 +1299,7 @@ static int32_t issue_and_tx(
         int32_t ist;
         ist = ninlil_r7_private_issue_checked_with_owner_epoch(
             bind->pcp, &bind->live, bind->live.site_assignment_epoch, &req,
-            bind->issue_registry, &permit, &cir);
+            bind_issue_registry(bind), &permit, &cir);
         pst = cir.pcp_status;
         out->r2_status = pst;
         out->issue_l1_class = cir.l1_class;
@@ -1362,7 +1357,8 @@ static int32_t issue_and_tx(
     admit.outer_len = (uint32_t)out->outer_len;
     admit.issue_now_ms = bind->r2_now_valid != 0u ? bind->r2_now_ms : 0u;
     memcpy(admit.outer_digest, outer_digest, 32u);
-    cst = ninlil_r7_frag_issue_coordinator_admit(&admit);
+    cst = ninlil_r7_frag_issue_coordinator_admit(
+        &bind->issue_coordinator, &admit);
     if (cst == NINLIL_R7_COORD_CAPACITY || cst == NINLIL_R7_COORD_BUSY
         || cst == NINLIL_R7_COORD_DUPLICATE || cst == NINLIL_R7_COORD_INVALID) {
         /* Issued but cannot own in queue: drain; never leave reissuable. */
@@ -2599,9 +2595,12 @@ int32_t ninlil_r7_frag_prod_tx_frag_apply_frag_ack(
         if (bind->held_tx_live != 0u || bind->ledger_count > 0u) {
             issued_live = 1;
         }
-        if (ninlil_r7_frag_issue_coordinator_count() > 0u
+        if (ninlil_r7_frag_issue_coordinator_count(
+                &bind->issue_coordinator)
+                > 0u
             && bind->pcp != NULL
-            && ninlil_r7_frag_issue_coordinator_head(bind_authority_token(bind))
+            && ninlil_r7_frag_issue_coordinator_head(
+                &bind->issue_coordinator, bind_authority_token(bind))
                 != 0u) {
             issued_live = 1;
         }

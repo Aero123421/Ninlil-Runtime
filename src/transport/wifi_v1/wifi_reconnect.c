@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "wifi_reconnect.h"
 
 #include "wifi_sha256.h"

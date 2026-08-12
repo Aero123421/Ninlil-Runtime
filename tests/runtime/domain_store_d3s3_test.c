@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D3-S3 unit coverage: context layout, begin prevalidation, PASS_INTERNAL
  * freeze, anti-false-pass harnesses for KEY_DIGEST reverse / Mode30 referrer

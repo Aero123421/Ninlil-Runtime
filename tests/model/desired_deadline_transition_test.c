@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "desired_deadline_transition.h"
 #include "required_receipt_transition.h"
 

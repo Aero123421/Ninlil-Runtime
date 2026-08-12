@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host test-only transport fixture E2E (private, non-installed).
  * Roles: --role parent|relay|endpoint
@@ -18,13 +19,13 @@
  */
 #include "host_completion_wire.h"
 
-#include "fabric_rrmp_select_hook.h"
 #include "in_memory_storage.h"
 #include "mfdt_v1.h"
 #include "mfdt_v1_pipeline.h"
 #include "ninlil/platform.h"
 #include "rrmp_abi.h"
 #include "rrmp_codec.h"
+#include "rrmp_fabric_dispatch.h"
 #include "rrmp_seam.h"
 #include "rrmp_util.h"
 #include "wifi_attachment_m4.h"
@@ -45,7 +46,7 @@
 #include <time.h>
 #include <unistd.h>
 
-enum { RRMP_WS_MAX = 512 * 1024 };
+enum { RRMP_WS_MAX = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES };
 enum { CONTENT_BYTES = 2000u }; /* > 896 → multi-chunk MFDT */
 enum { SESSION_COOKIE = 0x4d464454ull };
 
@@ -417,7 +418,7 @@ static int rrmp_install_route(ninlil_rrmp_owner_t *o, uint16_t h)
         return -1;
     }
     (void)memcpy(install.entries, raw, sizeof(raw));
-    if (ninlil_route_install_batch(&install, &out) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_install_batch(o, &install, &out) != NINLIL_ROUTE_OK) {
         return -1;
     }
     ninlil_rrmp_memzero(&act, sizeof(act));
@@ -427,7 +428,7 @@ static int rrmp_install_route(ninlil_rrmp_owner_t *o, uint16_t h)
     act.route_handle = h;
     act.route_generation = 1u;
     act.now_ms = 1000000u;
-    if (ninlil_route_activate(&act, &out) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_activate(o, &act, &out) != NINLIL_ROUTE_OK) {
         return -1;
     }
     return 0;
@@ -475,7 +476,7 @@ static int rrmp_install_two_parents(
         return -1;
     }
     (void)memcpy(set.parent_set_digest32, dig.bytes, 32u);
-    if (ninlil_parent_set_install(&set, &out) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(o, &set, &out) != NINLIL_PARENT_OK) {
         return -1;
     }
     return 0;
@@ -517,7 +518,7 @@ static int rrmp_hop_with_outbound(
     {
         ninlil_route_status_u32 ast;
         ninlil_route_status_u32 hst;
-        ast = ninlil_route_forward_admit(&admit, &out);
+        ast = ninlil_route_forward_admit(o, &admit, &out);
         if (ast != NINLIL_ROUTE_OK) {
             (void)fprintf(stderr, "hop admit st=%u\n", (unsigned)ast);
             return -1;
@@ -571,7 +572,7 @@ static int rrmp_hop_with_outbound(
         comp.completion_now_ms = 1000001u;
         {
             ninlil_route_status_u32 complete_st =
-                ninlil_route_forward_complete(&comp, &out);
+                ninlil_route_forward_complete(o, &comp, &out);
             if (complete_st != NINLIL_ROUTE_OK) {
                 (void)fprintf(
                     stderr,
@@ -919,6 +920,7 @@ static int rrmp_storage_current_witness(
  * a fixture flag; every transition is closed by its production FULL writepoint.
  */
 static int rrmp_bootstrap_assignment_durable(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_storage_ops_t *ops,
     ninlil_storage_handle_t handle,
     const uint8_t owner_scope_id[16],
@@ -937,7 +939,7 @@ static int rrmp_bootstrap_assignment_durable(
     uint8_t proof[32];
     uint8_t commit_digest[32];
 
-    if (ops == NULL || handle == NULL || owner_scope_id == NULL
+    if (owner == NULL || ops == NULL || handle == NULL || owner_scope_id == NULL
         || path_policy_id == NULL || parent_set_digest32 == NULL
         || parent_set_count == 0u || token32 == NULL) {
         return 0;
@@ -974,14 +976,17 @@ static int rrmp_bootstrap_assignment_durable(
     (void)memcpy(prep.handoff_token_digest32, token32, 32u);
     ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
     if (rrmp_test_owner_prepare_v2(
+            owner,
             &prep, &old_tuple, 1u, &new_tuple, &out)
             != NINLIL_PARENT_OK
         || rrmp_test_owner_fence_v2(
+            owner,
             owner_scope_id, token32, &old_tuple, proof, &out)
             != NINLIL_PARENT_OK
         || !rrmp_storage_current_witness(
             ops, handle, &expected_bundle)
         || rrmp_test_authority_commit_v2(
+            owner,
             owner_scope_id,
             &old_tuple,
             &new_tuple,
@@ -1000,7 +1005,7 @@ static int rrmp_bootstrap_assignment_durable(
     (void)memcpy(
         activate.commit_receipt_digest32, commit_digest, 32u);
     activate.now_ms = 1000000u;
-    return ninlil_parent_owner_activate(&activate, &out)
+    return ninlil_parent_owner_activate(owner, &activate, &out)
         == NINLIL_PARENT_OK;
 }
 
@@ -1558,7 +1563,8 @@ static int role_relay(
     (void)memset(bootstrap_token, 0x5bu, sizeof(bootstrap_token));
     if (!ninlil_rrmp_parent_set_digest(parent_ids, 2u, &parent_digest)
         || !rrmp_bootstrap_assignment_durable(
-            sops,
+                owner,
+                sops,
             shandle,
             scope,
             path_policy,
@@ -1575,7 +1581,7 @@ static int role_relay(
         (void)fprintf(stderr, "relay: fabric select fail\n");
         return 1;
     }
-    ninlil_fabric_rrmp_on_path_selected(
+    ninlil_rrmp_fabric_path_selected_hook_v1(
         owner, selected, has_sel, 1u, 1u, mono_ms(NULL));
     (void)printf("relay: fabric_selected P1 first has=%u\n", has_sel);
     (void)fflush(stdout);
@@ -1653,7 +1659,7 @@ static int role_relay(
                 return 1;
             }
         }
-        ninlil_fabric_rrmp_on_path_selected(
+        ninlil_rrmp_fabric_path_selected_hook_v1(
             owner, sel2, has2, 1u, 2u, mono_ms(NULL));
         ob_active = &ob_p2;
         provider.user = ob_active;
@@ -1825,7 +1831,7 @@ static int role_relay(
         rq.ingress_hop_context_id = 0x1001u;
         rq.route_handle = 1u;
         rq.route_generation = 1u;
-        if (ninlil_route_query(&rq, &rout) != NINLIL_ROUTE_OK
+        if (ninlil_route_query(owner, &rq, &rout) != NINLIL_ROUTE_OK
             || rout.lifecycle_state != NINLIL_RRMP_LIFE_ACTIVE) {
             (void)fprintf(stderr, "relay: LIVE route missing after recover\n");
             return 1;

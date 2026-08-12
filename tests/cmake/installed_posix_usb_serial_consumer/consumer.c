@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <ninlil/posix_usb_serial_v1.h>
 
 #include <errno.h>

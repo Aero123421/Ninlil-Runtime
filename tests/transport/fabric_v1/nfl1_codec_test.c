@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Strict C11 NFL1 v1 codec KATs (ADR-0017 / docs/34 §5).
  * Known-answer bytes hardcoded from accepted
@@ -1306,7 +1307,8 @@ static int test_kat_k_app_min(void)
         REQUIRE_EQ_U32(
             ninlil_fabric_private_nfl1_crc32c(tmp, k_app_min_len), stored);
         REQUIRE(stored == 0xe61981b1u);
-        (void)crc;
+        /* The production helper itself must ignore the stored field. */
+        REQUIRE_EQ_U32(crc, stored);
     }
     sha256(k_app_min, k_app_min_len, dig);
     REQUIRE(hex_eq32(dig, "c11c9ee6a0b4fd470ec2ea15555c5797b1224c511b350184286fcacbcf38d839"));

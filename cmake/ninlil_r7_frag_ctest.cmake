@@ -234,6 +234,26 @@ set_target_properties(ninlil_r7_frag_completion_test PROPERTIES
 ninlil_apply_strict_warnings(ninlil_r7_frag_completion_test)
 add_test(NAME nrw1_frag_completion_private COMMAND ninlil_r7_frag_completion_test)
 
+add_executable(ninlil_r7_issue_owner_state_test EXCLUDE_FROM_ALL
+    tests/radio/r7_frag/r7_issue_owner_state_test.c
+)
+target_include_directories(ninlil_r7_issue_owner_state_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/radio/r7_frag
+)
+target_link_libraries(ninlil_r7_issue_owner_state_test PRIVATE
+    ninlil_r7_frag_private
+    ninlil_runtime_private
+    ninlil
+)
+set_target_properties(ninlil_r7_issue_owner_state_test PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+    NINLIL_TEST_ONLY_ARTIFACT TRUE
+)
+ninlil_apply_strict_warnings(ninlil_r7_issue_owner_state_test)
+add_test(NAME nrw1_r7_issue_owner_state_private
+    COMMAND ninlil_r7_issue_owner_state_test)
+
 # ---------------------------------------------------------------------------
 # Wire fixture codec/crypto KAT (production codec + fixed vectors + negatives).
 # HIL remains NOT_RUN in fixture status field.
@@ -399,6 +419,7 @@ set(_r7_frag_test_tgts
     ninlil_r7_frag_session_test
     ninlil_r7_frag_lifecycle_matrix_test
     ninlil_r7_frag_completion_test
+    ninlil_r7_issue_owner_state_test
     ninlil_r7_frag_target_smoke_test
 )
 set(_r7_frag_test_names
@@ -408,6 +429,7 @@ set(_r7_frag_test_names
     nrw1_frag_session_private
     nrw1_frag_lifecycle_matrix_private
     nrw1_frag_completion_private
+    nrw1_r7_issue_owner_state_private
     nrw1_frag_target_smoke_private
 )
 if(TARGET ninlil_r7_radio_wire_v1_fixture_test)
@@ -431,4 +453,5 @@ add_test(NAME nrw1_frag_private_build
         --target ${_r7_frag_test_tgts}
 )
 set_tests_properties(nrw1_frag_private_build PROPERTIES
-    FIXTURES_SETUP r7_frag_private_build)
+    FIXTURES_SETUP r7_frag_private_build
+    RESOURCE_LOCK ninlil_ctest_build_tree)

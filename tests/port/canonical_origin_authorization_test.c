@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "canonical_origin_authorization.h"
 
 #include <stdint.h>

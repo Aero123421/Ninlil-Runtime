@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_lab_n6_owner.h"
 
 #include "r7_context_binding.h"

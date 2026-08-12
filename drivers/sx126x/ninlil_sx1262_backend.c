@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R4 SX1262 control-plane backend (docs/28 audit P1 fixes).
  * Not RF TX. Not HIL/legal. Not SKU identification.

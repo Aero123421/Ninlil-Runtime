@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil_esp_idf/cell_agent.h"
 
 int ninlil_esp_idf_tx_gate_ops_validate(const ninlil_tx_gate_ops_t *ops)

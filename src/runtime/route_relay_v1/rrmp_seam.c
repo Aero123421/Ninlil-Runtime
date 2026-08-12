@@ -1,9 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_seam.h"
 #include "rrmp_util.h"
 
 #include <string.h>
 
 ninlil_route_status_u32 ninlil_rrmp_seam_admit_from_nfl1_view(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_rrmp_nfl1_hop_view_t *hop, ninlil_route_result_v1_t *out)
 {
     ninlil_route_forward_admit_req_v1_t req;
@@ -38,7 +40,7 @@ ninlil_route_status_u32 ninlil_rrmp_seam_admit_from_nfl1_view(
     req.priority_class = hop->priority_class;
     req.caller_item_token = hop->caller_item_token;
     return ninlil_rrmp_core_forward_admit_with_carrier(
-        ninlil_rrmp_owner_current(), &req,
+        owner, &req,
         hop->application_data, hop->application_data_len,
         hop->attempt_id16, out);
 }
@@ -56,10 +58,10 @@ void ninlil_rrmp_seam_apply_r7_frag_view(
 }
 
 ninlil_route_status_u32 ninlil_rrmp_seam_fabric_forward_once(
+    ninlil_rrmp_owner_t *owner,
     ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = ninlil_rrmp_owner_current();
-    return ninlil_rrmp_core_forward_service_once(o, out);
+    return ninlil_rrmp_core_forward_service_once(owner, out);
 }
 
 /*
@@ -72,12 +74,12 @@ ninlil_route_status_u32 ninlil_rrmp_seam_fabric_forward_once(
  * Without a bound outbound provider, hop fails UNSUPPORTED_CAPABILITY.
  */
 ninlil_route_status_u32 ninlil_rrmp_seam_fabric_relay_cycle(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_rrmp_nfl1_hop_view_t *hop,
     uint8_t tx_permit_granted,
     ninlil_rrmp_hop_tx_view_t *tx_out,
     ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o;
     ninlil_route_status_u32 st;
     ninlil_route_result_v1_t admit_out;
     ninlil_route_result_v1_t svc_out;
@@ -93,13 +95,12 @@ ninlil_route_status_u32 ninlil_rrmp_seam_fabric_relay_cycle(
         out->status = NINLIL_ROUTE_INVALID_ARGUMENT;
         return NINLIL_ROUTE_INVALID_ARGUMENT;
     }
-    o = ninlil_rrmp_owner_current();
-    if (o == NULL) {
+    if (owner == NULL) {
         out->status = NINLIL_ROUTE_INVALID_ARGUMENT;
         return NINLIL_ROUTE_INVALID_ARGUMENT;
     }
 
-    st = ninlil_rrmp_seam_admit_from_nfl1_view(hop, &admit_out);
+    st = ninlil_rrmp_seam_admit_from_nfl1_view(owner, hop, &admit_out);
     if (st != NINLIL_ROUTE_OK) {
         *out = admit_out;
         return st;
@@ -110,7 +111,7 @@ ninlil_route_status_u32 ninlil_rrmp_seam_fabric_relay_cycle(
         return NINLIL_ROUTE_CORRUPT;
     }
 
-    st = ninlil_rrmp_core_forward_service_once(o, &svc_out);
+    st = ninlil_rrmp_core_forward_service_once(owner, &svc_out);
     if (st != NINLIL_ROUTE_OK) {
         *out = svc_out;
         return st;
@@ -122,7 +123,7 @@ ninlil_route_status_u32 ninlil_rrmp_seam_fabric_relay_cycle(
     }
 
     st = ninlil_rrmp_core_hop_forward_execute(
-        o, oh, NULL, 0u, tx_permit_granted, tx_out);
+        owner, oh, NULL, 0u, tx_permit_granted, tx_out);
     if (st != NINLIL_ROUTE_OK) {
         out->status = st;
         out->opaque_local_handle = oh;

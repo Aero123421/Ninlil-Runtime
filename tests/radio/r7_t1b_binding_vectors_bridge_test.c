@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 T1b independent vector bridge (docs/33 §9–10).
  *

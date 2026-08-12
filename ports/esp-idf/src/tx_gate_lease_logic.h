@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure single-use tx-gate lease registry (docs/22).
  * Host tests compile without FreeRTOS.

@@ -69,6 +69,12 @@ xtensa-esp32s3-elf-gcc -std=c11 -ffreestanding \
   -c tests/radio/pcp_r2_time_sample_abi_static.c \
   -o /tmp/pcp_r2_time_sample_abi_esp32s3.o
 test -s /tmp/pcp_r2_time_sample_abi_esp32s3.o
+# The committed ILP32 golden is generated from a freestanding 32-bit target
+# object; this is the final ESP32-S3 toolchain authority, not host inference.
+python3 tools/abi_manifest_ilp32_golden.py check \
+  tests/abi/golden/ILP32-le-32.manifest \
+  --cc xtensa-esp32s3-elf-gcc \
+  --objcopy xtensa-esp32s3-elf-objcopy
 idf.py -C ports/esp-idf/smoke_app set-target esp32s3 build
 idf.py -C ports/esp-idf/hil_app set-target esp32s3 build
 ELF=ports/esp-idf/smoke_app/build/ninlil_m3_combined_smoke.elf
@@ -430,6 +436,7 @@ xtensa-esp32s3-elf-nm "${FRAG_ELF}" | grep -E '[[:space:]][Tt][[:space:]]ninlil_
 grep -F 'libninlil.a(r7_frag_target_smoke.c.obj)' "${FRAG_MAP}" \
   || grep -F 'r7_frag_target_smoke.c.obj' "${FRAG_MAP}"
 grep -F 'ninlil_r7_frag_target_smoke_run' "${FRAG_MAP}"
+python3 tools/r7_frag_esp_dram_budget_gate.py check --map "${FRAG_MAP}"
 # Exact stack-usage gate for every production FRAG source (ceiling 4096).
 FRAG_SU_DIR="${FRAG_ON_BUILD}/esp-idf/ninlil"
 mkdir -p /tmp/ninlil_r7_frag_su
@@ -487,6 +494,7 @@ if grep -F 'src/runtime/mfdt_v1/mfdt_v1_store.c' "${MFDT_MAP}"; then
   echo "false-green: host lab mfdt_v1_store.c linked into ESP MFDT map" >&2
   exit 1
 fi
+python3 tools/mfdt_v1_esp_dram_budget_gate.py check --map "${MFDT_MAP}"
 # Stack-usage evidence for portable MFDT TUs when .su present.
 MFDT_SU_DIR="${MFDT_ON_BUILD}/ninlil_mfdt_su"
 rm -rf "${MFDT_SU_DIR}"
@@ -852,6 +860,13 @@ if grep -E ' [Tt] ninlil_pcp_lab_session_ledger_' "${V1_BOARD_DIR}/ninlil_v1_boa
   echo "V1 board target linked diagnostic session-ledger symbols" >&2
   exit 1
 fi
+python3 tools/esp_storage_stack_gate.py \
+  --require-su \
+  --max 2048 \
+  --only-source fabric_private_util.c \
+  --only-source nfl1_codec.c \
+  --only-source v1_lab_radio_mapping.c \
+  "${V1_BOARD_DIR}/esp-idf/ninlil"
 echo "V1 USB+SX1262 board target compile/link OK (flash candidate, not physical HIL)"
 
 # The generic peer is the same board owner with one fixed build-time role

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Concurrent mint/ready/consume/restart against M4 owner registry.
  * Validates mutex serialization (no use-after-reuse under race).

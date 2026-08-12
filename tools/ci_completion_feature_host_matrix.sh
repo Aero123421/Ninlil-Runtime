@@ -506,6 +506,7 @@ rrmp_off_residual() {
     ninlil_runtime_private \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -516,6 +517,7 @@ rrmp_off_residual() {
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -544,6 +546,7 @@ rrmp_on_normal() {
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -556,6 +559,7 @@ rrmp_on_normal() {
     ninlil_runtime_private \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -585,6 +589,7 @@ rrmp_on_asan() {
   build_targets_or_fail "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -594,6 +599,7 @@ rrmp_on_asan() {
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \

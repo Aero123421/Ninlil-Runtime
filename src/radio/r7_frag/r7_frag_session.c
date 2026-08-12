@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Integrated NRW1 LINK/FRAG session: wire AEAD + lanes + reasm.
  * Optional test durable simulator when NINLIL_R7_FRAG_SESS_WITH_TEST_DURABLE=1

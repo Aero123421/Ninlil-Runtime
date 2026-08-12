@@ -120,16 +120,27 @@ add_test(
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/radio/private/r7_crypto_vectors.json
 )
 
+# Compile KAT bridge probes with the compiler selected by this CMake build.
+# Normal profiles run only the release bridge; ASan/UBSan profiles run only
+# the sanitizer bridge so compiler-rt is not an undeclared normal-build input.
+set(_ninlil_r7_kat_bridge_args
+    "--compiler=${CMAKE_C_COMPILER}"
+)
+if(NINLIL_ENABLE_SANITIZERS)
+    list(APPEND _ninlil_r7_kat_bridge_args --sanitize-bridge)
+endif()
 add_test(
     NAME r7_kat_pin
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/r7_kat_pin.py
+        ${_ninlil_r7_kat_bridge_args}
         check
 )
 add_test(
     NAME r7_kat_pin_self_test
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/r7_kat_pin.py
+        ${_ninlil_r7_kat_bridge_args}
         self-test
 )
 # Pin/self-test recompile their own bridge mutation probes; still require the

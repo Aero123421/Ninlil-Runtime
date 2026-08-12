@@ -1,10 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_host_lifecycle_fixture.h"
 #include "rrmp_test_common.h"
 
 #include <stdio.h>
 #include <stdalign.h>
 
-enum { RRMP_WS_MAX = 512 * 1024 };
+enum { RRMP_WS_MAX = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES };
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_ws[RRMP_WS_MAX];
 
 int main(void)

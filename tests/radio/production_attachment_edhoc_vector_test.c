@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Independent C11 byte-contract gate for the Proposed Production Attachment
  * profile.  The generated fixture is data only; validation below does not use

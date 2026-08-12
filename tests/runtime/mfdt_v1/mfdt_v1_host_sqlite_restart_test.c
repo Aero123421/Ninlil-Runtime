@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Real POSIX SQLite cold-close/reopen acceptance for the private MFDT Host
  * coordinator.  Every reopen creates a new SQLite provider, namespace handle,

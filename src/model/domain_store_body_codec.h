@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_MODEL_DOMAIN_STORE_BODY_CODEC_H
 #define NINLIL_MODEL_DOMAIN_STORE_BODY_CODEC_H
 
@@ -1007,6 +1008,8 @@ typedef struct ninlil_model_domain_body_retry_summary {
  * (no RAW16). Immutable record_revision=1. Canonical request digest is
  * recomputed from body fields only (docs12 §10 / docs17 §5.1). Live
  * SPOOL/STATE/RESERVATION counters and family-3 sequence upper bound are D3.
+ * EVENT_RESUME accepts legacy audit zero/zero for decode/roundtrip and the
+ * canonical non-zero epoch/time-any shape; new Runtime writers use canonical.
  */
 typedef struct ninlil_model_domain_body_management_ledger {
     uint8_t operation_id[NINLIL_MODEL_DOMAIN_ID_BYTES];

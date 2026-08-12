@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Radio HIL composition: real R2 PCP + R5 profile + R1 HAL + R9 SX1262 phy
  * (Proposed ADR-0025).

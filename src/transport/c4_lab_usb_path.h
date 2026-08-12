@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TRANSPORT_C4_LAB_USB_PATH_H
 #define NINLIL_TRANSPORT_C4_LAB_USB_PATH_H
 

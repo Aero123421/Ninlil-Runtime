@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB item 10b: 2-process loopback uplink for Display / Leak node examples.
  * Derived from tests/runtime/v1_direct_1hop_e2e_test.c (scenario 7 pattern).
@@ -18,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -786,13 +788,15 @@ int v1_lab_loopback_uplink_child_main(int argc, char **argv)
 
 static int run_once(ninlil_family_t family, uint64_t seed)
 {
-    char socket_path[512];
-    char ctrl_db[512];
-    char end_db[512];
-    char ready_path[512];
-    char workdir[512];
+    char temp_dir[] = "/tmp/ninlil-uplink-XXXXXX";
+    char socket_path[512] = {0};
+    char ctrl_db[512] = {0};
+    char end_db[512] = {0};
+    char ready_path[512] = {0};
+    struct sockaddr_un unix_address;
     uint32_t scenario = family_to_scenario(family);
-    unsigned long long process_tag = (unsigned long long)getpid();
+    int written;
+    int success = 0;
     int ctrl_go[2];
     int ctrl_res[2];
     int end_go[2];
@@ -808,31 +812,29 @@ static int run_once(ninlil_family_t family, uint64_t seed)
     int read_end;
     int read_ctrl;
 
-    if (getcwd(workdir, sizeof(workdir)) == NULL) {
+    if (mkdtemp(temp_dir) == NULL) {
         return 0;
     }
-    if (snprintf(socket_path, sizeof(socket_path),
-            "%s/v1-lab-uplink-%llu-%u.sock",
-            workdir,
-            process_tag,
-            scenario)
-            <= 0
-        || snprintf(ctrl_db, sizeof(ctrl_db),
-               "%s/v1-lab-uplink-ctrl-%llu-%u.db",
-               workdir,
-               process_tag,
-               scenario)
-            <= 0
-        || snprintf(end_db, sizeof(end_db),
-               "%s/v1-lab-uplink-end-%llu-%u.db",
-               workdir,
-               process_tag,
-               scenario)
-            <= 0
-        || snprintf(ready_path, sizeof(ready_path),
-               "%s.ready", socket_path)
-            <= 0) {
-        return 0;
+    written = snprintf(socket_path, sizeof(socket_path),
+        "%s/uplink-%u.sock", temp_dir, scenario);
+    if (written <= 0 || (size_t)written >= sizeof(socket_path)
+        || (size_t)written >= sizeof(unix_address.sun_path)) {
+        goto cleanup;
+    }
+    written = snprintf(ctrl_db, sizeof(ctrl_db),
+        "%s/controller.db", temp_dir);
+    if (written <= 0 || (size_t)written >= sizeof(ctrl_db)) {
+        goto cleanup;
+    }
+    written = snprintf(end_db, sizeof(end_db),
+        "%s/endpoint.db", temp_dir);
+    if (written <= 0 || (size_t)written >= sizeof(end_db)) {
+        goto cleanup;
+    }
+    written = snprintf(
+        ready_path, sizeof(ready_path), "%s.ready", socket_path);
+    if (written <= 0 || (size_t)written >= sizeof(ready_path)) {
+        goto cleanup;
     }
     (void)unlink(socket_path);
     cleanup_sqlite_database(ctrl_db);
@@ -841,7 +843,7 @@ static int run_once(ninlil_family_t family, uint64_t seed)
 
     if (pipe(ctrl_go) != 0 || pipe(ctrl_res) != 0 || pipe(end_go) != 0
         || pipe(end_res) != 0 || pipe(sync_pipe) != 0) {
-        return 0;
+        goto cleanup;
     }
     if (spawn_peer("controller", socket_path, ctrl_db, scenario, family, seed,
             ctrl_go[0], ctrl_res[1], sync_pipe[1], &ctrl_pid)
@@ -849,7 +851,7 @@ static int run_once(ninlil_family_t family, uint64_t seed)
         || spawn_peer("endpoint", socket_path, end_db, scenario, family, seed,
                end_go[0], end_res[1], sync_pipe[0], &end_pid)
             != 0) {
-        return 0;
+        goto cleanup;
     }
     (void)close(ctrl_go[0]);
     (void)close(ctrl_res[1]);
@@ -858,7 +860,7 @@ static int run_once(ninlil_family_t family, uint64_t seed)
     (void)close(sync_pipe[0]);
     (void)close(sync_pipe[1]);
     if (!write_byte(end_go[1], go) || !write_byte(ctrl_go[1], go)) {
-        return 0;
+        goto cleanup;
     }
     (void)close(end_go[1]);
     (void)close(ctrl_go[1]);
@@ -870,19 +872,19 @@ static int run_once(ninlil_family_t family, uint64_t seed)
         || !WIFEXITED(end_status) || WEXITSTATUS(end_status) != 0) {
         (void)fprintf(
             stderr,
-            "uplink endpoint failed family=%u status=%d\n",
+            "uplink endpoint failed family=%u exit_code=%d\n",
             (unsigned int)family,
             WIFEXITED(end_status) ? WEXITSTATUS(end_status) : -1);
-        return 0;
+        goto cleanup;
     }
     if (waitpid(ctrl_pid, &ctrl_status, 0) != ctrl_pid
         || !WIFEXITED(ctrl_status) || WEXITSTATUS(ctrl_status) != 0) {
         (void)fprintf(
             stderr,
-            "uplink controller failed family=%u status=%d\n",
+            "uplink controller failed family=%u exit_code=%d\n",
             (unsigned int)family,
             WIFEXITED(ctrl_status) ? WEXITSTATUS(ctrl_status) : -1);
-        return 0;
+        goto cleanup;
     }
     if (!read_end || !read_ctrl || end_ack != 'O' || ctrl_ack != 'O') {
         (void)fprintf(
@@ -894,13 +896,16 @@ static int run_once(ninlil_family_t family, uint64_t seed)
             end_ack,
             read_ctrl,
             ctrl_ack);
-        return 0;
+        goto cleanup;
     }
+    success = 1;
+cleanup:
     (void)unlink(socket_path);
     cleanup_sqlite_database(ctrl_db);
     cleanup_sqlite_database(end_db);
     (void)unlink(ready_path);
-    return 1;
+    (void)rmdir(temp_dir);
+    return success;
 }
 
 int v1_lab_loopback_uplink_run(

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Combined owner/cell + durable-storage self-test source.
  * Real ISR: esp_timer ESP_TIMER_ISR (requires SUPPORTS_ISR_DISPATCH_METHOD).
@@ -94,19 +95,6 @@ static ninlil_r7_crypto_provider s_r7_crypto_provider;
 static ninlil_multi_service_node_profile_t s_multi_service_profile;
 static ninlil_multi_service_node_state_t s_multi_service_state;
 
-
-#if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
-    && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
-/* Bind MFDT durable adapter to real component storage_ops after flash open. */
-static int smoke_mfdt_bind_storage(const ninlil_storage_ops_t *ops,
-                                   ninlil_storage_handle_t handle)
-{
-    if (ops == NULL) {
-        return -1;
-    }
-    return ninlil_mfdt_v1_esp_store_bind(ops, handle);
-}
-#endif
 
 static int smoke_r7_crypto_link(void)
 {
@@ -682,13 +670,8 @@ static int smoke_storage_commit_unknown(void)
      * ncl1_encode / spine_arm / outbound / receiver ingress / pump). No dummy
      * symbol pins — map-proof symbols are live from app_main.
      */
-    if (smoke_mfdt_bind_storage(ops, handle) != 0) {
-        ESP_LOGE(TAG, "mfdt storage bind failed");
-        goto unbind;
-    }
-    ESP_LOGI(TAG, "mfdt storage adapter bound to retained handle");
     {
-        int32_t mfdt_st = ninlil_mfdt_v1_target_smoke_run();
+        int32_t mfdt_st = ninlil_mfdt_v1_target_smoke_run(ops, handle);
         if (mfdt_st != 0) {
             ESP_LOGE(TAG,
                 "MFDT target smoke FAIL code=%d (raw NEW + gate OFF required; "
@@ -724,10 +707,6 @@ unbind:
     if (txn != NULL) {
         (void)ops->rollback(ops->user, txn);
     }
-#if defined(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE) \
-    && CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE
-    ninlil_mfdt_v1_esp_store_unbind();
-#endif
     if (handle != NULL) {
         ops->close(ops->user, handle);
     }

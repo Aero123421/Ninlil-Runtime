@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host pure tests: lease single-use registry, pointer non-overlap, authority.
  */

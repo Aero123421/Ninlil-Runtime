@@ -17,6 +17,18 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
   enrichment gate、およびsource commitとworkflow-definition commitを分離記録する
   release build metadataを追加した。
 
+### Fixed
+
+- targeted cancel / resume / discard と delivery completion のtrusted-clock処理を
+  fail-closedにした。同一epochでは古いcorrectness timerを管理入力より先に処理し、
+  時刻逆行、ordered input枯渇、保存済みretry・management履歴との逆行は、mutationを
+  commitする前に拒否する。
+  既にeffectが起きた可能性は再送失敗で消さず、deadline後はevidence closeまで
+  deadline verdictの`INDETERMINATE`を維持し、証拠が無ければ`OUTCOME_UNKNOWN`へ収束する。
+- Event / DesiredStateのreceipt retryを固定backoffとoverflow-safeな時刻計算へそろえ、
+  evidence closeを`runtime_step`のnext wakeへ投影した。公開ABI、wire layout、既存storage
+  record layoutは変更していない。
+
 ### Changed
 
 - `0.x`のinstalled CMake packageが次minorを互換と誤判定しないよう、
@@ -52,6 +64,17 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
 - ESP-IDF CI imageをofficial linux/amd64 manifest digestへ固定し、macOS authorityを
   supportedな`macos-15` arm64 runnerへ更新した。
 - U5/U6の製品非依存editorial deltaをfreeze v2として再固定した。Normative meaning、wire、storage、API、実装状態の変更はない。
+- 公開SDKのbuild/install手順、英語overview、build option台帳、公開header契約を整備し、
+  tests-OFF installed archiveのsource/member境界、decoder fuzz 6種、Clang coverage、
+  CodeQL、DCO、SPDX SBOMのfail-closed検証を追加・強化した。
+
+### Known limitations
+
+- 旧clock epochに属する一般timerをdurable Recovery Fenceへ収束させるkind-21 reducerは
+  未実装である。targeted managementは該当状態を推測して更新せず
+  `NINLIL_E_CLOCK_UNCERTAIN`で安全停止するが、restartだけで自動回復するとは主張しない。
+- Required HIL、field/legal readiness、remote CIでのみ得られるtarget evidenceは、
+  compatibility matrixとcompletion ledgerで未検証またはexternalとして追跡する。
 
 ## [v1.0-lab-rc2] - 2026-07-24
 

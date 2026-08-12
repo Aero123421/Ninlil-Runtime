@@ -55,6 +55,11 @@ function(ninlil_v1_integration_gate_register_tests)
             NAME v1_integration_gate_e2e
             COMMAND ninlil_v1_integration_gate_e2e_test
         )
+        set(_ninlil_v1_integration_gate_workdir
+            "${CMAKE_CURRENT_BINARY_DIR}/v1-integration-gate-work")
+        file(MAKE_DIRECTORY "${_ninlil_v1_integration_gate_workdir}")
+        set_tests_properties(v1_integration_gate_e2e PROPERTIES
+            WORKING_DIRECTORY "${_ninlil_v1_integration_gate_workdir}")
     else()
         message(STATUS
             "V1 integration E2E: skipped (POSIX lab platform disabled)")

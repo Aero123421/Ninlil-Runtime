@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * N6 private durable context store — PRODUCTION object only.
  * docs/30 §5.3 / §9 / §20. No fixture/test binder symbols or branches.

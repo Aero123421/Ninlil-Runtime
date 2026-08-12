@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * M4 LAB install-token mint plus the single-use T1c consume adapter.
  *

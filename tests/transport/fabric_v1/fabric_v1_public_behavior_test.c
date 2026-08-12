@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Public-wrapper ownership, re-entry and close observability. */
 #include <ninlil/fabric_v1.h>
 

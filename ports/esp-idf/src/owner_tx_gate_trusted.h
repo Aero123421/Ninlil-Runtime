@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Internal trusted initial tx_gate publish (cell init only).
  * static inline — no default global ELF symbol.

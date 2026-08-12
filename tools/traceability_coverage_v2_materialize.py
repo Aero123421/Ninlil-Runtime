@@ -7,9 +7,13 @@ existing path-to-ID binding, so document reordering never changes IDs.
 
 from __future__ import annotations
 
+import argparse
+import copy
 import hashlib
 import json
 import re
+import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -54,60 +58,80 @@ FND_TESTS: dict[str, list[str]] = {
 }
 
 
-GENERIC_INVARIANT: dict[str, tuple[str, str, list[str]]] = {
+GENERIC_INVARIANT: dict[str, tuple[str, list[str], list[str]]] = {
     "NIN-INV-001": (
         "tests/model/required_receipt_transition_test.c",
-        "static int test_active_matrix(void)",
+        ["REQUIRE(result.next.state == expected->state);"],
         ["required_receipt_transition_model", "v1_runtime_family"],
     ),
     "NIN-INV-002": (
         "tests/model/required_receipt_transition_test.c",
-        "static int test_terminal_is_immutable(void)",
+        ["REQUIRE(result.next.state == input.current.state);"],
         ["required_receipt_transition_model", "v1_runtime_family"],
     ),
     "NIN-INV-003": (
         "tests/model/submission_admission_test.c",
-        "static int test_commit_ok_and_unknown(void)",
+        [
+            "REQUIRE(result.recovery_action\n"
+            "        == NINLIL_MODEL_ADMISSION_RECOVERY_FENCE_AND_REOPEN_JOURNAL);"
+        ],
         ["submission_admission_model", "resource_ledger_batch_model"],
     ),
     "NIN-INV-004": (
         "tests/runtime/v1_direct_1hop_e2e_test.c",
-        "#define SCENARIO_RESTART 5u",
+        ["REQUIRE(ninlil_posix_lab_platform_restart(platform) == 1);"],
         ["v1_direct_1hop_e2e", "v1_runtime_delivery"],
     ),
     "NIN-INV-006": (
         "tests/runtime/v1_event_mgmt_ledger_test.c",
-        "static int test_commit_unknown_hidden_truths(void)",
+        [
+            "REQUIRE(run_commit_unknown_case(0) == 0);",
+            "REQUIRE(run_commit_unknown_case(1) == 0);",
+        ],
         ["v1_event_mgmt_ledger", "v1_direct_1hop_e2e"],
     ),
     "NIN-INV-007": (
         "tests/runtime/v1_event_mgmt_ledger_test.c",
-        "static int test_catch_up_required_receipt_after_restart(void)",
+        ["REQUIRE(result.kind == NINLIL_EVENT_RESUME_ALREADY_RELEASED);"],
         ["v1_event_mgmt_ledger", "v1_posix_sqlite_restart_e2e"],
     ),
     "NIN-INV-008": (
         "tests/runtime/v1_runtime_delivery_test.c",
-        "static int test_callback_failure_no_false_success(void)",
+        ["REQUIRE(transaction->reason == NINLIL_REASON_APPLICATION_FAILED);"],
         ["v1_runtime_delivery", "v1_runtime_family"],
     ),
     "NIN-INV-009": (
         "tests/runtime/v1_runtime_family_test.c",
-        "static int test_latest_state_apply_and_stale(void)",
+        [
+            "REQUIRE(ninlil_rt_v1_family_latest_state_apply("
+            "&ws, &app_id, 11u, &result) == 0);\n"
+            "    REQUIRE(result.disposition == NINLIL_DISPOSITION_STALE_NOT_APPLIED);"
+        ],
         ["v1_runtime_family", "v1_runtime_capability"],
     ),
     "NIN-INV-011": (
         "tests/runtime/v1_runtime_spine_test.c",
-        "NIN-INV-011: a rejected, otherwise-valid submission remains visible",
+        [
+            "REQUIRE(metrics.submission_calls == 2u);",
+            "REQUIRE(metrics.rejected == 1u);",
+        ],
         ["v1_runtime_spine", "submission_preflight_model"],
     ),
     "NIN-INV-013": (
         "tests/radio/c3_lab_secure_wire_test.c",
-        "static int run_reject_stale_token(void)",
+        [
+            "REQUIRE(ninlil_c3_lab_install_from_token(\n"
+            "                &controller, &ctrl_hs.install_token, &install_result)\n"
+            "        == NINLIL_C3_LAB_STALE);"
+        ],
         ["c3_lab_secure_wire", "n6_context_store"],
     ),
     "NIN-INV-014": (
         "tests/model/submission_preflight_test.c",
-        "static int test_target_identity_validation(void)",
+        [
+            "input.submission.target.reserved_zero = 1u;\n"
+            "    REQUIRE(expect_model_invalid(&input));"
+        ],
         ["submission_preflight_model", "required_receipt_transition_model"],
     ),
 }
@@ -240,7 +264,7 @@ def fnd_tests(identity: str) -> list[str]:
 
 
 def generic_subclaim(identity: str) -> list[dict[str, Any]]:
-    source, anchor, tests = GENERIC_INVARIANT[identity]
+    source, anchors, tests = GENERIC_INVARIANT[identity]
     tests_by_profile = both(tests)
     return [
         {
@@ -249,7 +273,7 @@ def generic_subclaim(identity: str) -> list[dict[str, Any]]:
             "evidence": [
                 evidence(
                     source,
-                    [anchor],
+                    anchors,
                     tests_by_profile["baseline"],
                     tests_by_profile["all-private"],
                 ),
@@ -267,7 +291,13 @@ def focused_subclaims(identity: str) -> list[dict[str, Any]]:
                 "evidence": [
                     evidence(
                         "tests/runtime/v1_runtime_delivery_test.c",
-                        ["TRACE-INV005-TXID-STABLE"],
+                        [
+                            "REQUIRE(memcmp(\n"
+                            "                    &original_transaction_id,\n"
+                            "                    &submit_result.transaction_id,\n"
+                            "                    sizeof(original_transaction_id))\n"
+                            "            == 0);"
+                        ],
                         ["v1_runtime_delivery"],
                         [],
                     )
@@ -279,7 +309,13 @@ def focused_subclaims(identity: str) -> list[dict[str, Any]]:
                 "evidence": [
                     evidence(
                         "tests/runtime/v1_runtime_delivery_test.c",
-                        ["TRACE-INV005-LOGICAL-RETRY-FRESH-ATTEMPT"],
+                        [
+                            "REQUIRE(memcmp(\n"
+                            "                    &transaction->attempt_ids[1],\n"
+                            "                    &first_attempt_id,\n"
+                            "                    sizeof(first_attempt_id))\n"
+                            "            != 0);"
+                        ],
                         ["v1_runtime_delivery"],
                         [],
                     )
@@ -291,7 +327,13 @@ def focused_subclaims(identity: str) -> list[dict[str, Any]]:
                 "evidence": [
                     evidence(
                         "tests/runtime/v1_runtime_delivery_test.c",
-                        ["TRACE-INV005-CRASH-REPLAY-SAME-ATTEMPT"],
+                        [
+                            "REQUIRE(memcmp(\n"
+                            "                    &transaction->attempt_id,\n"
+                            "                    &transaction->attempt_ids[0],\n"
+                            "                    sizeof(transaction->attempt_id))\n"
+                            "            == 0);"
+                        ],
                         ["v1_runtime_delivery"],
                         [],
                     )
@@ -304,8 +346,10 @@ def focused_subclaims(identity: str) -> list[dict[str, Any]]:
                     evidence(
                         "tests/radio/r7_frag/r7_frag_prod_integration_test.c",
                         [
-                            'expect_t("hop counter strict fresh"',
-                            'expect_t("§8.6 nonces differ c1!=c2"',
+                            'expect_t("hop counter strict fresh", '
+                            "hop_retry != 0u && hop_retry != hop0);",
+                            'expect_t("§8.6 nonces differ c1!=c2", '
+                            "memcmp(n1, n2, 12u) != 0);",
                         ],
                         [],
                         ["nrw1_frag_prod_integration_private"],
@@ -318,35 +362,77 @@ def focused_subclaims(identity: str) -> list[dict[str, Any]]:
             (
                 "queue",
                 "tests/port/typed_simulated_bearer_test.c",
-                ["TRACE-INV010-QUEUE-BOUNDARY"],
+                [
+                    "REQUIRE(entries == 2u && bytes == 1021u);",
+                    "REQUIRE(send_message(&context, context.a, &c1, &permit, &result)\n"
+                    "        == NINLIL_BEARER_WOULD_BLOCK);",
+                ],
                 ["typed_simulated_bearer_fixture"],
                 ["typed_simulated_bearer_fixture", "wifi_v1_queue_drop_wrap_test"],
             ),
             (
                 "retry",
                 "tests/runtime/v1_runtime_capability_test.c",
-                ["TRACE-INV010-RETRY-BOUNDARY"],
+                [
+                    "REQUIRE(descriptor.max_attempts_per_target_per_cycle\n"
+                    "        == NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE);",
+                    "descriptor.max_attempts_per_target_per_cycle =\n"
+                    "        NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE + 1u;\n"
+                    "    service = NULL;\n"
+                    "    REQUIRE(ninlil_service_register(\n"
+                    "                env.runtime, &descriptor, &callbacks, &service)\n"
+                    "        == NINLIL_E_UNSUPPORTED);",
+                ],
                 ["v1_runtime_capability"],
                 ["nrw1_frag_session_private"],
             ),
             (
                 "dedup",
                 "tests/runtime/v1_runtime_capability_test.c",
-                ["TRACE-INV010-DEDUP-BOUNDARY"],
+                [
+                    "descriptor = desired_descriptor(0x8au);\n"
+                    "    descriptor.required_dedup_window_ms =\n"
+                    "        env.config.result_cache_retention_ms;\n"
+                    "    /*\n"
+                    "     * TRACE-INV010-RETRY-BOUNDARY\n"
+                    "     * The profile's exact attempt limit is accepted; "
+                    "limit+1 is rejected.\n"
+                    "     */\n"
+                    "    REQUIRE(descriptor.max_attempts_per_target_per_cycle\n"
+                    "        == NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE);\n"
+                    "    REQUIRE(ninlil_service_register(\n"
+                    "                env.runtime, &descriptor, &callbacks, &service)\n"
+                    "        == NINLIL_OK);",
+                    "descriptor.required_dedup_window_ms =\n"
+                    "        env.config.result_cache_retention_ms + 1u;\n"
+                    "    service = NULL;\n"
+                    "    REQUIRE(ninlil_service_register(\n"
+                    "                env.runtime, &descriptor, &callbacks, &service)\n"
+                    "        == NINLIL_E_UNSUPPORTED);",
+                ],
                 ["v1_runtime_capability", "v1_direct_1hop_e2e"],
                 ["nrw1_frag_prod_integration_private"],
             ),
             (
                 "reassembly",
                 "tests/radio/r7_frag/r7_frag_state_test.c",
-                ["TRACE-INV010-REASSEMBLY-BOUNDARY"],
+                [
+                    'expect_u64("plan max sum", sum, 2048u);',
+                    'expect_st("plan oversize", st, '
+                    "NINLIL_R7_FRAG_STATE_LENGTH);",
+                ],
                 [],
                 ["nrw1_frag_state_private", "nrw1_frag_prod_integration_private"],
             ),
             (
                 "journal",
                 "tests/transport/wifi_v1/wifi_v1_journal_test.c",
-                ["TRACE-INV010-JOURNAL-BOUNDARY"],
+                [
+                    "CHECK(ninlil_wifi_journal_put_attempt(&journal, &attempt)\n"
+                    "            == NINLIL_WIFI_OK);",
+                    "CHECK(ninlil_wifi_journal_put_attempt(&journal, &attempt)\n"
+                    "            == NINLIL_WIFI_CAPACITY);",
+                ],
                 [],
                 ["wifi_v1_journal_test"],
             ),
@@ -371,7 +457,14 @@ def focused_subclaims(identity: str) -> list[dict[str, Any]]:
                 "evidence": [
                     evidence(
                         "tests/radio/radio_hal_r1_test.c",
-                        ["static int test_default_deny(void)"],
+                        [
+                            "REQUIRE(\n"
+                            "        ninlil_radio_hal_transmit_with_permit("
+                            "rh, &permit, &frame, &err)\n"
+                            "        == NINLIL_RADIO_HAL_DEFAULT_DENY);\n"
+                            "    REQUIRE(spy.edge_calls == 0u);\n"
+                            "    REQUIRE(spy.validate_calls == 0u);"
+                        ],
                         ["radio_hal_r1", "sx1262_r9", "sx1262_r9_sole_edge_gate"],
                         ["radio_hal_r1", "sx1262_r9", "sx1262_r9_sole_edge_gate"],
                     )
@@ -452,20 +545,94 @@ def materialize() -> dict[str, Any]:
     }
 
 
-def main() -> int:
-    value = materialize()
-    OUTPUT.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    print(
-        "traceability coverage V2 materialized: "
+def canonical_text(value: dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+
+def validate_generated(value: dict[str, Any]) -> None:
+    all_tests = gate._all_manifest_tests(value)
+    registries = {
+        profile: set(all_tests) for profile in gate.EXPECTED_PROFILES
+    }
+    gate.validate(ROOT, value, registries)
+
+
+def require_fresh(value: dict[str, Any], actual: str) -> None:
+    if actual != canonical_text(value):
+        raise RuntimeError(
+            f"{gate.MANIFEST} is stale; run "
+            "tools/traceability_coverage_v2_materialize.py --write"
+        )
+
+
+def self_test() -> None:
+    first = materialize()
+    second = materialize()
+    if canonical_text(first) != canonical_text(second):
+        raise RuntimeError("materializer is not deterministic")
+    validate_generated(first)
+    require_fresh(first, OUTPUT.read_text(encoding="utf-8"))
+
+    stale = copy.deepcopy(first)
+    stale["invariant_source"]["invariants"][0]["subclaims"][0][
+        "evidence"
+    ][0]["anchors"] = ["static int test_active_matrix(void)"]
+    try:
+        validate_generated(stale)
+    except gate.CoverageError as exc:
+        if "not an active assertion-bearing anchor" not in str(exc):
+            raise
+    else:
+        raise RuntimeError("legacy function anchor was accepted")
+    try:
+        require_fresh(first, canonical_text(stale))
+    except RuntimeError as exc:
+        if "is stale" not in str(exc):
+            raise
+    else:
+        raise RuntimeError("stale generated manifest was accepted")
+
+    with tempfile.TemporaryDirectory() as raw_temp:
+        generated = Path(raw_temp) / gate.MANIFEST
+        generated.write_text(canonical_text(first), encoding="utf-8")
+        if generated.read_bytes() != OUTPUT.read_bytes():
+            raise RuntimeError("fresh generated bytes differ from checked manifest")
+
+
+def summary(value: dict[str, Any], action: str) -> str:
+    return (
+        f"traceability coverage V2 {action}: "
         f"headings={sum(len(s['heading_units']) for s in value['normative_sources'])} "
         f"requirements={len(value['explicit_requirement_sets'])} "
         f"invariants={len(value['invariant_source']['invariants'])}"
     )
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--write", action="store_true")
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument("--self-test", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        if args.self_test:
+            self_test()
+            print("traceability coverage V2 materializer self-test ok")
+            return 0
+        value = materialize()
+        validate_generated(value)
+        if args.write:
+            OUTPUT.write_text(canonical_text(value), encoding="utf-8")
+            print(summary(value, "materialized"))
+        else:
+            require_fresh(value, OUTPUT.read_text(encoding="utf-8"))
+            print(summary(value, "freshness ok"))
+    except (gate.CoverageError, OSError, RuntimeError, UnicodeError) as exc:
+        print(f"traceability coverage V2 materializer error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

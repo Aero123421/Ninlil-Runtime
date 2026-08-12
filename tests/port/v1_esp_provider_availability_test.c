@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* V1-LAB unit 1c: ESP platform provider catalog + LAB unavailable admission. */
 
 #include "ninlil_esp_idf/platform_availability.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Port-owned ESP-IDF durable storage API (M3 storage slice).
  * Format 4: directory + namespace dual-slot images on a wear-levelled medium.

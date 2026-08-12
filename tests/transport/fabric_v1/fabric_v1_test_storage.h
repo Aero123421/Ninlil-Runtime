@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * In-memory storage/provider test doubles for Fabric v1 lifecycle tests.
  */

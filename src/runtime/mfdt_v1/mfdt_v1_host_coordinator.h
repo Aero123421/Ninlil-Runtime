@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ADR-0021 exact four-slot Host coordinator.
  *
  * Source-only, private, default-OFF, not installed, and not public ABI.

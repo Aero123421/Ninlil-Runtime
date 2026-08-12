@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private durable writepoint simulator for r7_frag session tests/recovery.
  */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil/composition_v1.h"
 
 #include "domain_store_codec.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R5 LAB_ONLY profile loader + full §9.3 permit bind (host candidate).
  * docs/29 + ADR-0009. No Japan production claims. R2 durable schema1 unchanged.

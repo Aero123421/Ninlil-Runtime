@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ADR-0021 Host MFDT private storage boundary.
  *
  * Source-only, default-OFF, not installed, and not part of the public ABI.

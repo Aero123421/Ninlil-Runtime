@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_C3_LAB_CONTEXT_LIFECYCLE_H
 #define NINLIL_C3_LAB_CONTEXT_LIFECYCLE_H
 

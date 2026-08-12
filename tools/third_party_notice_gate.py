@@ -49,6 +49,31 @@ EXPECTED_VENDORED = [
         ),
     }
 ]
+EXPECTED_SOURCE_LICENSE_SCOPE = {
+    "scope": "repository-first-party-files",
+    "license_expression": "Apache-2.0",
+    "license_file": "LICENSE",
+    "copyright_text": "NOASSERTION",
+    "excluded_paths": [
+        {
+            "path": PYYAML_VENDOR_PATH,
+            "inventory_id": "pyyaml",
+        }
+    ],
+}
+PUBLIC_HEADER_PATHS = (
+    "include/ninlil/byte_stream.h",
+    "include/ninlil/composition_v1.h",
+    "include/ninlil/fabric_v1.h",
+    "include/ninlil/platform.h",
+    "include/ninlil/posix_tls_v1.h",
+    "include/ninlil/posix_usb_serial_v1.h",
+    "include/ninlil/runtime.h",
+    "include/ninlil/service.h",
+    "include/ninlil/transaction.h",
+    "include/ninlil/version.h",
+)
+PUBLIC_HEADER_SPDX = "/* SPDX-License-Identifier: Apache-2.0 */\n"
 EXPECTED_LOCK_COMPONENTS = [
     {
         "id": "espressif/esp_tinyusb",
@@ -95,6 +120,8 @@ class Inputs:
     notices: str
     release_workflow: str
     inventory: dict[str, Any]
+    public_headers: dict[str, str]
+    first_party_c_headers: dict[str, str]
 
 
 def read(path: str) -> str:
@@ -105,12 +132,35 @@ def read(path: str) -> str:
 
 
 def load() -> Inputs:
+    import subprocess
+
     try:
         inventory = json.loads(read("dependency-inventory.json"))
     except json.JSONDecodeError as exc:
         raise GateError(f"dependency-inventory.json is invalid JSON: {exc}") from exc
     if not isinstance(inventory, dict):
         raise GateError("dependency inventory must be an object")
+    public_header_paths = sorted((ROOT / "include" / "ninlil").glob("*.h"))
+    public_headers = {
+        path.relative_to(ROOT).as_posix(): read(path.relative_to(ROOT).as_posix())
+        for path in public_header_paths
+    }
+    try:
+        listed = subprocess.check_output(
+            [
+                "git", "ls-files", "--cached", "--others",
+                "--exclude-standard", "--", "*.c", "*.h",
+            ],
+            cwd=ROOT,
+            text=True,
+        ).splitlines()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise GateError(f"cannot enumerate first-party C/header files: {exc}") from exc
+    first_party_paths = sorted(
+        path for path in listed
+        if path and not path.startswith("tools/_vendor/") and (ROOT / path).is_file()
+    )
+    first_party_c_headers = {path: read(path) for path in first_party_paths}
     return Inputs(
         cmake=read("CMakeLists.txt"),
         sqlite_cmake=read("cmake/ninlil_posix_sqlite_sqlite3.cmake"),
@@ -120,6 +170,8 @@ def load() -> Inputs:
         notices=read("THIRD-PARTY-NOTICES.md"),
         release_workflow=read(".github/workflows/release.yml"),
         inventory=inventory,
+        public_headers=public_headers,
+        first_party_c_headers=first_party_c_headers,
     )
 
 
@@ -259,6 +311,7 @@ def validate_syft_tool_identity(release_workflow: str) -> None:
         "ninlil-runtime",
         "--source-version",
         "${SOURCE_VERSION}",
+        "--select-catalogers=-github-actions-usage-cataloger,-github-action-workflow-usage-cataloger",
         "--output",
         "spdx-json=${RAW_SBOM}",
     )
@@ -427,6 +480,7 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
     expected_top = {
         "schema",
         "project",
+        "source_license_scope",
         "host_dependencies",
         "host_tooling",
         "vendored_dependencies",
@@ -446,6 +500,16 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
         "supplier": "Organization: Ninlil project",
     }:
         raise GateError("project package identity/license drift")
+
+    source_scope = require_object(
+        inventory.get("source_license_scope"), "source_license_scope"
+    )
+    if source_scope != EXPECTED_SOURCE_LICENSE_SCOPE:
+        raise GateError("first-party source license scope/NOASSERTION drift")
+    if source_scope["license_expression"] != project["spdx_license"]:
+        raise GateError("source license scope must equal the project SPDX license")
+    if not (ROOT / str(source_scope["license_file"])).is_file():
+        raise GateError("source license scope points to a missing license file")
 
     host = require_array(inventory.get("host_dependencies"), "host_dependencies")
     expected_host = [
@@ -541,6 +605,25 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
 
 def validate(inputs: Inputs) -> None:
     validate_inventory_shape(inputs.inventory)
+    if set(inputs.public_headers) != set(PUBLIC_HEADER_PATHS):
+        raise GateError(
+            "public header SPDX inventory drift: "
+            f"expected={list(PUBLIC_HEADER_PATHS)!r} "
+            f"actual={sorted(inputs.public_headers)!r}"
+        )
+    for path in PUBLIC_HEADER_PATHS:
+        if not inputs.public_headers[path].startswith(PUBLIC_HEADER_SPDX):
+            raise GateError(
+                f"{path}: first line must be the exact Apache-2.0 SPDX identifier"
+            )
+    if not inputs.first_party_c_headers:
+        raise GateError("first-party C/header SPDX inventory is empty")
+    for path, source in inputs.first_party_c_headers.items():
+        first_line = source.splitlines()[0] if source else ""
+        if first_line != PUBLIC_HEADER_SPDX.rstrip("\n"):
+            raise GateError(
+                f"{path}: first line must be the exact Apache-2.0 SPDX identifier"
+            )
     if inputs.smoke_lock != inputs.hil_lock:
         raise GateError("smoke and HIL dependency locks must be byte-identical")
     if inputs.cmake.count("find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)") != 1:
@@ -659,6 +742,60 @@ def expect_failure(label: str, inputs: Inputs) -> None:
 def self_test() -> None:
     baseline = load()
     validate(baseline)
+
+    source_license_drift = copy.deepcopy(baseline)
+    source_license_drift.inventory["source_license_scope"][
+        "license_expression"
+    ] = "NOASSERTION"
+    expect_failure("first-party source license scope drift", source_license_drift)
+
+    claimed_holder = copy.deepcopy(baseline)
+    claimed_holder.inventory["source_license_scope"]["copyright_text"] = (
+        "Copyright guessed-holder"
+    )
+    expect_failure("unverified copyright holder in inventory", claimed_holder)
+
+    missing_public_header = copy.deepcopy(baseline)
+    del missing_public_header.public_headers[PUBLIC_HEADER_PATHS[-1]]
+    expect_failure("public header omitted from SPDX inventory", missing_public_header)
+
+    missing_public_spdx = copy.deepcopy(baseline)
+    first_header = PUBLIC_HEADER_PATHS[0]
+    missing_public_spdx.public_headers[first_header] = missing_public_spdx.public_headers[
+        first_header
+    ].removeprefix(PUBLIC_HEADER_SPDX)
+    expect_failure("public header missing exact SPDX first line", missing_public_spdx)
+
+    missing_source_spdx = copy.deepcopy(baseline)
+    source_path = next(
+        path for path in missing_source_spdx.first_party_c_headers
+        if path not in PUBLIC_HEADER_PATHS
+    )
+    source_lines = missing_source_spdx.first_party_c_headers[source_path].splitlines(
+        keepends=True
+    )
+    missing_source_spdx.first_party_c_headers[source_path] = "".join(source_lines[1:])
+    expect_failure("first-party source missing first-line SPDX", missing_source_spdx)
+
+    for label, first_line in (
+        ("compound SPDX expression", "/* SPDX-License-Identifier: Apache-2.0 OR MIT */"),
+        (
+            "SPDX exception expression",
+            "/* SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception */",
+        ),
+        (
+            "non-SPDX lookalike",
+            "/* not-an-SPDX-License-Identifier: Apache-2.0 */",
+        ),
+    ):
+        expression_drift = copy.deepcopy(baseline)
+        lines = expression_drift.first_party_c_headers[source_path].splitlines(
+            keepends=True
+        )
+        newline = "\n" if lines and lines[0].endswith("\n") else ""
+        lines[0] = first_line + newline
+        expression_drift.first_party_c_headers[source_path] = "".join(lines)
+        expect_failure(label, expression_drift)
 
     unknown = copy.deepcopy(baseline)
     injected = (

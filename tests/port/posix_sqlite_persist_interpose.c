@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Test-target-only SQLite interposition for deterministic persist tests.
  * Not part of the production library or install package.

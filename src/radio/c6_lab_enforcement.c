@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "c6_lab_enforcement.h"
 
 #include <string.h>

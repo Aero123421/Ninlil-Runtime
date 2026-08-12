@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "owner_config_stage_logic.h"
 
 #include "pointer_range_logic.h"

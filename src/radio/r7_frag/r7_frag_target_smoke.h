@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_R7_FRAG_TARGET_SMOKE_H
 #define NINLIL_R7_FRAG_TARGET_SMOKE_H
 

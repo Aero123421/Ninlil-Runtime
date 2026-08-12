@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_ESP_IDF_CELL_AGENT_STORAGE_H
 #define NINLIL_ESP_IDF_CELL_AGENT_STORAGE_H
 

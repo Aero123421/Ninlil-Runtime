@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_lab_fabric.h"
 
 #include "fabric_private_records.h"

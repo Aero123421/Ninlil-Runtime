@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * NCG1 framing boundary helpers for Cell Agent skeleton.
  * Framing success is not assignment apply or custody.

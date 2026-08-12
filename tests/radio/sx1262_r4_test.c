@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R4 host tests (audit P1). Not R4 complete / RF / HIL.
  * docs/28 §12.1 T01–T15 tracking — gate enforces tokens.

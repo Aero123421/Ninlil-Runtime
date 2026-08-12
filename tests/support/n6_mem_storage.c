@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Scripted in-memory storage backend for N6 host tests.
  * Supports multi-key FULL, four CU durable outcomes, phase faults.

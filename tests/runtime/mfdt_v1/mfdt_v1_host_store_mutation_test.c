@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Behavioral contract for the dedicated typed COMMIT_UNKNOWN mutation
  * provider. Coordinator recovery consumes the same provider in the integrated

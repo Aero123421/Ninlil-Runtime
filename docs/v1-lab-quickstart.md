@@ -1,5 +1,11 @@
 # Ninlil V1 LAB — Quickstart
 
+> **HISTORICAL — `v1.0-lab-rc2` snapshot.** This page preserves the commands and assumptions of
+> that tag; do not use it as current build guidance. Use the current [README quickstart](../README.md),
+> [build options](build-options.md), and [Host Runtime SDK](host-runtime-sdk.md). In particular, the
+> CMake 3.16 minimum below is historical; current repository and installed-consumer builds require
+> CMake 3.20 or newer.
+
 状態: V1 LAB RC2 利用者向け（タグ `v1.0-lab-rc2`）
 
 Ninlil V1 LAB は **隔離された LAB 環境** で動作する host simulation 完成版です。

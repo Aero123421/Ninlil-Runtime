@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Fabric packet-link: open SM, cancel/close reclaim, TxPermit atomic consume,
  * release-after-close, second_open DENIED.

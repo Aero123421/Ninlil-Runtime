@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private NRA1 v1 compact ApplicationData/Receipt body codec.
  * Authority: docs/adr/0035-v1-compact-radio-mapping.md

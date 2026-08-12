@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "entropy_publish_logic.h"
 
 #include <stddef.h>

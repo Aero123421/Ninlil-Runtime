@@ -1,0 +1,52 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '23 3 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: C/C++ analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # actions/checkout v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
+      # github/codeql-action v4
+      - uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3
+        with:
+          languages: c-cpp
+          build-mode: manual
+      - name: Install build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libsqlite3-dev libssl-dev ninja-build
+      - name: Build C/C++ database
+        run: |
+          cmake -S . -B build/codeql -G Ninja -DNINLIL_BUILD_TESTS=OFF
+          cmake --build build/codeql --parallel 2
+          cmake -S . -B build/codeql-all-private -G Ninja \
+            -DNINLIL_BUILD_TESTS=ON \
+            -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=ON \
+            -DNINLIL_ENABLE_PRIVATE_WIFI_V1=ON \
+            -DNINLIL_ENABLE_PRIVATE_FABRIC_V1=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_ENABLE_MFDT_V1_PRIVATE=ON \
+            -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
+          cmake --build build/codeql-all-private \
+            --target host_completion_all_private_build --parallel 2
+      - uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host-testable one-shot clock init with immutable embedded ops (no ESP-IDF).
  */

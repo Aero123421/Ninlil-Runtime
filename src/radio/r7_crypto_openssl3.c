@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 OpenSSL 3 Host crypto adapter.
  *

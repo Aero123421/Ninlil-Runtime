@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_R7_CRYPTO_MBEDTLS_H
 #define NINLIL_R7_CRYPTO_MBEDTLS_H
 

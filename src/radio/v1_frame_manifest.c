@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_frame_manifest.h"
 
 static const ninlil_v1_frame_manifest_entry_t k_v1_frame_manifest[] = {

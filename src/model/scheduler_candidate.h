@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_MODEL_SCHEDULER_CANDIDATE_H
 #define NINLIL_MODEL_SCHEDULER_CANDIDATE_H
 

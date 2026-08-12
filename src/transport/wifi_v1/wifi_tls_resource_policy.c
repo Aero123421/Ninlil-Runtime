@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "wifi_tls_resource_policy.h"
 
 _Static_assert(

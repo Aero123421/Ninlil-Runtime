@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "nfl1_codec.h"
 
 #include "fabric_private_util.h"
@@ -88,6 +89,7 @@ uint32_t ninlil_fabric_private_nfl1_crc32c(
     const uint8_t *data, size_t length)
 {
     uint32_t crc = UINT32_C(0xffffffff);
+    uint8_t value;
     size_t i;
     unsigned bit;
 
@@ -95,7 +97,8 @@ uint32_t ninlil_fabric_private_nfl1_crc32c(
         return 0u;
     }
     for (i = 0u; i < length; ++i) {
-        crc ^= (uint32_t)data[i];
+        value = (i >= 12u && i < 16u) ? 0u : data[i];
+        crc ^= (uint32_t)value;
         for (bit = 0u; bit < 8u; ++bit) {
             if ((crc & 1u) != 0u) {
                 crc = (crc >> 1) ^ UINT32_C(0x82f63b78);
@@ -502,7 +505,6 @@ ninlil_fabric_private_nfl1_status_t ninlil_fabric_private_nfl1_decode(
     uint32_t evidence_len;
     uint32_t body_need;
     uint32_t off;
-    uint8_t scratch[NINLIL_FABRIC_PRIVATE_NFL1_CODEC_CEILING];
     ninlil_fabric_private_nfl1_envelope_t tmp;
 
     if (packet == NULL || workspace == NULL || out == NULL) {
@@ -545,10 +547,7 @@ ninlil_fabric_private_nfl1_status_t ninlil_fabric_private_nfl1_decode(
     }
 
     stored_crc = get_u32_be(packet + 12);
-    (void)memcpy(scratch, packet, packet_length);
-    put_u32_be(scratch + 12, 0u);
-    computed_crc = ninlil_fabric_private_nfl1_crc32c(scratch, packet_length);
-    (void)memset(scratch, 0, packet_length);
+    computed_crc = ninlil_fabric_private_nfl1_crc32c(packet, packet_length);
     if (stored_crc != computed_crc) {
         ninlil_fabric_private_nfl1_clear(out);
         return NINLIL_FABRIC_PRIVATE_NFL1_CORRUPT;
@@ -752,7 +751,9 @@ void ninlil_fabric_private_nfl1_foundation_message_digest(
     uint32_t packet_length,
     uint8_t out_digest[32])
 {
-    uint8_t normalized[NINLIL_FABRIC_PRIVATE_NFL1_CODEC_CEILING];
+    static const uint8_t zeroes[86] = {0};
+    const uint8_t *parts[7];
+    size_t lengths[7];
 
     if (out_digest == NULL || packet == NULL
         || packet_length < NINLIL_FABRIC_PRIVATE_NFL1_HEADER_BYTES
@@ -762,16 +763,26 @@ void ninlil_fabric_private_nfl1_foundation_message_digest(
         }
         return;
     }
-    (void)memcpy(normalized, packet, packet_length);
-    ninlil_fabric_private_memzero(normalized + 12u, 4u);
-    ninlil_fabric_private_memzero(normalized + 272u, 28u);
-    ninlil_fabric_private_memzero(normalized + 484u, 86u);
-    ninlil_fabric_private_tagged_sha256(
+    parts[0] = packet;
+    lengths[0] = 12u;
+    parts[1] = zeroes;
+    lengths[1] = 4u;
+    parts[2] = packet + 16u;
+    lengths[2] = 256u;
+    parts[3] = zeroes;
+    lengths[3] = 28u;
+    parts[4] = packet + 300u;
+    lengths[4] = 184u;
+    parts[5] = zeroes;
+    lengths[5] = 86u;
+    parts[6] = packet + 570u;
+    lengths[6] = (size_t)packet_length - 570u;
+    ninlil_fabric_private_tagged_sha256_parts(
         "NINLIL-FABRIC-FOUNDATION-MESSAGE-V1",
-        normalized,
-        packet_length,
+        parts,
+        lengths,
+        7u,
         out_digest);
-    ninlil_fabric_private_memzero(normalized, packet_length);
 }
 
 void ninlil_fabric_private_nfl1_service_identity_digest(

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Deterministic FRAG/LINK target smoke vectors (heap-free, provider-injected).
  *

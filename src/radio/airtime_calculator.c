@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R3 LoRa airtime calculator — integer uint64 rational, ceil-to-us.
  *

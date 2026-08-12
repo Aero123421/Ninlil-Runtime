@@ -31,6 +31,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 AUTHORITY = "cmake/ninlil_nrw1_t1b_ctest.cmake"
 RUNTIME_AUTHORITY = "cmake/ninlil_runtime_private_sources.cmake"
 HOST_CMAKE = "CMakeLists.txt"
+HOST_CTEST = "cmake/ninlil_ctest.cmake"
 ESP_CMAKE = "ports/esp-idf/components/ninlil/CMakeLists.txt"
 BINDING_C = "src/radio/r7_context_binding.c"
 BINDING_H = "src/radio/r7_context_binding.h"
@@ -40,6 +41,7 @@ READ_PATHS = (
     AUTHORITY,
     RUNTIME_AUTHORITY,
     HOST_CMAKE,
+    HOST_CTEST,
     ESP_CMAKE,
     BINDING_C,
     BINDING_H,
@@ -469,7 +471,7 @@ def validate_texts(texts: Mapping[str, str]) -> list[str]:
         )
     require_once(
         errors,
-        host,
+        texts[HOST_CTEST],
         "ninlil_nrw1_t1b_register_tests()",
         "Host T1b test registration call",
     )

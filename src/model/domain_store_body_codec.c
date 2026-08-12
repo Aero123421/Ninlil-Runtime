@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "domain_store_body_codec.h"
 #include "domain_store_codec_internal.h"
 
@@ -9552,9 +9553,10 @@ static int management_audit_tail_zero(
 
 /*
  * Kind matrix (docs17 §8.6):
- * 15 EVENT_RESUME: algo0; expected_event/digest zero; ack0; audit epoch+time
- *   zero; spool_released0; reason1..5; replay kind2 + reason NONE; cycle NZ;
- *   revision = expected+1.
+ * 15 EVENT_RESUME: algo0; expected_event/digest zero; ack0; new canonical
+ *   audit epoch NZ (time may0); legacy decode/roundtrip zero/zero; mixed
+ *   zero/nonzero forbidden; spool_released0; reason1..5; replay kind2 +
+ *   reason NONE; cycle NZ; revision = expected+1.
  * 16 EVENT_DISCARD: algo1; expected_event/digest NZ; event==expected; ack1;
  *   audit epoch NZ (time may0); spool_released1; reason1..4; replay kind2 +
  *   OPERATOR_DISCARDED; cycle0; revision = expected+1.
@@ -9594,8 +9596,8 @@ static int management_ledger_fields_ok(
             || !id_is_zero(body->expected_event_id)
             || !digest_is_zero(body->expected_content_digest)
             || body->acknowledge_flag != 0u
-            || !id_is_zero(body->audit_clock_epoch)
-            || body->audit_committed_at_ms != 0u
+            || (id_is_zero(body->audit_clock_epoch)
+                && body->audit_committed_at_ms != 0u)
             || body->replay_spool_released != 0u
             || body->request_reason
                 < NINLIL_RESUME_CONNECTIVITY_REMEDIATED

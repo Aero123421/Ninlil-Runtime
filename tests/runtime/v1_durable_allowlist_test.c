@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB durable allowlist profile tests (unit 1a).
  * Writer gate RED probe + recovery publication rejection (4 kinds) +
@@ -282,6 +283,7 @@ static int test_bearer_state_exact_validator_and_mutations(void)
 static int test_writer_gate_red_probe(void)
 {
     ninlil_model_runtime_store_key_t rs_key;
+    ninlil_model_runtime_store_key_t transaction_counter_key;
     ninlil_model_runtime_store_key_t ordered_input_key;
     ninlil_model_runtime_store_key_t capacity_key;
     ninlil_status_t status;
@@ -325,6 +327,22 @@ static int test_writer_gate_red_probe(void)
                 NINLIL_MODEL_RUNTIME_STORE_KEY_COUNTER_ORDERED_INPUT,
                 &ordered_input_key)
         == NINLIL_OK);
+    REQUIRE(ninlil_v1_durable_writer_gate_check(
+                NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT,
+                (ninlil_bytes_view_t){
+                    ordered_input_key.bytes, ordered_input_key.length},
+                (ninlil_bytes_view_t){NULL, 0u})
+        == NINLIL_OK);
+    REQUIRE(ninlil_model_runtime_store_build_key(
+                NINLIL_MODEL_RUNTIME_STORE_KEY_COUNTER_TRANSACTION,
+                &transaction_counter_key)
+        == NINLIL_OK);
+    REQUIRE(ninlil_v1_durable_writer_gate_check(
+                NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT,
+                (ninlil_bytes_view_t){transaction_counter_key.bytes,
+                    transaction_counter_key.length},
+                (ninlil_bytes_view_t){NULL, 0u})
+        == NINLIL_E_UNSUPPORTED);
     REQUIRE(ninlil_v1_durable_writer_gate_check(
                 NINLIL_V1_DURABLE_OP_EVENT_RESUME_COMMIT,
                 (ninlil_bytes_view_t){
@@ -613,6 +631,13 @@ static int test_allowlist_table_closed(void)
         == NINLIL_V1_DURABLE_KIND_SPINE_BEARER_STATE);
     REQUIRE(g_ninlil_v1_durable_allowlist_table[33].kind
         == NINLIL_V1_DURABLE_KIND_SPINE_ATTEMPT_PREPARE);
+    REQUIRE(g_ninlil_v1_durable_allowlist_table[40].kind
+        == NINLIL_V1_DURABLE_KIND_DOM_RESERVATION);
+    REQUIRE(g_ninlil_v1_durable_allowlist_table[40].owner
+        == NINLIL_V1_DURABLE_OWNER_S1);
+    REQUIRE(strcmp(g_ninlil_v1_durable_allowlist_table[40].name,
+                "DOM_RESERVATION")
+        == 0);
     return 0;
 }
 

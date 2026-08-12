@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_lab_peer_runtime.h"
 
 #include "fabric_private_api.h"

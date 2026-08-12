@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP-IDF entropy: boot-global one-shot ownership, immutable embedded ops,
  * cancellation-safe acquire, and blocking task-notification drain.

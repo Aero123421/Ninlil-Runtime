@@ -3241,7 +3241,11 @@ def validate_evidence_mapping(
             raise GateError(f"{label}: Fabric test source is empty")
         note_text = note_bytes.decode("utf-8")
         cmake_text = executable_text_without_comments(
-            repo_path("CMakeLists.txt", f"{label}.CMakeLists", require_file=True)
+            repo_path(
+                "cmake/ninlil_ctest.cmake",
+                f"{label}.test_cmake_authority",
+                require_file=True,
+            )
             .read_text(encoding="utf-8"),
             cmake=True,
         )

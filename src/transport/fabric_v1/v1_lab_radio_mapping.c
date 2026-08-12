@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_lab_radio_mapping.h"
 
 #include "nfl1_codec.h"
@@ -29,6 +30,17 @@ static void clear_bytes(void *pointer, size_t length)
     for (i = 0u; i < length; ++i) {
         bytes[i] = 0u;
     }
+}
+
+static void mapper_scratch_clear(ninlil_v1_lab_radio_mapper_t *mapper)
+{
+    if (mapper == NULL) {
+        return;
+    }
+    clear_bytes(&mapper->binding_scratch, sizeof(mapper->binding_scratch));
+    clear_bytes(&mapper->nfl1_workspace, sizeof(mapper->nfl1_workspace));
+    clear_bytes(&mapper->nfl1_envelope, sizeof(mapper->nfl1_envelope));
+    clear_bytes(mapper->nra1_candidate, sizeof(mapper->nra1_candidate));
 }
 
 static int bytes_zero(const uint8_t *bytes, size_t length)
@@ -740,15 +752,17 @@ static ninlil_v1_lab_radio_mapping_status_t decode_application_body(
         &mapper->pairs[pair_slot].binding;
     const ninlil_v1_lab_service_row_t *row;
     ninlil_nra1_application_t application;
-    ninlil_fabric_private_nfl1_envelope_t envelope;
+    ninlil_fabric_private_nfl1_envelope_t *envelope;
     uint8_t digest[32];
     uint32_t encoded_length = 0u;
 
     (void)memset(&application, 0, sizeof(application));
-    (void)memset(&envelope, 0, sizeof(envelope));
     (void)memset(digest, 0, sizeof(digest));
+    mapper_scratch_clear(mapper);
+    envelope = &mapper->nfl1_envelope;
     if (ninlil_nra1_decode_application(nra1, nra1_length, &application)
         != NINLIL_NRA1_OK) {
+        mapper_scratch_clear(mapper);
         return NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
     }
     row = find_row_by_slot_flow(
@@ -773,15 +787,15 @@ static ninlil_v1_lab_radio_mapping_status_t decode_application_body(
         return NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
     }
     build_application_envelope(
-        mapper, binding, row, &application, &envelope, digest);
+        mapper, binding, row, &application, envelope, digest);
     if (ninlil_fabric_private_nfl1_encode(
-            &envelope,
+            envelope,
             out_nfl1,
             out_capacity,
             &encoded_length)
         != NINLIL_FABRIC_PRIVATE_NFL1_OK) {
         clear_bytes(&application, sizeof(application));
-        clear_bytes(&envelope, sizeof(envelope));
+        mapper_scratch_clear(mapper);
         clear_bytes(digest, sizeof(digest));
         return out_capacity < NINLIL_V1_LAB_RADIO_NFL1_MAX
             ? NINLIL_V1_LAB_RADIO_MAPPING_CAPACITY
@@ -789,7 +803,7 @@ static ninlil_v1_lab_radio_mapping_status_t decode_application_body(
     }
     *out_length = encoded_length;
     clear_bytes(&application, sizeof(application));
-    clear_bytes(&envelope, sizeof(envelope));
+    mapper_scratch_clear(mapper);
     clear_bytes(digest, sizeof(digest));
     return NINLIL_V1_LAB_RADIO_MAPPING_OK;
 }
@@ -845,18 +859,20 @@ static ninlil_v1_lab_radio_mapping_status_t decode_receipt_body(
         &mapper->pairs[pair_slot].binding;
     const ninlil_v1_lab_service_row_t *row;
     ninlil_nra1_receipt_t receipt;
-    ninlil_fabric_private_nfl1_workspace_t workspace;
-    ninlil_fabric_private_nfl1_envelope_t envelope;
+    ninlil_fabric_private_nfl1_workspace_t *workspace;
+    ninlil_fabric_private_nfl1_envelope_t *envelope;
     uint32_t required = 0u;
     uint32_t encoded_length = 0u;
     uint32_t token;
     uint8_t original_flow = opposite_flow(authenticated_radio_flow);
 
     (void)memset(&receipt, 0, sizeof(receipt));
-    (void)memset(&workspace, 0, sizeof(workspace));
-    (void)memset(&envelope, 0, sizeof(envelope));
+    mapper_scratch_clear(mapper);
+    workspace = &mapper->nfl1_workspace;
+    envelope = &mapper->nfl1_envelope;
     if (ninlil_nra1_decode_receipt(nra1, nra1_length, &receipt)
         != NINLIL_NRA1_OK) {
+        mapper_scratch_clear(mapper);
         return NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
     }
     row = find_row_by_slot_flow(binding, receipt.service_slot, original_flow);
@@ -882,27 +898,25 @@ static ninlil_v1_lab_radio_mapping_status_t decode_receipt_body(
     if (ninlil_fabric_private_nfl1_decode(
             correlation->nfl1,
             correlation->nfl1_length,
-            &workspace,
-            &envelope,
+            workspace,
+            envelope,
             &required)
             != NINLIL_FABRIC_PRIVATE_NFL1_OK
-        || envelope.message_kind != NINLIL_BEARER_MESSAGE_APPLICATION
-        || !envelope_static_matches(binding, row, &envelope)) {
+        || envelope->message_kind != NINLIL_BEARER_MESSAGE_APPLICATION
+        || !envelope_static_matches(binding, row, envelope)) {
         clear_bytes(&receipt, sizeof(receipt));
-        clear_bytes(&workspace, sizeof(workspace));
-        clear_bytes(&envelope, sizeof(envelope));
+        mapper_scratch_clear(mapper);
         return NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
     }
-    receipt_envelope_from_application(binding, row, &receipt, &envelope);
+    receipt_envelope_from_application(binding, row, &receipt, envelope);
     if (ninlil_fabric_private_nfl1_encode(
-            &envelope,
+            envelope,
             out_nfl1,
             out_capacity,
             &encoded_length)
-        != NINLIL_FABRIC_PRIVATE_NFL1_OK) {
+            != NINLIL_FABRIC_PRIVATE_NFL1_OK) {
         clear_bytes(&receipt, sizeof(receipt));
-        clear_bytes(&workspace, sizeof(workspace));
-        clear_bytes(&envelope, sizeof(envelope));
+        mapper_scratch_clear(mapper);
         return out_capacity < correlation->nfl1_length
             ? NINLIL_V1_LAB_RADIO_MAPPING_CAPACITY
             : NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
@@ -914,8 +928,7 @@ static ninlil_v1_lab_radio_mapping_status_t decode_receipt_body(
     *out_length = encoded_length;
     *out_receipt_token = token;
     clear_bytes(&receipt, sizeof(receipt));
-    clear_bytes(&workspace, sizeof(workspace));
-    clear_bytes(&envelope, sizeof(envelope));
+    mapper_scratch_clear(mapper);
     return NINLIL_V1_LAB_RADIO_MAPPING_OK;
 }
 
@@ -944,7 +957,7 @@ ninlil_v1_lab_radio_mapper_install_pair(
     size_t encoded_length,
     uint8_t *out_pair_slot)
 {
-    ninlil_v1_lab_binding_t binding;
+    ninlil_v1_lab_binding_t *binding;
     uint8_t local_side = 0u;
     uint8_t free_slot = NINLIL_V1_LAB_RADIO_PAIR_MAX;
     uint8_t i;
@@ -953,19 +966,20 @@ ninlil_v1_lab_radio_mapper_install_pair(
         || out_pair_slot == NULL) {
         return NINLIL_V1_LAB_RADIO_MAPPING_INVALID_ARGUMENT;
     }
-    (void)memset(&binding, 0, sizeof(binding));
+    mapper_scratch_clear(mapper);
+    binding = &mapper->binding_scratch;
     if (ninlil_v1_lab_binding_decode(
             &mapper->crypto,
             encoded_binding,
             encoded_length,
-            &binding)
+            binding)
             != NINLIL_V1_LAB_BINDING_OK
         || ninlil_v1_lab_binding_local_side(
-               &binding, mapper->local_runtime_id, &local_side)
+               binding, mapper->local_runtime_id, &local_side)
             != NINLIL_V1_LAB_BINDING_OK
-        || endpoint_for_side(&binding, local_side)->clock_trust
+        || endpoint_for_side(binding, local_side)->clock_trust
             != NINLIL_CLOCK_TRUSTED) {
-        ninlil_v1_lab_binding_clear(&binding);
+        mapper_scratch_clear(mapper);
         return NINLIL_V1_LAB_RADIO_MAPPING_BINDING;
     }
 
@@ -977,31 +991,31 @@ ninlil_v1_lab_radio_mapper_install_pair(
             }
             continue;
         }
-        if (memcmp(pair->binding.pair_id, binding.pair_id, 32u) == 0) {
-            if (pair->binding.raw_length == binding.raw_length
+        if (memcmp(pair->binding.pair_id, binding->pair_id, 32u) == 0) {
+            if (pair->binding.raw_length == binding->raw_length
                 && memcmp(
                        pair->binding.raw,
-                       binding.raw,
-                       binding.raw_length)
+                       binding->raw,
+                       binding->raw_length)
                     == 0
                 && pair->fenced == 0u) {
                 *out_pair_slot = i;
-                ninlil_v1_lab_binding_clear(&binding);
+                mapper_scratch_clear(mapper);
                 return NINLIL_V1_LAB_RADIO_MAPPING_OK;
             }
-            ninlil_v1_lab_binding_clear(&binding);
+            mapper_scratch_clear(mapper);
             return NINLIL_V1_LAB_RADIO_MAPPING_CONFLICT;
         }
     }
     if (free_slot >= NINLIL_V1_LAB_RADIO_PAIR_MAX) {
-        ninlil_v1_lab_binding_clear(&binding);
+        mapper_scratch_clear(mapper);
         return NINLIL_V1_LAB_RADIO_MAPPING_CAPACITY;
     }
     mapper->pairs[free_slot].active = 1u;
     mapper->pairs[free_slot].local_side = local_side;
-    mapper->pairs[free_slot].binding = binding;
+    mapper->pairs[free_slot].binding = *binding;
     *out_pair_slot = free_slot;
-    clear_bytes(&binding, sizeof(binding));
+    mapper_scratch_clear(mapper);
     return NINLIL_V1_LAB_RADIO_MAPPING_OK;
 }
 
@@ -1031,13 +1045,13 @@ ninlil_v1_lab_radio_mapping_status_t ninlil_v1_lab_radio_mapper_encode(
     size_t out_capacity,
     size_t *out_length)
 {
-    ninlil_fabric_private_nfl1_workspace_t workspace;
-    ninlil_fabric_private_nfl1_envelope_t envelope;
+    ninlil_fabric_private_nfl1_workspace_t *workspace;
+    ninlil_fabric_private_nfl1_envelope_t *envelope;
     ninlil_v1_lab_radio_mapping_status_t status;
     const ninlil_v1_lab_service_row_t *row;
     uint8_t pair_slot = 0u;
     uint8_t row_index = 0u;
-    uint8_t candidate[NINLIL_NRA1_APPLICATION_BODY_MAX];
+    uint8_t *candidate;
     size_t candidate_length = 0u;
     uint32_t required = 0u;
 
@@ -1049,73 +1063,67 @@ ninlil_v1_lab_radio_mapping_status_t ninlil_v1_lab_radio_mapper_encode(
         return NINLIL_V1_LAB_RADIO_MAPPING_INVALID_ARGUMENT;
     }
     *out_length = 0u;
-    (void)memset(&workspace, 0, sizeof(workspace));
-    (void)memset(&envelope, 0, sizeof(envelope));
-    (void)memset(candidate, 0, sizeof(candidate));
+    mapper_scratch_clear(mapper);
+    workspace = &mapper->nfl1_workspace;
+    envelope = &mapper->nfl1_envelope;
+    candidate = mapper->nra1_candidate;
     if (ninlil_fabric_private_nfl1_decode(
             nfl1,
             nfl1_length,
-            &workspace,
-            &envelope,
+            workspace,
+            envelope,
             &required)
         != NINLIL_FABRIC_PRIVATE_NFL1_OK) {
+        mapper_scratch_clear(mapper);
         return NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
     }
-    if (envelope.message_kind != NINLIL_BEARER_MESSAGE_APPLICATION
-        && envelope.message_kind != NINLIL_BEARER_MESSAGE_RECEIPT) {
-        clear_bytes(&workspace, sizeof(workspace));
-        clear_bytes(&envelope, sizeof(envelope));
+    if (envelope->message_kind != NINLIL_BEARER_MESSAGE_APPLICATION
+        && envelope->message_kind != NINLIL_BEARER_MESSAGE_RECEIPT) {
+        mapper_scratch_clear(mapper);
         return NINLIL_V1_LAB_RADIO_MAPPING_UNSUPPORTED;
     }
     status = find_outbound_row(
-        mapper, &envelope, &pair_slot, &row_index);
+        mapper, envelope, &pair_slot, &row_index);
     if (status != NINLIL_V1_LAB_RADIO_MAPPING_OK) {
-        clear_bytes(&workspace, sizeof(workspace));
-        clear_bytes(&envelope, sizeof(envelope));
+        mapper_scratch_clear(mapper);
         return status;
     }
     status = sample_pair_now(mapper, pair_slot, now);
     if (status != NINLIL_V1_LAB_RADIO_MAPPING_OK) {
-        clear_bytes(&workspace, sizeof(workspace));
-        clear_bytes(&envelope, sizeof(envelope));
+        mapper_scratch_clear(mapper);
         return status;
     }
     row = &mapper->pairs[pair_slot].binding.services[row_index];
-    if (envelope.message_kind == NINLIL_BEARER_MESSAGE_APPLICATION) {
+    if (envelope->message_kind == NINLIL_BEARER_MESSAGE_APPLICATION) {
         ninlil_nra1_application_t application;
         (void)memset(&application, 0, sizeof(application));
-        application_to_nra1(row, &envelope, &application);
+        application_to_nra1(row, envelope, &application);
         if (ninlil_nra1_encode_application(
                 &application,
                 candidate,
-                sizeof(candidate),
+                sizeof(mapper->nra1_candidate),
                 &candidate_length)
             != NINLIL_NRA1_OK) {
             clear_bytes(&application, sizeof(application));
-            clear_bytes(&workspace, sizeof(workspace));
-            clear_bytes(&envelope, sizeof(envelope));
+            mapper_scratch_clear(mapper);
             return NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
         }
         clear_bytes(&application, sizeof(application));
         if (out_capacity < candidate_length) {
-            clear_bytes(&workspace, sizeof(workspace));
-            clear_bytes(&envelope, sizeof(envelope));
-            clear_bytes(candidate, sizeof(candidate));
+            mapper_scratch_clear(mapper);
             return NINLIL_V1_LAB_RADIO_MAPPING_CAPACITY;
         }
-        if (envelope.required_evidence != NINLIL_EVIDENCE_NONE) {
+        if (envelope->required_evidence != NINLIL_EVIDENCE_NONE) {
             status = retain_application(
                 mapper,
                 pair_slot,
                 row,
-                &envelope,
+                envelope,
                 nfl1,
                 nfl1_length,
                 now->now_ms);
             if (status != NINLIL_V1_LAB_RADIO_MAPPING_OK) {
-                clear_bytes(&workspace, sizeof(workspace));
-                clear_bytes(&envelope, sizeof(envelope));
-                clear_bytes(candidate, sizeof(candidate));
+                mapper_scratch_clear(mapper);
                 return status;
             }
         }
@@ -1124,27 +1132,24 @@ ninlil_v1_lab_radio_mapping_status_t ninlil_v1_lab_radio_mapper_encode(
         ninlil_nra1_receipt_t receipt;
         (void)memset(&receipt, 0, sizeof(receipt));
         receipt.service_slot = row->slot;
-        receipt.receipt_stage = (uint8_t)envelope.receipt_stage;
+        receipt.receipt_stage = (uint8_t)envelope->receipt_stage;
         (void)memcpy(
-            receipt.transaction_id, envelope.transaction_id.bytes, 16u);
-        (void)memcpy(receipt.attempt_id, envelope.attempt_id.bytes, 16u);
-        receipt.evidence_time_now_ms = envelope.evidence_time_now_ms;
+            receipt.transaction_id, envelope->transaction_id.bytes, 16u);
+        (void)memcpy(receipt.attempt_id, envelope->attempt_id.bytes, 16u);
+        receipt.evidence_time_now_ms = envelope->evidence_time_now_ms;
         if (ninlil_nra1_encode_receipt(
                 &receipt,
                 candidate,
-                sizeof(candidate),
+                sizeof(mapper->nra1_candidate),
                 &candidate_length)
             != NINLIL_NRA1_OK) {
             clear_bytes(&receipt, sizeof(receipt));
-            clear_bytes(&workspace, sizeof(workspace));
-            clear_bytes(&envelope, sizeof(envelope));
+            mapper_scratch_clear(mapper);
             return NINLIL_V1_LAB_RADIO_MAPPING_CORRUPT;
         }
         clear_bytes(&receipt, sizeof(receipt));
         if (out_capacity < candidate_length) {
-            clear_bytes(&workspace, sizeof(workspace));
-            clear_bytes(&envelope, sizeof(envelope));
-            clear_bytes(candidate, sizeof(candidate));
+            mapper_scratch_clear(mapper);
             return NINLIL_V1_LAB_RADIO_MAPPING_CAPACITY;
         }
         *out_radio_flow = opposite_flow(row->flow);
@@ -1152,9 +1157,7 @@ ninlil_v1_lab_radio_mapping_status_t ninlil_v1_lab_radio_mapper_encode(
     (void)memcpy(out_nra1, candidate, candidate_length);
     *out_pair_slot = pair_slot;
     *out_length = candidate_length;
-    clear_bytes(&workspace, sizeof(workspace));
-    clear_bytes(&envelope, sizeof(envelope));
-    clear_bytes(candidate, sizeof(candidate));
+    mapper_scratch_clear(mapper);
     return NINLIL_V1_LAB_RADIO_MAPPING_OK;
 }
 

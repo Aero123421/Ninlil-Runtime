@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TESTS_RUNTIME_ROUTE_RELAY_V1_RRMP_TEST_COMMON_H
 #define NINLIL_TESTS_RUNTIME_ROUTE_RELAY_V1_RRMP_TEST_COMMON_H
 
@@ -120,7 +121,7 @@ static inline int rrmp_install_activate(
         return 1;
     }
     memcpy(install.entries, raw, sizeof(raw));
-    if (ninlil_route_install_batch(&install, &out) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_install_batch(o, &install, &out) != NINLIL_ROUTE_OK) {
         return 1;
     }
     ninlil_rrmp_memzero(&act, sizeof(act));
@@ -130,7 +131,7 @@ static inline int rrmp_install_activate(
     act.route_handle = h;
     act.route_generation = 1u;
     act.now_ms = 1000000u;
-    if (ninlil_route_activate(&act, &out) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_activate(o, &act, &out) != NINLIL_ROUTE_OK) {
         return 1;
     }
     return 0;
@@ -193,6 +194,7 @@ static inline int rrmp_test_authority_tuple_from_noa(
 }
 
 static inline ninlil_parent_status_u32 rrmp_test_owner_prepare_v2(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_prepare_req_v1_t *legacy,
     const ninlil_rrmp_authority_tuple_v2_t *expected_old,
     uint64_t new_writer_epoch,
@@ -221,10 +223,11 @@ static inline ninlil_parent_status_u32 rrmp_test_owner_prepare_v2(
         req.handoff_token_digest32,
         legacy->handoff_token_digest32,
         32u);
-    return ninlil_parent_owner_prepare_v2(&req, out);
+    return ninlil_parent_owner_prepare_v2(owner, &req, out);
 }
 
 static inline ninlil_parent_status_u32 rrmp_test_owner_fence_v2(
+    ninlil_rrmp_owner_t *owner,
     const uint8_t owner_scope_id[16],
     const uint8_t handoff_token_digest32[32],
     const ninlil_rrmp_authority_tuple_v2_t *expected_old,
@@ -292,7 +295,7 @@ static inline ninlil_parent_status_u32 rrmp_test_owner_fence_v2(
         preimage, sizeof(preimage), req.explicit_resign_digest32);
     {
         ninlil_parent_status_u32 status =
-            ninlil_parent_owner_fence_proof_v2(&req, out);
+            ninlil_parent_owner_fence_proof_v2(owner, &req, out);
         if (status == NINLIL_PARENT_OK) {
             memcpy(
                 proof_digest_out,
@@ -304,6 +307,7 @@ static inline ninlil_parent_status_u32 rrmp_test_owner_fence_v2(
 }
 
 static inline ninlil_parent_status_u32 rrmp_test_authority_commit_v2(
+    ninlil_rrmp_owner_t *owner,
     const uint8_t owner_scope_id[16],
     const ninlil_rrmp_authority_tuple_v2_t *expected_old,
     const ninlil_rrmp_authority_tuple_v2_t *expected_new,
@@ -377,10 +381,11 @@ static inline ninlil_parent_status_u32 rrmp_test_authority_commit_v2(
     ninlil_rrmp_sha256(preimage, off, commit_digest_out);
     memcpy(
         req.authority_commit_digest32, commit_digest_out, 32u);
-    return ninlil_parent_authority_commit_v2(&req, out);
+    return ninlil_parent_authority_commit_v2(owner, &req, out);
 }
 
 static inline int rrmp_test_bootstrap_assignment_v2(
+    ninlil_rrmp_owner_t *owner,
     const uint8_t owner_scope_id[16],
     const uint8_t path_policy_id[16],
     const uint8_t parent_set_digest32[32],
@@ -431,18 +436,21 @@ static inline int rrmp_test_bootstrap_assignment_v2(
     memcpy(prep.handoff_token_digest32, token32, 32u);
     ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
     if (rrmp_test_owner_prepare_v2(
+            owner,
             &prep,
             &old_tuple,
             cas_expected_generation + 1u,
             &new_tuple,
             &out) != NINLIL_PARENT_OK ||
         rrmp_test_owner_fence_v2(
+            owner,
             owner_scope_id,
             token32,
             &old_tuple,
             proof,
             &out) != NINLIL_PARENT_OK ||
         rrmp_test_authority_commit_v2(
+            owner,
             owner_scope_id,
             &old_tuple,
             &new_tuple,
@@ -461,7 +469,7 @@ static inline int rrmp_test_bootstrap_assignment_v2(
     memcpy(
         activate.commit_receipt_digest32, commit_digest_out, 32u);
     activate.now_ms = 1000000u;
-    return ninlil_parent_owner_activate(&activate, &out) ==
+    return ninlil_parent_owner_activate(owner, &activate, &out) ==
         NINLIL_PARENT_OK;
 }
 

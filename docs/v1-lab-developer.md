@@ -1,5 +1,10 @@
 # Ninlil V1 LAB — Developer guide
 
+> **HISTORICAL — `v1.0-lab-rc2` snapshot.** This page preserves the repository layout, options,
+> and target names of that tag; do not use it as current development guidance. Use the current
+> [README](../README.md), [build options](build-options.md), and
+> [Host Runtime SDK](host-runtime-sdk.md).
+
 状態: V1 LAB RC2 開発者向け（タグ `v1.0-lab-rc2`）
 
 ## Repository レイアウト

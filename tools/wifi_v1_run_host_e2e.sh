@@ -36,10 +36,14 @@ echo "wifi_v1_run_host_e2e: frames=${FRAMES}"
 FABRIC_SEND_ARGS=()
 FABRIC_REPLY_ARGS=()
 FABRIC_SEND_SUPPORTED=0
+RUNTIME_E2E_SUPPORTED=0
 if "${BIN}" --supports-fabric-send >/dev/null 2>&1; then
   FABRIC_SEND_ARGS=(--fabric-send)
   FABRIC_REPLY_ARGS=(--fabric-reply)
   FABRIC_SEND_SUPPORTED=1
+fi
+if "${BIN}" --supports-runtime-e2e >/dev/null 2>&1; then
+  RUNTIME_E2E_SUPPORTED=1
 fi
 
 # 1) Happy path
@@ -64,7 +68,7 @@ fi
 echo "wifi_v1_run_host_e2e: ordered PASS frames=${FRAMES}"
 
 # 2) Joined public Runtime -> Fabric -> real TLS -> peer Runtime -> Receipt.
-if [ "${FABRIC_SEND_SUPPORTED}" -eq 1 ]; then
+if [ "${RUNTIME_E2E_SUPPORTED}" -eq 1 ]; then
   PORT="$(free_port)"
   "${BIN}" --server --port "${PORT}" --certs "${WORKDIR}/certs" --frames 1 \
     --runtime-e2e >"${WORKDIR}/server_runtime.log" 2>&1 &
@@ -92,6 +96,8 @@ if [ "${FABRIC_SEND_SUPPORTED}" -eq 1 ]; then
     "public submit/Fabric/TLS/peer Runtime/Receipt satisfied" \
     "${WORKDIR}/client_runtime.log"
   echo "wifi_v1_run_host_e2e: joined public Runtime/Fabric/TLS PASS"
+else
+  echo "wifi_v1_run_host_e2e: joined public Runtime/Fabric/TLS NOT RUN in this build"
 fi
 
 # 3) Bidirectional

@@ -363,6 +363,7 @@ Pre-commit sampleの取得だけでNinlil ownershipは成立しません。FULL 
 - EFFECT_DEADLINEとEVIDENCE_CLOSEをEventFact transactionへ入力してはなりません。
 - EventFactのReceipt待ちはattemptごとのbounded attempt_receipt_timeout_msとretry cycleで制御します。
 - ATTEMPT_RECEIPT_TIMEOUTはBearer sendのaccepted/custody/LOST_UNKNOWNまたはCORRUPT/invalid possible-delivery observation時刻 + attempt_receipt_timeout_msのchecked additionから生成し、attempt IDへbindingします。Definitive no-sendでは生成しません。
+- Outbound originのlive STARTED closed send、ならびに8th timeoutでparkしたEvent closed sendは、non-zero timeoutとchecked deadlineを持つ必要があります。Decode後を含め、欠落/overflowはstepとtargeted managementをDEGRADED/CLOCK_UNCERTAINでmutation前に停止し、future wakeを推測しません。Receiverのcached reverse Receipt retryは別のfixed-backoff stateです。
 - Receipt未到達の時間が長いことだけを理由にEXPIREDまたはOUTCOME_UNKNOWNへ進めません。
 - 運用者にはPARKED_RETRY、public park reason、internal event_park_cause、last attempt、last seen / consumed availability epoch、payload保持中を明示します。
 
@@ -765,10 +766,11 @@ Applicationとremote-cancelの各logical ATTEMPT_PREPAREは、prepare recordを�
 | ATTEMPT_PREPARED | BEARER_RESULT=OK accepted/custody or LOST_UNKNOWN | AWAITING_EVIDENCE | effect_certainty=EFFECT_POSSIBLE、send observation+cursorをFULL commit、permit release 0 |
 | ATTEMPT_PREPARED | BEARER_RESULT=CORRUPT/EMPTY/unknown/invalid OK output | AWAITING_EVIDENCE | effect_certainty=EFFECT_POSSIBLE、send observation+cursorをFULL commit、permit release 0、Runtime DEGRADED / OUTCOME_UNKNOWN source |
 | ATTEMPT_PREPARED、AWAITING_EVIDENCE | DELIVERY_INGRESS_COMMITTED / valid positive reverse input | AWAITING_EVIDENCEまたはSATISFIED | same-attempt send observation未commitでもbinding済みinputを優先し、new attempt/send 0 |
-| AWAITING_EVIDENCE | current ATTEMPT_RECEIPT_TIMEOUT、send=ACCEPTED / DURABLE_CUSTODY / LOST_UNKNOWN / corrupt-or-invalid possible delivery、required evidence未到達 | AWAITING_EVIDENCE | EFFECT_POSSIBLEをFULL commit。NO_EFFECTと推測せず、timeout自体でRETRY_WAITへ進まない |
+| AWAITING_EVIDENCE | current ATTEMPT_RECEIPT_TIMEOUT、send=ACCEPTED / DURABLE_CUSTODY / LOST_UNKNOWN / corrupt-or-invalid possible delivery、required evidence未到達、safe apply-contract / budget / clock / deadline guard成立 | RETRY_WAIT | EFFECT_POSSIBLEをFULLで維持し、fixed backoffだけを予約。publicはWAITING_WINDOW。timeout call内のnew attempt/send 0、NO_EFFECTと推測しない |
+| AWAITING_EVIDENCE | 上記timeoutでsafe retry guard不成立 | AWAITING_EVIDENCEまたはAWAITING_GRACE | EFFECT_POSSIBLEをFULLで維持。send 0、evidence closeまで待つ |
 | active | valid CUSTODY_ACCEPTED、known attempt/binding | AWAITING_EVIDENCE | remote durable custodyをFULL commitしcurrent attempt Receipt timeout/retry candidateをclear。Required application evidence/evidence close/payload retentionは維持 |
 | any | stale old-attempt ATTEMPT_RECEIPT_TIMEOUT | current不変 | bounded stale observationだけ、current attempt / budget / timer不変 |
-| AWAITING_EVIDENCE | RETRY_DUE、EFFECT_POSSIBLE、safe apply-contract guard、budget / deadline / cancel fence guard成立、unique attempt ID取得 | ATTEMPT_PREPARED | old attemptのevidence受付を保ったままnew logical attemptをFULL commit |
+| RETRY_WAIT | RETRY_DUE、EFFECT_POSSIBLE、safe apply-contract guard、budget / deadline / cancel fence guard成立、unique attempt ID取得 | ATTEMPT_PREPARED | old attemptのevidence受付を保ったままnew logical attemptをFULL commit |
 | AWAITING_EVIDENCE | RETRY_DUE、safe apply-contract guard不成立 | AWAITING_EVIDENCE | send 0。evidence closeまで待ち、不明ならOUTCOME_UNKNOWN |
 | active | VALID_RECEIPT、stage < required | AWAITING_EVIDENCEまたはAWAITING_GRACE | highest stage更新 |
 | active | VALID_RECEIPT、required到達、期限内effect証明 | SATISFIED | NINLIL_REASON_REQUIRED_EVIDENCE_MET |
@@ -1009,7 +1011,7 @@ Retryable inputを受けたRuntimeは、reducer inputとして固定したtruste
 
 - attempt budgetはATTEMPT_PREPARED commit時に1消費します。
 - crash、send result不明、carrier observationだけを理由にbudgetを戻してはなりません。
-- Accepted-send ATTEMPT_RECEIPT_TIMEOUTはEFFECT_POSSIBLEであり、NO_EFFECT_PROVENやRETRY_SAME_AFTER guidanceを生成しません。TargetはAWAITING_EVIDENCEを保ちます。
+- Accepted-send ATTEMPT_RECEIPT_TIMEOUTはEFFECT_POSSIBLEであり、NO_EFFECT_PROVENやremote RETRY_SAME_AFTER guidanceを生成しません。safe apply-contract guardが成立する場合だけ、effect-possible truthとold-attempt evidence受付を保ったままinternal RETRY_WAIT / public WAITING_WINDOWへ移し、fixed backoff後のnew logical attemptを予約できます。timeout call自体のnew attempt/sendは0です。guard不成立時はAWAITING_EVIDENCEまたはAWAITING_GRACEを保ちます。
 - EFFECT_POSSIBLEのままautomatic retryを許すsafe apply-contract guardは、descriptorがAPPLY_IDEMPOTENTで同じabsolute desired stateを再適用するか、APPLY_APPLICATION_DEDUPで同じtransaction / target / generation / content digestとrequired durable dedup windowを維持する場合だけです。どちらもnew business identityを作りません。
 - 上記guardに加え、dispatch_fenced=false、required evidence未到達、budget残あり、trusted deadline epoch、`checked(now + retry_backoff_ms) < effect_deadline_at`がすべて成立した場合だけnew attemptを作れます。不成立ならsend 0でevidence closeまで待ちます。
 - Exact Disposition matrixのNO_EFFECT_PROVEN + RETRY_SAME_AFTERは別のautomatic retry pathで、internal RETRY_WAIT / public WAITING_WINDOWを使います。
@@ -1026,6 +1028,7 @@ Retryable inputを受けたRuntimeは、reducer inputとして固定したtruste
 - attempts_in_cycleはATTEMPT_PREPARED commit時に1増やします。
 - crash、send result不明、timeout、carrier observationでattempts_in_cycleを戻してはなりません。
 - attempts_in_cycleが8に達し、required Receipt未到達ならPARKED_RETRYへ進みます。Public reasonはNINLIL_REASON_EVENT_RETRY_CYCLE_PARKED、internal event_park_causeはNINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENTです。Tx Gate TEMPORARYは8thまでfixed-backoff cycle内retryで、このruleを使います。
+- 8th accepted-sendのATTEMPT_RECEIPT_TIMEOUTでparkしたcycleの`ended_at_ms`は、timeout reducerを実行したsample `W`ではなくchecked deadline `V = send_observed_at_ms + attempt_receipt_timeout_ms`です。Park snapshotはsend tupleを保持し、resume/availability consumeがsummaryへ`V`を移した後にlive tupleをclearします。したがってcrash後のtargeted managementはsame epoch `T < V`を拒否し、`T = V`を境界として許します。
 - Application Bearer sendのWOULD_BLOCK/UNAVAILABLEはdefinite no-sendでも改善機会をBearer availability epochへbindするため、1〜8件のpartial cycleを即時closeしPARKED_RETRY / BEARER_UNAVAILABLEへ進みます。ATTEMPT_PREPAREDで増えたattempt countを戻しません。DENIEDはPARKED_RETRY / APPLICATION_REMEDIATIONです。
 - Valid remote CAPACITY_EXHAUSTED / NO_EFFECT_PROVEN DispositionはPARKED_RETRY / CAPACITY_UNAVAILABLEです。Admission resource不足、Storage failure、step budget不足はこのcauseを生成しません。
 - PARKED_RETRYはactive transactionです。Timer、retry/Disposition、clock uncertaintyだけではFAILED_DEFINITIVE、EXPIRED、OUTCOME_UNKNOWNへ進めません。Required ReceiptはSATISFIED + RELEASED、監査付きexplicit discardだけはFAILED_DEFINITIVE + DISCARDEDへ進めます。
@@ -1042,6 +1045,7 @@ Provider / harnessはcurrent epoch、available bit、blocked historyをrestart�
 - `runtime_step` entryのBearer state pollでvalid strictly larger epochを観測したら、namespace-level `latest_availability_epoch + available flag + observation clock epoch/time`だけを`runtime.before_bearer_state_commit` / `after`間の1 FULL transactionへcommitします。Bearer state observationはdurable reducer ingressではないためordered-input sequenceとscheduler ownerを消費しません。このcommitはEvent recordを一括更新せず、state-transition budgetをexactly 1消費します。Exact same epoch/flagとold epochはwrite/hook 0、same epoch/different flagはcontract failureでstate不変/resume 0です。
 - EventFactがPARKED_RETRYへ入るFULL commitは、その時点のnamespace latest epochを`last_seen_availability_epoch`へsnapshotします。Active Eventへepochをfan-outせず、後からparkしたEventが古い改善通知を使ってresumeすることを防ぎます。
 - Namespace stateが`available=1`で、latest epochがparked Eventの`last_seen_availability_epoch`と`last_consumed_availability_epoch`の両方よりstrictly大きく、causeがNINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT、NINLIL_EVENT_PARK_CAUSE_BEARER_UNAVAILABLE、NINLIL_EVENT_PARK_CAUSE_CAPACITY_UNAVAILABLEのいずれかなら、そのEvent ownerへ12章work kind `AVAILABILITY_CONSUME`を1件作ります。Owner sequence昇順でEventごとにseparate FULL commitし、completed cycle summary、new retry_cycle_id、attempts_in_cycle=0、last seen/consumed epoch、spool revisionをatomic更新します。
+- `AVAILABILITY_CONSUME`のlogical inputはstep entryのtrusted sample `T`です。Persist済みnamespace Bearer observation `A`と、8th accepted-send Receipt timeoutによるparkではfixed logical cycle end `V`の双方についてepochが`T`と一致し、`T >= max(A,V)`であることをEvent commit前に検証します（該当しないcauseでは`V` guardなし）。Cross-epochは数値比較せずCLOCK_UNCERTAIN、same-epoch regressionまたは`V`のchecked加算不能はDEGRADED/CLOCK_UNCERTAINでEvent/retry/consume mutation 0です。Equalityはacceptし、late step sampleをsummary endへ保存しません。
 - 1 Event commitはstate-transition budget 1です。N Eventsを1巨大transactionや1 counterへまとめず、budget/crashで途中停止してもnamespace observationとcommit済みEventだけを保持し、残りは次stepで同じepochをexactly once consumeします。Cursorとのall-or-noneは12章11.0に従います。新capacity reservationは不要です。
 - PARKEDでないEvent、APPLICATION_REMEDIATION、COUNTER_EXHAUSTEDにはavailability candidateを作りません。前者が後でPARKEDへ入る場合、そのpark commitでcurrent latest epochをseenへsnapshotします。Application/counter causeのexplicit management/Receipt/discard規則は変えません。
 - input epochがnamespace latest以下、またはEventのseen/consumed以下ならNINLIL_REASON_STALE_AVAILABILITY_EPOCHとしてno-opです。
@@ -1412,6 +1416,8 @@ External side effect前は次のworst-case budgetをatomicにpreflightします�
 
 `ninlil_runtime_step()`はcurrent logical timeで直ちに処理可能なworkが残る場合`more_work=1`とします。`has_next_wake=1`は、durable pending timerのうちcurrent trusted clock epochと一致する最早のfuture pointだけを`next_wake_clock_epoch_id / next_wake_at_ms`に返します。Due-now timerはnext wakeではなくmore_workです。`has_next_wake=0`ではepoch/timeともzero、1ではepoch non-zeroかつ`next_wake_at_ms > current now_ms`です。Clock uncertain / epoch mismatch / port failureではwakeを推測せず0にし、NINLIL_REASON_CLOCK_UNCERTAIN causeをaddします。Public `degraded_reason`は他のactive causeを含む固定priorityから導出するため、常にCLOCK_UNCERTAINとは限りません。PARKED_RETRYだけでtimer wakeを生成しません。
 
+Terminal receiverがfresh duplicate Applicationに対するcached Receipt sendをtemporary no-sendで`WAITING_RETRY`へ戻した場合、business transactionがterminalでもそのfuture fixed-backoff pointをnext wakeへ含めます。Restartは同じwakeを保持し、dueでReceiptだけを再送してterminal Outcome/callbackを再openしません。
+
 複数ready ownerの選択、durable scheduler cursor、work class/stable key、step-entry/fresh Clock call、Bearer state poll、first-error stopは12章11.0だけを正本とします。本章のsame-time priorityは選ばれた同一transaction/target内の競合を畳む規則であり、ready owner間fairnessやPort call順を上書きしません。
 
 ### Metricsとhealth
@@ -1718,7 +1724,7 @@ reason textはCoreに保存しません。product adapterが12章のstable reaso
 - M1A-CMD-008: local now=1000、retry_delay_ms=200、profile backoff=500でinternal retry_not_before=1500。wire / public absolute retry timeは0件。
 - M1A-CMD-009: internal retry timerのepochとcurrent / deadline epochが不一致なら、now数値が大きくてもdispatch 0、deadline verdictはINDETERMINATE。
 - M1A-CMD-010: local now + effective retry delay overflowでnew timer / attempt 0、NINLIL_REASON_COUNTER_EXHAUSTEDでfail closed。
-- M1A-CMD-011: accepted-send current ATTEMPT_RECEIPT_TIMEOUTはEFFECT_POSSIBLE + AWAITING_EVIDENCE、immediate RETRY_WAIT / FAILED_DEFINITIVE 0。
+- M1A-CMD-011: accepted-send current ATTEMPT_RECEIPT_TIMEOUTはEFFECT_POSSIBLEを維持する。safe apply-contract guard成立時はfixed-backoffのinternal RETRY_WAIT / public WAITING_WINDOWを予約できるが、timeout call内のnew attempt / send / FAILED_DEFINITIVEは0。guard不成立時はAWAITING_EVIDENCEまたはAWAITING_GRACEを維持する。
 - M1A-CMD-012: stale old-attempt ATTEMPT_RECEIPT_TIMEOUTはcurrent attempt / budget / timer / Outcomeを変更しない。
 - M1A-CMD-013: NO_EFFECT_PROVEN + RETRY_SAME_AFTER Dispositionはbudget/deadline guard成立時だけinternal RETRY_WAIT / public WAITING_WINDOW。
 - M1A-CMD-014: EFFECT_POSSIBLE timeout後でもAPPLY_IDEMPOTENTまたはAPPLICATION_DEDUPのexact identity guard + budget/deadline成立ならnew logical attempt。Old attempt Receiptは引き続受理。

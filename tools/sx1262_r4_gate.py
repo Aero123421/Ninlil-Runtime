@@ -29,6 +29,7 @@ SPY_C = REPO_ROOT / "tests" / "support" / "sx1262_bus_spy.c"
 TEST_C = REPO_ROOT / "tests" / "radio" / "sx1262_r4_test.c"
 AUTH = REPO_ROOT / "cmake" / "ninlil_sx1262_sources.cmake"
 CMAKE_LISTS = REPO_ROOT / "CMakeLists.txt"
+CTEST = REPO_ROOT / "cmake" / "ninlil_ctest.cmake"
 DOC28 = REPO_ROOT / "docs" / "28-r4-sx1262-control-plane-backend.md"
 ADR8 = REPO_ROOT / "docs" / "adr" / "0008-r4-sx1262-control-plane-backend.md"
 DOC_README = REPO_ROOT / "docs" / "README.md"
@@ -341,15 +342,14 @@ def check_authority() -> None:
 
 
 def check_cmake() -> None:
-    text = read_text(CMAKE_LISTS)
-    for tok in (
-        "ninlil_sx1262_sources.cmake",
-        "sx1262_r4",
-        "sx1262_r4_gate",
-        "ninlil_sx1262",
-    ):
-        if tok not in text:
-            fail(f"CMakeLists missing {tok}")
+    production = read_text(CMAKE_LISTS)
+    tests = read_text(CTEST)
+    for tok in ("ninlil_sx1262_sources.cmake", "ninlil_sx1262"):
+        if tok not in production:
+            fail(f"top-level CMakeLists missing {tok}")
+    for tok in ("sx1262_r4", "sx1262_r4_gate"):
+        if tok not in tests:
+            fail(f"test CMake authority missing {tok}")
 
 
 def check_docs() -> None:
@@ -837,7 +837,7 @@ def check_test_present() -> None:
 
 def check(root: pathlib.Path | None = None) -> None:
     global BACKEND_H, BACKEND_C, CMD_H, BUS_H, ESP_BUS_C, ESP_BUS_H
-    global SPY_H, SPY_C, TEST_C, AUTH, CMAKE_LISTS, DOC28, ADR8
+    global SPY_H, SPY_C, TEST_C, AUTH, CMAKE_LISTS, CTEST, DOC28, ADR8
     global DOC_README, ADR_README, PUBLIC_INCLUDE, COMPONENT_CMAKE
 
     base = root if root is not None else REPO_ROOT
@@ -854,6 +854,7 @@ def check(root: pathlib.Path | None = None) -> None:
     TEST_C = base / "tests" / "radio" / "sx1262_r4_test.c"
     AUTH = base / "cmake" / "ninlil_sx1262_sources.cmake"
     CMAKE_LISTS = base / "CMakeLists.txt"
+    CTEST = base / "cmake" / "ninlil_ctest.cmake"
     DOC28 = base / "docs" / "28-r4-sx1262-control-plane-backend.md"
     ADR8 = base / "docs" / "adr" / "0008-r4-sx1262-control-plane-backend.md"
     DOC_README = base / "docs" / "README.md"
@@ -932,6 +933,7 @@ def _copy_tree(dst: pathlib.Path) -> None:
         "ports/esp-idf/include/ninlil_esp_idf/sx1262_bus.h",
         "ports/esp-idf/components/ninlil/CMakeLists.txt",
         "cmake/ninlil_sx1262_sources.cmake",
+        "cmake/ninlil_ctest.cmake",
         "CMakeLists.txt",
         "docs/28-r4-sx1262-control-plane-backend.md",
         "docs/adr/0008-r4-sx1262-control-plane-backend.md",
@@ -1006,7 +1008,7 @@ def self_test() -> None:
         )
 
     def mut_drop_cmake_gate(root: pathlib.Path) -> None:
-        p = root / "CMakeLists.txt"
+        p = root / "cmake" / "ninlil_ctest.cmake"
         text = p.read_text(encoding="utf-8")
         p.write_text(text.replace("sx1262_r4_gate", "sx1262_r4_GATE_REMOVED"), encoding="utf-8")
 

@@ -1,9 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Ninlil portable Fabric v1 public composition API.
  *
  * This experimental 0.x surface is fixed by ADR-0029.  Applications normally
  * use the Foundation Runtime; platform packet-link ports use this API to
  * compose transport without importing implementation headers.
+ *
+ * ADR-0029 is normative. The instance/lifetime block before the functions
+ * below summarizes caller-owned workspace and provider-code lifetimes,
+ * borrowed registrations/Bearer ops, owner-context confinement and re-entry
+ * rejection. ninlil_fabric_status_t is the public invocation status;
+ * ninlil_fabric_link_status_t is a packet-link provider result; and
+ * ninlil_fabric_link_completion_kind_t describes retained-token completion.
+ * TRANSPORT_DONE is not Application success, and COMMIT_UNKNOWN stays fenced.
  */
 #ifndef NINLIL_FABRIC_V1_H
 #define NINLIL_FABRIC_V1_H

@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Generic production bearer worker for the private MFDT candidate.
  *
  * The worker moves NCL1 DATA bytes only through caller-owned bearer callbacks.

@@ -54,8 +54,8 @@ D3S2_PREFIX = 144
 D3S3_SUFFIX_COUNT = 139
 D3S3_PRODUCTION_COUNT = 138
 D3S3_FORMAL_PRECHECK_COUNT = 1
-D3S2_CONTENT = "a9fccb12d932f0082111c94da3a23cd6680dc4bedecb2108e739bdca55d80fed"
-D3S2_RAW = "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec"
+D3S2_CONTENT = "8958aff6c31dcd09f13eae2b6df44b5ae3f4e7bb25a879f369c7b7824de30bf4"
+D3S2_RAW = "0429bc8174210fbb824940d0cfcfadd8ad3e8f1f74dee2b5ec507e9ea113c4d2"
 # R18/R19 execution_scope closed set (§18.14.19.1).
 EXEC_SCOPE_REP1_L2 = "rep1_l2"
 EXEC_SCOPE_FORMAL_PRECHECK = "formal_precheck"
@@ -72,7 +72,7 @@ BLOB_CHUNK_DATA_MAX = 3072
 D1_ZERO32 = bytes(32)
 D1_NONZERO_HEAD = bytes([0x44]) * 32
 D1_NONZERO_PVD = bytes([0x55]) * 32
-D1_SHA = "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4"
+D1_SHA = "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502"
 D1_COUNT = 1549
 D1_FORMAT = "ninlil-domain-store-v1-d1b3o"
 
@@ -13874,6 +13874,8 @@ def build_document(source: Path) -> Dict[str, Any]:
     }
     # retain prior authorities
     for k, v in src.items():
+        if k == "d3s2_suffix_count":
+            continue
         if k.endswith("_authority") or k.endswith("_prefix_count") or k.startswith("d3s2_"):
             if k not in doc:
                 doc[k] = copy.deepcopy(v)

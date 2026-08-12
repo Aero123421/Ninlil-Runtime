@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D2-S3 production profiled-begin structural bridge: executes each
  * domain-scan-structural-v1 vector through ninlil_domain_scan_begin_profiled

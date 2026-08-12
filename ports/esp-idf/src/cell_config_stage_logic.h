@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure cell outer/nested owner config staging (docs/22).
  * Nested owner inline layout: exact sizeof(owner config) only.

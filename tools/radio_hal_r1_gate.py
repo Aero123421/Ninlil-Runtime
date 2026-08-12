@@ -23,7 +23,7 @@ SPY_H = REPO_ROOT / "tests" / "support" / "radio_hal_spy.h"
 SPY_C = REPO_ROOT / "tests" / "support" / "radio_hal_spy.c"
 TEST_C = REPO_ROOT / "tests" / "radio" / "radio_hal_r1_test.c"
 PRIVATE_AUTH = REPO_ROOT / "cmake" / "ninlil_runtime_private_sources.cmake"
-CMAKE_LISTS = REPO_ROOT / "CMakeLists.txt"
+CMAKE_LISTS = REPO_ROOT / "cmake" / "ninlil_ctest.cmake"
 DOC23 = REPO_ROOT / "docs" / "23-usb-radio-boundary.md"
 DOC07 = REPO_ROOT / "docs" / "07-testing-and-quality.md"
 PUBLIC_INCLUDE = REPO_ROOT / "include" / "ninlil"
@@ -673,7 +673,7 @@ def check(root: pathlib.Path | None = None, *, run_prod_probe: bool = True) -> N
         SPY_C = root / "tests" / "support" / "radio_hal_spy.c"
         TEST_C = root / "tests" / "radio" / "radio_hal_r1_test.c"
         PRIVATE_AUTH = root / "cmake" / "ninlil_runtime_private_sources.cmake"
-        CMAKE_LISTS = root / "CMakeLists.txt"
+        CMAKE_LISTS = root / "cmake" / "ninlil_ctest.cmake"
         DOC23 = root / "docs" / "23-usb-radio-boundary.md"
         DOC07 = root / "docs" / "07-testing-and-quality.md"
         PUBLIC_INCLUDE = root / "include" / "ninlil"
@@ -699,7 +699,7 @@ def _copy_tree(dst: pathlib.Path) -> None:
         "tests/support/radio_hal_spy.c",
         "tests/radio/radio_hal_r1_test.c",
         "cmake/ninlil_runtime_private_sources.cmake",
-        "CMakeLists.txt",
+        "cmake/ninlil_ctest.cmake",
         "docs/23-usb-radio-boundary.md",
         "docs/07-testing-and-quality.md",
     ):
@@ -783,7 +783,7 @@ def self_test() -> None:
         )
 
     def mut_drop_cmake_gate(root: pathlib.Path) -> None:
-        p = root / "CMakeLists.txt"
+        p = root / "cmake" / "ninlil_ctest.cmake"
         text = p.read_text(encoding="utf-8")
         p.write_text(
             text.replace("radio_hal_r1_gate", "radio_hal_r1_Xgate"),

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Installed-package smoke: link the production factory header/archive only.
  * Uses supported diagnostics (no private pure helpers).

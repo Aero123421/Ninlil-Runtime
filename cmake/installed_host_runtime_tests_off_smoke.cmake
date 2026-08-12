@@ -6,8 +6,8 @@
 #   - SQLite-OFF has no SQLite package, target, header, or archive dependency;
 #   - SQLite-ON preserves the optional installed provider integration;
 #   - the archive contains the real public Runtime and Host crypto symbols;
-#   - private/test symbols, private archives, test objects, and absolute build
-#     paths do not leak;
+#   - LAB/simulator/physical-radio and private/test symbols or objects, private
+#     archives, and absolute build paths do not leak;
 #   - an independent public-API-only consumer exercises the 3-role x
 #     4-environment create matrix, Cell Agent fail-closed service authority,
 #     2/4-target DesiredState deep-copy/query/list/retry/restart, and four
@@ -185,6 +185,7 @@ execute_process(
         -DCMAKE_BUILD_TYPE=Release
         -DNINLIL_BUILD_TESTS=OFF
         -DNINLIL_BUILD_HOST_RUNTIME=ON
+        -DNINLIL_BUILD_FABRIC_V1=ON
         -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=${NINLIL_SMOKE_WITH_SQLITE}
         -DNINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=${NINLIL_SMOKE_DOMAIN_SCHEMA1}
         -DNINLIL_ENABLE_STRICT_WARNINGS=ON
@@ -324,6 +325,59 @@ if(_ar_lower MATCHES "(^|[\r\n])[^\\r\\n]*(test|fixture|oracle|spy|testbuild)[^\
         "public Runtime archive contains a test-only object:\n${_ar_out}")
 endif()
 
+# Exact archive-member identity closes the source boundary in both directions:
+# every authority source must be present once, and an unreviewed target_sources
+# append must not hide behind a private-family name denylist.
+include("${NINLIL_SOURCE_DIR}/cmake/ninlil_r7_crypto_sources.cmake")
+include("${NINLIL_SOURCE_DIR}/cmake/ninlil_host_runtime_sources.cmake")
+include("${NINLIL_SOURCE_DIR}/cmake/ninlil_composition_v1_sources.cmake")
+set(_expected_runtime_sources
+    ${NINLIL_HOST_RUNTIME_RELATIVE_SOURCES}
+    ${NINLIL_R7_CRYPTO_HOST_RELATIVE_SOURCES}
+    ${NINLIL_COMPOSITION_V1_RELATIVE_SOURCES})
+if(NINLIL_SMOKE_DOMAIN_SCHEMA1)
+    list(APPEND _expected_runtime_sources
+        src/model/domain_schema1_runtime_binding.c
+        src/model/domain_schema1_startup_authority.c
+        src/runtime/domain_schema1_startup_owner.c
+        src/runtime/domain_schema1_kind1_register.c)
+endif()
+set(_expected_runtime_members "")
+foreach(_source IN LISTS _expected_runtime_sources)
+    get_filename_component(_source_name "${_source}" NAME)
+    list(APPEND _expected_runtime_members "${_source_name}")
+endforeach()
+set(_actual_runtime_members "")
+string(REPLACE "\r\n" "\n" _ar_members_text "${_ar_out}")
+string(REPLACE "\n" ";" _ar_members "${_ar_members_text}")
+foreach(_member IN LISTS _ar_members)
+    string(STRIP "${_member}" _member)
+    if(_member STREQUAL "" OR _member MATCHES "^__\\.SYMDEF")
+        continue()
+    endif()
+    get_filename_component(_member_name "${_member}" NAME)
+    if(NOT _member_name MATCHES "\\.(o|obj)$")
+        message(FATAL_ERROR
+            "public Runtime archive contains an unknown member: ${_member}")
+    endif()
+    string(REGEX REPLACE "\\.(o|obj)$" "" _source_name "${_member_name}")
+    list(APPEND _actual_runtime_members "${_source_name}")
+endforeach()
+list(SORT _expected_runtime_members)
+list(SORT _actual_runtime_members)
+if(NOT _actual_runtime_members STREQUAL _expected_runtime_members)
+    message(FATAL_ERROR
+        "public Runtime archive member authority drift:\n"
+        "expected=${_expected_runtime_members}\n"
+        "actual=${_actual_runtime_members}")
+endif()
+if(_ar_lower MATCHES
+   "(^|[\r\n])[^\\r\\n]*(v1_lab|_lab_|pcp_lab|sx1262|simulator|mfdt_v1|rrmp_|wifi_v1|r7_frag|n6_)[^\\r\\n]*\\.(o|obj)([\r\n]|$)")
+    message(FATAL_ERROR
+        "public Runtime archive contains a LAB/simulator/private-candidate/physical-radio "
+        "object:\n${_ar_out}")
+endif()
+
 find_program(_nm NAMES nm REQUIRED)
 execute_process(
     COMMAND "${_nm}" -g "${_runtime_archive}"
@@ -383,6 +437,12 @@ foreach(_banned_symbol
             "'${_banned_symbol}'")
     endif()
 endforeach()
+if(_nm_out MATCHES
+   "[ \t]_?ninlil_(v1_lab_|m4_lab_|c3_lab_|c4_lab_|c5_lab_|c6_lab_|pcp_lab_|sx1262_|mfdt_v1_|rrmp_|route_|parent_|wifi_v1_|r7_frag_|n6_)[^ \t\r\n]*")
+    message(FATAL_ERROR
+        "public Runtime archive exposes a LAB/simulator/private-candidate/physical-radio "
+        "symbol:\n${_nm_out}")
+endif()
 if(_nm_out MATCHES
    "[ \t]_?ninlil_(ctrl_session_test_|logical_session_test_|n6_test_)[^ \t\r\n]*")
     message(FATAL_ERROR

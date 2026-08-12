@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production scanner bridge: executes each domain-scan-v1 vector through the
  * production C scanner + scripted spy and compares status/adopted/counts/

@@ -1,7 +1,34 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_fabric_dispatch.h"
 #include "rrmp_util.h"
 
 #include <string.h>
+
+void ninlil_rrmp_fabric_path_selected_hook_v1(
+    void *user,
+    const uint8_t selected_instance_id[16],
+    uint32_t has_selection,
+    uint32_t requires_custody,
+    uint64_t path_selection_epoch,
+    uint64_t now_ms)
+{
+    ninlil_rrmp_fabric_select_view_t view;
+
+    if (selected_instance_id == NULL) {
+        return;
+    }
+    (void)memset(&view, 0, sizeof(view));
+    (void)memcpy(
+        view.selected_instance_id, selected_instance_id,
+        sizeof(view.selected_instance_id));
+    view.has_selection = has_selection != 0u ? 1u : 0u;
+    view.selection_finalized = view.has_selection;
+    view.requires_custody = requires_custody;
+    view.path_selection_epoch = path_selection_epoch;
+    view.now_ms = now_ms;
+    (void)ninlil_rrmp_fabric_on_path_selected(
+        (ninlil_rrmp_owner_t *)user, &view, NULL);
+}
 
 ninlil_route_status_u32 ninlil_rrmp_fabric_on_path_selected(
     ninlil_rrmp_owner_t *owner,

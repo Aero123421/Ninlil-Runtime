@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Backend-independent clock helpers for the ESP-IDF clock port.
  * Host unit tests compile this without ESP-IDF headers.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 portable crypto boundary tests (docs/31 T0B / independent audit P1).
  *

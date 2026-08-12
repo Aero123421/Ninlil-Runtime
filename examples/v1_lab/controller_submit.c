@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB example: Site Controller downlink submit→delivery (host simulation).
  */

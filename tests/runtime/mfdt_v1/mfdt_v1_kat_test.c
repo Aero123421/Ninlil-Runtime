@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Independent wire/storage KATs from sealed MFDT vector fixtures.
  * Consumes literal hex from multi-frame-durable-transfer-spec-v1.json —
  * not self-referential lab re-encode as sole authority.
@@ -204,7 +205,17 @@ static void test_sealed_one_byte_open_page(void)
     /* re-encode page from sealed open tid/md/entries must match sealed page */
     {
         uint8_t out[132];
+        uint8_t out_second[132];
+        uint8_t out_first_snapshot[132];
+        uint8_t alias[132];
+        _Alignas(uint16_t) uint8_t invalid[132];
+        uint8_t invalid_snapshot[132];
+        uint8_t entries_second[40];
+        uint8_t invalid_entries[40];
         uint16_t out_len = 0u;
+        uint16_t second_len = 0u;
+        uint16_t alias_len = 0u;
+        uint16_t invalid_len = 0x5a5au;
         uint8_t tid[16];
         const uint8_t *entries = page + 92;
         (void)memcpy(tid, open, 16u);
@@ -213,6 +224,58 @@ static void test_sealed_one_byte_open_page(void)
                    out_len == 132u,
                "reenc page");
         expect(ninlil_mfdt_v1_memeq(out, page, 132u), "page bit-exact KAT");
+
+        /* Back-to-back separate outputs cannot share mutable encoder scratch. */
+        (void)memcpy(out_first_snapshot, out, sizeof(out));
+        (void)memcpy(entries_second, entries, sizeof(entries_second));
+        entries_second[39] ^= 0x5au;
+        expect(ninlil_mfdt_v1_encode_page(
+                   tid, 1u, md, 0u, 1u, 0u, 1u, entries_second, out_second,
+                   &second_len) == 0 && second_len == sizeof(out_second),
+               "second independent page encode");
+        expect(memcmp(out, out_first_snapshot, sizeof(out)) == 0,
+               "second encode leaves first output unchanged");
+        expect(memcmp(out_second, out, sizeof(out)) != 0,
+               "different entries produce independent output");
+
+        /* Exact final-entry alias is the one supported overlap shape. */
+        (void)memset(alias, 0xa5, sizeof(alias));
+        (void)memcpy(alias + 92, entries, 40u);
+        expect(ninlil_mfdt_v1_encode_page(
+                   tid, 1u, md, 0u, 1u, 0u, 1u, alias + 92, alias,
+                   &alias_len) == 0 && alias_len == sizeof(alias) &&
+                   memcmp(alias, page, sizeof(alias)) == 0,
+               "page final-entry alias bit-exact");
+
+        /* Unsupported overlap and invalid page shape fail before mutation. */
+        (void)memset(invalid, 0x6bu, sizeof(invalid));
+        (void)memcpy(invalid_snapshot, invalid, sizeof(invalid));
+        expect(ninlil_mfdt_v1_encode_page(
+                   tid, 1u, md, 0u, 1u, 0u, 1u, invalid + 1, invalid,
+                   &invalid_len) == NINLIL_MFDT_V1_ERR_PARAM,
+               "unsupported page overlap rejected");
+        expect(memcmp(invalid, invalid_snapshot, sizeof(invalid)) == 0 &&
+                   invalid_len == 0x5a5au,
+               "overlap reject no mutation");
+        expect(ninlil_mfdt_v1_encode_page(
+                   tid, 1u, md, 0u, 1u, 0u, 1u, entries, invalid,
+                   (uint16_t *)(void *)(invalid + 2u)) ==
+                   NINLIL_MFDT_V1_ERR_PARAM &&
+                   memcmp(invalid, invalid_snapshot, sizeof(invalid)) == 0,
+               "length-output overlap reject no mutation");
+        expect(ninlil_mfdt_v1_encode_page(
+                   tid, 1u, md, 1u, 1u, 22u, 1u, entries, invalid,
+                   &invalid_len) == NINLIL_MFDT_V1_ERR_PARAM &&
+                   memcmp(invalid, invalid_snapshot, sizeof(invalid)) == 0,
+               "semantic reject no mutation");
+        (void)memcpy(invalid_entries, entries, sizeof(invalid_entries));
+        (void)memset(invalid_entries + 8u, 0, 32u);
+        expect(ninlil_mfdt_v1_encode_page(
+                   tid, 1u, md, 0u, 1u, 0u, 1u, invalid_entries, invalid,
+                   &invalid_len) == NINLIL_MFDT_V1_ERR_PARAM &&
+                   memcmp(invalid, invalid_snapshot, sizeof(invalid)) == 0 &&
+                   invalid_len == 0x5a5au,
+               "entry semantic reject no mutation");
     }
 }
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * r7-radio-wire-v1 fixture authority (docs/30 §18):
  *   - CMake-registered host test

@@ -1,9 +1,9 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Fabric v1 core: lifecycle, registry, policy/authority, dispatch,
  * and single ninlil_bearer_ops_t adapter. Default-OFF source candidate.
  */
 #include "fabric_private_api.h"
-#include "fabric_rrmp_select_hook.h"
 #include "fabric_workspace.h"
 
 #include <stddef.h>
@@ -144,7 +144,8 @@ struct ninlil_fabric_v1 {
     ninlil_execution_ops_t execution;
     ninlil_storage_handle_t storage_handle;
     uint32_t storage_open;
-    struct ninlil_rrmp_owner *rrmp_owner;
+    void *path_selected_user;
+    ninlil_fabric_private_path_selected_fn_v1 path_selected_function;
     ninlil_fabric_private_fbm1_t meta;
     uint64_t meta_revision;
     uint64_t path_selection_epoch;
@@ -2782,22 +2783,30 @@ static void install_bearer_ops(ninlil_fabric_private_t *fabric)
     fabric->bearer_ops.state = fabric_bearer_state;
 }
 
-ninlil_fabric_private_status_t ninlil_fabric_private_bind_rrmp_owner_v1(
-    ninlil_fabric_private_t *fabric, struct ninlil_rrmp_owner *owner)
+ninlil_fabric_private_status_t
+ninlil_fabric_private_bind_path_selected_hook_v1(
+    ninlil_fabric_private_t *fabric,
+    void *user,
+    ninlil_fabric_private_path_selected_fn_v1 function)
 {
     ninlil_fabric_private_status_t st = owner_check(fabric);
     if (st != NINLIL_FABRIC_PRIVATE_OK) {
         return st;
     }
+    if ((user == NULL) != (function == NULL)) {
+        return NINLIL_FABRIC_PRIVATE_INVALID_ARGUMENT;
+    }
     /* Attach only while sends are possible; detach remains valid for teardown. */
-    if (owner != NULL && fabric->lifecycle != FABRIC_LIFECYCLE_OPEN) {
+    if (function != NULL && fabric->lifecycle != FABRIC_LIFECYCLE_OPEN) {
         return NINLIL_FABRIC_PRIVATE_CLOSED;
     }
-    if (owner != NULL && fabric->rrmp_owner != NULL
-        && fabric->rrmp_owner != owner) {
+    if (function != NULL && fabric->path_selected_function != NULL
+        && (fabric->path_selected_function != function
+            || fabric->path_selected_user != user)) {
         return NINLIL_FABRIC_PRIVATE_CONFLICT;
     }
-    fabric->rrmp_owner = owner;
+    fabric->path_selected_user = user;
+    fabric->path_selected_function = function;
     return NINLIL_FABRIC_PRIVATE_OK;
 }
 
@@ -6679,13 +6688,15 @@ static ninlil_bearer_status_t fabric_bearer_send(
     }
 
     /* Final selection + enrichment success: pin path / optional custody. */
-    ninlil_fabric_rrmp_on_path_selected(
-        fabric->rrmp_owner,
-        sel.selected_instance_id,
-        1u,
-        snap->query.requires_custody,
-        fabric->path_selection_epoch,
-        snap->query.now_ms);
+    if (fabric->path_selected_function != NULL) {
+        fabric->path_selected_function(
+            fabric->path_selected_user,
+            sel.selected_instance_id,
+            1u,
+            snap->query.requires_custody,
+            fabric->path_selection_epoch,
+            snap->query.now_ms);
+    }
 
     ninlil_fabric_private_nfl1_foundation_message_digest(
         packet, packet_len, foundation_digest);

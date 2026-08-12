@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0022 Domain schema1 HOST_CANDIDATE owner tests (feature ON).
  * Real in-memory storage_ops, fault injection, crash/restart matrix.

@@ -153,6 +153,43 @@ add_test(
     COMMAND ninlil_v1_lab_radio_mapping_test
 )
 
+add_test(
+    NAME fabric_radio_stack_gate_self_test
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_stack_gate.py
+        --self-test
+)
+if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
+   AND NOT _ninlil_any_sanitizer_active)
+    # All-private builds also compile the Fabric utility/codec into the
+    # private Runtime archive. Select one exact authoritative artifact for
+    # each source instead of scanning two roots and treating the intentional
+    # second object as an identity collision.
+    add_test(
+        NAME fabric_radio_stack_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_stack_gate.py
+            --require-su
+            --max 2048
+            ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ninlil_fabric_v1.dir/src/transport/fabric_v1/fabric_private_util.c.su
+            ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ninlil_fabric_v1.dir/src/transport/fabric_v1/nfl1_codec.c.su
+            ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/ninlil_runtime_private.dir/src/transport/fabric_v1/v1_lab_radio_mapping.c.su
+            --only-source fabric_private_util.c
+            --only-source nfl1_codec.c
+            --only-source v1_lab_radio_mapping.c
+    )
+else()
+    add_test(
+        NAME fabric_radio_stack_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/esp_storage_stack_gate.py
+            --compiler-skip=${CMAKE_C_COMPILER_ID}-sanitizer
+    )
+endif()
+set_tests_properties(fabric_radio_stack_gate PROPERTIES
+    DEPENDS "fabric_v1_nfl1_codec;v1_lab_radio_mapping"
+)
+
 add_executable(ninlil_v1_lab_n6_owner_test
     tests/transport/fabric_v1/v1_lab_n6_owner_test.c
     tests/support/n6_mem_storage.c

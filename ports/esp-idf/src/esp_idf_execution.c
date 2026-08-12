@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* ESP-IDF execution identity: one-shot state, immutable embedded ops. */
 
 #include "ninlil_esp_idf/execution.h"

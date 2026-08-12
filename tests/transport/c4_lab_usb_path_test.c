@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB item 9: C4-LAB USB Controller/Cell Agent software path tests.
  */

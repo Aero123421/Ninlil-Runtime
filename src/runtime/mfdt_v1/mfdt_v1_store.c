@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * In-memory durable FULL simulator for host/lab MFDT. Not ESP flash driver.
  * Multi-key transactional FULL: put/del stage until commit; crash inject
  * fails before any durable apply so NEW is never half-visible.
@@ -8,15 +9,21 @@
 #include <string.h>
 
 /* Host lab: ESP bind is a no-op (storage lives in lab pool). */
-int ninlil_mfdt_v1_esp_store_bind(const void *storage_ops, void *storage_handle)
+int ninlil_mfdt_v1_esp_store_bind(ninlil_mfdt_v1_lab_store_t *st,
+                                  const void *storage_ops,
+                                  void *storage_handle)
 {
+    if (st == NULL) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
+    }
     (void)storage_ops;
     (void)storage_handle;
     return NINLIL_MFDT_V1_OK;
 }
 
-void ninlil_mfdt_v1_esp_store_unbind(void)
+void ninlil_mfdt_v1_esp_store_unbind(ninlil_mfdt_v1_lab_store_t *st)
 {
+    (void)st;
 }
 
 void ninlil_mfdt_v1_lab_store_init(ninlil_mfdt_v1_lab_store_t *st)
@@ -26,11 +33,19 @@ void ninlil_mfdt_v1_lab_store_init(ninlil_mfdt_v1_lab_store_t *st)
         return;
     }
     ninlil_mfdt_v1_memzero(st, sizeof(*st));
+    st->esp.last_cu_class = -1;
     for (i = 0; i < NINLIL_MFDT_V1_LAB_MAX_ROWS; ++i) {
         st->rows[i].occupied = 0u;
         st->rows[i].value = NULL;
         st->rows[i].value_len = 0u;
         st->rows[i].key_len = 0u;
+    }
+}
+
+void ninlil_mfdt_v1_lab_store_fini(ninlil_mfdt_v1_lab_store_t *st)
+{
+    if (st != NULL) {
+        ninlil_mfdt_v1_memzero(st, sizeof(*st));
     }
 }
 
@@ -299,7 +314,7 @@ int ninlil_mfdt_v1_lab_full_commit(ninlil_mfdt_v1_lab_store_t *st)
      */
     if (st->force_cu_new_not_promoted != 0u) {
         st->force_cu_new_not_promoted = 0u;
-        ninlil_mfdt_v1_esp_last_cu_class_set((int)NINLIL_MFDT_V1_CU_NEW);
+        st->esp.last_cu_class = (int32_t)NINLIL_MFDT_V1_CU_NEW;
         return NINLIL_MFDT_V1_ERR_CU_NEW_NOT_PROMOTED;
     }
     return NINLIL_MFDT_V1_OK;

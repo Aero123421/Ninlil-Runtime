@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RUNTIME_V1_TRANSACTION_CODEC_H
 #define NINLIL_RUNTIME_V1_TRANSACTION_CODEC_H
 

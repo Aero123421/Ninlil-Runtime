@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Full NRW1 LINK/FRAG session tests: AEAD wire, KATs, reorder/loss/replay,
  * durable CU, restart, publication exact-once. Direct clang/cc + ASan/UBSan.

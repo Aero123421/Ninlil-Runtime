@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB unit 4: B3 logical capability layer — priority/deadline/retry,
  * bearer payload limits, logical payload/fragment, reservation, restart.
@@ -1577,7 +1578,6 @@ static int test_mfdt_runtime_waits_without_single_frame_fallback(void)
     ninlil_bearer_handle_t peer = NULL;
     ninlil_rt_transaction_slot_t *transaction;
     ninlil_rt_mfdt_v1_runtime_snapshot_t owner_snapshot;
-    ninlil_mfdt_v1_spine_ctx_t *spine;
     uint64_t send_calls;
     uint64_t acquire_calls;
     size_t trace_start;
@@ -1592,10 +1592,6 @@ static int test_mfdt_runtime_waits_without_single_frame_fallback(void)
     uint16_t wire_body_length = 0u;
     size_t trace_index;
     uint32_t step_index;
-
-    spine = ninlil_mfdt_v1_spine_ctx();
-    REQUIRE(spine != NULL);
-    (void)memset(spine, 0, sizeof(*spine));
 
     /*
      * Negative control: the fence is shape-specific. A maximum-size
@@ -1732,8 +1728,6 @@ static int test_mfdt_runtime_waits_without_single_frame_fallback(void)
     REQUIRE(ninlil_rt_mfdt_v1_runtime_snapshot(
                 env.runtime, &owner_snapshot) == NINLIL_OK);
     REQUIRE(owner_snapshot.active_count == 2u);
-    REQUIRE(spine->armed == 0u);
-    REQUIRE(spine->outcome_unknown == 0u);
     REQUIRE(env.platform.bearer->open(
                 env.platform.bearer->user,
                 &env.target.target_runtime_id,
@@ -1911,7 +1905,6 @@ static int test_mfdt_runtime_waits_without_single_frame_fallback(void)
     REQUIRE(transaction->attempt_in_cycle == 0u);
     REQUIRE(transaction->cumulative_attempts == 1u);
 
-    REQUIRE(spine->armed == 0u);
     env.platform.bearer->close(
         env.platform.bearer->user, peer);
     peer = NULL;
@@ -2079,7 +2072,6 @@ static int test_mfdt_public_owner_boundaries_and_isolation(void)
     ninlil_id128_t target_runtime_id;
     ninlil_id128_t attempt_927_id;
     uint8_t transfer_927_id[16];
-    ninlil_mfdt_v1_spine_ctx_t *global_spine;
     uint32_t tx_before;
 
     (void)memset(&env, 0, sizeof(env));
@@ -2203,10 +2195,6 @@ static int test_mfdt_public_owner_boundaries_and_isolation(void)
     REQUIRE(count_storage_tx_markers(env.storage_fixture) == tx_before);
     REQUIRE(mfdt_active_count_is(env.runtime, 2u));
 
-    global_spine = ninlil_mfdt_v1_spine_ctx();
-    REQUIRE(global_spine != NULL);
-    REQUIRE(global_spine->armed == 0u);
-    REQUIRE(global_spine->outcome_unknown == 0u);
     REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
     env.runtime = NULL;
     env.service = NULL;

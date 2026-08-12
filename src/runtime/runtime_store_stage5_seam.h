@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RUNTIME_STORE_STAGE5_SEAM_H
 #define NINLIL_RUNTIME_STORE_STAGE5_SEAM_H
 

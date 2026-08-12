@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Wi-Fi durable-state COMMIT_UNKNOWN oracle.
  *

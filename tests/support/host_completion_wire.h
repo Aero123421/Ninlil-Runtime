@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Test/support only: Host completion integrated E2E wire seam.
  * Not public ABI. Not installed. Wraps existing private codecs/ops.

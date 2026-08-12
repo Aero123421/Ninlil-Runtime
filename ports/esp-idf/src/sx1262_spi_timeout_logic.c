@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure overflow-safe SPI timeout → ticks conversion (host + target).
  * No ESP-IDF / FreeRTOS headers.

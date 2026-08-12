@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private FRAG adapters: production N6 / R1 / R2 / L1W1 with host spy.
  * Sole R2 issue path: ninlil_r7_private_issue_checked_with_owner_epoch
@@ -136,8 +137,9 @@ static void orch_coord_finish(
     uint64_t auth,
     uint64_t seq)
 {
-    (void)ninlil_r7_frag_issue_coordinator_complete(auth, seq, NULL);
-    ninlil_r7_r5_issue_registry_release_default(seq);
+    (void)ninlil_r7_frag_issue_coordinator_complete(
+        &orch->issue_coordinator, auth, seq, NULL);
+    ninlil_r7_r5_issue_registry_release(&orch->issue_registry, seq);
     orch_held_clear(orch);
 }
 
@@ -183,21 +185,26 @@ int32_t ninlil_r7_frag_orch_outer_tx(
         && orch->held_outer_len == (uint32_t)outer_len
         && memcmp(orch->held_outer_digest, outer_digest, 32u) == 0
         && ninlil_r7_frag_issue_coordinator_outer_matches(
-            auth, orch->held_permit_sequence, outer_digest,
+            &orch->issue_coordinator, auth, orch->held_permit_sequence,
+            outer_digest,
             (uint32_t)outer_len)) {
         if (orch->held_queued != 0u
             && !ninlil_r7_frag_issue_coordinator_is_head(
-                auth, orch->held_permit_sequence)) {
+                &orch->issue_coordinator, auth,
+                orch->held_permit_sequence)) {
             return 6; /* still queued */
         }
         if (ninlil_r7_frag_issue_coordinator_slot_state(
-                auth, orch->held_permit_sequence)
+                &orch->issue_coordinator, auth,
+                orch->held_permit_sequence)
             == NINLIL_R7_COORD_ST_HELD) {
             cst = ninlil_r7_frag_issue_coordinator_resume_tx(
-                auth, orch->held_permit_sequence);
+                &orch->issue_coordinator, auth,
+                orch->held_permit_sequence);
         } else {
             cst = ninlil_r7_frag_issue_coordinator_begin_tx(
-                auth, orch->held_permit_sequence);
+                &orch->issue_coordinator, auth,
+                orch->held_permit_sequence);
         }
         if (cst != NINLIL_R7_COORD_OK) {
             return 6;
@@ -213,7 +220,8 @@ int32_t ninlil_r7_frag_orch_outer_tx(
             || err.reason == NINLIL_RADIO_HAL_REASON_NOT_BEFORE
             || hst == NINLIL_RADIO_HAL_BUSY) {
             (void)ninlil_r7_frag_issue_coordinator_hold_retry(
-                auth, orch->held_permit_sequence);
+                &orch->issue_coordinator, auth,
+                orch->held_permit_sequence);
             orch->held_queued = 0u;
             (void)ninlil_r7_frag_l1w1_emit(
                 orch->bus, orch->spy, NINLIL_R7_FRAG_EV_TX_RESULT, owner_token,
@@ -316,7 +324,7 @@ int32_t ninlil_r7_frag_orch_outer_tx(
         int32_t ist;
         ist = ninlil_r7_private_issue_checked_with_owner_epoch(
             orch->pcp, &orch->live, orch->live.site_assignment_epoch, &req,
-            NULL, &permit, &cir);
+            &orch->issue_registry, &permit, &cir);
         pst = cir.pcp_status;
         perr = cir.pcp_error;
         (void)perr;
@@ -338,7 +346,8 @@ int32_t ninlil_r7_frag_orch_outer_tx(
         admit.outer_len = (uint32_t)outer_len;
         admit.issue_now_ms = orch->trusted_now_ms;
         memcpy(admit.outer_digest, outer_digest, 32u);
-        cst = ninlil_r7_frag_issue_coordinator_admit(&admit);
+        cst = ninlil_r7_frag_issue_coordinator_admit(
+            &orch->issue_coordinator, &admit);
         if (cst == NINLIL_R7_COORD_QUEUED) {
             /* Retain issued Permit+outer; no TX; no local release. */
             orch_held_store(
@@ -353,11 +362,14 @@ int32_t ninlil_r7_frag_orch_outer_tx(
             ninlil_pcp_error_t rev;
             memset(&rev, 0, sizeof(rev));
             (void)ninlil_pcp_revoke_all_outstanding(orch->pcp, &rev);
-            ninlil_r7_frag_issue_coordinator_complete_all_authority(auth);
-            ninlil_r7_r5_issue_registry_release_default(permit.permit_sequence);
+            ninlil_r7_frag_issue_coordinator_complete_all_authority(
+                &orch->issue_coordinator, auth);
+            ninlil_r7_r5_issue_registry_release(
+                &orch->issue_registry, permit.permit_sequence);
             return 6;
         }
-        if (ninlil_r7_frag_issue_coordinator_begin_tx(auth, permit.permit_sequence)
+        if (ninlil_r7_frag_issue_coordinator_begin_tx(
+                &orch->issue_coordinator, auth, permit.permit_sequence)
             != NINLIL_R7_COORD_OK) {
             /* Keep coordinator ownership; store held for resume. */
             orch_held_store(
@@ -375,7 +387,7 @@ int32_t ninlil_r7_frag_orch_outer_tx(
             || err.reason == NINLIL_RADIO_HAL_REASON_NOT_BEFORE
             || hst == NINLIL_RADIO_HAL_BUSY) {
             (void)ninlil_r7_frag_issue_coordinator_hold_retry(
-                auth, permit.permit_sequence);
+                &orch->issue_coordinator, auth, permit.permit_sequence);
             orch_held_store(
                 orch, auth, 0u, outer_digest, outer_frame, outer_len, &permit);
             (void)ninlil_r7_frag_l1w1_emit(

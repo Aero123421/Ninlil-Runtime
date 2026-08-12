@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "sx1262_bus_spy.h"
 
 #include <string.h>

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production C decoder bridge for control-frame-v1.json.
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_test_common.h"
 
 #include "ninlil/platform.h"
@@ -8,7 +9,7 @@ enum {
     RRMP_TEST_STORE_MAX = NINLIL_RRMP_RRM1_LOGICAL_BYTES_MAX,
     RRMP_TEST_PIECES = 6,
     RRMP_TEST_PIECE_MAX = NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX,
-    RRMP_TEST_WS_MAX = 512 * 1024
+    RRMP_TEST_WS_MAX = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES
 };
 
 enum test_fault {
@@ -34,6 +35,13 @@ typedef struct test_store {
     uint32_t cas_mode;
     uint32_t recovery_override;
     uint32_t cas_successes;
+    struct ninlil_rrmp_owner *reenter_owner;
+    uint16_t reenter_route_handle;
+    uint32_t reenter_expected_status;
+    uint32_t reenter_status;
+    uint8_t reenter_once;
+    uint8_t reenter_lifecycle_probe;
+    uint8_t reenter_succeeded;
     uint8_t pending;
     ninlil_rrmp_bundle_witness_v2_t pending_old;
     ninlil_rrmp_bundle_witness_v2_t pending_new;
@@ -61,6 +69,9 @@ static test_store_t g_store;
 static test_store_t g_staged_store;
 static uint8_t g_before[RRMP_TEST_STORE_MAX];
 static uint8_t g_after[RRMP_TEST_STORE_MAX];
+
+static void fill_install(
+    ninlil_route_install_batch_req_v1_t *req, uint16_t handle);
 
 static int test_key_kind(ninlil_bytes_view_t key)
 {
@@ -528,6 +539,39 @@ static uint32_t test_compare_exchange(
         s->cas_mode = TEST_CAS_NORMAL;
         return NINLIL_RRMP_STORAGE_CAS_DEFINITE_FAILURE;
     }
+    if (s->reenter_once) {
+        ninlil_route_install_batch_req_v1_t nested_req;
+        ninlil_route_result_v1_t nested_out;
+        ninlil_rrmp_owner_t *nested_owner = s->reenter_owner;
+        uint16_t nested_handle = s->reenter_route_handle;
+        s->reenter_once = 0u;
+        if (nested_owner == NULL) {
+            return NINLIL_RRMP_STORAGE_CAS_CORRUPT;
+        }
+        if (s->reenter_expected_status == NINLIL_ROUTE_OK &&
+            !ninlil_rrmp_owner_bind(nested_owner)) {
+            return NINLIL_RRMP_STORAGE_CAS_CORRUPT;
+        }
+        fill_install(&nested_req, nested_handle);
+        s->reenter_status = ninlil_route_install_batch(
+            nested_owner, &nested_req, &nested_out);
+        if (s->reenter_status != s->reenter_expected_status) {
+            return NINLIL_RRMP_STORAGE_CAS_CORRUPT;
+        }
+        if (s->reenter_lifecycle_probe) {
+            if (ninlil_rrmp_owner_bind(nested_owner)) {
+                return NINLIL_RRMP_STORAGE_CAS_CORRUPT;
+            }
+            ninlil_rrmp_owner_unbind(nested_owner);
+            ninlil_rrmp_owner_fini(nested_owner);
+            if (ninlil_route_install_batch(
+                    nested_owner, &nested_req, &nested_out) !=
+                    NINLIL_ROUTE_REENTRANT) {
+                return NINLIL_RRMP_STORAGE_CAS_CORRUPT;
+            }
+        }
+        s->reenter_succeeded = 1u;
+    }
     g_staged_store = *s;
     if (!desired_piece_vector_apply(
             &g_staged_store,
@@ -707,7 +751,7 @@ static int test_definite_failures_restore_exact_old(void)
         g_store.fault = faults[fi];
         fill_install(&install, 2u);
         RRMP_CHECK_EQ(
-            ninlil_route_install_batch(&install, &out),
+            ninlil_route_install_batch(o, &install, &out),
             NINLIL_ROUTE_CORRUPT);
         RRMP_CHECK(test_store_witness(&g_store, &after_witness));
         RRMP_CHECK(witness_equal(&after_witness, &old_witness));
@@ -720,10 +764,10 @@ static int test_definite_failures_restore_exact_old(void)
 
         ninlil_rrmp_owner_bind(o);
         fill_route_query(&query, 1u);
-        RRMP_CHECK_EQ(ninlil_route_query(&query, &out), NINLIL_ROUTE_OK);
+        RRMP_CHECK_EQ(ninlil_route_query(o, &query, &out), NINLIL_ROUTE_OK);
         fill_route_query(&query, 2u);
         RRMP_CHECK_EQ(
-            ninlil_route_query(&query, &out),
+            ninlil_route_query(o, &query, &out),
             NINLIL_ROUTE_NOT_ACTIVE);
         RRMP_CHECK_EQ(ninlil_rrmp_owner_downlink_tx_allowed(o), 1u);
         ninlil_rrmp_owner_fini(o);
@@ -758,18 +802,102 @@ static int test_standard_stale_owner_rejected(void)
 
     ninlil_rrmp_owner_bind(a);
     fill_install(&install, 2u);
-    RRMP_CHECK_EQ(ninlil_route_install_batch(&install, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(
+        ninlil_route_install_batch(a, &install, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK(test_store_witness(&g_store, &after_a));
 
     ninlil_rrmp_owner_bind(b);
     fill_install(&install, 3u);
     RRMP_CHECK_EQ(
-        ninlil_route_install_batch(&install, &out),
+        ninlil_route_install_batch(b, &install, &out),
         NINLIL_ROUTE_AUTHORITY_CONFLICT);
     RRMP_CHECK(test_store_witness(&g_store, &after_b));
     RRMP_CHECK(witness_equal(&after_a, &after_b));
     ninlil_rrmp_owner_fini(a);
     ninlil_rrmp_owner_fini(b);
+    return 0;
+}
+
+static int bytes_all_zero(const uint8_t *bytes, size_t length)
+{
+    size_t i;
+    for (i = 0u; i < length; ++i) {
+        if (bytes[i] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int test_two_owner_storage_scratch_isolation_and_fini_zeroize(void)
+{
+    test_store_t store_a;
+    test_store_t store_b;
+    ninlil_rrmp_owner_t *owner_a;
+    ninlil_rrmp_owner_t *owner_b;
+    ninlil_route_install_batch_req_v1_t install;
+    ninlil_route_query_req_v1_t query;
+    ninlil_route_result_v1_t out;
+    size_t workspace_bytes = ninlil_rrmp_owner_workspace_bytes();
+
+    test_store_init(&store_a);
+    test_store_init(&store_b);
+    owner_a = make_owner(g_ws1, 1u, 0u);
+    owner_b = make_owner(g_ws2, 1u, 0u);
+    RRMP_CHECK(owner_a != NULL && owner_b != NULL);
+    RRMP_CHECK(bind_authority(owner_a, &store_a));
+    RRMP_CHECK(bind_authority(owner_b, &store_b));
+    RRMP_CHECK(rrmp_install_activate(owner_a, 1u, 1u, 1u) == 0);
+    RRMP_CHECK(rrmp_install_activate(owner_b, 100u, 1u, 1u) == 0);
+
+    /*
+     * Re-enter owner B from owner A's compare-and-exchange callback before
+     * owner A copies its desired piece vector. A process-global scratch
+     * buffer is overwritten here; owner-local scratch keeps both commits
+     * exact and independently queryable.
+     */
+    store_a.reenter_owner = owner_b;
+    store_a.reenter_route_handle = 101u;
+    store_a.reenter_expected_status = NINLIL_ROUTE_OK;
+    store_a.reenter_once = 1u;
+    RRMP_CHECK(ninlil_rrmp_owner_bind(owner_a));
+    fill_install(&install, 2u);
+    RRMP_CHECK_EQ(
+        ninlil_route_install_batch(owner_a, &install, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(store_a.reenter_succeeded, 1u);
+
+    /* Same-owner callback reentry and lifecycle calls are mutation-free. */
+    store_a.reenter_owner = owner_a;
+    store_a.reenter_route_handle = 102u;
+    store_a.reenter_expected_status = NINLIL_ROUTE_REENTRANT;
+    store_a.reenter_status = NINLIL_ROUTE_OK;
+    store_a.reenter_lifecycle_probe = 1u;
+    store_a.reenter_succeeded = 0u;
+    store_a.reenter_once = 1u;
+    fill_install(&install, 3u);
+    RRMP_CHECK_EQ(
+        ninlil_route_install_batch(owner_a, &install, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(store_a.reenter_succeeded, 1u);
+    RRMP_CHECK_EQ(store_a.reenter_status, NINLIL_ROUTE_REENTRANT);
+
+    fill_route_query(&query, 2u);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(owner_a, &query, &out), NINLIL_ROUTE_OK);
+    fill_route_query(&query, 3u);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(owner_a, &query, &out), NINLIL_ROUTE_OK);
+    fill_route_query(&query, 102u);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(owner_a, &query, &out), NINLIL_ROUTE_NOT_ACTIVE);
+    RRMP_CHECK(ninlil_rrmp_owner_bind(owner_b));
+    fill_route_query(&query, 101u);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(owner_b, &query, &out), NINLIL_ROUTE_OK);
+
+    ninlil_rrmp_owner_fini(owner_a);
+    ninlil_rrmp_owner_fini(owner_b);
+    RRMP_CHECK(bytes_all_zero(g_ws1, workspace_bytes));
+    RRMP_CHECK(bytes_all_zero(g_ws2, workspace_bytes));
     return 0;
 }
 
@@ -839,7 +967,7 @@ static int setup_active_two_parent_scope(
     memcpy(
         set.parent_set_digest32, pc->parent_digest.bytes, 32u);
     ninlil_rrmp_owner_bind(o);
-    if (ninlil_parent_set_install(&set, &out) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(o, &set, &out) != NINLIL_PARENT_OK) {
         return 0;
     }
 
@@ -873,14 +1001,14 @@ static int setup_active_two_parent_scope(
     }
     memcpy(prep.handoff_token_digest32, pc->token, 32u);
     ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
-    if (rrmp_test_owner_prepare_v2(
+    if (rrmp_test_owner_prepare_v2(o,
             &prep, &old_tuple, 1u, &new_tuple, &out) !=
             NINLIL_PARENT_OK ||
-        rrmp_test_owner_fence_v2(
+        rrmp_test_owner_fence_v2(o,
             pc->scope, pc->token, &old_tuple, proof, &out) !=
             NINLIL_PARENT_OK ||
         !test_store_witness(store, &expected_bundle) ||
-        rrmp_test_authority_commit_v2(
+        rrmp_test_authority_commit_v2(o,
             pc->scope,
             &old_tuple,
             &new_tuple,
@@ -899,7 +1027,7 @@ static int setup_active_two_parent_scope(
     memcpy(activate.owner_scope_id, pc->scope, 16u);
     memcpy(activate.commit_receipt_digest32, commit_digest, 32u);
     activate.now_ms = 1000000u;
-    return ninlil_parent_owner_activate(&activate, &out) ==
+    return ninlil_parent_owner_activate(o, &activate, &out) ==
         NINLIL_PARENT_OK;
 }
 
@@ -935,7 +1063,7 @@ static int fill_parent_precommit(
     }
     memcpy(set.parent_set_digest32, parent_digest.bytes, 32u);
     ninlil_rrmp_owner_bind(o);
-    if (ninlil_parent_set_install(&set, &out) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(o, &set, &out) != NINLIL_PARENT_OK) {
         return 0;
     }
 
@@ -968,13 +1096,13 @@ static int fill_parent_precommit(
         return 0;
     }
     memcpy(prep.handoff_token_digest32, pc->token, 32u);
-    if (rrmp_test_owner_prepare_v2(
+    if (rrmp_test_owner_prepare_v2(o,
             &prep,
             &pc->old_tuple,
             1u,
             &pc->new_tuple,
             &out) != NINLIL_PARENT_OK ||
-        rrmp_test_owner_fence_v2(
+        rrmp_test_owner_fence_v2(o,
             pc->scope,
             pc->token,
             &pc->old_tuple,
@@ -1016,7 +1144,7 @@ static int test_two_owner_nph_exactly_one_commit(void)
     before = g_store.cas_successes;
 
     ninlil_rrmp_owner_bind(a);
-    if (rrmp_test_authority_commit_v2(
+    if (rrmp_test_authority_commit_v2(a,
             pc.scope,
             &pc.old_tuple,
             &pc.new_tuple,
@@ -1029,7 +1157,7 @@ static int test_two_owner_nph_exactly_one_commit(void)
         successes += 1u;
     }
     ninlil_rrmp_owner_bind(b);
-    if (rrmp_test_authority_commit_v2(
+    if (rrmp_test_authority_commit_v2(b,
             pc.scope,
             &pc.old_tuple,
             &pc.new_tuple,
@@ -1057,7 +1185,8 @@ static int test_two_owner_nph_exactly_one_commit(void)
     query.preamble.api_version = 1u;
     query.preamble.struct_size = 48u;
     memcpy(query.owner_scope_id, pc.scope, 16u);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(
+        ninlil_parent_query(cold, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step,
         NINLIL_RRMP_HANDOFF_AUTHORITY_COMMITTED);
@@ -1112,7 +1241,7 @@ static int test_commit_unknown_old_new_and_global_fence(void)
     g_store.cas_mode = TEST_CAS_CU_OLD;
     fill_install(&install, 2u);
     RRMP_CHECK_EQ(
-        ninlil_route_install_batch(&install, &rout),
+        ninlil_route_install_batch(o, &install, &rout),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(ninlil_rrmp_owner_downlink_tx_allowed(o), 0u);
     RRMP_CHECK(test_store_witness(&g_store, &observed_witness));
@@ -1120,18 +1249,18 @@ static int test_commit_unknown_old_new_and_global_fence(void)
 
     fill_install(&install, 3u);
     RRMP_CHECK_EQ(
-        ninlil_route_install_batch(&install, &rout),
+        ninlil_route_install_batch(o, &install, &rout),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     fill_route_query(&query, 1u);
     RRMP_CHECK_EQ(
-        ninlil_route_query(&query, &rout),
+        ninlil_route_query(o, &query, &rout),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(
         ninlil_rrmp_core_forward_service_once(o, &rout),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     fill_parent_set_for_fence(&set);
     RRMP_CHECK_EQ(
-        ninlil_parent_set_install(&set, &pout),
+        ninlil_parent_set_install(o, &set, &pout),
         NINLIL_PARENT_COMMIT_UNKNOWN);
     rrmp_fill_id(scope, 0x31u);
     rrmp_fill_attempt_id16(attempt, 1u);
@@ -1158,17 +1287,18 @@ static int test_commit_unknown_old_new_and_global_fence(void)
     RRMP_CHECK(ninlil_rrmp_owner_storage_recover(cold));
     RRMP_CHECK(ninlil_rrmp_owner_bind(cold));
     fill_route_query(&query, 1u);
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &rout), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(cold, &query, &rout), NINLIL_ROUTE_OK);
     fill_route_query(&query, 2u);
     RRMP_CHECK_EQ(
-        ninlil_route_query(&query, &rout),
+        ninlil_route_query(cold, &query, &rout),
         NINLIL_ROUTE_NOT_ACTIVE);
 
     /* Cold recovery classifies exact NEW and exposes the staged route 2. */
     g_store.cas_mode = TEST_CAS_CU_NEW;
     fill_install(&install, 2u);
     RRMP_CHECK_EQ(
-        ninlil_route_install_batch(&install, &rout),
+        ninlil_route_install_batch(cold, &install, &rout),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     RRMP_CHECK(test_store_witness(&g_store, &observed_witness));
     RRMP_CHECK_EQ(observed_witness.present, 1u);
@@ -1179,14 +1309,15 @@ static int test_commit_unknown_old_new_and_global_fence(void)
     RRMP_CHECK(ninlil_rrmp_owner_storage_recover(cold));
     RRMP_CHECK(ninlil_rrmp_owner_bind(cold));
     fill_route_query(&query, 2u);
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &rout), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(cold, &query, &rout), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(rout.lifecycle_state, NINLIL_RRMP_LIFE_STAGED);
 
     /* PARTIAL and THIRD are never guessed into OLD/NEW. */
     g_store.cas_mode = TEST_CAS_CU_OLD;
     fill_install(&install, 3u);
     RRMP_CHECK_EQ(
-        ninlil_route_install_batch(&install, &rout),
+        ninlil_route_install_batch(cold, &install, &rout),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     g_store.recovery_override = NINLIL_RRMP_STORAGE_RECOVERY_PARTIAL;
     RRMP_CHECK(!ninlil_rrmp_owner_storage_recover(cold));
@@ -1194,13 +1325,15 @@ static int test_commit_unknown_old_new_and_global_fence(void)
         ninlil_rrmp_owner_cu_class(cold),
         NINLIL_RRMP_CU_PARTIAL);
     fill_route_query(&query, 2u);
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &rout), NINLIL_ROUTE_CORRUPT);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(cold, &query, &rout), NINLIL_ROUTE_CORRUPT);
     g_store.recovery_override = NINLIL_RRMP_STORAGE_RECOVERY_THIRD;
     RRMP_CHECK(!ninlil_rrmp_owner_storage_recover(cold));
     RRMP_CHECK_EQ(
         ninlil_rrmp_owner_cu_class(cold),
         NINLIL_RRMP_CU_THIRD);
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &rout), NINLIL_ROUTE_CORRUPT);
+    RRMP_CHECK_EQ(
+        ninlil_route_query(cold, &query, &rout), NINLIL_ROUTE_CORRUPT);
     ninlil_rrmp_owner_fini(cold);
     return 0;
 }
@@ -1268,7 +1401,7 @@ static int test_parent_select_definite_failure_restores_mid_index_old(void)
     RRMP_CHECK(memcmp(g_before, g_after, old_export_len) == 0);
 
     fill_route_query(&query, 1u);
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &rout), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_query(o, &query, &rout), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(rout.lifecycle_state, NINLIL_RRMP_LIFE_ACTIVE);
     RRMP_CHECK_EQ(
         ninlil_rrmp_core_parent_select_for_attempt(
@@ -1369,7 +1502,7 @@ static int test_forward_admit_definite_failure_restores_mid_index_old(void)
     RRMP_CHECK(memcmp(g_before, g_after, old_export_len) == 0);
 
     fill_route_query(&query, 1u);
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &rout), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_query(o, &query, &rout), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(rout.lifecycle_state, NINLIL_RRMP_LIFE_ACTIVE);
     RRMP_CHECK_EQ(
         ninlil_rrmp_core_parent_select_for_attempt(
@@ -1388,6 +1521,8 @@ int main(void)
 {
     RRMP_CHECK(test_definite_failures_restore_exact_old() == 0);
     RRMP_CHECK(test_standard_stale_owner_rejected() == 0);
+    RRMP_CHECK(
+        test_two_owner_storage_scratch_isolation_and_fini_zeroize() == 0);
     RRMP_CHECK(test_two_owner_nph_exactly_one_commit() == 0);
     RRMP_CHECK(test_commit_unknown_old_new_and_global_fence() == 0);
     RRMP_CHECK(

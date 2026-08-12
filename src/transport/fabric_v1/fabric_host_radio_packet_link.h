@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private host radio packet-link seam (no public ABI).
  * Deterministic loopback for Fabric host acceptance; not ESP/RF HIL.

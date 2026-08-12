@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB unit 1b: POSIX SQLite restart E2E (single process).
  * (a) durable submit → restart → recovery resume, no duplicate resend

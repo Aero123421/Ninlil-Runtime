@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_HOOK_REGISTRY_SCHEMA_H
 #define NINLIL_HOOK_REGISTRY_SCHEMA_H
 

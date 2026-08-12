@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host-only RRMP software lifecycle fixture (not RF/HIL, not public ABI).
  * Synthetic platform-shaped FULL store + outbound submit used for host KAT.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_v1_bearer_wire.h"
 
 #include "domain_store_codec.h"
@@ -328,6 +329,7 @@ static ninlil_status_t acquire_fresh_tx_permit(
 {
     const ninlil_tx_gate_ops_t *tx_gate = runtime->platform->tx_gate;
     ninlil_port_status_t clock_status;
+    ninlil_status_t status;
     ninlil_tx_gate_status_t gate_status;
     int permit_zero;
     int permit_valid;
@@ -338,8 +340,11 @@ static ninlil_status_t acquire_fresh_tx_permit(
     clock_status = runtime->platform->clock->now(
         runtime->platform->clock->user, out_fresh_sample);
     if (clock_status != NINLIL_PORT_OK
+        || out_fresh_sample->abi_version != NINLIL_ABI_VERSION
+        || out_fresh_sample->struct_size != sizeof(*out_fresh_sample)
         || out_fresh_sample->trust != NINLIL_CLOCK_TRUSTED
         || !id_nonzero(&out_fresh_sample->clock_epoch_id)
+        || out_fresh_sample->reserved_zero != 0u
         || memcmp(
             out_fresh_sample->clock_epoch_id.bytes,
             step_sample->clock_epoch_id.bytes,
@@ -353,6 +358,11 @@ static ninlil_status_t acquire_fresh_tx_permit(
                         == NINLIL_CLOCK_UNCERTAIN)
             ? NINLIL_E_CLOCK_UNCERTAIN
             : NINLIL_E_DEGRADED;
+    }
+    status = ninlil_rt_accept_trusted_clock_sample(
+        runtime, out_fresh_sample);
+    if (status != NINLIL_OK) {
+        return status;
     }
 
     gate_status = tx_gate->acquire(
@@ -427,6 +437,29 @@ static void clear_target_attempt_state(ninlil_rt_target_slot_t *target)
         sizeof(target->send_observed_clock_epoch_id));
 }
 
+static int target_has_effect_possible_evidence(
+    const ninlil_rt_target_slot_t *target)
+{
+    return target != NULL
+        && target->reason
+            == NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING;
+}
+
+static void restore_active_effect_possible_projection(
+    ninlil_rt_transaction_slot_t *transaction)
+{
+    uint32_t active = 0u;
+
+    if (ninlil_rt_v1_active_target(transaction, &active)
+        && target_has_effect_possible_evidence(
+            &transaction->bound_targets[active])) {
+        transaction->reason =
+            NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING;
+        transaction->deadline_verdict =
+            transaction->bound_targets[active].deadline_verdict;
+    }
+}
+
 static int activate_next_unfinished_target(
     ninlil_rt_transaction_slot_t *transaction,
     uint32_t after_index)
@@ -450,6 +483,71 @@ static int activate_next_unfinished_target(
         &transaction->attempt_id, 0, sizeof(transaction->attempt_id));
     transaction->pending_dispatch = 0u;
     return 0;
+}
+
+/*
+ * A later attempt that definitely did not send cannot erase delivery-possible
+ * evidence from an earlier accepted/LOST_UNKNOWN attempt.  NTS3 already
+ * persists that authority in the per-target reason; return the target to
+ * evidence waiting without inventing a second durable state field.
+ */
+static void preserve_effect_possible_after_no_send(
+    ninlil_rt_transaction_slot_t *transaction,
+    uint32_t target_index)
+{
+    ninlil_rt_target_slot_t *target =
+        &transaction->bound_targets[target_index];
+    uint32_t scan;
+    int activated = 0;
+
+    clear_target_attempt_state(target);
+    target->terminal = 0u;
+    target->pending_dispatch = 0u;
+    target->delivery_phase = NINLIL_RT_DELIVERY_STARTED;
+    target->next_retry_ms = 0u;
+    (void)memset(
+        &target->next_retry_clock_epoch_id,
+        0,
+        sizeof(target->next_retry_clock_epoch_id));
+    target->outcome = NINLIL_OUTCOME_NONE;
+    target->reason =
+        NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING;
+
+    transaction->active_target_index =
+        NINLIL_RT_V1_NO_ACTIVE_TARGET;
+    transaction->attempt_prepared = 0u;
+    (void)memset(
+        &transaction->attempt_id, 0, sizeof(transaction->attempt_id));
+    transaction->send_observation_closed = 0u;
+    transaction->send_observed_at_ms = 0u;
+    (void)memset(
+        &transaction->send_observed_clock_epoch_id,
+        0,
+        sizeof(transaction->send_observed_clock_epoch_id));
+    transaction->next_retry_ms = 0u;
+    (void)memset(
+        &transaction->next_retry_clock_epoch_id,
+        0,
+        sizeof(transaction->next_retry_clock_epoch_id));
+
+    for (scan = 1u; scan < transaction->bound_target_count; ++scan) {
+        uint32_t next =
+            (target_index + scan) % transaction->bound_target_count;
+        ninlil_rt_target_slot_t *next_target =
+            &transaction->bound_targets[next];
+
+        if (next_target->in_use != 0u && next_target->terminal == 0u
+            && next_target->pending_dispatch != 0u) {
+            ninlil_rt_v1_activate_target(transaction, next);
+            activated = 1;
+            break;
+        }
+    }
+    if (!activated) {
+        ninlil_rt_v1_activate_target(transaction, target_index);
+    }
+    ninlil_rt_v1_refresh_target_aggregate(transaction);
+    restore_active_effect_possible_projection(transaction);
 }
 
 static int terminalize_desired_active_target(
@@ -495,10 +593,13 @@ static ninlil_status_t commit_application_gate_observation(
     uint32_t desired_target_index = 0u;
     ninlil_rt_target_slot_t *desired_target = NULL;
     int desired_origin;
+    int prior_effect_possible;
 
     *candidate = *transaction;
     desired_origin = desired_origin_active_target(
         candidate, &desired_target_index, &desired_target);
+    prior_effect_possible = desired_origin
+        && target_has_effect_possible_evidence(desired_target);
     if (observation == NINLIL_RT_TX_GATE_RETRY
         && transaction->retry_budget != 0u) {
         if (candidate->retry_backoff_ms == 0u) {
@@ -515,7 +616,9 @@ static ninlil_status_t commit_application_gate_observation(
         candidate->attempt_prepared = 0u;
         (void)memset(
             &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
-        candidate->reason = NINLIL_REASON_TRANSPORT_RETRY;
+        candidate->reason = prior_effect_possible
+            ? NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING
+            : NINLIL_REASON_TRANSPORT_RETRY;
         candidate->next_retry_clock_epoch_id =
             fresh_sample->clock_epoch_id;
         candidate->next_retry_ms =
@@ -525,13 +628,16 @@ static ninlil_status_t commit_application_gate_observation(
                 NINLIL_RT_DELIVERY_QUEUED;
             desired_target->pending_dispatch = 1u;
             clear_target_attempt_state(desired_target);
-            desired_target->reason = NINLIL_REASON_TRANSPORT_RETRY;
+            desired_target->reason = prior_effect_possible
+                ? NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING
+                : NINLIL_REASON_TRANSPORT_RETRY;
             desired_target->next_retry_clock_epoch_id =
                 candidate->next_retry_clock_epoch_id;
             desired_target->next_retry_ms = candidate->next_retry_ms;
             (void)activate_next_unfinished_target(
                 candidate, desired_target_index);
             ninlil_rt_v1_refresh_target_aggregate(candidate);
+            restore_active_effect_possible_projection(candidate);
         }
         status = ninlil_rt_v1_commit_transaction_snapshot(
             runtime,
@@ -573,6 +679,15 @@ static ninlil_status_t commit_application_gate_observation(
             out_result->events_parked += 1u;
             saturating_increment_u64(&runtime->metrics.events_parked);
         }
+    } else if (prior_effect_possible) {
+        preserve_effect_possible_after_no_send(
+            candidate, desired_target_index);
+        status = ninlil_rt_v1_commit_transaction_snapshot(
+            runtime,
+            transaction,
+            candidate,
+            NINLIL_RT_V1_MARKER_RT,
+            NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT);
     } else {
         ninlil_reason_t failure_reason =
             observation == NINLIL_RT_TX_GATE_RETRY
@@ -728,10 +843,13 @@ static ninlil_status_t commit_application_send_observation(
     uint32_t desired_target_index = 0u;
     ninlil_rt_target_slot_t *desired_target = NULL;
     int desired_origin;
+    int prior_effect_possible;
 
     *candidate = *transaction;
     desired_origin = desired_origin_active_target(
         candidate, &desired_target_index, &desired_target);
+    prior_effect_possible = desired_origin
+        && target_has_effect_possible_evidence(desired_target);
     if (transaction->last_bearer_availability_epoch > minimum_epoch) {
         minimum_epoch = transaction->last_bearer_availability_epoch;
     }
@@ -765,7 +883,10 @@ static ninlil_status_t commit_application_send_observation(
                 &desired_target->next_retry_clock_epoch_id,
                 0,
                 sizeof(desired_target->next_retry_clock_epoch_id));
-            desired_target->reason = NINLIL_REASON_NONE;
+            if (desired_target->reason
+                != NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING) {
+                desired_target->reason = NINLIL_REASON_NONE;
+            }
         }
         status = ninlil_rt_v1_commit_transaction_snapshot(
             runtime,
@@ -824,7 +945,10 @@ static ninlil_status_t commit_application_send_observation(
             saturating_increment_u64(&runtime->metrics.events_parked);
             return NINLIL_OK;
         }
-        if (!terminalize_desired_active_target(
+        if (prior_effect_possible) {
+            preserve_effect_possible_after_no_send(
+                candidate, desired_target_index);
+        } else if (!terminalize_desired_active_target(
                 candidate,
                 NINLIL_OUTCOME_FAILED_DEFINITIVE,
                 NINLIL_REASON_APPLICATION_FAILED)) {
@@ -839,8 +963,12 @@ static ninlil_status_t commit_application_send_observation(
             runtime,
             transaction,
             candidate,
-            NINLIL_RT_V1_MARKER_OC,
-            NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT);
+            prior_effect_possible
+                ? NINLIL_RT_V1_MARKER_RT
+                : NINLIL_RT_V1_MARKER_OC,
+            prior_effect_possible
+                ? NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT
+                : NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT);
         if (status != NINLIL_OK) {
             return status;
         }
@@ -894,12 +1022,30 @@ static ninlil_status_t commit_application_send_observation(
         return NINLIL_OK;
     }
 
+    if (prior_effect_possible && desired_target->retry_budget == 0u) {
+        preserve_effect_possible_after_no_send(
+            candidate, desired_target_index);
+        status = ninlil_rt_v1_commit_transaction_snapshot(
+            runtime,
+            transaction,
+            candidate,
+            NINLIL_RT_V1_MARKER_RT,
+            NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT);
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        out_result->transitions_consumed += 1u;
+        return NINLIL_OK;
+    }
+
     candidate->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
     candidate->pending_dispatch = 1u;
     candidate->attempt_prepared = 0u;
     (void)memset(
         &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
-    candidate->reason = NINLIL_REASON_TRANSPORT_RETRY;
+    candidate->reason = prior_effect_possible
+        ? NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING
+        : NINLIL_REASON_TRANSPORT_RETRY;
     if (candidate->retry_backoff_ms == 0u) {
         candidate->retry_backoff_ms = 100u;
     }
@@ -914,13 +1060,16 @@ static ninlil_status_t commit_application_send_observation(
         desired_target->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
         desired_target->pending_dispatch = 1u;
         clear_target_attempt_state(desired_target);
-        desired_target->reason = NINLIL_REASON_TRANSPORT_RETRY;
+        desired_target->reason = prior_effect_possible
+            ? NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING
+            : NINLIL_REASON_TRANSPORT_RETRY;
         desired_target->next_retry_ms = candidate->next_retry_ms;
         desired_target->next_retry_clock_epoch_id =
             candidate->next_retry_clock_epoch_id;
         (void)activate_next_unfinished_target(
             candidate, desired_target_index);
         ninlil_rt_v1_refresh_target_aggregate(candidate);
+        restore_active_effect_possible_projection(candidate);
     }
     status = ninlil_rt_v1_commit_transaction_snapshot(
         runtime,

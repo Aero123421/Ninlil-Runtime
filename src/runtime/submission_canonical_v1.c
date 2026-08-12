@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "submission_canonical_v1.h"
 
 #include "domain_store_codec.h"

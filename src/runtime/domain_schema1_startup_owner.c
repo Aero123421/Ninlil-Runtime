@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0022 Canonical Domain schema1 startup owner (HOST_CANDIDATE).
  * Real storage_ops. Feature-gated. No public ABI.

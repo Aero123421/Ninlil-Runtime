@@ -46,6 +46,7 @@ include("${NINLIL_REPO_ROOT}/cmake/ninlil_composition_v1_sources.cmake")
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_r7_frag_sources.cmake")
 # MFDT source authority only — do not auto-append; gated by Kconfig below.
 include("${NINLIL_REPO_ROOT}/cmake/ninlil_mfdt_v1_sources.cmake")
+include("${NINLIL_REPO_ROOT}/cmake/ninlil_rrmp_sources.cmake")
 
 set(NINLIL_COMPONENT_SRCS "")
 foreach(_rel IN LISTS NINLIL_RUNTIME_PRIVATE_RELATIVE_SOURCES)
@@ -117,6 +118,9 @@ endif()
 set(NINLIL_MFDT_V1_PRIV_INCLUDES "")
 if(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE)
     foreach(_rel IN LISTS NINLIL_MFDT_V1_PRODUCTION_RELATIVE_SOURCES)
+        list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+    endforeach()
+    foreach(_rel IN LISTS NINLIL_MFDT_V1_ESP_ADAPTER_RELATIVE_SOURCES)
         list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
     endforeach()
     # ESP durable FULL adapter (storage_ops bind); fail-closed until bound.
@@ -213,16 +217,12 @@ endif()
 # Not public ABI. Simulator TU is host-only (excluded on ESP).
 set(NINLIL_RRMP_PRIV_INCLUDES "")
 if(CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1)
+    foreach(_rel IN LISTS NINLIL_RRMP_PORTABLE_RELATIVE_SOURCES
+            NINLIL_RRMP_ESP_ADAPTER_RELATIVE_SOURCES)
+        list(APPEND NINLIL_COMPONENT_SRCS "${NINLIL_REPO_ROOT}/${_rel}")
+    endforeach()
     list(APPEND NINLIL_COMPONENT_SRCS
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_util.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_codec.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_store.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_core.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_seam.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_fabric_dispatch.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_composition.c"
-        "${NINLIL_REPO_ROOT}/ports/esp-idf/src/rrmp_target_smoke.c"
-    )
+        "${NINLIL_REPO_ROOT}/ports/esp-idf/src/rrmp_target_smoke.c")
     list(APPEND NINLIL_RRMP_PRIV_INCLUDES
         "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1"
     )
@@ -291,6 +291,16 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Werror
     -Wvla
 )
+# Real V1 radio receive chain: source-specific stack artifacts and a hard
+# frame ceiling. The official launcher parses these exact .su rows.
+set(_ninlil_fabric_radio_stack_srcs
+    "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/fabric_private_util.c"
+    "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/nfl1_codec.c"
+    "${NINLIL_REPO_ROOT}/src/transport/fabric_v1/v1_lab_radio_mapping.c"
+)
+set_source_files_properties(${_ninlil_fabric_radio_stack_srcs} PROPERTIES
+    COMPILE_OPTIONS "-fstack-usage;-Wframe-larger-than=2048"
+)
 # Production ESP build: exclude legacy request_transmit_with_permit symbol.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     NINLIL_SX1262_PRODUCTION_BUILD=1
@@ -350,6 +360,9 @@ if(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE)
     foreach(_rel IN LISTS NINLIL_MFDT_V1_PRODUCTION_RELATIVE_SOURCES)
         list(APPEND _ninlil_mfdt_srcs "${NINLIL_REPO_ROOT}/${_rel}")
     endforeach()
+    foreach(_rel IN LISTS NINLIL_MFDT_V1_ESP_ADAPTER_RELATIVE_SOURCES)
+        list(APPEND _ninlil_mfdt_srcs "${NINLIL_REPO_ROOT}/${_rel}")
+    endforeach()
     list(APPEND _ninlil_mfdt_srcs
         "${NINLIL_REPO_ROOT}/src/runtime/mfdt_v1/mfdt_v1_store_esp.c"
     )
@@ -359,8 +372,7 @@ if(CONFIG_NINLIL_ENABLE_MFDT_V1_PRIVATE)
 endif()
 if(CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE
-        NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=1
-        NINLIL_RRMP_HAVE_MBEDTLS=1)
+        NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=1)
     if(CONFIG_NINLIL_RRMP_ROLE_ENDPOINT)
         target_compile_definitions(${COMPONENT_LIB} PRIVATE
             NINLIL_RRMP_ROLE_ENDPOINT=1)
@@ -374,18 +386,14 @@ if(CONFIG_NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1)
             NINLIL_RRMP_ROLE_PARENT=1)
     endif()
     # Stack/frame gate: RRMP TUs must not put owner workspace on task stacks.
-    # Workspace is caller-owned PSRAM heap (≤384 KiB budget); frames stay small.
+    # Workspace is caller-owned PSRAM heap (≤768 KiB incl. storage scratch).
     set(_ninlil_rrmp_srcs "")
+    foreach(_rel IN LISTS NINLIL_RRMP_PORTABLE_RELATIVE_SOURCES
+            NINLIL_RRMP_ESP_ADAPTER_RELATIVE_SOURCES)
+        list(APPEND _ninlil_rrmp_srcs "${NINLIL_REPO_ROOT}/${_rel}")
+    endforeach()
     list(APPEND _ninlil_rrmp_srcs
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_util.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_codec.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_store.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_core.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_seam.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_fabric_dispatch.c"
-        "${NINLIL_REPO_ROOT}/src/runtime/route_relay_v1/rrmp_composition.c"
-        "${NINLIL_REPO_ROOT}/ports/esp-idf/src/rrmp_target_smoke.c"
-    )
+        "${NINLIL_REPO_ROOT}/ports/esp-idf/src/rrmp_target_smoke.c")
     # Encode scratch lives in owner workspace — frames must stay tight.
     set_source_files_properties(${_ninlil_rrmp_srcs} PROPERTIES
         COMPILE_OPTIONS "-Wvla;-fstack-usage;-Wframe-larger-than=2048"

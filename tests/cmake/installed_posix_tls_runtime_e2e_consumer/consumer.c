@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #define _POSIX_C_SOURCE 200809L
 
 /* Installed-SDK-only Runtime -> Fabric -> POSIX TLS -> peer -> Receipt E2E. */

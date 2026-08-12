@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ADR-0021 MFDT private integration boundary notes (not public ABI).
  *
  * SEMANTIC: NOT_PUBLIC_ABI

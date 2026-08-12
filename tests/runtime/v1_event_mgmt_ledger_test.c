@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "deterministic_entropy.h"
 #include "domain_store_codec.h"
 #include "in_memory_storage.h"
@@ -128,6 +129,21 @@ static void set_header(uint16_t *version, uint16_t *size, size_t value)
 {
     *version = NINLIL_ABI_VERSION;
     *size = (uint16_t)value;
+}
+
+static void store_u32_be(uint8_t out[4], uint32_t value)
+{
+    out[0] = (uint8_t)(value >> 24u);
+    out[1] = (uint8_t)(value >> 16u);
+    out[2] = (uint8_t)(value >> 8u);
+    out[3] = (uint8_t)value;
+}
+
+static void refresh_event_ledger_crc(uint8_t *value, uint32_t length)
+{
+    uint32_t crc = ninlil_model_domain_crc32c(value, length - 4u);
+
+    store_u32_be(&value[length - 4u], crc);
 }
 
 static void set_id(ninlil_id128_t *id, uint8_t first)
@@ -966,6 +982,8 @@ static int encode_resume_ledger_record(
         record.metadata,
         request->audit_metadata.data,
         request->audit_metadata.length);
+    record.audit_clock_epoch_id = transaction->admission_clock_epoch_id;
+    record.audit_committed_at_ms = transaction->admitted_at_ms;
     record.replay_result_kind = NINLIL_EVENT_RESUME_ALREADY_RESUMED;
     record.replay_result_reason = NINLIL_REASON_NONE;
     record.replay_retry_cycle_id = result->retry_cycle_id;
@@ -1060,6 +1078,1794 @@ static int discard_result_is_api_zero(
         && result->audit_committed_at_ms == 0u
         && result->spool_revision == 0u
         && result->spool_released == 0u;
+}
+
+typedef enum targeted_clock_fault {
+    TARGETED_CLOCK_TEMPORARY = 0,
+    TARGETED_CLOCK_UNCERTAIN = 1,
+    TARGETED_CLOCK_INVALID = 2,
+    TARGETED_CLOCK_PERMANENT = 3,
+    TARGETED_CLOCK_REGRESSION = 4
+} targeted_clock_fault_t;
+
+static int run_targeted_clock_health_case(
+    int use_discard,
+    targeted_clock_fault_t fault)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_event_resume_request_t resume_request;
+    ninlil_event_resume_result_t resume_result;
+    ninlil_event_discard_request_t discard_request;
+    ninlil_event_discard_result_t discard_result;
+    ninlil_time_sample_t sample;
+    ninlil_id128_t second_transaction_id;
+    ninlil_status_t expected_status;
+    ninlil_status_t status;
+    uint64_t clock_calls;
+    uint64_t ordered_sequence;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_open(&env) == 0);
+    REQUIRE(park_event(&env) == 0);
+    if (fault == TARGETED_CLOCK_REGRESSION) {
+        /* Establish a Runtime-wide high-water independent of this owner. */
+        REQUIRE(ninlil_test_clock_advance(env.clock, 100u));
+        REQUIRE(submit_second_event(&env, &second_transaction_id) == 0);
+    }
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    transaction_before = *transaction;
+    ordered_sequence = env.runtime->last_assigned_ordered_input_sequence;
+    sample = env.runtime->last_accepted_trusted_sample;
+    expected_status = NINLIL_E_DEGRADED;
+    switch (fault) {
+    case TARGETED_CLOCK_TEMPORARY:
+        expected_status = NINLIL_E_CLOCK_UNCERTAIN;
+        REQUIRE(ninlil_test_clock_script(
+            env.clock, NINLIL_PORT_TEMPORARY_FAILURE, NULL, 1u));
+        break;
+    case TARGETED_CLOCK_UNCERTAIN:
+        sample.trust = NINLIL_CLOCK_UNCERTAIN;
+        expected_status = NINLIL_E_CLOCK_UNCERTAIN;
+        REQUIRE(ninlil_test_clock_script(
+            env.clock, NINLIL_PORT_OK, &sample, 1u));
+        break;
+    case TARGETED_CLOCK_INVALID:
+        sample.struct_size = (uint16_t)(sizeof(sample) - 1u);
+        REQUIRE(ninlil_test_clock_script_raw(
+            env.clock, NINLIL_PORT_OK, &sample, 1u));
+        break;
+    case TARGETED_CLOCK_PERMANENT:
+        REQUIRE(ninlil_test_clock_script(
+            env.clock, NINLIL_PORT_PERMANENT_FAILURE, NULL, 1u));
+        break;
+    case TARGETED_CLOCK_REGRESSION:
+        REQUIRE(sample.now_ms > 0u);
+        sample.now_ms -= 1u;
+        REQUIRE(ninlil_test_clock_script_raw(
+            env.clock, NINLIL_PORT_OK, &sample, 1u));
+        break;
+    default:
+        REQUIRE(0);
+    }
+
+    clock_calls = ninlil_test_clock_call_count(env.clock);
+    if (use_discard != 0) {
+        fill_discard_request(
+            &discard_request,
+            transaction,
+            (uint8_t)(0x80u + (uint8_t)fault),
+            DISCARD_METADATA,
+            sizeof(DISCARD_METADATA) - 1u);
+        (void)memset(&discard_result, 0xa5, sizeof(discard_result));
+        set_header(
+            &discard_result.abi_version,
+            &discard_result.struct_size,
+            sizeof(discard_result));
+        status = ninlil_event_discard(
+            env.runtime,
+            &env.transaction_id,
+            &discard_request,
+            &discard_result);
+        REQUIRE(discard_result_is_api_zero(&discard_result));
+    } else {
+        fill_resume_request(
+            &resume_request,
+            transaction,
+            (uint8_t)(0x70u + (uint8_t)fault),
+            RESUME_METADATA,
+            sizeof(RESUME_METADATA) - 1u);
+        (void)memset(&resume_result, 0xa5, sizeof(resume_result));
+        set_header(
+            &resume_result.abi_version,
+            &resume_result.struct_size,
+            sizeof(resume_result));
+        status = ninlil_event_resume(
+            env.runtime,
+            &env.transaction_id,
+            &resume_request,
+            &resume_result);
+        REQUIRE(resume_result_is_api_zero(&resume_result));
+    }
+    REQUIRE(status == expected_status);
+    REQUIRE(ninlil_test_clock_call_count(env.clock) == clock_calls + 1u);
+    REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+    REQUIRE(env.runtime->degraded_reason == NINLIL_REASON_CLOCK_UNCERTAIN);
+    REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+        == ordered_sequence);
+    REQUIRE(memcmp(transaction, &transaction_before, sizeof(*transaction)) == 0);
+    REQUIRE(ninlil_test_storage_count_keys_with_prefix(
+                env.storage,
+                (ninlil_bytes_view_t){
+                    TEST_NAMESPACE, sizeof(TEST_NAMESPACE) - 1u},
+                0x45u,
+                use_discard != 0 ? 0x44u : 0x52u)
+        == 0u);
+    env_teardown(&env);
+    return 0;
+}
+
+static int test_targeted_clock_failures_add_health_without_mutation(void)
+{
+    targeted_clock_fault_t fault;
+
+    for (fault = TARGETED_CLOCK_TEMPORARY;
+         fault <= TARGETED_CLOCK_REGRESSION;
+         fault = (targeted_clock_fault_t)((uint32_t)fault + 1u)) {
+        REQUIRE(run_targeted_clock_health_case(0, fault) == 0);
+        REQUIRE(run_targeted_clock_health_case(1, fault) == 0);
+    }
+    return 0;
+}
+
+static int run_cross_epoch_management_fence_case(
+    int use_discard,
+    int parked_cycle)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_event_resume_request_t resume_request;
+    ninlil_event_resume_result_t resume_result;
+    ninlil_event_discard_request_t discard_request;
+    ninlil_event_discard_result_t discard_result;
+    ninlil_time_sample_t trusted;
+    ninlil_id128_t fresh_epoch;
+    ninlil_status_t status;
+    uint64_t commit_calls;
+    uint64_t ordered_sequence;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_open(&env) == 0);
+    REQUIRE(persist_due_event_attempt(
+                &env,
+                parked_cycle != 0
+                    ? NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE : 1u)
+        == 0);
+    if (parked_cycle != 0) {
+        ninlil_step_budget_t budget;
+        ninlil_step_result_t step_result;
+
+        fill_step_budget(&budget);
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        REQUIRE(ninlil_runtime_step(
+                    env.runtime, &budget, &step_result)
+            == NINLIL_OK);
+    }
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    if (parked_cycle != 0) {
+        REQUIRE(transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED);
+        REQUIRE(transaction->event_park_cause
+            == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT);
+        REQUIRE(transaction->send_observation_closed == 1u);
+    }
+    transaction_before = *transaction;
+    ordered_sequence = env.runtime->last_assigned_ordered_input_sequence;
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+
+    if (use_discard != 0) {
+        fill_discard_request(
+            &discard_request,
+            transaction,
+            0x92u,
+            DISCARD_METADATA,
+            sizeof(DISCARD_METADATA) - 1u);
+    } else {
+        fill_resume_request(
+            &resume_request,
+            transaction,
+            0x91u,
+            RESUME_METADATA,
+            sizeof(RESUME_METADATA) - 1u);
+    }
+
+    set_id(&fresh_epoch, use_discard != 0 ? 0xf2u : 0xf1u);
+    REQUIRE(ninlil_test_clock_rollback(env.clock, &fresh_epoch));
+    (void)memset(&trusted, 0, sizeof(trusted));
+    set_header(
+        &trusted.abi_version, &trusted.struct_size, sizeof(trusted));
+    trusted.clock_epoch_id = fresh_epoch;
+    trusted.now_ms = 2000u;
+    trusted.trust = NINLIL_CLOCK_TRUSTED;
+    REQUIRE(ninlil_test_clock_recover(env.clock, &trusted));
+
+    if (use_discard != 0) {
+        (void)memset(&discard_result, 0xa5, sizeof(discard_result));
+        set_header(
+            &discard_result.abi_version,
+            &discard_result.struct_size,
+            sizeof(discard_result));
+        status = ninlil_event_discard(
+            env.runtime,
+            &env.transaction_id,
+            &discard_request,
+            &discard_result);
+        REQUIRE(discard_result_is_api_zero(&discard_result));
+    } else {
+        (void)memset(&resume_result, 0xa5, sizeof(resume_result));
+        set_header(
+            &resume_result.abi_version,
+            &resume_result.struct_size,
+            sizeof(resume_result));
+        status = ninlil_event_resume(
+            env.runtime,
+            &env.transaction_id,
+            &resume_request,
+            &resume_result);
+        REQUIRE(resume_result_is_api_zero(&resume_result));
+    }
+    REQUIRE(status == NINLIL_E_CLOCK_UNCERTAIN);
+    REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+    REQUIRE(env.runtime->degraded_reason == NINLIL_REASON_CLOCK_UNCERTAIN);
+    REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+        == ordered_sequence);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+        == commit_calls);
+    REQUIRE(memcmp(transaction, &transaction_before, sizeof(*transaction)) == 0);
+    REQUIRE(ninlil_test_storage_count_keys_with_prefix(
+                env.storage,
+                (ninlil_bytes_view_t){
+                    TEST_NAMESPACE, sizeof(TEST_NAMESPACE) - 1u},
+                0x45u,
+                use_discard != 0 ? 0x44u : 0x52u)
+        == 0u);
+    env_teardown(&env);
+    return 0;
+}
+
+static int test_cross_epoch_management_fails_closed_without_mutation(void)
+{
+    REQUIRE(run_cross_epoch_management_fence_case(0, 0) == 0);
+    REQUIRE(run_cross_epoch_management_fence_case(1, 0) == 0);
+    REQUIRE(run_cross_epoch_management_fence_case(0, 1) == 0);
+    REQUIRE(run_cross_epoch_management_fence_case(1, 1) == 0);
+    return 0;
+}
+
+typedef enum event_owner_clock_baseline {
+    EVENT_OWNER_CLOCK_ADMISSION = 0,
+    EVENT_OWNER_CLOCK_SEND_OBSERVATION = 1,
+    EVENT_OWNER_CLOCK_RETRY_SCHEDULED = 2,
+    EVENT_OWNER_CLOCK_RECENT_RETRY_HISTORY = 3,
+    EVENT_OWNER_CLOCK_OLDER_RETRY_HISTORY = 4,
+    EVENT_OWNER_CLOCK_PARKED_CYCLE_SEND_HISTORY = 5
+} event_owner_clock_baseline_t;
+
+static int run_cold_restart_owner_clock_regression_case(
+    int use_discard,
+    event_owner_clock_baseline_t baseline_kind,
+    int exact_boundary)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_rt_transaction_slot_t *candidate;
+    ninlil_event_resume_request_t resume_request;
+    ninlil_event_resume_result_t resume_result;
+    ninlil_event_discard_request_t discard_request;
+    ninlil_event_discard_result_t discard_result;
+    ninlil_step_budget_t budget;
+    ninlil_step_result_t step_result;
+    ninlil_id128_t owner_epoch;
+    ninlil_time_sample_t owner_sample;
+    ninlil_time_sample_t regressed_sample;
+    uint64_t owner_baseline_ms;
+    uint64_t put_calls;
+    uint64_t commit_calls;
+    uint64_t ordered_sequence;
+    ninlil_status_t status;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    owner_epoch = transaction->admission_clock_epoch_id;
+    owner_baseline_ms = transaction->admitted_at_ms;
+
+    if (baseline_kind != EVENT_OWNER_CLOCK_ADMISSION) {
+        REQUIRE(ninlil_test_clock_advance(env.clock, 200u));
+        (void)memset(&owner_sample, 0, sizeof(owner_sample));
+        REQUIRE(env.platform.clock->now(
+                    env.platform.clock->user, &owner_sample)
+            == NINLIL_PORT_OK);
+        REQUIRE(ninlil_rt_accept_trusted_clock_sample(
+                    env.runtime, &owner_sample)
+            == NINLIL_OK);
+        candidate = &env.runtime->transaction_scratch;
+        *candidate = *transaction;
+        if (baseline_kind == EVENT_OWNER_CLOCK_SEND_OBSERVATION) {
+            set_event_attempt_history(candidate, 1u);
+            candidate->delivery_phase = NINLIL_RT_DELIVERY_STARTED;
+            candidate->pending_dispatch = 0u;
+            candidate->send_observation_closed = 1u;
+            candidate->send_observed_clock_epoch_id =
+                owner_sample.clock_epoch_id;
+            candidate->send_observed_at_ms = owner_sample.now_ms;
+            candidate->spool_revision += 1u;
+            REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                        env.runtime,
+                        transaction,
+                        candidate,
+                        DELIVERY_STARTED_PREFIX,
+                        NINLIL_V1_DURABLE_OP_DELIVERY_STARTED_COMMIT)
+                == NINLIL_OK);
+            owner_baseline_ms = owner_sample.now_ms;
+        } else if (baseline_kind == EVENT_OWNER_CLOCK_RETRY_SCHEDULED) {
+            REQUIRE(candidate->retry_backoff_ms != 0u);
+            REQUIRE(owner_sample.now_ms
+                <= UINT64_MAX - candidate->retry_backoff_ms);
+            candidate->next_retry_ms =
+                owner_sample.now_ms + candidate->retry_backoff_ms;
+            candidate->next_retry_clock_epoch_id =
+                owner_sample.clock_epoch_id;
+            REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                        env.runtime,
+                        transaction,
+                        candidate,
+                        RETRY_STATE_PREFIX,
+                        NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT)
+                == NINLIL_OK);
+            owner_baseline_ms = owner_sample.now_ms;
+        } else if (baseline_kind
+                == EVENT_OWNER_CLOCK_RECENT_RETRY_HISTORY) {
+            candidate->retry_cycle_id = 3u;
+            candidate->retry_summary_count = 2u;
+            candidate->retry_summaries[0].retry_cycle_id = 1u;
+            candidate->retry_summaries[0]
+                    .last_observed_clock_epoch_id =
+                owner_sample.clock_epoch_id;
+            candidate->retry_summaries[0].last_observed_at_ms =
+                owner_sample.now_ms;
+            candidate->retry_summaries[1].retry_cycle_id = 2u;
+            REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                        env.runtime,
+                        transaction,
+                        candidate,
+                        RETRY_STATE_PREFIX,
+                        NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT)
+                == NINLIL_OK);
+            owner_baseline_ms = owner_sample.now_ms;
+        } else if (baseline_kind
+                == EVENT_OWNER_CLOCK_OLDER_RETRY_HISTORY) {
+            candidate->retry_cycle_id = 2u;
+            candidate->older_retry_cycle_count = 1u;
+            candidate->older_retry_last_observed_clock_epoch_id =
+                owner_sample.clock_epoch_id;
+            candidate->older_retry_last_observed_at_ms =
+                owner_sample.now_ms;
+            REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                        env.runtime,
+                        transaction,
+                        candidate,
+                        RETRY_STATE_PREFIX,
+                        NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT)
+                == NINLIL_OK);
+            owner_baseline_ms = owner_sample.now_ms;
+        } else {
+            set_event_attempt_history(
+                candidate, NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE);
+            candidate->delivery_phase = NINLIL_RT_DELIVERY_STARTED;
+            candidate->pending_dispatch = 0u;
+            candidate->event_park_cause = NINLIL_EVENT_PARK_CAUSE_NONE;
+            candidate->send_observation_closed = 1u;
+            candidate->send_observed_clock_epoch_id =
+                owner_sample.clock_epoch_id;
+            candidate->send_observed_at_ms = owner_sample.now_ms;
+            candidate->spool_revision += 1u;
+            REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                        env.runtime,
+                        transaction,
+                        candidate,
+                        DELIVERY_STARTED_PREFIX,
+                        NINLIL_V1_DURABLE_OP_DELIVERY_STARTED_COMMIT)
+                == NINLIL_OK);
+            REQUIRE(candidate->attempt_receipt_timeout_ms
+                <= UINT64_MAX - 100u);
+            REQUIRE(ninlil_test_clock_advance(
+                env.clock,
+                candidate->attempt_receipt_timeout_ms + 100u));
+            fill_step_budget(&budget);
+            (void)memset(&step_result, 0, sizeof(step_result));
+            set_header(
+                &step_result.abi_version,
+                &step_result.struct_size,
+                sizeof(step_result));
+            REQUIRE(ninlil_runtime_step(
+                        env.runtime, &budget, &step_result)
+                == NINLIL_OK);
+            transaction = ninlil_rt_find_transaction(
+                env.runtime, &env.transaction_id);
+            REQUIRE(transaction != NULL);
+            REQUIRE(transaction->delivery_phase
+                == NINLIL_RT_DELIVERY_PARKED);
+            REQUIRE(transaction->event_park_cause
+                == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT);
+            REQUIRE(transaction->send_observation_closed == 1u);
+            REQUIRE(memcmp(
+                        &transaction->send_observed_clock_epoch_id,
+                        &owner_sample.clock_epoch_id,
+                        sizeof(transaction->send_observed_clock_epoch_id))
+                == 0);
+            REQUIRE(transaction->send_observed_at_ms
+                == owner_sample.now_ms);
+            REQUIRE(owner_sample.now_ms
+                <= UINT64_MAX - transaction->attempt_receipt_timeout_ms);
+            owner_baseline_ms = owner_sample.now_ms
+                + transaction->attempt_receipt_timeout_ms;
+        }
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+    }
+
+    if (use_discard != 0) {
+        fill_discard_request(
+            &discard_request,
+            transaction,
+            (uint8_t)(0xb0u + (uint8_t)baseline_kind),
+            DISCARD_METADATA,
+            sizeof(DISCARD_METADATA) - 1u);
+    } else {
+        fill_resume_request(
+            &resume_request,
+            transaction,
+            (uint8_t)(0xa0u + (uint8_t)baseline_kind),
+            RESUME_METADATA,
+            sizeof(RESUME_METADATA) - 1u);
+    }
+
+    REQUIRE(owner_baseline_ms != 0u);
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    env.service = NULL;
+    ninlil_test_storage_simulate_crash(env.storage);
+    (void)memset(&regressed_sample, 0, sizeof(regressed_sample));
+    set_header(
+        &regressed_sample.abi_version,
+        &regressed_sample.struct_size,
+        sizeof(regressed_sample));
+    regressed_sample.clock_epoch_id = owner_epoch;
+    regressed_sample.now_ms = exact_boundary != 0
+        ? owner_baseline_ms
+        : owner_baseline_ms - 1u;
+    regressed_sample.trust = NINLIL_CLOCK_TRUSTED;
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &regressed_sample, 2u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    transaction_before = *transaction;
+    ordered_sequence = env.runtime->last_assigned_ordered_input_sequence;
+    put_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+
+    if (use_discard != 0) {
+        (void)memset(&discard_result, 0xa5, sizeof(discard_result));
+        set_header(
+            &discard_result.abi_version,
+            &discard_result.struct_size,
+            sizeof(discard_result));
+        status = ninlil_event_discard(
+            env.runtime,
+            &env.transaction_id,
+            &discard_request,
+            &discard_result);
+        if (exact_boundary == 0) {
+            REQUIRE(discard_result_is_api_zero(&discard_result));
+        }
+    } else {
+        (void)memset(&resume_result, 0xa5, sizeof(resume_result));
+        set_header(
+            &resume_result.abi_version,
+            &resume_result.struct_size,
+            sizeof(resume_result));
+        status = ninlil_event_resume(
+            env.runtime,
+            &env.transaction_id,
+            &resume_request,
+            &resume_result);
+        if (exact_boundary == 0) {
+            REQUIRE(resume_result_is_api_zero(&resume_result));
+        }
+    }
+    if (exact_boundary != 0) {
+        REQUIRE(status == NINLIL_OK);
+        if (use_discard != 0) {
+            REQUIRE(discard_result.kind == NINLIL_EVENT_DISCARD_DISCARDED);
+            REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+                == ordered_sequence + 1u);
+        } else if (baseline_kind
+                == EVENT_OWNER_CLOCK_PARKED_CYCLE_SEND_HISTORY) {
+            REQUIRE(resume_result.kind == NINLIL_EVENT_RESUME_RESUMED);
+            REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+                == ordered_sequence + 1u);
+            transaction = ninlil_rt_find_transaction(
+                env.runtime, &env.transaction_id);
+            REQUIRE(transaction != NULL);
+            REQUIRE(transaction->retry_summary_count == 1u);
+            REQUIRE(memcmp(
+                        &transaction->retry_summaries[0]
+                            .last_observed_clock_epoch_id,
+                        &owner_epoch,
+                        sizeof(owner_epoch))
+                == 0);
+            REQUIRE(transaction->retry_summaries[0]
+                    .last_observed_at_ms
+                == owner_baseline_ms);
+            REQUIRE(transaction->send_observation_closed == 0u);
+            REQUIRE(transaction->send_observed_at_ms == 0u);
+            REQUIRE(id_is_zero(
+                &transaction->send_observed_clock_epoch_id));
+        } else {
+            REQUIRE(resume_result.kind == NINLIL_EVENT_RESUME_NOT_PARKED);
+            REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+                == ordered_sequence);
+        }
+    } else {
+        REQUIRE(status == NINLIL_E_DEGRADED);
+        REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+        REQUIRE(env.runtime->degraded_reason == NINLIL_REASON_CLOCK_UNCERTAIN);
+        REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+            == ordered_sequence);
+        REQUIRE(memcmp(
+                    transaction, &transaction_before, sizeof(*transaction))
+            == 0);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+            == put_calls);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+            == commit_calls);
+        REQUIRE(ninlil_test_storage_count_keys_with_prefix(
+                    env.storage,
+                    (ninlil_bytes_view_t){
+                        TEST_NAMESPACE, sizeof(TEST_NAMESPACE) - 1u},
+                    0x45u,
+                    use_discard != 0 ? 0x44u : 0x52u)
+            == 0u);
+    }
+    env_teardown(&env);
+    return 0;
+}
+
+static int test_cold_restart_event_owner_clock_regression_fails_closed(void)
+{
+    event_owner_clock_baseline_t baseline_kind;
+
+    for (baseline_kind = EVENT_OWNER_CLOCK_ADMISSION;
+         baseline_kind <= EVENT_OWNER_CLOCK_OLDER_RETRY_HISTORY;
+         baseline_kind = (event_owner_clock_baseline_t)(
+             (uint32_t)baseline_kind + 1u)) {
+        REQUIRE(run_cold_restart_owner_clock_regression_case(
+                    0, baseline_kind, 0)
+            == 0);
+        REQUIRE(run_cold_restart_owner_clock_regression_case(
+                    1, baseline_kind, 0)
+            == 0);
+    }
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                0, EVENT_OWNER_CLOCK_RECENT_RETRY_HISTORY, 1)
+        == 0);
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                1, EVENT_OWNER_CLOCK_RECENT_RETRY_HISTORY, 1)
+        == 0);
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                0, EVENT_OWNER_CLOCK_OLDER_RETRY_HISTORY, 1)
+        == 0);
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                1, EVENT_OWNER_CLOCK_OLDER_RETRY_HISTORY, 1)
+        == 0);
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                0, EVENT_OWNER_CLOCK_PARKED_CYCLE_SEND_HISTORY, 0)
+        == 0);
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                1, EVENT_OWNER_CLOCK_PARKED_CYCLE_SEND_HISTORY, 0)
+        == 0);
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                0, EVENT_OWNER_CLOCK_PARKED_CYCLE_SEND_HISTORY, 1)
+        == 0);
+    REQUIRE(run_cold_restart_owner_clock_regression_case(
+                1, EVENT_OWNER_CLOCK_PARKED_CYCLE_SEND_HISTORY, 1)
+        == 0);
+    return 0;
+}
+
+static int run_parked_cycle_deadline_overflow_case(int use_discard)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_rt_transaction_slot_t *candidate;
+    ninlil_event_resume_request_t resume_request;
+    ninlil_event_resume_result_t resume_result;
+    ninlil_event_discard_request_t discard_request;
+    ninlil_event_discard_result_t discard_result;
+    ninlil_id128_t owner_epoch;
+    ninlil_time_sample_t sample;
+    uint64_t put_calls;
+    uint64_t commit_calls;
+    uint64_t ordered_sequence;
+    ninlil_status_t status;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    REQUIRE(transaction->attempt_receipt_timeout_ms > 1u);
+    candidate = &env.runtime->transaction_scratch;
+    *candidate = *transaction;
+    set_event_attempt_history(
+        candidate, NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE);
+    candidate->delivery_phase = NINLIL_RT_DELIVERY_PARKED;
+    candidate->pending_dispatch = 0u;
+    candidate->event_park_cause =
+        NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT;
+    candidate->send_observation_closed = 1u;
+    candidate->send_observed_clock_epoch_id =
+        transaction->admission_clock_epoch_id;
+    owner_epoch = candidate->send_observed_clock_epoch_id;
+    candidate->send_observed_at_ms = UINT64_MAX
+        - candidate->attempt_receipt_timeout_ms + 1u;
+    candidate->spool_revision += 1u;
+    REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                env.runtime,
+                transaction,
+                candidate,
+                EVENT_SPOOL_PREFIX,
+                NINLIL_V1_DURABLE_OP_EVENT_SPOOL_COMMIT)
+        == NINLIL_OK);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    if (use_discard != 0) {
+        fill_discard_request(
+            &discard_request,
+            transaction,
+            0xd2u,
+            DISCARD_METADATA,
+            sizeof(DISCARD_METADATA) - 1u);
+    } else {
+        fill_resume_request(
+            &resume_request,
+            transaction,
+            0xd1u,
+            RESUME_METADATA,
+            sizeof(RESUME_METADATA) - 1u);
+    }
+
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    env.service = NULL;
+    ninlil_test_storage_simulate_crash(env.storage);
+    (void)memset(&sample, 0, sizeof(sample));
+    set_header(&sample.abi_version, &sample.struct_size, sizeof(sample));
+    sample.clock_epoch_id = owner_epoch;
+    sample.now_ms = UINT64_MAX;
+    sample.trust = NINLIL_CLOCK_TRUSTED;
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &sample, 2u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    transaction_before = *transaction;
+    ordered_sequence = env.runtime->last_assigned_ordered_input_sequence;
+    put_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+
+    if (use_discard != 0) {
+        (void)memset(&discard_result, 0xa5, sizeof(discard_result));
+        set_header(
+            &discard_result.abi_version,
+            &discard_result.struct_size,
+            sizeof(discard_result));
+        status = ninlil_event_discard(
+            env.runtime,
+            &env.transaction_id,
+            &discard_request,
+            &discard_result);
+        REQUIRE(discard_result_is_api_zero(&discard_result));
+    } else {
+        (void)memset(&resume_result, 0xa5, sizeof(resume_result));
+        set_header(
+            &resume_result.abi_version,
+            &resume_result.struct_size,
+            sizeof(resume_result));
+        status = ninlil_event_resume(
+            env.runtime,
+            &env.transaction_id,
+            &resume_request,
+            &resume_result);
+        REQUIRE(resume_result_is_api_zero(&resume_result));
+    }
+    REQUIRE(status == NINLIL_E_DEGRADED);
+    REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+    REQUIRE(env.runtime->degraded_reason == NINLIL_REASON_CLOCK_UNCERTAIN);
+    REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+        == ordered_sequence);
+    REQUIRE(memcmp(
+                transaction, &transaction_before, sizeof(*transaction))
+        == 0);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+        == put_calls);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+        == commit_calls);
+    env_teardown(&env);
+    return 0;
+}
+
+static int test_parked_cycle_deadline_overflow_fails_closed(void)
+{
+    REQUIRE(run_parked_cycle_deadline_overflow_case(0) == 0);
+    REQUIRE(run_parked_cycle_deadline_overflow_case(1) == 0);
+    return 0;
+}
+
+typedef enum started_receipt_boundary_case {
+    STARTED_RECEIPT_STEP_OVERFLOW = 0,
+    STARTED_RECEIPT_STEP_MISSING_TIMEOUT = 1,
+    STARTED_RECEIPT_DISCARD_OVERFLOW = 2,
+    STARTED_RECEIPT_DISCARD_EXACT_MAX = 3
+} started_receipt_boundary_case_t;
+
+static int run_started_receipt_boundary_case(
+    started_receipt_boundary_case_t case_kind)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_rt_transaction_slot_t *candidate;
+    ninlil_event_discard_request_t discard_request;
+    ninlil_event_discard_result_t discard_result;
+    ninlil_step_budget_t budget;
+    ninlil_step_result_t step_result;
+    ninlil_time_sample_t sample;
+    ninlil_id128_t owner_epoch;
+    uint64_t put_calls;
+    uint64_t commit_calls;
+    uint64_t ordered_sequence;
+    ninlil_status_t status;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    REQUIRE(transaction->attempt_receipt_timeout_ms > 1u);
+    candidate = &env.runtime->transaction_scratch;
+    *candidate = *transaction;
+    set_event_attempt_history(candidate, 1u);
+    candidate->delivery_phase = NINLIL_RT_DELIVERY_STARTED;
+    candidate->pending_dispatch = 0u;
+    candidate->event_park_cause = NINLIL_EVENT_PARK_CAUSE_NONE;
+    candidate->send_observation_closed = 1u;
+    candidate->send_observed_clock_epoch_id =
+        transaction->admission_clock_epoch_id;
+    owner_epoch = candidate->send_observed_clock_epoch_id;
+    if (case_kind == STARTED_RECEIPT_STEP_MISSING_TIMEOUT) {
+        candidate->attempt_receipt_timeout_ms = 0u;
+        candidate->send_observed_at_ms = 1000u;
+    } else {
+        candidate->send_observed_at_ms = UINT64_MAX
+            - candidate->attempt_receipt_timeout_ms
+            + (case_kind == STARTED_RECEIPT_DISCARD_EXACT_MAX ? 0u : 1u);
+    }
+    candidate->spool_revision += 1u;
+    REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                env.runtime,
+                transaction,
+                candidate,
+                DELIVERY_STARTED_PREFIX,
+                NINLIL_V1_DURABLE_OP_DELIVERY_STARTED_COMMIT)
+        == NINLIL_OK);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    if (case_kind != STARTED_RECEIPT_STEP_OVERFLOW) {
+        fill_discard_request(
+            &discard_request,
+            transaction,
+            case_kind == STARTED_RECEIPT_DISCARD_EXACT_MAX
+                ? 0xd4u : 0xd3u,
+            DISCARD_METADATA,
+            sizeof(DISCARD_METADATA) - 1u);
+    }
+
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    env.service = NULL;
+    ninlil_test_storage_simulate_crash(env.storage);
+    (void)memset(&sample, 0, sizeof(sample));
+    set_header(&sample.abi_version, &sample.struct_size, sizeof(sample));
+    sample.clock_epoch_id = owner_epoch;
+    sample.now_ms = UINT64_MAX;
+    sample.trust = NINLIL_CLOCK_TRUSTED;
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &sample, 2u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    transaction_before = *transaction;
+    ordered_sequence = env.runtime->last_assigned_ordered_input_sequence;
+    put_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+
+    if (case_kind == STARTED_RECEIPT_STEP_OVERFLOW
+        || case_kind == STARTED_RECEIPT_STEP_MISSING_TIMEOUT) {
+        fill_step_budget(&budget);
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        status = ninlil_runtime_step(env.runtime, &budget, &step_result);
+        REQUIRE(step_result.has_next_wake == 0u);
+        REQUIRE(step_result.next_wake_at_ms == 0u);
+    } else {
+        (void)memset(&discard_result, 0xa5, sizeof(discard_result));
+        set_header(
+            &discard_result.abi_version,
+            &discard_result.struct_size,
+            sizeof(discard_result));
+        status = ninlil_event_discard(
+            env.runtime,
+            &env.transaction_id,
+            &discard_request,
+            &discard_result);
+    }
+    if (case_kind == STARTED_RECEIPT_DISCARD_EXACT_MAX) {
+        REQUIRE(status == NINLIL_OK);
+        REQUIRE(discard_result.kind == NINLIL_EVENT_DISCARD_DISCARDED);
+        REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+            == ordered_sequence + 1u);
+    } else {
+        REQUIRE(status == NINLIL_E_DEGRADED);
+        if (case_kind == STARTED_RECEIPT_DISCARD_OVERFLOW) {
+            REQUIRE(discard_result_is_api_zero(&discard_result));
+        }
+        REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+        REQUIRE(env.runtime->degraded_reason
+            == NINLIL_REASON_CLOCK_UNCERTAIN);
+        REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+            == ordered_sequence);
+        REQUIRE(memcmp(
+                    transaction,
+                    &transaction_before,
+                    sizeof(*transaction))
+            == 0);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+            == put_calls);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+            == commit_calls);
+    }
+    env_teardown(&env);
+    return 0;
+}
+
+static int test_started_receipt_deadline_boundary(void)
+{
+    REQUIRE(run_started_receipt_boundary_case(
+                STARTED_RECEIPT_STEP_OVERFLOW)
+        == 0);
+    REQUIRE(run_started_receipt_boundary_case(
+                STARTED_RECEIPT_STEP_MISSING_TIMEOUT)
+        == 0);
+    REQUIRE(run_started_receipt_boundary_case(
+                STARTED_RECEIPT_DISCARD_OVERFLOW)
+        == 0);
+    REQUIRE(run_started_receipt_boundary_case(
+                STARTED_RECEIPT_DISCARD_EXACT_MAX)
+        == 0);
+    return 0;
+}
+
+typedef enum automatic_resume_clock_baseline {
+    AUTOMATIC_RESUME_CLOCK_CYCLE_END = 0,
+    AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION = 1,
+    AUTOMATIC_RESUME_CLOCK_CROSS_EPOCH = 2
+} automatic_resume_clock_baseline_t;
+
+static int run_cold_restart_automatic_resume_clock_case(
+    automatic_resume_clock_baseline_t baseline_kind,
+    int exact_boundary)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_rt_transaction_slot_t *candidate;
+    ninlil_bearer_state_t available_state;
+    ninlil_bearer_state_t resume_state;
+    ninlil_step_budget_t budget;
+    ninlil_step_result_t step_result;
+    ninlil_time_sample_t restart_sample;
+    ninlil_id128_t owner_epoch;
+    uint64_t bearer_observed_at_ms;
+    uint64_t cycle_ended_at_ms;
+    uint64_t restart_baseline_ms;
+    uint64_t put_calls;
+    uint64_t commit_calls;
+    uint64_t retry_cycle_id;
+    uint64_t spool_revision;
+    ninlil_status_t status;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    (void)memset(&available_state, 0, sizeof(available_state));
+    set_header(
+        &available_state.abi_version,
+        &available_state.struct_size,
+        sizeof(available_state));
+    available_state.availability_epoch = 2u;
+    available_state.available = 1u;
+    resume_state = available_state;
+    resume_state.availability_epoch = 3u;
+
+    if (baseline_kind != AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION) {
+        /* Persist A before the accepted send so V is the later boundary. */
+        REQUIRE(ninlil_test_bearer_raw_state_enqueue(
+            env.bearer, NINLIL_BEARER_OK, &available_state, 1u));
+        fill_step_budget(&budget);
+        budget.max_state_transitions = 1u;
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        REQUIRE(ninlil_runtime_step(
+                    env.runtime, &budget, &step_result)
+            == NINLIL_OK);
+        REQUIRE(env.runtime->bearer_state_present == 1u);
+        REQUIRE(env.runtime->bearer_availability_epoch
+            == available_state.availability_epoch);
+        bearer_observed_at_ms = env.runtime->bearer_observed_at_ms;
+    }
+
+    REQUIRE(persist_due_event_attempt(
+                &env, NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE)
+        == 0);
+    fill_step_budget(&budget);
+    (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
+    REQUIRE(ninlil_runtime_step(
+                env.runtime, &budget, &step_result)
+        == NINLIL_OK);
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    REQUIRE(transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED);
+    REQUIRE(transaction->event_park_cause
+        == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT);
+    REQUIRE(transaction->send_observation_closed == 1u);
+    if (baseline_kind != AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION) {
+        /* The new park writer snapshots the latest namespace epoch. */
+        REQUIRE(transaction->last_bearer_availability_epoch
+            == available_state.availability_epoch);
+        REQUIRE(transaction->last_consumed_bearer_availability_epoch
+            == available_state.availability_epoch);
+        /* Simulate a legacy parked owner written before that fix. */
+        candidate = &env.runtime->transaction_scratch;
+        *candidate = *transaction;
+        candidate->last_bearer_availability_epoch = 1u;
+        candidate->last_consumed_bearer_availability_epoch = 1u;
+        REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                    env.runtime,
+                    transaction,
+                    candidate,
+                    EVENT_SPOOL_PREFIX,
+                    NINLIL_V1_DURABLE_OP_EVENT_SPOOL_COMMIT)
+            == NINLIL_OK);
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+    }
+    REQUIRE(transaction->send_observed_at_ms
+        <= UINT64_MAX - transaction->attempt_receipt_timeout_ms);
+    owner_epoch = transaction->send_observed_clock_epoch_id;
+    cycle_ended_at_ms = transaction->send_observed_at_ms
+        + transaction->attempt_receipt_timeout_ms;
+
+    if (baseline_kind == AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION) {
+        /* Persist fresh B with observation A strictly after V. */
+        REQUIRE(ninlil_test_clock_advance(env.clock, 500u));
+        REQUIRE(ninlil_test_bearer_raw_state_enqueue(
+            env.bearer, NINLIL_BEARER_OK, &resume_state, 1u));
+        fill_step_budget(&budget);
+        budget.max_state_transitions = 1u;
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        REQUIRE(ninlil_runtime_step(
+                    env.runtime, &budget, &step_result)
+            == NINLIL_OK);
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+        REQUIRE(transaction->delivery_phase
+            == NINLIL_RT_DELIVERY_PARKED);
+        bearer_observed_at_ms = env.runtime->bearer_observed_at_ms;
+        REQUIRE(bearer_observed_at_ms > cycle_ended_at_ms);
+        /* Keep B fresh for the automatic consume after restart. */
+        candidate = &env.runtime->transaction_scratch;
+        *candidate = *transaction;
+        candidate->last_bearer_availability_epoch = 1u;
+        candidate->last_consumed_bearer_availability_epoch = 1u;
+        REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                    env.runtime,
+                    transaction,
+                    candidate,
+                    EVENT_SPOOL_PREFIX,
+                    NINLIL_V1_DURABLE_OP_EVENT_SPOOL_COMMIT)
+            == NINLIL_OK);
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+    } else {
+        REQUIRE(bearer_observed_at_ms < cycle_ended_at_ms);
+    }
+    REQUIRE(env.runtime->bearer_available == 1u);
+    if (baseline_kind == AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION) {
+        REQUIRE(env.runtime->bearer_availability_epoch
+            == resume_state.availability_epoch);
+    } else {
+        REQUIRE(env.runtime->bearer_availability_epoch
+            == available_state.availability_epoch);
+    }
+    REQUIRE(memcmp(
+                &env.runtime->bearer_observed_clock_epoch_id,
+                &owner_epoch,
+                sizeof(owner_epoch))
+        == 0);
+    REQUIRE(transaction->last_bearer_availability_epoch
+        < resume_state.availability_epoch);
+    REQUIRE(transaction->last_consumed_bearer_availability_epoch
+        < resume_state.availability_epoch);
+    retry_cycle_id = transaction->retry_cycle_id;
+    spool_revision = transaction->spool_revision;
+
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    env.service = NULL;
+    ninlil_test_storage_simulate_crash(env.storage);
+    (void)memset(&restart_sample, 0, sizeof(restart_sample));
+    set_header(
+        &restart_sample.abi_version,
+        &restart_sample.struct_size,
+        sizeof(restart_sample));
+    restart_baseline_ms = baseline_kind
+            == AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION
+        ? bearer_observed_at_ms : cycle_ended_at_ms;
+    restart_sample.clock_epoch_id = owner_epoch;
+    restart_sample.now_ms = exact_boundary != 0
+        ? restart_baseline_ms : restart_baseline_ms - 1u;
+    restart_sample.trust = NINLIL_CLOCK_TRUSTED;
+    if (baseline_kind == AUTOMATIC_RESUME_CLOCK_CROSS_EPOCH) {
+        set_id(&restart_sample.clock_epoch_id, 0xe0u);
+        restart_sample.now_ms = restart_baseline_ms;
+    }
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &restart_sample, 3u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    transaction_before = *transaction;
+    put_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+    REQUIRE(ninlil_test_bearer_raw_state_enqueue(
+        env.bearer, NINLIL_BEARER_OK, &resume_state, 2u));
+    fill_step_budget(&budget);
+    budget.max_state_transitions = 1u;
+    (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
+    status = ninlil_runtime_step(env.runtime, &budget, &step_result);
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    if (baseline_kind == AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION
+        && exact_boundary == 0) {
+        REQUIRE(status == NINLIL_E_DEGRADED);
+        REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+        REQUIRE(env.runtime->degraded_reason
+            == NINLIL_REASON_CLOCK_UNCERTAIN);
+        REQUIRE(step_result.state_transitions == 0u);
+    } else if (baseline_kind == AUTOMATIC_RESUME_CLOCK_CROSS_EPOCH) {
+        REQUIRE(status == NINLIL_OK);
+        REQUIRE(step_result.state_transitions == 1u);
+        REQUIRE(transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED);
+    } else if (baseline_kind == AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION) {
+        REQUIRE(status == NINLIL_OK);
+        REQUIRE(step_result.state_transitions == 1u);
+        REQUIRE(transaction->delivery_phase == NINLIL_RT_DELIVERY_QUEUED);
+    } else {
+        REQUIRE(status == NINLIL_OK);
+        REQUIRE(step_result.state_transitions == 1u);
+        REQUIRE(transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED);
+    }
+    if (status == NINLIL_OK
+        && transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED) {
+        transaction_before = *transaction;
+        put_calls = ninlil_test_storage_call_count(
+            env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+        commit_calls = ninlil_test_storage_call_count(
+            env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        status = ninlil_runtime_step(env.runtime, &budget, &step_result);
+    }
+
+    if (exact_boundary == 0
+        || baseline_kind == AUTOMATIC_RESUME_CLOCK_CROSS_EPOCH) {
+        REQUIRE(status == (baseline_kind
+                    == AUTOMATIC_RESUME_CLOCK_CROSS_EPOCH
+                ? NINLIL_E_CLOCK_UNCERTAIN : NINLIL_E_DEGRADED));
+        REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+        REQUIRE(env.runtime->degraded_reason
+            == NINLIL_REASON_CLOCK_UNCERTAIN);
+        REQUIRE(step_result.state_transitions == 0u);
+        REQUIRE(memcmp(
+                    transaction,
+                    &transaction_before,
+                    sizeof(*transaction))
+            == 0);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+            == put_calls);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+            == commit_calls);
+    } else {
+        REQUIRE(status == NINLIL_OK);
+        REQUIRE(step_result.state_transitions == 1u);
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+        REQUIRE(transaction->retry_cycle_id == retry_cycle_id + 1u);
+        REQUIRE(transaction->spool_revision == spool_revision + 1u);
+        REQUIRE(transaction->delivery_phase == NINLIL_RT_DELIVERY_QUEUED);
+        REQUIRE(transaction->retry_summary_count == 1u);
+        REQUIRE(memcmp(
+                    &transaction->retry_summaries[0]
+                        .last_observed_clock_epoch_id,
+                    &owner_epoch,
+                    sizeof(owner_epoch))
+            == 0);
+        REQUIRE(transaction->retry_summaries[0].last_observed_at_ms
+            == cycle_ended_at_ms);
+        REQUIRE(transaction->send_observation_closed == 0u);
+        REQUIRE(transaction->send_observed_at_ms == 0u);
+        REQUIRE(id_is_zero(
+            &transaction->send_observed_clock_epoch_id));
+        REQUIRE(transaction->last_bearer_availability_epoch
+            == resume_state.availability_epoch);
+        REQUIRE(transaction->last_consumed_bearer_availability_epoch
+            == resume_state.availability_epoch);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+            == commit_calls + 1u);
+    }
+    env_teardown(&env);
+    return 0;
+}
+
+static int test_cold_restart_automatic_resume_clock_guard(void)
+{
+    REQUIRE(run_cold_restart_automatic_resume_clock_case(
+                AUTOMATIC_RESUME_CLOCK_CYCLE_END, 0)
+        == 0);
+    REQUIRE(run_cold_restart_automatic_resume_clock_case(
+                AUTOMATIC_RESUME_CLOCK_CYCLE_END, 1)
+        == 0);
+    REQUIRE(run_cold_restart_automatic_resume_clock_case(
+                AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION, 0)
+        == 0);
+    REQUIRE(run_cold_restart_automatic_resume_clock_case(
+                AUTOMATIC_RESUME_CLOCK_BEARER_OBSERVATION, 1)
+        == 0);
+    REQUIRE(run_cold_restart_automatic_resume_clock_case(
+                AUTOMATIC_RESUME_CLOCK_CROSS_EPOCH, 0)
+        == 0);
+    return 0;
+}
+
+static int test_cold_restart_automatic_resume_overflow_fails_closed(void)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_rt_transaction_slot_t *candidate;
+    ninlil_bearer_state_t available_state;
+    ninlil_step_budget_t budget;
+    ninlil_step_result_t step_result;
+    ninlil_time_sample_t restart_sample;
+    ninlil_id128_t owner_epoch;
+    uint64_t put_calls;
+    uint64_t commit_calls;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    (void)memset(&available_state, 0, sizeof(available_state));
+    set_header(
+        &available_state.abi_version,
+        &available_state.struct_size,
+        sizeof(available_state));
+    available_state.availability_epoch = 2u;
+    available_state.available = 1u;
+    REQUIRE(ninlil_test_bearer_raw_state_enqueue(
+        env.bearer, NINLIL_BEARER_OK, &available_state, 1u));
+    fill_step_budget(&budget);
+    budget.max_state_transitions = 1u;
+    (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
+    REQUIRE(ninlil_runtime_step(env.runtime, &budget, &step_result)
+        == NINLIL_OK);
+
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    REQUIRE(transaction->attempt_receipt_timeout_ms > 1u);
+    candidate = &env.runtime->transaction_scratch;
+    *candidate = *transaction;
+    set_event_attempt_history(
+        candidate, NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE);
+    candidate->delivery_phase = NINLIL_RT_DELIVERY_PARKED;
+    candidate->pending_dispatch = 0u;
+    candidate->event_park_cause =
+        NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT;
+    candidate->send_observation_closed = 1u;
+    candidate->send_observed_clock_epoch_id =
+        transaction->admission_clock_epoch_id;
+    owner_epoch = candidate->send_observed_clock_epoch_id;
+    candidate->send_observed_at_ms = UINT64_MAX
+        - candidate->attempt_receipt_timeout_ms + 1u;
+    candidate->spool_revision += 1u;
+    REQUIRE(ninlil_rt_v1_commit_transaction_snapshot(
+                env.runtime,
+                transaction,
+                candidate,
+                EVENT_SPOOL_PREFIX,
+                NINLIL_V1_DURABLE_OP_EVENT_SPOOL_COMMIT)
+        == NINLIL_OK);
+    REQUIRE(ninlil_runtime_destroy(env.runtime) == NINLIL_OK);
+    env.runtime = NULL;
+    env.service = NULL;
+    ninlil_test_storage_simulate_crash(env.storage);
+    (void)memset(&restart_sample, 0, sizeof(restart_sample));
+    set_header(
+        &restart_sample.abi_version,
+        &restart_sample.struct_size,
+        sizeof(restart_sample));
+    restart_sample.clock_epoch_id = owner_epoch;
+    restart_sample.now_ms = UINT64_MAX;
+    restart_sample.trust = NINLIL_CLOCK_TRUSTED;
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &restart_sample, 2u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    transaction_before = *transaction;
+    REQUIRE(ninlil_test_bearer_raw_state_enqueue(
+        env.bearer, NINLIL_BEARER_OK, &available_state, 1u));
+    put_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+    fill_step_budget(&budget);
+    budget.max_state_transitions = 1u;
+    (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
+    REQUIRE(ninlil_runtime_step(env.runtime, &budget, &step_result)
+        == NINLIL_E_DEGRADED);
+    REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+    REQUIRE(env.runtime->degraded_reason == NINLIL_REASON_CLOCK_UNCERTAIN);
+    REQUIRE(step_result.state_transitions == 0u);
+    REQUIRE(memcmp(
+                transaction, &transaction_before, sizeof(*transaction))
+        == 0);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+        == put_calls);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+        == commit_calls);
+    env_teardown(&env);
+    return 0;
+}
+
+static int resume_once_at_owner_sample(
+    event_env_t *env,
+    ninlil_event_resume_request_t *out_request,
+    ninlil_time_sample_t *out_sample)
+{
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_event_resume_result_t result;
+    ninlil_rt_v1_event_ledger_record_t record;
+
+    REQUIRE(park_event(env) == 0);
+    transaction = ninlil_rt_find_transaction(
+        env->runtime, &env->transaction_id);
+    REQUIRE(transaction != NULL);
+    REQUIRE(env->platform.clock->now(
+                env->platform.clock->user, out_sample)
+        == NINLIL_PORT_OK);
+    fill_resume_request(
+        out_request,
+        transaction,
+        0xedu,
+        RESUME_METADATA,
+        sizeof(RESUME_METADATA) - 1u);
+    (void)memset(&result, 0, sizeof(result));
+    set_header(&result.abi_version, &result.struct_size, sizeof(result));
+    REQUIRE(ninlil_event_resume(
+                env->runtime,
+                &env->transaction_id,
+                out_request,
+                &result)
+        == NINLIL_OK);
+    REQUIRE(result.kind == NINLIL_EVENT_RESUME_RESUMED);
+    REQUIRE(read_event_ledger(
+                env,
+                NINLIL_RT_V1_EVENT_LEDGER_RESUME_PREFIX,
+                &out_request->operation_id,
+                &record)
+        == 0);
+    REQUIRE(memcmp(
+                record.audit_clock_epoch_id.bytes,
+                out_sample->clock_epoch_id.bytes,
+                sizeof(record.audit_clock_epoch_id.bytes))
+        == 0);
+    REQUIRE(record.audit_committed_at_ms == out_sample->now_ms);
+    return 0;
+}
+
+static int test_resume_ledger_audit_chronology_and_legacy_fence(void)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_event_resume_request_t original_request;
+    ninlil_event_resume_request_t unseen_resume;
+    ninlil_event_resume_result_t resume_result;
+    ninlil_event_discard_request_t unseen_discard;
+    ninlil_event_discard_result_t discard_result;
+    ninlil_time_sample_t owner_sample;
+    ninlil_time_sample_t restart_sample;
+    uint8_t key[NINLIL_RT_V1_EVENT_LEDGER_KEY_BYTES];
+    uint8_t value[NINLIL_RT_V1_EVENT_LEDGER_RECORD_MAX_BYTES];
+    uint32_t value_length;
+    uint64_t ordered_before;
+    uint64_t put_calls;
+    uint64_t commit_calls;
+    uint64_t clock_calls;
+
+    /* Canonical resume audit is a cold-restart baseline; replay stays clock0. */
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    REQUIRE(ninlil_test_clock_advance(env.clock, 200u));
+    REQUIRE(resume_once_at_owner_sample(
+                &env, &original_request, &owner_sample)
+        == 0);
+    REQUIRE(owner_sample.now_ms != 0u);
+    REQUIRE(stop_runtime(&env) == 0);
+    ninlil_test_storage_simulate_crash(env.storage);
+    restart_sample = owner_sample;
+    restart_sample.now_ms -= 1u;
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &restart_sample, 2u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&resume_result, 0, sizeof(resume_result));
+    set_header(
+        &resume_result.abi_version,
+        &resume_result.struct_size,
+        sizeof(resume_result));
+    REQUIRE(ninlil_event_resume(
+                env.runtime,
+                &env.transaction_id,
+                &original_request,
+                &resume_result)
+        == NINLIL_OK);
+    REQUIRE(resume_result.kind == NINLIL_EVENT_RESUME_ALREADY_RESUMED);
+    REQUIRE(ninlil_test_clock_call_count(env.clock) == clock_calls);
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    fill_resume_request(
+        &unseen_resume,
+        transaction,
+        0xeeu,
+        RESUME_METADATA,
+        sizeof(RESUME_METADATA) - 1u);
+    transaction_before = *transaction;
+    ordered_before = env.runtime->last_assigned_ordered_input_sequence;
+    put_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+    (void)memset(&resume_result, 0xa5, sizeof(resume_result));
+    set_header(
+        &resume_result.abi_version,
+        &resume_result.struct_size,
+        sizeof(resume_result));
+    REQUIRE(ninlil_event_resume(
+                env.runtime,
+                &env.transaction_id,
+                &unseen_resume,
+                &resume_result)
+        == NINLIL_E_DEGRADED);
+    REQUIRE(resume_result_is_api_zero(&resume_result));
+    REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+    REQUIRE(env.runtime->degraded_reason == NINLIL_REASON_CLOCK_UNCERTAIN);
+    REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+        == ordered_before);
+    REQUIRE(memcmp(transaction, &transaction_before, sizeof(*transaction)) == 0);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+        == put_calls);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+        == commit_calls);
+    env_teardown(&env);
+
+    /* Equality is accepted and reaches the ordinary current-state semantic. */
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    REQUIRE(ninlil_test_clock_advance(env.clock, 200u));
+    REQUIRE(resume_once_at_owner_sample(
+                &env, &original_request, &owner_sample)
+        == 0);
+    REQUIRE(stop_runtime(&env) == 0);
+    ninlil_test_storage_simulate_crash(env.storage);
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &owner_sample, 2u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    fill_resume_request(
+        &unseen_resume,
+        transaction,
+        0xeeu,
+        RESUME_METADATA,
+        sizeof(RESUME_METADATA) - 1u);
+    (void)memset(&resume_result, 0, sizeof(resume_result));
+    set_header(
+        &resume_result.abi_version,
+        &resume_result.struct_size,
+        sizeof(resume_result));
+    REQUIRE(ninlil_event_resume(
+                env.runtime,
+                &env.transaction_id,
+                &unseen_resume,
+                &resume_result)
+        == NINLIL_OK);
+    REQUIRE(resume_result.kind == NINLIL_EVENT_RESUME_NOT_PARKED);
+    env_teardown(&env);
+
+    /* Legacy zero/zero remains replayable, but any ledger miss fails closed. */
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+    REQUIRE(env_open(&env) == 0);
+    REQUIRE(ninlil_test_clock_advance(env.clock, 200u));
+    REQUIRE(resume_once_at_owner_sample(
+                &env, &original_request, &owner_sample)
+        == 0);
+    REQUIRE(stop_runtime(&env) == 0);
+    ninlil_rt_v1_event_ledger_key(
+        NINLIL_RT_V1_EVENT_LEDGER_RESUME_PREFIX,
+        &env.transaction_id,
+        &original_request.operation_id,
+        key);
+    REQUIRE(raw_storage_read(
+        &env,
+        (ninlil_bytes_view_t){key, sizeof(key)},
+        value,
+        (uint32_t)sizeof(value),
+        &value_length));
+    REQUIRE(value_length >= 228u);
+    (void)memset(&value[200], 0, 24u);
+    refresh_event_ledger_crc(value, value_length);
+    {
+        ninlil_bytes_view_t legacy_value = {value, value_length};
+
+        REQUIRE(raw_storage_mutate(
+            &env,
+            (ninlil_bytes_view_t){key, sizeof(key)},
+            &legacy_value));
+    }
+    ninlil_test_storage_simulate_crash(env.storage);
+    restart_sample = owner_sample;
+    restart_sample.now_ms += 1u;
+    REQUIRE(ninlil_test_clock_script_raw(
+        env.clock, NINLIL_PORT_OK, &restart_sample, 2u));
+    REQUIRE(ninlil_runtime_create(
+                &env.config, &env.platform, &env.runtime)
+        == NINLIL_OK);
+    clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&resume_result, 0, sizeof(resume_result));
+    set_header(
+        &resume_result.abi_version,
+        &resume_result.struct_size,
+        sizeof(resume_result));
+    REQUIRE(ninlil_event_resume(
+                env.runtime,
+                &env.transaction_id,
+                &original_request,
+                &resume_result)
+        == NINLIL_OK);
+    REQUIRE(resume_result.kind == NINLIL_EVENT_RESUME_ALREADY_RESUMED);
+    REQUIRE(ninlil_test_clock_call_count(env.clock) == clock_calls);
+    transaction = ninlil_rt_find_transaction(
+        env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    fill_discard_request(
+        &unseen_discard,
+        transaction,
+        0xefu,
+        DISCARD_METADATA,
+        sizeof(DISCARD_METADATA) - 1u);
+    transaction_before = *transaction;
+    ordered_before = env.runtime->last_assigned_ordered_input_sequence;
+    put_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+    commit_calls = ninlil_test_storage_call_count(
+        env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+    clock_calls = ninlil_test_clock_call_count(env.clock);
+    (void)memset(&discard_result, 0xa5, sizeof(discard_result));
+    set_header(
+        &discard_result.abi_version,
+        &discard_result.struct_size,
+        sizeof(discard_result));
+    REQUIRE(ninlil_event_discard(
+                env.runtime,
+                &env.transaction_id,
+                &unseen_discard,
+                &discard_result)
+        == NINLIL_E_CLOCK_UNCERTAIN);
+    REQUIRE(discard_result_is_api_zero(&discard_result));
+    REQUIRE(ninlil_test_clock_call_count(env.clock) == clock_calls + 1u);
+    REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+    REQUIRE(env.runtime->degraded_reason == NINLIL_REASON_CLOCK_UNCERTAIN);
+    REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+        == ordered_before);
+    REQUIRE(memcmp(transaction, &transaction_before, sizeof(*transaction)) == 0);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+        == put_calls);
+    REQUIRE(ninlil_test_storage_call_count(
+                env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+        == commit_calls);
+    env_teardown(&env);
+    return 0;
+}
+
+static int test_discard_ledger_audit_chronology(void)
+{
+    uint32_t exact_boundary;
+
+    for (exact_boundary = 0u; exact_boundary <= 1u; ++exact_boundary) {
+        event_env_t env;
+        ninlil_rt_transaction_slot_t *transaction;
+        ninlil_rt_transaction_slot_t transaction_before;
+        ninlil_event_discard_request_t discard_request;
+        ninlil_event_discard_result_t discard_result;
+        ninlil_event_resume_request_t unseen_resume;
+        ninlil_event_resume_result_t resume_result;
+        ninlil_rt_v1_event_ledger_record_t record;
+        ninlil_time_sample_t owner_sample;
+        ninlil_time_sample_t restart_sample;
+        uint64_t ordered_before;
+        uint64_t put_calls;
+        uint64_t commit_calls;
+
+        (void)memset(&env, 0, sizeof(env));
+        REQUIRE(platform_init(&env));
+        REQUIRE(ninlil_test_clock_advance(env.clock, 1000u));
+        REQUIRE(env_open(&env) == 0);
+        REQUIRE(ninlil_test_clock_advance(env.clock, 200u));
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+        fill_discard_request(
+            &discard_request,
+            transaction,
+            (uint8_t)(0xd8u + exact_boundary),
+            DISCARD_METADATA,
+            sizeof(DISCARD_METADATA) - 1u);
+        REQUIRE(env.platform.clock->now(
+                    env.platform.clock->user, &owner_sample)
+            == NINLIL_PORT_OK);
+        (void)memset(&discard_result, 0, sizeof(discard_result));
+        set_header(
+            &discard_result.abi_version,
+            &discard_result.struct_size,
+            sizeof(discard_result));
+        REQUIRE(ninlil_event_discard(
+                    env.runtime,
+                    &env.transaction_id,
+                    &discard_request,
+                    &discard_result)
+            == NINLIL_OK);
+        REQUIRE(discard_result.kind == NINLIL_EVENT_DISCARD_DISCARDED);
+        REQUIRE(memcmp(
+                    discard_result.audit_clock_epoch_id.bytes,
+                    owner_sample.clock_epoch_id.bytes,
+                    sizeof(discard_result.audit_clock_epoch_id.bytes))
+            == 0);
+        REQUIRE(discard_result.audit_committed_at_ms == owner_sample.now_ms);
+        REQUIRE(read_event_ledger(
+                    &env,
+                    NINLIL_RT_V1_EVENT_LEDGER_DISCARD_PREFIX,
+                    &discard_request.operation_id,
+                    &record)
+            == 0);
+        REQUIRE(memcmp(
+                    record.audit_clock_epoch_id.bytes,
+                    owner_sample.clock_epoch_id.bytes,
+                    sizeof(record.audit_clock_epoch_id.bytes))
+            == 0);
+        REQUIRE(record.audit_committed_at_ms == owner_sample.now_ms);
+        REQUIRE(stop_runtime(&env) == 0);
+        ninlil_test_storage_simulate_crash(env.storage);
+        restart_sample = owner_sample;
+        if (exact_boundary == 0u) {
+            restart_sample.now_ms -= 1u;
+        }
+        REQUIRE(ninlil_test_clock_script_raw(
+            env.clock, NINLIL_PORT_OK, &restart_sample, 2u));
+        REQUIRE(ninlil_runtime_create(
+                    &env.config, &env.platform, &env.runtime)
+            == NINLIL_OK);
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+        fill_resume_request(
+            &unseen_resume,
+            transaction,
+            (uint8_t)(0xe8u + exact_boundary),
+            RESUME_METADATA,
+            sizeof(RESUME_METADATA) - 1u);
+        transaction_before = *transaction;
+        ordered_before = env.runtime->last_assigned_ordered_input_sequence;
+        put_calls = ninlil_test_storage_call_count(
+            env.storage, NINLIL_TEST_STORAGE_OP_PUT);
+        commit_calls = ninlil_test_storage_call_count(
+            env.storage, NINLIL_TEST_STORAGE_OP_COMMIT);
+        (void)memset(&resume_result, 0xa5, sizeof(resume_result));
+        set_header(
+            &resume_result.abi_version,
+            &resume_result.struct_size,
+            sizeof(resume_result));
+        if (exact_boundary == 0u) {
+            REQUIRE(ninlil_event_resume(
+                        env.runtime,
+                        &env.transaction_id,
+                        &unseen_resume,
+                        &resume_result)
+                == NINLIL_E_DEGRADED);
+            REQUIRE(resume_result_is_api_zero(&resume_result));
+            REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+            REQUIRE(env.runtime->degraded_reason
+                == NINLIL_REASON_CLOCK_UNCERTAIN);
+        } else {
+            REQUIRE(ninlil_event_resume(
+                        env.runtime,
+                        &env.transaction_id,
+                        &unseen_resume,
+                        &resume_result)
+                == NINLIL_OK);
+            REQUIRE(resume_result.kind
+                == NINLIL_EVENT_RESUME_ALREADY_DISCARDED);
+        }
+        REQUIRE(env.runtime->last_assigned_ordered_input_sequence
+            == ordered_before);
+        REQUIRE(memcmp(
+                    transaction, &transaction_before, sizeof(*transaction))
+            == 0);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_PUT)
+            == put_calls);
+        REQUIRE(ninlil_test_storage_call_count(
+                    env.storage, NINLIL_TEST_STORAGE_OP_COMMIT)
+            == commit_calls);
+        env_teardown(&env);
+    }
+    return 0;
 }
 
 static int test_syntax_role_replay_conflict_and_restart(void)
@@ -2012,8 +3818,12 @@ static int run_delivery_step_event_timeout_case(uint32_t attempt_count)
     ninlil_rt_transaction_slot_t *transaction;
     ninlil_step_budget_t budget;
     ninlil_step_result_t step_result;
+    ninlil_bearer_state_t available_state;
     ninlil_id128_t zero_id;
     uint64_t spool_revision;
+    uint64_t send_observed_at_ms;
+    uint64_t cycle_ended_at_ms;
+    ninlil_id128_t send_observed_clock_epoch_id;
     int parks_cycle =
         attempt_count == NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE;
 
@@ -2026,6 +3836,13 @@ static int run_delivery_step_event_timeout_case(uint32_t attempt_count)
         ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
     REQUIRE(transaction != NULL);
     spool_revision = transaction->spool_revision;
+    send_observed_at_ms = transaction->send_observed_at_ms;
+    send_observed_clock_epoch_id =
+        transaction->send_observed_clock_epoch_id;
+    REQUIRE(send_observed_at_ms
+        <= UINT64_MAX - transaction->attempt_receipt_timeout_ms);
+    cycle_ended_at_ms = send_observed_at_ms
+        + transaction->attempt_receipt_timeout_ms;
     fill_step_budget(&budget);
     (void)memset(&step_result, 0, sizeof(step_result));
     set_header(
@@ -2044,12 +3861,18 @@ static int run_delivery_step_event_timeout_case(uint32_t attempt_count)
                 &zero_id,
                 sizeof(zero_id))
         == 0);
-    REQUIRE(transaction->send_observation_closed == 0u);
-    REQUIRE(transaction->send_observed_at_ms == 0u);
-    REQUIRE(id_is_zero(&transaction->send_observed_clock_epoch_id));
     REQUIRE(transaction->retry_budget
         == NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE - attempt_count);
+    REQUIRE(step_result.state_transitions >= 1u);
     if (parks_cycle) {
+        REQUIRE(transaction->send_observation_closed == 1u);
+        REQUIRE(transaction->send_observed_at_ms
+            == send_observed_at_ms);
+        REQUIRE(memcmp(
+                    &transaction->send_observed_clock_epoch_id,
+                    &send_observed_clock_epoch_id,
+                    sizeof(send_observed_clock_epoch_id))
+            == 0);
         REQUIRE(transaction->delivery_phase
             == NINLIL_RT_DELIVERY_PARKED);
         REQUIRE(transaction->pending_dispatch == 0u);
@@ -2057,16 +3880,89 @@ static int run_delivery_step_event_timeout_case(uint32_t attempt_count)
             == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT);
         REQUIRE(transaction->spool_revision == spool_revision + 1u);
         REQUIRE(step_result.events_parked == 1u);
+
+        /* Automatic availability resume must preserve the fixed deadline V. */
+        (void)memset(&available_state, 0, sizeof(available_state));
+        set_header(
+            &available_state.abi_version,
+            &available_state.struct_size,
+            sizeof(available_state));
+        REQUIRE(env.runtime->bearer_availability_epoch != UINT64_MAX);
+        available_state.availability_epoch =
+            env.runtime->bearer_availability_epoch + 1u;
+        available_state.available = 1u;
+        REQUIRE(ninlil_test_bearer_raw_state_enqueue(
+            env.bearer, NINLIL_BEARER_OK, &available_state, 2u));
+        budget.max_state_transitions = 1u;
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        REQUIRE(ninlil_runtime_step(
+                    env.runtime, &budget, &step_result)
+            == NINLIL_OK);
+        REQUIRE(transaction->delivery_phase
+            == NINLIL_RT_DELIVERY_PARKED);
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        REQUIRE(ninlil_runtime_step(
+                    env.runtime, &budget, &step_result)
+            == NINLIL_OK);
+        transaction = ninlil_rt_find_transaction(
+            env.runtime, &env.transaction_id);
+        REQUIRE(transaction != NULL);
+        REQUIRE(transaction->retry_summary_count == 1u);
+        REQUIRE(memcmp(
+                    &transaction->retry_summaries[0]
+                        .last_observed_clock_epoch_id,
+                    &send_observed_clock_epoch_id,
+                    sizeof(send_observed_clock_epoch_id))
+            == 0);
+        REQUIRE(transaction->retry_summaries[0].last_observed_at_ms
+            == cycle_ended_at_ms);
+        REQUIRE(transaction->send_observation_closed == 0u);
+        REQUIRE(transaction->send_observed_at_ms == 0u);
+        REQUIRE(id_is_zero(
+            &transaction->send_observed_clock_epoch_id));
     } else {
+        REQUIRE(transaction->send_observation_closed == 0u);
+        REQUIRE(transaction->send_observed_at_ms == 0u);
+        REQUIRE(id_is_zero(
+            &transaction->send_observed_clock_epoch_id));
         REQUIRE(transaction->delivery_phase
             == NINLIL_RT_DELIVERY_QUEUED);
         REQUIRE(transaction->pending_dispatch == 1u);
         REQUIRE(transaction->event_park_cause
             == NINLIL_EVENT_PARK_CAUSE_NONE);
+        REQUIRE(memcmp(
+                    &transaction->next_retry_clock_epoch_id,
+                    &env.runtime->last_accepted_trusted_sample
+                        .clock_epoch_id,
+                    sizeof(transaction->next_retry_clock_epoch_id))
+            == 0);
+        REQUIRE(transaction->next_retry_ms
+            == env.runtime->last_accepted_trusted_sample.now_ms
+                + transaction->retry_backoff_ms);
+        REQUIRE(env.runtime->last_accepted_trusted_sample.now_ms
+            < transaction->next_retry_ms);
         REQUIRE(transaction->spool_revision == spool_revision);
         REQUIRE(step_result.events_parked == 0u);
+
+        (void)memset(&step_result, 0, sizeof(step_result));
+        set_header(
+            &step_result.abi_version,
+            &step_result.struct_size,
+            sizeof(step_result));
+        REQUIRE(ninlil_runtime_step(
+                    env.runtime, &budget, &step_result)
+            == NINLIL_OK);
+        REQUIRE(transaction->attempt_count == attempt_count);
+        REQUIRE(transaction->attempt_prepared == 0u);
     }
-    REQUIRE(step_result.state_transitions >= 1u);
     REQUIRE(env.runtime->last_assigned_ordered_input_sequence == 0u);
     env_teardown(&env);
     return 0;
@@ -2078,6 +3974,44 @@ static int test_delivery_step_event_attempt_timeout(void)
     REQUIRE(run_delivery_step_event_timeout_case(
                 NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE)
         == 0);
+    return 0;
+}
+
+static int test_event_receipt_backoff_overflow_fails_before_mutation(void)
+{
+    event_env_t env;
+    ninlil_rt_transaction_slot_t transaction_before;
+    ninlil_rt_transaction_slot_t *transaction;
+    ninlil_step_budget_t budget;
+    ninlil_step_result_t step_result;
+
+    (void)memset(&env, 0, sizeof(env));
+    REQUIRE(platform_init(&env));
+    REQUIRE(env_open(&env) == 0);
+    REQUIRE(persist_due_event_attempt(&env, 1u) == 0);
+    transaction =
+        ninlil_rt_find_transaction(env.runtime, &env.transaction_id);
+    REQUIRE(transaction != NULL);
+    REQUIRE(transaction->retry_backoff_ms > 50u);
+    transaction_before = *transaction;
+    REQUIRE(ninlil_test_clock_advance(
+        env.clock,
+        UINT64_MAX - transaction->attempt_receipt_timeout_ms - 50u));
+
+    fill_step_budget(&budget);
+    (void)memset(&step_result, 0, sizeof(step_result));
+    set_header(
+        &step_result.abi_version,
+        &step_result.struct_size,
+        sizeof(step_result));
+    REQUIRE(ninlil_runtime_step(
+                env.runtime, &budget, &step_result)
+        == NINLIL_E_DEGRADED);
+    REQUIRE(env.runtime->health == NINLIL_HEALTH_DEGRADED);
+    REQUIRE(env.runtime->degraded_reason
+        == NINLIL_REASON_COUNTER_EXHAUSTED);
+    REQUIRE(memcmp(transaction, &transaction_before, sizeof(*transaction)) == 0);
+    env_teardown(&env);
     return 0;
 }
 
@@ -2599,6 +4533,17 @@ static int test_restart_rejects_cross_transaction_ordered_sequence_duplicate(
 
 int main(void)
 {
+    REQUIRE(test_targeted_clock_failures_add_health_without_mutation() == 0);
+    REQUIRE(test_cross_epoch_management_fails_closed_without_mutation() == 0);
+    REQUIRE(
+        test_cold_restart_event_owner_clock_regression_fails_closed() == 0);
+    REQUIRE(test_parked_cycle_deadline_overflow_fails_closed() == 0);
+    REQUIRE(test_started_receipt_deadline_boundary() == 0);
+    REQUIRE(test_cold_restart_automatic_resume_clock_guard() == 0);
+    REQUIRE(
+        test_cold_restart_automatic_resume_overflow_fails_closed() == 0);
+    REQUIRE(test_resume_ledger_audit_chronology_and_legacy_fence() == 0);
+    REQUIRE(test_discard_ledger_audit_chronology() == 0);
     REQUIRE(test_syntax_role_replay_conflict_and_restart() == 0);
     REQUIRE(test_eight_resume_limit_and_old_replay() == 0);
     REQUIRE(test_discard_replay_conflict_and_restart() == 0);
@@ -2609,6 +4554,8 @@ int main(void)
     REQUIRE(test_catch_up_required_receipt_precedence() == 0);
     REQUIRE(test_catch_up_same_time_event_timeout_precedes_resume() == 0);
     REQUIRE(test_delivery_step_event_attempt_timeout() == 0);
+    REQUIRE(
+        test_event_receipt_backoff_overflow_fails_before_mutation() == 0);
     REQUIRE(test_catch_up_required_receipt_after_restart() == 0);
     REQUIRE(test_catch_up_commit_unknown_hidden_truths() == 0);
     REQUIRE(test_retry_cycle_helper_preserves_cumulative_attempts() == 0);

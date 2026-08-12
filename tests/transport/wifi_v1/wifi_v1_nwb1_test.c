@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Wi-Fi v1 NWB1/stream/queue unit tests (real codec, no fake transport).
  */

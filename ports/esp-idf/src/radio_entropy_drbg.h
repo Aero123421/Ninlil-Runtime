@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private phase-separated entropy provider for the V1 external-radio image.
  * Authority: docs/adr/0035-v1-compact-radio-mapping.md

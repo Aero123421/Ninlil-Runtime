@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * A2 ESP32-S3 esp_tinyusb 2.1.1 CDC-ACM backend.
  *

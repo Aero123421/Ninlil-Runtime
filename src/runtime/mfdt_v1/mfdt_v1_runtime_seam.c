@@ -1,7 +1,8 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Runtime seam: ApplicationData → two-endpoint MFDT transfer (private).
  * Host lab only: pumps real frames between local A(sender) and B(receiver).
- * No single-pipeline self-echo. BSS-backed workspaces.
+ * No single-pipeline self-echo. Caller-owned workspaces.
  */
 #include "mfdt_v1_runtime_seam.h"
 
@@ -10,7 +11,8 @@
 
 #include <string.h>
 
-static ninlil_mfdt_v1_seam_config_t g_seam_cfg;
+/* Private in-memory context tag; not a wire/storage protocol magic. */
+#define MFDT_SEAM_MAGIC ((uint32_t)0x4d534d81u)
 
 /*
  * The private engine and direct Fabric candidate are software-green, but the
@@ -22,35 +24,53 @@ static ninlil_mfdt_v1_seam_config_t g_seam_cfg;
 static const int g_acceptance_software_green = 0;
 static const int g_acceptance_hil_green = 0; /* honest: no physical HIL */
 
-/*
- * Two endpoints: sender A + receiver B (no dual-role self-loop).
- * Host lab only: static dual workspace/store (~2 * (64K+lab)).
- * ESP: not BSS-resident — try_application_data fail-closed (spine path used).
- */
-#if !defined(ESP_PLATFORM)
-static ninlil_mfdt_v1_workspace_t g_seam_aws;
-static ninlil_mfdt_v1_workspace_t g_seam_bws;
-static ninlil_mfdt_v1_lab_store_t g_seam_ast;
-static ninlil_mfdt_v1_lab_store_t g_seam_bst;
-static ninlil_mfdt_v1_engine_t g_seam_a;
-static ninlil_mfdt_v1_engine_t g_seam_b;
-static uint8_t g_seam_busy;
-#endif
-
-void ninlil_mfdt_v1_seam_set_config(const ninlil_mfdt_v1_seam_config_t *cfg)
+static int seam_valid(const ninlil_mfdt_v1_seam_ctx_t *ctx)
 {
-    if (cfg == NULL) {
-        ninlil_mfdt_v1_memzero(&g_seam_cfg, sizeof(g_seam_cfg));
-        return;
-    }
-    g_seam_cfg = *cfg;
+    return ctx != NULL && ctx->magic == MFDT_SEAM_MAGIC;
 }
 
-void ninlil_mfdt_v1_seam_get_config(ninlil_mfdt_v1_seam_config_t *out)
+int ninlil_mfdt_v1_seam_init(ninlil_mfdt_v1_seam_ctx_t *ctx)
 {
-    if (out != NULL) {
-        *out = g_seam_cfg;
+    if (ctx == NULL) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
     }
+    ninlil_mfdt_v1_memzero(ctx, sizeof(*ctx));
+    ctx->magic = MFDT_SEAM_MAGIC;
+    return NINLIL_MFDT_V1_OK;
+}
+
+void ninlil_mfdt_v1_seam_fini(ninlil_mfdt_v1_seam_ctx_t *ctx)
+{
+    if (ctx != NULL) {
+        ninlil_mfdt_v1_memzero(ctx, sizeof(*ctx));
+    }
+}
+
+int ninlil_mfdt_v1_seam_set_config(
+    ninlil_mfdt_v1_seam_ctx_t *ctx,
+    const ninlil_mfdt_v1_seam_config_t *cfg)
+{
+    if (!seam_valid(ctx) || ctx->busy != 0u) {
+        return ctx != NULL && ctx->busy != 0u
+                   ? NINLIL_MFDT_V1_ERR_BUSY
+                   : NINLIL_MFDT_V1_ERR_PARAM;
+    }
+    ninlil_mfdt_v1_memzero(&ctx->config, sizeof(ctx->config));
+    if (cfg != NULL) {
+        ctx->config = *cfg;
+    }
+    return NINLIL_MFDT_V1_OK;
+}
+
+int ninlil_mfdt_v1_seam_get_config(
+    const ninlil_mfdt_v1_seam_ctx_t *ctx,
+    ninlil_mfdt_v1_seam_config_t *out)
+{
+    if (!seam_valid(ctx) || out == NULL) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
+    }
+    *out = ctx->config;
+    return NINLIL_MFDT_V1_OK;
 }
 
 int ninlil_mfdt_v1_release_policy_allows_default_on(void)
@@ -109,12 +129,14 @@ static int two_endpoint_run(ninlil_mfdt_v1_pipeline_t *a,
 #endif /* !ESP_PLATFORM two_endpoint */
 
 int ninlil_mfdt_v1_seam_try_application_data(
+    ninlil_mfdt_v1_seam_ctx_t *ctx,
     const uint8_t *application_data, uint32_t data_len,
     const uint8_t transfer_id_hint[16], uint8_t out_transfer_id[16],
     uint8_t out_publication_token[16])
 {
 #if defined(ESP_PLATFORM)
-    /* Host-lab dual-workspace seam is not linked into ESP DRAM. Use spine. */
+    /* Host-lab dual-workspace seam is unavailable on ESP. Use owner spine. */
+    (void)ctx;
     (void)application_data;
     (void)data_len;
     (void)transfer_id_hint;
@@ -131,20 +153,26 @@ int ninlil_mfdt_v1_seam_try_application_data(
     size_t i;
     uint32_t max_steps;
 
+    if (!seam_valid(ctx)) {
+        return NINLIL_MFDT_SEAM_REJECTED;
+    }
+    if (ctx->busy != 0u) {
+        return NINLIL_MFDT_SEAM_BUSY;
+    }
     ninlil_mfdt_v1_memzero(&cfg, sizeof(cfg));
-    cfg.policy = g_seam_cfg.policy_on ? NINLIL_MFDT_V1_POLICY_ON
-                                      : NINLIL_MFDT_V1_POLICY_OFF;
-    cfg.mfdt_admission_version = g_seam_cfg.mfdt_admission_version;
-    cfg.mfdt_capability = g_seam_cfg.capability;
-    cfg.host_mode = g_seam_cfg.host_mode;
-    cfg.session_generation = g_seam_cfg.session_generation;
-    cfg.now_ms = g_seam_cfg.now_ms;
+    cfg.policy = ctx->config.policy_on ? NINLIL_MFDT_V1_POLICY_ON
+                                       : NINLIL_MFDT_V1_POLICY_OFF;
+    cfg.mfdt_admission_version = ctx->config.mfdt_admission_version;
+    cfg.mfdt_capability = ctx->config.capability;
+    cfg.host_mode = ctx->config.host_mode;
+    cfg.session_generation = ctx->config.session_generation;
+    cfg.now_ms = ctx->config.now_ms;
     (void)memcpy(cfg.local_clock_epoch.bytes,
-                 g_seam_cfg.local_clock_epoch, 16u);
+                 ctx->config.local_clock_epoch, 16u);
     cfg.retention_ms = NINLIL_MFDT_V1_RETENTION_MS_DEFAULT;
 
     if (!ninlil_mfdt_v1_pipeline_requires_mfdt(&cfg, data_len) &&
-        !(g_seam_cfg.policy_on && g_seam_cfg.capability != 0u &&
+        !(ctx->config.policy_on && ctx->config.capability != 0u &&
           data_len > NINLIL_MFDT_V1_U6_SINGLE_FRAME_MAX)) {
         return NINLIL_MFDT_SEAM_NOT_APPLICABLE;
     }
@@ -157,10 +185,7 @@ int ninlil_mfdt_v1_seam_try_application_data(
     if (data_len > NINLIL_MFDT_V1_MAX_CONTENT) {
         return NINLIL_MFDT_SEAM_REJECTED;
     }
-    if (g_seam_busy) {
-        return NINLIL_MFDT_SEAM_BUSY;
-    }
-    g_seam_busy = 1u;
+    ctx->busy = 1u;
 
     if (transfer_id_hint != NULL) {
         (void)memcpy(tid, transfer_id_hint, 16u);
@@ -171,40 +196,42 @@ int ninlil_mfdt_v1_seam_try_application_data(
         tid[0] ^= (uint8_t)(data_len & 0xffu);
     }
 
-    ninlil_mfdt_v1_lab_store_init(&g_seam_ast);
-    ninlil_mfdt_v1_lab_store_init(&g_seam_bst);
-    if (ninlil_mfdt_v1_engine_init(&g_seam_a, &g_seam_aws, &g_seam_ast, &cfg) !=
+    ninlil_mfdt_v1_lab_store_init(&ctx->sender_store);
+    ninlil_mfdt_v1_lab_store_init(&ctx->receiver_store);
+    if (ninlil_mfdt_v1_engine_init(
+            &ctx->sender, &ctx->sender_workspace, &ctx->sender_store, &cfg) !=
             NINLIL_MFDT_V1_OK ||
-        ninlil_mfdt_v1_engine_init(&g_seam_b, &g_seam_bws, &g_seam_bst, &cfg) !=
-            NINLIL_MFDT_V1_OK) {
-        g_seam_busy = 0u;
+        ninlil_mfdt_v1_engine_init(
+            &ctx->receiver, &ctx->receiver_workspace,
+            &ctx->receiver_store, &cfg) != NINLIL_MFDT_V1_OK) {
+        ctx->busy = 0u;
         return NINLIL_MFDT_SEAM_STORAGE;
     }
     ninlil_mfdt_v1_pipeline_init(
-        &pa, &g_seam_a, NULL, NULL, NULL,
-        g_seam_cfg.session_generation ? g_seam_cfg.session_generation : 1u,
-        g_seam_cfg.session_cookie ? g_seam_cfg.session_cookie : 0x4d464454ull);
+        &pa, &ctx->sender, NULL, NULL, NULL,
+        ctx->config.session_generation ? ctx->config.session_generation : 1u,
+        ctx->config.session_cookie ? ctx->config.session_cookie : 0x4d464454ull);
     ninlil_mfdt_v1_pipeline_init(
-        &pb, NULL, &g_seam_b, NULL, NULL,
-        g_seam_cfg.session_generation ? g_seam_cfg.session_generation : 1u,
-        g_seam_cfg.session_cookie ? g_seam_cfg.session_cookie : 0x4d464454ull);
+        &pb, NULL, &ctx->receiver, NULL, NULL,
+        ctx->config.session_generation ? ctx->config.session_generation : 1u,
+        ctx->config.session_cookie ? ctx->config.session_cookie : 0x4d464454ull);
 
     rc = ninlil_mfdt_v1_pipeline_sender_begin(&pa, tid, application_data,
                                               data_len);
     if (rc != NINLIL_MFDT_V1_OK) {
-        g_seam_busy = 0u;
+        ctx->busy = 0u;
         return NINLIL_MFDT_SEAM_REJECTED;
     }
     /* Bound: open + pages + chunks + fin + accepts ≈ 2*(1+2+37+1) + margin */
     max_steps = 256u;
     rc = two_endpoint_run(&pa, &pb, max_steps);
     if (rc != NINLIL_MFDT_V1_OK) {
-        g_seam_busy = 0u;
+        ctx->busy = 0u;
         return NINLIL_MFDT_SEAM_REJECTED;
     }
     rc = ninlil_mfdt_v1_pipeline_finish_terminal(&pa);
     if (rc != NINLIL_MFDT_V1_OK) {
-        g_seam_busy = 0u;
+        ctx->busy = 0u;
         return NINLIL_MFDT_SEAM_STORAGE;
     }
     /*
@@ -219,7 +246,7 @@ int ninlil_mfdt_v1_seam_try_application_data(
     if (out_publication_token != NULL) {
         (void)memcpy(out_publication_token, pb.publication_token, 16u);
     }
-    g_seam_busy = 0u;
+    ctx->busy = 0u;
     return NINLIL_MFDT_SEAM_OK;
 #endif
 }

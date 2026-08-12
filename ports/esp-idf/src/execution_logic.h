@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Backend-independent TaskHandle → context id conversion rules.
  * Host unit tests compile this without FreeRTOS headers.

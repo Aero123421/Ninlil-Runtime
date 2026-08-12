@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D3-S4 typed authority bridge.
  *
@@ -26,13 +27,13 @@
 #define PROFILE_ROW_COUNT ((size_t)17u)
 #define D3S4_EXPECTED_NEGATIVE_COUNT ((size_t)191u)
 #define D3S4_EXPECTED_CONTENT_SHA256                                      \
-    "b18f717e2752c9d617d575c86194ef644f301706263674f2666a5d29ed951e25"
+    "aedae15d450d82d512ce1bb4a3e668ebbc9c52706ca3cdfdcc2bdd323ea943c0"
 #define D3S4_EXPECTED_ORDER_SHA256                                        \
     "17ec848715537a261f274a392d23c586045b87bc0adf1fe65cb1e15c7f0c8c4d"
 #define D3S4_EXPECTED_NEGATIVE_SHA256                                     \
     "74e0ded28a87d77f002db181a496a70efd29f601833c08d2379e717fff7f00ee"
 #define D3S4_EXPECTED_CANONICAL_SHA256                                    \
-    "33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15"
+    "b0feba1f2543e1355532a835abe93f57da540cf89f35999737b2b259467bb2aa"
 
 static const char *g_current_id = "";
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "c4_c5_lab_wire.h"
 
 #include <string.h>

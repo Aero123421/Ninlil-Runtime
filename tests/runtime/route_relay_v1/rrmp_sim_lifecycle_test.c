@@ -1,6 +1,7 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_test_common.h"
 
-enum { RRMP_WS_MAX = 512 * 1024 };
+enum { RRMP_WS_MAX = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES };
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_ws[RRMP_WS_MAX];
 
 static int test_sim_driver(void)
@@ -82,7 +83,7 @@ static int test_lifecycle_10k_exact(void)
         f.ingress_hop_context_id = 0x1001u;
         RRMP_CHECK(ninlil_rrmp_encode_nrm1(&f, raw));
         memcpy(install.entries, raw, sizeof(raw));
-        st = ninlil_route_install_batch(&install, &out);
+        st = ninlil_route_install_batch(o, &install, &out);
         RRMP_CHECK_EQ(out.status, st);
         RRMP_CHECK_EQ(st, NINLIL_ROUTE_OK);
         ++ok_install;
@@ -94,7 +95,7 @@ static int test_lifecycle_10k_exact(void)
         act.route_handle = h;
         act.route_generation = gen;
         act.now_ms = 1000000u;
-        st = ninlil_route_activate(&act, &out);
+        st = ninlil_route_activate(o, &act, &out);
         RRMP_CHECK_EQ(out.status, st);
         RRMP_CHECK_EQ(st, NINLIL_ROUTE_OK);
         ++ok_activate;
@@ -113,7 +114,7 @@ static int test_lifecycle_10k_exact(void)
             admit.e2e_header_digest32[j] =
                 (uint8_t)((k + (int)j) ^ (k >> 8));
         }
-        st = ninlil_route_forward_admit(&admit, &out);
+        st = ninlil_route_forward_admit(o, &admit, &out);
         RRMP_CHECK_EQ(out.status, st);
         RRMP_CHECK_EQ(st, NINLIL_ROUTE_OK);
         ++ok_admit;
@@ -133,7 +134,7 @@ static int test_lifecycle_10k_exact(void)
         complete.opaque_local_handle = oh;
         complete.outcome = 1u;
         complete.completion_now_ms = 1000000u;
-        st = ninlil_route_forward_complete(&complete, &out);
+        st = ninlil_route_forward_complete(o, &complete, &out);
         RRMP_CHECK_EQ(out.status, st);
         RRMP_CHECK_EQ(st, NINLIL_ROUTE_OK);
         ++ok_complete;
@@ -145,7 +146,7 @@ static int test_lifecycle_10k_exact(void)
         retire.route_handle = h;
         retire.route_generation = gen;
         retire.force = 1u;
-        st = ninlil_route_retire(&retire, &out);
+        st = ninlil_route_retire(o, &retire, &out);
         RRMP_CHECK_EQ(out.status, st);
         RRMP_CHECK_EQ(st, NINLIL_ROUTE_OK);
         RRMP_CHECK_EQ(out.lifecycle_state, NINLIL_RRMP_LIFE_RETIRED);

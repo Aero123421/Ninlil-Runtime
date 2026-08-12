@@ -24,19 +24,19 @@
   "s3_authority": {
     "path": "spec/vectors/domain-scan-structural-v1.json",
     "format": "ninlil-domain-scan-structural-v1-d2s3",
-    "sha256": "f8e75437202c90476aa93fb0a336c86ad03e7e4820510e15074a69cbc6041684",
+    "sha256": "af8133f1b01c87b79b24a80479aa5d0f8480d124ead2cdb3c57277fc41d8d754",
     "vector_count": 89
   },
   "s4_authority": {
     "path": "spec/vectors/domain-scan-exact-get-v1.json",
     "format": "ninlil-domain-scan-exact-get-v1-d2s4",
-    "sha256": "5f458424a2f2adc1fd421285853b7567a9cc6fbf9ba43808b4d8dec69e4b9a8a",
+    "sha256": "c907142751b0920d0ef1ba889b1efb33098ac866780e69367e7af1f43b52642b",
     "vector_count": 30
   },
   "d1_authority": {
     "path": "spec/vectors/domain-store-v1.json",
     "format": "ninlil-domain-store-v1-d1b3o",
-    "sha256": "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4",
+    "sha256": "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502",
     "vector_count": 1549
   },
   "vectors": [

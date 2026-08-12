@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Typed cell/channel/role assignment validation (Controller -> Cell Agent).
  */

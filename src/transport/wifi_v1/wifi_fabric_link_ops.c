@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Fabric v1 packet-link ops over wifi_session (both flags ON).
  *

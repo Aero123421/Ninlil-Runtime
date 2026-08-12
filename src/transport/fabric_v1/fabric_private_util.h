@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Fabric v1 utilities — not installed, not public ABI.
  * Authority: docs/adr/0017-bearer-registry-path-selection.md,
@@ -88,6 +89,12 @@ void ninlil_fabric_private_tagged_sha256(
     const char *tag_ascii,
     const uint8_t *value,
     size_t value_len,
+    uint8_t out[32]);
+void ninlil_fabric_private_tagged_sha256_parts(
+    const char *tag_ascii,
+    const uint8_t *const *values,
+    const size_t *value_lengths,
+    size_t value_count,
     uint8_t out[32]);
 
 #ifdef __cplusplus

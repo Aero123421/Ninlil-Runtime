@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_DOMAIN_STORE_D3S2_H
 #define NINLIL_DOMAIN_STORE_D3S2_H
 

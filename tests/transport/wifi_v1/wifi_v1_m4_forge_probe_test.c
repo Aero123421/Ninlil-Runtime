@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Adversarial external-consumer forge probe for M4 evidence.
  *

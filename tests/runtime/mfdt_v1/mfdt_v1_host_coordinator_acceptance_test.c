@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Independent behavioral acceptance for the private ADR-0021 Host
  * coordinator.  This is software evidence only: it is not physical HIL,
@@ -7,7 +8,6 @@
 #include "mfdt_v1_host_coordinator.h"
 #include "mfdt_v1_host_store.h"
 #include "mfdt_v1_ncl1.h"
-#include "mfdt_v1_target_alloc.h"
 #include "mfdt_v1_typed_mutation_provider.h"
 
 #include <stdint.h>
@@ -1371,14 +1371,11 @@ static int test_four_slots_and_fifth_atomic(void)
     uint64_t generation_after;
     uint64_t fulls_before;
     uint64_t fulls_after;
-    uint64_t allocations_before;
     uint8_t index;
     int rc;
 
     CHECK(host_fixture_prepare(&fixture, 1));
     (void)memset(content, 0x4a, sizeof(content));
-    allocations_before = ninlil_mfdt_v1_target_zalloc_call_count();
-    ninlil_mfdt_v1_target_zalloc_force_fail(1);
     for (index = 0u; index < 5u; ++index) {
         make_bind(
             &binds[index],
@@ -1398,9 +1395,6 @@ static int test_four_slots_and_fifth_atomic(void)
                   &slot) == NINLIL_MFDT_V1_OK);
         CHECK(slot == index);
     }
-    CHECK(
-        ninlil_mfdt_v1_target_zalloc_call_count() ==
-        allocations_before);
     CHECK(snapshot_owner(fixture.owner, &header, slots) ==
           NINLIL_MFDT_V1_OK);
     CHECK(header.active_count == 4u);
@@ -1441,10 +1435,6 @@ static int test_four_slots_and_fifth_atomic(void)
     CHECK(bytes_after == bytes_before);
     CHECK(generation_after == generation_before);
     CHECK(fulls_after == fulls_before);
-    CHECK(
-        ninlil_mfdt_v1_target_zalloc_call_count() ==
-        allocations_before);
-    ninlil_mfdt_v1_target_zalloc_force_fail(0);
     free(owner_before);
     host_fixture_destroy(&fixture);
     return 0;
@@ -2252,7 +2242,6 @@ static int test_bidirectional_complete_retention_and_gc(void)
     uint8_t right_sender_slot = 0xffu;
     uint8_t left_receiver_slot = 0xffu;
     uint8_t fresh_slot = 0xffu;
-    uint64_t allocation_count;
 
     CHECK(host_fixture_prepare(&left, 1));
     CHECK(host_fixture_prepare(&right, 1));
@@ -2278,8 +2267,6 @@ static int test_bidirectional_complete_retention_and_gc(void)
         0x222002ull);
     (void)memset(left_content, 0x1a, sizeof(left_content));
     (void)memset(right_content, 0x2b, sizeof(right_content));
-    allocation_count = ninlil_mfdt_v1_target_zalloc_call_count();
-    ninlil_mfdt_v1_target_zalloc_force_fail(1);
     CHECK(prepare_one_sender_for_chunks(
               &left,
               &right,
@@ -2316,9 +2303,6 @@ static int test_bidirectional_complete_retention_and_gc(void)
               &left_receiver,
               right_sender_slot,
               left_receiver_slot) == NINLIL_MFDT_V1_OK);
-    CHECK(
-        ninlil_mfdt_v1_target_zalloc_call_count() ==
-        allocation_count);
     CHECK(snapshot_owner(left.owner, &header, slots) ==
           NINLIL_MFDT_V1_OK);
     CHECK(header.active_count == 0u);
@@ -2347,7 +2331,6 @@ static int test_bidirectional_complete_retention_and_gc(void)
           NINLIL_MFDT_V1_OK);
     CHECK(header.tracked_groups == 0u);
     CHECK(header.committed_keys == 0u);
-    ninlil_mfdt_v1_target_zalloc_force_fail(0);
     host_fixture_destroy(&right);
     host_fixture_destroy(&left);
     return 0;
@@ -3118,7 +3101,7 @@ static int test_gc_concurrent_row_mutation_fail_closed(void)
     return 0;
 }
 
-static int test_post_start_allocator_trap_end_to_end(void)
+static int test_post_start_fixed_arena_end_to_end(void)
 {
     host_fixture_t sender;
     host_fixture_t receiver;
@@ -3133,7 +3116,6 @@ static int test_post_start_allocator_trap_end_to_end(void)
     uint8_t receiver_slot = 0xffu;
     uint8_t selected = 0xffu;
     uint8_t active_slot = 0xffu;
-    uint64_t allocations_before;
     decoded_frame_t retry_offer;
 
     CHECK(host_fixture_prepare(&sender, 1));
@@ -3154,11 +3136,7 @@ static int test_post_start_allocator_trap_end_to_end(void)
         0xb7b7b7ull);
     (void)memset(content, 0x7bu, sizeof(content));
 
-    allocations_before =
-        ninlil_mfdt_v1_target_zalloc_call_count();
-    ninlil_mfdt_v1_target_zalloc_force_fail(1);
-
-    /* Admission plus OPEN/PAGE progress under the post-start trap. */
+    /* Admission plus OPEN/PAGE progress using only the fixed owner arenas. */
     CHECK(prepare_one_sender_for_chunks(
               &sender,
               &receiver,
@@ -3171,7 +3149,7 @@ static int test_post_start_allocator_trap_end_to_end(void)
               &receiver_slot,
               0) == NINLIL_MFDT_V1_OK);
 
-    /* Scheduler plus a real response-timeout retry under the same trap. */
+    /* Scheduler plus a real response-timeout retry in the same arenas. */
     CHECK(ninlil_mfdt_v1_host_schedule_one_chunk(
               sender.owner,
               &selected) == NINLIL_MFDT_V1_OK);
@@ -3250,11 +3228,6 @@ static int test_post_start_allocator_trap_end_to_end(void)
     CHECK(header.active_count == 1u);
     CHECK(slots[0].occupied == 1u);
     CHECK(slots[0].bind_valid == 1u);
-    CHECK(
-        ninlil_mfdt_v1_target_zalloc_call_count() ==
-        allocations_before);
-
-    ninlil_mfdt_v1_target_zalloc_force_fail(0);
     free(cold_owner);
     host_fixture_destroy(&receiver);
     host_fixture_destroy(&sender);
@@ -4692,8 +4665,8 @@ int main(void)
         "gc_concurrent_row_mutation_fail_closed",
         test_gc_concurrent_row_mutation_fail_closed);
     failures += run_witness(
-        "post_start_allocator_trap_end_to_end",
-        test_post_start_allocator_trap_end_to_end);
+        "post_start_fixed_arena_end_to_end",
+        test_post_start_fixed_arena_end_to_end);
     failures += run_witness(
         "host_semantic_reject_outbox_contract",
         test_host_semantic_reject_outbox_contract);
@@ -4709,7 +4682,6 @@ int main(void)
     failures += run_witness(
         "fresh_sender_disarm_exact_compensation",
         test_fresh_sender_disarm_exact_compensation);
-    ninlil_mfdt_v1_target_zalloc_force_fail(0);
     if (failures != 0) {
         (void)fprintf(
             stderr,

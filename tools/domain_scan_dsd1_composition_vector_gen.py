@@ -79,7 +79,7 @@ D1_VECTORS = REPO_ROOT / "spec" / "vectors" / "domain-store-v1.json"
 CROSSROW_VECTORS = REPO_ROOT / "spec" / "vectors" / "domain-scan-crossrow-v1.json"
 D1_FORMAT = "ninlil-domain-store-v1-d1b3o"
 D1_SHA256 = (
-    "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4"
+    "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502"
 )
 D1_COUNT = 1549
 CROSSROW_FORMAT_D3S2 = "ninlil-domain-scan-crossrow-v1-d3s2"
@@ -87,10 +87,10 @@ CROSSROW_FORMAT_D3S3 = "ninlil-domain-scan-crossrow-v1-d3s3"
 CROSSROW_FORMAT_D3S4 = "ninlil-domain-scan-crossrow-v1-d3s4"
 # Frozen D3-S2 raw authority (full-file when format was d3s2 / 144 vectors).
 CROSSROW_D3S2_RAW_SHA256 = (
-    "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec"
+    "0429bc8174210fbb824940d0cfcfadd8ad3e8f1f74dee2b5ec507e9ea113c4d2"
 )
 CROSSROW_D3S2_CONTENT_SHA256 = (
-    "a9fccb12d932f0082111c94da3a23cd6680dc4bedecb2108e739bdca55d80fed"
+    "8958aff6c31dcd09f13eae2b6df44b5ae3f4e7bb25a879f369c7b7824de30bf4"
 )
 CROSSROW_D3S2_COUNT = 144
 # Current append-only D3-S4 authority.  DSD1 still consumes only the frozen
@@ -98,10 +98,10 @@ CROSSROW_D3S2_COUNT = 144
 # reviewed successor rather than accepting an arbitrary document that merely
 # copies d3s2_prefix_authority metadata.
 CROSSROW_D3S4_RAW_SHA256 = (
-    "33d936597ce617952043f6a0324ba616b8d71acf41cc8744d1b3f771abd54f15"
+    "b0feba1f2543e1355532a835abe93f57da540cf89f35999737b2b259467bb2aa"
 )
 CROSSROW_D3S4_CONTENT_SHA256 = (
-    "b18f717e2752c9d617d575c86194ef644f301706263674f2666a5d29ed951e25"
+    "aedae15d450d82d512ce1bb4a3e668ebbc9c52706ca3cdfdcc2bdd323ea943c0"
 )
 CROSSROW_D3S4_COUNT = 468
 # Backward-compat aliases (d3s2-only worktrees).

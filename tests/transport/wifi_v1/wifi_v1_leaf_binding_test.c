@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0018 §14.2 leaf binding_value[82] codec + GeneralNames nest KAT.
  */

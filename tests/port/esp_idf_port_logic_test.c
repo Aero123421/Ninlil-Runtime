@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Host-pure tests for ESP-IDF adapter lifecycle and immutable ops contracts. */
 
 #include "clock_init_logic.h"

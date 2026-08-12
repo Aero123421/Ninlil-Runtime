@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Composition seams with private Fabric/NFL1 and R7 LINK/FRAG without
  * changing those modules' contracts. Thin adapters only.
@@ -44,6 +45,7 @@ typedef struct ninlil_rrmp_nfl1_hop_view {
 } ninlil_rrmp_nfl1_hop_view_t;
 
 ninlil_route_status_u32 ninlil_rrmp_seam_admit_from_nfl1_view(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_rrmp_nfl1_hop_view_t *hop, ninlil_route_result_v1_t *out);
 
 /* R7 FRAG remaining groups/attempts feed drain/forward gates only. */
@@ -58,6 +60,7 @@ void ninlil_rrmp_seam_apply_r7_frag_view(
 
 /* Fabric path: after select, service one forward from core queue. */
 ninlil_route_status_u32 ninlil_rrmp_seam_fabric_forward_once(
+    ninlil_rrmp_owner_t *owner,
     ninlil_route_result_v1_t *out);
 
 /*
@@ -71,6 +74,7 @@ ninlil_route_status_u32 ninlil_rrmp_seam_fabric_forward_once(
  * Complete: ninlil_route_forward_complete after authentic ACK only.
  */
 ninlil_route_status_u32 ninlil_rrmp_seam_fabric_relay_cycle(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_rrmp_nfl1_hop_view_t *hop,
     uint8_t tx_permit_granted,
     ninlil_rrmp_hop_tx_view_t *tx_out,

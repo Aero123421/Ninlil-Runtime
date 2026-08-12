@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP-IDF wear-levelled partition media. FULL OK is not claimed without HIL.
  * See docs/21-m3-esp-idf-durable-storage.md §7.

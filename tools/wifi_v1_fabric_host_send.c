@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Real Fabric outer -> Wi-Fi packet-link -> TLS/TCP Host acceptance path.
  *

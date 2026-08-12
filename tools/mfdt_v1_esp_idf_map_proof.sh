@@ -30,7 +30,7 @@ if [[ "${NINLIL_ESP_CI_DRY_RUN:-}" == "1" ]]; then
   echo "mfdt_v1_esp_idf_map_proof dry-run OK pin=${PIN} platform=${PLATFORM}"
   test -f ports/esp-idf/smoke_app/sdkconfig.defaults.mfdt_on
   test -f src/runtime/mfdt_v1/mfdt_v1_store_esp.c
-  test -f src/runtime/mfdt_v1/mfdt_v1_target_alloc.c
+  test -f ports/esp-idf/src/mfdt_v1_target_alloc.c
   test -f ports/esp-idf/src/mfdt_v1_target_smoke.c
   if grep -Fq 'mfdt_v1_store.c"' \
     ports/esp-idf/components/ninlil/CMakeLists.txt; then
@@ -51,8 +51,8 @@ if [[ "${NINLIL_ESP_CI_DRY_RUN:-}" == "1" ]]; then
   grep -F 'ninlil_mfdt_v1_session_on_accept' ports/esp-idf/src/mfdt_v1_target_smoke.c
   grep -F 'ninlil_mfdt_v1_ncl1_encode' ports/esp-idf/src/mfdt_v1_target_smoke.c
   grep -F 'ninlil_mfdt_v1_target_smoke_run' ports/esp-idf/smoke_app/main/main.c
-  grep -F 'heap_caps_calloc' src/runtime/mfdt_v1/mfdt_v1_target_alloc.c
-  grep -F 'MALLOC_CAP_SPIRAM' src/runtime/mfdt_v1/mfdt_v1_target_alloc.c
+  grep -F 'heap_caps_calloc' ports/esp-idf/src/mfdt_v1_target_alloc.c
+  grep -F 'MALLOC_CAP_SPIRAM' ports/esp-idf/src/mfdt_v1_target_alloc.c
   python3 tools/mfdt_v1_esp_dram_budget_gate.py self-test
   echo "dry-run contract: lab store absent; SPIRAM/heap offload + live smoke path present"
   exit 0

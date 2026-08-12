@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RUNTIME_INTERNAL_H
 #define NINLIL_RUNTIME_INTERNAL_H
 
@@ -357,6 +358,13 @@ struct ninlil_runtime {
     uint32_t storage_recovery_complete;
     uint32_t commit_unknown_fence;
     ninlil_time_sample_t started_sample;
+    /*
+     * Runtime-wide high-water mark for accepted trusted clock samples.
+     * Every live Runtime clock boundary shares this private baseline so a
+     * sample accepted by one transaction cannot be followed by an older
+     * same-epoch sample at another transaction or Port boundary.
+     */
+    ninlil_time_sample_t last_accepted_trusted_sample;
     ninlil_id128_t metrics_epoch_id;
     ninlil_rt_metrics_counters_t metrics;
     ninlil_rt_private_transition_hook_fn private_transition_hook;
@@ -440,6 +448,10 @@ ninlil_status_t ninlil_rt_validate_mutation_allowed(
 ninlil_status_t ninlil_rt_validate_owner_thread(
     ninlil_runtime_t *runtime,
     uint32_t allow_callback);
+
+ninlil_status_t ninlil_rt_accept_trusted_clock_sample(
+    ninlil_runtime_t *runtime,
+    const ninlil_time_sample_t *sample);
 
 void ninlil_rt_zero_submission_result(ninlil_submission_result_t *result);
 void ninlil_rt_zero_cancel_result(ninlil_cancel_result_t *result);

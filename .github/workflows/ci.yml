@@ -290,12 +290,15 @@ jobs:
             --output-on-failure --no-tests=error \
             -R '^public_module_manifest_gate(_self_test)?$'
       - name: Test full matrix
-        run: ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
+        run: >-
+          ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
+          --output-junit build/ci-ubuntu-dyn/ctest-junit.xml
       - name: Traceability registration coverage V2 (baseline)
         run: |
           python3 tools/traceability_complete_coverage_gate.py --self-test
           python3 tools/traceability_complete_coverage_gate.py --check \
-            --profile baseline=build/ci-ubuntu-dyn
+            --profile baseline=build/ci-ubuntu-dyn \
+            --junit baseline=build/ci-ubuntu-dyn/ctest-junit.xml
       - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
@@ -961,6 +964,100 @@ jobs:
           test -f build/ci-clang-sanitize/libninlil_posix_sqlite_storage.a
           grep -E 'NINLIL_ENABLE_SANITIZERS:BOOL=ON' \
             build/ci-clang-sanitize/CMakeCache.txt
+
+  decoder-fuzz:
+    name: Decoder fuzz (6 boundaries, 5 minutes each)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
+      - name: Install Clang and build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          clang libclang-rt-dev libsqlite3-dev libssl-dev ninja-build
+      - name: Configure private libFuzzer targets
+        run: |
+          cmake -S . -B build/ci-decoder-fuzz -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DNINLIL_ENABLE_SANITIZERS=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_BUILD_DECODER_FUZZERS=ON
+      - name: Build all six harnesses
+        run: >-
+          cmake --build build/ci-decoder-fuzz --parallel 2
+          --target ninlil_decoder_fuzzers
+      - name: Generate and verify vector-derived seed corpus
+        run: |
+          python3 tools/decoder_fuzz_seed_corpus.py self-test
+          python3 tools/decoder_fuzz_seed_corpus.py generate \
+            --output build/ci-decoder-fuzz/corpus
+          python3 tools/decoder_fuzz_seed_corpus.py check \
+            --output build/ci-decoder-fuzz/corpus
+      - name: Fuzz all decoder boundaries concurrently
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          build=$PWD/build/ci-decoder-fuzz
+          mkdir -p "$build/fuzz-artifacts" "$build/fuzz-logs"
+          specs=(
+            ninlil_nfl1_codec_fuzzer:nfl1_codec
+            ninlil_rrmp_codec_fuzzer:rrmp_codec
+            ninlil_r7_wire_codec_fuzzer:r7_wire_codec
+            ninlil_r7_frag_wire_fuzzer:r7_frag_wire
+            ninlil_n6_record_codec_fuzzer:n6_record_codec
+            ninlil_domain_store_body_codec_fuzzer:domain_store_body_codec
+          )
+          pids=()
+          names=()
+          for spec in "${specs[@]}"; do
+            binary=${spec%%:*}
+            corpus=${spec#*:}
+            names+=("$binary")
+            "$build/$binary" "$build/corpus/$corpus" \
+              -max_total_time=300 -max_len=4096 -timeout=10 \
+              -rss_limit_mb=2048 \
+              -artifact_prefix="$build/fuzz-artifacts/$corpus-" \
+              >"$build/fuzz-logs/$corpus.log" 2>&1 &
+            pids+=("$!")
+          done
+          failed=0
+          for i in "${!pids[@]}"; do
+            if wait "${pids[$i]}"; then
+              tail -n 8 "$build/fuzz-logs/${specs[$i]#*:}.log"
+            else
+              echo "fuzzer failed: ${names[$i]}" >&2
+              cat "$build/fuzz-logs/${specs[$i]#*:}.log" >&2
+              failed=1
+            fi
+          done
+          exit "$failed"
+      # actions/upload-artifact v4.6.2
+      - name: Upload crash inputs and logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: decoder-fuzz-failure-${{ github.run_id }}
+          path: |
+            build/ci-decoder-fuzz/fuzz-artifacts
+            build/ci-decoder-fuzz/fuzz-logs
+            build/ci-decoder-fuzz/corpus/manifest.json
+          if-no-files-found: error
+          retention-days: 14
 
   # ADR-0021 private MFDT: default-OFF residual + feature-ON private suite.
   # Actual ESP compile/link/map is tools/esp_idf_ci_docker_run.sh (official amd64).
@@ -1698,9 +1795,47 @@ jobs:
       - name: Traceability registration coverage V2 (all-private)
         run: |
           set -euo pipefail
+          # The aggregate above proves the six-feature integration surface,
+          # but the traceability manifest cites additional focused CTests.
+          # Build the configured tree, execute the exact all-private cited set,
+          # and let the gate reject any extraction omission via missing JUnit
+          # PASS evidence.
+          cmake --build build/host-completion-allfeat --parallel 2
+          python3 - <<'PY' \
+            > build/host-completion-allfeat/traceability-cited.regex
+          import json
+          import re
+
+          manifest = json.load(open(
+              "requirements-traceability-coverage.json",
+              encoding="utf-8"))
+          tests = set()
+          for source in manifest["normative_sources"]:
+              for unit in source["heading_units"]:
+                  tests.update(unit["tests_by_profile"]["all-private"])
+          for row in manifest["explicit_requirement_sets"]:
+              tests.update(row["tests_by_profile"]["all-private"])
+          for authority in manifest["delegated_authorities"]:
+              tests.update(authority["tests_by_profile"]["all-private"])
+          for invariant in manifest["invariant_source"]["invariants"]:
+              for claim in invariant["subclaims"]:
+                  for evidence in claim["evidence"]:
+                      tests.update(
+                          evidence["tests_by_profile"]["all-private"])
+          if not tests:
+              raise SystemExit("all-private traceability cited set is empty")
+          print("^(" + "|".join(re.escape(name) for name in sorted(tests)) + ")$")
+          PY
+          ctest --test-dir build/host-completion-allfeat \
+            --output-on-failure --no-tests=error \
+            --output-junit \
+              build/host-completion-allfeat/traceability-cited-junit.xml \
+            -R "$(cat build/host-completion-allfeat/traceability-cited.regex)"
           python3 tools/traceability_complete_coverage_gate.py --self-test
           python3 tools/traceability_complete_coverage_gate.py --check \
-            --profile all-private=build/host-completion-allfeat
+            --profile all-private=build/host-completion-allfeat \
+            --junit \
+              all-private=build/host-completion-allfeat/traceability-cited-junit.xml
       - name: Canonical Foundation/Fabric/MFDT actual E2E (normal companion)
         env:
           ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:detect_stack_use_after_return=1

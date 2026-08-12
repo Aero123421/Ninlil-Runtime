@@ -7,8 +7,9 @@ surface (not whole-repo CMakeLists.txt).
 
 CMake authority design:
   - Live inventory is extracted from cmake/ninlil_mfdt_ctest.cmake only.
-  - Root CMakeLists.txt is checked only for the include of that dedicated file
-    under the tests-ON region; its whole-file SHA is never pinned.
+  - cmake/ninlil_ctest.cmake is checked for the include of that dedicated file;
+    root CMakeLists.txt is checked only for the tests-ON umbrella include.
+    Neither shared file's whole-file SHA is pinned.
   - Unrelated legitimate CMakeLists edits must not invalidate MFDT.
 
 Does not claim implementation completion or release support. Does not import the vector generator.
@@ -48,6 +49,10 @@ MFDT_CMAKE_AUTHORITY_REL = "cmake/ninlil_mfdt_ctest.cmake"
 MFDT_CMAKE_INCLUDE_SNIPPET = (
     "include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_mfdt_ctest.cmake)"
 )
+TEST_CMAKE_AUTHORITY_REL = "cmake/ninlil_ctest.cmake"
+TEST_CMAKE_INCLUDE_SNIPPET = (
+    "include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_ctest.cmake)"
+)
 
 # MFDT-owned artifacts only (no shared monorepo files).
 # This gate file itself is existence-only (self-circular avoidance).
@@ -69,7 +74,7 @@ PINNED_ARTIFACTS: tuple[str, ...] = (
 # Content-digest pins for MFDT-owned files (filled by authority_resync / freeze).
 PINNED_ARTIFACT_SHA256: dict[str, str] = {
     "docs/adr/0021-multi-frame-durable-custody.md":
-        "39e010f2e31b13fffd198af39ac993a1a4a4173c68fbe99c5d6e409684a74049",
+        "15bd999eb3240672f65089aa2ba12ba481c552688fda262aa221ebf4f2ed4ac9",
     "docs/work/2026-08-01-mfdt-spec-accepted-promotion.md":
         "013acbc8659669347d913e273fce91e04c9b594f6afe98839445597fb9d70345",
     "docs/work/2026-08-01-mfdt-application-handoff-spec-repair.md":
@@ -79,17 +84,17 @@ PINNED_ARTIFACT_SHA256: dict[str, str] = {
     "docs/reviews/2026-08-01-mfdt-application-handoff-spec-accepted.md":
         "fbf1e9382e08a0225eb32640b9d282a0dba3fc9b17cb12755cf94bbfbde69433",
     "spec/vectors/multi-frame-durable-transfer-spec-v1.json":
-        "a3e3c70e02abe20f8c8a2083b8fc5c1a3ef897d0b84928111212a65c26d6a118",
+        "7e8b84159481c458ed441c0c9fc50ac0da6336cf93f471d8550a31bbb2d291c0",
     "tools/multi_frame_durable_transfer_spec_vector_gen.py":
-        "ffe0b4ea350508eb72c9cb815401bba800ba316d53193f80cc2a9c144cd4679e",
+        "5517ef34707ff18b9623c69dd6c88b9af495940274b326208991769c7b69c8d3",
     "tools/multi_frame_durable_transfer_spec_gate.py":
-        "f9e15d3e9a67d7af4c302924a1c091aee692b85caa3ad65cd769639e43b34b27",
+        "72118084815150794fd596002c41e5408f937453a03f205c550271dec5525a45",
     "tools/multi_frame_durable_transfer_spec_gate.mjs":
-        "2a4245b3700252dcbb2eb94863f08e0ced5d5f06d21d975fd0233897fbdc1b16",
+        "51fe9aec16f25a76dd3ff1dd6ef3cd495cbf26b17daae0d9ce32d0ed2227ad85",
     "tests/model/multi_frame_durable_transfer_c_gate_test.c":
-        "3f635b3972f553113ad27b8c12bfa086e5732eff24f4e09fd6b45316d0c121c6",
+        "6a79b9378b41eff2990d3be09b1dfbb7ead2e96ede1be97297e06f8d79c8e271",
     "tests/model/multi_frame_durable_transfer_c_authority.h":
-        "b791e39e8b4d0563115cade9eff5b9f8a3bf3c51b0da45047222a96c57a287c3",
+        "d36c038ea94d0c13e22d3dffd725d65a0a55f5c44a233edf82200c1ba7f789ef",
     "cmake/ninlil_mfdt_ctest.cmake":
         "f14fe596ddc17ba92cf00f38fb3e9798273bd29708cc5cf5f698122a8837e795",
 }
@@ -251,8 +256,9 @@ def validate_work_and_adr(
 def validate_cmake_mfdt_authority(
     authority_text: str | None = None,
     root_cmake_text: str | None = None,
+    test_cmake_text: str | None = None,
 ) -> dict[str, object]:
-    """Validate dedicated MFDT cmake file + root include; never whole-file root SHA."""
+    """Validate dedicated MFDT authority and the two-step include chain."""
 
     auth_path = ROOT / MFDT_CMAKE_AUTHORITY_REL
     if authority_text is None and not auth_path.is_file():
@@ -291,17 +297,25 @@ def validate_cmake_mfdt_authority(
     if inv_sha != PINNED_CMAKE_INVENTORY_SHA256:
         fail(f"MFDT cmake inventory sha drift: got {inv_sha}")
 
-    # Root CMakeLists must include the dedicated authority under tests-ON path.
+    # Root owns only the tests-ON umbrella. The umbrella owns the dedicated
+    # MFDT authority include; neither shared file is content-pinned.
     if root_cmake_text is None:
         root_cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
-    if MFDT_CMAKE_INCLUDE_SNIPPET not in root_cmake_text:
-        fail("root CMakeLists missing dedicated MFDT cmake include")
-    # Ensure no leftover inlined multi_frame add_test bodies outside the include.
-    # Allow the include line and comments mentioning multi_frame.
+    if test_cmake_text is None:
+        test_cmake_text = (ROOT / TEST_CMAKE_AUTHORITY_REL).read_text(
+            encoding="utf-8"
+        )
+    if TEST_CMAKE_INCLUDE_SNIPPET not in root_cmake_text:
+        fail("root CMakeLists missing tests-ON cmake authority include")
+    if MFDT_CMAKE_INCLUDE_SNIPPET not in test_cmake_text:
+        fail("test CMake authority missing dedicated MFDT cmake include")
+    # Ensure no leftover inlined multi_frame add_test bodies in either shared
+    # dispatcher. The dedicated file above remains the sole registration body.
     for name in PINNED_CMAKE_TESTS:
-        # Direct NAME registration must not appear in root file.
         if re.search(rf"NAME\s+{re.escape(name)}\b", root_cmake_text):
             fail(f"root CMakeLists still inlines MFDT test {name}")
+        if re.search(rf"NAME\s+{re.escape(name)}\b", test_cmake_text):
+            fail(f"test CMake authority still inlines MFDT test {name}")
     install_blocks = re.findall(
         r"install\s*\((.*?)\)", root_cmake_text, flags=re.S | re.I
     )

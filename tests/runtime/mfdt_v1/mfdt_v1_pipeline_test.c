@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * NCL1 + two-endpoint pipeline (no local self-echo).
  */
 #include "mfdt_v1.h"
@@ -11,6 +12,20 @@
 #include <string.h>
 
 static int g_fail;
+static ninlil_mfdt_v1_seam_ctx_t g_seam_ctx;
+
+static int bytes_are_zero(const void *memory, size_t length)
+{
+    const uint8_t *bytes = (const uint8_t *)memory;
+    size_t index;
+    for (index = 0u; index < length; ++index) {
+        if (bytes[index] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void expect(int c, const char *m)
 {
     if (!c) {
@@ -285,10 +300,15 @@ static void test_seam_and_release_policy(void)
     uint8_t tid[16], tok[16];
     uint8_t big[1000];
     int rc;
+    expect(ninlil_mfdt_v1_seam_init(&g_seam_ctx) == NINLIL_MFDT_V1_OK,
+           "seam owner init");
     memset(&sc, 0, sizeof(sc));
     memset(big, 0xcd, sizeof(big));
-    ninlil_mfdt_v1_seam_set_config(&sc);
-    rc = ninlil_mfdt_v1_seam_try_application_data(big, 1000, NULL, tid, tok);
+    expect(ninlil_mfdt_v1_seam_set_config(&g_seam_ctx, &sc) ==
+               NINLIL_MFDT_V1_OK,
+           "seam owner config off");
+    rc = ninlil_mfdt_v1_seam_try_application_data(
+        &g_seam_ctx, big, 1000, NULL, tid, tok);
     expect(rc == NINLIL_MFDT_SEAM_REJECTED || rc == NINLIL_MFDT_SEAM_NOT_APPLICABLE,
            "off large");
     sc.policy_on = 1;
@@ -299,11 +319,23 @@ static void test_seam_and_release_policy(void)
     sc.session_cookie = 1;
     sc.now_ms = 1;
     memset(sc.local_clock_epoch, 0xc0, 16u);
-    ninlil_mfdt_v1_seam_set_config(&sc);
-    rc = ninlil_mfdt_v1_seam_try_application_data(big, 1000, NULL, tid, tok);
+    expect(ninlil_mfdt_v1_seam_set_config(&g_seam_ctx, &sc) ==
+               NINLIL_MFDT_V1_OK,
+           "seam owner config on");
+    g_seam_ctx.busy = 1u;
+    expect(ninlil_mfdt_v1_seam_try_application_data(
+               &g_seam_ctx, big, 1000, NULL, tid, tok) ==
+               NINLIL_MFDT_SEAM_BUSY,
+           "same-owner reentry rejected");
+    g_seam_ctx.busy = 0u;
+    rc = ninlil_mfdt_v1_seam_try_application_data(
+        &g_seam_ctx, big, 1000, NULL, tid, tok);
     expect(rc == NINLIL_MFDT_SEAM_OK, "on large ok");
     expect(ninlil_mfdt_v1_release_policy_allows_default_on() == 0,
            "default on blocked until software matrix and HIL close");
+    ninlil_mfdt_v1_seam_fini(&g_seam_ctx);
+    expect(bytes_are_zero(&g_seam_ctx, sizeof(g_seam_ctx)),
+           "seam fini zeroizes owner");
 }
 
 /*

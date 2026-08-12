@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "storage_canonical_plan.h"
 
 #include <limits.h>

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TOOLS_WIFI_V1_FABRIC_HOST_SEND_H
 #define NINLIL_TOOLS_WIFI_V1_FABRIC_HOST_SEND_H
 

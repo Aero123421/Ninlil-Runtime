@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "usb_cdc_state_logic.h"
 
 #include <string.h>

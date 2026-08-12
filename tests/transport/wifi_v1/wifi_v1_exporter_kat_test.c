@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0018 exporter context KATs + negative tests for inverted semantics.
  * Contexts are 62/64-byte inputs; IDs are 16-byte exporter outputs.

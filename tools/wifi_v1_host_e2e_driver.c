@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * 2-process real-socket Wi-Fi Host e2e driver (private candidate).
  * Modes:
@@ -458,6 +459,16 @@ int main(int argc, char **argv)
     if (argc == 2 && strcmp(argv[1], "--supports-fabric-send") == 0) {
 #if defined(NINLIL_WIFI_HOST_FABRIC_SEND)
         (void)printf("wifi_v1_host_e2e_driver: fabric-send supported\n");
+        return 0;
+#else
+        return 2;
+#endif
+    }
+    if (argc == 2 && strcmp(argv[1], "--supports-runtime-e2e") == 0) {
+#if defined(NINLIL_WIFI_HOST_FABRIC_SEND) \
+    && !(defined(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING) \
+        && (NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING != 0))
+        (void)printf("wifi_v1_host_e2e_driver: runtime-e2e supported\n");
         return 0;
 #else
         return 2;

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_usb_fabric_link.h"
 
 #include "fake_byte_stream.h"

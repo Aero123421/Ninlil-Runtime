@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Wi-Fi packet-link seam registered into Fabric (no public ABI).
  * Host-only; not ESP HIL.

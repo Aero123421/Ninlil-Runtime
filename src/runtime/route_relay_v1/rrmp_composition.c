@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production composition: platform storage bind + recover only.
  * No synthetic store/provider, no large BSS lifecycle fixtures.

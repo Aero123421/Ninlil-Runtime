@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "domain_store_body_codec.h"
 #include "domain_store_codec.h"
 #include "domain_store_codec_internal.h"
@@ -1024,8 +1025,8 @@ static int replay_quiet(const ninlil_dv_vector_t *v)
                 QCHECK(zeros(ml->expected_event_id, 16u));
                 QCHECK(zeros(ml->expected_content_digest, 32u));
                 QCHECK(ml->acknowledge_flag == 0u);
-                QCHECK(zeros(ml->audit_clock_epoch, 16u));
-                QCHECK(ml->audit_committed_at_ms == 0u);
+                QCHECK(!zeros(ml->audit_clock_epoch, 16u)
+                    || ml->audit_committed_at_ms == 0u);
                 QCHECK(ml->replay_spool_released == 0u);
                 QCHECK(ml->request_reason >= 1u && ml->request_reason <= 5u);
                 QCHECK(ml->replay_result_kind
@@ -6956,6 +6957,8 @@ static int test_management_ledger_contracts(const char *path)
     int seen_excl_d_time = 0;
     int seen_excl_d_epoch = 0;
     int seen_excl_r_cycle = 0;
+    int seen_resume_legacy_audit = 0;
+    int seen_resume_canonical_time0 = 0;
     ninlil_model_domain_body_management_ledger_t body;
     ninlil_model_domain_typed_record_t rec;
     uint8_t body_buf[512];
@@ -7047,6 +7050,12 @@ static int test_management_ledger_contracts(const char *path)
                 REQUIRE(body.replay_result_kind
                     == NINLIL_EVENT_RESUME_ALREADY_RESUMED);
                 REQUIRE(body.replay_result_reason == NINLIL_REASON_NONE);
+                if (zeros(body.audit_clock_epoch, 16u)) {
+                    REQUIRE(body.audit_committed_at_ms == 0u);
+                    seen_resume_legacy_audit = 1;
+                } else if (body.audit_committed_at_ms == 0u) {
+                    seen_resume_canonical_time0 = 1;
+                }
                 if (body.request_reason == 5u) {
                     seen_r_rsn5 = 1;
                 }
@@ -7242,6 +7251,8 @@ static int test_management_ledger_contracts(const char *path)
     REQUIRE(seen_excl_d_time == 1);
     REQUIRE(seen_excl_d_epoch == 1);
     REQUIRE(seen_excl_r_cycle == 1);
+    REQUIRE(seen_resume_legacy_audit == 1);
+    REQUIRE(seen_resume_canonical_time0 == 1);
     REQUIRE(seen_mut == 1);
     ninlil_dv_free(&file);
     (void)fprintf(stdout,

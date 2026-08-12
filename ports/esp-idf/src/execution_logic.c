@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "execution_logic.h"
 
 int ninlil_esp_idf_execution_handle_width_ok(size_t handle_bytes)

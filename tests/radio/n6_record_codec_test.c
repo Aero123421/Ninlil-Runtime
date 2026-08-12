@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * N6 record codec product-level KAT (docs/30 §5.3).
  *

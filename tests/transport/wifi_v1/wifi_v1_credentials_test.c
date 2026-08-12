@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "wifi_credentials.h"
 
 #include "in_memory_storage.h"

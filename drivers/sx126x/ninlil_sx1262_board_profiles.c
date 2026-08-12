@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Release encode for XIAO ESP32-S3 + Wio-SX1262.
  * Source identity: Seeed Wio-SX1262 datasheet v1.0 (informative only —

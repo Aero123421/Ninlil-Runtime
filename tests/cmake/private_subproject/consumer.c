@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <ninlil/runtime.h>
 
 static int would_fail_if_child_werror_leaked(void)

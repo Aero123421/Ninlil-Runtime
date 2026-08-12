@@ -57,6 +57,36 @@ RESOURCE_FIELDS = (
     "target_smoke_store_bytes",
     "worst_case_live_dynamic_bytes",
 )
+CATALOG_NAMES = (
+    "ninlil_route_install_batch",
+    "ninlil_route_activate",
+    "ninlil_route_begin_drain",
+    "ninlil_route_retire",
+    "ninlil_route_query",
+    "ninlil_route_forward_admit",
+    "ninlil_route_forward_complete",
+    "ninlil_route_cancel_drain",
+    "ninlil_route_recover_commit_unknown",
+    "ninlil_route_diagnostics_snapshot",
+    "ninlil_parent_set_install",
+    "ninlil_parent_owner_prepare",
+    "ninlil_parent_owner_fence_proof",
+    "ninlil_parent_authority_commit",
+    "ninlil_parent_owner_prepare_v2",
+    "ninlil_parent_owner_fence_proof_v2",
+    "ninlil_parent_authority_commit_v2",
+    "ninlil_parent_owner_activate",
+    "ninlil_parent_endpoint_observe",
+    "ninlil_parent_owner_retire",
+    "ninlil_parent_query",
+    "ninlil_parent_recover_commit_unknown",
+    "ninlil_parent_diagnostics_snapshot",
+)
+SEAM_NAMES = (
+    "ninlil_rrmp_seam_admit_from_nfl1_view",
+    "ninlil_rrmp_seam_fabric_forward_once",
+    "ninlil_rrmp_seam_fabric_relay_cycle",
+)
 
 
 class GateError(RuntimeError):
@@ -93,6 +123,13 @@ def required_int(parent: dict[str, Any], key: str, where: str) -> int:
     return value
 
 
+def required_bool(parent: dict[str, Any], key: str, where: str) -> bool:
+    value = parent.get(key)
+    if not isinstance(value, bool):
+        fail(f"{where}.{key} must be a boolean")
+    return value
+
+
 def parse_uint_define(path: pathlib.Path, name: str) -> int:
     text = path.read_text(encoding="utf-8")
     match = re.search(
@@ -117,24 +154,114 @@ def parse_uint_define(path: pathlib.Path, name: str) -> int:
     return value
 
 
+def verify_portable_mutable_scratch(core: str, util: str) -> None:
+    mutable_static_object = re.compile(
+        r"^[ \t]*static[ \t]+(?P<declaration>[^;{}\n]+);",
+        re.MULTILINE,
+    )
+    for label, source in (("rrmp_core.c", core), ("rrmp_util.c", util)):
+        for match in mutable_static_object.finditer(source):
+            declaration = " ".join(match.group("declaration").split())
+            first_paren = declaration.find("(")
+            function_prototype = False
+            if first_paren > 0 and not any(
+                token in declaration[:first_paren] for token in ("=", "[", "]")
+            ):
+                depth = 0
+                closing_paren = -1
+                for index, char in enumerate(declaration[first_paren:], first_paren):
+                    if char == "(":
+                        depth += 1
+                    elif char == ")":
+                        depth -= 1
+                        if depth == 0:
+                            closing_paren = index
+                            break
+                prefix = declaration[:first_paren].rstrip()
+                function_prototype = (
+                    closing_paren == len(declaration) - 1
+                    and re.search(r"[A-Za-z_][A-Za-z0-9_]*$", prefix) is not None
+                )
+
+            # Function prototypes and immutable non-pointer const objects are
+            # not mutable storage.  A pointer to const remains mutable unless
+            # the pointer itself is const, so it deliberately fails closed.
+            immutable_const_object = (
+                declaration.startswith("const ") and "*" not in declaration
+            )
+            # Every mutable static object fails closed, including pointers,
+            # arrays, parenthesized initializers and function-pointer objects.
+            if function_prototype or immutable_const_object:
+                continue
+            fail(f"{label} contains mutable static object: {declaration}")
+    required_route_scratch = (
+        "(uint8_t (*)[NINLIL_RRMP_SLOT_BYTES])o->enc_page_b"
+    )
+    if required_route_scratch not in core:
+        fail("RRMP route-slot scratch is not pinned to the current owner")
+    if "static int kat_ok" in util:
+        fail("RRMP SHA KAT result must not use a process-global mutable cache")
+
+
+def verify_explicit_serial_owner(
+    abi: str, core: str, seam_header: str, seam_source: str
+) -> None:
+    first_owner = r"\s*\(\s*ninlil_rrmp_owner_t\s*\*\s*owner\s*,"
+    for name in CATALOG_NAMES:
+        pattern = re.compile(rf"\b{re.escape(name)}{first_owner}")
+        if len(pattern.findall(abi)) != 1:
+            fail(f"RRMP catalog declaration lacks explicit owner: {name}")
+        if len(pattern.findall(core)) != 1:
+            fail(f"RRMP catalog definition lacks explicit owner: {name}")
+    for name in SEAM_NAMES:
+        pattern = re.compile(rf"\b{re.escape(name)}{first_owner}")
+        if len(pattern.findall(seam_header)) != 1:
+            fail(f"RRMP seam declaration lacks explicit owner: {name}")
+        if len(pattern.findall(seam_source)) != 1:
+            fail(f"RRMP seam definition lacks explicit owner: {name}")
+
+    lifecycle = re.compile(
+        r"\bninlil_rrmp_owner_unbind\s*\(\s*ninlil_rrmp_owner_t\s*\*\s*owner\s*\)"
+    )
+    if len(lifecycle.findall(abi)) != 1 or len(lifecycle.findall(core)) != 1:
+        fail("RRMP owner_unbind must target one explicit owner")
+
+    sources = (abi, core, seam_header, seam_source)
+    forbidden = ("g_bound", "ninlil_rrmp_owner_current")
+    for token in forbidden:
+        if any(token in source for source in sources):
+            fail(f"RRMP legacy current-owner source remains: {token}")
+
+
 def verify_large_allocations_are_psram_only() -> None:
+    abi_path = REPO / "src/runtime/route_relay_v1/rrmp_abi.h"
     core_path = REPO / "src/runtime/route_relay_v1/rrmp_core.c"
+    util_path = REPO / "src/runtime/route_relay_v1/rrmp_util.c"
+    seam_header_path = REPO / "src/runtime/route_relay_v1/rrmp_seam.h"
+    seam_source_path = REPO / "src/runtime/route_relay_v1/rrmp_seam.c"
     smoke_path = REPO / "ports/esp-idf/src/rrmp_target_smoke.c"
+    abi = abi_path.read_text(encoding="utf-8")
     core = core_path.read_text(encoding="utf-8")
+    util = util_path.read_text(encoding="utf-8")
+    seam_header = seam_header_path.read_text(encoding="utf-8")
+    seam_source = seam_source_path.read_text(encoding="utf-8")
     smoke = smoke_path.read_text(encoding="utf-8")
 
-    core_fn = re.search(
-        r"static int rrmp_export_scratch_ready\(void\)\s*\{(?P<body>.*?)^\}",
-        core,
-        re.MULTILINE | re.DOTALL,
-    )
-    if core_fn is None:
-        fail("RRMP export scratch allocator not found")
-    core_body = core_fn.group("body")
-    if core_body.count("MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT") != 2:
-        fail("RRMP export/piece scratch buffers are not explicitly allocated from PSRAM")
-    if core_body.count("heap_caps_malloc(") != 2:
-        fail("RRMP export/piece scratch allocation count drift or internal-DRAM fallback")
+    verify_portable_mutable_scratch(core, util)
+    verify_explicit_serial_owner(abi, core, seam_header, seam_source)
+
+    for field, size in (
+        ("storage_export_scratch", "NINLIL_RRMP_RRM1_LOGICAL_BYTES_MAX"),
+        ("storage_piece_scratch", "NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX"),
+    ):
+        if re.search(
+            rf"\buint8_t\s+{field}\s*\[\s*{size}\s*\]\s*;", core
+        ) is None:
+            fail(f"RRMP caller-owned scratch field missing or unbounded: {field}")
+    if "heap_caps_malloc(" in core or "esp_heap_caps.h" in core:
+        fail("RRMP core must not own platform allocation or lazy global scratch")
+    if re.search(r"static\s+uint8_t\s+\*?s_rrmp_storage_", core) is not None:
+        fail("RRMP storage scratch must be owner-local, not process-global")
 
     smoke_fn = re.search(
         r"static void \*smoke_caps_alloc\(.*?\)\s*\{(?P<body>.*?)^\}",
@@ -166,10 +293,18 @@ def verify_authority(
         if other != values[name]:
             fail(f"manifest/template resource drift for {name}: {values[name]} != {other}")
 
+    includes_scratch = required_bool(
+        ns, "workspace_includes_storage_scratch", "manifest.namespace_keys"
+    )
+    if required_bool(
+        prereq,
+        "workspace_includes_storage_scratch",
+        "template.software_prerequisites",
+    ) != includes_scratch or not includes_scratch:
+        fail("RRMP workspace must include both durable scratch buffers")
+
     expected_worst = (
         values["workspace_measured_host_bytes"]
-        + values["storage_export_max_bytes"]
-        + values["storage_piece_scratch_bytes"]
         + values["target_smoke_store_bytes"]
     )
     if values["worst_case_live_dynamic_bytes"] != expected_worst:
@@ -282,15 +417,49 @@ def verify_sdkconfig(path: pathlib.Path) -> None:
 
 
 def parse_rrmp_bss(map_text: str) -> list[tuple[int, str, str]]:
+    """Return live RRMP rows from `.dram0.bss`, including wrapped rows."""
     rows: list[tuple[int, str, str]] = []
-    pat = re.compile(
-        r"^\s*\.bss[^\s]*\s+0x[0-9a-fA-F]+\s+(0x[0-9a-fA-F]+)\s+(\S*rrmp\S*)\s*$"
+    same_line = re.compile(
+        r"^\s+(\.bss\S*)\s+0x[0-9a-fA-F]+\s+"
+        r"(0x[0-9a-fA-F]+)\s+(\S*rrmp\S*)\s*$"
     )
+    section_only = re.compile(r"^\s+(\.bss\S*)\s*$")
+    continuation = re.compile(
+        r"^\s+0x[0-9a-fA-F]+\s+(0x[0-9a-fA-F]+)\s+"
+        r"(\S*rrmp\S*)\s*$"
+    )
+    output_section = re.compile(
+        r"^(\.\S+)\s+0x[0-9a-fA-F]+\s+0x[0-9a-fA-F]+"
+    )
+    in_dram_bss = False
+    pending: str | None = None
     for line in map_text.splitlines():
-        match = pat.match(line)
-        if match is None:
+        output = output_section.match(line)
+        if output is not None:
+            in_dram_bss = output.group(1) == ".dram0.bss"
+            pending = None
             continue
-        rows.append((int(match.group(1), 16), match.group(2), line.strip()))
+        if not in_dram_bss:
+            continue
+        match = same_line.match(line)
+        if match is not None:
+            rows.append((int(match.group(2), 16), match.group(3), line.strip()))
+            pending = None
+            continue
+        split = section_only.match(line)
+        if split is not None:
+            pending = split.group(1)
+            continue
+        match = continuation.match(line)
+        if pending is not None and match is not None:
+            rows.append(
+                (
+                    int(match.group(1), 16),
+                    match.group(2),
+                    f"{pending} {line.strip()}",
+                )
+            )
+        pending = None
     return rows
 
 
@@ -314,7 +483,13 @@ def check_map(map_path: pathlib.Path, budget: int) -> int:
         if required not in text:
             fail(f"required RRMP object missing from map: {required}")
 
-    total = sum(size for size, _, _ in parse_rrmp_bss(text))
+    rows = parse_rrmp_bss(text)
+    if not rows:
+        fail(
+            "zero live RRMP .dram0.bss rows parsed (map format mismatch or "
+            "RRMP not linked)"
+        )
+    total = sum(size for size, _, _ in rows)
     if total > budget:
         fail(f"RRMP .bss total {total} exceeds budget {budget}")
     return total
@@ -330,7 +505,23 @@ def expect_rejection(fn: Any, label: str) -> None:
 
 def self_test() -> None:
     values = verify_authority(DEFAULT_MANIFEST, DEFAULT_TEMPLATE, None)
+    core = (REPO / "src/runtime/route_relay_v1/rrmp_core.c").read_text(
+        encoding="utf-8"
+    )
+    abi = (REPO / "src/runtime/route_relay_v1/rrmp_abi.h").read_text(
+        encoding="utf-8"
+    )
+    seam_header = (REPO / "src/runtime/route_relay_v1/rrmp_seam.h").read_text(
+        encoding="utf-8"
+    )
+    seam_source = (REPO / "src/runtime/route_relay_v1/rrmp_seam.c").read_text(
+        encoding="utf-8"
+    )
+    util = (REPO / "src/runtime/route_relay_v1/rrmp_util.c").read_text(
+        encoding="utf-8"
+    )
     sample = """
+.dram0.bss 0x3fc9db68 0x100
  .bss.rrmp  0x00000000  0x00000100  libninlil.a(rrmp_core.c.obj)
  .text.rrmp 0x00000000  0x00000200  libninlil.a(rrmp_codec.c.obj)
 rrmp_store.c.obj
@@ -341,12 +532,29 @@ rrmp_codec.c.obj
 rrmp_composition.c.obj
 rrmp_target_smoke.c.obj
 """
+    split_oversized = """
+.dram0.bss 0x3fc9db68 0x20000
+ .bss.rrmp_enormous_workspace_with_long_symbol_name
+                0x3fc9db68 0x20000 libninlil.a(rrmp_core.c.obj)
+rrmp_store.c.obj
+rrmp_util.c.obj
+rrmp_seam.c.obj
+rrmp_codec.c.obj
+rrmp_composition.c.obj
+rrmp_target_smoke.c.obj
+"""
     with tempfile.TemporaryDirectory() as directory:
         root = pathlib.Path(directory)
         map_path = root / "test.map"
         map_path.write_text(sample, encoding="utf-8")
         if check_map(map_path, DEFAULT_BSS_BUDGET) != 256:
             fail("self-test map BSS parser returned the wrong total")
+        split_path = root / "split.map"
+        split_path.write_text(split_oversized, encoding="utf-8")
+        expect_rejection(
+            lambda: check_map(split_path, DEFAULT_BSS_BUDGET),
+            "split-line oversized RRMP BSS row",
+        )
 
         bad_manifest = read_json(DEFAULT_MANIFEST)
         bad_manifest["namespace_keys"]["worst_case_live_dynamic_bytes"] += 1
@@ -357,6 +565,123 @@ rrmp_target_smoke.c.obj
         expect_rejection(
             lambda: verify_authority(bad_manifest_path, DEFAULT_TEMPLATE, None),
             "incorrect live-buffer sum",
+        )
+
+        bad_manifest = read_json(DEFAULT_MANIFEST)
+        bad_manifest["namespace_keys"]["workspace_includes_storage_scratch"] = False
+        bad_manifest_path.write_text(
+            json.dumps(bad_manifest, sort_keys=True), encoding="utf-8"
+        )
+        expect_rejection(
+            lambda: verify_authority(bad_manifest_path, DEFAULT_TEMPLATE, None),
+            "process-global durable scratch regression",
+        )
+
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core + "\n    static uint8_t renamed_scratch[64];\n", util
+            ),
+            "function-static route scratch regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core,
+                util + "\n    static int renamed_kat_cache = -1;\n",
+            ),
+            "function-static SHA KAT cache regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core.replace(
+                    "(uint8_t (*)[NINLIL_RRMP_SLOT_BYTES])o->enc_page_b",
+                    "(uint8_t (*)[NINLIL_RRMP_SLOT_BYTES])slot_scratch",
+                    1,
+                ),
+                util,
+            ),
+            "route scratch detached from owner",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core + "\nstatic uint8_t file_scope_scratch[64];\n", util
+            ),
+            "column-zero file-static route scratch regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core,
+                util + "\nstatic int file_scope_kat_cache = -1;\n",
+            ),
+            "column-zero file-static SHA KAT cache regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core, util + "\nstatic int disguised_cache = (0);\n"
+            ),
+            "parenthesized mutable static initializer regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core, util + "\nstatic uint8_t disguised_scratch[(64)];\n"
+            ),
+            "parenthesized mutable static array regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core, util + "\nstatic int (*mutable_callback)(void);\n"
+            ),
+            "mutable static function-pointer regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core,
+                util
+                + "\nstatic const uint8_t *renamed_storage_scratch = NULL;\n",
+            ),
+            "mutable static pointer-to-const regression",
+        )
+        expect_rejection(
+            lambda: verify_portable_mutable_scratch(
+                core + "\nstatic ninlil_rrmp_owner_t *renamed_bound;\n", util
+            ),
+            "renamed mutable owner pointer regression",
+        )
+        verify_portable_mutable_scratch(
+            core,
+            util
+            + "\nstatic int rrmp_self_test_prototype(const uint8_t *bytes);\n",
+        )
+        verify_explicit_serial_owner(abi, core, seam_header, seam_source)
+        expect_rejection(
+            lambda: verify_explicit_serial_owner(
+                abi.replace(
+                    "ninlil_route_install_batch(\n    ninlil_rrmp_owner_t *owner,",
+                    "ninlil_route_install_batch(",
+                    1,
+                ),
+                core,
+                seam_header,
+                seam_source,
+            ),
+            "catalog owner argument removal",
+        )
+        expect_rejection(
+            lambda: verify_explicit_serial_owner(
+                abi,
+                core + "\nstatic ninlil_rrmp_owner_t *g_bound;\n",
+                seam_header,
+                seam_source,
+            ),
+            "legacy owner pointer spelling",
+        )
+        expect_rejection(
+            lambda: verify_explicit_serial_owner(
+                abi + "\nninlil_rrmp_owner_t *ninlil_rrmp_owner_current(void);\n",
+                core,
+                seam_header,
+                seam_source,
+            ),
+            "legacy current-owner accessor",
         )
 
         bad_config = root / "sdkconfig"

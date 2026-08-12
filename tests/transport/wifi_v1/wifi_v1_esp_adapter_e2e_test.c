@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #define _POSIX_C_SOURCE 200112L
 
 #include "wifi_adapter_v1.h"

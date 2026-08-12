@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Deterministic Fabric path selection (ADR-0017).
  * Pure function over fixed snapshots; no heap/VLA.

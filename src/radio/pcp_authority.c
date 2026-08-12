@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R2 Physical Compliance Permit authority — production-private portable Core.
  *

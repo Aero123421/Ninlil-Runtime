@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0022 T1b–T7 / kind-1 / LAB quarantine private authority tests.
  * Feature ON only. No runtime_public integration.

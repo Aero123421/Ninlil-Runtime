@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TRANSPORT_FABRIC_V1_NVB1_CODEC_H
 #define NINLIL_TRANSPORT_FABRIC_V1_NVB1_CODEC_H
 

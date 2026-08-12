@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 T1b portable context binding + verified HKDF schedule (docs/33).
  *

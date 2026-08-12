@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RADIO_C5_LAB_RADIO_PATH_H
 #define NINLIL_RADIO_C5_LAB_RADIO_PATH_H
 

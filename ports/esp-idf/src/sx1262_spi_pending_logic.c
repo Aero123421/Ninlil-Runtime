@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure SPI pending ownership state machine (docs/28 §6.4).
  * C11 freestanding-friendly: stddef for NULL; stdint via header.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D3-S2 independent semantic-oracle → production scanner bridge.
  *

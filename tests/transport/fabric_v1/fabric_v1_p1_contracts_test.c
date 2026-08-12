@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Fabric P1 contracts: API precedence Cartesian, workspace exact partition,
  * provider output shapes, outer query peer/attachment/RF, revision wrap.

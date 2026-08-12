@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private route-relay / multi-parent types (ADR-0019 / ADR-0020).
  * Default-OFF, not installed, not public ABI. Symbol prefix: ninlil_rrmp_
@@ -120,12 +121,13 @@ extern "C" {
 #define NINLIL_RRMP_AUTHORITY_FENCE_LEGACY_ATTEMPT_STATE 2u
 
 /*
- * Workspace budget (ESP PSRAM allocation authority): compact owner ≤ ceiling.
- * Required 22 parent keys + 21 route keys retained; raw page caches are not
- * mirrored per live scope (re-encode / durable reload).
+ * Workspace budget (ESP PSRAM allocation authority): owner state plus its
+ * durable export/piece scratch fit one caller-owned allocation. Required 22
+ * parent keys + 21 route keys are retained; raw page caches are not mirrored
+ * per live scope (re-encode / durable reload).
  * Caller-owned workspace must be at least 8-byte aligned (uint64 fields).
  */
-#define NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES (384u * 1024u)
+#define NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES (768u * 1024u)
 #define NINLIL_RRMP_OWNER_WORKSPACE_ALIGN 8u
 
 /* Route state in slot[0] (durable page encoding; distinct from LIFE_*) */

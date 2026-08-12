@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_R7_FRAG_CHECKED_ISSUE_H
 #define NINLIL_R7_FRAG_CHECKED_ISSUE_H
 
@@ -142,25 +143,33 @@ typedef struct ninlil_r7_checked_issue_result {
     ninlil_r7_class_d_sample_t sample;
 } ninlil_r7_checked_issue_result_t;
 
-/* Process-local R5 issue registry (volatile). */
+/*
+ * Caller-owned R5 issue state (volatile, private ABI). The row registry,
+ * whole-path reentry guard, and activation replay identity live together so
+ * distinct Runtime/Cell owners never share mutable process state. A zeroed
+ * object is valid; init/fini wipe every byte. clear drops issue rows while
+ * retaining the activation replay identity for the live owner lifetime.
+ */
 typedef struct ninlil_r7_r5_issue_registry {
     uint8_t live[NINLIL_R7_R5_ISSUE_REGISTRY_CAP];
     uint64_t permit_sequence[NINLIL_R7_R5_ISSUE_REGISTRY_CAP];
     uint64_t owner_epoch[NINLIL_R7_R5_ISSUE_REGISTRY_CAP];
     uint64_t issue_now_ms[NINLIL_R7_R5_ISSUE_REGISTRY_CAP];
     size_t count;
+    uint8_t in_api;
+    uint64_t activate_snapshot_id_used;
+    uint64_t activate_token;
 } ninlil_r7_r5_issue_registry_t;
 
 void ninlil_r7_r5_issue_registry_init(ninlil_r7_r5_issue_registry_t *reg);
 void ninlil_r7_r5_issue_registry_clear(ninlil_r7_r5_issue_registry_t *reg);
+void ninlil_r7_r5_issue_registry_fini(ninlil_r7_r5_issue_registry_t *reg);
 size_t ninlil_r7_r5_issue_registry_count(
     const ninlil_r7_r5_issue_registry_t *reg);
 /* Drop row after L1 cleanup (FIFO drain). No-op if not present. */
 void ninlil_r7_r5_issue_registry_release(
     ninlil_r7_r5_issue_registry_t *reg,
     uint64_t permit_sequence);
-/* Release from process-static registry used when bind.issue_registry==NULL. */
-void ninlil_r7_r5_issue_registry_release_default(uint64_t permit_sequence);
 
 /* Default validation_cb: VAL_OK + window from S when trusted class-D. */
 int32_t ninlil_r7_default_validation_cb(
@@ -203,6 +212,7 @@ int32_t ninlil_r5_private_issue_checked_with_owner_epoch(
  * (docs/30 §15.3.1.1). Single-use snapshot_id; no re-sample.
  */
 int32_t ninlil_r5_private_activate_profiles_with_authority_epoch(
+    ninlil_r7_r5_issue_registry_t *owner,
     const ninlil_r7_class_d_sample_t *accepted_class_d_snapshot,
     uint64_t snapshot_id,
     uint64_t sample_generation,
@@ -210,9 +220,8 @@ int32_t ninlil_r5_private_activate_profiles_with_authority_epoch(
     uint64_t expected_authority_epoch);
 
 /*
- * Convenience for production orch: uses default validation_cb and optional
- * process-static registry when registry==NULL (tests may pass explicit reg).
- * No caller S — R2 samples once.
+ * Convenience for production orch: uses default validation_cb and the
+ * required caller-owned registry. No caller S — R2 samples once.
  */
 int32_t ninlil_r7_private_issue_checked_with_owner_epoch(
     ninlil_pcp_t *pcp,

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0022 private Domain schema1 startup authority (T1b–T7, kind-1, LAB).
  * Feature-gated. Not public ABI. No runtime_public integration.

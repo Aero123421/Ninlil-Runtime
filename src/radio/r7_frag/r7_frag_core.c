@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 private FRAG engine: lanes, reassembly, link groups, restart, CU.
  * Heap-free fixed capacity. No partial publication. Tombstones volatile.

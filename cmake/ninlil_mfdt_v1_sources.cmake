@@ -5,7 +5,8 @@
 # libs (installable ninlil_runtime must stay free of MFDT symbols — see
 # tools/mfdt_v1_install_boundary_gate.py). Host path: ninlil_runtime_private only.
 # Do not inject test fixtures into the production list.
-# ADR-0021 status remains Proposed / PROPOSED_SPEC_ONLY until Sol acceptance.
+# ADR-0021 is Accepted; these implementation sources remain private,
+# default-OFF, non-installed candidates under that accepted boundary.
 #
 # Enable contracts:
 #   Host:  NINLIL_ENABLE_MFDT_V1_PRIVATE=ON (top-level CMake option, default OFF)
@@ -18,7 +19,7 @@
 #
 # When disabled: zero MFDT TUs in component archive / public install / default
 # smoke ELF (symbol absence is a packaging residual for map gates).
-# Not SPEC_ACCEPTED. Not public ABI. Not power-cut/RF HIL without hardware.
+# Not public ABI. Not power-cut/RF HIL without hardware.
 
 set(NINLIL_MFDT_V1_PRODUCTION_RELATIVE_SOURCES
     src/runtime/mfdt_v1/mfdt_v1_crypto.c
@@ -29,7 +30,6 @@ set(NINLIL_MFDT_V1_PRODUCTION_RELATIVE_SOURCES
     src/runtime/mfdt_v1/mfdt_v1_store_port.c
     src/runtime/mfdt_v1/mfdt_v1_engine.c
     src/runtime/mfdt_v1/mfdt_v1_hil_gate.c
-    src/runtime/mfdt_v1/mfdt_v1_target_alloc.c
     src/runtime/mfdt_v1/mfdt_v1_ncl1.c
     src/runtime/mfdt_v1/mfdt_v1_pipeline.c
     src/runtime/mfdt_v1/mfdt_v1_bearer_worker.c
@@ -42,6 +42,16 @@ set(NINLIL_MFDT_V1_PRODUCTION_RELATIVE_SOURCES
 
 set(NINLIL_MFDT_V1_LAB_RELATIVE_SOURCES
     src/runtime/mfdt_v1/mfdt_v1_store.c
+)
+
+# Mutually exclusive private allocator adapters. The portable engine imports
+# only mfdt_v1_target_alloc.h; platform SDK headers stay in ports/.
+set(NINLIL_MFDT_V1_HOST_ADAPTER_RELATIVE_SOURCES
+    src/runtime/mfdt_v1/mfdt_v1_target_alloc.c
+)
+
+set(NINLIL_MFDT_V1_ESP_ADAPTER_RELATIVE_SOURCES
+    ports/esp-idf/src/mfdt_v1_target_alloc.c
 )
 
 # Host-only reference provider and coordinator. These sources are deliberately
@@ -62,6 +72,7 @@ set(NINLIL_MFDT_V1_PORTABLE_RELATIVE_SOURCES
     ${NINLIL_MFDT_V1_PRODUCTION_RELATIVE_SOURCES}
     ${NINLIL_MFDT_V1_LAB_RELATIVE_SOURCES}
     ${NINLIL_MFDT_V1_HOST_RELATIVE_SOURCES}
+    ${NINLIL_MFDT_V1_HOST_ADAPTER_RELATIVE_SOURCES}
 )
 
 set(NINLIL_MFDT_V1_SOURCES_AUTHORITY_LOADED TRUE)

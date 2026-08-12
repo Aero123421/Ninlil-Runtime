@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Portable internal-linkage / non-default visibility for private port helpers.
  * Not a public API. Not installed. Does not make symbols public.

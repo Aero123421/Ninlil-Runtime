@@ -144,7 +144,7 @@ REQUIRED_VECTOR_IDS: tuple[str, ...] = (
 
 # Authority seal SHA covers hard-pinned metadata + source digests + per-ID index.
 # Not equal to the legacy index-only map hash.
-AUTHORITY_MAP_SHA256_HEX = "169ca9605a46222fd582bee3207f5c223dccb9400cf6e1fb52923276ef23a48f"
+AUTHORITY_MAP_SHA256_HEX = "e691f98d786708a981234f4c3f77c50d8cc4a6f968585f39204acb6a3f309c8f"
 
 # Independently hard-pinned machine metadata (gates do not learn these from vector).
 PINNED_SCHEMA = "ninlil.multi-frame-durable-transfer.spec.v1"
@@ -172,9 +172,9 @@ PINNED_SOURCES: tuple[str, ...] = (
 # Source content digests: ADR + generator. Gates pin both. Generator pins only ADR
 # (avoids self-circular self-SHA inside the generator file).
 PINNED_SOURCE_SHA256_HEX: dict[str, str] = {
-    PINNED_ADR_PATH: "39e010f2e31b13fffd198af39ac993a1a4a4173c68fbe99c5d6e409684a74049",
+    PINNED_ADR_PATH: "15bd999eb3240672f65089aa2ba12ba481c552688fda262aa221ebf4f2ed4ac9",
     "tools/multi_frame_durable_transfer_spec_vector_gen.py": (
-        "ffe0b4ea350508eb72c9cb815401bba800ba316d53193f80cc2a9c144cd4679e"
+        "5517ef34707ff18b9623c69dd6c88b9af495940274b326208991769c7b69c8d3"
     ),
 }
 

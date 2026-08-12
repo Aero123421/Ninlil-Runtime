@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Fabric lifecycle, registry, dispatch PREPARED/LINK_RETAINED/RETRYABLE/
  * FENCED/CLOSED, provider WOULD_BLOCK, unregister, COMMIT_UNKNOWN storage,

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Ring-queue drop_sequence wrap + boundary + random survivor integrity.
  */

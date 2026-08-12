@@ -9,6 +9,7 @@ targets are outside this deterministic offline check.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import re
@@ -36,6 +37,13 @@ REMOTE_SCHEMES = {
     "plugin",
     "ssh",
 }
+LANGUAGE_POLICY_BEGIN = "<!-- ninlil-doc-language-policy-v1:begin -->"
+LANGUAGE_POLICY_END = "<!-- ninlil-doc-language-policy-v1:end -->"
+LANGUAGE_POLICY_SCOPE = "*.md"
+LANGUAGE_POLICY_TRANSLATION_STATUS = (
+    "SOURCE_LANGUAGE_RECORDED_NO_NORMATIVE_TRANSLATION"
+)
+LANGUAGE_POLICY_SOURCE_LANGUAGES = {"en", "ja"}
 
 
 def _tracked_markdown(root: pathlib.Path) -> list[pathlib.Path]:
@@ -132,6 +140,107 @@ def _has_exact_case(path: pathlib.Path) -> bool:
     return True
 
 
+def _language_policy_errors(root: pathlib.Path) -> list[str]:
+    """Keep every top-level docs source in one explicit language roster."""
+    index = root / "docs" / "README.md"
+    if not index.is_file():
+        return []
+    text = index.read_text(encoding="utf-8")
+    if text.count(LANGUAGE_POLICY_BEGIN) != 1 or text.count(LANGUAGE_POLICY_END) != 1:
+        return ["docs/README.md: language policy markers must occur exactly once"]
+    middle = text.split(LANGUAGE_POLICY_BEGIN, 1)[1].split(LANGUAGE_POLICY_END, 1)[0]
+    match = re.fullmatch(r"\s*```json\s*\n(?P<body>.*?)\n```\s*", middle, re.DOTALL)
+    if match is None:
+        return ["docs/README.md: language policy must be one live JSON fence"]
+    duplicate_keys: list[str] = []
+
+    def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                duplicate_keys.append(key)
+            result[key] = value
+        return result
+
+    try:
+        policy = json.loads(
+            match.group("body"), object_pairs_hook=reject_duplicate_keys
+        )
+    except json.JSONDecodeError as exc:
+        return [f"docs/README.md: invalid language policy JSON: {exc}"]
+    if duplicate_keys:
+        return [
+            "docs/README.md: duplicate language policy key(s): "
+            + ", ".join(sorted(set(duplicate_keys)))
+        ]
+    if not isinstance(policy, dict) or set(policy) != {
+        "scope",
+        "documents",
+        "translation_status",
+    }:
+        return ["docs/README.md: language policy fields are not closed"]
+    if policy.get("scope") != LANGUAGE_POLICY_SCOPE:
+        return ["docs/README.md: language policy scope drift"]
+    if (
+        policy.get("translation_status")
+        != LANGUAGE_POLICY_TRANSLATION_STATUS
+    ):
+        return ["docs/README.md: language policy translation status drift"]
+
+    documents = policy.get("documents")
+    if not isinstance(documents, dict) or not documents:
+        return ["docs/README.md: language policy documents must be a non-empty object"]
+    errors: list[str] = []
+    for name, language in documents.items():
+        if (
+            not isinstance(name, str)
+            or pathlib.PurePosixPath(name).name != name
+            or not name.endswith(".md")
+        ):
+            errors.append(
+                f"docs/README.md: invalid language-policy document name {name!r}"
+            )
+        if language not in LANGUAGE_POLICY_SOURCE_LANGUAGES:
+            errors.append(
+                f"docs/README.md: {name}: unsupported source language {language!r}"
+            )
+
+    actual = sorted(
+        path.name
+        for path in index.parent.glob(LANGUAGE_POLICY_SCOPE)
+        if path.is_file()
+    )
+    if not actual:
+        return ["docs/README.md: language policy scope matched no specifications"]
+    listed = sorted(documents)
+    missing = sorted(set(actual) - set(listed))
+    stale = sorted(set(listed) - set(actual))
+    if missing:
+        errors.append(
+            "docs/README.md: language policy missing document(s): "
+            + ", ".join(missing)
+        )
+    if stale:
+        errors.append(
+            "docs/README.md: language policy lists absent document(s): "
+            + ", ".join(stale)
+        )
+
+    numbered = sorted(path.name for path in index.parent.glob("[0-9][0-9]-*.md"))
+    try:
+        reading_order = text.split("## 読む順番", 1)[1].split("## 実装開始条件", 1)[0]
+    except IndexError:
+        return ["docs/README.md: reading-order section markers are incomplete"]
+    for name in numbered:
+        count = len(re.findall(rf"\]\({re.escape(name)}(?:#[^)]+)?\)", reading_order))
+        if count != 1:
+            errors.append(
+                f"docs/README.md: language-policy document {name} "
+                f"must be indexed exactly once (got {count})"
+            )
+    return errors
+
+
 def check(root: pathlib.Path, files: list[pathlib.Path] | None = None) -> list[str]:
     root = root.resolve()
     markdown = _tracked_markdown(root) if files is None else files
@@ -158,6 +267,7 @@ def check(root: pathlib.Path, files: list[pathlib.Path] | None = None) -> list[s
                 errors.append(
                     f"{source.relative_to(root)}: missing or case-mismatched target: {raw}"
                 )
+    errors.extend(_language_policy_errors(root))
     return sorted(set(errors))
 
 
@@ -193,6 +303,66 @@ def self_test() -> None:
         assert any("missing or case-mismatched" in item for item in errors)
         assert any("escapes repository" in item for item in errors)
         assert _all_markdown(root) == sorted([good, bad, target])
+
+        numbered = [docs / "00-a.md", docs / "01-b.md"]
+        for path in numbered:
+            path.write_text(f"# {path.stem}\n", encoding="utf-8")
+        index = docs / "README.md"
+        policy = {
+            "scope": LANGUAGE_POLICY_SCOPE,
+            "documents": {
+                "00-a.md": "ja",
+                "01-b.md": "ja",
+                "README.md": "ja",
+                "bad.md": "en",
+                "target.md": "en",
+            },
+            "translation_status": LANGUAGE_POLICY_TRANSLATION_STATUS,
+        }
+        index.write_text(
+            "# Docs\n\n"
+            f"{LANGUAGE_POLICY_BEGIN}\n"
+            "```json\n"
+            + json.dumps(policy, ensure_ascii=False, indent=2)
+            + "\n```\n"
+            f"{LANGUAGE_POLICY_END}\n\n"
+            "## 読む順番\n\n"
+            "[A](00-a.md)\n[B](01-b.md)\n\n"
+            "## 実装開始条件\n",
+            encoding="utf-8",
+        )
+        assert check(root, [index, *numbered]) == []
+
+        # Source mutation: a newly added docs source must be RED until its
+        # source language is explicitly entered in the central roster.
+        added = docs / "02-new.md"
+        added.write_text("# new\n", encoding="utf-8")
+        assert any(
+            "language policy missing document(s): 02-new.md" in item
+            for item in check(root, [index, *numbered, added])
+        )
+        added.unlink()
+
+        baseline_index = index.read_text(encoding="utf-8")
+        invalid_language = baseline_index.replace(
+            '"01-b.md": "ja"', '"01-b.md": "fr"', 1
+        )
+        assert invalid_language != baseline_index
+        index.write_text(invalid_language, encoding="utf-8")
+        assert any(
+            "01-b.md: unsupported source language 'fr'" in item
+            for item in check(root, [index, *numbered])
+        )
+        index.write_text(baseline_index, encoding="utf-8")
+
+        index.write_text(
+            index.read_text(encoding="utf-8").replace("[B](01-b.md)\n", ""),
+            encoding="utf-8",
+        )
+        assert any(
+            "01-b.md must be indexed exactly once" in item
+            for item in check(root, [index, *numbered])
+        )
     print("markdown link gate self-test: ok")
 
 

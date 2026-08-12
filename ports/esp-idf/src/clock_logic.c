@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "clock_logic.h"
 
 #include <stddef.h>

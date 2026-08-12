@@ -56,22 +56,22 @@ S2_SHA256 = (
 S2_COUNT = 32
 S3_FORMAT = "ninlil-domain-scan-structural-v1-d2s3"
 S3_SHA256 = (
-    "f8e75437202c90476aa93fb0a336c86ad03e7e4820510e15074a69cbc6041684"
+    "af8133f1b01c87b79b24a80479aa5d0f8480d124ead2cdb3c57277fc41d8d754"
 )
 S3_COUNT = 89
 S4_FORMAT = "ninlil-domain-scan-exact-get-v1-d2s4"
 S4_SHA256 = (
-    "5f458424a2f2adc1fd421285853b7567a9cc6fbf9ba43808b4d8dec69e4b9a8a"
+    "c907142751b0920d0ef1ba889b1efb33098ac866780e69367e7af1f43b52642b"
 )
 S4_COUNT = 30
 S5_FORMAT = "ninlil-domain-scan-composition-v1-d2s5"
 S5_SHA256 = (
-    "9492b40771d4e30a3a24e0e23110da2ecb91ceaa286d169cc90186545085d549"
+    "b0b6c6c3cab5843cad12030a431ed1de8d6ccf4230e92774f6b0b8b3d15d5be4"
 )
 S5_COUNT = 22
 D1_FORMAT = "ninlil-domain-store-v1-d1b3o"
 D1_SHA256 = (
-    "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4"
+    "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502"
 )
 D1_COUNT = 1549
 

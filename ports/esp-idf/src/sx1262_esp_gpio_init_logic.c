@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "sx1262_esp_gpio_init_logic.h"
 
 #include <stddef.h>

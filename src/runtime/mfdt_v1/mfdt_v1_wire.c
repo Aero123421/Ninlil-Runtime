@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ADR-0021 exact wire encode/decode (BIND52 + OPEN/PAGE/CHUNK/responses).
  * Independent of lab FSM; used by engine and KAT tests.
  */
@@ -19,6 +20,20 @@ static int bytes_zero(const uint8_t *bytes, size_t len)
         any = (uint8_t)(any | bytes[i]);
     }
     return any == 0u;
+}
+
+static int ranges_overlap(const void *left, size_t left_len,
+                          const void *right, size_t right_len)
+{
+    const uintptr_t l = (uintptr_t)left;
+    const uintptr_t r = (uintptr_t)right;
+    if (left == NULL || right == NULL || left_len == 0u || right_len == 0u) {
+        return 0;
+    }
+    if (l > UINTPTR_MAX - left_len || r > UINTPTR_MAX - right_len) {
+        return 1;
+    }
+    return l < r + right_len && r < l + left_len;
 }
 
 static int text_id_ok(const uint8_t *bytes, uint16_t len, int namespace_id)
@@ -321,11 +336,51 @@ int ninlil_mfdt_v1_encode_page(const uint8_t transfer_id[16], uint32_t revision,
                                uint16_t *page_len_out)
 {
     uint8_t dig[32];
-    /* domain(11)+tid(16)+rev(4)+md(32)+4*u16(8)+entries(22*40)=951; BSS not stack. */
-    static uint8_t tmp[11u + 16u + 4u + 32u + 8u + 22u * 40u];
-    size_t n = 0u;
-    if (page_out == NULL || page_len_out == NULL || entry_count == 0u ||
-        entry_count > NINLIL_MFDT_V1_ENTRIES_PER_PAGE || entries == NULL) {
+    uint16_t entry_index;
+    size_t entry_bytes;
+    size_t output_len;
+    size_t preimage_len;
+    if (transfer_id == NULL || manifest_digest == NULL || page_out == NULL ||
+        page_len_out == NULL || entries == NULL || page_count == 0u ||
+        page_count > NINLIL_MFDT_V1_MAX_PAGES || page_index >= page_count ||
+        entry_count == 0u ||
+        entry_count > NINLIL_MFDT_V1_ENTRIES_PER_PAGE ||
+        first_chunk_index !=
+            (uint16_t)(page_index * NINLIL_MFDT_V1_ENTRIES_PER_PAGE) ||
+        (page_index + 1u < page_count &&
+         entry_count != NINLIL_MFDT_V1_ENTRIES_PER_PAGE) ||
+        (uint32_t)first_chunk_index + (uint32_t)entry_count >
+            NINLIL_MFDT_V1_MAX_CHUNKS) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
+    }
+    entry_bytes = (size_t)entry_count * 40u;
+    output_len = 92u + entry_bytes;
+    for (entry_index = 0u; entry_index < entry_count; ++entry_index) {
+        const uint8_t *entry = entries + (size_t)entry_index * 40u;
+        const uint16_t chunk_index =
+            (uint16_t)(first_chunk_index + entry_index);
+        const uint16_t chunk_length = ninlil_mfdt_v1_get_u16(entry + 2u);
+        const int is_final_entry =
+            page_index + 1u == page_count && entry_index + 1u == entry_count;
+        if (ninlil_mfdt_v1_get_u16(entry) != chunk_index ||
+            ninlil_mfdt_v1_get_u32(entry + 4u) !=
+                (uint32_t)chunk_index * NINLIL_MFDT_V1_CHUNK_SIZE ||
+            (is_final_entry == 0 &&
+             chunk_length != NINLIL_MFDT_V1_CHUNK_SIZE) ||
+            (is_final_entry != 0 &&
+             (chunk_length == 0u ||
+              chunk_length > NINLIL_MFDT_V1_CHUNK_SIZE)) ||
+            bytes_zero(entry + 8u, 32u)) {
+            return NINLIL_MFDT_V1_ERR_PARAM;
+        }
+    }
+    /* Exact final-entry alias is supported; every other input overlap fails. */
+    if ((entries != page_out + 92 &&
+         ranges_overlap(entries, entry_bytes, page_out, output_len)) ||
+        ranges_overlap(transfer_id, 16u, page_out, output_len) ||
+        ranges_overlap(manifest_digest, 32u, page_out, output_len) ||
+        ranges_overlap(page_len_out, sizeof(*page_len_out), page_out,
+                       output_len)) {
         return NINLIL_MFDT_V1_ERR_PARAM;
     }
     ninlil_mfdt_v1_bind52(transfer_id, revision, manifest_digest, page_out);
@@ -333,29 +388,23 @@ int ninlil_mfdt_v1_encode_page(const uint8_t transfer_id[16], uint32_t revision,
     ninlil_mfdt_v1_put_u16(page_out + 54, page_count);
     ninlil_mfdt_v1_put_u16(page_out + 56, first_chunk_index);
     ninlil_mfdt_v1_put_u16(page_out + 58, entry_count);
-    /* page_digest */
-    (void)memcpy(tmp + n, "NM3-PAGE-V1", 11u);
-    n = 11u;
-    (void)memcpy(tmp + n, transfer_id, 16u);
-    n += 16u;
-    ninlil_mfdt_v1_put_u32(tmp + n, revision);
-    n += 4u;
-    (void)memcpy(tmp + n, manifest_digest, 32u);
-    n += 32u;
-    ninlil_mfdt_v1_put_u16(tmp + n, page_index);
-    n += 2u;
-    ninlil_mfdt_v1_put_u16(tmp + n, page_count);
-    n += 2u;
-    ninlil_mfdt_v1_put_u16(tmp + n, first_chunk_index);
-    n += 2u;
-    ninlil_mfdt_v1_put_u16(tmp + n, entry_count);
-    n += 2u;
-    (void)memcpy(tmp + n, entries, (size_t)entry_count * 40u);
-    n += (size_t)entry_count * 40u;
-    ninlil_mfdt_v1_sha256(tmp, n, dig);
+    (void)memmove(page_out + 92, entries, entry_bytes);
+
+    /*
+     * Use the caller's final 972-byte output as the 951-byte digest preimage:
+     * domain || BIND52 || four u16 fields || entries. memmove keeps the exact
+     * final-entry alias safe without process-global or large stack scratch.
+     */
+    (void)memmove(page_out + 11, page_out, 60u);
+    (void)memmove(page_out + 71, page_out + 92, entry_bytes);
+    (void)memcpy(page_out, "NM3-PAGE-V1", 11u);
+    preimage_len = 71u + entry_bytes;
+    ninlil_mfdt_v1_sha256(page_out, preimage_len, dig);
+
+    (void)memmove(page_out + 92, page_out + 71, entry_bytes);
+    (void)memmove(page_out, page_out + 11, 60u);
     (void)memcpy(page_out + 60, dig, 32u);
-    (void)memcpy(page_out + 92, entries, (size_t)entry_count * 40u);
-    *page_len_out = (uint16_t)(92u + entry_count * 40u);
+    *page_len_out = (uint16_t)output_len;
     return NINLIL_MFDT_V1_OK;
 }
 

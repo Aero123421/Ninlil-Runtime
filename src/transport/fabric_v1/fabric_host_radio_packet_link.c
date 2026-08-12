@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "fabric_host_radio_packet_link.h"
 
 #include <string.h>

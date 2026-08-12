@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Header-only static_assert probe for ninlil_time_sample_t.
  * Compiled as a .c TU on host LP64 and (when available) arm-none-eabi ILP32.

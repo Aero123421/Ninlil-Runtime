@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 portable crypto wrapper — validation, alias, candidate publish, zeroize.
  * Private C11. No heap, VLA, OS, or crypto-library headers.

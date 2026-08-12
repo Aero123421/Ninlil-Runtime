@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Deterministic barrier test: concurrent membership_load A then B where A
  * completes after B must not overwrite B's result (logical stale completion).

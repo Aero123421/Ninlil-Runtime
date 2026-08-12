@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host OpenSSL SHA-256 backend for private wifi_v1.
  * Compiled only on Host (not ESP_PLATFORM).

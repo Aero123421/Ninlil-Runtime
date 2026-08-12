@@ -35,7 +35,7 @@ import tempfile
 from typing import Callable, Dict, List, Set, Tuple
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-HOST_CMAKE = REPO_ROOT / "CMakeLists.txt"
+HOST_CMAKE = REPO_ROOT / "cmake" / "ninlil_ctest.cmake"
 
 CROSSROW_FIXTURE_BASENAME = "domain_scan_crossrow_vector_fixture.h"
 CROSSROW_CUSTOM_TARGET = "ninlil_domain_scan_crossrow_vector_fixture"

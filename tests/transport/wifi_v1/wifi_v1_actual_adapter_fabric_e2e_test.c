@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Actual private composition proof:
  * ESP adapter host fake -> production registration wrapper -> real Fabric

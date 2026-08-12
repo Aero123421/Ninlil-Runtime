@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R5 LAB_ONLY profile loader + full §9.3 permit bind matrix host tests.
  *

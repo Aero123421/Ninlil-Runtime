@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 private NRW1 FRAG/LINK wire materialization.
  * AEAD/nonce/SHA only via ninlil_r7_crypto_* (docs/31). No bypass.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_SX1262_SPI_PENDING_LOGIC_H
 #define NINLIL_SX1262_SPI_PENDING_LOGIC_H
 

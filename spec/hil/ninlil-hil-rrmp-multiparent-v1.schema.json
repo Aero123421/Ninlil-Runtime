@@ -39,6 +39,7 @@
         "esp_idf_map_proof",
         "workspace_budget_bytes",
         "workspace_measured_host_bytes",
+        "workspace_includes_storage_scratch",
         "storage_export_max_bytes",
         "storage_piece_scratch_bytes",
         "target_smoke_store_bytes",
@@ -59,12 +60,15 @@
         "workspace_budget_bytes": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 393216
+          "maximum": 786432
         },
         "workspace_measured_host_bytes": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 393216
+          "maximum": 786432
+        },
+        "workspace_includes_storage_scratch": {
+          "const": true
         },
         "storage_export_max_bytes": {
           "type": "integer",
@@ -92,7 +96,7 @@
             "null"
           ],
           "minimum": 1,
-          "maximum": 393216
+          "maximum": 786432
         },
         "esp_runtime_minimum_free_psram_bytes": {
           "type": [

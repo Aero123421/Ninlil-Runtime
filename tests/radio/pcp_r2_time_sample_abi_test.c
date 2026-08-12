@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Compile-time + runtime verification of ninlil_time_sample_t field offsets
  * from the real platform.h (not a Python hardcode).

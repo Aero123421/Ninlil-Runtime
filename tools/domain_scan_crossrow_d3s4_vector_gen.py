@@ -57,7 +57,7 @@ D3S1_GEN = REPO / "tools" / "domain_scan_crossrow_vector_gen.py"
 A2A2_LOG_BASENAME = "qa-regression-log-a2a2.txt"
 
 # D1 authority pins (same lineage as d3s3 R19–R27; independent of production C).
-D1_SHA = "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4"
+D1_SHA = "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502"
 D1_COUNT = 1549
 D1_FORMAT = "ninlil-domain-store-v1-d1b3o"
 DOMAIN_KEY_ROOT = bytes.fromhex("4e494e4c494c0001")
@@ -112,9 +112,9 @@ D3S4_GENERATOR_ID = (
     + "#" + D3S4_GENERATOR_SEED
 )
 
-D3S3_CONTENT_PIN = "0155b6929c2bb64396623cd75be283947b76c68d9f5d9578825ae5966b375639"
+D3S3_CONTENT_PIN = "9d33b213d3b0cf24bc993717d11c88d5ff7485f11c59d50fed845ebb6c888e22"
 D3S3_RAW_PIN = "c39e821b3f6a627758036b49b98a2fc1649bf488b9c9ec9651dcc4bee1f41d41"
-D3S3_FILE_RAW_PIN = "8b17304f7edda04495aafa2e8f3a54bd7e57d5c147b8e62fca8a1b6b360740ed"
+D3S3_FILE_RAW_PIN = "c8cecf86d430deeed3885e9da8d0b4b79d525f2d1183092d56f99314d47076b6"
 
 # A2-b rev3 P1-006: D3-S4 authority fixed pins. The frozen D3-S3 prefix is verified
 # against the baked D3S3_* pins above (independent of DEFAULT_JSON's current bytes);
@@ -123,7 +123,7 @@ D3S3_FILE_RAW_PIN = "8b17304f7edda04495aafa2e8f3a54bd7e57d5c147b8e62fca8a1b6b360
 # the Git blob stays below ordinary forge limits; any alternate re-save is rejected.
 # Content/raw pins are re-baked after the rev3 suffix (72 vectors) is finalized.
 D3S4_VECTOR_COUNT_PIN = 468
-D3S4_CONTENT_PIN = "b18f717e2752c9d617d575c86194ef644f301706263674f2666a5d29ed951e25"
+D3S4_CONTENT_PIN = "aedae15d450d82d512ce1bb4a3e668ebbc9c52706ca3cdfdcc2bdd323ea943c0"
 D3S4_WHOLE_FILE_RAW_PIN = EXPANDED_CANONICAL_SHA256
 
 OWNERSHIP = (

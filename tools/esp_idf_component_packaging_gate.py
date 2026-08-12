@@ -14,6 +14,7 @@ PORTABLE_AUTHORITY = REPO_ROOT / "cmake" / "ninlil_runtime_private_sources.cmake
 PORT_AUTHORITY = REPO_ROOT / "cmake" / "ninlil_esp_idf_port_sources.cmake"
 STORAGE_AUTHORITY = REPO_ROOT / "cmake" / "ninlil_esp_storage_sources.cmake"
 HOST_CMAKE = REPO_ROOT / "CMakeLists.txt"
+TEST_CMAKE = REPO_ROOT / "cmake" / "ninlil_ctest.cmake"
 COMPONENT_CMAKE = (
     REPO_ROOT / "ports" / "esp-idf" / "components" / "ninlil" / "CMakeLists.txt"
 )
@@ -767,7 +768,9 @@ def _forbidden_shell_indirection(script: str) -> str | None:
     body = "\n".join(lines)
     patterns = [
         (r"\beval\b", "eval"),
-        (r"\bsource\b", "source"),
+        # Match the shell builtin token, not option names such as
+        # ``--only-source`` used by stack-usage gates.
+        (r"(?<![-A-Za-z0-9_])source(?=\s)", "source"),
         (r"(?<!\S)\.\s+/", "dot-source"),
         (r"\balias\s+", "alias"),
         (r"\bfunction\s+", "function"),
@@ -941,6 +944,36 @@ def assert_esp_idf_docker_run_authority(
     # Env values must not embed docker.
     assert_env_docker_dataflow(workflow_text)
 
+    # The V1 board build is the only current target evidence for the Fabric
+    # radio mapper/NFL1/private SHA stack frames. Bind the exact active command
+    # rather than accepting a token in a comment or a different build path.
+    launcher_commands = shell_logical_commands(script_text)
+    expected_stack_command = (
+        "python3 tools/esp_storage_stack_gate.py --require-su --max 2048 "
+        "--only-source fabric_private_util.c --only-source nfl1_codec.c "
+        "--only-source v1_lab_radio_mapping.c "
+        '"${V1_BOARD_DIR}/esp-idf/ninlil"'
+    )
+    stack_commands = [
+        command
+        for command in launcher_commands
+        if "tools/esp_storage_stack_gate.py" in command
+    ]
+    if stack_commands != [expected_stack_command]:
+        fail(
+            "V1 board exact-source stack gate command drift: "
+            f"{stack_commands!r}"
+        )
+    board_assignments = [
+        command
+        for command in launcher_commands
+        if re.match(r"^V1_BOARD_DIR=", command)
+    ]
+    if board_assignments != [
+        "V1_BOARD_DIR=ports/esp-idf/radio_hil_app/build-v1-board"
+    ]:
+        fail(f"V1 board build-directory authority drift: {board_assignments!r}")
+
     # Record script hash for diagnostics (not a floating claim).
     print(
         f"esp_idf docker authority: script={ESP_IDF_DOCKER_SCRIPT_REL} "
@@ -1023,14 +1056,16 @@ def check() -> None:
     numeric = pin_numeric(pin)
 
     host = read_text(HOST_CMAKE)
+    host_tests = read_text(TEST_CMAKE)
+    host_graph = host + "\n" + host_tests
     if "ninlil_runtime_private_sources.cmake" not in host:
         fail("host CMakeLists missing private authority")
-    if "ninlil_esp_idf_port_sources.cmake" not in host:
-        fail("host CMakeLists missing ESP-IDF port authority")
-    if "ninlil_esp_storage_sources.cmake" not in host:
-        fail("host CMakeLists missing storage authority")
-    if "esp_idf_port_logic" not in host:
-        fail("host missing esp_idf_port_logic test")
+    if "ninlil_esp_idf_port_sources.cmake" not in host_graph:
+        fail("host CMake graph missing ESP-IDF port authority")
+    if "ninlil_esp_storage_sources.cmake" not in host_graph:
+        fail("host CMake graph missing storage authority")
+    if "esp_idf_port_logic" not in host_tests:
+        fail("host test authority missing esp_idf_port_logic test")
 
     component = read_text(COMPONENT_CMAKE)
     if "ninlil_esp_idf_port_sources.cmake" not in component:
@@ -1412,31 +1447,32 @@ def check() -> None:
         fail("owner logic test has vacuous OR geometry assertion")
 
     host = read_text(HOST_CMAKE)
-    if "owner_cell_agent_logic" not in host:
-        fail("host CMakeLists missing owner_cell_agent_logic test")
+    host_tests = read_text(TEST_CMAKE)
+    if "owner_cell_agent_logic" not in host_tests:
+        fail("host test authority missing owner_cell_agent_logic test")
     if "NINLIL_ENABLE_POINTER_COMPARE_SANITIZER" not in host:
         fail("host CMakeLists missing pointer-compare sanitizer option")
-    if "esp_storage_dual_slot_conformance" not in host:
-        fail("host CMakeLists missing esp_storage_dual_slot_conformance test")
-    if "esp_storage_stack_gate" not in host:
-        fail("host CMakeLists missing esp_storage_stack_gate test")
-    if "esp_storage_wear_gate" not in host:
-        fail("host CMakeLists missing esp_storage_wear_gate test")
-    if "esp_storage_budget_gate" not in host:
-        fail("host CMakeLists missing esp_storage_budget_gate test")
-    if "esp_storage_public_api_gate.py" not in host:
-        fail("host CMakeLists missing esp_storage_public_api_gate test")
+    if "esp_storage_dual_slot_conformance" not in host_tests:
+        fail("host test authority missing esp_storage_dual_slot_conformance test")
+    if "esp_storage_stack_gate" not in host_tests:
+        fail("host test authority missing esp_storage_stack_gate test")
+    if "esp_storage_wear_gate" not in host_tests:
+        fail("host test authority missing esp_storage_wear_gate test")
+    if "esp_storage_budget_gate" not in host_tests:
+        fail("host test authority missing esp_storage_budget_gate test")
+    if "esp_storage_public_api_gate.py" not in host_tests:
+        fail("host test authority missing esp_storage_public_api_gate test")
     # Host CTest archive is the dual-slot host library (includes host media
     # test seams). Kind must be host; target kind here would false-fail on
     # intentional ninlil_port_esp_storage_host_media_ops.
-    if "--archive-kind host" not in host:
+    if "--archive-kind host" not in host_tests:
         fail(
-            "host CMakeLists public_api_gate must pass --archive-kind host "
+            "host test authority public_api_gate must pass --archive-kind host "
             "(refuse missing kind / silent target rules on host archive)"
         )
-    if "--archive-kind target" in host:
+    if "--archive-kind target" in host_tests:
         fail(
-            "host CMakeLists must not pass --archive-kind target "
+            "host test authority must not pass --archive-kind target "
             "(official ESP archive is gated in esp-idf.yml)"
         )
 
@@ -1653,6 +1689,10 @@ set(TARGET
         "ports/esp-idf/storage/esp/media.c",
     ]:
         fail("self-test recursive source expansion")
+    if _forbidden_shell_indirection("tool --only-source codec.c") is not None:
+        fail("self-test --only-source false positive")
+    if _forbidden_shell_indirection("source ./untrusted.sh") != "source":
+        fail("self-test source builtin detection")
 
     # Never write ROOT workflow/script — in-memory mutations only.
     st = CI_WORKFLOW.stat()
@@ -1728,6 +1768,39 @@ set(TARGET
         script_original.replace(
             f"--platform {ESP_IDF_PLATFORM}",
             "--platform linux/arm64",
+            1,
+        ),
+    )
+    exact_stack = (
+        "python3 tools/esp_storage_stack_gate.py \\\n"
+        "  --require-su \\\n"
+        "  --max 2048 \\\n"
+        "  --only-source fabric_private_util.c \\\n"
+        "  --only-source nfl1_codec.c \\\n"
+        "  --only-source v1_lab_radio_mapping.c \\\n"
+        '  "${V1_BOARD_DIR}/esp-idf/ninlil"'
+    )
+    if exact_stack not in script_original:
+        fail("self-test cannot locate V1 board exact-source stack command")
+    reject_script(
+        "deleted V1 board stack invocation",
+        script_original.replace(exact_stack, "echo stack-gate-removed", 1),
+    )
+    reject_script(
+        "comment-only V1 board stack decoy",
+        script_original.replace(exact_stack, "# " + exact_stack, 1),
+    )
+    reject_script(
+        "wrong V1 board stack source",
+        script_original.replace(
+            "--only-source nfl1_codec.c", "--only-source unrelated.c", 1
+        ),
+    )
+    reject_script(
+        "wrong V1 board stack root",
+        script_original.replace(
+            '"${V1_BOARD_DIR}/esp-idf/ninlil"',
+            '"${V1_PEER_DIR}/esp-idf/ninlil"',
             1,
         ),
     )

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_store.h"
 #include "rrmp_codec.h"
 #include "rrmp_util.h"

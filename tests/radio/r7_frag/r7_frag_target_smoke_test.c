@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host runner for ninlil_r7_frag_target_smoke_run (deterministic vectors).
  */

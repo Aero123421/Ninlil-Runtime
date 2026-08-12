@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_R7_FRAG_PROD_ORCH_H
 #define NINLIL_R7_FRAG_PROD_ORCH_H
 
@@ -20,6 +21,7 @@
 #include "r7_frag_ack_ledger.h"
 #include "r7_frag_adapters.h"
 #include "r7_frag_checked_issue.h"
+#include "r7_frag_issue_coordinator.h"
 #include "r7_frag_state.h"
 #include "radio_hal.h"
 /* Intentionally no r7_frag_session.h: production orch must not pull lab
@@ -322,9 +324,13 @@ typedef struct ninlil_r7_frag_prod_bind {
     ninlil_r7_frag_ack_ledger_t *ack_ledger;
 
     /*
-     * Optional R5 issue registry (docs/30 §15.3.1). NULL ⇒ process-static.
-     * Caller/instance-owned for isolation tests.
+     * Caller-owned issue pipeline state (docs/30 §15.3). The embedded
+     * coordinator is the global eight-slot domain for this Runtime/Cell
+     * owner. The embedded R5 registry is used when issue_registry is NULL;
+     * an explicit pointer may share the registry with the same L1 owner.
      */
+    ninlil_r7_frag_issue_coordinator_t issue_coordinator;
+    ninlil_r7_r5_issue_registry_t issue_registry_owned;
     ninlil_r7_r5_issue_registry_t *issue_registry;
 
     /*

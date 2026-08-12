@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Adversarial shape/alias acceptance for the private typed MFDT store adapter.
  * The fixture deliberately violates provider output contracts.  The adapter

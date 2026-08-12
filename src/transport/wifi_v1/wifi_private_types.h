@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Wi-Fi v1 types (ADR-0018). Default-OFF. Not installed.
  */

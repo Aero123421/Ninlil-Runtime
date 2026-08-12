@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Fault / transactional FULL / expiry / adversarial geometry tests.
  */
 #include "mfdt_v1.h"
@@ -6,6 +7,7 @@
 #include <string.h>
 
 static int g_fail;
+static ninlil_mfdt_v1_workspace_t g_cu_scratch;
 static void expect(int c, const char *m) {
   if (!c) { fprintf(stderr, "FAIL: %s\n", m); g_fail = 1; }
 }
@@ -328,12 +330,16 @@ static void test_cu_after_full_boundary(void) {
   expect(ninlil_mfdt_v1_lab_full_begin(&st) == 0, "b");
   expect(ninlil_mfdt_v1_lab_put(&st, key, oldv, 8) == 0, "p");
   expect(ninlil_mfdt_v1_lab_full_commit(&st) == 0, "c");
-  c = ninlil_mfdt_v1_cu_observe_key(&st, key, oldv, 8, 1, newv, 8, 1);
+  c = ninlil_mfdt_v1_cu_observe_key(
+      &st, g_cu_scratch.bytes, sizeof(g_cu_scratch.bytes), key,
+      oldv, 8, 1, newv, 8, 1);
   expect(c == NINLIL_MFDT_V1_CU_OLD, "old image");
   expect(ninlil_mfdt_v1_lab_full_begin(&st) == 0, "b2");
   expect(ninlil_mfdt_v1_lab_put(&st, key, newv, 8) == 0, "p2");
   expect(ninlil_mfdt_v1_lab_full_commit(&st) == 0, "c2");
-  c = ninlil_mfdt_v1_cu_observe_key(&st, key, oldv, 8, 1, newv, 8, 1);
+  c = ninlil_mfdt_v1_cu_observe_key(
+      &st, g_cu_scratch.bytes, sizeof(g_cu_scratch.bytes), key,
+      oldv, 8, 1, newv, 8, 1);
   expect(c == NINLIL_MFDT_V1_CU_NEW, "new image");
 }
 

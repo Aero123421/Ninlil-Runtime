@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Ninlil POSIX TLS Fabric reference port.
  *
@@ -5,6 +6,15 @@
  * operating system owns network association; this object owns one
  * nonblocking TCP/TLS connection (or one listener and accepted connection)
  * and exposes it only through Ninlil::fabric_v1.
+ *
+ * ADR-0030 is normative. The caller owns the workspace through successful
+ * destroy. create copies path, namespace and vtable values; function code and
+ * non-NULL user pointees remain caller-owned through destroy. A registration
+ * handle is a port-owned borrow through unregister_poll(done=1). Calls are
+ * owner-context-only and reject re-entry except the documented controlled
+ * registration handshake. ninlil_posix_tls_status_t is invocation status;
+ * operational state/reason and Fabric token completion are separate. TLS/TCP
+ * completion is not Application success, and COMMIT_UNKNOWN fences the port.
  */
 #ifndef NINLIL_POSIX_TLS_V1_H
 #define NINLIL_POSIX_TLS_V1_H

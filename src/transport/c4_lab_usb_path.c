@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "c4_lab_usb_path.h"
 
 #include <string.h>

@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Private MFDT session negotiation + NCL1 DATA carrier demux.
  *
  * MFN1 is deliberately independent from the Accepted HELLO
@@ -17,6 +18,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct ninlil_mfdt_v1_spine_ctx;
 
 #define NINLIL_MFDT_V1_NEGOTIATE_OFFER   ((uint8_t)0x34u)
 #define NINLIL_MFDT_V1_NEGOTIATE_ACCEPT  ((uint8_t)0x35u)
@@ -111,11 +114,15 @@ int ninlil_mfdt_v1_session_carrier_ncl1_data_ok(
  * Demux one NCG1 DATA payload: if MFDT type 0x36..0x43 and session admits,
  * forward to spine receive. Returns 1 if consumed, 0 if not MFDT, <0 error.
  */
-int ninlil_mfdt_v1_session_on_ncg1_data(const ninlil_mfdt_v1_session_t *s,
-                                        const uint8_t *payload, size_t len);
+int ninlil_mfdt_v1_session_on_ncg1_data(
+    const ninlil_mfdt_v1_session_t *s,
+    struct ninlil_mfdt_v1_spine_ctx *spine,
+    const uint8_t *payload, size_t len);
 
-/* Sync seam config from negotiated session. */
-void ninlil_mfdt_v1_session_apply_to_seam(const ninlil_mfdt_v1_session_t *s);
+/* Explicitly sync one caller-owned spine; session mutation has no side effect. */
+int ninlil_mfdt_v1_session_apply_to_spine(
+    const ninlil_mfdt_v1_session_t *s,
+    struct ninlil_mfdt_v1_spine_ctx *spine);
 
 #ifdef __cplusplus
 }

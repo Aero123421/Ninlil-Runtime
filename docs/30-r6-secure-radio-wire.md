@@ -250,6 +250,7 @@
 **SEMANTIC: PRE_CONTEXT_INSTALL_0x11_APP_TXRX0**  
 **SEMANTIC: R7_IMPLEMENTATION_NOT_IN_R6**  
 **SEMANTIC: L1_RADIO_COORDINATOR_CLOSED**  
+**SEMANTIC: R7_ISSUE_STATE_CALLER_OWNED**  
 **SEMANTIC: W1_CODEC_NO_R2_R5_COMPILE_DEP**  
 **SEMANTIC: W1_IMMUTABLE_CANDIDATE_TYPED_EVENT_ONLY**  
 **SEMANTIC: RECOVERY_SERIES_SINGLE_PIPELINE_CLOSED**  
@@ -2617,6 +2618,7 @@ Hop attempt count increments only when Permit consume succeeds and the sole TX e
 - Candidate uses exactly one owner row from §11.2.1 and is bounded by its immutable **enclosing owner deadline**; LINK DATA also obeys its group absolute deadline.  
 - Issue and full-pipeline retry counters count the first call and are each exact max **8 calls per candidate**. `calls_used` for R1 **includes the current call**. Every OPEN retry uses a positive fixed backoff, never same-tick spin: `permit_issue_retry_at = checked_add(now_mono, permit_issue_retry_ms)` or `permit_tx_retry_at = checked_add(current_accepted_now_mono, permit_tx_retry_ms)` with `current_accepted_now_mono` the sole accepted R2-authority-domain sample (§15.3.5). Overflow, `calls_used=8` without success, Permit/owner/(valid) group deadline reached, untrusted sample, epoch mismatch, or fence ⇒ for **issued** after OK_ISSUED: **RETRY_GATE_CLOSED** / `TX_QUARANTINE` then DRAIN (never local unissued-style terminal/release); for **unissued** issue path: owner/group terminal per PRE_R1.  
 - At most **8 issued Permits globally** (R2 bound). **L1 Radio Coordinator** orders valid issued snapshots by ascending `permit_sequence`; only FIFO head may enter `transmit_with_permit`. Candidate selection before issue is fair round-robin across ready owners, but issued-Permit FIFO takes precedence. Restart reuses no volatile snapshot: new issue remains TX 0 until §15.3.3 exported private-module drain proves R2 outstanding zero, rebuilds R5 without assignment, and the U5 owner completes authenticated SET L0–L4 RESTORE/DUP or L5–L9 APPLY (ARW alone never restores full body). Local discard of an issued Permit (or candidate-only drop while issued may exist) is forbidden.  
+- The private C realization of that global bound is **one caller-owned L1 coordinator domain**: all candidates governed by the same coordinator share one owner object and its eight slots. Coordinator slots/reentry, R5 issue registry/reentry, and profile-activation replay state MUST NOT be file-static or process-global mutable state. Separate Runtime/Cell owners do not share those bytes; teardown secure-zeroes the complete owner state. This changes neither the eight-reference bound within one coordinator domain nor any wire/storage/public ABI contract.  
 - Denied/unconsumed is **not** a sent/air attempt, but the crypto counter and preparation slot remain burned.
 
 #### 15.3.1 R7 private R2 checked-issue primitive (Normative blocker)

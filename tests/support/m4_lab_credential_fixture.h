@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_M4_LAB_CREDENTIAL_FIXTURE_H
 #define NINLIL_M4_LAB_CREDENTIAL_FIXTURE_H
 

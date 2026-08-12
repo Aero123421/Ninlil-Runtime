@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * M4 LAB Join/Attachment — C1 stateless primitives implementation.
  */

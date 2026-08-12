@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TEST_SCRIPTED_STORAGE_SPY_H
 #define NINLIL_TEST_SCRIPTED_STORAGE_SPY_H
 

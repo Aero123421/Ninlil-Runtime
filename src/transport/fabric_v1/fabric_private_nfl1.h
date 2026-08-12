@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Compatibility shim: canonical NFL1 authority is nfl1_codec.h/.c.
  * Do not reintroduce a second encode/decode implementation here.

@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Private NCL1 framing for MFN1 0x34..0x35 and MFDT 0x36..0x43 over NCG1
  * DATA.
  */

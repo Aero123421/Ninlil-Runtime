@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB item 9: C4/C5-LAB integrated path E2E (submit -> secure wire -> USB/radio).
  */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "c5_lab_radio_path.h"
 
 #include "airtime_calculator.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_test_common.h"
 
 #include <stdint.h>
@@ -37,6 +38,7 @@ static void make_token(uint32_t ordinal, uint8_t token[32])
 }
 
 static int install_scope(
+    ninlil_rrmp_owner_t *owner,
     const uint8_t scope[16],
     uint8_t path_seed,
     uint8_t parent_seed,
@@ -68,7 +70,7 @@ static int install_scope(
         req.parent_set_digest32, fixture->parent_digest.bytes, 32u);
     memcpy(
         req.parent_runtime_id[0], fixture->parent_id.bytes, 16u);
-    if (ninlil_parent_set_install(&req, &out) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(owner, &req, &out) != NINLIL_PARENT_OK) {
         return 0;
     }
 
@@ -128,6 +130,7 @@ static int make_prepare(
 }
 
 static int complete_handoff(
+    ninlil_rrmp_owner_t *owner,
     const scope_fixture_t *fixture,
     const uint8_t token[32],
     uint64_t revision)
@@ -160,7 +163,7 @@ static int complete_handoff(
             return 0;
         }
     }
-    status = rrmp_test_owner_prepare_v2(
+    status = rrmp_test_owner_prepare_v2(owner,
         &prep, &old_tuple, revision, &new_tuple, &out);
     if (status != NINLIL_PARENT_OK) {
         fprintf(stderr, "prepare revision=%llu status=%u\n",
@@ -168,7 +171,7 @@ static int complete_handoff(
         return 0;
     }
 
-    status = rrmp_test_owner_fence_v2(
+    status = rrmp_test_owner_fence_v2(owner,
         fixture->scope, token, &old_tuple, proof, &out);
     if (status != NINLIL_PARENT_OK) {
         fprintf(stderr, "fence revision=%llu status=%u\n",
@@ -176,7 +179,7 @@ static int complete_handoff(
         return 0;
     }
 
-    status = rrmp_test_authority_commit_v2(
+    status = rrmp_test_authority_commit_v2(owner,
         fixture->scope,
         &old_tuple,
         &new_tuple,
@@ -198,7 +201,7 @@ static int complete_handoff(
     memcpy(
         activate.commit_receipt_digest32, commit_digest.bytes, 32u);
     activate.now_ms = 1000000u;
-    status = ninlil_parent_owner_activate(&activate, &out);
+    status = ninlil_parent_owner_activate(owner, &activate, &out);
     if (status != NINLIL_PARENT_OK) {
         fprintf(stderr, "activate revision=%llu status=%u\n",
             (unsigned long long)revision, status);
@@ -213,7 +216,7 @@ static int complete_handoff(
         fixture->parent_digest.bytes,
         32u);
     observe.now_ms = 1000000u;
-    status = ninlil_parent_endpoint_observe(&observe, &out);
+    status = ninlil_parent_endpoint_observe(owner, &observe, &out);
     if (status != NINLIL_PARENT_OK) {
         fprintf(stderr, "observe revision=%llu status=%u\n",
             (unsigned long long)revision, status);
@@ -225,7 +228,7 @@ static int complete_handoff(
     memcpy(retire.owner_scope_id, fixture->scope, 16u);
     memcpy(retire.tombstone_digest32, token, 32u);
     retire.now_ms = 1000000u;
-    status = ninlil_parent_owner_retire(&retire, &out);
+    status = ninlil_parent_owner_retire(owner, &retire, &out);
     if (status != NINLIL_PARENT_OK) {
         fprintf(stderr, "retire revision=%llu status=%u\n",
             (unsigned long long)revision, status);
@@ -320,12 +323,13 @@ int main(void)
     RRMP_CHECK(ninlil_rrmp_owner_bind(owner));
     rrmp_fill_id(scope_a_id, 0x21u);
     rrmp_fill_id(scope_b_id, 0x41u);
-    RRMP_CHECK(install_scope(scope_a_id, 0x61u, 0x31u, &scope_a));
+    RRMP_CHECK(install_scope(
+        owner, scope_a_id, 0x61u, 0x31u, &scope_a));
 
     make_token(1u, first_token);
     for (ordinal = 1u; ordinal <= TOKEN_CASE_COUNT; ++ordinal) {
         make_token(ordinal, token);
-        if (!complete_handoff(&scope_a, token, ordinal)) {
+        if (!complete_handoff(owner, &scope_a, token, ordinal)) {
             fprintf(stderr, "handoff failed ordinal=%u\n", ordinal);
             return 1;
         }
@@ -343,7 +347,7 @@ int main(void)
     RRMP_CHECK(make_prepare(
         &scope_a, first_token, TOKEN_CASE_COUNT + 1u, &same_scope_replay));
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(owner,
             &same_scope_replay,
             &current_a,
             TOKEN_CASE_COUNT + 1u,
@@ -351,11 +355,12 @@ int main(void)
             &out),
         NINLIL_PARENT_TOKEN_REPLAY);
 
-    RRMP_CHECK(install_scope(scope_b_id, 0x71u, 0x51u, &scope_b));
+    RRMP_CHECK(install_scope(
+        owner, scope_b_id, 0x71u, 0x51u, &scope_b));
     RRMP_CHECK(make_prepare(
         &scope_b, first_token, 1u, &cross_scope_replay));
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(owner,
             &cross_scope_replay,
             &absent,
             TOKEN_CASE_COUNT + 1u,
@@ -367,7 +372,7 @@ int main(void)
     RRMP_CHECK(make_prepare(
         &scope_a, token, TOKEN_CASE_COUNT + 1u, &boundary_257));
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(owner,
             &boundary_257,
             &current_a,
             TOKEN_CASE_COUNT + 1u,
@@ -388,7 +393,7 @@ int main(void)
         restarted, g_snapshot, snapshot_len));
     RRMP_CHECK(ninlil_rrmp_owner_bind(restarted));
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(restarted,
             &same_scope_replay,
             &current_a,
             TOKEN_CASE_COUNT + 1u,
@@ -396,7 +401,7 @@ int main(void)
             &out),
         NINLIL_PARENT_TOKEN_REPLAY);
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(restarted,
             &cross_scope_replay,
             &absent,
             TOKEN_CASE_COUNT + 1u,
@@ -404,7 +409,7 @@ int main(void)
             &out),
         NINLIL_PARENT_TOKEN_REPLAY);
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(restarted,
             &boundary_257,
             &current_a,
             TOKEN_CASE_COUNT + 1u,

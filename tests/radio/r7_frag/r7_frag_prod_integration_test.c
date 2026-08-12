@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production-path NRW1 LINK/FRAG private integration:
  *   real N6 (testbuild) + R7 wire AEAD + R2 pcp + R1 HAL + L1 ledger
@@ -2490,6 +2491,7 @@ static void test_prod_adversarial_coordinator_and_cont(void)
 
     /* Authority-scoped admit/begin/hold/resume/complete — no register bypass. */
     {
+        ninlil_r7_frag_issue_coordinator_t coord;
         ninlil_r7_coord_admit_t a;
         uint64_t auth = 0xA11u;
         uint8_t dig_a[32];
@@ -2497,9 +2499,9 @@ static void test_prod_adversarial_coordinator_and_cont(void)
         uint64_t promoted = 0u;
         memset(dig_a, 0xA1, sizeof(dig_a));
         memset(dig_b, 0xB2, sizeof(dig_b));
-        ninlil_r7_frag_issue_coordinator_reset();
+        ninlil_r7_frag_issue_coordinator_init(&coord);
         expect_i("coord empty",
-            (int32_t)ninlil_r7_frag_issue_coordinator_count(), 0);
+            (int32_t)ninlil_r7_frag_issue_coordinator_count(&coord), 0);
         memset(&a, 0, sizeof(a));
         a.authority_token = auth;
         a.permit_sequence = 10u;
@@ -2507,31 +2509,34 @@ static void test_prod_adversarial_coordinator_and_cont(void)
         a.outer_len = 51u;
         memcpy(a.outer_digest, dig_a, 32u);
         expect_i("coord admit head",
-            ninlil_r7_frag_issue_coordinator_admit(&a), NINLIL_R7_COORD_OK);
+            ninlil_r7_frag_issue_coordinator_admit(&coord, &a),
+            NINLIL_R7_COORD_OK);
         a.permit_sequence = 11u;
         a.bind_token = 2u;
         memcpy(a.outer_digest, dig_b, 32u);
         expect_i("coord admit queued",
-            ninlil_r7_frag_issue_coordinator_admit(&a), NINLIL_R7_COORD_QUEUED);
+            ninlil_r7_frag_issue_coordinator_admit(&coord, &a),
+            NINLIL_R7_COORD_QUEUED);
         expect_t("head is 10",
-            ninlil_r7_frag_issue_coordinator_is_head(auth, 10u));
+            ninlil_r7_frag_issue_coordinator_is_head(&coord, auth, 10u));
         expect_t("11 not head",
-            !ninlil_r7_frag_issue_coordinator_is_head(auth, 11u));
+            !ninlil_r7_frag_issue_coordinator_is_head(&coord, auth, 11u));
         expect_i("begin head",
-            ninlil_r7_frag_issue_coordinator_begin_tx(auth, 10u),
+            ninlil_r7_frag_issue_coordinator_begin_tx(&coord, auth, 10u),
             NINLIL_R7_COORD_OK);
         expect_i("hold head",
-            ninlil_r7_frag_issue_coordinator_hold_retry(auth, 10u),
+            ninlil_r7_frag_issue_coordinator_hold_retry(&coord, auth, 10u),
             NINLIL_R7_COORD_OK);
         expect_i("resume held",
-            ninlil_r7_frag_issue_coordinator_resume_tx(auth, 10u),
+            ninlil_r7_frag_issue_coordinator_resume_tx(&coord, auth, 10u),
             NINLIL_R7_COORD_OK);
         expect_i("complete head",
-            ninlil_r7_frag_issue_coordinator_complete(auth, 10u, &promoted),
+            ninlil_r7_frag_issue_coordinator_complete(
+                &coord, auth, 10u, &promoted),
             NINLIL_R7_COORD_OK);
         expect_i("promoted 11", (int32_t)promoted, 11);
         expect_t("head becomes 11",
-            ninlil_r7_frag_issue_coordinator_is_head(auth, 11u));
+            ninlil_r7_frag_issue_coordinator_is_head(&coord, auth, 11u));
         /* After complete(10): only seq 11 remains (head). Fill to capacity. */
         for (i = 0u; i < 7u; i++) {
             memset(&a, 0, sizeof(a));
@@ -2542,11 +2547,11 @@ static void test_prod_adversarial_coordinator_and_cont(void)
             a.outer_digest[0] = (uint8_t)(0x10u + i);
             /* Non-head sequences stay QUEUED under real queue ownership. */
             expect_i("fill",
-                ninlil_r7_frag_issue_coordinator_admit(&a),
+                ninlil_r7_frag_issue_coordinator_admit(&coord, &a),
                 NINLIL_R7_COORD_QUEUED);
         }
         expect_i("full count 8",
-            (int32_t)ninlil_r7_frag_issue_coordinator_count(), 8);
+            (int32_t)ninlil_r7_frag_issue_coordinator_count(&coord), 8);
         /* Count: 11 + 7 fills = 8 → next CAPACITY. */
         memset(&a, 0, sizeof(a));
         a.authority_token = auth;
@@ -2555,10 +2560,10 @@ static void test_prod_adversarial_coordinator_and_cont(void)
         a.outer_len = 51u;
         a.outer_digest[0] = 0xFFu;
         expect_i("cap8",
-            ninlil_r7_frag_issue_coordinator_admit(&a),
+            ninlil_r7_frag_issue_coordinator_admit(&coord, &a),
             NINLIL_R7_COORD_CAPACITY);
         /* Dual-issue same outer digest under authority. */
-        ninlil_r7_frag_issue_coordinator_reset();
+        ninlil_r7_frag_issue_coordinator_reset(&coord);
         memset(&a, 0, sizeof(a));
         a.authority_token = auth;
         a.permit_sequence = 1u;
@@ -2566,17 +2571,19 @@ static void test_prod_adversarial_coordinator_and_cont(void)
         a.outer_len = 51u;
         memset(a.outer_digest, 0xCD, 32u);
         expect_i("admit first outer",
-            ninlil_r7_frag_issue_coordinator_admit(&a), NINLIL_R7_COORD_OK);
+            ninlil_r7_frag_issue_coordinator_admit(&coord, &a),
+            NINLIL_R7_COORD_OK);
         a.permit_sequence = 2u;
         expect_i("dup outer",
-            ninlil_r7_frag_issue_coordinator_admit(&a),
+            ninlil_r7_frag_issue_coordinator_admit(&coord, &a),
             NINLIL_R7_COORD_DUPLICATE);
         /* Authority isolation: different auth may reuse outer digests. */
         a.authority_token = auth + 1u;
         a.permit_sequence = 1u;
         expect_i("other auth ok",
-            ninlil_r7_frag_issue_coordinator_admit(&a), NINLIL_R7_COORD_OK);
-        ninlil_r7_frag_issue_coordinator_reset();
+            ninlil_r7_frag_issue_coordinator_admit(&coord, &a),
+            NINLIL_R7_COORD_OK);
+        ninlil_r7_frag_issue_coordinator_fini(&coord);
     }
 
     /* CONT full without digest → NEED_DIGEST; retry with digest completes. */
@@ -2707,6 +2714,7 @@ static void test_prod_contract_negatives(void)
 /* Counterexamples for acceptance blockers 1–8 (exact production paths). */
 static void test_prod_acceptance_blocker_counterexamples(void)
 {
+    ninlil_r7_frag_issue_coordinator_t coord;
     ninlil_r7_checked_issue_result_t cir;
     ninlil_r7_frag_prod_bind_t b;
     ninlil_r7_frag_prod_rx_result_t rr;
@@ -2764,7 +2772,7 @@ static void test_prod_acceptance_blocker_counterexamples(void)
     }
 
     /* (3) cleanup converges all authority rows, not single permit_sequence. */
-    ninlil_r7_frag_issue_coordinator_reset();
+    ninlil_r7_frag_issue_coordinator_init(&coord);
     for (i = 0u; i < 3u; i++) {
         memset(&a, 0, sizeof(a));
         a.authority_token = auth;
@@ -2772,13 +2780,13 @@ static void test_prod_acceptance_blocker_counterexamples(void)
         a.bind_token = 1u;
         a.outer_len = 51u;
         a.outer_digest[0] = (uint8_t)(0x20u + i);
-        (void)ninlil_r7_frag_issue_coordinator_admit(&a);
+        (void)ninlil_r7_frag_issue_coordinator_admit(&coord, &a);
     }
-    expect_i("three admitted", (int32_t)ninlil_r7_frag_issue_coordinator_count(),
-        3);
-    ninlil_r7_frag_issue_coordinator_complete_all_authority(auth);
+    expect_i("three admitted",
+        (int32_t)ninlil_r7_frag_issue_coordinator_count(&coord), 3);
+    ninlil_r7_frag_issue_coordinator_complete_all_authority(&coord, auth);
     expect_i("all authority cleared",
-        (int32_t)ninlil_r7_frag_issue_coordinator_count(), 0);
+        (int32_t)ninlil_r7_frag_issue_coordinator_count(&coord), 0);
 
     /* (4) adapter held fields exist and zero on reset-like clear. */
     {
@@ -2893,7 +2901,7 @@ static void test_prod_acceptance_blocker_counterexamples(void)
         (int32_t)NINLIL_RADIO_HAL_REASON_EXPIRED, 17);
     expect_i("ISSUED_HELD class", (int32_t)NINLIL_R7_FRAG_CLN_ISSUED_HELD, 8);
 
-    ninlil_r7_frag_issue_coordinator_reset();
+    ninlil_r7_frag_issue_coordinator_fini(&coord);
 }
 
 /*
@@ -3234,7 +3242,6 @@ static void test_prod_r1_not_before_hold_and_expired_drain(void)
     if (!ensure_prov()) {
         return;
     }
-    ninlil_r7_frag_issue_coordinator_reset();
     if (n6_boot(&n6, g_n6_obj_tx, g_n6_pool_tx, 8u) != 0) {
         expect_t("r1 map n6 boot", 0);
         return;
@@ -3318,7 +3325,6 @@ static void test_prod_r1_not_before_hold_and_expired_drain(void)
     }
 
     /* EXPIRED: spy clock past expiry → terminal drain, never hold. */
-    ninlil_r7_frag_issue_coordinator_reset();
     ninlil_r7_frag_prod_bind_reset(&tb);
     tb.n6 = n6;
     tb.hop_data_handle = h_hop;
@@ -3360,7 +3366,6 @@ done:
     if (n6 != NULL) {
         (void)ninlil_n6_shutdown(n6);
     }
-    ninlil_r7_frag_issue_coordinator_reset();
 }
 
 int main(void)

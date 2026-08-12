@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Test/support only wire seam for host completion integrated E2E.
  */

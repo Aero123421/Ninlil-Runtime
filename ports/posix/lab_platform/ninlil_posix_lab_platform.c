@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil_posix_lab_platform.h"
 
 #include "canonical_origin_authorization.h"

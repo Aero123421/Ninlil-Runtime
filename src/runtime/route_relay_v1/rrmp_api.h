@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Compatibility include: exact private ABI is rrmp_abi.h.
  * Codec + store + owner surface.

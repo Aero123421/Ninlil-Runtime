@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D3-S1 chunk-A/B/C unit tests (docs/17 §18.12).
  * D3-S1 unit coverage for Modes 1–20 rebuild/evaluate.

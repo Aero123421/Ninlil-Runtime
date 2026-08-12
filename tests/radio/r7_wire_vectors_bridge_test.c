@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 T1 subset vector bridge: production-linked layer Seal/Open (docs/32 §7).
  * Executes every generated vector exactly once. No skip/duplicate/unknown.

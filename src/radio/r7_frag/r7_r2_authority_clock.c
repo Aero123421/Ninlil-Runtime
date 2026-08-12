@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * docs/30 §11.2.3 closed R2 private sample_authority_clock implementation.
  */

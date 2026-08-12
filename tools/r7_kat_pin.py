@@ -33,8 +33,8 @@ OPENSSL_C = REPO / "src" / "radio" / "r7_crypto_openssl3.c"
 
 # SHA-256 over a domain-separated concatenation of the canonical JSON and
 # generated private header.  Refresh only with intentional vector review.
-PINNED_ARTIFACT_SHA256 = "6efef6dc99fb8462a38e058c50dfea445d8e22d6cfe22cfb19b8d6c9fb7a0de9"
-PINNED_BRIDGE_SOURCE_SHA256 = "83a6dd1b8f67f66a6bb641540c46e2d12de11997d0b077ba1ac26c8f9a57873d"
+PINNED_ARTIFACT_SHA256 = "d2543c4ed8845fd7ab1035d32ba31061a491017b1b2600a75c516ef803a9670d"
+PINNED_BRIDGE_SOURCE_SHA256 = "0159f6bd38b0dde9189d2b522af27212a7c6e2659e725e810ca5a7e623c2dca4"
 
 EXPECTED_BRIDGE_OUTPUT = (
     "r7_crypto_vectors_bridge OK total=37 aead=22 sha256=3 hkdf=8 "
@@ -105,6 +105,26 @@ def run(
     )
 
 
+def resolve_compiler(configured: str | None) -> tuple[str | None, str | None]:
+    candidate = (
+        configured
+        or shutil.which("cc")
+        or shutil.which("clang")
+        or shutil.which("gcc")
+    )
+    if not candidate:
+        return None, "C compiler not found (pass --compiler or set CC)"
+    if os.path.sep in candidate or (os.path.altsep and os.path.altsep in candidate):
+        path = pathlib.Path(candidate).expanduser()
+        if not path.is_file() or not os.access(path, os.X_OK):
+            return None, f"C compiler not found or not executable: {candidate}"
+        return str(path), None
+    resolved = shutil.which(candidate)
+    if resolved is None:
+        return None, f"C compiler not found on PATH: {candidate}"
+    return resolved, None
+
+
 def artifact_digest(json_bytes: bytes, header_bytes: bytes) -> str:
     digest = hashlib.sha256()
     digest.update(b"ninlil-r7-json\x00")
@@ -138,9 +158,9 @@ def compile_bridge(
     source: pathlib.Path,
     output: pathlib.Path,
     *,
+    compiler: str,
     sanitize: bool,
 ) -> subprocess.CompletedProcess[str]:
-    compiler = os.environ.get("CC") or shutil.which("clang") or "clang"
     prefix = locate_openssl_prefix()
     if prefix is None:
         return subprocess.CompletedProcess(
@@ -191,29 +211,31 @@ def execute_bridge(binary: pathlib.Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def check_bridge_execution() -> list[str]:
+def check_bridge_execution(compiler: str, sanitize_bridge: bool) -> list[str]:
     errors: list[str] = []
     with tempfile.TemporaryDirectory(prefix="r7-bridge-") as td:
         directory = pathlib.Path(td)
-        for name, sanitize in (("release", False), ("san", True)):
-            binary = directory / f"bridge-{name}"
-            compiled = compile_bridge(BRIDGE, binary, sanitize=sanitize)
-            if compiled.returncode != 0:
-                errors.append(
-                    f"bridge {name} compile failed: {compiled.stderr or compiled.stdout}"
-                )
-                continue
-            executed = execute_bridge(binary)
-            if executed.returncode != 0:
-                errors.append(
-                    f"bridge {name} execution failed: "
-                    f"{executed.stderr or executed.stdout}"
-                )
-            elif executed.stdout != EXPECTED_BRIDGE_OUTPUT or executed.stderr:
-                errors.append(
-                    f"bridge {name} output mismatch stdout={executed.stdout!r} "
-                    f"stderr={executed.stderr!r}"
-                )
+        name = "san" if sanitize_bridge else "release"
+        binary = directory / f"bridge-{name}"
+        compiled = compile_bridge(
+            BRIDGE, binary, compiler=compiler, sanitize=sanitize_bridge
+        )
+        if compiled.returncode != 0:
+            errors.append(
+                f"bridge {name} compile failed: {compiled.stderr or compiled.stdout}"
+            )
+            return errors
+        executed = execute_bridge(binary)
+        if executed.returncode != 0:
+            errors.append(
+                f"bridge {name} execution failed: "
+                f"{executed.stderr or executed.stdout}"
+            )
+        elif executed.stdout != EXPECTED_BRIDGE_OUTPUT or executed.stderr:
+            errors.append(
+                f"bridge {name} output mismatch stdout={executed.stdout!r} "
+                f"stderr={executed.stderr!r}"
+            )
     return errors
 
 
@@ -464,7 +486,9 @@ def oracle_verify(path: pathlib.Path) -> subprocess.CompletedProcess[str]:
     return run([sys.executable, str(ORACLE), "verify-json", "--json", str(path)])
 
 
-def collect_errors() -> tuple[list[str], int, str]:
+def collect_errors(
+    compiler: str, sanitize_bridge: bool
+) -> tuple[list[str], int, str]:
     errors: list[str] = []
     for path in (
         ORACLE,
@@ -532,7 +556,7 @@ def collect_errors() -> tuple[list[str], int, str]:
             "bridge source sha256 mismatch "
             f"got={bridge_source_digest} pin={PINNED_BRIDGE_SOURCE_SHA256}"
         )
-    errors.extend(check_bridge_execution())
+    errors.extend(check_bridge_execution(compiler, sanitize_bridge))
     return errors, len(document["vectors"]), digest
 
 
@@ -546,6 +570,8 @@ def binary_mutation_must_fail(
     label: str,
     source_text: str,
     header_bytes: bytes,
+    compiler: str,
+    sanitize_bridge: bool,
 ) -> list[str]:
     errors: list[str] = []
     with tempfile.TemporaryDirectory(prefix=f"r7-mut-{label}-") as td:
@@ -557,7 +583,9 @@ def binary_mutation_must_fail(
         source.write_text(source_text, encoding="utf-8")
         header.write_bytes(header_bytes)
         binary = directory / "bridge-mutated"
-        compiled = compile_bridge(source, binary, sanitize=False)
+        compiled = compile_bridge(
+            source, binary, compiler=compiler, sanitize=sanitize_bridge
+        )
         if compiled.returncode != 0:
             errors.append(
                 f"{label}: mutated bridge must compile before red execution: "
@@ -570,11 +598,30 @@ def binary_mutation_must_fail(
     return errors
 
 
-def mutation_self_tests() -> list[str]:
+def mutation_self_tests(compiler: str, sanitize_bridge: bool) -> list[str]:
     errors: list[str] = []
     committed_json = JSON_FIXTURE.read_bytes()
     committed_header = HEADER_FIXTURE.read_bytes()
     document = json.loads(committed_json.decode("ascii"))
+
+    with tempfile.TemporaryDirectory(prefix="r7-missing-cc-") as td:
+        missing_compiler = pathlib.Path(td) / "missing-cc"
+        missing = run(
+            [
+                sys.executable,
+                str(PIN_TOOL),
+                f"--compiler={missing_compiler}",
+                "check",
+            ]
+        )
+        expected = (
+            "r7_kat_pin check FAIL: C compiler not found or not executable: "
+            f"{missing_compiler}\n"
+        )
+        if missing.returncode != 1 or missing.stdout or missing.stderr != expected:
+            errors.append(
+                "missing-compiler mutation did not fail with the short diagnostic"
+            )
 
     artifact_mutation = bytearray(committed_json)
     position = artifact_mutation.find(b"0011223344556677")
@@ -641,7 +688,11 @@ def mutation_self_tests() -> list[str]:
     if error:
         errors.append(error)
     else:
-        errors.extend(binary_mutation_must_fail("early-return", mutated, committed_header))
+        errors.extend(
+            binary_mutation_must_fail(
+                "early-return", mutated, committed_header, compiler, sanitize_bridge
+            )
+        )
 
     counter_needle = (
         "        counters.total++;\n"
@@ -660,7 +711,9 @@ def mutation_self_tests() -> list[str]:
         errors.append(error)
     else:
         errors.extend(
-            binary_mutation_must_fail("execution-counter", mutated, committed_header)
+            binary_mutation_must_fail(
+                "execution-counter", mutated, committed_header, compiler, sanitize_bridge
+            )
         )
 
     skip_needle = "    if (vector->expect_ok != 0u) {"
@@ -678,7 +731,11 @@ def mutation_self_tests() -> list[str]:
     if error:
         errors.append(error)
     else:
-        errors.extend(binary_mutation_must_fail("surface-skip", mutated, committed_header))
+        errors.extend(
+            binary_mutation_must_fail(
+                "surface-skip", mutated, committed_header, compiler, sanitize_bridge
+            )
+        )
 
     auth_needle = ") != NINLIL_R7_CRYPTO_RAW_AUTH_FAILED) {"
     auth_replacement = ") != NINLIL_R7_CRYPTO_RAW_OK) {"
@@ -688,7 +745,11 @@ def mutation_self_tests() -> list[str]:
     if error:
         errors.append(error)
     else:
-        errors.extend(binary_mutation_must_fail("bad-tag-auth", mutated, committed_header))
+        errors.extend(
+            binary_mutation_must_fail(
+                "bad-tag-auth", mutated, committed_header, compiler, sanitize_bridge
+            )
+        )
 
     surface_header = committed_header.replace(
         b'"raw_adapter"', b'"unknown_surface"', 1
@@ -697,7 +758,13 @@ def mutation_self_tests() -> list[str]:
         errors.append("unknown-surface mutation setup failed")
     else:
         errors.extend(
-            binary_mutation_must_fail("unknown-surface", source_text, surface_header)
+            binary_mutation_must_fail(
+                "unknown-surface",
+                source_text,
+                surface_header,
+                compiler,
+                sanitize_bridge,
+            )
         )
 
     tag_header = committed_header.replace(
@@ -708,12 +775,16 @@ def mutation_self_tests() -> list[str]:
     if tag_header == committed_header:
         errors.append("bad-tag binary mutation setup failed")
     else:
-        errors.extend(binary_mutation_must_fail("bad-tag-vector", source_text, tag_header))
+        errors.extend(
+            binary_mutation_must_fail(
+                "bad-tag-vector", source_text, tag_header, compiler, sanitize_bridge
+            )
+        )
     return errors
 
 
-def run_check() -> int:
-    errors, count, digest = collect_errors()
+def run_check(compiler: str, sanitize_bridge: bool) -> int:
+    errors, count, digest = collect_errors(compiler, sanitize_bridge)
     if errors:
         for error in errors:
             print(f"r7_kat_pin FAIL: {error}", file=sys.stderr)
@@ -725,16 +796,18 @@ def run_check() -> int:
     return 0
 
 
-def run_self_test() -> int:
-    errors, count, digest = collect_errors()
-    errors.extend(mutation_self_tests() if not errors else [])
+def run_self_test(compiler: str, sanitize_bridge: bool) -> int:
+    errors, count, digest = collect_errors(compiler, sanitize_bridge)
+    errors.extend(
+        mutation_self_tests(compiler, sanitize_bridge) if not errors else []
+    )
     if errors:
         for error in errors:
             print(f"r7_kat_pin self-test FAIL: {error}", file=sys.stderr)
         return 1
     print(
         "r7_kat_pin self-test OK "
-        f"vectors={count} artifact_sha256={digest} mutations=13 c_bridge=implemented"
+        f"vectors={count} artifact_sha256={digest} mutations=14 c_bridge=implemented"
     )
     return 0
 
@@ -742,11 +815,25 @@ def run_self_test() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="R7 private KAT fixture gate")
     parser.add_argument("command", choices=("check", "self-test", "emit-sha256"))
+    parser.add_argument(
+        "--compiler",
+        default=os.environ.get("CC"),
+        help="C compiler used for the bridge probes (defaults to CC or PATH)",
+    )
+    parser.add_argument(
+        "--sanitize-bridge",
+        action="store_true",
+        help="compile bridge probes with ASan+UBSan for a sanitizer profile",
+    )
     args = parser.parse_args(argv)
-    if args.command == "check":
-        return run_check()
-    if args.command == "self-test":
-        return run_self_test()
+    if args.command in ("check", "self-test"):
+        compiler, error = resolve_compiler(args.compiler)
+        if error or compiler is None:
+            print(f"r7_kat_pin {args.command} FAIL: {error}", file=sys.stderr)
+            return 1
+        if args.command == "check":
+            return run_check(compiler, args.sanitize_bridge)
+        return run_self_test(compiler, args.sanitize_bridge)
     if not JSON_FIXTURE.is_file() or not HEADER_FIXTURE.is_file():
         print("fixtures are missing", file=sys.stderr)
         return 1

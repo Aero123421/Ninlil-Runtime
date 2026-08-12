@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 private pure FRAG planner + reassembly state machine.
  * Heap-free. No AEAD/wire/crypto. Failure: no partial publication.

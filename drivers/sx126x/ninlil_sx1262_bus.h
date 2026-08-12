@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_SX1262_BUS_H
 #define NINLIL_SX1262_BUS_H
 

@@ -25,8 +25,13 @@ endif()
 
 set(GOLDEN "${GOLDEN_DIR}/${TARGET_ID}.manifest")
 if(NOT EXISTS "${GOLDEN}")
-    message(STATUS "abi manifest golden skipped: no golden for target ${TARGET_ID}")
-    return()
+    if(NINLIL_ABI_GOLDEN_ALLOW_MISSING STREQUAL "ON")
+        message(STATUS "abi manifest golden skipped by NINLIL_ABI_GOLDEN_ALLOW_MISSING=ON: ${TARGET_ID}")
+        return()
+    endif()
+    message(FATAL_ERROR
+        "abi manifest golden missing for target ${TARGET_ID}; add ${GOLDEN} or configure "
+        "-DNINLIL_ABI_GOLDEN_ALLOW_MISSING=ON explicitly")
 endif()
 
 execute_process(

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <ninlil/posix_tls_v1.h>
 
 #include "nfl1_codec.h"

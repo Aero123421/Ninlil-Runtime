@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TX_EXCLUSIVE_TRANCHE_H
 #define NINLIL_TX_EXCLUSIVE_TRANCHE_H
 

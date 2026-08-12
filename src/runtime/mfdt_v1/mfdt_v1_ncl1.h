@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Private NCL1/NCG1 adapter for MFN1 negotiation 0x34..0x35 and MFDT
  * transfer control messages 0x36..0x43.
  * Does not modify production NCL1 v2 catalog; private candidate only.

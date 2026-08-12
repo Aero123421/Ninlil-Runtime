@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0022 repair tests: Foundation profile, LAST_LAB, T0, overflow, tamper.
  */

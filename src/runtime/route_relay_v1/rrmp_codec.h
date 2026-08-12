@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private durable codecs for ADR-0019/0020 records.
  * Default-OFF, not installed.

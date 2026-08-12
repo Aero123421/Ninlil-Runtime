@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_internal.h"
 #include "runtime_v1_bearer_wire.h"
 #include "runtime_v1_delivery_durable.h"
@@ -62,6 +63,28 @@ static int id_equal(
     const ninlil_id128_t *right)
 {
     return memcmp(left->bytes, right->bytes, sizeof(left->bytes)) == 0;
+}
+
+ninlil_status_t ninlil_rt_accept_trusted_clock_sample(
+    ninlil_runtime_t *runtime,
+    const ninlil_time_sample_t *sample)
+{
+    const ninlil_time_sample_t *baseline;
+
+    if (runtime == NULL || !trusted_time_sample_is_valid(sample)) {
+        return NINLIL_E_INVALID_ARGUMENT;
+    }
+    baseline = &runtime->last_accepted_trusted_sample;
+    if (trusted_time_sample_is_valid(baseline)
+        && id_equal(
+            &baseline->clock_epoch_id, &sample->clock_epoch_id)
+        && sample->now_ms < baseline->now_ms) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    runtime->last_accepted_trusted_sample = *sample;
+    return NINLIL_OK;
 }
 
 static void saturating_increment_u64(uint64_t *value)
@@ -1416,6 +1439,7 @@ ninlil_status_t ninlil_runtime_create(
         }
         trusted_sample = clock_in.sample;
         runtime->started_sample = clock_in.sample;
+        runtime->last_accepted_trusted_sample = clock_in.sample;
 
         (void)memset(
             &runtime->domain_schema1_storage_result,
@@ -1705,6 +1729,7 @@ ninlil_status_t ninlil_runtime_create(
             return gate.api_status;
         }
         runtime->started_sample = clock_in.sample;
+        runtime->last_accepted_trusted_sample = clock_in.sample;
     }
 
     status = rt_draw_metrics_entropy(platform, entropy_obs, &entropy);
@@ -2173,8 +2198,18 @@ static void runtime_step_consider_wake(
     }
 }
 
-static void runtime_step_project_next_wake(
-    const ninlil_runtime_t *runtime,
+static void runtime_step_clear_next_wake(ninlil_step_result_t *out_result)
+{
+    out_result->has_next_wake = 0u;
+    (void)memset(
+        &out_result->next_wake_clock_epoch_id,
+        0,
+        sizeof(out_result->next_wake_clock_epoch_id));
+    out_result->next_wake_at_ms = 0u;
+}
+
+static ninlil_status_t runtime_step_project_next_wake(
+    ninlil_runtime_t *runtime,
     const ninlil_time_sample_t *sample,
     ninlil_step_result_t *out_result)
 {
@@ -2184,9 +2219,24 @@ static void runtime_step_project_next_wake(
         const ninlil_rt_transaction_slot_t *transaction =
             &runtime->transactions[index];
 
-        if (transaction->in_use == 0u || transaction->terminal != 0u
-            || transaction->event_discarded != 0u
-            || transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED) {
+        if (transaction->in_use == 0u
+            || transaction->event_discarded != 0u) {
+            continue;
+        }
+        if (transaction->terminal != 0u) {
+            if (transaction->origin_admission == 0u
+                && transaction->evidence_recorded != 0u
+                && transaction->ingress_pending != 0u
+                && transaction->reverse_receipt_closed == 0u) {
+                runtime_step_consider_wake(
+                    sample,
+                    &transaction->next_retry_clock_epoch_id,
+                    transaction->next_retry_ms,
+                    out_result);
+            }
+            continue;
+        }
+        if (transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED) {
             continue;
         }
         runtime_step_consider_wake(
@@ -2204,11 +2254,31 @@ static void runtime_step_project_next_wake(
         }
         if (transaction->effect_deadline_ms != 0u
             && transaction->effect_deadline_ms < NINLIL_NO_DEADLINE) {
+            uint64_t evidence_close_at_ms;
+
             runtime_step_consider_wake(
                 sample,
                 &transaction->deadline_clock_epoch_id,
                 transaction->effect_deadline_ms,
                 out_result);
+            if (transaction->family == NINLIL_FAMILY_DESIRED_STATE
+                && transaction->origin_admission != 0u) {
+                if (transaction->effect_deadline_ms
+                    > UINT64_MAX - transaction->evidence_grace_ms) {
+                    runtime->health = NINLIL_HEALTH_DEGRADED;
+                    runtime->degraded_reason =
+                        NINLIL_REASON_COUNTER_EXHAUSTED;
+                    runtime_step_clear_next_wake(out_result);
+                    return NINLIL_E_DEGRADED;
+                }
+                evidence_close_at_ms = transaction->effect_deadline_ms
+                    + transaction->evidence_grace_ms;
+                runtime_step_consider_wake(
+                    sample,
+                    &transaction->deadline_clock_epoch_id,
+                    evidence_close_at_ms,
+                    out_result);
+            }
         }
         if (transaction->delivery_phase == NINLIL_RT_DELIVERY_STARTED
             && transaction->evidence_recorded == 0u
@@ -2225,6 +2295,7 @@ static void runtime_step_project_next_wake(
                 out_result);
         }
     }
+    return NINLIL_OK;
 }
 
 ninlil_status_t ninlil_runtime_step(
@@ -2297,15 +2368,27 @@ ninlil_status_t ninlil_runtime_step(
         runtime->platform->clock->user, &sample);
     if (clock_status != NINLIL_PORT_OK
         || !trusted_time_sample_is_valid(&sample)) {
-        runtime->in_step = 0u;
-        runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
-        out_result->health = runtime->health;
-        out_result->degraded_reason = runtime->degraded_reason;
-        return clock_status == NINLIL_PORT_TEMPORARY_FAILURE
+        status = clock_status == NINLIL_PORT_TEMPORARY_FAILURE
             || (clock_status == NINLIL_PORT_OK
                 && uncertain_time_sample_is_valid(&sample))
             ? NINLIL_E_CLOCK_UNCERTAIN
             : NINLIL_E_DEGRADED;
+        goto step_exit;
+    }
+    status = ninlil_rt_accept_trusted_clock_sample(runtime, &sample);
+    if (status != NINLIL_OK) {
+        goto step_exit;
+    }
+    for (uint32_t transaction_index = 0u;
+         transaction_index < runtime->transaction_capacity;
+         ++transaction_index) {
+        if (ninlil_rt_v1_transaction_has_invalid_active_receipt_timer(
+                &runtime->transactions[transaction_index])) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            status = NINLIL_E_DEGRADED;
+            goto step_exit;
+        }
     }
 
     runtime->step_phase = NINLIL_RT_STEP_PHASE_WORK;
@@ -2317,19 +2400,11 @@ ninlil_status_t ninlil_runtime_step(
         &bearer_state_transitions,
         &bearer_state_work_remaining);
     if (status != NINLIL_OK) {
-        runtime->in_step = 0u;
-        runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
-        out_result->health = runtime->health;
-        out_result->degraded_reason = runtime->degraded_reason;
-        return status;
+        goto step_exit;
     }
     if (bearer_state_work_remaining != 0u) {
         out_result->more_work = 1u;
-        out_result->health = runtime->health;
-        out_result->degraded_reason = runtime->degraded_reason;
-        runtime->in_step = 0u;
-        runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
-        return NINLIL_OK;
+        goto step_exit;
     }
 
     runtime->step_phase = NINLIL_RT_STEP_PHASE_WORK;
@@ -2341,14 +2416,10 @@ ninlil_status_t ninlil_runtime_step(
         &mfdt_bearer_sends,
         &mfdt_work_remaining);
     if (status != NINLIL_OK) {
-        runtime->in_step = 0u;
-        runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
         out_result->more_work = mfdt_work_remaining;
         out_result->bearer_sends = mfdt_bearer_sends;
         out_result->state_transitions = bearer_state_transitions;
-        out_result->health = runtime->health;
-        out_result->degraded_reason = runtime->degraded_reason;
-        return status;
+        goto step_exit;
     }
     delivery_send_budget -= mfdt_bearer_sends;
     status = ninlil_rt_mfdt_v1_runtime_reconcile_ready(
@@ -2358,15 +2429,11 @@ ninlil_status_t ninlil_runtime_step(
         &mfdt_foundation_transitions,
         &mfdt_foundation_work_remaining);
     if (status != NINLIL_OK) {
-        runtime->in_step = 0u;
-        runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
         out_result->more_work = mfdt_foundation_work_remaining;
         out_result->bearer_sends = mfdt_bearer_sends;
         out_result->state_transitions =
             bearer_state_transitions + mfdt_foundation_transitions;
-        out_result->health = runtime->health;
-        out_result->degraded_reason = runtime->degraded_reason;
-        return status;
+        goto step_exit;
     }
 #endif
     (void)memset(&delivery_result, 0, sizeof(delivery_result));
@@ -2392,11 +2459,7 @@ ninlil_status_t ninlil_runtime_step(
     out_result->state_transitions += mfdt_foundation_transitions;
 #endif
     if (status != NINLIL_OK) {
-        runtime->in_step = 0u;
-        runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
-        out_result->health = runtime->health;
-        out_result->degraded_reason = runtime->degraded_reason;
-        return status;
+        goto step_exit;
     }
 
     runtime->step_phase = NINLIL_RT_STEP_PHASE_PROJECT;
@@ -2409,10 +2472,18 @@ ninlil_status_t ninlil_runtime_step(
 #endif
         ? 1u
         : runtime->pending_work;
-    runtime_step_project_next_wake(runtime, &sample, out_result);
+    status = runtime_step_project_next_wake(runtime, &sample, out_result);
+    if (status != NINLIL_OK) {
+        goto step_exit;
+    }
+
+step_exit:
+    /* One owner-state exit keeps every post-entry path reentrancy-safe. */
     runtime->in_step = 0u;
     runtime->step_phase = NINLIL_RT_STEP_PHASE_IDLE;
-    return NINLIL_OK;
+    out_result->health = runtime->health;
+    out_result->degraded_reason = runtime->degraded_reason;
+    return status;
 }
 
 ninlil_status_t ninlil_offer_accept(

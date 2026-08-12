@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "fabric_private_records.h"
 
 ninlil_fabric_private_record_status_t

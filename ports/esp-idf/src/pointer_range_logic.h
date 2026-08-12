@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Overflow-safe pure address-range helpers (docs/22).
  * uintptr_t only — no pointer relational operators (< > <= >=).

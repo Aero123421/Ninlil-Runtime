@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure lifecycle authority model for host deterministic concurrency tests.
  * Mirrors docs/22 inflight + claim + FAILED_LIVE rules without FreeRTOS.

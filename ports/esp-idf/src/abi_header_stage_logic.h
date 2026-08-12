@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure ABI header staging + declared struct_size non-overlap (docs/22).
  * Stage minimal header first; only then inspect declared full range vs storage.

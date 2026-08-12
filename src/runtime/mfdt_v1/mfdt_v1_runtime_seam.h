@@ -1,10 +1,13 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Private seam: generic ninlil_submit ApplicationData → MFDT when admitted.
  * No separate product API. Default-OFF via admission policy.
  * SEMANTIC: NOT_PUBLIC_ABI
  */
 #ifndef NINLIL_MFDT_V1_RUNTIME_SEAM_H
 #define NINLIL_MFDT_V1_RUNTIME_SEAM_H
+
+#include "mfdt_v1.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -33,9 +36,29 @@ typedef struct ninlil_mfdt_v1_seam_config {
     uint8_t local_clock_epoch[16];
 } ninlil_mfdt_v1_seam_config_t;
 
-/* Process-global default-OFF seam config (tests/host set explicitly). */
-void ninlil_mfdt_v1_seam_set_config(const ninlil_mfdt_v1_seam_config_t *cfg);
-void ninlil_mfdt_v1_seam_get_config(ninlil_mfdt_v1_seam_config_t *out);
+/* Caller-owned Host/lab two-endpoint seam. Never installed or public ABI. */
+typedef struct ninlil_mfdt_v1_seam_ctx {
+    uint32_t magic;
+    ninlil_mfdt_v1_seam_config_t config;
+#if !defined(ESP_PLATFORM)
+    ninlil_mfdt_v1_workspace_t sender_workspace;
+    ninlil_mfdt_v1_workspace_t receiver_workspace;
+    ninlil_mfdt_v1_lab_store_t sender_store;
+    ninlil_mfdt_v1_lab_store_t receiver_store;
+    ninlil_mfdt_v1_engine_t sender;
+    ninlil_mfdt_v1_engine_t receiver;
+#endif
+    uint8_t busy;
+} ninlil_mfdt_v1_seam_ctx_t;
+
+int ninlil_mfdt_v1_seam_init(ninlil_mfdt_v1_seam_ctx_t *ctx);
+void ninlil_mfdt_v1_seam_fini(ninlil_mfdt_v1_seam_ctx_t *ctx);
+int ninlil_mfdt_v1_seam_set_config(
+    ninlil_mfdt_v1_seam_ctx_t *ctx,
+    const ninlil_mfdt_v1_seam_config_t *cfg);
+int ninlil_mfdt_v1_seam_get_config(
+    const ninlil_mfdt_v1_seam_ctx_t *ctx,
+    ninlil_mfdt_v1_seam_config_t *out);
 
 /*
  * Try multi-frame path for ApplicationData.
@@ -43,6 +66,7 @@ void ninlil_mfdt_v1_seam_get_config(ninlil_mfdt_v1_seam_config_t *out);
  * On OK, *out_transfer_id (16) and *out_publication_token (16) filled when complete.
  */
 int ninlil_mfdt_v1_seam_try_application_data(
+    ninlil_mfdt_v1_seam_ctx_t *ctx,
     const uint8_t *application_data, uint32_t data_len,
     const uint8_t transfer_id_hint[16], uint8_t out_transfer_id[16],
     uint8_t out_publication_token[16]);

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Joined public Runtime -> private Fabric -> real Wi-Fi TLS/TCP acceptance.
  *
