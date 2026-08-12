@@ -93,6 +93,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.resolve-source.outputs.commit }}
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
 
       - name: Pin verified source commit
         id: source

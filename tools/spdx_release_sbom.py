@@ -65,6 +65,7 @@ def inventory_packages(inventory: dict[str, Any]) -> list[dict[str, Any]]:
         packages = [
             inventory["project"],
             *inventory["host_dependencies"],
+            *inventory.get("host_tooling", []),
             *vendored,
             *inventory["esp_idf"]["lock_components"],
             *inventory["esp_idf"]["bundled_dependencies"],
@@ -209,6 +210,7 @@ def spdx_id(package_id: str) -> str:
 
 def canonical_package(item: dict[str, Any]) -> dict[str, Any]:
     package_id = str(item["id"])
+    relationship = str(item.get("relationship", "PROJECT"))
     package = {
         "SPDXID": spdx_id(package_id),
         "name": str(item["name"]),
@@ -222,11 +224,15 @@ def canonical_package(item: dict[str, Any]) -> dict[str, Any]:
         "copyrightText": "NOASSERTION",
         "supplier": str(item.get("supplier", "NOASSERTION")),
         "primaryPackagePurpose": (
-            "SOURCE" if package_id == "ninlil-runtime" else "LIBRARY"
+            "SOURCE"
+            if package_id == "ninlil-runtime"
+            else "APPLICATION"
+            if relationship == "BUILD_TOOL"
+            else "LIBRARY"
         ),
         "comment": (
             f"Ninlil dependency inventory ID: {package_id}; "
-            f"relationship: {item.get('relationship', 'PROJECT')}"
+            f"relationship: {relationship}"
         ),
     }
     component_hash = item.get("component_hash")
@@ -260,13 +266,23 @@ def canonical_relationships(
         package_id = str(item["id"])
         if package_id == str(inventory["project"]["id"]):
             continue
-        relationships.append(
-            {
-                "spdxElementId": project_id,
-                "relationshipType": "DEPENDS_ON",
-                "relatedSpdxElement": spdx_id(package_id),
-            }
-        )
+        package_spdx_id = spdx_id(package_id)
+        if str(item.get("relationship", "")) == "BUILD_TOOL":
+            relationships.append(
+                {
+                    "spdxElementId": package_spdx_id,
+                    "relationshipType": "BUILD_TOOL_OF",
+                    "relatedSpdxElement": project_id,
+                }
+            )
+        else:
+            relationships.append(
+                {
+                    "spdxElementId": project_id,
+                    "relationshipType": "DEPENDS_ON",
+                    "relatedSpdxElement": package_spdx_id,
+                }
+            )
     relationships.sort(
         key=lambda item: (
             item["spdxElementId"],
@@ -665,6 +681,20 @@ def self_test(inventory: dict[str, Any]) -> None:
     ]
     if pyyaml_ids != ["SPDXRef-Ninlil-pyyaml"]:
         raise SbomError(f"enriched SBOM missing vendored PyYAML package: {pyyaml_ids!r}")
+    node_build_relationship = {
+        "spdxElementId": "SPDXRef-Ninlil-nodejs",
+        "relationshipType": "BUILD_TOOL_OF",
+        "relatedSpdxElement": "SPDXRef-Ninlil-ninlil-runtime",
+    }
+    node = next(
+        package
+        for package in baseline["packages"]
+        if package.get("SPDXID") == "SPDXRef-Ninlil-nodejs"
+    )
+    if node.get("primaryPackagePurpose") != "APPLICATION":
+        raise SbomError("Node.js host tooling is not classified as an APPLICATION")
+    if node_build_relationship not in baseline["relationships"]:
+        raise SbomError("Node.js BUILD_TOOL_OF project relationship is absent")
 
     # Two-run determinism: mutated Syft timestamp/namespace must yield byte-identical
     # enriched SPDX JSON for identical source inventory.
@@ -716,6 +746,35 @@ def self_test(inventory: dict[str, Any]) -> None:
     )
     sqlite["versionInfo"] = "UNKNOWN"
     expect_failure("dependency version drift", version)
+
+    node_purpose = copy.deepcopy(baseline)
+    node_package = next(
+        item
+        for item in node_purpose["packages"]
+        if item["SPDXID"] == "SPDXRef-Ninlil-nodejs"
+    )
+    node_package["primaryPackagePurpose"] = "LIBRARY"
+    expect_failure("Node.js build tool misclassified as library", node_purpose)
+
+    node_relation = copy.deepcopy(baseline)
+    node_relation["relationships"] = [
+        {
+            "spdxElementId": "SPDXRef-Ninlil-ninlil-runtime",
+            "relationshipType": "DEPENDS_ON",
+            "relatedSpdxElement": "SPDXRef-Ninlil-nodejs",
+        }
+        if item == node_build_relationship
+        else item
+        for item in node_relation["relationships"]
+    ]
+    node_relation["relationships"].sort(
+        key=lambda item: (
+            item["spdxElementId"],
+            item["relationshipType"],
+            item["relatedSpdxElement"],
+        )
+    )
+    expect_failure("Node.js dependency relation is not BUILD_TOOL_OF", node_relation)
 
     duplicate = copy.deepcopy(baseline)
     duplicate["packages"].append(

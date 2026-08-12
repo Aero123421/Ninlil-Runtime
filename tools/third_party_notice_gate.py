@@ -428,6 +428,7 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
         "schema",
         "project",
         "host_dependencies",
+        "host_tooling",
         "vendored_dependencies",
         "syft_reconciliation",
         "esp_idf",
@@ -467,6 +468,20 @@ def validate_inventory_shape(inventory: dict[str, Any]) -> None:
     ]
     if host != expected_host:
         raise GateError("host dependency set/order/version/license drift")
+
+    tooling = require_array(inventory.get("host_tooling"), "host_tooling")
+    expected_tooling = [
+        {
+            "id": "nodejs",
+            "name": "Node.js",
+            "version": ">=18",
+            "version_requirement": ">=18.0.0",
+            "spdx_license": "MIT",
+            "relationship": "BUILD_TOOL",
+        }
+    ]
+    if tooling != expected_tooling:
+        raise GateError("host tooling set/order/version/license drift")
 
     vendored = require_array(inventory.get("vendored_dependencies"), "vendored_dependencies")
     if vendored != EXPECTED_VENDORED:
@@ -594,6 +609,7 @@ def validate(inputs: Inputs) -> None:
     all_packages = (
         [inputs.inventory["project"]]
         + require_array(inputs.inventory["host_dependencies"], "host dependencies")
+        + require_array(inputs.inventory["host_tooling"], "host tooling")
         + require_array(
             inputs.inventory["vendored_dependencies"], "vendored dependencies"
         )
@@ -694,6 +710,18 @@ def self_test() -> None:
         1,
     )
     expect_failure("missing notice package", notice_missing)
+
+    no_node = copy.deepcopy(baseline)
+    no_node.inventory["host_tooling"] = []
+    expect_failure("missing Node.js host tooling inventory entry", no_node)
+
+    node_notice_missing = copy.deepcopy(baseline)
+    node_notice_missing.notices = node_notice_missing.notices.replace(
+        "**Machine ID:** `nodejs`",
+        "**Machine ID:** `removed-nodejs`",
+        1,
+    )
+    expect_failure("missing Node.js host tooling notice", node_notice_missing)
 
     # Vendored PyYAML must remain in inventory + notices (no silent omission).
     no_pyyaml = copy.deepcopy(baseline)

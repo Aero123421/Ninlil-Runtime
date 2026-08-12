@@ -35,6 +35,7 @@ RESOLVED_REF = "${{ needs.resolve-source.outputs.commit }}"
 WORKFLOW_REF = "${{ needs.resolve-source.outputs.workflow-commit }}"
 REMOTE_ACTIONS = {
     "actions/checkout": "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+    "actions/setup-node": "49933ea5288caeca8642d1e84afbd3f7d6820020",
     "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
     "actions/download-artifact": "634f93cb2916e3fdff6788551b99b062d0335ce0",
     "actions/attest": "f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6",
@@ -52,35 +53,35 @@ REMOTE_ACTION_JOB_AUTHORITY: dict[str, dict[str, tuple[str, ...]]] = {
     "CI": {
         "workflow-syntax": ("actions/checkout",),
         "compatibility-matrix": ("actions/checkout",),
-        "cmake-floor-package": ("actions/checkout",),
-        "optional-composition": ("actions/checkout",),
-        "ubuntu-dynamic-strict": ("actions/checkout",),
-        "ubuntu-gcc-release-n6-frame": ("actions/checkout",),
-        "ubuntu-clang-release-r7": ("actions/checkout",),
-        "ubuntu-static-strict": ("actions/checkout",),
+        "cmake-floor-package": ("actions/checkout", "actions/setup-node"),
+        "optional-composition": ("actions/checkout", "actions/setup-node"),
+        "ubuntu-dynamic-strict": ("actions/checkout", "actions/setup-node"),
+        "ubuntu-gcc-release-n6-frame": ("actions/checkout", "actions/setup-node"),
+        "ubuntu-clang-release-r7": ("actions/checkout", "actions/setup-node"),
+        "ubuntu-static-strict": ("actions/checkout", "actions/setup-node"),
         "ubuntu-static-tests-off-consumer": ("actions/checkout",),
-        "clang-sanitizers": ("actions/checkout",),
-        "mfdt-v1-private": ("actions/checkout",),
-        "wifi-v1-private": ("actions/checkout",),
-        "wifi-v1-openssl-authority": ("actions/checkout",),
-        "domain-schema1-runtime": ("actions/checkout",),
-        "fabric-v1-private": ("actions/checkout",),
-        "r7-frag-private": ("actions/checkout",),
-        "rrmp-v1-private": ("actions/checkout",),
-        "host-completion-integrated-e2e": ("actions/checkout",),
-        "clang-non-sanitizer-hygiene": ("actions/checkout",),
-        "ubuntu-release-archive-cleanroom": ("actions/checkout",),
-        "macos-release-archive-cleanroom": ("actions/checkout",),
-        "macos-dynamic": ("actions/checkout",),
-        "macos-dynamic-asan": ("actions/checkout",),
-        "clang-pointer-compare": ("actions/checkout",),
+        "clang-sanitizers": ("actions/checkout", "actions/setup-node"),
+        "mfdt-v1-private": ("actions/checkout", "actions/setup-node"),
+        "wifi-v1-private": ("actions/checkout", "actions/setup-node"),
+        "wifi-v1-openssl-authority": ("actions/checkout", "actions/setup-node"),
+        "domain-schema1-runtime": ("actions/checkout", "actions/setup-node"),
+        "fabric-v1-private": ("actions/checkout", "actions/setup-node"),
+        "r7-frag-private": ("actions/checkout", "actions/setup-node"),
+        "rrmp-v1-private": ("actions/checkout", "actions/setup-node"),
+        "host-completion-integrated-e2e": ("actions/checkout", "actions/setup-node"),
+        "clang-non-sanitizer-hygiene": ("actions/checkout", "actions/setup-node"),
+        "ubuntu-release-archive-cleanroom": ("actions/checkout", "actions/setup-node"),
+        "macos-release-archive-cleanroom": ("actions/checkout", "actions/setup-node"),
+        "macos-dynamic": ("actions/checkout", "actions/setup-node"),
+        "macos-dynamic-asan": ("actions/checkout", "actions/setup-node"),
+        "clang-pointer-compare": ("actions/checkout", "actions/setup-node"),
     },
     "ESP-IDF": {
         "esp32s3-component-build": ("actions/checkout",),
     },
     "Release": {
         "resolve-source": ("actions/checkout",),
-        "verify": ("actions/checkout",),
+        "verify": ("actions/checkout", "actions/setup-node"),
         "package": (
             "actions/checkout",
             "anchore/sbom-action/download-syft",
@@ -215,6 +216,41 @@ def validate_all_uses(inputs: Inputs) -> None:
                 f"{label}: remote Action job authority mismatch "
                 f"missing_jobs={missing_jobs} extra_jobs={extra_jobs} "
                 f"sequence_drift={drift}"
+            )
+
+
+def validate_setup_node(inputs: Inputs) -> None:
+    expected_with = {"node-version": "22.18.0", "check-latest": False}
+    for label, text in (
+        ("CI", inputs.ci),
+        ("ESP-IDF", inputs.esp),
+        ("Release", inputs.release),
+    ):
+        doc = parse_workflow(text, label)
+        seen: set[str] = set()
+        for job_id, step_index, mapping in walk_job_steps(doc):
+            if step_index is None:
+                continue
+            value = step_uses(mapping)
+            if value is None or not str(value).startswith("actions/setup-node@"):
+                continue
+            if job_id in seen:
+                raise GateError(f"{label} job={job_id}: duplicate setup-node step")
+            seen.add(job_id)
+            if step_with(mapping) != expected_with:
+                raise GateError(
+                    f"{label} job={job_id} step[{step_index}]: "
+                    "setup-node must pin Node 22.18.0 with check-latest=false"
+                )
+        expected = {
+            job_id
+            for job_id, actions in REMOTE_ACTION_JOB_AUTHORITY[label].items()
+            if "actions/setup-node" in actions
+        }
+        if seen != expected:
+            raise GateError(
+                f"{label}: setup-node job set drift "
+                f"missing={sorted(expected - seen)} extra={sorted(seen - expected)}"
             )
 
 
@@ -787,6 +823,7 @@ def validate(inputs: Inputs) -> None:
     validate_linter(inputs.ci)
     validate_release(inputs.release)
     validate_all_uses(inputs)
+    validate_setup_node(inputs)
     # Also run the dedicated version-identity self-test (fail-closed).
     import subprocess
 
@@ -970,6 +1007,14 @@ def self_test() -> None:
         1,
     )
     reject("checkout uses @main with old SHA in comment", float_checkout)
+
+    wrong_node_version = copy.deepcopy(baseline)
+    wrong_node_version.ci = wrong_node_version.ci.replace(
+        "          node-version: 22.18.0",
+        "          node-version: 18.0.0",
+        1,
+    )
+    reject("setup-node version drift", wrong_node_version)
 
     # Version identity: workflow must not accept arbitrary SemVer / wrong core.
     strip_enforce = copy.deepcopy(baseline)

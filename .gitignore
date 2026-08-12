@@ -1,6 +1,9 @@
 /build/
 /build-*/
 /tmp-v1*/
+/tmp-controller*/
+/tmp-install*/
+/tmp-all-private*/
 __pycache__/
 *.py[cod]
 

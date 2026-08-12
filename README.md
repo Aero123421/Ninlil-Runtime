@@ -141,21 +141,113 @@ Coreはsocket、ESP-IDF、SX1262、アプリ固有語彙を知りません。pla
 storage・clock・entropy・Bearerを提供し、private機能はAccepted public ABIの外側で
 段階的に昇格します。
 
-## 5 分 quickstart
+## Quickstart（focused smoke）
 
-前提: Linux または macOS、CMake ≥ 3.20、C11 コンパイラ、**OpenSSL 3.x**（Host Runtime / host tests）。**SQLite3** は任意の POSIX storage port 用です。
-Repository の build / CTest と install 済み CMake package の独立 consumer は、
-どちらも CMake ≥ 3.20 を要求します。
+前提: Linux または macOS、CMake ≥ 3.20、C11 / C++17 compiler、Python 3、
+**Node.js ≥18**、**OpenSSL 3.x**（Host Runtime / host tests）。このfocused smokeは
+POSIX LAB platformを使うためSQLite3 development packageも必要です（library package
+自体ではPOSIX SQLite portは任意）。Repository の build / CTest とinstall済みCMake
+packageの独立consumerは、どちらもCMake ≥ 3.20を要求します。
 
 ```bash
 git clone https://github.com/Aero123421/Ninlil-Runtime.git
 cd Ninlil-Runtime
-cmake -S . -B tmp-v1 \
-  -DNINLIL_BUILD_TESTS=ON \
-  -DNINLIL_ENABLE_SANITIZERS=ON
-cmake --build tmp-v1 -j
-ctest --test-dir tmp-v1 --output-on-failure
+cmake -S . -B tmp-v1 -DCMAKE_BUILD_TYPE=Debug
+cmake --build tmp-v1 --target ninlil_v1_integration_gate_e2e_test --parallel
+ctest --test-dir tmp-v1 -R '^v1_integration_gate_e2e$' --output-on-failure
 ```
+
+これは入口用の focused smoke です。全 CTest、private candidate、sanitizer は別の
+検証であり、5分で終わることを約束しません。
+
+### Sanitizer と全 suite
+
+CI の sanitizer profile は Clang を使います（CMake option 自体は GNU / Clang /
+AppleClang を受け付けます）。全 suite は通常 build と sanitizer build を分けて実行
+してください。
+
+```bash
+cmake --build tmp-v1 --parallel
+ctest --test-dir tmp-v1 --output-on-failure
+CC=clang CXX=clang++ cmake -S . -B build-sanitize \
+  -DCMAKE_BUILD_TYPE=Debug -DNINLIL_ENABLE_SANITIZERS=ON
+cmake --build build-sanitize --parallel
+ctest --test-dir build-sanitize --output-on-failure
+```
+
+### 最小 C SDK 例
+
+次はpublic Runtime APIの主経路です。`config`、`descriptor`、`callbacks`、`submission`
+はABI headerを含めて初期化済み、`submission`はAPPLIED evidenceを要求するvalidな
+1-target submission、
+`platform.storage`はRuntime再起動後も同じ永続provider、`platform.bearer`はpeerからの
+Receiptを`step`中に返す前提です。完全なprovider実装と
+初期値は [Host Runtime SDK](docs/host-runtime-sdk.md) のinstalled consumerを参照してください。
+
+```c
+#include <ninlil/runtime.h>
+#include <string.h>
+
+#define INIT(v) do { memset(&(v), 0, sizeof(v)); \
+    (v).abi_version = NINLIL_ABI_VERSION; \
+    (v).struct_size = (uint16_t)sizeof(v); } while (0)
+
+int run_transaction(const ninlil_runtime_config_t *config,
+                    const ninlil_platform_ops_t *platform,
+                    const ninlil_service_descriptor_t *descriptor,
+                    const ninlil_service_callbacks_t *callbacks,
+                    const ninlil_submission_t *submission) {
+    ninlil_runtime_t *runtime = NULL;
+    ninlil_service_t *service = NULL;
+    ninlil_submission_result_t admitted;
+    ninlil_step_budget_t budget;
+    ninlil_step_result_t stepped;
+    ninlil_transaction_snapshot_t snapshot;
+    ninlil_target_snapshot_t target;
+    uint32_t turn;
+
+    INIT(admitted); INIT(budget); INIT(stepped); INIT(snapshot); INIT(target);
+    budget.max_ingress_messages = budget.max_callbacks = 4;
+    budget.max_state_transitions = budget.max_bearer_sends = 4;
+    snapshot.targets = &target; snapshot.target_capacity = 1;
+    if (ninlil_runtime_create(config, platform, &runtime) != NINLIL_OK ||
+        ninlil_service_register(runtime, descriptor, callbacks, &service) != NINLIL_OK ||
+        ninlil_submit(service, submission, &admitted) != NINLIL_OK ||
+        (admitted.kind != NINLIL_SUBMISSION_ADMITTED_READY &&
+         admitted.kind != NINLIL_SUBMISSION_ALREADY_ADMITTED)) goto fail;
+    for (turn = 0; turn < 64; ++turn) {
+        INIT(stepped);
+        if (ninlil_runtime_step(runtime, &budget, &stepped) != NINLIL_OK ||
+            ninlil_transaction_query(runtime, &admitted.transaction_id, &snapshot)
+                != NINLIL_OK) goto fail;
+        if (snapshot.outcome == NINLIL_OUTCOME_SATISFIED) break; /* Receipt applied */
+    }
+    if (turn == 64) goto fail;
+    if (ninlil_runtime_destroy(runtime) != NINLIL_OK) return 1;
+    runtime = NULL; service = NULL; INIT(snapshot); INIT(target);
+    snapshot.targets = &target; snapshot.target_capacity = 1;
+    if (ninlil_runtime_create(config, platform, &runtime) != NINLIL_OK ||
+        ninlil_service_register(runtime, descriptor, callbacks, &service) != NINLIL_OK ||
+        ninlil_transaction_query(runtime, &admitted.transaction_id, &snapshot)
+            != NINLIL_OK || snapshot.outcome != NINLIL_OUTCOME_SATISFIED) goto fail;
+    return ninlil_runtime_destroy(runtime) == NINLIL_OK ? 0 : 1;
+fail:
+    if (runtime != NULL) (void)ninlil_runtime_destroy(runtime);
+    return 1;
+}
+```
+
+これはlifecycleの要点だけです。productionでは固定64回待ちではなく、
+`ninlil_step_result_t`のwake情報とplatform event loopで再駆動してください。
+
+### 近い protocol との違い
+
+| Protocol | Ninlil の範囲 |
+| --- | --- |
+| MQTT-SN | publish/subscribe protocol を置き換えるものではなく、Ninlil は application outcome と durable evidence を追跡する Runtime。 |
+| LoRaWAN | radio network / join の代替ではなく、Ninlil はその上を含む bearer の選択と結果追跡を扱う。 |
+| CoAP | request/response protocol の代替ではなく、Ninlil は不安定な bearer をまたぐ application transaction を扱う。 |
+| Zenoh | data-centric pub/sub/query の代替ではなく、Ninlil は現場 bearer 上の application transaction とその証拠を扱う。 |
 
 ### V1 USB Controller接続プローブ（private LAB）
 
@@ -277,7 +369,7 @@ Executable / CTest 名 `*_display_latest_state_*` / `*_leak_measurement_*` は *
 | 通常 Debug | `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j && ctest --test-dir build --output-on-failure` |
 | ASan / UBSan | `CC=clang CXX=clang++ cmake -S . -B build-sanitize -DCMAKE_BUILD_TYPE=Debug -DNINLIL_ENABLE_SANITIZERS=ON && cmake --build build-sanitize -j && ctest --test-dir build-sanitize --output-on-failure` |
 
-**前提:** Python 3（vector oracle 生成）、OpenSSL 3.x（Host R7 crypto tests）、SQLite3 development package（POSIX storage port; 未検出時は port のみ skip）。
+**前提:** Python 3（vector oracle 生成）、Node.js ≥18（independent specification gates）、OpenSSL 3.x（Host R7 crypto tests）、SQLite3 development package（POSIX storage port; 未検出時は port のみ skip）。
 
 統合 E2E gate: `ctest -R v1_integration_gate --test-dir tmp-v1 --output-on-failure`
 
@@ -304,7 +396,7 @@ Executable / CTest 名 `*_display_latest_state_*` / `*_leak_measurement_*` は *
 | [Compatibility matrix](compatibility-matrix.json) | version・platform・feature状態・HIL境界のmachine-readable正本 |
 | [Dependency inventory](dependency-inventory.json) | Host / ESP-IDF dependency、version、license、lock hash、container digestのmachine-readable正本 |
 | [Release Guide](docs/releasing.md) | immutable source identity、source archive、SBOM、attestationの公開手順 |
-| [Requirements traceability](requirements-traceability.yaml) | Foundation PR1の厳密な試験対応表。Coverage V2がbaseline / all-private両profileのNormative見出し・要件・vector・invariantを検査 |
+| [Requirements traceability](requirements-traceability.yaml) | Foundation PR1の試験登録対応表。Registration Coverage V2がbaseline / all-private両profileのNormative見出し・要件・vector・invariantと、有効なCTest名・source anchorの対応を検査する。test実行結果やassertion強度の証明ではない |
 | [V1 LAB quickstart](docs/v1-lab-quickstart.md) | `v1.0-lab-rc2`履歴スナップショット |
 | [V1 LAB developer](docs/v1-lab-developer.md) | `v1.0-lab-rc2`開発者向け履歴 |
 | [V1 LAB distribution](docs/v1-lab-distribution-manifest.md) | `v1.0-lab-rc2`配布履歴 |

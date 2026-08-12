@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Fail-closed V2 traceability coverage authority.
+"""Fail-closed V2 traceability registration coverage authority.
+
+The historical filename remains stable for existing automation; the emitted
+gate and CTest names describe the narrower registration claim.
 
 V2 deliberately separates three claims:
 
@@ -11,8 +14,9 @@ V2 deliberately separates three claims:
   registry for the profile being checked.
 
 Source hashes are drift fences only.  They are not treated as evidence that a
-test proves newly-added prose.  Focused invariant evidence therefore also
-pins reader-reviewable assertion anchors in test sources.
+test proves newly-added prose. Focused invariant evidence pins static,
+reader-reviewable anchors in test sources. This gate checks the registration
+map; it neither executes tests nor measures assertion strength.
 """
 
 from __future__ import annotations
@@ -321,12 +325,12 @@ def _validate_anchor_evidence(
     seen: set[str] = set()
     for anchor in anchors:
         if not isinstance(anchor, str) or not anchor:
-            raise CoverageError(f"{context} invalid assertion anchor")
+            raise CoverageError(f"{context} invalid source anchor")
         if anchor in seen:
-            raise CoverageError(f"{context} duplicate assertion anchor")
+            raise CoverageError(f"{context} duplicate source anchor")
         if text.count(anchor) != 1:
             raise CoverageError(
-                f"{context} assertion anchor must occur exactly once in {relative}: "
+                f"{context} source anchor must occur exactly once in {relative}: "
                 f"{anchor!r}"
             )
         seen.add(anchor)
@@ -780,17 +784,17 @@ def main(argv: list[str]) -> int:
         manifest = _json_load(args.root / MANIFEST)
         if args.self_test:
             self_test(args.root, manifest)
-            print("traceability complete coverage V2 self-test ok")
+            print("traceability registration coverage V2 self-test ok")
         else:
             registries = _parse_profiles(args.profile)
             result = validate(args.root, manifest, registries)
             print(
-                "traceability complete coverage V2 ok: "
+                "traceability registration coverage V2 ok: "
                 + " ".join(f"{key}={value}" for key, value in result.items())
                 + f" profiles={','.join(sorted(registries))}"
             )
     except (CoverageError, OSError, UnicodeError) as exc:
-        print(f"traceability complete coverage V2 error: {exc}", file=sys.stderr)
+        print(f"traceability registration coverage V2 error: {exc}", file=sys.stderr)
         return 1
     return 0
 

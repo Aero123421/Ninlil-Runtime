@@ -116,6 +116,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install package build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -216,6 +221,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       # OpenSSL 3 is required for R7 Host private crypto (tests-ON and tests-OFF top-level).
       - name: Install OpenSSL 3 headers and SQLite3
         run: >-
@@ -253,6 +263,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3, OpenSSL 3, and ninja
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -276,7 +291,7 @@ jobs:
             -R '^public_module_manifest_gate(_self_test)?$'
       - name: Test full matrix
         run: ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
-      - name: Traceability complete coverage V2 (baseline)
+      - name: Traceability registration coverage V2 (baseline)
         run: |
           python3 tools/traceability_complete_coverage_gate.py --self-test
           python3 tools/traceability_complete_coverage_gate.py --check \
@@ -362,6 +377,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install gcc-13 g++-13 ninja OpenSSL 3 SQLite shared headers
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -636,6 +656,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -678,6 +703,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 (static archive), OpenSSL 3, zlib, ninja
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -882,6 +912,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -942,6 +977,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1126,6 +1166,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1315,6 +1360,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install Host build dependencies (Linux)
         if: runner.os == 'Linux'
         run: >-
@@ -1394,6 +1444,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1421,6 +1476,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps (+ arm-none-eabi for ILP32)
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1443,6 +1503,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1472,6 +1537,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1502,6 +1572,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1538,7 +1613,7 @@ jobs:
             | grep -F 'host_completion_transport_fixture_e2e' \
             || { echo "false-green: transport fixture not registered under all-features-ON" >&2; exit 1; }
           ctest --test-dir build/host-completion-allfeat -N \
-            | grep -F 'traceability_complete_coverage_v2_check' \
+            | grep -F 'traceability_registration_coverage_v2_check' \
             || { echo "false-green: all-private traceability gate not registered" >&2; exit 1; }
           ctest --test-dir build/host-completion-allfeat \
             --show-only=json-v1 \
@@ -1611,7 +1686,7 @@ jobs:
             -DNINLIL_ENABLE_MFDT_V1_PRIVATE=OFF \
             -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
           if ctest --test-dir build/traceability-not-all-private -N \
-            | grep -F 'traceability_complete_coverage_v2_check'; then
+            | grep -F 'traceability_registration_coverage_v2_check'; then
             echo "false-green: partial private tree received a complete profile" >&2
             exit 1
           fi
@@ -1620,7 +1695,7 @@ jobs:
             echo "false-green: partial private tree registered all-private Host tests" >&2
             exit 1
           fi
-      - name: Traceability complete coverage V2 (all-private)
+      - name: Traceability registration coverage V2 (all-private)
         run: |
           set -euo pipefail
           python3 tools/traceability_complete_coverage_gate.py --self-test
@@ -1803,6 +1878,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3, OpenSSL 3, ninja, binutils
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1891,6 +1971,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install clean-room build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1928,6 +2013,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Assert supported macOS arm64 runner
         run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
@@ -1971,6 +2061,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Assert supported macOS arm64 runner
         run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
@@ -2063,6 +2158,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Assert supported macOS arm64 runner
         run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
@@ -2132,6 +2232,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
           sudo apt-get update && sudo apt-get install -y

@@ -31,6 +31,9 @@ Foundation M1aの正本は次のNormative文書です。
 - **Building and running the test suite** requires a **Python 3** interpreter on
   `PATH`（independent vector oracle、compatibility/dependency authority、
   package/source gateに使用）。Production libraryはPythonをlink・invokeしません。
+- **Building and running the test suite** requires **Node.js 18 or newer** on
+  `PATH`（independent specification gatesに使用）。Node/npm packageをinstallする
+  必要はなく、Production libraryはNodeをlink・invokeしません。
 
 通常buildとtest:
 
@@ -50,7 +53,7 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-PRを提出する前に、変更範囲に応じたtargeted testに加えて、通常suiteとsanitizer suiteを実行してください。CTest件数は増減するため、件数ではなく全test成功をgateにします。
+PRを提出する前に、変更範囲に応じたtargeted testに加えて、通常suiteとsanitizer suiteを実行してください。CIのsanitizer profileはClangです。CTest件数は増減するため、件数ではなく全test成功をgateにします。
 
 ## Public ABI changes
 

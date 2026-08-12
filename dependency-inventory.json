@@ -25,6 +25,16 @@
       "relationship": "DIRECT"
     }
   ],
+  "host_tooling": [
+    {
+      "id": "nodejs",
+      "name": "Node.js",
+      "version": ">=18",
+      "version_requirement": ">=18.0.0",
+      "spdx_license": "MIT",
+      "relationship": "BUILD_TOOL"
+    }
+  ],
   "vendored_dependencies": [
     {
       "id": "pyyaml",

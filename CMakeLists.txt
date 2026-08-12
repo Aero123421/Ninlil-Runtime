@@ -2055,7 +2055,32 @@ if(NINLIL_BUILD_TESTS)
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_store_schema1_binding_gate.py
             --self-test
     )
-    find_program(NINLIL_NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+    find_program(NINLIL_NODE_EXECUTABLE NAMES node nodejs)
+    if(NOT NINLIL_NODE_EXECUTABLE)
+        message(FATAL_ERROR
+            "Ninlil's test suite requires Node.js >=18 for independent "
+            "specification gates. Install Node.js 18 or newer and retry, or "
+            "configure the library package with -DNINLIL_BUILD_TESTS=OFF.")
+    endif()
+    execute_process(
+        COMMAND ${NINLIL_NODE_EXECUTABLE} --version
+        RESULT_VARIABLE _ninlil_node_version_result
+        OUTPUT_VARIABLE _ninlil_node_version
+        ERROR_VARIABLE _ninlil_node_version_error
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT _ninlil_node_version_result EQUAL 0
+            OR NOT _ninlil_node_version MATCHES "^v([0-9]+)\\.")
+        message(FATAL_ERROR
+            "Ninlil's test suite requires a runnable Node.js >=18 "
+            "(found '${_ninlil_node_version}'). Install Node.js 18 or newer, "
+            "or configure the library package with -DNINLIL_BUILD_TESTS=OFF.")
+    endif()
+    if(CMAKE_MATCH_1 LESS 18)
+        message(FATAL_ERROR
+            "Ninlil's test suite requires Node.js >=18 "
+            "(found ${_ninlil_node_version}). Install Node.js 18 or newer, "
+            "or configure the library package with -DNINLIL_BUILD_TESTS=OFF.")
+    endif()
     add_test(
         NAME domain_store_schema1_binding_node_gate
         COMMAND ${NINLIL_NODE_EXECUTABLE}
@@ -2268,18 +2293,6 @@ if(NINLIL_BUILD_TESTS)
         production_attachment_edhoc_fixture_freshness
         PROPERTIES DEPENDS production_attachment_edhoc_vector_oracle
     )
-    # The registry self-test creates short-lived mutation files under tools/.
-    # Serialize every gate that scans that tree with the mutation window.
-    set_tests_properties(
-        production_attachment_edhoc_python_gate
-        production_attachment_edhoc_python_gate_self_test
-        production_attachment_edhoc_node_gate
-        production_attachment_edhoc_node_gate_self_test
-        production_attachment_magic_registry_gate
-        production_attachment_magic_registry_gate_self_test
-        PROPERTIES RESOURCE_LOCK protocol_magic_registry
-    )
-
     # ADR-0018 Proposed Wi-Fi real-path authority candidate (spec-only).
     # Independent generator/Python/Node/C11 gates; no Wi-Fi driver/TLS/HIL claim.
     add_test(
@@ -3480,21 +3493,18 @@ else:
         )
     endif()
 
-    find_program(NINLIL_NODE_EXECUTABLE NAMES node)
-    if(NINLIL_NODE_EXECUTABLE)
-        add_test(
-            NAME domain_schema1_runtime_binding_vector_bridge_node
-            COMMAND ${NINLIL_NODE_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.mjs
-                --check
-        )
-        add_test(
-            NAME domain_schema1_runtime_binding_vector_bridge_node_self_test
-            COMMAND ${NINLIL_NODE_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.mjs
-                --self-test
-        )
-    endif()
+    add_test(
+        NAME domain_schema1_runtime_binding_vector_bridge_node
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.mjs
+            --check
+    )
+    add_test(
+        NAME domain_schema1_runtime_binding_vector_bridge_node_self_test
+        COMMAND ${NINLIL_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/domain_schema1_runtime_binding_vector_bridge.mjs
+            --self-test
+    )
 
     add_executable(ninlil_domain_schema1_runtime_binding_bridge_test
         tests/model/domain_schema1_runtime_binding_bridge_test.c
@@ -7579,17 +7589,17 @@ else:
         COMMAND ninlil_traceability_test ${CMAKE_CURRENT_SOURCE_DIR}
     )
     add_test(
-        NAME traceability_complete_coverage_v2_self_test
+        NAME traceability_registration_coverage_v2_self_test
         COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/traceability_complete_coverage_gate.py
             --self-test
             --root ${CMAKE_CURRENT_SOURCE_DIR}
     )
     set_tests_properties(
-        traceability_complete_coverage_v2_self_test
+        traceability_registration_coverage_v2_self_test
         PROPERTIES
             PASS_REGULAR_EXPRESSION
-                "traceability complete coverage V2 self-test ok"
+                "traceability registration coverage V2 self-test ok"
     )
 
     # Coverage evidence is profile-specific.  Domain Schema 1 currently
@@ -7610,7 +7620,7 @@ else:
     endif()
     if(_ninlil_traceability_coverage_profile)
         add_test(
-            NAME traceability_complete_coverage_v2_check
+            NAME traceability_registration_coverage_v2_check
             COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/traceability_complete_coverage_gate.py
                 --check
@@ -7619,10 +7629,10 @@ else:
                 ${_ninlil_traceability_coverage_profile}=${CMAKE_CURRENT_BINARY_DIR}
         )
         set_tests_properties(
-            traceability_complete_coverage_v2_check
+            traceability_registration_coverage_v2_check
             PROPERTIES
                 PASS_REGULAR_EXPRESSION
-                    "traceability complete coverage V2 ok:"
+                    "traceability registration coverage V2 ok:"
         )
     endif()
     unset(_ninlil_traceability_coverage_profile)

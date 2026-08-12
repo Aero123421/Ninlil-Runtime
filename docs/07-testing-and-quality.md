@@ -19,7 +19,7 @@ requirement ID
 
 Requirementを削除・弱化する変更は、testだけを削除して通してはいけません。仕様変更理由とcompatibility impactを必要とします。
 
-### Complete coverage V2 authority
+### Traceability registration coverage V2 authority
 
 `requirements-traceability-coverage.json`は12〜14章と本章invariantのcomplete coverage正本です。coverage unitは次のとおりです。
 
@@ -30,9 +30,11 @@ Requirementを削除・弱化する変更は、testだけを削除して通し�
 
 各見出しIDは明示値であり、現在の文書順序や行番号から再生成しません。見出しの並べ替えでは同じ完全pathと同じIDを維持します。rename、split、mergeではID/path対応をreviewし、仕様変更理由とcompatibility impactを記録します。source SHA-256はdrift検出であり、変更後の文章を既存testが証明するという意味ではありません。
 
-test evidenceはconfigured CTestの`--show-only=json-v1`に存在し、かつ`DISABLED`でないtestだけを有効とします。CMake source中に`add_test`文字列があるだけ、`if(FALSE)`内だけ、または別profileでだけ有効なtestはevidenceに数えません。baselineとall-privateはprofile別に検査し、あるfeature構成で意図的に非適用となるunitはmanifestの`profiles`で明示します。
+登録evidenceはconfigured CTestの`--show-only=json-v1`に存在し、かつ`DISABLED`でないtestだけを有効とします。CMake source中に`add_test`文字列があるだけ、`if(FALSE)`内だけ、または別profileでだけ有効なtestはevidenceに数えません。baselineとall-privateはprofile別に検査し、あるfeature構成で意図的に非適用となるunitはmanifestの`profiles`で明示します。
 
-`NIN-PR1-TRACE-COVERAGE-001`を`verified`へ昇格できるのは、V2 self-test、baseline、all-private、303-vector authority、および対応するfocused invariant testがすべてgreenになった後だけです。それまでは`partial`を維持します。自己検査は最低でもomission、duplicate、reorder、disabled/`if(FALSE)`、fenced heading、source byte hash、invariant section外移動を拒否します。
+このgateはCTestを実行せず、JUnit結果も読みません。source anchorは対応箇所が消えたことを検出するための静的なdrift fenceであり、assertionの存在・強度・実行・成功を証明しません。振る舞いの証拠には、別途CTestを実行して成功結果を保存する必要があります。
+
+`NIN-PR1-TRACE-COVERAGE-001`の`verified`は、V2 self-test、baseline、all-private、303-vector authorityとfocused invariant testの**登録対応が完全**であることだけを表します。testの実行・成功やassertion強度へ読み替えてはいけません。自己検査は最低でもomission、duplicate、reorder、disabled/`if(FALSE)`、fenced heading、source byte hash、invariant section外移動を拒否します。
 
 ## Test layers
 
