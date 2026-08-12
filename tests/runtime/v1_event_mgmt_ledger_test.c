@@ -2038,7 +2038,7 @@ static int run_cold_restart_automatic_resume_clock_case(
     ninlil_step_result_t step_result;
     ninlil_time_sample_t restart_sample;
     ninlil_id128_t owner_epoch;
-    uint64_t bearer_observed_at_ms;
+    uint64_t bearer_observed_at_ms = 0u;
     uint64_t cycle_ended_at_ms;
     uint64_t restart_baseline_ms;
     uint64_t put_calls;

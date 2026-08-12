@@ -628,6 +628,26 @@ def validate_all_private_traceability_job(ci: str) -> None:
             "CI all-private traceability: CTest JUnit producer/consumer path drift"
         )
 
+
+def validate_clang_release_r7_job(ci: str) -> None:
+    """Keep the full Release matrix inside a measured, executable time budget."""
+    doc = parse_workflow(ci, "CI Clang Release R7")
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict):
+        raise GateError("CI Clang Release R7: jobs are absent")
+    job = jobs.get("ubuntu-clang-release-r7")
+    if not isinstance(job, dict):
+        raise GateError("CI Clang Release R7: owner job is absent")
+    if (
+        job.get("name") != "Ubuntu Clang Release R7 authority"
+        or job.get("runs-on") != "ubuntu-24.04"
+        or job.get("timeout-minutes") != 45
+    ):
+        raise GateError(
+            "CI Clang Release R7: runner/name/45-minute budget authority drift"
+        )
+
+
 def job_body(workflow: str, job_id: str) -> str:
     match = re.search(
         rf"(?ms)^  {re.escape(job_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
@@ -1754,6 +1774,7 @@ def validate(inputs: Inputs) -> None:
     validate_reusable(inputs.ci, "CI")
     validate_reusable(inputs.esp, "ESP-IDF")
     validate_all_private_traceability_job(inputs.ci)
+    validate_clang_release_r7_job(inputs.ci)
     validate_linter(inputs.ci)
     validate_decoder_fuzz_job(inputs.ci)
     validate_release(inputs.release)
@@ -1805,6 +1826,19 @@ def self_test() -> None:
         1,
     )
     reject("all-private JUnit path nested below --test-dir", nested_all_private_junit)
+
+    short_clang_release = copy.deepcopy(baseline)
+    clang_release_body = job_body(
+        short_clang_release.ci, "ubuntu-clang-release-r7"
+    )
+    if clang_release_body.count("    timeout-minutes: 45\n") != 1:
+        raise GateError("self-test fixture missing Clang Release R7 budget")
+    short_clang_release.ci = short_clang_release.ci.replace(
+        clang_release_body,
+        clang_release_body.replace("timeout-minutes: 45", "timeout-minutes: 35"),
+        1,
+    )
+    reject("Clang Release R7 measured budget shortened", short_clang_release)
 
     floating_dco_checkout = copy.deepcopy(baseline)
     floating_dco_checkout.dco = floating_dco_checkout.dco.replace(

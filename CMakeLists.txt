@@ -231,8 +231,9 @@ endif()
 # Native GNU x86/x86_64 host builds only: -maccumulate-outgoing-args fixes
 # .su kind=dynamic caused by push/pop of outgoing call arguments (GCC classifies
 # those frames as dynamic even without VLAs). Feature-detect; fail closed when
-# unavailable on this host. Shared by N6 production and R7 portable production
-# sources (AES-GCM seal/open wrappers need static .su on the same host class).
+# unavailable on this host. Shared by the Fabric radio chain, N6 production,
+# and R7 portable production sources (outgoing calls otherwise make GCC report
+# bounded frames as dynamic in the same host class).
 # Do not apply to AppleClang, Clang, non-x86 hosts, cross builds, or ESP Xtensa.
 # Cache probe name NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS is stable for CI assert.
 set(_ninlil_maccumulate_outgoing_args FALSE)
@@ -983,6 +984,9 @@ if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
         set(_fabric_radio_compile_opts -fstack-usage)
         if(NOT _ninlil_any_sanitizer_active)
             list(APPEND _fabric_radio_compile_opts -Wframe-larger-than=2048)
+        endif()
+        if(_ninlil_maccumulate_outgoing_args)
+            list(APPEND _fabric_radio_compile_opts -maccumulate-outgoing-args)
         endif()
         set_property(
             SOURCE ${_fabric_radio_src}

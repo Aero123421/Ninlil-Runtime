@@ -650,7 +650,9 @@ jobs:
   ubuntu-clang-release-r7:
     name: Ubuntu Clang Release R7 authority
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    # Fresh hosted-runner evidence: the strict full matrix alone takes about
+    # 31 minutes; leave room for configure/build and the focused R7 gates.
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
