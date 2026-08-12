@@ -1829,7 +1829,7 @@ jobs:
           ctest --test-dir build/host-completion-allfeat \
             --output-on-failure --no-tests=error \
             --output-junit \
-              build/host-completion-allfeat/traceability-cited-junit.xml \
+              traceability-cited-junit.xml \
             -R "$(cat build/host-completion-allfeat/traceability-cited.regex)"
           python3 tools/traceability_complete_coverage_gate.py --self-test
           python3 tools/traceability_complete_coverage_gate.py --check \

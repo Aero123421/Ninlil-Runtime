@@ -592,6 +592,42 @@ def validate_linter(ci: str) -> None:
             )
 
 
+def validate_all_private_traceability_job(ci: str) -> None:
+    """Bind cited-test JUnit production to CTest's --test-dir path rules."""
+    doc = parse_workflow(ci, "CI all-private traceability")
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict):
+        raise GateError("CI all-private traceability: jobs are absent")
+    job = jobs.get("host-completion-integrated-e2e")
+    if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+        raise GateError("CI all-private traceability: owner job is absent")
+    matches = [
+        step
+        for step in job["steps"]
+        if isinstance(step, dict)
+        and step.get("name")
+        == "Traceability registration coverage V2 (all-private)"
+    ]
+    if len(matches) != 1 or set(matches[0]) != {"name", "run"}:
+        raise GateError(
+            "CI all-private traceability: exact evidence step is not closed"
+        )
+    commands = logical_shell_commands(matches[0].get("run", ""))
+    expected_ctest = (
+        "ctest --test-dir build/host-completion-allfeat --output-on-failure "
+        "--no-tests=error --output-junit traceability-cited-junit.xml "
+        '-R "$(cat build/host-completion-allfeat/traceability-cited.regex)"'
+    )
+    expected_gate = (
+        "python3 tools/traceability_complete_coverage_gate.py --check "
+        "--profile all-private=build/host-completion-allfeat --junit "
+        "all-private=build/host-completion-allfeat/traceability-cited-junit.xml"
+    )
+    if commands.count(expected_ctest) != 1 or commands.count(expected_gate) != 1:
+        raise GateError(
+            "CI all-private traceability: CTest JUnit producer/consumer path drift"
+        )
+
 def job_body(workflow: str, job_id: str) -> str:
     match = re.search(
         rf"(?ms)^  {re.escape(job_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
@@ -1717,6 +1753,7 @@ def validate_ci_badge(readme: str, ci: str) -> None:
 def validate(inputs: Inputs) -> None:
     validate_reusable(inputs.ci, "CI")
     validate_reusable(inputs.esp, "ESP-IDF")
+    validate_all_private_traceability_job(inputs.ci)
     validate_linter(inputs.ci)
     validate_decoder_fuzz_job(inputs.ci)
     validate_release(inputs.release)
@@ -1759,6 +1796,15 @@ def self_test() -> None:
         1,
     )
     reject("mutable CI checkout", mutable_ci)
+
+    nested_all_private_junit = copy.deepcopy(baseline)
+    nested_all_private_junit.ci = nested_all_private_junit.ci.replace(
+        "--output-junit \\\n              traceability-cited-junit.xml \\",
+        "--output-junit \\\n"
+        "              build/host-completion-allfeat/traceability-cited-junit.xml \\",
+        1,
+    )
+    reject("all-private JUnit path nested below --test-dir", nested_all_private_junit)
 
     floating_dco_checkout = copy.deepcopy(baseline)
     floating_dco_checkout.dco = floating_dco_checkout.dco.replace(

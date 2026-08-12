@@ -962,7 +962,7 @@ ninlil_v1_lab_radio_mapper_install_pair(
     uint8_t free_slot = NINLIL_V1_LAB_RADIO_PAIR_MAX;
     uint8_t i;
 
-    if (!mapper_valid(mapper) || encoded_binding == NULL
+    if (mapper == NULL || !mapper_valid(mapper) || encoded_binding == NULL
         || out_pair_slot == NULL) {
         return NINLIL_V1_LAB_RADIO_MAPPING_INVALID_ARGUMENT;
     }

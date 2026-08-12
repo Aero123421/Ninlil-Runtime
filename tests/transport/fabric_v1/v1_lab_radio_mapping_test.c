@@ -675,11 +675,15 @@ int main(void)
     ninlil_r7_crypto_provider crypto;
     ninlil_v1_lab_binding_t binding;
     uint8_t encoded[NINLIL_V1_LAB_BINDING_MAX_BYTES];
+    uint8_t pair_slot = 0xffu;
     size_t encoded_length = 0u;
 
     REQUIRE(ninlil_r7_crypto_openssl3_provider_init(&crypto)
         == NINLIL_R7_CRYPTO_OK);
     REQUIRE(make_binding(&crypto, &binding, encoded, &encoded_length) == 0);
+    REQUIRE(ninlil_v1_lab_radio_mapper_install_pair(
+                NULL, encoded, encoded_length, &pair_slot)
+        == NINLIL_V1_LAB_RADIO_MAPPING_INVALID_ARGUMENT);
     REQUIRE(test_application_receipt_round_trip(
                 &crypto, &binding, encoded, encoded_length)
         == 0);

@@ -1320,6 +1320,9 @@ static int project_active_record(
     if (eng == NULL || x == NULL || rec == NULL) {
         return NINLIL_MFDT_V1_ERR_STORAGE;
     }
+    if (eng->slot_layout == 0u) {
+        return NINLIL_MFDT_V1_ERR_STATE;
+    }
     rc = ninlil_mfdt_v1_record_unpack(rec, len, &owner, &state, tid, &rev, md,
                                       &openb, &openl, &ents, &eb, &cont, &cl,
                                       &rgen, &pb, &cb, &rb, &pub, &ho);
@@ -1347,20 +1350,10 @@ static int project_active_record(
     x->open_len = openl;
     (void)memcpy(x->manifest_digest, md, 32u);
     if (openb != NULL && openl > 0u && openl <= MFDT_WS_OPEN_MAX) {
-        if (eng->slot_layout == 0u) {
-            (void)memcpy(open_ptr(eng), openb, openl);
-        }
         (void)memcpy(x->whole_digest, openb + 32, 32u);
         x->total_length = ninlil_mfdt_v1_get_u32(openb + 20);
         x->chunk_count = ninlil_mfdt_v1_get_u16(openb + 26);
         x->page_count = ninlil_mfdt_v1_get_u16(openb + 28);
-    }
-    if (eng->slot_layout == 0u && ents != NULL && eb > 0u) {
-        (void)memcpy(entries_ptr(eng), ents, eb);
-    }
-    if (eng->slot_layout == 0u &&
-        cont != NULL && cl > 0u && cl <= NINLIL_MFDT_V1_MAX_CONTENT) {
-        (void)memcpy(content_ptr(eng), cont, cl);
     }
     /* header reservation fields */
     (void)memcpy(x->reservation_id, rec + 112, 16u);
