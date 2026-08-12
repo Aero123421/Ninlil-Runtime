@@ -60,8 +60,10 @@ storage encodings, and release status are unchanged.
   serial-owner implementation.
 - The actual no-flash ESP-IDF 5.5.3 / ESP32-S3 strict build and map proof pass.
   The relevant translation units compile with strict warnings, the final ELF
-  and required-symbol/map checks pass, and RRMP BSS is 3,136 bytes against the
-  32,768-byte ceiling.
+  and required-symbol/map checks pass. On PR #117 head
+  `3892766741569c536f4456de0a860090445e8926`, the
+  [official ESP-IDF run](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/31614757984)
+  measured RRMP BSS at 8,716 bytes against the 32,768-byte ceiling.
 - RRMP resource authority and negative self-test pass with
   `workspace=756688` and `worst_case=1064144`. Frame-stack and storage-ABI
   gates pass.

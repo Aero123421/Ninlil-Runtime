@@ -42,7 +42,7 @@ Project ReviewのOR-10、OR-14、OR-31、OR-32だけを対象に、既存の正�
   prototypeをdefault-OFF、非install / 非export、private、通常build・実機・releaseから
   非到達に限定した。この例外は新状態を作らず、採番、S/C gate、Host/Target、HIL、supportの
   evidenceにならない。
-- [docs index](../README.md)に、レビュー対象SHAで47件、現行treeで49件ある`docs/`直下の
+- [docs index](../README.md)に、レビュー対象SHAで47件、現行treeで51件ある`docs/`直下の
   全Markdownをsource language付きで明示する中央policyを追加した。Markdown link gateが
   実ファイル集合との完全一致と番号付き仕様の読む順番を照合する。欠けていた35章も索引へ
   追加した。英語原文の[build options](../build-options.md)にあった誤った「日本語原文」表示も
@@ -64,7 +64,8 @@ Project ReviewのOR-10、OR-14、OR-31、OR-32だけを対象に、既存の正�
   source fileへ書かずに拒否した。現行default buildの5 private optionも全てOFFである。
 - 初回translation gateは番号付き37件だけを見ており、レビューの47件を閉じたという記録が
   false-greenだった。レビューSHA `9cc907f`の`docs/`直下がexactly 47件であること、現行は
-  `status.md`と`build-options.md`を加え49件であることを再計数し、49件の明示台帳へ修正した。
+  `status.md`と`build-options.md`、後続OR-36の`runtime-concepts.md`と
+  `host-runtime-tutorial.md`を加え51件であることを再計数し、51件の明示台帳へ修正した。
   temp treeへ未登録の新規sourceを追加するmutationがREDになることを確認した。
 
 ## 検証

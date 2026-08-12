@@ -18,7 +18,8 @@ self-testはsource treeへmutantを書き、並列実行と中断後のcheckout�
   CTestとClang sanitizerを別手順・別claimにした。full CTest前には全targetをbuildする。
 - Node.js >=18をREADME / CONTRIBUTING / CMakeへ固定した。不在・実行不能・旧version
   は、install方法と`NINLIL_BUILD_TESTS=OFF`代替を示してconfigure時に拒否する。
-- tests-ONまたはNode authorityを実行するCI 21 jobとrelease verifyで、commit固定の
+- 当時snapshotではtests-ONまたはNode authorityを実行するCI 21 jobとrelease verify、
+  現行snapshotではCI 22 jobとrelease / CodeQL / coverage workflowで、commit固定の
   `actions/setup-node`とNode 22.18.0を使う。release workflow identity gateもAction
   commit、job集合、version、`check-latest=false`を検査する。
 - Nodeをdependency inventory、notices、notice gate、release SPDX SBOM入力へ
@@ -58,7 +59,8 @@ self-testはsource treeへmutantを書き、並列実行と中断後のcheckout�
 
 ## 非claimと後続
 
-full CTest、sanitizer全suite、remote CI、release support、ESP実行、HILを本変更の
-結果としてはclaimしない。fuzz harness、非gating coverage、CodeQL、ABI ILP32 golden、
+このfirst-aid単独の当時snapshotはfull CTest、sanitizer全suite、remote CI、release
+support、ESP実行、HILをclaimしなかった。後続trancheの現行証拠は各専用記録と
+completion ledgerを正本とする。fuzz harness、非gating coverage、CodeQL、ABI ILP32 golden、
 compatibility matrixの公開3 package、layering gate、copyright/DCOは、それぞれ正本と
 受入を持つ後続trancheとして残す。

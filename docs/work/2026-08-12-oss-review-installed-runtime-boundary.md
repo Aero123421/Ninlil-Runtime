@@ -44,5 +44,8 @@ No public header, ABI, wire format, storage format or feature maturity changed.
 
 Physical USB/RF HIL is outside this source-boundary change. Independent final
 review re-ran both source-authority and direct-target injection negatives and
-found no residual defect in the current archive; the integrated full suite and
-remote CI remain pending.
+found no residual defect in the current archive. PR #117 head
+`3892766741569c536f4456de0a860090445e8926` completed the integrated remote
+matrices, including the
+[tests-OFF installed consumer job](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/31614757981/job/94174673801).
+The final follow-up commit still requires its own same-SHA remote rerun.

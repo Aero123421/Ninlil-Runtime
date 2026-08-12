@@ -563,6 +563,56 @@
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/markdown_link_gate.py
             self-test
     )
+    set(_ninlil_runtime_step_gate_args
+        --cc ${CMAKE_C_COMPILER}
+        --define NINLIL_DOMAIN_SCAN_ENABLE_TEST_TRANSPORT_BEGIN=1
+        --define NINLIL_CTRL_SESSION_ENABLE_TEST_SEAM=1
+        --define NINLIL_LOGICAL_SESSION_ENABLE_TEST_SEAM=1
+        --define NINLIL_R7_CRYPTO_TEST_BUILD=1
+        --define NINLIL_R7_WIRE_TEST_BUILD=1
+        --define NINLIL_R7_BINDING_TEST_BUILD=1)
+    if(NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING)
+        list(APPEND _ninlil_runtime_step_gate_args
+            --define NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=1)
+    endif()
+    if(NINLIL_ENABLE_PRIVATE_FABRIC_V1)
+        list(APPEND _ninlil_runtime_step_gate_args
+            --define NINLIL_ENABLE_PRIVATE_FABRIC_V1=1)
+    endif()
+    if(NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1)
+        list(APPEND _ninlil_runtime_step_gate_args
+            --define NINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=1)
+    endif()
+    if(NINLIL_ENABLE_MFDT_V1_PRIVATE)
+        list(APPEND _ninlil_runtime_step_gate_args
+            --define NINLIL_MFDT_V1_PRIVATE=1)
+    endif()
+    add_test(
+        NAME runtime_step_epilogue_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_step_epilogue_gate.py
+            check
+            ${_ninlil_runtime_step_gate_args}
+    )
+    add_test(
+        NAME runtime_step_epilogue_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime_step_epilogue_gate.py
+            self-test
+            ${_ninlil_runtime_step_gate_args}
+    )
+    add_test(
+        NAME oss_review_provenance_gate
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/oss_review_provenance_gate.py
+            check
+    )
+    add_test(
+        NAME oss_review_provenance_gate_self_test
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/oss_review_provenance_gate.py
+            self-test
+    )
     add_test(
         NAME build_options_docs_gate
         COMMAND ${Python3_EXECUTABLE}

@@ -6,12 +6,23 @@
 任意のPOSIX SQLite providerを提供します。これは物理HILやRuntime Fabric全体の
 完成宣言ではありません。
 
-| 文書 | 対象 |
-| --- | --- |
-| [Host Runtime SDK](host-runtime-sdk.md) | CMake 3.20、build / install、external consumer、package gate |
-| [SDK distribution manifest](sdk-distribution-manifest.md) | 現行install tree、export / non-export、release artifacts |
-| [Release Guide](releasing.md) | dry run、tag、SBOM、checksum、provenance、公開後検証 |
-| [README（repository 入口）](../README.md) | 価値説明・状態・quickstart・examples |
+次の6分類は閉じています。目的に合う入口を1つ選び、詳細は各ページから辿ってください。
+これはナビゲーション分類であり、リンク先のNormative / Informative状態や実装完成度を
+変更しません。
+
+<!-- ninlil-doc-taxonomy-v1:begin -->
+| 類型 | 現行入口 | 用途 |
+| --- | --- | --- |
+| `README` | [Repository README](../README.md) | 価値、現在の状態、最短の入口を知る |
+| `concept` | [Runtime concepts](runtime-concepts.md) | transaction、evidence、roleの基本概念を掴む |
+| `tutorial` | [Host Runtime first tutorial](host-runtime-tutorial.md) | source treeから最初のfocused smokeを順に完了する |
+| `how-to` | [Host Runtime SDK](host-runtime-sdk.md) | build、install、external consumerなど目的別の手順を使う |
+| `reference` | [SDK distribution manifest](sdk-distribution-manifest.md) | install tree、export target、release artifactを正確に調べる |
+| `explanation` | [Architecture](01-architecture.md) | role分離、依存方向、durability設計の理由を理解する |
+<!-- ninlil-doc-taxonomy-v1:end -->
+
+状態根拠は[Current status](status.md)、build option一覧は[Build options](build-options.md)、
+release担当者向け手順は[Release Guide](releasing.md)を参照してください。
 
 ---
 
@@ -91,8 +102,10 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 
 番号付き仕様（Accepted前のnormative candidateを含む）は現在すべて日本語原文が正本です。
 英訳や英語overviewは参考情報であり、矛盾時は各仕様の日本語原文とAccepted ADRを優先します。
-レビュー対象SHAでは`docs/`直下に47文書、現行treeでは49文書があります。次のpolicyは
-informative文書を含む現行49文書それぞれの原文言語と共通translation statusを中央で記録します。
+レビュー対象SHAでは`docs/`直下に47文書、現行treeでは51文書があります。次のpolicyは
+informative文書を含む現行51文書それぞれの原文言語と共通translation statusを中央で
+exact 1件記録します。このclosed registryをCharterの「各文書に明記」の正本とし、
+各本文へ同じmetadataを複製しません。
 この台帳への掲載は文書をNormativeへ昇格しません。`tools/markdown_link_gate.py`は実ファイル集合との
 完全一致と、番号付き仕様の読む順番への掲載を検査します。
 
@@ -142,9 +155,11 @@ informative文書を含む現行49文書それぞれの原文言語と共通tran
     "build-options.md": "en",
     "hil-evidence.md": "ja",
     "host-runtime-sdk.md": "ja",
+    "host-runtime-tutorial.md": "ja",
     "lab-to-domain-cutover.md": "en",
     "release-history.md": "ja",
     "releasing.md": "ja",
+    "runtime-concepts.md": "ja",
     "sdk-distribution-manifest.md": "ja",
     "status.md": "ja",
     "v1-lab-developer.md": "ja",

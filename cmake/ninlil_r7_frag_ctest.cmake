@@ -97,6 +97,18 @@ add_test(
         ${CMAKE_CURRENT_SOURCE_DIR}/tools/r7_frag_stack_gate.py
         self-test
 )
+add_test(
+    NAME nrw1_frag_false_green_gate
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/r7_frag_false_green_gate.py
+        check
+)
+add_test(
+    NAME nrw1_frag_false_green_gate_self_test
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/r7_frag_false_green_gate.py
+        self-test
+)
 # After private lib build, re-check with host .su artifacts.
 # Sanitizer builds rewrite .su kind to dynamic and inflate frames — register
 # presence without hiding the authoritative bounded path. Normal builds omit

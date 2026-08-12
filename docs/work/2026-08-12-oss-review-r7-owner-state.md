@@ -46,14 +46,21 @@ standalone coordinator/registry owners have explicit init/fini functions.
   the other; checks registry and activation isolation; checks same-owner
   coordinator, checked-issue, and activation reentry rejection; and compares
   every owner byte with zero after fini.
-- Full private R7/NRW1 suite: **17/17 PASS** in the normal profile and
-  **17/17 PASS** in the ASan/UBSan profile. This includes production
-  integration, radio packet-link vertical, wire fixture, lifecycle, target
-  smoke, and stack gates.
+- The original full private R7/NRW1 suite was **17/17 PASS** in normal and
+  ASan/UBSan profiles. The final remote-evidence route now makes the owner test
+  an exact required/build/selector member and runs **18/18 normal** and
+  **12/12 ASan/UBSan** focused tests; the smaller sanitizer selector is an
+  explicit focused set, not a claim that the omitted tests passed.
+- `r7_frag_false_green_gate` and its self-test inspect both matrix functions.
+  Removing the owner test from normal/ASan required lists, build targets, or
+  CTest selectors is RED in all six mutations.
 - `radio_wire_r6_docs_gate.py check`: PASS after the caller-owned coordinator
   contract was added to docs/30.
 - Source and archive scans find none of the removed `g_slots`, `g_in_api`,
   `g_r5_issue_*`, or `g_activate_*` symbols. `git diff --check`: PASS.
+- `bash tools/ci_completion_feature_host_matrix.sh r7_frag all_profiles`:
+  PASS across OFF residual、normal、ASan/UBSan、tests-OFF. The follow-up commit
+  requires this same route to pass remote CI at its own head SHA.
 
 ## Nonclaims
 

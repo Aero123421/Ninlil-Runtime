@@ -58,7 +58,7 @@
   needs / runner / timeout / permission / privileged condition、3 checkout refを個別照合した
   上で、parsed semantic tree全体のSHA-256を固定する。comment decoyを残した
   `pull_request_target + write-all + PR-head checkout`複合変異はCI / ESP / Releaseの
-  すべてでREDになる。full 448 CTestのserial実測が約41分であるため、release verify
+  すべてでREDになる。当時snapshotのfull 448 CTestのserial実測が約41分であるため、release verify
   jobの外側timeoutは45分から90分へ広げた。個別CTest timeoutは変更しない。
 
 ## ローカル検証
@@ -79,8 +79,14 @@
 | local AppleClang delivery coverage artifact（profraw/LCOV/text/profdata） | PASS（Runtime private 80 build edge、LCOV 94,959行、text 82,172行） |
 | `git diff --check` | PASS |
 
-## NOT_RUN
+## Remote verification / 非claim
 
-remote CodeQLとGitHub artifact workflowはlocalから実行しない。local Xcode toolchainで
-coverage artifactの生成経路は確認したが、Ubuntu/Clang remote artifactはNOT_RUNである。
-ローカルの単一delivery executableもcoverage率やrelease readinessとして主張しない。
+PR #117 head `3892766741569c536f4456de0a860090445e8926` で次を確認した。
+
+| Remote evidence | 結果 |
+| --- | --- |
+| [CodeQL run 31614757982](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/31614757982) | tests-OFF Hostと6-feature all-private Hostを抽出し、analysis uploadまでSUCCESS |
+| [Clang coverage run 31614758002](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/31614758002) | instrumented Runtime deliveryを実行し、非閾値artifact job SUCCESS |
+
+CodeQL証拠にESP固有adapter/toolchainは含めない。coverage artifactは実行地図であり、
+coverage率の閾値、十分性、release readinessを証明しない。

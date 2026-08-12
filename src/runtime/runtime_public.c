@@ -2477,6 +2477,8 @@ ninlil_status_t ninlil_runtime_step(
         goto step_exit;
     }
 
+    goto step_exit;
+
 step_exit:
     /* One owner-state exit keeps every post-entry path reentrancy-safe. */
     runtime->in_step = 0u;

@@ -14,7 +14,7 @@ code内で閉じた。一方、正式copyright holder/yearとGitHub admin設定�
 | --- | --- | --- |
 | OR-09: source license inventory | CLOSED | `dependency-inventory.json`がfirst-party defaultを`Apache-2.0`、license textを`LICENSE`、copyrightを`NOASSERTION`、`tools/_vendor`をPyYAML inventoryへ除外対応する |
 | OR-09: installed public header SPDX | CLOSED | `include/ninlil/*.h` 10/10の先頭行をexact `SPDX-License-Identifier: Apache-2.0`とし、既存third-party gateが集合・値を閉じる |
-| OR-09: repository全C/H fileの個別SPDX | CLOSED | review基準の799本と本trancheで追加された13本を合わせた現行first-party C/H 812/812に先頭行のApache-2.0 SPDX identifierを付与。`tools/_vendor`は依存inventoryへ分離し、gateがtracked/untracked実集合と欠落mutationを検査する |
+| OR-09: repository全C/H fileの個別SPDX | CLOSED | review基準の799本から追加13本・削除1本のnet +12となる現行first-party C/H 811/811に先頭行のApache-2.0 SPDX identifierを付与。`tools/_vendor`は依存inventoryへ分離し、gateがtracked/untracked実集合と欠落mutationを検査する |
 | OR-09: DCO 1.1経路 | CLOSED (code) | `CONTRIBUTING.md`に`git commit -s`、修正・local checkを記載。workflowは各commitのauthor emailとsign-off emailを照合する |
 | OR-09: holder/year、required check / App | EXTERNAL | 下記owner/legal判断が未完。`LICENSE` Appendixと`NOTICE`のholder行は未変更 |
 | OR-33: CI badge | CLOSED (code) | canonical repository、`ci.yml`、default branch `main`へ固定したGitHub native badgeだけを追加し、workflow gateがREADMEとCI triggerを照合する |
@@ -23,7 +23,7 @@ code内で閉じた。一方、正式copyright holder/yearとGitHub admin設定�
 ## 実装
 
 - 既存`third_party_notice_gate.py`へfirst-party license scope、公開header 10本のexact SPDX、
-  および現行first-party C/H実集合812本のfirst-line SPDX検査を追加した。vendored PyYAMLのpath / inventory ID対応もclosed objectで固定し、
+  および現行first-party C/H実集合811本のfirst-line SPDX検査を追加した。vendored PyYAMLのpath / inventory ID対応もclosed objectで固定し、
   holder未確定をSPDX標準の`NOASSERTION`として保持した。新しいlicense frameworkは作っていない。
   既存release SBOMもproject packageの`copyrightText`をこのinventory値へ結び、推測値を拒否する。
 - [DCO 1.1](https://developercertificate.org/)のsign-off手順を`CONTRIBUTING.md`へ追加した。
@@ -110,7 +110,7 @@ gh repo view Aero123421/Ninlil-Runtime \
 ## 検証
 
 - `python3 tools/third_party_notice_gate.py check` / `self-test` — PASS
-- first-party C/H SPDX coverage — 812/812、非public sourceのfirst-line削除mutation RED
+- first-party C/H SPDX coverage — 811/811、非public sourceのfirst-line削除mutation RED
 - `python3 tools/dco_signoff_gate.py self-test` — PASS
 - `python3 tools/release_workflow_identity_gate.py check` / `self-test` — PASS
 - `python3 tools/spdx_release_sbom.py self-test` — PASS

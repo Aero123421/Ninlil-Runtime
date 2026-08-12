@@ -32,8 +32,11 @@ ESP mapに未接続だったMFDT/R7 FRAG DRAM budget gateを対象にした。
 | ESP launcher dry-run | PASS |
 | `git diff --check` | PASS |
 
-## 未完
+## Remote verification / 非claim
 
-このhostではDocker daemon（`~/.colima/default/docker.sock`）が起動しておらず、
-official ESP-IDF fresh build/mapは開始前に停止した。launcherへreal map gateは接続済み
-だが、daemonを起動したCIまたは開発hostでfull launcherを再実行する必要がある。
+PR #117 head `3892766741569c536f4456de0a860090445e8926` の
+[ESP-IDF run 31614757984](https://github.com/Aero123421/Ninlil-Runtime/actions/runs/31614757984)
+で、immutable ESP-IDF v5.5.3 amd64 imageを使うofficial launcherをfresh実行した。
+feature-ONの実mapに対してR7 FRAGは9,416/49,152 bytes、MFDTは0/49,152 bytesで
+両budget gateがPASSし、job全体もSUCCESSした。これはcompile/linkとmap resourceの証拠で
+あり、実機flash、物理HIL、RF/power挙動は証明しない。
