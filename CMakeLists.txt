@@ -247,12 +247,12 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND NOT CMAKE_CROSSCOMPILING)
         if(NOT NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS)
             message(FATAL_ERROR
                 "GNU x86/x86_64 host requires -maccumulate-outgoing-args for "
-                "N6/R7 production static .su classification, but the C compiler "
+                "Fabric/N6/R7 production static .su classification, but the C compiler "
                 "rejected the flag (target=${CMAKE_SYSTEM_PROCESSOR})")
         endif()
         set(_ninlil_maccumulate_outgoing_args TRUE)
         message(STATUS
-            "N6/R7 production: -maccumulate-outgoing-args enabled "
+            "Fabric/N6/R7 production: -maccumulate-outgoing-args enabled "
             "(native GNU target ${CMAKE_SYSTEM_PROCESSOR}; "
             "NINLIL_HAS_MACCUMULATE_OUTGOING_ARGS=1)")
     endif()
