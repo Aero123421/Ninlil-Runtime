@@ -2190,7 +2190,9 @@ jobs:
   macos-dynamic:
     name: macOS dynamic SQLite full
     runs-on: macos-15
-    timeout-minutes: 35
+    # A loaded hosted runner needed almost 34 minutes for CTest alone.
+    # Preserve room for configure/build and the focused R7/archive gates.
+    timeout-minutes: 50
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}

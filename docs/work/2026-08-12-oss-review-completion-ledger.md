@@ -8,7 +8,9 @@ commit `9cc907fe3a384aba9bf0e984b62fa55fa1207f3f` を対象にした
 「Ninlil Runtime 徹底レビュー」の全指摘を、修正済み・作業中・未着手・外部確認待ちに
 分けて追跡する。件数や文書更新だけで完了扱いにせず、各行は対応する実装、focused
 test、独立reviewが現行byte列で揃った時だけrepository-localの`CLOSED`へ進める。
-remote CIやrepository管理設定が必要な証拠は各行と非claimで別に追跡し、stacked PR全体は
+repository管理設定そのものが指摘対象の行は、実設定をadmin適用し、日付付きGitHub API
+read-backと独立確認が揃った時だけ`CLOSED`へ進める。remote CIやrepository管理設定が必要な
+証拠は各行と非claimで別に追跡し、stacked PR全体は
 同一commitのremote CIがgreenになるまで完成・release-readyとは扱わない。
 
 受領原文は[immutable copyと全414行provenance map](../reviews/2026-08-11-ninlil-runtime-exhaustive-review-index.md)
@@ -19,7 +21,8 @@ OR-01〜37のmany-to-many対応の正本であり、各行からのlocal証拠�
 
 状態:
 
-- `CLOSED`: repository-localの修正、再現可能な検証、独立reviewが完了した。
+- `CLOSED`: repository-localの修正、再現可能な検証、独立reviewが完了した。指摘対象が
+  repository管理設定の場合は、実設定のadmin適用、日付付きAPI read-back、独立確認を必須とする。
 - `IN_PROGRESS`: 専用trancheで実装または検証中。
 - `OPEN`: 現行treeで未解決を再確認した。
 - `EXTERNAL`: 法的事実またはrepository管理権限の確認が必要。
@@ -37,7 +40,7 @@ OR-01〜37のmany-to-many対応の正本であり、各行からのlocal証拠�
 | OR-06 | `byte_stream.h` / `posix_usb_serial_v1.h`がABI manifest対象外 | CLOSED | 48 constants/5 layouts/34 fieldsを追加しpublic-layout deletion mutation RED、ABI focused 9/9 PASS |
 | OR-07 | MFDT/R7 ESP DRAM gateが実mapを検査しない | CLOSED | official ESP-IDF v5.5.3 amd64 launcherのfresh feature-ON build/mapで、R7 FRAG 9,416/49,152 bytes、MFDT 0/49,152 bytesを実測して両gateをPASS。split-line/zero-row/oversize mutationと独立reviewもPASS。物理HILは非claim |
 | OR-08 | Node.jsが未宣言・未固定・SBOM不在 | CLOSED | Node >=18、CI 22.18.0 pin、inventory/notice、SPDX `APPLICATION` + `BUILD_TOOL_OF` |
-| OR-09 | copyright holder/SPDX/DCO経路が不在 | EXTERNAL | review基準799本から追加13本・削除1本のnet +12となるfirst-party C/H 811/811 SPDX、実集合gate、source-license inventory、DCO 1.1 gate/workflowはlocal CLOSED。正式holder/yearとNOTICE、remote DCO required化だけはowner/legal/admin証拠待ち。Apache LICENSE本文は変更しない |
+| OR-09 | copyright holder/SPDX/DCO経路が不在 | EXTERNAL | review基準799本から追加13本・削除1本のnet +12となるfirst-party C/H 811/811 SPDX、実集合gate、source-license inventory、DCO 1.1 gate/workflowをlocal CLOSED。2026-08-13に観測済み`Sign-off trailers`を`main`のrequired checkへ設定し、strict base、PR経由、会話解決、admin enforcement、force-push/deletion拒否もAPI再確認済み。正式holder/yearとNOTICEだけはowner/legal証拠待ち。Apache LICENSE本文は変更しない |
 | OR-10 | 公開3 packageがcompatibility matrixに不在 | CLOSED | POSIX TLS / POSIX USB / Compositionをexact dependency、`SPEC_ACCEPTED` ceiling、Required HIL未確認で追加。各featureの欠落・依存改変・false HIL mutation RED |
 | OR-11 | MQTT-SN/LoRaWAN/CoAP/Zenohとの差別化説明がない | CLOSED | PR #116のREADME比較表でtransport ACKとdurable/application evidenceの違いを説明 |
 | OR-12 | README statusが39行のjargon壁・巨大table | CLOSED | 詳細ledgerを`docs/status.md`へ移し、READMEは利用可能面・未証明面・focused入口へ短縮。link/self-test PASS |
@@ -61,7 +64,7 @@ OR-01〜37のmany-to-many対応の正本であり、各行からのlocal証拠�
 | OR-30 | historical 3文書が現行正本に見える | CLOSED | 3本文へHISTORICAL banner・固定tag・現行Host SDK/READMEリンクを追加。古い値は履歴として保持 |
 | OR-31 | Proposed中のprivate prototypeが規則違反に見える | CLOSED | docs/34にdefault-OFF/non-install/non-export/non-authority境界を追加。default-ON・install/export・evidence昇格のsource mutation RED |
 | OR-32 | 47 normative docsのsource/translation statusが未記載 | CLOSED | review SHAのdocs直下47件、現行51件をsource language付き中央closed registryで完全列挙。Charterはこのexact-one中央記録を各文書の明記とする解釈へ固定し、未登録source追加・不正language・番号付き索引漏れをgateで拒否 |
-| OR-33 | repository description/topics/badge/Discussionsが空 | EXTERNAL | canonical main CI badgeはlocal CLOSED。description、topics、Discussionsはrepository admin設定の適用とAPI再確認待ち |
+| OR-33 | repository description/topics/badge/Discussionsが空 | CLOSED | canonical main CI badgeに加え、2026-08-13にrepository description、9 topics、Discussionsをadmin適用し、GitHub APIでexact値とdefault branch `main`を再確認した。READMEのpre-release / LAB_ONLY境界は維持 |
 | OR-34 | 公開archiveとLAB/simulator/private candidateの境界が曖昧 | CLOSED | 明示source authorityとLAB/simulator/既知private familyのconfigure/member/symbol fenceを追加、独立mutation review PASS |
 | OR-35 | positive design / verification / security findings（境界、vector freshness、nonce/replay/AEAD/TLS/file checks等） | NO_ACTION | 原文の肯定的観察をprovenance mapへ明示し、修正件数や完成率へ数えない。現行安全境界を回帰gateで維持し、別の弱化差分を入れない |
 | OR-36 | Charterが要求するREADME/concept/tutorial/how-to/reference/explanationの分離がない | CLOSED | docs indexへ6種類・6 distinct targetのclosed taxonomyを追加し、current concept/tutorialを新設。分類欠落・誤routing mutationをMarkdown gateでRED、focused tutorial smokeと独立reviewをPASS |

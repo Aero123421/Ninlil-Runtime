@@ -1,8 +1,17 @@
 # Changelog
 
-Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録します。日付付きreleaseが始まるまでは、開発中の変更を`Unreleased`へまとめます。
+Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録します。未公開の変更は
+`Unreleased`へ、公開候補は日付付きsectionへまとめます。
 
 ## Unreleased
+
+次のdevelopment snapshotへ入れる変更をここへ記録します。
+
+## [v0.1.0-dev.1] - 2026-08-13
+
+> **Experimental / pre-alpha source snapshot.** canonical package versionは`0.1.0`です。
+> `dev.1`はtagとartifact名のprerelease suffixであり、public alpha、stable release、
+> `RELEASE_SUPPORTED`、production/field/legal readinessへの昇格を意味しません。
 
 ### Added
 
@@ -68,13 +77,42 @@ Ninlil Runtimeの利用者に影響する変更をこのファイルへ記録し
   tests-OFF installed archiveのsource/member境界、decoder fuzz 6種、Clang coverage、
   CodeQL、DCO、SPDX SBOMのfail-closed検証を追加・強化した。
 
+### Compatibility and release scope
+
+- Runtime / SDK coreは`0.1.0`、Public C ABIは`0.1 experimental`です。CMake packageの
+  compatibilityは`0.1.x`内に限定し、`0.2.x`以降を互換とは判定しません。`0.x`での
+  breaking changeはminor bump、CHANGELOG、migration note、compatibility matrixを必須とします。
+- public data wireとcomplete public control protocolは未割当です。private control、radio、
+  MFDT、LAB protocolをpublic wire compatibilityやfield fleet supportとして扱いません。
+- Foundation storage schema 1はexperimentalです。Legacy/LAB namespaceからのin-place
+  migration、mixed-version rolling upgrade、rollback compatibilityはこのsnapshotでは保証しません。
+- compatibility matrixのLinux x86_64 / macOS arm64 platform行と
+  `oss-package-docs-release-ci`行は`HOST_CANDIDATE`です。一方、
+  `portable-core-host-runtime` feature行は`SPEC_ACCEPTED`（ceiling `HOST_CANDIDATE`）です。
+  installed public Host consumerとclean-room packageは検証済みです。ESP32-S3 platform行は
+  `SPEC_ACCEPTED`（ceiling `TARGET_CANDIDATE`、required HIL未完）です。
+- exactな機能状態、依存、state ceiling、HIL有無は`compatibility-matrix.json`を正本とします。
+
 ### Known limitations
 
-- 旧clock epochに属する一般timerをdurable Recovery Fenceへ収束させるkind-21 reducerは
-  未実装である。targeted managementは該当状態を推測して更新せず
-  `NINLIL_E_CLOCK_UNCERTAIN`で安全停止するが、restartだけで自動回復するとは主張しない。
+- Accepted Domain Schema1の8種correctness timerに対する一般kind-21 reducer、T6
+  CLOCK_FENCE reconstruction、step Recovery barrierは未実装である（#119）。既存LAB-private
+  active Result token recoveryを除き、targeted cancel / resume / discardがvalid old-epoch
+  active timerを検出した場合は`NINLIL_E_CLOCK_UNCERTAIN`、health `CLOCK_UNCERTAIN`、
+  transaction / ordered-input / management-ledger / Storage mutation 0で安全停止する。
+  restartだけで一般timerがdurable healingするとは主張しない。Disposition / CancelResult /
+  Delivery / reconcile / Receiptのdurable local ingress-time authorityも別subgateとして未完である。
 - Required HIL、field/legal readiness、remote CIでのみ得られるtarget evidenceは、
   compatibility matrixとcompletion ledgerで未検証またはexternalとして追跡する。
+- V1 functional LABの3-board physical campaignと実USB/RFは`NOT_RUN`です。Host simulation、
+  target compile/link、raw radio diagnosticsを実機証拠の代用にしません。Flash FULL power-cut、
+  実AP、physical restart/fault-injection matrix、resource watermark、long-running soakは別の
+  V2/hardening gateです。
+- 現LAB radio profileはJapan legal profileではありません。法的権限が確認された
+  shielded/conducted test environment以外でRF送信しません。shielded testの成功を製品運用や
+  regulatory conformityの根拠にしません。
+- 正式copyright holder/yearとNOTICE要否はowner/legal判断待ちです。repository名やaccount名から
+  推測せず、release tracking Issueで外部authorityとして管理します。
 
 ## [v1.0-lab-rc2] - 2026-07-24
 

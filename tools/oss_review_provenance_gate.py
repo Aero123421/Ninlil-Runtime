@@ -35,7 +35,7 @@ EXPECTED_SOURCE = {
     "normalization": "append-final-lf",
 }
 EXPECTED_STATUSES = tuple(
-    "EXTERNAL" if number in {9, 33}
+    "EXTERNAL" if number == 9
     else "NO_ACTION" if number in {35, 37}
     else "CLOSED"
     for number in range(1, 38)
@@ -44,7 +44,7 @@ EXPECTED_SPANS_SHA256 = (
     "94a67e9ed1e583bd753f1cfd34ad81fb38e1c25769fc6356f0a766934424f090"
 )
 EXPECTED_ENTRIES_SHA256 = (
-    "9e0f475d623509fc3a64057c730c3f09732c0639bd9f6ca1b9ebd7956d8d4cad"
+    "3e3e027a8f67607c53ebf4dc16acdb0cae2e5b78f4fe65c69c36bb0905607550"
 )
 CHARTER_MATURITY = "現在の maturity: Experimental / pre-alpha"
 CHARTER_ENGLISH_EXIT = (
@@ -52,6 +52,14 @@ CHARTER_ENGLISH_EXIT = (
     "文書の英語版を正本として整備する。"
 )
 README_MATURITY = "**プレリリース SDK**"
+LEDGER_ADMIN_CLOSURE = (
+    "`CLOSED`: repository-localの修正、再現可能な検証、独立reviewが完了した。指摘対象が\n"
+    "  repository管理設定の場合は、実設定のadmin適用、日付付きAPI read-back、独立確認を必須とする。"
+)
+EVIDENCE_ADMIN_CLOSURE = (
+    "指摘対象がrepository管理設定の場合に限り、実設定のadmin適用、\n"
+    "日付付きGitHub API read-back、独立確認をclosure evidenceとして扱う。"
+)
 
 
 def _closed_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -285,6 +293,8 @@ def validate(
         errors.append(f"review ledger OR IDs must be exact 01..37 (got {ledger_ids})")
     if tuple(status for _, status in ledger_rows) != EXPECTED_STATUSES:
         errors.append("review ledger status vector differs from accepted disposition")
+    if active_ledger_text.count(LEDGER_ADMIN_CLOSURE) != 1:
+        errors.append("review ledger admin-closure authority drift")
     ledger_targets = re.findall(
         r"^commit `([0-9a-f]{40})` を対象",
         active_ledger_text,
@@ -333,16 +343,23 @@ def validate(
 
     evidence_path = root / EVIDENCE.relative_to(ROOT)
     try:
-        evidence = _extract(
+        evidence_raw = (
             evidence_path.read_text(encoding="utf-8")
             if evidence_text is None
-            else evidence_text,
+            else evidence_text
+        )
+        active_evidence_text = _active_markdown(evidence_raw)
+        evidence = _extract(
+            evidence_raw,
             EVIDENCE_BEGIN,
             EVIDENCE_END,
         )
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         errors.append(f"review evidence index: {exc}")
         evidence = {}
+        active_evidence_text = ""
+    if active_evidence_text.count(EVIDENCE_ADMIN_CLOSURE) != 1:
+        errors.append("review evidence admin-closure authority drift")
     if set(evidence) != {"schema", "pull_request", "entries"}:
         errors.append("review evidence top-level fields are not closed")
     if evidence.get("schema") != "ninlil-oss-review-evidence-v1":
@@ -577,15 +594,23 @@ def self_test() -> None:
     ledger_mutations = (
         "````markdown\n" + ledger + "\n````\n",
         "<!--\n" + ledger + "\n-->\n",
+        ledger.replace(LEDGER_ADMIN_CLOSURE, "", 1),
     )
     for index, ledger_mutation in enumerate(ledger_mutations):
-        if not validate(
+        if ledger_mutation == ledger or not validate(
             ROOT,
             baseline,
             evidence,
             ledger_text_override=ledger_mutation,
         ):
             raise RuntimeError(f"inactive review ledger mutation {index} was accepted")
+    evidence_admin_mutation = evidence.replace(EVIDENCE_ADMIN_CLOSURE, "", 1)
+    if evidence_admin_mutation == evidence or not validate(
+        ROOT,
+        baseline,
+        evidence_admin_mutation,
+    ):
+        raise RuntimeError("review evidence admin-closure deletion was accepted")
     premise_mutations = (
         (charter.replace(CHARTER_MATURITY, "現在の maturity: Public alpha", 1), readme),
         (charter.replace(CHARTER_ENGLISH_EXIT, "", 1), readme),

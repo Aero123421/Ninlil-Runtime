@@ -1,11 +1,13 @@
 # 2026-08-11 OSS review evidence graph
 
-状態: per-OR local evidence authority
+状態: per-OR closure evidence authority
 
 この索引は[原文provenance](2026-08-11-ninlil-runtime-exhaustive-review-index.md)で正規化した
 OR-01〜37を、repository-localの作業記録、実装/gate authority、focused verificationへ結ぶ。
 同じartifactを複数ORが共有する場合も各ORから明示的に辿れる。`CLOSED`はlocal修正・検証・
-独立reviewが揃った状態であり、remote evidenceやexternal owner actionを置換しない。
+独立reviewが揃った状態である。指摘対象がrepository管理設定の場合に限り、実設定のadmin適用、
+日付付きGitHub API read-back、独立確認をclosure evidenceとして扱う。これはremote CIや
+legal holder/NOTICEなど未確定のexternal owner actionを置換しない。
 
 最終HEADの独立review receiptとremote run/job rollupはPR #117へ記録し、この索引自体を
 書き換えて検証対象SHAを変える循環を避ける。
@@ -24,7 +26,7 @@ OR-01〜37を、repository-localの作業記録、実装/gate authority、focuse
     {"id":"OR-06","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-abi-resource-gates.md"],"authorities":["tools/abi_drift_schema.c"],"checks":["public layout deletion mutations"],"remote":"ci"},
     {"id":"OR-07","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-abi-resource-gates.md"],"authorities":["tools/r7_frag_esp_dram_budget_gate.py","tools/mfdt_v1_esp_dram_budget_gate.py"],"checks":["official ESP feature-ON map gates"],"remote":"esp"},
     {"id":"OR-08","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-docs-build-ux.md"],"authorities":["CMakeLists.txt","dependency-inventory.json","tools/release_workflow_identity_gate.py"],"checks":["Node pin and SBOM mutations"],"remote":"ci"},
-    {"id":"OR-09","status":"EXTERNAL","records":["docs/work/2026-08-12-oss-review-legal-community-tranche.md"],"authorities":["tools/third_party_notice_gate.py","tools/dco_signoff_gate.py"],"checks":["first-party C/H 811/811 SPDX"],"remote":"dco-and-admin"},
+    {"id":"OR-09","status":"EXTERNAL","records":["docs/work/2026-08-12-oss-review-legal-community-tranche.md"],"authorities":["tools/third_party_notice_gate.py","tools/dco_signoff_gate.py"],"checks":["first-party C/H 811/811 SPDX","main required DCO and branch protection API verification"],"remote":"legal-holder-and-notice"},
     {"id":"OR-10","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-ux-docs-tranche.md"],"authorities":["compatibility-matrix.json","tools/compatibility_matrix_gate.py"],"checks":["feature omission and dependency mutations"],"remote":"ci"},
     {"id":"OR-11","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-docs-build-ux.md"],"authorities":["README.md","README.en.md"],"checks":["markdown link and README sync gates"],"remote":"ci"},
     {"id":"OR-12","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-ux-docs-tranche.md"],"authorities":["README.md","docs/status.md"],"checks":["README focused entry and status links"],"remote":"ci"},
@@ -48,7 +50,7 @@ OR-01〜37を、repository-localの作業記録、実装/gate authority、focuse
     {"id":"OR-30","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-ux-docs-tranche.md"],"authorities":["docs/v1-lab-quickstart.md","docs/v1-lab-developer.md","docs/v1-lab-distribution-manifest.md"],"checks":["historical banners and current links"],"remote":"ci"},
     {"id":"OR-31","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-spec-docs-tranche.md"],"authorities":["docs/34-v2-runtime-fabric-completion.md"],"checks":["private prototype boundary mutations"],"remote":"ci"},
     {"id":"OR-32","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-spec-docs-tranche.md"],"authorities":["docs/README.md","tools/markdown_link_gate.py"],"checks":["51-document source-language closed registry"],"remote":"ci"},
-    {"id":"OR-33","status":"EXTERNAL","records":["docs/work/2026-08-12-oss-review-legal-community-tranche.md"],"authorities":["README.md"],"checks":["CI badge local; repository metadata owner action pending"],"remote":"admin"},
+    {"id":"OR-33","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-legal-community-tranche.md"],"authorities":["README.md"],"checks":["CI badge and GitHub API exact description/topics/Discussions/default-branch verification"],"remote":"repository-admin-verified-2026-08-13"},
     {"id":"OR-34","status":"CLOSED","records":["docs/work/2026-08-12-oss-review-installed-runtime-boundary.md"],"authorities":["cmake/ninlil_host_runtime_sources.cmake","tools/layering_invariant_gate.py"],"checks":["private source and symbol injection negatives"],"remote":"ci"},
     {"id":"OR-35","status":"NO_ACTION","records":["docs/reviews/2026-08-11-ninlil-runtime-exhaustive-review-index.md"],"authorities":["tools/oss_review_provenance_gate.py"],"checks":["positive observation spans mapped without promotion"],"remote":"not-applicable"},
     {"id":"OR-36","status":"CLOSED","records":["docs/work/2026-08-13-oss-review-documentation-taxonomy.md"],"authorities":["docs/README.md","docs/host-runtime-tutorial.md","tools/markdown_link_gate.py"],"checks":["six distinct documentation classes and exact-command tutorial smoke"],"remote":"ci"},
@@ -62,5 +64,6 @@ OR-01〜37を、repository-localの作業記録、実装/gate authority、focuse
 
 Final-head remote evidence is accepted only when PR #117 reports no failed, cancelled, skipped, or
 pending checks and the specialized ESP、CodeQL、coverage、DCO jobs match that head SHA. Physical HIL、
-RF soak、legal holder/year、required-check administration、repository description/topics/Discussionsは
-このgraphのlocal evidenceから推測しない。
+RF soakとlegal holder/year / NOTICEはこのgraphのlocal evidenceから推測しない。
+Required DCO / branch protectionとrepository description/topics/Discussionsは2026-08-13に
+repository adminが適用し、GitHub APIのread-backで検証した。
