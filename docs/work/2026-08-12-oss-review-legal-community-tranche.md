@@ -5,9 +5,11 @@
 ## 対象と結論
 
 Project ReviewのOR-09とOR-33だけを対象に、repository内で事実を確定できる範囲を
-実装した。OR-09のrepository内作業とOR-33のbadgeは完了し、残件は外部authorityだけである。
+実装した。OR-09のrepository内作業とOR-33のbadgeは完了した。2026-08-13 follow-upで
+OR-33のrepository metadata / Discussionsと、OR-09のrequired DCO / branch protectionを
+admin適用・API再確認した。残る外部authorityは正式holder/yearとNOTICEのlegal判断である。
 全first-party C/HのSPDX、source license inventory、DCO sign-off経路、DCO workflowのimmutable authority、既存CI badgeは
-code内で閉じた。一方、正式copyright holder/yearとGitHub admin設定はowner判断が
+code内で閉じた。一方、正式copyright holder/yearとNOTICEはowner/legal判断が
 必要なため、推測・変更していない。
 
 | 項目 | 判定 | 根拠 / 残件 |
@@ -16,9 +18,10 @@ code内で閉じた。一方、正式copyright holder/yearとGitHub admin設定�
 | OR-09: installed public header SPDX | CLOSED | `include/ninlil/*.h` 10/10の先頭行をexact `SPDX-License-Identifier: Apache-2.0`とし、既存third-party gateが集合・値を閉じる |
 | OR-09: repository全C/H fileの個別SPDX | CLOSED | review基準の799本から追加13本・削除1本のnet +12となる現行first-party C/H 811/811に先頭行のApache-2.0 SPDX identifierを付与。`tools/_vendor`は依存inventoryへ分離し、gateがtracked/untracked実集合と欠落mutationを検査する |
 | OR-09: DCO 1.1経路 | CLOSED (code) | `CONTRIBUTING.md`に`git commit -s`、修正・local checkを記載。workflowは各commitのauthor emailとsign-off emailを照合する |
-| OR-09: holder/year、required check / App | EXTERNAL | 下記owner/legal判断が未完。`LICENSE` Appendixと`NOTICE`のholder行は未変更 |
+| OR-09: DCO required check / branch protection | CLOSED (admin) | PR #117で観測した`Sign-off trailers`を含む30 checkをstrict required化。PR経由・会話解決・admin enforcementを必須とし、force-push/deletionを拒否する設定をAPIでread-backした |
+| OR-09: holder/year / NOTICE | EXTERNAL | 下記owner/legal判断が未完。`LICENSE` Appendixと`NOTICE`のholder行は未変更 |
 | OR-33: CI badge | CLOSED (code) | canonical repository、`ci.yml`、default branch `main`へ固定したGitHub native badgeだけを追加し、workflow gateがREADMEとCI triggerを照合する |
-| OR-33: description / topics / Discussions | EXTERNAL | 現在はdescription空、topics未設定、Discussions無効。推奨値とowner実行案を下記へ分離した |
+| OR-33: description / topics / Discussions | CLOSED (admin) | description、9 topics、Discussionsを適用し、default branch `main`を含むGitHub API read-backでexact確認した |
 
 ## 実装
 
@@ -65,47 +68,35 @@ Appendix templateなので、holder通知先として編集しない。確認値
 
 ### 2. DCO required check / GitHub App
 
-**blocker:** workflow fileを追加しても、branch rulesetのrequired check化やGitHub App installは
-repository admin権限とownerの運用判断が必要である。この権限状態はcodeから証明できない。
+2026-08-13にrepository admin権限で、PR #117に実出現した30 check contextを`main`の
+required status checksへ設定した。`Sign-off trailers`をDCO authorityとし、別DCO Appとの
+二重authorityは導入していない。
 
-推奨は、最初のremote PRでworkflow名`DCO sign-off`、job名`Sign-off trailers`の成功を確認後、
-そのrunで観測したcheck contextを`main`対象rulesetのrequired checkにすること。UI上の表示名は
-`DCO sign-off / Sign-off trailers`を想定するが、raw contextは最初のrunを見ずに推測しない。
-変更前のread-only確認案（`<PR_NUMBER>`と`<HEAD_SHA>`は実値へ置換）:
+適用後のAPI read-backでは、strict base、required PR、stale review dismissal、conversation
+resolution、admin enforcementが有効で、force-push / branch deletionは無効だった。再確認は
+次のread-only commandで行う。
 
 ```sh
-gh run list --repo Aero123421/Ninlil-Runtime --workflow dco.yml --limit 5
-gh pr checks <PR_NUMBER> --repo Aero123421/Ninlil-Runtime
-gh api repos/Aero123421/Ninlil-Runtime/commits/<HEAD_SHA>/check-runs \
-  --jq '.check_runs[] | {name,app:.app.slug,conclusion}'
-gh api repos/Aero123421/Ninlil-Runtime/rulesets
+gh api repos/Aero123421/Ninlil-Runtime/branches/main/protection
 ```
 
-blindなbranch-protection PUTは既存policyを上書きし得るため行わない。ownerがGitHub提供外の
-App運用を選ぶ場合は[official DCO App listing](https://github.com/apps/dco)を確認してinstallする。
-既存workflowをrequiredにするかAppを使うかはownerが一方をauthorityとして決め、二重で異なる
-判定を持たせない。
+将来check名を変更するPRは、workflow identity gateとbranch protection contextを同じ
+owner作業として更新し、旧contextを残したままmerge不能にしない。
 
 ### 3. Repository metadata / Discussions
 
-2026-08-12に`gh repo view`で確認した状態は、public、default branch `main`、description空、
-topics未設定、Discussions無効だった。推奨値とowner実行案は次のとおり。
+2026-08-12時点ではpublic、default branch `main`、description空、topics未設定、Discussions無効
+だった。2026-08-13に次をadmin適用した。
 
 ```sh
-gh repo edit Aero123421/Ninlil-Runtime \
-  --description 'Portable C11 runtime/SDK for durable, evidence-aware communication over intermittent LoRa, Wi-Fi, and USB links.'
-gh repo edit Aero123421/Ninlil-Runtime \
-  --add-topic c --add-topic c11 --add-topic embedded --add-topic iot \
-  --add-topic lora --add-topic wifi --add-topic usb --add-topic runtime \
-  --add-topic sdk --add-topic offline-first
-gh repo edit Aero123421/Ninlil-Runtime --enable-discussions
-gh repo view Aero123421/Ninlil-Runtime \
-  --json description,repositoryTopics,hasDiscussionsEnabled,defaultBranchRef
+description: Portable C11 runtime and SDK for durable messaging over intermittent, low-bandwidth networks.
+topics: c, c11, durable-messaging, embedded, esp32, iot, lora, runtime, sdk
+Discussions: enabled
+default branch: main
 ```
 
-これらはrepository公開面を変えるため、このtrancheでは実行していない。Discussionsを有効にする
-場合は、`CODE_OF_CONDUCT.md`と`SUPPORT.md`の既存境界に沿ったcategory / moderation担当もownerが
-同時に決める。
+`gh repo view --json description,repositoryTopics,hasDiscussionsEnabled,defaultBranchRef`で
+上記exact値を再確認した。moderationは`CODE_OF_CONDUCT.md`と`SUPPORT.md`の既存境界へ従う。
 
 ## 検証
 
@@ -122,6 +113,8 @@ gh repo view Aero123421/Ninlil-Runtime \
 - ABI golden / public layout — 2/2 PASS
 - Markdown links、JSON parse、Python compile、`git diff --check` — PASS
 - `git diff --exit-code -- LICENSE NOTICE` — PASS（変更なし）
+- GitHub API metadata / branch protection read-back — PASS（2026-08-13）
 
 `.DS_Store`、`dist/`、Apache `LICENSE` Appendix、`NOTICE`のholder/yearは変更せず、
-stage / commit / push、GitHub設定変更も行っていない。
+stage / commit / pushはこのfollow-up時点では行っていない。GitHub設定は上記admin authorityだけを
+適用し、legal holder/year / NOTICEは変更していない。
