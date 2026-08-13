@@ -324,17 +324,16 @@ def assert_schema_quality() -> None:
         rrmp_schema["properties"]["software_prerequisites"]["properties"][
             "workspace_budget_bytes"
         ]["maximum"]
-        == 393216
+        == 786432
     )
     assert_schema_instance(rrmp_template, rrmp_schema, rrmp_schema)
     prereq = rrmp_template["software_prerequisites"]
     assert prereq["spec_accepted"] is True
     assert prereq["private_implementation_candidate"] is True
     assert prereq["workspace_measured_host_bytes"] <= prereq["workspace_budget_bytes"]
+    assert prereq["workspace_includes_storage_scratch"] is True
     assert prereq["worst_case_live_dynamic_bytes"] == (
         prereq["workspace_measured_host_bytes"]
-        + prereq["storage_export_max_bytes"]
-        + prereq["storage_piece_scratch_bytes"]
         + prereq["target_smoke_store_bytes"]
     )
     assert prereq["esp_runtime_workspace_measured_bytes"] is None

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * FreeRTOS owner-task backend (docs/22).
  * ESP-IDF v5.5.3: vTaskDelete of non-running task calls prvDeleteTCB sync.

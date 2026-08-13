@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Negative: PEER_SESSION alone does not enable NWB1.
  * Incomplete M4 evidence stays PEER_SESSION (publish=0).

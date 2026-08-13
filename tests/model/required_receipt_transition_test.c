@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "required_receipt_transition.h"
 
 #include <stdint.h>

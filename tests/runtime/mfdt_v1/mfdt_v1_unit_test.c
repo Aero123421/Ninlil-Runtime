@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Host unit tests for private MFDT v1 (crypto, geometry, CU, policy).
  * Not HIL. Not public ABI. Not SPEC_ACCEPTED claim.
  */

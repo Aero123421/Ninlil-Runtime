@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "traceability_schema.h"
 
 #include <stdio.h>

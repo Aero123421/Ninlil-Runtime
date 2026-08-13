@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Unstable concrete storage detail — experimental owner lease registry layout.
  * NOT part of the stable public main API surface (owner_task.h).

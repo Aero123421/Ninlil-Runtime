@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Provider-neutral final-view and iterator-snapshot conformance vectors. */
 #ifndef NINLIL_TEST_STORAGE_PROVIDER_CONFORMANCE_H
 #define NINLIL_TEST_STORAGE_PROVIDER_CONFORMANCE_H

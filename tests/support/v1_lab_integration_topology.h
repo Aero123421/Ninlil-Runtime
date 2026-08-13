@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_V1_LAB_INTEGRATION_TOPOLOGY_H
 #define NINLIL_V1_LAB_INTEGRATION_TOPOLOGY_H
 

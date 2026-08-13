@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_WIFI_HIL_M4_H
 #define NINLIL_WIFI_HIL_M4_H
 

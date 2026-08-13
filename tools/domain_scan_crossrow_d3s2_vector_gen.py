@@ -269,7 +269,7 @@ CEILING = 8192
 # Frozen D3-S1 prefix identity (byte-for-byte rebuild pin).
 D3S1_FORMAT = "ninlil-domain-scan-crossrow-v1-d3s1"
 D3S1_PREFIX_CONTENT_SHA256 = (
-    "76b28d847be8cd7a95e8f1879400403abf702931a3de170a473c7c0f76d95468"
+    "6e4c2cd29323c4ab53fe2d6452150478e50b48bea8f31a8a45bd8ed06f5980a8"
 )
 D3S1_PREFIX_FINGERPRINT_HASH = (
     "2c99af3c9b3aea228e4478c0d2739352f111fdd8c42303bf07177f8bb8ee8c58"
@@ -10303,7 +10303,7 @@ def check_data(
                 f"(want d3s2 rebuild {str(expected_doc.get('content_sha256'))[:16]}…)"
             )
         frozen_raw = (
-            "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec"
+            "0429bc8174210fbb824940d0cfcfadd8ad3e8f1f74dee2b5ec507e9ea113c4d2"
         )
         if auth.get("raw_sha256") != frozen_raw:
             return _fail_check(

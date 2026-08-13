@@ -13,6 +13,7 @@ import argparse
 import copy
 import json
 import re
+import shutil
 import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -186,6 +187,25 @@ def _validated_occurrences(
     return tuple(result)
 
 
+def _is_scanned_source(
+    path: Path,
+    repository_root: Path,
+    extensions: tuple[str, ...],
+    excluded_components: tuple[str, ...],
+    excluded_relative_paths: tuple[str, ...],
+) -> bool:
+    if not path.is_file() or path.suffix not in extensions:
+        return False
+    relative = path.relative_to(repository_root).as_posix()
+    if relative in excluded_relative_paths:
+        return False
+    return not any(
+        component in excluded_components
+        or ("build" in excluded_components and component.startswith("build-"))
+        for component in path.parts
+    )
+
+
 def scan_inventory(
     repository_root: Path,
     roots: tuple[str, ...],
@@ -202,7 +222,6 @@ def scan_inventory(
     """
 
     repository_root = repository_root.resolve()
-    excluded_paths = set(excluded_relative_paths)
     found: dict[str, list[tuple[str, str]]] = {}
     for relative_root in roots:
         scan_root = repository_root / relative_root
@@ -210,17 +229,15 @@ def scan_inventory(
             raise RegistryError(f"scan root missing {relative_root}")
         paths = [scan_root] if scan_root.is_file() else scan_root.rglob("*")
         for path in paths:
-            if not path.is_file() or path.suffix not in extensions:
-                continue
-            relative = path.relative_to(repository_root).as_posix()
-            if relative in excluded_paths:
-                continue
-            if any(
-                component in excluded_components
-                or ("build" in excluded_components and component.startswith("build-"))
-                for component in path.parts
+            if not _is_scanned_source(
+                path,
+                repository_root,
+                extensions,
+                excluded_components,
+                excluded_relative_paths,
             ):
                 continue
+            relative = path.relative_to(repository_root).as_posix()
             try:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeError) as exc:
@@ -520,63 +537,72 @@ def validate(
     }
 
 
-def _write_temp_document(document: dict[str, Any]) -> Path:
-    handle = tempfile.NamedTemporaryFile(
-        "w", suffix=".json", encoding="utf-8", delete=False
+def _mutation_repository(destination: Path, document: dict[str, Any]) -> Path:
+    """Copy the complete scan authority into a disposable repository root."""
+
+    for relative_root in SCAN_ROOTS:
+        source_root = ROOT / relative_root
+        target_root = destination / relative_root
+        target_root.mkdir(parents=True, exist_ok=True)
+        paths = [source_root] if source_root.is_file() else source_root.rglob("*")
+        for source in paths:
+            if not _is_scanned_source(
+                source,
+                ROOT,
+                SCAN_EXTENSIONS,
+                EXCLUDED_PATH_COMPONENTS,
+                EXCLUDED_RELATIVE_PATHS,
+            ):
+                continue
+            target = destination / source.relative_to(ROOT)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+    for authority in document["domains"]["authorities"]:
+        source = _authority_path(authority, ROOT)
+        target = destination / authority
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    registry = destination / "spec" / REGISTRY.name
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(REGISTRY, registry)
+    return registry
+
+
+def _expect_rejected_document(
+    document: dict[str, Any], label: str, repository_root: Path, registry: Path
+) -> None:
+    shutil.copy2(REGISTRY, registry)
+    registry.write_text(
+        json.dumps(document, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
     )
     try:
-        json.dump(document, handle, indent=2, ensure_ascii=True)
-        handle.write("\n")
-    finally:
-        handle.close()
-    return Path(handle.name)
+        validate(registry, repository_root=repository_root)
+    except RegistryError:
+        return
+    raise RegistryError(f"mutation accepted: {label}")
 
 
-def _expect_rejected_document(document: dict[str, Any], label: str) -> None:
-    path = _write_temp_document(document)
+def _expect_rejected_raw(
+    raw: str, label: str, repository_root: Path, registry: Path
+) -> None:
+    shutil.copy2(REGISTRY, registry)
+    registry.write_text(raw, encoding="utf-8")
+    try:
+        validate(registry, repository_root=repository_root)
+    except RegistryError:
+        return
+    raise RegistryError(f"mutation accepted: {label}")
+
+
+def _expect_rejected_repository_source(
+    source: str, label: str, repository_root: Path, registry: Path
+) -> None:
+    shutil.copy2(REGISTRY, registry)
+    candidate_path = repository_root / "tools" / ".magic_registry_mutant.c"
+    candidate_path.write_text(source, encoding="utf-8")
     try:
         try:
-            validate(path)
-        except RegistryError:
-            return
-        raise RegistryError(f"mutation accepted: {label}")
-    finally:
-        path.unlink(missing_ok=True)
-
-
-def _expect_rejected_raw(raw: str, label: str) -> None:
-    handle = tempfile.NamedTemporaryFile(
-        "w", suffix=".json", encoding="utf-8", delete=False
-    )
-    try:
-        handle.write(raw)
-    finally:
-        handle.close()
-    path = Path(handle.name)
-    try:
-        try:
-            validate(path)
-        except RegistryError:
-            return
-        raise RegistryError(f"mutation accepted: {label}")
-    finally:
-        path.unlink(missing_ok=True)
-
-
-def _expect_rejected_repository_source(source: str, label: str) -> None:
-    with tempfile.NamedTemporaryFile(
-        "w",
-        suffix=".c",
-        prefix=".magic_registry_mutant_",
-        dir=ROOT / "tools",
-        encoding="utf-8",
-        delete=False,
-    ) as handle:
-        handle.write(source)
-        candidate_path = Path(handle.name)
-    try:
-        try:
-            validate()
+            validate(registry, repository_root=repository_root)
         except RegistryError:
             return
         raise RegistryError(f"mutation accepted: {label}")
@@ -584,20 +610,24 @@ def _expect_rejected_repository_source(source: str, label: str) -> None:
         candidate_path.unlink(missing_ok=True)
 
 
-def self_test() -> int:
+def _self_test(repository_root: Path, registry: Path) -> int:
     doc = _load_strict(REGISTRY)
     mutations = 0
 
     duplicate = copy.deepcopy(doc)
     duplicate["entries"].append(dict(duplicate["entries"][0]))
-    _expect_rejected_document(duplicate, "duplicate magic collision")
+    _expect_rejected_document(
+        duplicate, "duplicate magic collision", repository_root, registry
+    )
     mutations += 1
 
     stolen = copy.deepcopy(doc)
     next(entry for entry in stolen["entries"] if entry["magic"] == "NPA1")[
         "owner"
     ] = "PRODUCTION_ATTACHMENT"
-    _expect_rejected_document(stolen, "reserved magic stolen")
+    _expect_rejected_document(
+        stolen, "reserved magic stolen", repository_root, registry
+    )
     mutations += 1
 
     missing_required = copy.deepcopy(doc)
@@ -606,7 +636,9 @@ def self_test() -> int:
         for entry in missing_required["entries"]
         if entry["magic"] != "NAR1"
     ]
-    _expect_rejected_document(missing_required, "required PA entry missing")
+    _expect_rejected_document(
+        missing_required, "required PA entry missing", repository_root, registry
+    )
     mutations += 1
 
     missing_scanned = copy.deepcopy(doc)
@@ -615,27 +647,37 @@ def self_test() -> int:
         for entry in missing_scanned["entries"]
         if entry["magic"] != "NLR1"
     ]
-    _expect_rejected_document(missing_scanned, "scanned entry missing")
+    _expect_rejected_document(
+        missing_scanned, "scanned entry missing", repository_root, registry
+    )
     mutations += 1
 
     unknown_status = copy.deepcopy(doc)
     unknown_status["entries"][0]["status"] = "UNKNOWN_PROMOTED"
-    _expect_rejected_document(unknown_status, "unknown status")
+    _expect_rejected_document(
+        unknown_status, "unknown status", repository_root, registry
+    )
     mutations += 1
 
     bool_artifact = copy.deepcopy(doc)
     bool_artifact["entries"][0]["artifact"] = False
-    _expect_rejected_document(bool_artifact, "boolean artifact")
+    _expect_rejected_document(
+        bool_artifact, "boolean artifact", repository_root, registry
+    )
     mutations += 1
 
     unknown_owner = copy.deepcopy(doc)
     unknown_owner["entries"][0]["owner"] = "UNKNOWN_OWNER"
-    _expect_rejected_document(unknown_owner, "unknown owner")
+    _expect_rejected_document(
+        unknown_owner, "unknown owner", repository_root, registry
+    )
     mutations += 1
 
     unknown_authority = copy.deepcopy(doc)
     unknown_authority["entries"][0]["authority"] = "docs/unknown-authority.md"
-    _expect_rejected_document(unknown_authority, "unknown authority")
+    _expect_rejected_document(
+        unknown_authority, "unknown authority", repository_root, registry
+    )
     mutations += 1
 
     overlap = copy.deepcopy(doc)
@@ -646,14 +688,18 @@ def self_test() -> int:
         }
     )
     overlap["explicit_exclusions"].sort(key=lambda row: row["token"])
-    _expect_rejected_document(overlap, "entry exclusion overlap")
+    _expect_rejected_document(
+        overlap, "entry exclusion overlap", repository_root, registry
+    )
     mutations += 1
 
     duplicate_exclusion = copy.deepcopy(doc)
     duplicate_exclusion["explicit_exclusions"].append(
         dict(duplicate_exclusion["explicit_exclusions"][0])
     )
-    _expect_rejected_document(duplicate_exclusion, "duplicate exclusion")
+    _expect_rejected_document(
+        duplicate_exclusion, "duplicate exclusion", repository_root, registry
+    )
     mutations += 1
 
     stale = copy.deepcopy(doc)
@@ -668,12 +714,16 @@ def self_test() -> int:
         }
     )
     stale["entries"].sort(key=lambda row: row["magic"])
-    _expect_rejected_document(stale, "stale registry entry")
+    _expect_rejected_document(
+        stale, "stale registry entry", repository_root, registry
+    )
     mutations += 1
 
     weakened_scan = copy.deepcopy(doc)
     weakened_scan["scan"]["roots"] = weakened_scan["scan"]["roots"][1:]
-    _expect_rejected_document(weakened_scan, "weakened scan roots")
+    _expect_rejected_document(
+        weakened_scan, "weakened scan roots", repository_root, registry
+    )
     mutations += 1
 
     raw = REGISTRY.read_text(encoding="utf-8")
@@ -685,7 +735,9 @@ def self_test() -> int:
         needle + '\n      "status": "PROPOSED",',
         1,
     )
-    _expect_rejected_raw(duplicate_key_raw, "duplicate JSON status key")
+    _expect_rejected_raw(
+        duplicate_key_raw, "duplicate JSON status key", repository_root, registry
+    )
     mutations += 1
 
     sentinel_prefix = "ZZ"
@@ -714,10 +766,17 @@ def self_test() -> int:
             "registered magic owner/path collision",
         ),
     ):
-        _expect_rejected_repository_source(source, label)
+        _expect_rejected_repository_source(source, label, repository_root, registry)
         mutations += 1
 
     return mutations
+
+
+def self_test() -> int:
+    with tempfile.TemporaryDirectory(prefix="magic_registry_mutant_") as directory:
+        repository_root = Path(directory)
+        registry = _mutation_repository(repository_root, _load_strict(REGISTRY))
+        return _self_test(repository_root, registry)
 
 
 def main() -> int:

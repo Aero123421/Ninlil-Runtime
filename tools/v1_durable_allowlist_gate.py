@@ -60,6 +60,11 @@ MATRIX_ROW_RE = re.compile(
     r"\s*UINT64_C\(\s*(0x[0-9a-fA-F]+)\s*\)\s*\}",
     re.MULTILINE,
 )
+DOC_KIND_COUNT_RE = re.compile(
+    r"^## 2\. Record kind allowlist[（(](\d+) kinds[）)]"
+    r"[^\S\r\n]*$",
+    re.MULTILINE,
+)
 
 KIND_NAMES: Tuple[str, ...] = (
     "RS_BINDING",
@@ -131,7 +136,12 @@ OPERATION_MATRIX: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ),
     (
         "CANCEL_ADMISSION_COMMIT",
-        ("SPINE_CANCEL_ADMISSION", "SPINE_SERVICE_MARKER", *CAPACITY_KIND_NAMES),
+        (
+            "SPINE_CANCEL_ADMISSION",
+            "SPINE_SERVICE_MARKER",
+            "RS_COUNTER_ORDERED_INPUT",
+            *CAPACITY_KIND_NAMES,
+        ),
     ),
     (
         "DELIVERY_STARTED_COMMIT",
@@ -262,6 +272,21 @@ def kind_mask(kind_names: Sequence[str]) -> int:
     return sum(1 << indexes[name] for name in kind_names)
 
 
+def expected_doc_kind_catalog() -> Tuple[Tuple[int, str, str], ...]:
+    return tuple(
+        (
+            index + 1,
+            name,
+            (
+                "M4"
+                if name == "M4_INSTALL_TOKEN"
+                else "C3" if name == "C3_REPLAY_ADMISSION" else "S1"
+            ),
+        )
+        for index, name in enumerate(KIND_NAMES)
+    )
+
+
 def append_exact_mismatch(
     errors: List[str],
     label: str,
@@ -308,6 +333,30 @@ def parse_doc_operation_rows(
         kinds = tuple(re.findall(r"`([A-Z][A-Z0-9_]+)`", cells[2]))
         rows.append((operation_match.group(1), kinds))
     return tuple(rows)
+
+
+def parse_doc_kind_catalog(
+    doc_text: str,
+) -> Tuple[Optional[int], Tuple[Tuple[int, str, str], ...]]:
+    count_match = DOC_KIND_COUNT_RE.search(doc_text)
+    if count_match is None:
+        return None, ()
+    section = doc_text[count_match.end() :]
+    if "\n### 2" in section:
+        section = section.split("\n### 2", 1)[0]
+    rows: List[Tuple[int, str, str]] = []
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in line.strip().split("|")[1:-1]]
+        if len(cells) != 5 or re.fullmatch(r"\d+", cells[0]) is None:
+            continue
+        kind_match = re.fullmatch(r"`?([A-Z][A-Z0-9_]+)`?", cells[1])
+        owner_match = re.fullmatch(r"`?(S1|M4|C3)`?", cells[4])
+        if kind_match is None or owner_match is None:
+            continue
+        rows.append(
+            (int(cells[0]), kind_match.group(1), owner_match.group(1))
+        )
+    return int(count_match.group(1)), tuple(rows)
 
 
 def validate_exact_authority(
@@ -407,12 +456,28 @@ def validate_exact_authority(
         expected_mask_rows,
     )
 
-    # Work-record docs may lag when docs edits are frozen under concurrent
-    # audit. C header + mask table remain the executable authority.
+    doc_kind_count, actual_doc_kind_catalog = parse_doc_kind_catalog(doc_text)
+    if doc_kind_count is None:
+        errors.append("document §2 record-kind count heading missing")
+    elif doc_kind_count != len(KIND_NAMES):
+        errors.append(
+            "document §2 record-kind count does not match exact authority: "
+            f"{doc_kind_count} != {len(KIND_NAMES)}"
+        )
+    append_exact_mismatch(
+        errors,
+        "document §2 kind catalog",
+        actual_doc_kind_catalog,
+        expected_doc_kind_catalog(),
+    )
+
     actual_doc_rows = parse_doc_operation_rows(doc_text)
-    if actual_doc_rows and actual_doc_rows != OPERATION_MATRIX:
-        # Non-fatal advisory: do not fail the gate solely on frozen docs.
-        pass
+    append_exact_mismatch(
+        errors,
+        "document §4 operation matrix",
+        actual_doc_rows,
+        OPERATION_MATRIX,
+    )
     return errors
 
 
@@ -520,6 +585,115 @@ def self_test() -> None:
         "record-kind count",
     )
 
+    doc_text = read_text(ALLOWLIST_DOC)
+    doc_count_match = DOC_KIND_COUNT_RE.search(doc_text)
+    if doc_count_match is None:
+        print("mutation precondition: document §2 kind count missing")
+        sys.exit(1)
+    changed_doc_count = (
+        doc_text[: doc_count_match.start(1)]
+        + str(int(doc_count_match.group(1)) + 1)
+        + doc_text[doc_count_match.end(1) :]
+    )
+    mutation_errors, _ = check_sources(doc_text=changed_doc_count)
+    require_mutation_red(
+        "document §2 count mismatch",
+        mutation_errors,
+        "document §2 record-kind count",
+    )
+
+    omitted_doc_count = (
+        doc_text[: doc_count_match.start()]
+        + "## 2. Record kind allowlist"
+        + doc_text[doc_count_match.end() :]
+    )
+    mutation_errors, _ = check_sources(doc_text=omitted_doc_count)
+    require_mutation_red(
+        "document §2 count omission",
+        mutation_errors,
+        "document §2 record-kind count",
+    )
+
+    doc_kind_row = re.search(
+        r"^\| 41 \| DOM_RESERVATION \|[^\r\n]*\r?\n?",
+        doc_text,
+        re.MULTILINE,
+    )
+    if doc_kind_row is None:
+        print("mutation precondition: document §2 kind 41 row missing")
+        sys.exit(1)
+    omitted_doc_kind = (
+        doc_text[: doc_kind_row.start()] + doc_text[doc_kind_row.end() :]
+    )
+    mutation_errors, _ = check_sources(doc_text=omitted_doc_kind)
+    require_mutation_red(
+        "document §2 kind omission",
+        mutation_errors,
+        "document §2 kind catalog",
+    )
+
+    changed_doc_kind = doc_text.replace(
+        "| 41 | DOM_RESERVATION |",
+        "| 41 | DOM_RESERVATION_MUTATED |",
+        1,
+    )
+    if changed_doc_kind == doc_text:
+        print("mutation precondition: document §2 kind 41 token missing")
+        sys.exit(1)
+    mutation_errors, _ = check_sources(doc_text=changed_doc_kind)
+    require_mutation_red(
+        "document §2 kind change",
+        mutation_errors,
+        "document §2 kind catalog",
+    )
+
+    doc_operation_row = re.search(
+        r"^\| `BOOTSTRAP_COMMIT` \|[^\r\n]*\r?\n?",
+        doc_text,
+        re.MULTILINE,
+    )
+    if doc_operation_row is None:
+        print("mutation precondition: document §4 operation row missing")
+        sys.exit(1)
+    omitted_doc_operation = (
+        doc_text[: doc_operation_row.start()]
+        + doc_text[doc_operation_row.end() :]
+    )
+    mutation_errors, _ = check_sources(doc_text=omitted_doc_operation)
+    require_mutation_red(
+        "document §4 operation omission",
+        mutation_errors,
+        "document §4 operation matrix",
+    )
+
+    clock_operation_row = re.search(
+        r"^\| `CLOCK_TRUSTED_COMMIT` \|[^\r\n]*\r?\n?",
+        doc_text,
+        re.MULTILINE,
+    )
+    if clock_operation_row is None:
+        print("mutation precondition: document §4 clock row missing")
+        sys.exit(1)
+    changed_clock_row = clock_operation_row.group(0).replace(
+        "`DOM_CLOCK_BASELINE`",
+        "`DOM_WITNESS_HEAD_INDEX`",
+        1,
+    )
+    if changed_clock_row == clock_operation_row.group(0):
+        print("mutation precondition: document §4 clock kind missing")
+        sys.exit(1)
+    changed_doc_operation = (
+        doc_text[: clock_operation_row.start()]
+        + changed_clock_row
+        + doc_text[clock_operation_row.end() :]
+    )
+    mutation_errors, _ = check_sources(doc_text=changed_doc_operation)
+    require_mutation_red(
+        "document §4 operation/kind change",
+        mutation_errors,
+        "document §4 operation matrix",
+    )
+
     c_text = read_text(ALLOWLIST_C)
     matrix_rows = list(MATRIX_ROW_RE.finditer(c_text))
     if len(matrix_rows) != len(OPERATION_MATRIX):
@@ -561,9 +735,6 @@ def self_test() -> None:
         mutation_errors,
         "operation mask authority",
     )
-
-    # Documented work-record matrix is advisory while docs edits are frozen.
-    # Executable authority is C header + operation mask table only.
 
     print("ok v1_durable_allowlist_gate_self_test")
 

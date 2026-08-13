@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "wifi_tls_leaf_binding.h"
 
 #include <string.h>

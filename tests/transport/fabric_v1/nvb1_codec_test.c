@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "nvb1_codec.h"
 
 #include <stdio.h>

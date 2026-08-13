@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TEST_IN_MEMORY_STORAGE_H
 #define NINLIL_TEST_IN_MEMORY_STORAGE_H
 

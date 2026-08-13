@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Two-endpoint transport simulation: WOULD_BLOCK, drop, reorder, restart.
  * No synthetic single-pipeline self-loop.
  */

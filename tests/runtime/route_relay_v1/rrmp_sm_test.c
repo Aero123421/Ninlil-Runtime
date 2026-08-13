@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_fabric_dispatch.h"
 #include "rrmp_seam.h"
 #include "rrmp_test_common.h"
@@ -7,7 +8,7 @@
 #include <stdlib.h>
 
 /* Use VLA-free fixed max: allocate oversized static based on compile size. */
-enum { RRMP_WS_MAX = 512 * 1024 };
+enum { RRMP_WS_MAX = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES };
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_owner_ws[RRMP_WS_MAX];
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_owner_ws2[RRMP_WS_MAX];
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_owner_ws3[RRMP_WS_MAX];
@@ -89,7 +90,7 @@ static int test_caller_authorization(void)
     RRMP_CHECK(ninlil_rrmp_encode_nrm1(&fields, raw));
     memcpy(install.entries, raw, sizeof(raw));
     RRMP_CHECK_EQ(
-        ninlil_route_install_batch(&install, &out), NINLIL_ROUTE_OK);
+        ninlil_route_install_batch(o, &install, &out), NINLIL_ROUTE_OK);
 
     ninlil_rrmp_memzero(&activate, sizeof(activate));
     activate.preamble.api_version = 1u;
@@ -98,7 +99,7 @@ static int test_caller_authorization(void)
     activate.route_handle = 1u;
     activate.route_generation = 1u;
     activate.now_ms = 1000000u;
-    RRMP_CHECK_EQ(ninlil_route_activate(&activate, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_activate(o, &activate, &out), NINLIL_ROUTE_OK);
 
     ninlil_rrmp_memzero(&query, sizeof(query));
     query.preamble.api_version = 1u;
@@ -107,7 +108,7 @@ static int test_caller_authorization(void)
     query.route_handle = 1u;
     query.route_generation = 1u;
     RRMP_CHECK_EQ(
-        ninlil_route_query(&query, &out), NINLIL_ROUTE_AUTHORITY_CONFLICT);
+        ninlil_route_query(o, &query, &out), NINLIL_ROUTE_AUTHORITY_CONFLICT);
 
     ninlil_rrmp_memzero(&admit, sizeof(admit));
     admit.preamble.api_version = 1u;
@@ -123,7 +124,7 @@ static int test_caller_authorization(void)
         admit.e2e_header_digest32[i] = (uint8_t)(0xB0u + i);
     }
     RRMP_CHECK_EQ(
-        ninlil_route_forward_admit(&admit, &out),
+        ninlil_route_forward_admit(o, &admit, &out),
         NINLIL_ROUTE_AUTHORITY_CONFLICT);
 
     fill_auth(
@@ -132,13 +133,12 @@ static int test_caller_authorization(void)
             NINLIL_RRMP_AUTH_WORKER | NINLIL_RRMP_AUTH_BEARER,
         1u);
     RRMP_CHECK(ninlil_rrmp_owner_bind_authorized(o, &auth, &authorizer));
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_query(o, &query, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(
-        ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_OK);
+        ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK(calls == 3u);
 
-    ninlil_rrmp_owner_unbind();
-    RRMP_CHECK(ninlil_rrmp_owner_current() == NULL);
+    ninlil_rrmp_owner_unbind(o);
     ninlil_rrmp_owner_fini(o);
     return 0;
 }
@@ -150,7 +150,7 @@ static int test_workspace_no_heap(void)
     uint8_t misaligned[64];
     RRMP_CHECK(need > 0u);
     RRMP_CHECK(need <= RRMP_WS_MAX);
-    /* Host-conservative proxy: owner must stay under the 384 KiB ceiling. */
+    /* Host-conservative proxy: owner must stay under the 768 KiB ceiling. */
     RRMP_CHECK(need <= NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES);
     RRMP_CHECK(
         ((uintptr_t)g_owner_ws % (uintptr_t)NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) ==
@@ -179,7 +179,7 @@ static int test_feature_off(void)
     req.preamble.api_version = 1u;
     req.preamble.struct_size = 312u;
     req.entry_count = 1u;
-    RRMP_CHECK_EQ(ninlil_route_install_batch(&req, &out), NINLIL_ROUTE_FEATURE_OFF);
+    RRMP_CHECK_EQ(ninlil_route_install_batch(o, &req, &out), NINLIL_ROUTE_FEATURE_OFF);
     RRMP_CHECK_EQ(out.status, NINLIL_ROUTE_FEATURE_OFF);
     ninlil_rrmp_owner_fini(o);
     return 0;
@@ -207,18 +207,18 @@ static int test_lease_and_hop_gates(void)
     }
     /* now >= lease_expiry (route lease 5000000) → durable EXPIRED */
     admit.admission_now_ms = 5000000u;
-    RRMP_CHECK_EQ(ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_LEASE_EXPIRED);
+    RRMP_CHECK_EQ(ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_LEASE_EXPIRED);
     /* Fresh route for hop gate (previous is EXPIRED) */
     RRMP_CHECK(rrmp_install_activate(o, 2u, 1u, 1u) == 0);
     admit.ingress_hop_context_id = 0x1002u;
     admit.route_handle = 2u;
     admit.admission_now_ms = 1000000u;
     admit.hop_remaining = 9u; /* > max_hops absolute / profile */
-    RRMP_CHECK_EQ(ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_HOP_EXHAUSTED);
+    RRMP_CHECK_EQ(ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_HOP_EXHAUSTED);
     /* wrong hop context => NOT_ACTIVE (lookup key includes ingress) */
     admit.hop_remaining = 1u;
     admit.ingress_hop_context_id = 0xDEADBEEFu;
-    RRMP_CHECK_EQ(ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_NOT_ACTIVE);
+    RRMP_CHECK_EQ(ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_NOT_ACTIVE);
     ninlil_rrmp_owner_fini(o);
     return 0;
 }
@@ -253,7 +253,7 @@ static int test_queue_full_no_live_evidence(void)
             admit.e2e_header_digest32[j] = (uint8_t)(i + (int)j + 3);
         }
         admit.caller_item_token = (uint64_t)i + 1u;
-        st = ninlil_route_forward_admit(&admit, &out);
+        st = ninlil_route_forward_admit(o, &admit, &out);
         RRMP_CHECK(out.status == st);
         if (st == NINLIL_ROUTE_OK) {
             ++ok_count;
@@ -291,7 +291,7 @@ static int test_queue_full_no_live_evidence(void)
         }
         admit.caller_item_token = 999u;
         {
-            uint32_t st = ninlil_route_forward_admit(&admit, &out);
+            uint32_t st = ninlil_route_forward_admit(o, &admit, &out);
             RRMP_CHECK(st == NINLIL_ROUTE_OK || st == NINLIL_ROUTE_REPLAY ||
                 st == NINLIL_ROUTE_BACKPRESSURE);
             RRMP_CHECK_EQ(out.status, st);
@@ -352,9 +352,9 @@ static int test_drain_order_and_attempts(void)
     drain.now_ms = 1000000u;
     drain.drain_deadline_ms = 1020000u;
     drain.lease_deadline_ms = 2000000u;
-    RRMP_CHECK_EQ(ninlil_route_begin_drain(&drain, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_begin_drain(o, &drain, &out), NINLIL_ROUTE_OK);
     /* second begin_drain from DRAINING not allowed */
-    RRMP_CHECK_EQ(ninlil_route_begin_drain(&drain, &out), NINLIL_ROUTE_NOT_ACTIVE);
+    RRMP_CHECK_EQ(ninlil_route_begin_drain(o, &drain, &out), NINLIL_ROUTE_NOT_ACTIVE);
     ninlil_rrmp_owner_fini(o);
     return 0;
 }
@@ -413,10 +413,10 @@ static int test_handoff_proof_and_receipt(void)
     memcpy(set.parent_runtime_id[1], ids[1].bytes, 16u);
     RRMP_CHECK(ninlil_rrmp_parent_set_digest(ids, 2u, &dig));
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
     /* non-monotonic revision reject */
     set.assignment_epoch = 1u;
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_STALE_REVISION);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_STALE_REVISION);
 
     ninlil_rrmp_memzero(&noa, sizeof(noa));
     memcpy(noa.owner_scope_id.bytes, scope, 16u);
@@ -447,10 +447,10 @@ static int test_handoff_proof_and_receipt(void)
     memcpy(prep.handoff_token_digest32, token, 32u);
     ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
     RRMP_CHECK_EQ(
-        ninlil_parent_owner_prepare(&prep, &out),
+        ninlil_parent_owner_prepare(o, &prep, &out),
         NINLIL_PARENT_UNSUPPORTED_API);
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(o,
             &prep, &old_tuple, 1u, &new_tuple, &out),
         NINLIL_PARENT_OK);
 
@@ -462,16 +462,16 @@ static int test_handoff_proof_and_receipt(void)
     fence.old_assignment_revision = 1u;
     fence.now_ms = 1000000u;
     RRMP_CHECK_EQ(
-        ninlil_parent_owner_fence_proof(&fence, &out),
+        ninlil_parent_owner_fence_proof(o, &fence, &out),
         NINLIL_PARENT_UNSUPPORTED_API);
     RRMP_CHECK_EQ(
-        rrmp_test_owner_fence_v2(
+        rrmp_test_owner_fence_v2(o,
             scope, token, &old_tuple, proof, &out),
         NINLIL_PARENT_OK);
     /* v1 cannot smuggle a partial proof digest. */
     fence.proof_digest32[0] ^= 1u;
     RRMP_CHECK_EQ(
-        ninlil_parent_owner_fence_proof(&fence, &out),
+        ninlil_parent_owner_fence_proof(o, &fence, &out),
         NINLIL_PARENT_UNSUPPORTED_API);
 
     ninlil_rrmp_memzero(&commit, sizeof(commit));
@@ -480,10 +480,10 @@ static int test_handoff_proof_and_receipt(void)
     memcpy(commit.owner_scope_id, scope, 16u);
     commit.cas_expected_generation = 0u;
     RRMP_CHECK_EQ(
-        ninlil_parent_authority_commit(&commit, &out),
+        ninlil_parent_authority_commit(o, &commit, &out),
         NINLIL_PARENT_UNSUPPORTED_API);
     RRMP_CHECK_EQ(
-        rrmp_test_authority_commit_v2(
+        rrmp_test_authority_commit_v2(o,
             scope,
             &old_tuple,
             &new_tuple,
@@ -573,7 +573,7 @@ static int test_handoff_proof_and_receipt(void)
         memcpy(set2.parent_runtime_id[1], ids[1].bytes, 16u);
         memcpy(set2.parent_set_digest32, dig.bytes, 32u);
         RRMP_CHECK_EQ(
-            ninlil_parent_set_install(&set2, &out), NINLIL_PARENT_OK);
+            ninlil_parent_set_install(o2, &set2, &out), NINLIL_PARENT_OK);
 
         ninlil_rrmp_memzero(&noa2, sizeof(noa2));
         memcpy(noa2.owner_scope_id.bytes, scope2, 16u);
@@ -608,16 +608,16 @@ static int test_handoff_proof_and_receipt(void)
             prep2.handoff_token_digest32, token2, sizeof(token2));
         ninlil_rrmp_memzero(&old_tuple2, sizeof(old_tuple2));
         RRMP_CHECK_EQ(
-            rrmp_test_owner_prepare_v2(
+            rrmp_test_owner_prepare_v2(o2,
                 &prep2, &old_tuple2, 2u, &new_tuple2, &out),
             NINLIL_PARENT_OK);
 
         RRMP_CHECK_EQ(
-            rrmp_test_owner_fence_v2(
+            rrmp_test_owner_fence_v2(o2,
                 scope2, token2, &old_tuple2, proof2, &out),
             NINLIL_PARENT_OK);
         RRMP_CHECK_EQ(
-            rrmp_test_authority_commit_v2(
+            rrmp_test_authority_commit_v2(o2,
                 scope2,
                 &old_tuple2,
                 &new_tuple2,
@@ -641,12 +641,12 @@ static int test_handoff_proof_and_receipt(void)
     /* wrong: token instead of commit receipt */
     memcpy(act.commit_receipt_digest32, token, 32u);
     act.now_ms = 1000000u;
-    RRMP_CHECK_EQ(ninlil_parent_owner_activate(&act, &out), NINLIL_PARENT_TOKEN_REPLAY);
+    RRMP_CHECK_EQ(ninlil_parent_owner_activate(o, &act, &out), NINLIL_PARENT_TOKEN_REPLAY);
     memcpy(act.commit_receipt_digest32, cdig.bytes, 32u);
-    RRMP_CHECK_EQ(ninlil_parent_owner_activate(&act, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_owner_activate(o, &act, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_NEW_OWNER_ACTIVATED);
     RRMP_CHECK_EQ(out.seal_allowed, 1u);
-    RRMP_CHECK_EQ(ninlil_parent_owner_activate(&act, &out), NINLIL_PARENT_TOKEN_REPLAY);
+    RRMP_CHECK_EQ(ninlil_parent_owner_activate(o, &act, &out), NINLIL_PARENT_TOKEN_REPLAY);
 
     /* NPA1/NPT1 page codec + atomic FULL persist path exercised by handoff steps. */
     {
@@ -702,13 +702,13 @@ static int test_scope_local_split_brain(void)
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
     rrmp_fill_id(set.path_policy_id, 0x51u);
     memcpy(set.owner_scope_id, scope_a, 16u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
     /* NPS1 is a constructor only; no NOA means no operational seal. */
     RRMP_CHECK_EQ(out.seal_allowed, 0u);
     memcpy(set.owner_scope_id, scope_b, 16u);
     rrmp_fill_id(set.path_policy_id, 0x52u);
     set.assignment_epoch = 1u;
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
 
     rrmp_fill_id(wa, 0xC1u);
     rrmp_fill_id(wb, 0xC2u);
@@ -782,7 +782,7 @@ static int test_qst2_legacy_parent_scope_fail_closed(void)
     rrmp_fill_id(set.path_policy_id, 0x61u);
     set.controller_term = 5u;
     set.assignment_epoch = 1u;
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(ninlil_rrmp_core_scope_seal_allowed(o, scope), 0u);
 
     RRMP_CHECK(ninlil_rrmp_owner_export_namespace(
@@ -830,7 +830,7 @@ static int test_qst2_legacy_parent_scope_fail_closed(void)
         query.preamble.struct_size = 48u;
         memcpy(query.owner_scope_id, scope, sizeof(scope));
         RRMP_CHECK_EQ(
-            ninlil_parent_query(&query, &out),
+            ninlil_parent_query(o2, &query, &out),
             NINLIL_PARENT_SPLIT_BRAIN);
         RRMP_CHECK_EQ(out.seal_allowed, 0u);
         RRMP_CHECK_EQ(
@@ -870,7 +870,7 @@ static int hop_once(
     admit.caller_item_token = token;
     admit.outer_rx_counter = 100u + token;
     memcpy(admit.e2e_header_digest32, e2e, 32u);
-    RRMP_CHECK_EQ(ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(out.hop_remaining_out, expect_out);
     {
         uint64_t oh = out.opaque_local_handle;
@@ -907,7 +907,7 @@ static int hop_once(
             c0.opaque_local_handle = oh;
             c0.outcome = 1u;
             c0.completion_now_ms = 1000001u;
-            RRMP_CHECK_EQ(ninlil_route_forward_complete(&c0, &tmp), NINLIL_ROUTE_OK);
+            RRMP_CHECK_EQ(ninlil_route_forward_complete(o, &c0, &tmp), NINLIL_ROUTE_OK);
         }
     }
     /* Fresh admit for custody-only hop (null carrier). */
@@ -919,7 +919,7 @@ static int hop_once(
             admit.e2e_header_digest32[j] = (uint8_t)(e2e[j] ^ 0x5Au);
         }
     }
-    RRMP_CHECK_EQ(ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_OK);
     {
         uint64_t oh = out.opaque_local_handle;
         ninlil_route_result_v1_t tmp;
@@ -946,7 +946,7 @@ static int hop_once(
             comp.opaque_local_handle = oh;
             comp.outcome = 1u;
             comp.completion_now_ms = 1000001u;
-            RRMP_CHECK_EQ(ninlil_route_forward_complete(&comp, &tmp), NINLIL_ROUTE_OK);
+            RRMP_CHECK_EQ(ninlil_route_forward_complete(o, &comp, &tmp), NINLIL_ROUTE_OK);
         }
     }
     if (tx_out != NULL) {
@@ -1000,7 +1000,7 @@ static int install_path_nrm1(
         return 1;
     }
     memcpy(install.entries, raw, sizeof(raw));
-    if (ninlil_route_install_batch(&install, &out) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_install_batch(o, &install, &out) != NINLIL_ROUTE_OK) {
         return 1;
     }
     ninlil_rrmp_memzero(&act, sizeof(act));
@@ -1010,7 +1010,7 @@ static int install_path_nrm1(
     act.route_handle = h;
     act.route_generation = 1u;
     act.now_ms = 1000000u;
-    if (ninlil_route_activate(&act, &out) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_activate(o, &act, &out) != NINLIL_ROUTE_OK) {
         return 1;
     }
     return 0;
@@ -1117,7 +1117,7 @@ static int test_real_multi_hop_path(void)
     rec.preamble.struct_size = 80u;
     rec.expected_class = 0u;
     RRMP_CHECK_EQ(
-        ninlil_route_recover_commit_unknown(&rec, &rout),
+        ninlil_route_recover_commit_unknown(nA, &rec, &rout),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(rout.cu_class, NINLIL_RRMP_CU_OLD);
     ninlil_rrmp_owner_bind(nB);
@@ -1129,7 +1129,7 @@ static int test_real_multi_hop_path(void)
         q.ingress_hop_context_id = 0x1001u;
         q.route_handle = 1u;
         q.route_generation = 1u;
-        RRMP_CHECK_EQ(ninlil_route_query(&q, &rout), NINLIL_ROUTE_OK);
+        RRMP_CHECK_EQ(ninlil_route_query(nB, &q, &rout), NINLIL_ROUTE_OK);
     }
     ninlil_rrmp_owner_bind(nC);
     {
@@ -1140,7 +1140,7 @@ static int test_real_multi_hop_path(void)
         q.ingress_hop_context_id = 0x1001u;
         q.route_handle = 1u;
         q.route_generation = 1u;
-        RRMP_CHECK_EQ(ninlil_route_query(&q, &rout), NINLIL_ROUTE_OK);
+        RRMP_CHECK_EQ(ninlil_route_query(nC, &q, &rout), NINLIL_ROUTE_OK);
     }
 
     ninlil_rrmp_owner_fini(nA);
@@ -1268,7 +1268,7 @@ static int test_fabric_relay_cycle_seam(void)
             hop.e2e_header_digest32[i] = (uint8_t)(0xD0u + i);
         }
         RRMP_CHECK_EQ(
-            ninlil_rrmp_seam_admit_from_nfl1_view(&hop, &aout), NINLIL_ROUTE_OK);
+            ninlil_rrmp_seam_admit_from_nfl1_view(o, &hop, &aout), NINLIL_ROUTE_OK);
         RRMP_CHECK_EQ(
             ninlil_rrmp_core_hop_forward_execute(
                 o, aout.opaque_local_handle, NULL, 0u, 1u, &tx),
@@ -1280,7 +1280,7 @@ static int test_fabric_relay_cycle_seam(void)
         c.outcome = 1u;
         c.completion_now_ms = 1000000u;
         RRMP_CHECK_EQ(
-            ninlil_route_forward_complete(&c, &out), NINLIL_ROUTE_AUTHORITY_CONFLICT);
+            ninlil_route_forward_complete(o, &c, &out), NINLIL_ROUTE_AUTHORITY_CONFLICT);
         /* Direct hop under no provider remains the authoritative no-send proof. */
         ninlil_rrmp_owner_fini(o);
     }
@@ -1311,7 +1311,7 @@ static int test_fabric_relay_cycle_seam(void)
             hop.e2e_header_digest32[i] = (uint8_t)(0xE0u + i);
         }
         RRMP_CHECK_EQ(
-            ninlil_rrmp_seam_fabric_relay_cycle(&hop, 1u, &tx, &out), NINLIL_ROUTE_OK);
+            ninlil_rrmp_seam_fabric_relay_cycle(o, &hop, 1u, &tx, &out), NINLIL_ROUTE_OK);
         RRMP_CHECK_EQ(tx.rewrap_identical, 1u);
         RRMP_CHECK_EQ(tx.tx_permit_granted, 1u);
         RRMP_CHECK_EQ(tx.e2e_len, 96u);
@@ -1335,10 +1335,10 @@ static int test_fabric_relay_cycle_seam(void)
         c.completion_now_ms = 1000000u;
         /* No ACK yet → complete must fail (no false green). */
         RRMP_CHECK_EQ(
-            ninlil_route_forward_complete(&c, &out), NINLIL_ROUTE_AUTHORITY_CONFLICT);
+            ninlil_route_forward_complete(o, &c, &out), NINLIL_ROUTE_AUTHORITY_CONFLICT);
         RRMP_CHECK_EQ(
             rrmp_auth_link_ack(o, oh, tx.outer_tx_counter, &out), NINLIL_ROUTE_OK);
-        RRMP_CHECK_EQ(ninlil_route_forward_complete(&c, &out), NINLIL_ROUTE_OK);
+        RRMP_CHECK_EQ(ninlil_route_forward_complete(o, &c, &out), NINLIL_ROUTE_OK);
         ninlil_rrmp_owner_fini(o);
     }
     return 0;
@@ -1375,7 +1375,7 @@ static int test_scope_blocks_hop_tx(void)
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
     memcpy(set.path_policy_id, scope, 16u);
     memcpy(set.owner_scope_id, scope, 16u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &pout), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &pout), NINLIL_PARENT_OK);
 
     /* Route path_policy_id == owner_scope for mandatory scope bind. */
     ninlil_rrmp_memzero(&install, sizeof(install));
@@ -1389,7 +1389,7 @@ static int test_scope_blocks_hop_tx(void)
     memcpy(f.path_policy_id.bytes, scope, 16u);
     RRMP_CHECK(ninlil_rrmp_encode_nrm1(&f, raw));
     memcpy(install.entries, raw, sizeof(raw));
-    RRMP_CHECK_EQ(ninlil_route_install_batch(&install, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_install_batch(o, &install, &out), NINLIL_ROUTE_OK);
     ninlil_rrmp_memzero(&act, sizeof(act));
     act.preamble.api_version = 1u;
     act.preamble.struct_size = 64u;
@@ -1397,7 +1397,7 @@ static int test_scope_blocks_hop_tx(void)
     act.route_handle = 1u;
     act.route_generation = 1u;
     act.now_ms = 1000000u;
-    RRMP_CHECK_EQ(ninlil_route_activate(&act, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_activate(o, &act, &out), NINLIL_ROUTE_OK);
 
     ninlil_rrmp_memzero(&admit, sizeof(admit));
     admit.preamble.api_version = 1u;
@@ -1418,7 +1418,7 @@ static int test_scope_blocks_hop_tx(void)
         ninlil_rrmp_core_split_brain_detect(o, scope, wa, wb, 1u, 1u),
         NINLIL_PARENT_SPLIT_BRAIN);
     /* Admit under sealed scope → DRAIN_FENCED (mandatory bind). */
-    RRMP_CHECK_EQ(ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_DRAIN_FENCED);
+    RRMP_CHECK_EQ(ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_DRAIN_FENCED);
     ninlil_rrmp_owner_fini(o);
     return 0;
 }
@@ -1463,7 +1463,7 @@ static int test_owner_scope_derivation_vectors(void)
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
     memcpy(set.path_policy_id, pp_a, 16u);
     memcpy(set.owner_scope_id, sc_a, 16u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &pout), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &pout), NINLIL_PARENT_OK);
 
     ninlil_rrmp_memzero(&admit, sizeof(admit));
     admit.preamble.api_version = 1u;
@@ -1483,7 +1483,7 @@ static int test_owner_scope_derivation_vectors(void)
      * traffic authority before an accepted NOA handoff.
      */
     RRMP_CHECK_EQ(
-        ninlil_route_forward_admit(&admit, &out),
+        ninlil_route_forward_admit(o, &admit, &out),
         NINLIL_ROUTE_DRAIN_FENCED);
 
     /* Unknown derived scope (no install for alternate policy) fail-closed. */
@@ -1496,7 +1496,7 @@ static int test_owner_scope_derivation_vectors(void)
         RRMP_CHECK(rrmp_install_activate(o2, 1u, 1u, 1u) == 0);
         /* no parent set install → unknown scope */
         RRMP_CHECK_EQ(
-            ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_DRAIN_FENCED);
+            ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_DRAIN_FENCED);
         ninlil_rrmp_owner_fini(o2);
     }
     ninlil_rrmp_owner_fini(o);
@@ -1544,7 +1544,7 @@ static int test_s6_old_seal_zero_rehydrate(void)
     memcpy(set.parent_runtime_id[1], ids[1].bytes, 16u);
     RRMP_CHECK(ninlil_rrmp_parent_set_digest(ids, 2u, &dig));
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
 
     ninlil_rrmp_memzero(&noa, sizeof(noa));
     memcpy(noa.owner_scope_id.bytes, scope, 16u);
@@ -1575,15 +1575,15 @@ static int test_s6_old_seal_zero_rehydrate(void)
     memcpy(prep.handoff_token_digest32, token, 32u);
     ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(o,
             &prep, &old_tuple, 1u, &new_tuple, &out),
         NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
-        rrmp_test_owner_fence_v2(
+        rrmp_test_owner_fence_v2(o,
             scope, token, &old_tuple, proof, &out),
         NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
-        rrmp_test_authority_commit_v2(
+        rrmp_test_authority_commit_v2(o,
             scope,
             &old_tuple,
             &new_tuple,
@@ -1601,7 +1601,7 @@ static int test_s6_old_seal_zero_rehydrate(void)
     memcpy(act.owner_scope_id, scope, 16u);
     memcpy(act.commit_receipt_digest32, cdig.bytes, 32u);
     act.now_ms = 1000000u;
-    RRMP_CHECK_EQ(ninlil_parent_owner_activate(&act, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_owner_activate(o, &act, &out), NINLIL_PARENT_OK);
 
     ninlil_rrmp_memzero(&obs, sizeof(obs));
     obs.preamble.api_version = 1u;
@@ -1609,7 +1609,7 @@ static int test_s6_old_seal_zero_rehydrate(void)
     memcpy(obs.owner_scope_id, scope, 16u);
     memcpy(obs.observed_parent_set_digest32, dig.bytes, 32u);
     obs.now_ms = 1000001u;
-    RRMP_CHECK_EQ(ninlil_parent_endpoint_observe(&obs, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_endpoint_observe(o, &obs, &out), NINLIL_PARENT_OK);
 
     ninlil_rrmp_memzero(&ret, sizeof(ret));
     ret.preamble.api_version = 1u;
@@ -1617,7 +1617,7 @@ static int test_s6_old_seal_zero_rehydrate(void)
     memcpy(ret.owner_scope_id, scope, 16u);
     memcpy(ret.tombstone_digest32, token, 32u);
     ret.now_ms = 1000002u;
-    RRMP_CHECK_EQ(ninlil_parent_owner_retire(&ret, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_owner_retire(o, &ret, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_OLD_RETIRED);
 
     RRMP_CHECK(ninlil_rrmp_owner_export_namespace(o, export_buf, sizeof(export_buf), &elen));
@@ -1631,7 +1631,7 @@ static int test_s6_old_seal_zero_rehydrate(void)
         q.preamble.api_version = 1u;
         q.preamble.struct_size = 48u;
         memcpy(q.owner_scope_id, scope, 16u);
-        RRMP_CHECK_EQ(ninlil_parent_query(&q, &out), NINLIL_PARENT_OK);
+        RRMP_CHECK_EQ(ninlil_parent_query(o, &q, &out), NINLIL_PARENT_OK);
         RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_OLD_RETIRED);
         /* S6: new seal may stay; scope seal still allowed via new_seal.
          * old_seal must be 0 after rehydrate (enforced in rehydrate_from_ns). */
@@ -1674,9 +1674,9 @@ static int test_attempt_id16_restart_conflict(void)
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
     rrmp_fill_id(set.path_policy_id, 0x51u);
     memcpy(set.owner_scope_id, scope, 16u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
     memset(token, 0xA6, sizeof(token));
-    RRMP_CHECK(rrmp_test_bootstrap_assignment_v2(
+    RRMP_CHECK(rrmp_test_bootstrap_assignment_v2(o,
         scope,
         set.path_policy_id,
         dig.bytes,
@@ -1769,7 +1769,7 @@ static int test_npp1_full_namespace_linear_probe(void)
         memcpy(set.path_policy_id, scopes[found], 16u);
         set.path_policy_id[0] ^= 0x80u;
         RRMP_CHECK_EQ(
-            ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+            ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
         RRMP_CHECK_EQ(out.seal_allowed, 0u);
     }
 
@@ -1887,7 +1887,7 @@ static int test_npa1_multi_scope_rewrite_restart(void)
         memcpy(set.parent_set_digest32, parent_digest.bytes, 32u);
         memcpy(set.parent_runtime_id[0], parent_ids[0].bytes, 16u);
         RRMP_CHECK_EQ(
-            ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+            ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
 
         ninlil_rrmp_memzero(token, sizeof(token));
         token[0] = 0xA5u;
@@ -1922,7 +1922,7 @@ static int test_npa1_multi_scope_rewrite_restart(void)
         memcpy(prep.handoff_token_digest32, token, sizeof(token));
         ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
         RRMP_CHECK_EQ(
-            rrmp_test_owner_prepare_v2(
+            rrmp_test_owner_prepare_v2(o,
                 &prep, &old_tuple, 1u, &new_tuple, &out),
             NINLIL_PARENT_OK);
         RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_PREPARED_NEW);
@@ -1944,7 +1944,7 @@ static int test_npa1_multi_scope_rewrite_restart(void)
             query.preamble.struct_size = 48u;
             memcpy(query.owner_scope_id, scopes[i], 16u);
             RRMP_CHECK_EQ(
-                ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+                ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
             RRMP_CHECK_EQ(
                 out.handoff_step, NINLIL_RRMP_HANDOFF_PREPARED_NEW);
             RRMP_CHECK_EQ(out.seal_allowed, 0u);
@@ -1993,7 +1993,7 @@ static int test_route_full_capacity_restart(void)
             query.route_handle = handle;
             query.route_generation = 1u;
             RRMP_CHECK_EQ(
-                ninlil_route_query(&query, &out), NINLIL_ROUTE_OK);
+                ninlil_route_query(o, &query, &out), NINLIL_ROUTE_OK);
             RRMP_CHECK_EQ(out.lifecycle_state, NINLIL_RRMP_LIFE_ACTIVE);
         }
         ninlil_rrmp_owner_fini(o2);
@@ -2067,7 +2067,7 @@ static int test_simultaneous_capacity_envelope(void)
         memcpy(
             set.parent_set_digest32, parent_digest.bytes, 32u);
         RRMP_CHECK_EQ(
-            ninlil_parent_set_install(&set, &parent_out),
+            ninlil_parent_set_install(o, &set, &parent_out),
             NINLIL_PARENT_OK);
         if (ninlil_rrmp_owner_downlink_tx_allowed(o) != 1u) {
             fprintf(stderr, "downlink fenced after parent scope %zu\n", i + 1u);
@@ -2075,7 +2075,7 @@ static int test_simultaneous_capacity_envelope(void)
         }
     }
     memset(bootstrap_token, 0xB6, sizeof(bootstrap_token));
-    RRMP_CHECK(rrmp_test_bootstrap_assignment_v2(
+    RRMP_CHECK(rrmp_test_bootstrap_assignment_v2(o,
         scopes[0],
         route_path_policy,
         parent_digest.bytes,
@@ -2113,7 +2113,7 @@ static int test_simultaneous_capacity_envelope(void)
             admit.e2e_header_digest32 + 24u, (uint64_t)i + 1u);
         {
             uint32_t status =
-                ninlil_route_forward_admit(&admit, &route_out);
+                ninlil_route_forward_admit(o, &admit, &route_out);
             if (status != NINLIL_ROUTE_OK) {
                 fprintf(
                     stderr,
@@ -2145,7 +2145,7 @@ static int test_simultaneous_capacity_envelope(void)
             parent_digest.bytes,
             32u);
         RRMP_CHECK_EQ(
-            ninlil_parent_set_install(&overflow_scope, &parent_out),
+            ninlil_parent_set_install(o, &overflow_scope, &parent_out),
             NINLIL_PARENT_RESOURCE);
     }
     admit.ingress_hop_context_id = 0x1009u;
@@ -2158,7 +2158,7 @@ static int test_simultaneous_capacity_envelope(void)
     admit.e2e_header_digest32[0] = 0xC3u;
     ninlil_rrmp_put_u64_be(admit.e2e_header_digest32 + 24u, 65u);
     RRMP_CHECK_EQ(
-        ninlil_route_forward_admit(&admit, &route_out),
+        ninlil_route_forward_admit(o, &admit, &route_out),
         NINLIL_ROUTE_BACKPRESSURE);
 
     RRMP_CHECK(ninlil_rrmp_owner_export_namespace(
@@ -2203,7 +2203,7 @@ static int test_simultaneous_capacity_envelope(void)
         route_query.route_handle = NINLIL_RRMP_ROUTE_MAX;
         route_query.route_generation = 1u;
         RRMP_CHECK_EQ(
-            ninlil_route_query(&route_query, &route_out),
+            ninlil_route_query(o, &route_query, &route_out),
             NINLIL_ROUTE_OK);
 
         ninlil_rrmp_memzero(&parent_query, sizeof(parent_query));
@@ -2214,7 +2214,7 @@ static int test_simultaneous_capacity_envelope(void)
             scopes[NINLIL_RRMP_SCOPE_PARENT_SET_CAPACITY - 1u],
             16u);
         RRMP_CHECK_EQ(
-            ninlil_parent_query(&parent_query, &parent_out),
+            ninlil_parent_query(o, &parent_query, &parent_out),
             NINLIL_PARENT_OK);
 
         RRMP_CHECK(ninlil_rrmp_owner_export_namespace(
@@ -2290,7 +2290,7 @@ static int test_parent_full_capacity_handoff_restart(void)
             set.parent_runtime_id[0], parent_ids[0].bytes, 16u);
         memcpy(set.parent_set_digest32, parent_digest.bytes, 32u);
         RRMP_CHECK_EQ(
-            ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+            ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
 
         ninlil_rrmp_memzero(&noa, sizeof(noa));
         memcpy(noa.owner_scope_id.bytes, scopes[i], 16u);
@@ -2326,17 +2326,17 @@ static int test_parent_full_capacity_handoff_restart(void)
         memcpy(prep.handoff_token_digest32, token, 32u);
         ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
         RRMP_CHECK_EQ(
-            rrmp_test_owner_prepare_v2(
+            rrmp_test_owner_prepare_v2(o,
                 &prep, &old_tuple, (uint64_t)i + 1u,
                 &new_tuple, &out),
             NINLIL_PARENT_OK);
         RRMP_CHECK_EQ(
-            rrmp_test_owner_fence_v2(
+            rrmp_test_owner_fence_v2(o,
                 scopes[i], token, &old_tuple, proof, &out),
             NINLIL_PARENT_OK);
 
         RRMP_CHECK_EQ(
-            rrmp_test_authority_commit_v2(
+            rrmp_test_authority_commit_v2(o,
                 scopes[i],
                 &old_tuple,
                 &new_tuple,
@@ -2358,7 +2358,7 @@ static int test_parent_full_capacity_handoff_restart(void)
             32u);
         activate.now_ms = 1000000u;
         RRMP_CHECK_EQ(
-            ninlil_parent_owner_activate(&activate, &out),
+            ninlil_parent_owner_activate(o, &activate, &out),
             NINLIL_PARENT_OK);
         RRMP_CHECK_EQ(
             ninlil_rrmp_core_scope_seal_allowed(o, scopes[i]), 1u);
@@ -2380,7 +2380,7 @@ static int test_parent_full_capacity_handoff_restart(void)
         memcpy(
             overflow.parent_set_digest32, parent_digest.bytes, 32u);
         RRMP_CHECK_EQ(
-            ninlil_parent_set_install(&overflow, &out),
+            ninlil_parent_set_install(o, &overflow, &out),
             NINLIL_PARENT_RESOURCE);
     }
 
@@ -2405,7 +2405,7 @@ static int test_parent_full_capacity_handoff_restart(void)
             query.preamble.struct_size = 48u;
             memcpy(query.owner_scope_id, scopes[i], 16u);
             RRMP_CHECK_EQ(
-                ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+                ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
             RRMP_CHECK_EQ(
                 out.handoff_step,
                 NINLIL_RRMP_HANDOFF_NEW_OWNER_ACTIVATED);

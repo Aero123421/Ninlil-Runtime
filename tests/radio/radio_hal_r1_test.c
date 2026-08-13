@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R1 host tests: ninlil_radio_hal sole transmit-with-permit + spy port.
  * Does not claim R2/R4/SX1262/RF/legal/HIL/production radio complete.

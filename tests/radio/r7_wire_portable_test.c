@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 T1 wire production API: docs/32 §§5–8 full acceptance matrix.
  * Production archive link only. Not R7 full / W1 / HIL / Accepted.

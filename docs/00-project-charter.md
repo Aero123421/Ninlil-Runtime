@@ -109,7 +109,9 @@ SLO は、全入力ではなく、明示した traffic envelope と fault model 
 - 初期設計と reference integration 資料は日本語で作成する。
 - public alpha までに、normative API / protocol / porting / contribution 文書の英語版を正本として整備する。
 - 日本語 overview と運用資料を維持する。
-- 翻訳で規範が分岐しないよう、normative source と translation status を各文書に明記する。
+- 翻訳で規範が分岐しないよう、各top-level文書についてnormative sourceと
+  translation statusを中央のclosed registryへexact 1件記録する。本文へ同じmetadataを
+  複製せず、中央registryを各文書の明記として扱う。
 
 ## License の扱い
 

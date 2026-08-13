@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB item 10a: C6-LAB enforcement tests.
  * ASan/UBSan build. Does not claim production certification / RF / HIL.

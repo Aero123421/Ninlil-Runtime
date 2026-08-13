@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Multi-frame pipeline: real outbound ownership + inbound-driven progress.
  * No local echo / fake completion. Private, default-OFF.
  */

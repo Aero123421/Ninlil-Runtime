@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D3-S2 production crossrow bridge (append-only sibling oracle):
  * executes the D3-S2 suffix vectors from domain-scan-crossrow-v1 through

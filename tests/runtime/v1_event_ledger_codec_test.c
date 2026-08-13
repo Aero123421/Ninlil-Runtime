@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "domain_store_codec.h"
 #include "runtime_v1_event_ledger_codec.h"
 
@@ -138,6 +139,8 @@ static void fill_resume_record(
     for (index = 0u; index < metadata_length; ++index) {
         record->metadata[index] = (uint8_t)(index ^ 0x5au);
     }
+    set_id(&record->audit_clock_epoch_id, 0x50u);
+    record->audit_committed_at_ms = 0u;
     record->replay_result_kind =
         NINLIL_EVENT_RESUME_ALREADY_RESUMED;
     record->replay_result_reason = NINLIL_REASON_NONE;
@@ -245,6 +248,12 @@ static int test_key_and_roundtrip(void)
     REQUIRE(decoded.metadata_length
         == NINLIL_RT_V1_EVENT_LEDGER_METADATA_MAX_BYTES);
     REQUIRE(memcmp(
+                decoded.audit_clock_epoch_id.bytes,
+                source.audit_clock_epoch_id.bytes,
+                sizeof(decoded.audit_clock_epoch_id.bytes))
+        == 0);
+    REQUIRE(decoded.audit_committed_at_ms == 0u);
+    REQUIRE(memcmp(
                 decoded.metadata,
                 source.metadata,
                 source.metadata_length)
@@ -285,6 +294,7 @@ static int expect_decode_failure_unchanged(
 static int test_malformed_rejection_and_nonmutation(void)
 {
     ninlil_rt_v1_event_ledger_record_t source;
+    ninlil_rt_v1_event_ledger_record_t decoded;
     uint8_t value[NINLIL_RT_V1_EVENT_LEDGER_RECORD_MAX_BYTES + 1u];
     uint8_t original[NINLIL_RT_V1_EVENT_LEDGER_RECORD_MAX_BYTES + 1u];
     uint32_t length = 0u;
@@ -335,6 +345,51 @@ static int test_malformed_rejection_and_nonmutation(void)
     REQUIRE(expect_decode_failure_unchanged(
                 value, length, NINLIL_E_STORAGE_CORRUPT)
         == 0);
+
+    /* Existing V1 resume ledgers used legacy audit zero/zero. */
+    (void)memcpy(value, original, length);
+    (void)memset(&value[200], 0, 24u);
+    refresh_crc(value, length);
+    (void)memset(&decoded, 0, sizeof(decoded));
+    REQUIRE(ninlil_rt_v1_event_ledger_decode(
+                (ninlil_bytes_view_t){value, length}, &decoded)
+        == NINLIL_OK);
+    REQUIRE(all_bytes_equal(
+        decoded.audit_clock_epoch_id.bytes,
+        0u,
+        sizeof(decoded.audit_clock_epoch_id.bytes)));
+    REQUIRE(decoded.audit_committed_at_ms == 0u);
+    {
+        uint32_t encoded_length = UINT32_MAX;
+
+        REQUIRE(ninlil_rt_v1_event_ledger_encode(
+                    &decoded,
+                    value,
+                    (uint32_t)sizeof(value),
+                    &encoded_length)
+            == NINLIL_E_INVALID_ARGUMENT);
+        REQUIRE(encoded_length == 0u);
+    }
+
+    /* Legacy mixed shape remains corrupt on decode. */
+    (void)memcpy(value, original, length);
+    (void)memset(&value[200], 0, 16u);
+    value[223] = 1u;
+    refresh_crc(value, length);
+    REQUIRE(expect_decode_failure_unchanged(
+                value, length, NINLIL_E_STORAGE_CORRUPT)
+        == 0);
+
+    source.audit_committed_at_ms = 1u;
+    (void)memset(
+        &source.audit_clock_epoch_id,
+        0,
+        sizeof(source.audit_clock_epoch_id));
+    length = UINT32_MAX;
+    REQUIRE(ninlil_rt_v1_event_ledger_encode(
+                &source, value, (uint32_t)sizeof(value), &length)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(length == 0u);
 
     (void)memset(value, 0, 40u);
     (void)memcpy(value, "NER1", 4u);

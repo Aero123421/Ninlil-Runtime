@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_POSIX_USB_SERIAL_PRIVATE_H
 #define NINLIL_POSIX_USB_SERIAL_PRIVATE_H
 

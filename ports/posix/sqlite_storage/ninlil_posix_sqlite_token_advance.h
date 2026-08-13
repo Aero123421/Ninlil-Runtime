@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_POSIX_SQLITE_TOKEN_ADVANCE_H
 #define NINLIL_POSIX_SQLITE_TOKEN_ADVANCE_H
 

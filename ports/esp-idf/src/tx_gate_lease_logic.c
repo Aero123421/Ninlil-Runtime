@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "tx_gate_lease_logic.h"
 
 #include "abi_header_stage_logic.h"

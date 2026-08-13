@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure A2 USB CDC orchestration (host-testable; no ESP/FreeRTOS/TinyUSB headers).
  *

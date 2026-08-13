@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP target software smoke for private RRMP (ADR-0019/0020).
  *
@@ -498,6 +499,7 @@ static void smoke_bundle_witness_encode(
 }
 
 static int smoke_parent_bootstrap_assignment(
+    ninlil_rrmp_owner_t *owner,
     const uint8_t scope[16],
     const uint8_t path_policy[16],
     const uint8_t parent_digest[32],
@@ -559,7 +561,8 @@ static int smoke_parent_bootstrap_assignment(
     }
     memcpy(
         s_prepare_v2.handoff_token_digest32, token, 32u);
-    status = ninlil_parent_owner_prepare_v2(&s_prepare_v2, &s_pout);
+    status = ninlil_parent_owner_prepare_v2(
+        owner, &s_prepare_v2, &s_pout);
     if (status != NINLIL_PARENT_OK) {
         return 0;
     }
@@ -639,7 +642,7 @@ static int smoke_parent_bootstrap_assignment(
         off,
         s_commit_v2.authority_commit_digest32);
     status = ninlil_parent_authority_commit_v2(
-        &s_commit_v2, &s_pout);
+        owner, &s_commit_v2, &s_pout);
     if (status != NINLIL_PARENT_OK ||
         memcmp(
             s_pout.token_or_commit_digest32,
@@ -659,7 +662,7 @@ static int smoke_parent_bootstrap_assignment(
         32u);
     s_owner_activate.now_ms = 1000000u;
     return ninlil_parent_owner_activate(
-               &s_owner_activate, &s_pout) == NINLIL_PARENT_OK;
+               owner, &s_owner_activate, &s_pout) == NINLIL_PARENT_OK;
 }
 
 static void fill_nrm1(ninlil_rrmp_nrm1_fields_t *f)
@@ -773,7 +776,7 @@ static int32_t rrmp_target_software_lifecycle(uint8_t *ws, size_t need)
         return -5;
     }
     memcpy(s_install.entries, s_raw, sizeof(s_raw));
-    if (ninlil_route_install_batch(&s_install, &s_rout) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_install_batch(o, &s_install, &s_rout) != NINLIL_ROUTE_OK) {
         ninlil_rrmp_owner_fini(o);
         return -5;
     }
@@ -784,7 +787,7 @@ static int32_t rrmp_target_software_lifecycle(uint8_t *ws, size_t need)
     s_act.route_handle = 1u;
     s_act.route_generation = 1u;
     s_act.now_ms = 1000000u;
-    if (ninlil_route_activate(&s_act, &s_rout) != NINLIL_ROUTE_OK ||
+    if (ninlil_route_activate(o, &s_act, &s_rout) != NINLIL_ROUTE_OK ||
         smoke_store_logical_length(&s_store) == 0u) {
         ninlil_rrmp_owner_fini(o);
         return -5;
@@ -815,11 +818,12 @@ static int32_t rrmp_target_software_lifecycle(uint8_t *ws, size_t need)
         return -6;
     }
     memcpy(s_pset.parent_set_digest32, dig.bytes, 32u);
-    if (ninlil_parent_set_install(&s_pset, &s_pout) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(o, &s_pset, &s_pout) != NINLIL_PARENT_OK) {
         ninlil_rrmp_owner_fini(o);
         return -6;
     }
     if (!smoke_parent_bootstrap_assignment(
+            o,
             scope,
             path_policy,
             dig.bytes,
@@ -858,7 +862,7 @@ static int32_t rrmp_target_software_lifecycle(uint8_t *ws, size_t need)
     s_rq.ingress_hop_context_id = 0x1001u;
     s_rq.route_handle = 1u;
     s_rq.route_generation = 1u;
-    if (ninlil_route_query(&s_rq, &s_rout) != NINLIL_ROUTE_OK ||
+    if (ninlil_route_query(o2, &s_rq, &s_rout) != NINLIL_ROUTE_OK ||
         s_rout.lifecycle_state != NINLIL_RRMP_LIFE_ACTIVE) {
         ninlil_rrmp_owner_fini(o2);
         return -9;
@@ -867,7 +871,7 @@ static int32_t rrmp_target_software_lifecycle(uint8_t *ws, size_t need)
     s_pq.preamble.api_version = 1u;
     s_pq.preamble.struct_size = 48u;
     memcpy(s_pq.owner_scope_id, scope, 16u);
-    if (ninlil_parent_query(&s_pq, &s_pout) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_query(o2, &s_pq, &s_pout) != NINLIL_PARENT_OK) {
         ninlil_rrmp_owner_fini(o2);
         return -9;
     }
@@ -884,7 +888,7 @@ static int32_t rrmp_target_software_lifecycle(uint8_t *ws, size_t need)
      * admit real ApplicationData and parent[0].
      */
     s_pset.assignment_epoch = 2u;
-    if (ninlil_parent_set_install(&s_pset, &s_pout) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(o2, &s_pset, &s_pout) != NINLIL_PARENT_OK) {
         ninlil_rrmp_owner_fini(o2);
         return -6;
     }
@@ -964,7 +968,7 @@ static int32_t rrmp_target_software_lifecycle(uint8_t *ws, size_t need)
     s_complete.opaque_local_handle = opaque;
     s_complete.outcome = 1u;
     s_complete.completion_now_ms = 1005000u;
-    if (ninlil_route_forward_complete(&s_complete, &s_rout) !=
+    if (ninlil_route_forward_complete(o2, &s_complete, &s_rout) !=
         NINLIL_ROUTE_OK) {
         ninlil_rrmp_owner_fini(o2);
         return -8;
@@ -1012,11 +1016,13 @@ int32_t ninlil_rrmp_target_smoke_run(void)
     {
         ninlil_route_result_v1_t seam_out;
         ninlil_parent_result_v1_t precover_out;
-        if (ninlil_rrmp_seam_fabric_relay_cycle(NULL, 0u, NULL, &seam_out) !=
+        if (ninlil_rrmp_seam_fabric_relay_cycle(
+                NULL, NULL, 0u, NULL, &seam_out) !=
             NINLIL_ROUTE_INVALID_ARGUMENT) {
             return -3;
         }
-        if (ninlil_parent_recover_commit_unknown(NULL, &precover_out) !=
+        if (ninlil_parent_recover_commit_unknown(
+                NULL, NULL, &precover_out) !=
             NINLIL_PARENT_INVALID_ARGUMENT) {
             return -3;
         }

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RUNTIME_V1_SPINE_DURABLE_H
 #define NINLIL_RUNTIME_V1_SPINE_DURABLE_H
 

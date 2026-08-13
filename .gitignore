@@ -1,6 +1,22 @@
 /build/
 /build-*/
 /tmp-v1*/
+/tmp-controller*/
+/tmp-install*/
+/tmp-all-private*/
+/tmp-generic*/
+
+# Root-local test/application output. Tests use build-tree working directories;
+# these exact patterns are a defense against direct executable runs and
+# accidental `git add -A` contamination.
+/.ninlil-sqlite-*.lock
+/ig-*.db
+/ig-*.db-shm
+/ig-*.db-wal
+/abi_manifest_actual.txt
+/abi_manifest_golden_self_test/
+/.DS_Store
+/dist/
 __pycache__/
 *.py[cod]
 

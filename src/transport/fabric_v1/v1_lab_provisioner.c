@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_lab_provisioner.h"
 
 #include "v1_lab_binding.h"

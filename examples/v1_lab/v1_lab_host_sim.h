@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef V1_LAB_HOST_SIM_H
 #define V1_LAB_HOST_SIM_H
 

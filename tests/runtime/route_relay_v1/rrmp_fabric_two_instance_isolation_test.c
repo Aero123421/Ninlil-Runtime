@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0029 instance-local composition acceptance:
  * two live Fabric/RRMP pairs select distinct paths without consulting or
@@ -300,7 +301,10 @@ static int initialize_pair(
         rrmp_workspace, rrmp_workspace_bytes, &rrmp_config);
     FABRIC_REQUIRE(pair->rrmp != NULL);
     FABRIC_REQUIRE_EQ_U32(
-        ninlil_fabric_private_bind_rrmp_owner_v1(pair->fabric, pair->rrmp),
+        ninlil_fabric_private_bind_path_selected_hook_v1(
+            pair->fabric,
+            pair->rrmp,
+            ninlil_rrmp_fabric_path_selected_hook_v1),
         NINLIL_FABRIC_PRIVATE_OK);
 
     fill_message(&pair->message, message_offset);
@@ -351,7 +355,8 @@ static int shutdown_pair(isolation_pair_t *pair)
         return 0;
     }
     FABRIC_REQUIRE_EQ_U32(
-        ninlil_fabric_private_bind_rrmp_owner_v1(pair->fabric, NULL),
+        ninlil_fabric_private_bind_path_selected_hook_v1(
+            pair->fabric, NULL, NULL),
         NINLIL_FABRIC_PRIVATE_OK);
     if (pair->bearer != NULL && pair->bearer_handle != NULL) {
         pair->bearer->close(pair->bearer->user, pair->bearer_handle);
@@ -399,11 +404,14 @@ int main(void)
 
     /* Replacing a live instance binding is deliberately fail-closed. */
     FABRIC_REQUIRE_EQ_U32(
-        ninlil_fabric_private_bind_rrmp_owner_v1(
-            g_pair_a.fabric, g_pair_b.rrmp),
+        ninlil_fabric_private_bind_path_selected_hook_v1(
+            g_pair_a.fabric,
+            g_pair_b.rrmp,
+            ninlil_rrmp_fabric_path_selected_hook_v1),
         NINLIL_FABRIC_PRIVATE_CONFLICT);
 
-    /* Legacy global points at B; Fabric A must still update only RRMP A. */
+    /* Both explicit owner domains are live; Fabric A updates only RRMP A. */
+    FABRIC_REQUIRE(ninlil_rrmp_owner_bind(g_pair_a.rrmp) != 0);
     FABRIC_REQUIRE(ninlil_rrmp_owner_bind(g_pair_b.rrmp) != 0);
     ninlil_fabric_private_memzero(&send_result, sizeof(send_result));
     FABRIC_REQUIRE_EQ_U32(
@@ -414,7 +422,6 @@ int main(void)
             &g_pair_a.message,
             &send_result),
         NINLIL_BEARER_OK);
-    FABRIC_REQUIRE(ninlil_rrmp_owner_current() == g_pair_b.rrmp);
     FABRIC_REQUIRE(
         ninlil_rrmp_fabric_last_path(g_pair_a.rrmp, path_a, &epoch_a) != 0);
     FABRIC_REQUIRE(epoch_a == 1u);
@@ -424,8 +431,7 @@ int main(void)
     (void)memcpy(saved_a, path_a, sizeof(saved_a));
     saved_epoch_a = epoch_a;
 
-    /* Legacy global points at A; Fabric B must still update only RRMP B. */
-    FABRIC_REQUIRE(ninlil_rrmp_owner_bind(g_pair_a.rrmp) != 0);
+    /* Fabric B updates only RRMP B without any implicit current-owner state. */
     ninlil_fabric_private_memzero(&send_result, sizeof(send_result));
     FABRIC_REQUIRE_EQ_U32(
         g_pair_b.bearer->send(
@@ -435,7 +441,6 @@ int main(void)
             &g_pair_b.message,
             &send_result),
         NINLIL_BEARER_OK);
-    FABRIC_REQUIRE(ninlil_rrmp_owner_current() == g_pair_a.rrmp);
     FABRIC_REQUIRE(
         ninlil_rrmp_fabric_last_path(g_pair_b.rrmp, path_b, &epoch_b) != 0);
     FABRIC_REQUIRE(epoch_b == 1u);

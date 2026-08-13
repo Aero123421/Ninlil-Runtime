@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_durable_allowlist.h"
 
 #include "domain_store_body_codec.h"
@@ -629,7 +630,7 @@ static const ninlil_v1_durable_operation_kind_mask_t
          * Terminal / release paths that may co-stage SERVICE quota decrement
          * (bit 19 / kind 20 SPINE_SERVICE_MARKER) with TX + capacity rows.
          */
-        {NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT, UINT64_C(0x00029ffc0)},
+        {NINLIL_V1_DURABLE_OP_CANCEL_ADMISSION_COMMIT, UINT64_C(0x00029ffc8)},
         {NINLIL_V1_DURABLE_OP_DELIVERY_STARTED_COMMIT, UINT64_C(0x00049ffc8)},
         {NINLIL_V1_DURABLE_OP_DELIVERY_EVIDENCE_COMMIT, UINT64_C(0x00089ffc8)},
         {NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT, UINT64_C(0x00109ffc0)},

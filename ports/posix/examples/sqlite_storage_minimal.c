@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Minimal host example: open a temp SQLite store, put/get one key, exit.
  * Not a public Runtime demo. Build only when NINLIL_BUILD_POSIX_SQLITE_STORAGE

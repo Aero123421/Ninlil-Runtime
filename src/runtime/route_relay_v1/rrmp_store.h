@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Fixed-length dual-slot durable provider with shared page arena
  * (ESP-budget: no per-key 2x4096 embedding).

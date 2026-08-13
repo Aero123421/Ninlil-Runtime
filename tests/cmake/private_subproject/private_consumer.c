@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_lifecycle_model.h"
 
 #include <string.h>

@@ -1,3 +1,21 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Transaction input/output ownership contract.
+ *
+ * Submission targets, payload, idempotency key, and audit metadata are
+ * caller-owned views borrowed only for the API call; successful admission
+ * persists canonical copies. Result structs are caller-owned outputs.
+ *
+ * For transaction_query(), `targets` is a caller-owned array and
+ * target_capacity is its initialized element capacity. BUFFER_TOO_SMALL
+ * publishes only the required target_count and leaves the array unchanged.
+ * For transaction_list(), `items` is a caller-owned page buffer; normal
+ * pagination writes at most item_capacity items and reports cursor/has_more,
+ * rather than using BUFFER_TOO_SMALL. Query/list may run on the owner context
+ * during a callback; their returned snapshots and nested values remain owned
+ * by the caller. Semantic kind/outcome/reason fields must be inspected even
+ * when the API-level ninlil_status_t is NINLIL_OK.
+ */
 #ifndef NINLIL_TRANSACTION_H
 #define NINLIL_TRANSACTION_H
 
@@ -7,6 +25,7 @@
 extern "C" {
 #endif
 
+/* Borrowed input to ninlil_submit; every nested view is copied only on admit. */
 typedef struct ninlil_submission {
     NINLIL_STRUCT_HEADER;
     uint16_t schema_major;
@@ -46,6 +65,10 @@ typedef struct ninlil_admission_assurance {
     uint32_t reserved_zero;
 } ninlil_admission_assurance_t;
 
+/*
+ * Caller-owned output. NINLIL_OK is only the API boundary: kind/reason and the
+ * assurance flags state whether ownership was admitted, replayed, or rejected.
+ */
 typedef struct ninlil_submission_result {
     NINLIL_STRUCT_HEADER;
     ninlil_submission_kind_t kind;
@@ -76,6 +99,10 @@ typedef struct ninlil_target_snapshot {
     uint64_t late_evidence_count;
 } ninlil_target_snapshot_t;
 
+/*
+ * Caller-owned query output. targets points to a caller-owned, ABI-initialized
+ * array; BUFFER_TOO_SMALL publishes only the required target_count.
+ */
 typedef struct ninlil_transaction_snapshot {
     NINLIL_STRUCT_HEADER;
     ninlil_id128_t transaction_id;
@@ -122,6 +149,7 @@ typedef struct ninlil_transaction_summary {
     uint64_t record_revision;
 } ninlil_transaction_summary_t;
 
+/* Borrowed list filter; no pointer or nested storage is retained. */
 typedef struct ninlil_query {
     NINLIL_STRUCT_HEADER;
     uint64_t after_transaction_sequence;
@@ -134,6 +162,10 @@ typedef struct ninlil_query {
     uint32_t reserved_zero;
 } ninlil_query_t;
 
+/*
+ * Caller-owned list output. items is an ABI-initialized caller array; normal
+ * pagination writes a partial page and cursor/has_more without BUFFER_TOO_SMALL.
+ */
 typedef struct ninlil_transaction_page {
     NINLIL_STRUCT_HEADER;
     ninlil_transaction_summary_t *items;
@@ -149,6 +181,7 @@ typedef struct ninlil_transaction_page {
 #define NINLIL_CANCEL_TOO_LATE_EFFECT_POSSIBLE ((ninlil_cancel_kind_t)3u)
 #define NINLIL_CANCEL_ALREADY_TERMINAL      ((ninlil_cancel_kind_t)4u)
 
+/* Caller-owned semantic output; a successful request is not cancel completion. */
 typedef struct ninlil_cancel_result {
     NINLIL_STRUCT_HEADER;
     ninlil_cancel_kind_t kind;
@@ -175,6 +208,7 @@ typedef struct ninlil_cancel_result {
 #define NINLIL_RESUME_OPERATOR_OVERRIDE       ((ninlil_event_resume_reason_t)4u)
 #define NINLIL_RESUME_TEST                    ((ninlil_event_resume_reason_t)5u)
 
+/* Borrowed management input; audit_metadata is retained only via durable copy. */
 typedef struct ninlil_event_resume_request {
     NINLIL_STRUCT_HEADER;
     ninlil_id128_t operation_id;
@@ -185,6 +219,7 @@ typedef struct ninlil_event_resume_request {
     ninlil_bytes_view_t audit_metadata;
 } ninlil_event_resume_request_t;
 
+/* Caller-owned semantic output; NINLIL_OK may describe a no-mutation result. */
 typedef struct ninlil_event_resume_result {
     NINLIL_STRUCT_HEADER;
     ninlil_event_resume_kind_t kind;
@@ -207,6 +242,7 @@ typedef struct ninlil_event_resume_result {
 #define NINLIL_DISCARD_OPERATOR_OVERRIDE      ((ninlil_event_discard_reason_t)3u)
 #define NINLIL_DISCARD_TEST_CLEANUP           ((ninlil_event_discard_reason_t)4u)
 
+/* Borrowed management input; audit_metadata is retained only via durable copy. */
 typedef struct ninlil_event_discard_request {
     NINLIL_STRUCT_HEADER;
     ninlil_id128_t operation_id;
@@ -219,6 +255,10 @@ typedef struct ninlil_event_discard_request {
     ninlil_bytes_view_t audit_metadata;
 } ninlil_event_discard_request_t;
 
+/*
+ * Caller-owned semantic output. spool_released is non-zero only for DISCARDED
+ * or its canonical ALREADY_DISCARDED replay, never merely for API NINLIL_OK.
+ */
 typedef struct ninlil_event_discard_result {
     NINLIL_STRUCT_HEADER;
     ninlil_event_discard_kind_t kind;

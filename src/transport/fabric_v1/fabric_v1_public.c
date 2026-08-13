@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil/fabric_v1.h"
 
 #include "fabric_private_api.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D2-S6 private Stage 5 fail-closed seam integration matrix.
  * Claims: private fail-closed seam implemented; Stage 5 incomplete.

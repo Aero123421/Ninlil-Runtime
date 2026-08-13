@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 private NRW1 LINK/FRAG/reassembly direct tests.
  *

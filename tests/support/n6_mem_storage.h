@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TEST_N6_MEM_STORAGE_H
 #define NINLIL_TEST_N6_MEM_STORAGE_H
 

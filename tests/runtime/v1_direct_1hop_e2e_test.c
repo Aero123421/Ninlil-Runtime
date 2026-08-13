@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB unit 5: B4 PC間 direct 1-hop E2E (2-process loopback bearer).
  */
@@ -1158,6 +1159,9 @@ static int run_controller_process(
                 ninlil_posix_lab_platform_test_clock(platform);
             if (clock != NULL && step == 6u) {
                 (void)ninlil_test_clock_advance(clock, 1200u);
+            } else if (clock != NULL && step == 7u) {
+                (void)ninlil_test_clock_advance(
+                    clock, descriptor.retry_backoff_ms);
             }
         } else if (scenario == SCENARIO_DATA_LOSS) {
             ninlil_test_clock_t *clock =

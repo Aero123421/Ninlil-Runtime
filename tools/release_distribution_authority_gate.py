@@ -12,11 +12,12 @@ skip a later gate when an earlier one is green alone:
   6. markdown_link_gate
   7. compatibility_matrix_gate
   8. third_party_notice_gate
-  9. release_version_identity self-test + print-core
- 10. release_workflow_identity_gate
- 11. spdx_release_sbom self-test
- 12. esp_idf_sdk_public_boundary_gate
- 13. m1a_public_family_docs_gate
+  9. dco_signoff_gate self-test
+ 10. release_version_identity self-test + print-core
+ 11. release_workflow_identity_gate
+ 12. spdx_release_sbom self-test
+ 13. esp_idf_sdk_public_boundary_gate
+ 14. m1a_public_family_docs_gate
 
 ``cleanroom`` additionally runs from-release-archive unpack→build→package.
 
@@ -79,6 +80,7 @@ ORDERED_CHECKS: list[tuple[str, list[str]]] = [
         "third_party_notice_gate_self_test",
         ["third_party_notice_gate.py", "self-test"],
     ),
+    ("dco_signoff_gate_self_test", ["dco_signoff_gate.py", "self-test"]),
     (
         "release_version_identity_self_test",
         ["release_version_identity.py", "self-test"],
@@ -172,7 +174,12 @@ def self_test() -> None:
             elif "markdown" in name:
                 if argv[-1] == "self-test":
                     run_step(name, argv)
-            elif "workflow" in name or "version" in name or "spdx" in name:
+            elif (
+                "workflow" in name
+                or "version" in name
+                or "spdx" in name
+                or "dco" in name
+            ):
                 run_step(name, argv)
             elif "boundary" in name or "m1a" in name:
                 if argv[-1] == "self-test":

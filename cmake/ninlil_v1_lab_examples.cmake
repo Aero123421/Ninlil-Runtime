@@ -123,4 +123,14 @@ function(ninlil_v1_lab_examples_register)
         NAME v1_lab_leak_measurement_example
         COMMAND ninlil_v1_lab_leak_measurement_example
     )
+    # Run the two process examples from a deliberately long cwd. Their Unix
+    # socket names must stay inside sockaddr_un::sun_path independently of a
+    # user's checkout/build path (regression for the macOS long-path failure).
+    set(_ninlil_v1_lab_long_cwd
+        "${CMAKE_CURRENT_BINARY_DIR}/v1-lab-long-cwd/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    file(MAKE_DIRECTORY "${_ninlil_v1_lab_long_cwd}")
+    set_tests_properties(
+        v1_lab_display_latest_state_example
+        v1_lab_leak_measurement_example
+        PROPERTIES WORKING_DIRECTORY "${_ninlil_v1_lab_long_cwd}")
 endfunction()

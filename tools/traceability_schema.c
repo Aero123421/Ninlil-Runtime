@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "traceability_schema.h"
 
 #include <stdint.h>
@@ -1042,7 +1043,8 @@ int ninlil_traceability_run_repository_check(
     }
     written_manifest = snprintf(manifest_path, sizeof(manifest_path), "%s/%s", repo_root,
         NINLIL_TRACEABILITY_MANIFEST_PATH);
-    written_cmake = snprintf(cmake_path, sizeof(cmake_path), "%s/CMakeLists.txt", repo_root);
+    written_cmake = snprintf(cmake_path, sizeof(cmake_path),
+        "%s/cmake/ninlil_ctest.cmake", repo_root);
     if (written_manifest < 0 || (size_t)written_manifest >= sizeof(manifest_path)
         || written_cmake < 0 || (size_t)written_cmake >= sizeof(cmake_path)) {
         if (error_stream != NULL) {

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 private R5→R2 checked-issue (docs/30 §15.3.1–15.3.2).
  * Process-local; not public ABI.
@@ -14,10 +15,6 @@
 #include "ninlil/version.h"
 
 #include <string.h>
-
-/* Process-static registry when caller does not supply one. */
-static ninlil_r7_r5_issue_registry_t g_r5_issue_reg;
-static uint8_t g_r5_issue_reg_inited;
 
 static void axes_precheck_zero(ninlil_r7_checked_issue_result_t *r)
 {
@@ -44,6 +41,18 @@ void ninlil_r7_r5_issue_registry_init(ninlil_r7_r5_issue_registry_t *reg)
 }
 
 void ninlil_r7_r5_issue_registry_clear(ninlil_r7_r5_issue_registry_t *reg)
+{
+    if (reg == NULL) {
+        return;
+    }
+    memset(reg->live, 0, sizeof(reg->live));
+    memset(reg->permit_sequence, 0, sizeof(reg->permit_sequence));
+    memset(reg->owner_epoch, 0, sizeof(reg->owner_epoch));
+    memset(reg->issue_now_ms, 0, sizeof(reg->issue_now_ms));
+    reg->count = 0u;
+}
+
+void ninlil_r7_r5_issue_registry_fini(ninlil_r7_r5_issue_registry_t *reg)
 {
     ninlil_r7_r5_issue_registry_init(reg);
 }
@@ -84,14 +93,6 @@ void ninlil_r7_r5_issue_registry_release(
             return;
         }
     }
-}
-
-void ninlil_r7_r5_issue_registry_release_default(uint64_t permit_sequence)
-{
-    if (g_r5_issue_reg_inited == 0u) {
-        return;
-    }
-    ninlil_r7_r5_issue_registry_release(&g_r5_issue_reg, permit_sequence);
 }
 
 static int32_t r5_registry_insert(
@@ -322,11 +323,6 @@ static void map_pcp_to_axes(
     r->l1_class = NINLIL_R7_L1_OPERATOR_RECOVERY_REQUIRED;
 }
 
-/* R5 whole-path in_api (docs/30 §15.3.1). */
-static uint8_t g_r5_in_api;
-static uint64_t g_activate_snapshot_id_used;
-static uint64_t g_activate_token;
-
 static uint64_t epoch_lo_from_sample(const ninlil_time_sample_t *ts)
 {
     uint64_t lo = 0u;
@@ -505,37 +501,51 @@ int32_t ninlil_r2_private_issue_checked_owner_epoch(
 }
 
 int32_t ninlil_r5_private_activate_profiles_with_authority_epoch(
+    ninlil_r7_r5_issue_registry_t *owner,
     const ninlil_r7_class_d_sample_t *accepted_class_d_snapshot,
     uint64_t snapshot_id,
     uint64_t sample_generation,
     uint64_t l1_issuer_token,
     uint64_t expected_authority_epoch)
 {
-    if (accepted_class_d_snapshot == NULL || snapshot_id == 0u
+    int32_t st = NINLIL_R7_CHECKED_ISSUE_OK;
+
+    if (owner == NULL || accepted_class_d_snapshot == NULL || snapshot_id == 0u
         || sample_generation == 0u || l1_issuer_token == 0u) {
         return NINLIL_R7_CHECKED_ISSUE_INVALID;
     }
+    if (owner->in_api != 0u) {
+        return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
+    }
+    owner->in_api = 1u;
     if (accepted_class_d_snapshot->trusted == 0u
         || accepted_class_d_snapshot->fence_clock != 0u) {
-        return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
+        st = NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
+        goto done;
     }
     /* Single-use snapshot_id; forge without L1 token rejected. */
-    if (g_activate_token != 0u && l1_issuer_token != g_activate_token) {
-        return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
+    if (owner->activate_token != 0u
+        && l1_issuer_token != owner->activate_token) {
+        st = NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
+        goto done;
     }
-    if (g_activate_snapshot_id_used != 0u
-        && snapshot_id == g_activate_snapshot_id_used) {
-        return NINLIL_R7_CHECKED_ISSUE_REGISTRY; /* replay */
+    if (owner->activate_snapshot_id_used != 0u
+        && snapshot_id == owner->activate_snapshot_id_used) {
+        st = NINLIL_R7_CHECKED_ISSUE_REGISTRY; /* replay */
+        goto done;
     }
     if (expected_authority_epoch != 0u
         && accepted_class_d_snapshot->epoch_id_lo != 0u
         && expected_authority_epoch
             != accepted_class_d_snapshot->epoch_id_lo) {
-        return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
+        st = NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
+        goto done;
     }
-    g_activate_snapshot_id_used = snapshot_id;
-    g_activate_token = l1_issuer_token;
-    return NINLIL_R7_CHECKED_ISSUE_OK;
+    owner->activate_snapshot_id_used = snapshot_id;
+    owner->activate_token = l1_issuer_token;
+done:
+    owner->in_api = 0u;
+    return st;
 }
 
 int32_t ninlil_r5_private_issue_checked_with_owner_epoch(
@@ -558,18 +568,18 @@ int32_t ninlil_r5_private_issue_checked_with_owner_epoch(
     if (out_permit != NULL) {
         memset(out_permit, 0, sizeof(*out_permit));
     }
-    if (pcp == NULL || live == NULL || req == NULL || out_permit == NULL
-        || out_result == NULL) {
+    if (pcp == NULL || live == NULL || req == NULL || registry == NULL
+        || out_permit == NULL || out_result == NULL) {
         return NINLIL_R7_CHECKED_ISSUE_INVALID;
     }
     /* R5 whole-path guard (preflight → R2 → registry). */
-    if (g_r5_in_api != 0u) {
+    if (registry->in_api != 0u) {
         out_result->exact_status = NINLIL_PCP_BUSY_REENTRY;
         out_result->pcp_status = NINLIL_PCP_BUSY_REENTRY;
         out_result->l1_class = NINLIL_R7_L1_RETRYABLE_PIPELINE;
         return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
     }
-    g_r5_in_api = 1u;
+    registry->in_api = 1u;
 
     /* (1) R5 static preflight — no sample. */
     if (live->site_assignment_epoch == 0u
@@ -578,14 +588,14 @@ int32_t ninlil_r5_private_issue_checked_with_owner_epoch(
         out_result->exact_status = NINLIL_PCP_INVALID_ARGUMENT;
         out_result->pcp_status = NINLIL_PCP_INVALID_ARGUMENT;
         out_result->l1_class = NINLIL_R7_L1_TERMINAL_UNISSUED;
-        g_r5_in_api = 0u;
+        registry->in_api = 0u;
         return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
     }
     if (owner_epoch != 0u && owner_epoch != live->site_assignment_epoch) {
         out_result->exact_status = NINLIL_PCP_PROFILE_MISMATCH;
         out_result->pcp_status = NINLIL_PCP_PROFILE_MISMATCH;
         out_result->l1_class = NINLIL_R7_L1_AUTHORITY_DIVERGENCE;
-        g_r5_in_api = 0u;
+        registry->in_api = 0u;
         return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
     }
     if (req->max_airtime_us == 0u
@@ -595,16 +605,15 @@ int32_t ninlil_r5_private_issue_checked_with_owner_epoch(
         out_result->exact_status = NINLIL_PCP_INVALID_ARGUMENT;
         out_result->pcp_status = NINLIL_PCP_INVALID_ARGUMENT;
         out_result->l1_class = NINLIL_R7_L1_TERMINAL_UNISSUED;
-        g_r5_in_api = 0u;
+        registry->in_api = 0u;
         return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
     }
-    if (registry != NULL
-        && ninlil_r7_r5_issue_registry_count(registry)
-            >= NINLIL_R7_R5_ISSUE_REGISTRY_CAP) {
+    if (ninlil_r7_r5_issue_registry_count(registry)
+        >= NINLIL_R7_R5_ISSUE_REGISTRY_CAP) {
         out_result->exact_status = NINLIL_PCP_CAPACITY;
         out_result->pcp_status = NINLIL_PCP_CAPACITY;
         out_result->l1_class = NINLIL_R7_L1_RETRYABLE_UNISSUED;
-        g_r5_in_api = 0u;
+        registry->in_api = 0u;
         return NINLIL_R7_CHECKED_ISSUE_PREFLIGHT;
     }
 
@@ -625,12 +634,12 @@ int32_t ninlil_r5_private_issue_checked_with_owner_epoch(
     st = ninlil_r2_private_issue_checked_owner_epoch(
         pcp, &plan, validation_cb, validation_user, out_permit, out_result);
     if (st != NINLIL_R7_CHECKED_ISSUE_OK || out_result->issued == 0u) {
-        g_r5_in_api = 0u;
+        registry->in_api = 0u;
         return st;
     }
 
     /* (7) R5 registry insert — failure is RECONCILE (dual-truth risk). */
-    if (registry != NULL) {
+    {
         uint64_t now_ms = out_result->sample_valid != 0u
             ? out_result->sample.now_ms
             : 0u;
@@ -644,11 +653,11 @@ int32_t ninlil_r5_private_issue_checked_with_owner_epoch(
             out_result->l1_class = NINLIL_R7_L1_RECONCILE_REQUIRED;
             out_result->exact_status = NINLIL_PCP_OK;
             out_result->pcp_status = NINLIL_PCP_OK;
-            g_r5_in_api = 0u;
+            registry->in_api = 0u;
             return NINLIL_R7_CHECKED_ISSUE_REGISTRY;
         }
     }
-    g_r5_in_api = 0u;
+    registry->in_api = 0u;
     return NINLIL_R7_CHECKED_ISSUE_OK;
 }
 
@@ -661,13 +670,6 @@ int32_t ninlil_r7_private_issue_checked_with_owner_epoch(
     ninlil_radio_hal_permit_snapshot_t *out_permit,
     ninlil_r7_checked_issue_result_t *out_result)
 {
-    if (registry == NULL) {
-        if (g_r5_issue_reg_inited == 0u) {
-            ninlil_r7_r5_issue_registry_init(&g_r5_issue_reg);
-            g_r5_issue_reg_inited = 1u;
-        }
-        registry = &g_r5_issue_reg;
-    }
     return ninlil_r5_private_issue_checked_with_owner_epoch(
         pcp, live, owner_epoch, req, registry, NULL, NULL, out_permit,
         out_result);

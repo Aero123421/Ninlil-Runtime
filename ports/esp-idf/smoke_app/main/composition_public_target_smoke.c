@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP32-S3 executable contract probe for the installed Composition surface.
  * This translation unit intentionally includes no private Ninlil header.

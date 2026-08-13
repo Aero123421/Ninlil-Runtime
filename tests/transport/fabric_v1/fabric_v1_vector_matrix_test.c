@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Execute machine vector rows against production private codecs / select /
  * commit_unknown_classify. Fixture headers are generated from accepted JSON.

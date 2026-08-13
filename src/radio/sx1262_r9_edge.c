@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R9 sole physical TX edge: radio_hal → SX1262 phy (Proposed ADR-0025).
  */

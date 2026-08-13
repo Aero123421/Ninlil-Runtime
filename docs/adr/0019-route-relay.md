@@ -3,7 +3,7 @@
 状態: **Accepted / SPEC_ACCEPTED**
 状態補足: ADR-0020とjoint design acceptance（independent final review GO; P0=0 / P1=0）
 提案日: 2026-07-28
-改訂日: 2026-07-30（ADR-0020とjoint SPEC_ACCEPTED; Normative bytes不変）
+改訂日: 2026-08-12（caller-owned serial domainを明示化; Normative bytes不変）
 受入日: 2026-07-30
 SPEC_ACCEPTED日: 2026-07-30（vector `claims.spec_accepted=1`）
 RELEASE_SUPPORTED日: —（未達・非主張）
@@ -54,6 +54,8 @@ ACCEPTANCE節はSPEC_ACCEPTEDの充足証拠と、その先の実機gateを分�
 | D19-10 | schedulerはbounded queue / priority fairness / backpressure / cancel-drainを持つ |
 | D19-11 | default feature flag OFF。mixed-version / downgrade / rollbackをfail-closedにする |
 | D19-12 | machine vectors + 独立Python/Node/C gateを機械正本とする。実装・HILは別tranche |
+| D19-13 | route/evidence page encode scratch と durable bundle scratch は caller-owned owner workspace に置き、SHA provider KAT は process-global mutable cache を持たず fail-closed に実行する。serial-domain bind pointer の解消は D19-14 で固定する |
+| D19-14 | RRMP private catalogのserial domainは既存caller-owned `ninlil_rrmp_owner_t` workspaceそのものとし、全catalog callが明示第1引数で渡す。process-global current-owner pointerは禁止し、別ownerの状態を参照・変更しないこと、owner単位のreentry拒否、unbind/owner-fini時の認証・workspace zeroizationを必須とする |
 
 ## Decision
 
@@ -142,6 +144,20 @@ offset  size  field
 | reentrant call into same owner | `NINLIL_ROUTE_REENTRANT` |
 
 caller-owned buffer以外のheap成長、VLA、callback reentry、borrowed pointerの保持を禁止する。
+route/evidence page encode と outer durable bundle の全scratchは、その操作を実行する
+ownerのcaller-owned workspaceに含める。別ownerと共有するfunction-static scratchを禁止する。
+SHA provider KATはempty/`abc`をfail-closedに検査するが、その結果をprocess-global mutable
+stateへcacheしない。
+
+RRMP private catalogのserial domainは既存のcaller-owned owner workspaceそのものであり、
+`owner_bind(owner)` または `owner_bind_authorized(owner, ...)` の成功後、同じ `owner` を
+各catalog callの第1引数として渡す。NULL・未初期化・別ownerを指定したcallは
+`INVALID_ARGUMENT`またはrequestに対応するclosed statusかつ対象外ownerへの副作用0。
+`owner_unbind(owner)` は当該ownerの認証principal/capabilityをzeroizeし、
+`owner_fini(owner)` はworkspace全体をzeroizeする。process-global / thread-local の
+implicit current-ownerをcatalog authorityにしてはならない。同一ownerのcatalog callback
+実行中に`bind` / `bind_authorized` / `unbind` / `owner_fini`を再入してはならず、
+実装は失敗またはno-opとして認証・workspaceを変更しない。
 
 #### 2.2 Private function surface（exact names）
 
@@ -218,50 +234,61 @@ recomputeしてintegrity classを先に確定する（§10）。
 
 すべて `ninlil_route_status_u32` を返す。public export / dynamic symbol を持たない。
 `out` は caller-owned 固定 `ninlil_route_result_v1`（§2.5、exact 128 bytes）。
-NULL `req`/`out` は `INVALID_ARGUMENT`。同一 install-owner serial domain への reentry は
+NULL `owner`/`req`/`out` は `INVALID_ARGUMENT`。同一 install-owner serial domain への reentry は
 `REENTRANT`。feature_route_relay=0 は preamble通過後 `FEATURE_OFF`（precedence §2.3）。
 
 ```c
 /* private; not installed public headers */
 typedef uint32_t ninlil_route_status_u32;
+typedef struct ninlil_rrmp_owner ninlil_rrmp_owner_t;
 
 ninlil_route_status_u32 ninlil_route_install_batch(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_install_batch_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_activate(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_activate_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_begin_drain(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_begin_drain_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_retire(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_retire_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_query(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_query_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_forward_admit(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_forward_admit_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_forward_complete(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_forward_complete_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_cancel_drain(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_cancel_drain_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_recover_commit_unknown(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_recover_cu_req_v1 *req,
     ninlil_route_result_v1 *out);
 
 ninlil_route_status_u32 ninlil_route_diagnostics_snapshot(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_diagnostics_req_v1 *req,
     ninlil_route_result_v1 *out);
 ```
@@ -1044,8 +1071,9 @@ parent scopeは再assignmentされるまでfail-closedとし、送信許可を�
 
 #### 6.3.2 Caller authorization
 
-`authorization_required=1`ではlegacy `owner_bind`を禁止し、外部authorizerが検証した
-principal/capabilityだけをserial domainへbindする。caller自己申告のcapability/proofは
+`authorization_required=1`ではunauthorized `owner_bind(owner)`を禁止し、
+外部authorizerが検証したprincipal/capabilityだけをexplicit serial domainへbindする。
+caller自己申告のcapability/proofは
 それ自体をauthorityとみなさない。closed capabilityは
 `ROUTE_ADMIN / FORWARD / PARENT_ADMIN / DIAGNOSTICS / BEARER / WORKER`。
 管理、read、forward、authenticated ACK、timeout workerの各APIは必要capability欠落時

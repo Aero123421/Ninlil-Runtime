@@ -99,9 +99,9 @@ CMake 3.20です。Host support対象はLinux / macOSです。
 - LAB platform、loopback bearer、examples executable
 - ESP-IDF componentと実機firmware image
 
-Host Runtime archiveにhost simulation用の一部内部software-path implementation
-unitが含まれることは、それらを独立したpublic C4/C5/C6 moduleとしてexportする
-こと、または物理USB/RFの完成を意味しません。
+Host Runtime archiveは専用の明示source authorityを使い、LAB、simulator、
+`pcp_lab_session_ledger`、SX1262 physical edge、default-OFF private candidateを
+含めません。これらは非installのprivate/opt-in targetに限定します。
 
 ## 5. Source repository
 
@@ -135,8 +135,8 @@ Tag release workflowは次を生成・検証します。
 - archiveをsubjectとするSBOM attestation
 
 詳細は [Release Guide](releasing.md) を参照してください。SBOM / attestationの
-生成と、maintainer tagの必須署名方針、production license / legal reviewは
-別の保証です。
+生成、tag署名の有無、production license / legal reviewは別の保証です。現workflowは
+annotated tagと対象commitを検証しますが、tag署名そのものは検証しません。
 
 ## 7. Required package gates
 
@@ -192,7 +192,7 @@ cmake -S . -B ../ninlil-package-noconfig -G Ninja \
   -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=ON
 cmake --build ../ninlil-package-noconfig --parallel
 ctest --test-dir ../ninlil-package-noconfig --output-on-failure \
-  -R '^(host_runtime_tests_off_installed_consumer(_sqlite)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
+  -R '^(host_runtime_tests_off_installed_consumer(_sqlite|_domain_on)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
 
 # Ninja Debug / Release
 for config in Debug Release; do
@@ -204,7 +204,7 @@ for config in Debug Release; do
     -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=ON
   cmake --build "$build" --parallel
   ctest --test-dir "$build" --output-on-failure \
-    -R '^(host_runtime_tests_off_installed_consumer(_sqlite)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
+    -R '^(host_runtime_tests_off_installed_consumer(_sqlite|_domain_on)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
 done
 
 # Ninja Multi-Config: producer / consumerをDebugとReleaseの両方で実行
@@ -214,10 +214,10 @@ cmake -S . -B ../ninlil-package-multi -G 'Ninja Multi-Config' \
   -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=ON
 cmake --build ../ninlil-package-multi --config Debug --parallel
 ctest --test-dir ../ninlil-package-multi -C Debug --output-on-failure \
-  -R '^(host_runtime_tests_off_installed_consumer(_sqlite)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
+  -R '^(host_runtime_tests_off_installed_consumer(_sqlite|_domain_on)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
 cmake --build ../ninlil-package-multi --config Release --parallel
 ctest --test-dir ../ninlil-package-multi -C Release --output-on-failure \
-  -R '^(host_runtime_tests_off_installed_consumer(_sqlite)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
+  -R '^(host_runtime_tests_off_installed_consumer(_sqlite|_domain_on)?|fabric_v1_tests_off_installed_consumer|posix_sqlite_storage_installed_consumer|runtime_private_subproject_smoke)$'
 
 # SQLite OFFでもHost Runtime install consumerは必須
 cmake -S . -B ../ninlil-package-sqlite-off -G Ninja \
@@ -227,5 +227,5 @@ cmake -S . -B ../ninlil-package-sqlite-off -G Ninja \
   -DNINLIL_BUILD_POSIX_SQLITE_STORAGE=OFF
 cmake --build ../ninlil-package-sqlite-off --parallel
 ctest --test-dir ../ninlil-package-sqlite-off --output-on-failure \
-  -R '^(host_runtime_tests_off_installed_consumer|fabric_v1_tests_off_installed_consumer|runtime_private_subproject_smoke)$'
+  -R '^(host_runtime_tests_off_installed_consumer(_domain_on)?|fabric_v1_tests_off_installed_consumer|runtime_private_subproject_smoke)$'
 ```

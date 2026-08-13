@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "posix_tls_v1_records.h"
 
 #include "wifi_storage_cu.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "submission_admission.h"
 #include "family_capability_model.h"
 

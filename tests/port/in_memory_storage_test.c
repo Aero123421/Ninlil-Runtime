@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "in_memory_storage.h"
 #include "storage_provider_conformance.h"
 

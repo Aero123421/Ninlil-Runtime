@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Regression: host session TLS storage must be max_align_t-aligned so that
  * casting tls_storage to ninlil_wifi_tls_t* (OpenSSL SSL / SSL_CTX pointers)

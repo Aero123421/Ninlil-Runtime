@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * M4 linear capability: owner-registry + 128-bit entropy cap_id + capacity
  * fail-closed + alias invalidation + session cancel/close.

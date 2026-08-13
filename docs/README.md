@@ -6,12 +6,23 @@
 任意のPOSIX SQLite providerを提供します。これは物理HILやRuntime Fabric全体の
 完成宣言ではありません。
 
-| 文書 | 対象 |
-| --- | --- |
-| [Host Runtime SDK](host-runtime-sdk.md) | CMake 3.20、build / install、external consumer、package gate |
-| [SDK distribution manifest](sdk-distribution-manifest.md) | 現行install tree、export / non-export、release artifacts |
-| [Release Guide](releasing.md) | dry run、tag、SBOM、checksum、provenance、公開後検証 |
-| [README（repository 入口）](../README.md) | 価値説明・状態・quickstart・examples |
+次の6分類は閉じています。目的に合う入口を1つ選び、詳細は各ページから辿ってください。
+これはナビゲーション分類であり、リンク先のNormative / Informative状態や実装完成度を
+変更しません。
+
+<!-- ninlil-doc-taxonomy-v1:begin -->
+| 類型 | 現行入口 | 用途 |
+| --- | --- | --- |
+| `README` | [Repository README](../README.md) | 価値、現在の状態、最短の入口を知る |
+| `concept` | [Runtime concepts](runtime-concepts.md) | transaction、evidence、roleの基本概念を掴む |
+| `tutorial` | [Host Runtime first tutorial](host-runtime-tutorial.md) | source treeから最初のfocused smokeを順に完了する |
+| `how-to` | [Host Runtime SDK](host-runtime-sdk.md) | build、install、external consumerなど目的別の手順を使う |
+| `reference` | [SDK distribution manifest](sdk-distribution-manifest.md) | install tree、export target、release artifactを正確に調べる |
+| `explanation` | [Architecture](01-architecture.md) | role分離、依存方向、durability設計の理由を理解する |
+<!-- ninlil-doc-taxonomy-v1:end -->
+
+状態根拠は[Current status](status.md)、build option一覧は[Build options](build-options.md)、
+release担当者向け手順は[Release Guide](releasing.md)を参照してください。
 
 ---
 
@@ -36,8 +47,10 @@
 [34. V2 Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md)と
 [ADR-0017〜0021](adr/README.md)は、Portable/Host、Fabric Bearer、Wi-Fi、Relay、
 Multi-parent、fragmentation/reassembly、durable custody、OSS 1.0を完成と判定する共通gateを
-定義する。状態はすべて**Proposed docs-only**であり、ABI/wire/storage採番、実装、HIL、
-legal、production supportを主張しない。
+定義する。completion contract自体は**Proposed**である。ADR-0017、0019、0020、0021は
+designの`SPEC_ACCEPTED`、ADR-0018はProposedであり、個別状態は[ADR索引](adr/README.md)を
+正本とする。default-OFF / 非installのprivate prototypeやdesign acceptanceから、公開support、
+HIL、legal、production readinessを主張しない。
 
 Runtimeの既存単一Bearer ABIは維持し、複数packet linkは1個のportable Fabric Bearer内部で
 registry化する。Portable canonical logical envelope候補はNFL1であり、V1 POSIX loopbackの
@@ -85,6 +98,79 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 
 `例`、`候補`、`将来`、`Open question`は、それだけでは規範要件ではありません。
 
+## 原文言語と翻訳状態
+
+番号付き仕様（Accepted前のnormative candidateを含む）は現在すべて日本語原文が正本です。
+英訳や英語overviewは参考情報であり、矛盾時は各仕様の日本語原文とAccepted ADRを優先します。
+レビュー対象SHAでは`docs/`直下に47文書、現行treeでは51文書があります。次のpolicyは
+informative文書を含む現行51文書それぞれの原文言語と共通translation statusを中央で
+exact 1件記録します。このclosed registryをCharterの「各文書に明記」の正本とし、
+各本文へ同じmetadataを複製しません。
+この台帳への掲載は文書をNormativeへ昇格しません。`tools/markdown_link_gate.py`は実ファイル集合との
+完全一致と、番号付き仕様の読む順番への掲載を検査します。
+
+<!-- ninlil-doc-language-policy-v1:begin -->
+```json
+{
+  "scope": "*.md",
+  "documents": {
+    "00-project-charter.md": "ja",
+    "01-architecture.md": "ja",
+    "02-application-contracts.md": "ja",
+    "03-identity-and-join.md": "ja",
+    "04-runtime-api-and-storage.md": "ja",
+    "05-security-and-compliance.md": "ja",
+    "06-versioning-and-compatibility.md": "ja",
+    "07-testing-and-quality.md": "ja",
+    "08-foundation-release.md": "ja",
+    "09-roadmap.md": "ja",
+    "10-reference-application-integration.md": "ja",
+    "11-operator-model.md": "ja",
+    "12-foundation-abi.md": "ja",
+    "13-foundation-state-machine.md": "ja",
+    "14-foundation-ports-and-simulator.md": "ja",
+    "15-glossary.md": "ja",
+    "16-foundation-implementation-plan.md": "ja",
+    "17-foundation-domain-store.md": "ja",
+    "18-m3-prep-esp-idf-component.md": "ja",
+    "19-m3-control-byte-stream-framing.md": "ja",
+    "20-m3-basic-esp-idf-platform-adapters.md": "ja",
+    "21-m3-esp-idf-durable-storage.md": "ja",
+    "22-m3-owner-cell-agent-skeleton.md": "ja",
+    "23-usb-radio-boundary.md": "ja",
+    "24-r2-physical-compliance-permit-authority.md": "ja",
+    "25-u5-cell-operating-assignment.md": "ja",
+    "26-u6-transport-custody.md": "ja",
+    "27-r3-airtime-calculator.md": "ja",
+    "28-r4-sx1262-control-plane-backend.md": "ja",
+    "29-r5-lab-only-profile-loader.md": "ja",
+    "30-r6-secure-radio-wire.md": "ja",
+    "31-r7-crypto-provider-and-aead.md": "ja",
+    "32-r7-t1-nrw1-single-wire-codec.md": "ja",
+    "33-r7-t1b-context-binding-hkdf.md": "ja",
+    "34-r7-t1c-authenticated-hop-fresh-install-owner.md": "ja",
+    "34-v2-runtime-fabric-completion.md": "ja",
+    "35-production-attachment-edhoc-profile.md": "ja",
+    "README.md": "ja",
+    "build-options.md": "en",
+    "hil-evidence.md": "ja",
+    "host-runtime-sdk.md": "ja",
+    "host-runtime-tutorial.md": "ja",
+    "lab-to-domain-cutover.md": "en",
+    "release-history.md": "ja",
+    "releasing.md": "ja",
+    "runtime-concepts.md": "ja",
+    "sdk-distribution-manifest.md": "ja",
+    "status.md": "ja",
+    "v1-lab-developer.md": "ja",
+    "v1-lab-distribution-manifest.md": "ja",
+    "v1-lab-quickstart.md": "ja"
+  },
+  "translation_status": "SOURCE_LANGUAGE_RECORDED_NO_NORMATIVE_TRANSLATION"
+}
+```
+<!-- ninlil-doc-language-policy-v1:end -->
+
 ## 読む順番
 
 | # | 文書 | 決めること |
@@ -124,7 +210,8 @@ Legacy codeの現在の挙動は、新しい公開仕様を暗黙に固定しま
 | 32 | [R7 T1 NRW1 SINGLE wire codec](32-r7-t1-nrw1-single-wire-codec.md) | DATA/SINGLE private pure codec（[ADR-0012](adr/0012-r7-t1-nrw1-single-wire-codec.md) Accepted; **state/W1/HIL/legal未完**） |
 | 33 | [R7 T1b context binding and HKDF](33-r7-t1b-context-binding-hkdf.md) | byte-exact private stateless binding + verified typed key schedule（[ADR-0013](adr/0013-r7-t1b-context-binding-hkdf.md) Accepted; [review](reviews/2026-07-19-r7-t1b-context-binding-hkdf-accepted.md); **AcceptedはT1b候補のみ。state/W1/HIL/legal/R7 full未完**） |
 | 34 | [R7 T1c authenticated Hop fresh-install owner](34-r7-t1c-authenticated-hop-fresh-install-owner.md) | M4 Hop token one-shot → T1b verified → N6 Hop fresh 4-key FULL の stateful private owner（[ADR-0014](adr/0014-r7-t1c-authenticated-hop-fresh-install-owner.md) **Proposed docs-only**; **implementation / vectors / ESP target crypto KAT / Accepted 未。E2E/resume/M5/W1/RF・USB・LoRa HIL/legal/R7 full 非claim**） |
-| V2 | [Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md) | 10段階完成条件、version/bounds、NFL1、Wi-Fi、Relay、Multi-parent、multi-frame custody、OSS 1.0 gate（[ADR-0017〜0021](adr/README.md) **Proposed docs-only**） |
+| V2 | [Runtime Fabric Completion Contract](34-v2-runtime-fabric-completion.md) | 10段階完成条件、version/bounds、NFL1、Wi-Fi、Relay、Multi-parent、multi-frame custody、OSS 1.0 gate（completion contractは**Proposed**。関連ADRの個別状態は[ADR索引](adr/README.md)を正本とし、§1.1の限定prototypeは状態を昇格しない） |
+| 35 | [Production Attachment / EDHOC profile](35-production-attachment-edhoc-profile.md) | Production Attachment carrier、EDHOC、protected install、restart-fresh境界（[ADR-0023](adr/0023-production-attachment-edhoc-profile.md) **Proposed**; implementation / HIL / production非claim） |
 
 ## 実装開始条件
 

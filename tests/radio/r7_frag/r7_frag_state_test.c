@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure FRAG planner + reassembly state tests (no AEAD/wire).
  * Boundary vectors: empty/1/exact/max/gap/reorder/dup/conflict/resource/restart.

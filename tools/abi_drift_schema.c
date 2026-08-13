@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "abi_drift_schema.h"
 
 #include <ctype.h>
@@ -7,6 +8,9 @@
 #include <string.h>
 
 #define STRUCT_HEADER_BODY "uint16_t abi_version; uint16_t struct_size"
+#define NINLIL_ABI_FOUNDATION_MANIFEST_CONSTANTS 385u
+#define NINLIL_ABI_FOUNDATION_MANIFEST_STRUCTS 71u
+#define NINLIL_ABI_FOUNDATION_MANIFEST_FIELDS 731u
 
 /*
  * Bounded NUL-terminated copy into error_out for any error_out_size > 0.
@@ -1725,6 +1729,25 @@ static int is_manifest_constant_candidate(const ninlil_abi_macro_entry_t *macro)
            && strcmp(macro->name, "NINLIL_STRUCT_HEADER") != 0;
 }
 
+/*
+ * byte_stream/posix_usb are public layout extensions with a dedicated source
+ * set gate.  docs/12's parser intentionally remains Foundation-only.
+ */
+static int is_extension_manifest_constant(const char *name)
+{
+    return strncmp(name, "NINLIL_BYTE_STREAM_", 19u) == 0
+           || strncmp(name, "NINLIL_POSIX_USB_SERIAL_", 23u) == 0;
+}
+
+static int is_extension_manifest_struct(const char *name)
+{
+    return strcmp(name, "ninlil_byte_stream_error_t") == 0
+           || strcmp(name, "ninlil_byte_stream_stats_t") == 0
+           || strcmp(name, "ninlil_byte_stream_ops_t") == 0
+           || strcmp(name, "struct ninlil_byte_stream") == 0
+           || strcmp(name, "ninlil_posix_usb_serial_object_t") == 0;
+}
+
 int ninlil_abi_count_header_manifest_symbols(
     const ninlil_abi_catalog_t *header,
     size_t *out_constants,
@@ -1760,44 +1783,62 @@ int ninlil_abi_compare_header_manifest(
     size_t expected_constants = 0;
     size_t expected_structs = 0;
     size_t expected_fields = 0;
+    size_t manifest_constants = 0;
+    size_t manifest_structs = 0;
+    size_t manifest_fields = 0;
 
     ninlil_abi_count_header_manifest_symbols(header, &expected_constants, &expected_structs, &expected_fields);
 
-    if (expected_constants != NINLIL_ABI_MANIFEST_EXPECTED_CONSTANTS
-        || expected_structs != NINLIL_ABI_MANIFEST_EXPECTED_STRUCTS
-        || expected_fields != NINLIL_ABI_MANIFEST_EXPECTED_FIELDS) {
+    if (expected_constants != NINLIL_ABI_FOUNDATION_MANIFEST_CONSTANTS
+        || expected_structs != NINLIL_ABI_FOUNDATION_MANIFEST_STRUCTS
+        || expected_fields != NINLIL_ABI_FOUNDATION_MANIFEST_FIELDS) {
         fprintf(
             err,
             "abi drift: header manifest symbol counts (%zu,%zu,%zu) != expected (%u,%u,%u)\n",
             expected_constants,
             expected_structs,
             expected_fields,
-            NINLIL_ABI_MANIFEST_EXPECTED_CONSTANTS,
-            NINLIL_ABI_MANIFEST_EXPECTED_STRUCTS,
-            NINLIL_ABI_MANIFEST_EXPECTED_FIELDS);
+            NINLIL_ABI_FOUNDATION_MANIFEST_CONSTANTS,
+            NINLIL_ABI_FOUNDATION_MANIFEST_STRUCTS,
+            NINLIL_ABI_FOUNDATION_MANIFEST_FIELDS);
         failed = 1;
     }
-    if (manifest->constant_count != expected_constants) {
+    for (i = 0; i < manifest->constant_count; ++i) {
+        if (!is_extension_manifest_constant(manifest->constants[i])) {
+            ++manifest_constants;
+        }
+    }
+    for (i = 0; i < manifest->struct_count; ++i) {
+        if (!is_extension_manifest_struct(manifest->structs[i])) {
+            ++manifest_structs;
+        }
+    }
+    for (i = 0; i < manifest->field_count; ++i) {
+        if (!is_extension_manifest_struct(manifest->fields[i].struct_name)) {
+            ++manifest_fields;
+        }
+    }
+    if (manifest_constants != expected_constants) {
         fprintf(
             err,
             "abi drift: manifest constants.inc count %zu != header %zu\n",
-            manifest->constant_count,
+            manifest_constants,
             expected_constants);
         failed = 1;
     }
-    if (manifest->struct_count != expected_structs) {
+    if (manifest_structs != expected_structs) {
         fprintf(
             err,
             "abi drift: manifest structs.inc struct count %zu != header %zu\n",
-            manifest->struct_count,
+            manifest_structs,
             expected_structs);
         failed = 1;
     }
-    if (manifest->field_count != expected_fields) {
+    if (manifest_fields != expected_fields) {
         fprintf(
             err,
             "abi drift: manifest structs.inc field count %zu != header %zu\n",
-            manifest->field_count,
+            manifest_fields,
             expected_fields);
         failed = 1;
     }
@@ -1819,6 +1860,9 @@ int ninlil_abi_compare_header_manifest(
         }
     }
     for (i = 0; i < manifest->constant_count; ++i) {
+        if (is_extension_manifest_constant(manifest->constants[i])) {
+            continue;
+        }
         if (catalog_find_macro(header, manifest->constants[i]) < 0
             || !is_manifest_constant_candidate(
                 &header->macros[catalog_find_macro(header, manifest->constants[i])])) {
@@ -1864,6 +1908,9 @@ int ninlil_abi_compare_header_manifest(
     }
 
     for (i = 0; i < manifest->struct_count; ++i) {
+        if (is_extension_manifest_struct(manifest->structs[i])) {
+            continue;
+        }
         if (catalog_find_struct(header, manifest->structs[i]) < 0) {
             fprintf(
                 err,
@@ -1873,6 +1920,9 @@ int ninlil_abi_compare_header_manifest(
         }
     }
     for (i = 0; i < manifest->field_count; ++i) {
+        if (is_extension_manifest_struct(manifest->fields[i].struct_name)) {
+            continue;
+        }
         int struct_idx = catalog_find_struct(header, manifest->fields[i].struct_name);
         if (struct_idx < 0) {
             fprintf(

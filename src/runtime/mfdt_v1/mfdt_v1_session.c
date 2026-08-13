@@ -2,7 +2,6 @@
 #include "mfdt_v1_session.h"
 
 #include "mfdt_v1_ncl1.h"
-#include "mfdt_v1_runtime_seam.h"
 #include "mfdt_v1_spine.h"
 
 #include <string.h>
@@ -64,7 +63,6 @@ static void fence_session(ninlil_mfdt_v1_session_t *session)
     session->negotiated = 0u;
     session->ncl1_data_carrier_ok = 0u;
     session->selected_max_active = 0u;
-    ninlil_mfdt_v1_session_apply_to_seam(session);
 }
 
 static uint8_t local_max_active(const ninlil_mfdt_v1_session_t *session)
@@ -105,7 +103,6 @@ static void admit_session(ninlil_mfdt_v1_session_t *session,
     session->negotiated = 1u;
     session->ncl1_data_carrier_ok = 1u;
     (void)memcpy(session->transcript_digest, transcript, 32u);
-    ninlil_mfdt_v1_session_apply_to_seam(session);
 }
 
 void ninlil_mfdt_v1_session_init(ninlil_mfdt_v1_session_t *session,
@@ -150,7 +147,6 @@ int ninlil_mfdt_v1_session_bind(
     session->session_cookie = session_cookie;
     (void)memcpy(session->local_endpoint_id, local_endpoint_id, 16u);
     (void)memcpy(session->peer_endpoint_id, peer_endpoint_id, 16u);
-    ninlil_mfdt_v1_session_apply_to_seam(session);
     return NINLIL_MFDT_V1_OK;
 }
 
@@ -415,8 +411,9 @@ int ninlil_mfdt_v1_session_carrier_ncl1_data_ok(
 }
 
 int ninlil_mfdt_v1_session_on_ncg1_data(
-    const ninlil_mfdt_v1_session_t *session, const uint8_t *payload,
-    size_t length)
+    const ninlil_mfdt_v1_session_t *session,
+    ninlil_mfdt_v1_spine_ctx_t *spine,
+    const uint8_t *payload, size_t length)
 {
     uint8_t message_type = 0u;
     uint32_t request_id = 0u;
@@ -426,7 +423,7 @@ int ninlil_mfdt_v1_session_on_ncg1_data(
     uint16_t body_length = 0u;
     int result;
 
-    if (session == NULL || payload == NULL || length == 0u) {
+    if (session == NULL || spine == NULL || payload == NULL || length == 0u) {
         return NINLIL_MFDT_V1_ERR_PARAM;
     }
     if (!ninlil_mfdt_v1_session_carrier_ncl1_data_ok(session)) {
@@ -443,18 +440,18 @@ int ninlil_mfdt_v1_session_on_ncg1_data(
         cookie != session->session_cookie) {
         return NINLIL_MFDT_V1_ERR_STATE;
     }
-    result = ninlil_mfdt_v1_spine_on_ncl1_data(payload, length);
+    result = ninlil_mfdt_v1_spine_on_ncl1_data(spine, payload, length);
     return result == NINLIL_MFDT_V1_OK ? 1 : result;
 }
 
-void ninlil_mfdt_v1_session_apply_to_seam(
-    const ninlil_mfdt_v1_session_t *session)
+int ninlil_mfdt_v1_session_apply_to_spine(
+    const ninlil_mfdt_v1_session_t *session,
+    ninlil_mfdt_v1_spine_ctx_t *spine)
 {
     ninlil_mfdt_v1_seam_config_t config;
-    ninlil_mfdt_v1_spine_ctx_t *spine;
 
-    if (session == NULL) {
-        return;
+    if (session == NULL || spine == NULL) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
     }
     (void)memset(&config, 0, sizeof(config));
     config.policy_on = session->policy_on;
@@ -463,9 +460,5 @@ void ninlil_mfdt_v1_session_apply_to_seam(
     config.host_mode = session->host_mode;
     config.session_generation = session->session_generation;
     config.session_cookie = session->session_cookie;
-    ninlil_mfdt_v1_seam_set_config(&config);
-    spine = ninlil_mfdt_v1_spine_ctx();
-    if (spine != NULL) {
-        spine->seam = config;
-    }
+    return ninlil_mfdt_v1_spine_set_config(spine, &config);
 }

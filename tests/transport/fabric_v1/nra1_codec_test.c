@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "nra1_codec.h"
 
 #include "ninlil/version.h"

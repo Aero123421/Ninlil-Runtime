@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "radio_entropy_drbg.h"
 
 #include "mbedtls/entropy.h"

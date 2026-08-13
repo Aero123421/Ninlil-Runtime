@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Auto-extracted golden key/value pairs from domain-store-v1.json for D3-S1 chunk-A/B/C tests. */
 #ifndef NINLIL_DOMAIN_STORE_D3S1_FIXTURES_H
 #define NINLIL_DOMAIN_STORE_D3S1_FIXTURES_H

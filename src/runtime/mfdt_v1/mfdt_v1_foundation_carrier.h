@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Instance-bound Foundation bearer carrier for private MFDT v1.
  *
  * This is a private/default-OFF integration surface.  It maps one NCL1 DATA

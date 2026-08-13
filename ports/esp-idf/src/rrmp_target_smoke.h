@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ESP RRMP target software smoke (private candidate).
  *
  * SPIRAM CAPS workspace + SPIRAM software FULL store + production

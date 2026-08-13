@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Independent golden profile documents (NOT produced by production encoder). */
 /* Verified by tools/profile_r5_golden_oracle.py */
 #ifndef NINLIL_PROFILE_R5_GOLDEN_PROFILES_H

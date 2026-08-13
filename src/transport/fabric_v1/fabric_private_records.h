@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Fabric storage schema 1 codecs: FBM1/FBR1/FBP1/FBC1/FBA1/FBT1.
  */

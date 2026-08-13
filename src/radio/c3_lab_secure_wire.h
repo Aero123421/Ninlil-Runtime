@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_C3_LAB_SECURE_WIRE_H
 #define NINLIL_C3_LAB_SECURE_WIRE_H
 

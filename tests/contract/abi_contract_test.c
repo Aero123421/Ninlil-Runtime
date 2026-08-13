@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "abi_contract.h"
 
 #include <stddef.h>

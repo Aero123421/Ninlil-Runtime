@@ -46,7 +46,7 @@ S2_SHA256 = (
 )
 S3_FORMAT = "ninlil-domain-scan-structural-v1-d2s3"
 S3_SHA256 = (
-    "f8e75437202c90476aa93fb0a336c86ad03e7e4820510e15074a69cbc6041684"
+    "af8133f1b01c87b79b24a80479aa5d0f8480d124ead2cdb3c57277fc41d8d754"
 )
 
 REQUIRED_KINDS = frozenset(

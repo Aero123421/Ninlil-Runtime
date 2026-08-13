@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production private core for ADR-0019 / ADR-0020.
  * Catalog signatures (req, out); serial domain via bound owner.
@@ -13,10 +14,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-
-#if defined(ESP_PLATFORM)
-#include "esp_heap_caps.h"
-#endif
 
 /*
  * Storage ABI compile gate (host + ESP).
@@ -322,6 +319,7 @@ struct ninlil_rrmp_owner {
      * Used by parent/route page encode paths so frames stay << 4 KiB.
      */
     uint8_t enc_page_a[4096];
+    /* Route-slot staging; owner-local so independent owners never alias it. */
     uint8_t enc_page_b[4096];
     uint8_t enc_nps_slots[NINLIL_RRMP_NPP1_SLOTS][NINLIL_RRMP_NPS1_BYTES];
     uint8_t enc_aslot[NINLIL_RRMP_ASSIGNMENT_SLOT_BYTES];
@@ -356,7 +354,15 @@ struct ninlil_rrmp_owner {
     uint8_t storage_expected_manifest[NINLIL_RRMP_RRM1_BYTES];
     uint8_t storage_pending_old_manifest[NINLIL_RRMP_RRM1_BYTES];
     uint8_t storage_pending_new_manifest[NINLIL_RRMP_RRM1_BYTES];
-    /* Authorized serial-domain caller, validated by external trust provider. */
+    /*
+     * Durable bundle scratch is part of the caller-owned owner workspace.
+     * Keeping it here makes two owners independent and removes the former
+     * process-global / ESP lazy-allocation state.
+     */
+    uint8_t storage_export_scratch[NINLIL_RRMP_RRM1_LOGICAL_BYTES_MAX];
+    uint8_t storage_piece_scratch[NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX];
+    /* Explicit caller-owned serial-domain authorization state. */
+    uint8_t serial_bound;
     uint8_t auth_active;
     uint8_t auth_principal_id[16];
     uint32_t auth_capabilities;
@@ -376,21 +382,41 @@ size_t ninlil_rrmp_owner_workspace_bytes(void)
     return sizeof(ninlil_rrmp_owner_t);
 }
 
-/* Compile-time budget: compact owner must fit the explicit workspace ceiling. */
+/* Compile-time budget: owner and durable scratch fit one explicit ceiling. */
 _Static_assert(
     sizeof(struct ninlil_rrmp_owner) <= NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES,
-    "rrmp owner workspace exceeds 384 KiB budget");
+    "rrmp owner workspace exceeds 768 KiB budget");
+_Static_assert(
+    sizeof(((struct ninlil_rrmp_owner *)0)->enc_page_b) >=
+        NINLIL_RRMP_SLOTS_PER_PAGE * NINLIL_RRMP_SLOT_BYTES,
+    "rrmp owner route-slot scratch is too small");
 _Static_assert(
     NINLIL_RRMP_TOKEN_REPLAY_LEDGER_CAPACITY <=
         NINLIL_RRMP_NPT1_PAGE_COUNT * NINLIL_RRMP_NPT1_SLOTS_PER_PAGE,
     "rrmp replay ledger exceeds NPT1 physical capacity");
 
-static ninlil_rrmp_owner_t *g_bound;
+static int owner_is_live(const ninlil_rrmp_owner_t *owner)
+{
+    return owner != NULL && owner->magic == NINLIL_RRMP_OWNER_MAGIC;
+}
+
+static int owner_serial_active(const ninlil_rrmp_owner_t *owner)
+{
+    return owner_is_live(owner) && owner->serial_bound != 0u;
+}
+
+static void owner_serial_clear(ninlil_rrmp_owner_t *owner)
+{
+    owner->serial_bound = 0u;
+    owner->auth_active = 0u;
+    owner->auth_capabilities = 0u;
+    ninlil_rrmp_memzero(owner->auth_principal_id, 16u);
+}
 
 static int owner_has_capability(
     const ninlil_rrmp_owner_t *owner, uint32_t required)
 {
-    if (owner == NULL) {
+    if (!owner_serial_active(owner)) {
         return 0;
     }
     if (!owner->cfg.authorization_required) {
@@ -1092,38 +1118,41 @@ static uint8_t slot_to_life(uint8_t slot_state)
 static int persist_route_page(ninlil_rrmp_owner_t *o, uint16_t page)
 {
     const uint8_t *slots[NINLIL_RRMP_SLOTS_PER_PAGE];
+    uint8_t (*slot_scratch)[NINLIL_RRMP_SLOT_BYTES] =
+        (uint8_t (*)[NINLIL_RRMP_SLOT_BYTES])o->enc_page_b;
     uint8_t *buf;
     size_t cap;
     uint64_t gen;
     size_t i;
     size_t base = (size_t)page * NINLIL_RRMP_SLOTS_PER_PAGE;
     uint8_t kid = (uint8_t)(NINLIL_RRMP_KEY_NRP1_BASE + page);
-    {
-        static uint8_t slot_scratch[NINLIL_RRMP_SLOTS_PER_PAGE][NINLIL_RRMP_SLOT_BYTES];
-        for (i = 0u; i < NINLIL_RRMP_SLOTS_PER_PAGE; ++i) {
-            size_t idx = base + i;
-            if (idx < NINLIL_RRMP_ROUTE_MAX && o->routes[idx].used) {
-                uint8_t ss = life_to_slot_state(o->routes[idx].state);
-                (void)ninlil_rrmp_encode_slot(
-                    ss,
-                    &o->routes[idx].fields,
-                    o->routes[idx].next_admission_seq,
-                    o->routes[idx].state == NINLIL_RRMP_LIFE_DRAINING
-                        ? &o->routes[idx].drain
-                        : NULL,
-                    slot_scratch[i]);
-                slots[i] = slot_scratch[i];
-            } else {
-                slots[i] = NULL;
-            }
+    ninlil_rrmp_memzero(o->enc_page_b, sizeof(o->enc_page_b));
+    for (i = 0u; i < NINLIL_RRMP_SLOTS_PER_PAGE; ++i) {
+        size_t idx = base + i;
+        if (idx < NINLIL_RRMP_ROUTE_MAX && o->routes[idx].used) {
+            uint8_t ss = life_to_slot_state(o->routes[idx].state);
+            (void)ninlil_rrmp_encode_slot(
+                ss,
+                &o->routes[idx].fields,
+                o->routes[idx].next_admission_seq,
+                o->routes[idx].state == NINLIL_RRMP_LIFE_DRAINING
+                    ? &o->routes[idx].drain
+                    : NULL,
+                slot_scratch[i]);
+            slots[i] = slot_scratch[i];
+        } else {
+            slots[i] = NULL;
         }
     }
     if (!ninlil_rrmp_route_dual_begin_write(&o->route_ns, kid, &buf, &cap, &gen)) {
+        ninlil_rrmp_memzero(o->enc_page_b, sizeof(o->enc_page_b));
         return 0;
     }
     if (!ninlil_rrmp_encode_nrp1(page, (uint32_t)gen, slots, buf)) {
+        ninlil_rrmp_memzero(o->enc_page_b, sizeof(o->enc_page_b));
         return 0;
     }
+    ninlil_rrmp_memzero(o->enc_page_b, sizeof(o->enc_page_b));
     if (!ninlil_rrmp_route_dual_commit(&o->route_ns, kid, NINLIL_RRMP_NRP1_BYTES)) {
         return 0;
     }
@@ -1745,7 +1774,7 @@ ninlil_rrmp_owner_t *ninlil_rrmp_owner_init(
     if (workspace == NULL || cfg == NULL) {
         return NULL;
     }
-    if (workspace_bytes < sizeof(ninlil_rrmp_owner_t)) {
+    if (workspace_bytes < ninlil_rrmp_owner_workspace_bytes()) {
         return NULL;
     }
     /* uint64 fields in owner require natural alignment (UBSan / portable). */
@@ -1763,7 +1792,7 @@ ninlil_rrmp_owner_t *ninlil_rrmp_owner_init(
         return NULL;
     }
     o = (ninlil_rrmp_owner_t *)workspace;
-    ninlil_rrmp_memzero(o, sizeof(*o));
+    ninlil_rrmp_memzero(o, ninlil_rrmp_owner_workspace_bytes());
     o->magic = NINLIL_RRMP_OWNER_MAGIC;
     o->cfg = *cfg;
     if (o->cfg.max_hops_profile == 0u) {
@@ -1778,24 +1807,19 @@ ninlil_rrmp_owner_t *ninlil_rrmp_owner_init(
 
 void ninlil_rrmp_owner_fini(ninlil_rrmp_owner_t *owner)
 {
-    if (g_bound == owner) {
-        g_bound = NULL;
-    }
-    if (owner != NULL && owner->magic == NINLIL_RRMP_OWNER_MAGIC) {
-        ninlil_rrmp_memzero(owner, sizeof(*owner));
+    if (owner_is_live(owner) && owner->entered == 0u) {
+        ninlil_rrmp_memzero(owner, ninlil_rrmp_owner_workspace_bytes());
     }
 }
 
 int ninlil_rrmp_owner_bind(ninlil_rrmp_owner_t *owner)
 {
-    if (owner == NULL || owner->magic != NINLIL_RRMP_OWNER_MAGIC ||
+    if (!owner_is_live(owner) || owner->entered != 0u ||
         owner->cfg.authorization_required) {
         return 0;
     }
-    owner->auth_active = 0u;
-    owner->auth_capabilities = 0u;
-    ninlil_rrmp_memzero(owner->auth_principal_id, 16u);
-    g_bound = owner;
+    owner_serial_clear(owner);
+    owner->serial_bound = 1u;
     return 1;
 }
 
@@ -1805,9 +1829,11 @@ int ninlil_rrmp_owner_bind_authorized(
     const ninlil_rrmp_authorizer_v1_t *authorizer)
 {
     uint32_t invalid_caps;
-    if (owner == NULL || auth == NULL || authorizer == NULL ||
-        authorizer->authorize == NULL ||
-        owner->magic != NINLIL_RRMP_OWNER_MAGIC) {
+    if (!owner_is_live(owner) || owner->entered != 0u) {
+        return 0;
+    }
+    owner_serial_clear(owner);
+    if (auth == NULL || authorizer == NULL || authorizer->authorize == NULL) {
         return 0;
     }
     invalid_caps = auth->capability_mask & ~NINLIL_RRMP_AUTH_ALL;
@@ -1816,34 +1842,20 @@ int ninlil_rrmp_owner_bind_authorized(
         !authorizer->authorize(
             authorizer->user, auth, owner->cfg.local_runtime_id,
             owner->cfg.authority_id)) {
-        if (g_bound == owner) {
-            g_bound = NULL;
-        }
-        owner->auth_active = 0u;
-        owner->auth_capabilities = 0u;
-        ninlil_rrmp_memzero(owner->auth_principal_id, 16u);
         return 0;
     }
     memcpy(owner->auth_principal_id, auth->principal_id, 16u);
     owner->auth_capabilities = auth->capability_mask;
     owner->auth_active = 1u;
-    g_bound = owner;
+    owner->serial_bound = 1u;
     return 1;
 }
 
-void ninlil_rrmp_owner_unbind(void)
+void ninlil_rrmp_owner_unbind(ninlil_rrmp_owner_t *owner)
 {
-    if (g_bound != NULL) {
-        g_bound->auth_active = 0u;
-        g_bound->auth_capabilities = 0u;
-        ninlil_rrmp_memzero(g_bound->auth_principal_id, 16u);
+    if (owner_is_live(owner) && owner->entered == 0u) {
+        owner_serial_clear(owner);
     }
-    g_bound = NULL;
-}
-
-ninlil_rrmp_owner_t *ninlil_rrmp_owner_current(void)
-{
-    return g_bound;
 }
 
 void ninlil_rrmp_core_set_fabric_path(
@@ -3057,34 +3069,10 @@ static const uint8_t k_rrmp_chunk_keys[NINLIL_RRMP_RRM1_CHUNK_COUNT_MAX][7] = {
     {'R', 'R', 'M', 'P', '/', 'C', '4'}};
 static const uint8_t k_rrmp_prefix[5] = {'R', 'R', 'M', 'P', '/'};
 
-#if defined(ESP_PLATFORM)
-static uint8_t *s_rrmp_storage_export;
-static uint8_t *s_rrmp_storage_piece;
-static int rrmp_export_scratch_ready(void)
+static int rrmp_export_scratch_ready(const ninlil_rrmp_owner_t *owner)
 {
-    if (s_rrmp_storage_export == NULL) {
-        s_rrmp_storage_export = (uint8_t *)heap_caps_malloc(
-            NINLIL_RRMP_RRM1_LOGICAL_BYTES_MAX,
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    }
-    if (s_rrmp_storage_piece == NULL) {
-        s_rrmp_storage_piece = (uint8_t *)heap_caps_malloc(
-            NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX,
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    }
-    return s_rrmp_storage_export != NULL &&
-        s_rrmp_storage_piece != NULL;
+    return owner != NULL && owner->magic == NINLIL_RRMP_OWNER_MAGIC;
 }
-#else
-static uint8_t
-    s_rrmp_storage_export[NINLIL_RRMP_RRM1_LOGICAL_BYTES_MAX];
-static uint8_t
-    s_rrmp_storage_piece[NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX];
-static int rrmp_export_scratch_ready(void)
-{
-    return 1;
-}
-#endif
 
 static uint8_t rrm1_chunk_count(uint32_t logical_length)
 {
@@ -3208,6 +3196,7 @@ static ninlil_storage_status_t bundle_read_snapshot(
     const ninlil_storage_ops_t *ops,
     ninlil_storage_txn_t txn,
     uint8_t *logical_out,
+    uint8_t *piece_scratch,
     ninlil_rrmp_bundle_witness_v2_t *witness_out)
 {
     ninlil_bytes_view_t key;
@@ -3223,7 +3212,7 @@ static ninlil_storage_status_t bundle_read_snapshot(
     uint8_t last_key[7];
     uint8_t have_last = 0u;
     if (ops == NULL || txn == NULL || logical_out == NULL ||
-        witness_out == NULL) {
+        piece_scratch == NULL || witness_out == NULL) {
         return NINLIL_STORAGE_CORRUPT;
     }
     ninlil_rrmp_memzero(witness_out, sizeof(*witness_out));
@@ -3256,7 +3245,7 @@ static ninlil_storage_status_t bundle_read_snapshot(
         key.data = k_rrmp_chunk_keys[i];
         key.length = 7u;
         value.data = i < chunk_count ? logical_out + offset
-                                     : s_rrmp_storage_piece;
+                                     : piece_scratch;
         value.capacity = NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX;
         value.length = 0u;
         st = ops->get(ops->user, txn, key, &value);
@@ -3306,7 +3295,7 @@ static ninlil_storage_status_t bundle_read_snapshot(
         ik.data = iter_key;
         ik.capacity = sizeof(iter_key);
         ik.length = 0u;
-        iv.data = s_rrmp_storage_piece;
+        iv.data = piece_scratch;
         iv.capacity = NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX;
         iv.length = 0u;
         st = ops->iter_next(ops->user, iter, &ik, &iv);
@@ -3510,7 +3499,7 @@ int ninlil_rrmp_owner_storage_commit_full(ninlil_rrmp_owner_t *owner)
     uint64_t generation;
     if (owner == NULL || !owner->storage_bound ||
         owner->storage_ops == NULL || owner->storage_handle == NULL ||
-        owner->storage_hard_fence || !rrmp_export_scratch_ready()) {
+        owner->storage_hard_fence || !rrmp_export_scratch_ready(owner)) {
         return 0;
     }
     ops = owner->storage_ops;
@@ -3520,7 +3509,7 @@ int ninlil_rrmp_owner_storage_commit_full(ninlil_rrmp_owner_t *owner)
         logical_length > NINLIL_RRMP_RRM1_LOGICAL_REQUIRED_MAX ||
         !ninlil_rrmp_owner_export_namespace(
             owner,
-            s_rrmp_storage_export,
+            owner->storage_export_scratch,
             NINLIL_RRMP_RRM1_LOGICAL_BYTES_MAX,
             &logical_length)) {
         owner->storage_last_outcome = RRMP_STORAGE_OUTCOME_CORRUPT;
@@ -3535,7 +3524,7 @@ int ninlil_rrmp_owner_storage_commit_full(ninlil_rrmp_owner_t *owner)
     desired.logical_length = (uint32_t)logical_length;
     if (generation == 0u || generation == UINT64_MAX ||
         !rrm1_manifest_build(
-            s_rrmp_storage_export,
+            owner->storage_export_scratch,
             (uint32_t)logical_length,
             generation,
             desired.manifest_rrm1)) {
@@ -3563,7 +3552,7 @@ int ninlil_rrmp_owner_storage_commit_full(ninlil_rrmp_owner_t *owner)
             pieces[i + 1u].key = k_rrmp_chunk_keys[i];
             pieces[i + 1u].key_length = 7u;
             pieces[i + 1u].value = length != 0u
-                ? s_rrmp_storage_export +
+                ? owner->storage_export_scratch +
                     (size_t)i * NINLIL_RRMP_RRM1_CHUNK_BYTES_MAX
                 : NULL;
             pieces[i + 1u].value_length = length;
@@ -3623,7 +3612,11 @@ int ninlil_rrmp_owner_storage_commit_full(ninlil_rrmp_owner_t *owner)
         return 0;
     }
     st = bundle_read_snapshot(
-        ops, txn, s_rrmp_storage_export, &observed);
+        ops,
+        txn,
+        owner->storage_export_scratch,
+        owner->storage_piece_scratch,
+        &observed);
     if (st != NINLIL_STORAGE_OK ||
         !owner->storage_expected_valid ||
         !bundle_witness_equal(&observed, &expected)) {
@@ -3649,11 +3642,11 @@ int ninlil_rrmp_owner_storage_commit_full(ninlil_rrmp_owner_t *owner)
     }
     if (!ninlil_rrmp_owner_export_namespace(
             owner,
-            s_rrmp_storage_export,
+            owner->storage_export_scratch,
             NINLIL_RRMP_RRM1_LOGICAL_BYTES_MAX,
             &logical_length) ||
         !rrm1_manifest_build(
-            s_rrmp_storage_export,
+            owner->storage_export_scratch,
             (uint32_t)logical_length,
             generation,
             desired.manifest_rrm1)) {
@@ -3661,7 +3654,7 @@ int ninlil_rrmp_owner_storage_commit_full(ninlil_rrmp_owner_t *owner)
         owner->storage_last_outcome = RRMP_STORAGE_OUTCOME_CORRUPT;
         return 0;
     }
-    st = bundle_stage(ops, txn, s_rrmp_storage_export, &desired);
+    st = bundle_stage(ops, txn, owner->storage_export_scratch, &desired);
     if (st != NINLIL_STORAGE_OK) {
         ninlil_storage_status_t rollback_st =
             ops->rollback(ops->user, txn);
@@ -3808,7 +3801,7 @@ static int owner_storage_recover_internal(
         return 0;
     }
     ops = owner->storage_ops;
-    if (!rrmp_export_scratch_ready()) {
+    if (!rrmp_export_scratch_ready(owner)) {
         owner_storage_fence(owner);
         return 0;
     }
@@ -3819,7 +3812,7 @@ static int owner_storage_recover_internal(
             owner->storage_handle,
             k_rrmp_storage_key,
             (uint32_t)sizeof(k_rrmp_storage_key),
-            s_rrmp_storage_export,
+            owner->storage_export_scratch,
             NINLIL_RRMP_STORAGE_EXPORT_MAX,
             &recovered_length,
             &outer_class);
@@ -3840,7 +3833,7 @@ static int owner_storage_recover_internal(
             ninlil_rrmp_memzero(digest, sizeof(digest));
             if (present) {
                 ninlil_rrmp_sha256(
-                    s_rrmp_storage_export, recovered_length, digest);
+                    owner->storage_export_scratch, recovered_length, digest);
             }
             if (owner->storage_pending_unknown) {
                 if (outer_class == NINLIL_RRMP_STORAGE_RECOVERY_OLD &&
@@ -3869,7 +3862,7 @@ static int owner_storage_recover_internal(
             if (!owner_apply_storage_image(
                     owner,
                     present,
-                    s_rrmp_storage_export,
+                    owner->storage_export_scratch,
                     recovered_length,
                     outer_class)) {
                 return 0;
@@ -3897,7 +3890,7 @@ static int owner_storage_recover_internal(
     }
     key.data = k_rrmp_storage_key;
     key.length = (uint32_t)sizeof(k_rrmp_storage_key);
-    val.data = s_rrmp_storage_export;
+    val.data = owner->storage_export_scratch;
     val.capacity = (uint32_t)NINLIL_RRMP_STORAGE_EXPORT_MAX;
     val.length = 0u;
     sst = ops->get(ops->user, txn, key, &val);
@@ -4018,7 +4011,7 @@ static int owner_storage_recover_internal(
     uint32_t provider_class = NINLIL_RRMP_STORAGE_RECOVERY_NONE;
     if (owner == NULL || !owner->storage_bound ||
         owner->storage_ops == NULL || owner->storage_handle == NULL ||
-        !rrmp_export_scratch_ready()) {
+        !rrmp_export_scratch_ready(owner)) {
         return 0;
     }
     ops = owner->storage_ops;
@@ -4061,7 +4054,11 @@ static int owner_storage_recover_internal(
         return 0;
     }
     st = bundle_read_snapshot(
-        ops, txn, s_rrmp_storage_export, &observed);
+        ops,
+        txn,
+        owner->storage_export_scratch,
+        owner->storage_piece_scratch,
+        &observed);
     if (ops->rollback(ops->user, txn) != NINLIL_STORAGE_OK ||
         st != NINLIL_STORAGE_OK) {
         owner->storage_last_outcome = RRMP_STORAGE_OUTCOME_CORRUPT;
@@ -4098,7 +4095,7 @@ static int owner_storage_recover_internal(
     if (!owner_apply_bundle_image(
             owner,
             &observed,
-            observed.present ? s_rrmp_storage_export : NULL,
+            observed.present ? owner->storage_export_scratch : NULL,
             outer_class)) {
         return 0;
     }
@@ -4245,9 +4242,10 @@ uint32_t ninlil_rrmp_owner_downlink_tx_allowed(const ninlil_rrmp_owner_t *owner)
 /* --- Route ops --- */
 
 ninlil_route_status_u32 ninlil_route_install_batch(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_install_batch_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     uint16_t n;
@@ -4269,7 +4267,7 @@ ninlil_route_status_u32 ninlil_route_install_batch(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL) {
+    if (!owner_serial_active(o)) {
         result_fill(out, NINLIL_ROUTE_INVALID_ARGUMENT);
         return NINLIL_ROUTE_INVALID_ARGUMENT;
     }
@@ -4395,9 +4393,10 @@ ninlil_route_status_u32 ninlil_route_install_batch(
 }
 
 ninlil_route_status_u32 ninlil_route_activate(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_activate_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     rrmp_route_t *ent;
@@ -4411,7 +4410,7 @@ ninlil_route_status_u32 ninlil_route_activate(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL) {
+    if (!owner_serial_active(o)) {
         result_fill(out, NINLIL_ROUTE_INVALID_ARGUMENT);
         return NINLIL_ROUTE_INVALID_ARGUMENT;
     }
@@ -4483,9 +4482,10 @@ ninlil_route_status_u32 ninlil_route_activate(
 }
 
 ninlil_route_status_u32 ninlil_route_begin_drain(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_begin_drain_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     rrmp_route_t *ent;
@@ -4498,8 +4498,8 @@ ninlil_route_status_u32 ninlil_route_begin_drain(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_route_relay) {
-        result_fill(out, o == NULL ? NINLIL_ROUTE_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_route_relay) {
+        result_fill(out, !owner_serial_active(o) ? NINLIL_ROUTE_INVALID_ARGUMENT
                                   : NINLIL_ROUTE_FEATURE_OFF);
         return out->status;
     }
@@ -4540,9 +4540,10 @@ ninlil_route_status_u32 ninlil_route_begin_drain(
 }
 
 ninlil_route_status_u32 ninlil_route_retire(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_retire_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     rrmp_route_t *ent;
@@ -4556,8 +4557,8 @@ ninlil_route_status_u32 ninlil_route_retire(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_route_relay) {
-        result_fill(out, o == NULL ? NINLIL_ROUTE_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_route_relay) {
+        result_fill(out, !owner_serial_active(o) ? NINLIL_ROUTE_INVALID_ARGUMENT
                                   : NINLIL_ROUTE_FEATURE_OFF);
         return out->status;
     }
@@ -4654,9 +4655,10 @@ ninlil_route_status_u32 ninlil_route_retire(
 }
 
 ninlil_route_status_u32 ninlil_route_query(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_query_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     rrmp_route_t *ent;
@@ -4669,8 +4671,8 @@ ninlil_route_status_u32 ninlil_route_query(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_route_relay) {
-        result_fill(out, o == NULL ? NINLIL_ROUTE_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_route_relay) {
+        result_fill(out, !owner_serial_active(o) ? NINLIL_ROUTE_INVALID_ARGUMENT
                                   : NINLIL_ROUTE_FEATURE_OFF);
         return out->status;
     }
@@ -4757,14 +4759,14 @@ static void reclaim_completed(ninlil_rrmp_owner_t *o)
 }
 
 static ninlil_route_status_u32 route_forward_admit_impl(
-    ninlil_rrmp_owner_t *expected_owner,
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_forward_admit_req_v1_t *req,
     const uint8_t *carrier,
     uint16_t carrier_len,
     const uint8_t attempt_id16[16],
     ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     rrmp_route_t *ent;
@@ -4785,13 +4787,9 @@ static ninlil_route_status_u32 route_forward_admit_impl(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL) {
+    if (!owner_serial_active(o)) {
         result_fill(out, NINLIL_ROUTE_INVALID_ARGUMENT);
         return NINLIL_ROUTE_INVALID_ARGUMENT;
-    }
-    if (expected_owner != NULL && expected_owner != o) {
-        result_fill(out, NINLIL_ROUTE_AUTHORITY_CONFLICT);
-        return NINLIL_ROUTE_AUTHORITY_CONFLICT;
     }
     if (!owner_has_capability(o, NINLIL_RRMP_AUTH_FORWARD)) {
         result_fill(out, NINLIL_ROUTE_AUTHORITY_CONFLICT);
@@ -5368,10 +5366,11 @@ static ninlil_route_status_u32 route_forward_admit_impl(
 }
 
 ninlil_route_status_u32 ninlil_route_forward_admit(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_forward_admit_req_v1_t *req,
     ninlil_route_result_v1_t *out)
 {
-    return route_forward_admit_impl(NULL, req, NULL, 0u, NULL, out);
+    return route_forward_admit_impl(owner, req, NULL, 0u, NULL, out);
 }
 
 ninlil_route_status_u32 ninlil_rrmp_core_forward_admit_with_carrier(
@@ -5387,9 +5386,10 @@ ninlil_route_status_u32 ninlil_rrmp_core_forward_admit_with_carrier(
 }
 
 ninlil_route_status_u32 ninlil_route_forward_complete(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_forward_complete_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     size_t i;
@@ -5404,8 +5404,8 @@ ninlil_route_status_u32 ninlil_route_forward_complete(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_route_relay) {
-        result_fill(out, o == NULL ? NINLIL_ROUTE_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_route_relay) {
+        result_fill(out, !owner_serial_active(o) ? NINLIL_ROUTE_INVALID_ARGUMENT
                                   : NINLIL_ROUTE_FEATURE_OFF);
         return out->status;
     }
@@ -5539,9 +5539,10 @@ ninlil_route_status_u32 ninlil_route_forward_complete(
 }
 
 ninlil_route_status_u32 ninlil_route_cancel_drain(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_cancel_drain_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     rrmp_route_t *ent;
@@ -5554,8 +5555,8 @@ ninlil_route_status_u32 ninlil_route_cancel_drain(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_route_relay) {
-        result_fill(out, o == NULL ? NINLIL_ROUTE_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_route_relay) {
+        result_fill(out, !owner_serial_active(o) ? NINLIL_ROUTE_INVALID_ARGUMENT
                                   : NINLIL_ROUTE_FEATURE_OFF);
         return out->status;
     }
@@ -5594,9 +5595,10 @@ ninlil_route_status_u32 ninlil_route_cancel_drain(
 }
 
 ninlil_route_status_u32 ninlil_route_recover_commit_unknown(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_recover_cu_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     uint32_t cu;
@@ -5609,8 +5611,8 @@ ninlil_route_status_u32 ninlil_route_recover_commit_unknown(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_route_relay) {
-        result_fill(out, o == NULL ? NINLIL_ROUTE_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_route_relay) {
+        result_fill(out, !owner_serial_active(o) ? NINLIL_ROUTE_INVALID_ARGUMENT
                                   : NINLIL_ROUTE_FEATURE_OFF);
         return out->status;
     }
@@ -5678,9 +5680,10 @@ ninlil_route_status_u32 ninlil_route_recover_commit_unknown(
 }
 
 ninlil_route_status_u32 ninlil_route_diagnostics_snapshot(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_diagnostics_req_v1_t *req, ninlil_route_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     if (req == NULL || out == NULL) {
@@ -5692,8 +5695,8 @@ ninlil_route_status_u32 ninlil_route_diagnostics_snapshot(
         result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_route_relay) {
-        result_fill(out, o == NULL ? NINLIL_ROUTE_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_route_relay) {
+        result_fill(out, !owner_serial_active(o) ? NINLIL_ROUTE_INVALID_ARGUMENT
                                   : NINLIL_ROUTE_FEATURE_OFF);
         return out->status;
     }
@@ -6212,9 +6215,10 @@ static int persist_npa1_npt1_full(
 }
 
 ninlil_parent_status_u32 ninlil_parent_set_install(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_set_install_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     ninlil_rrmp_digest32_t dig;
@@ -6233,8 +6237,8 @@ ninlil_parent_status_u32 ninlil_parent_set_install(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -6382,9 +6386,10 @@ ninlil_parent_status_u32 ninlil_parent_set_install(
 }
 
 ninlil_parent_status_u32 ninlil_parent_owner_prepare(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_prepare_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    if (req == NULL || out == NULL) {
+    if (!owner_serial_active(owner) || req == NULL || out == NULL) {
         parent_result_fill(out, NINLIL_PARENT_INVALID_ARGUMENT);
         return NINLIL_PARENT_INVALID_ARGUMENT;
     }
@@ -6396,8 +6401,8 @@ ninlil_parent_status_u32 ninlil_parent_owner_prepare(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -6509,9 +6514,10 @@ ninlil_parent_status_u32 ninlil_parent_owner_prepare(
 }
 
 ninlil_parent_status_u32 ninlil_parent_owner_fence_proof(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_fence_proof_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    if (req == NULL || out == NULL) {
+    if (!owner_serial_active(owner) || req == NULL || out == NULL) {
         parent_result_fill(out, NINLIL_PARENT_INVALID_ARGUMENT);
         return NINLIL_PARENT_INVALID_ARGUMENT;
     }
@@ -6523,8 +6529,8 @@ ninlil_parent_status_u32 ninlil_parent_owner_fence_proof(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -6582,9 +6588,10 @@ ninlil_parent_status_u32 ninlil_parent_owner_fence_proof(
 }
 
 ninlil_parent_status_u32 ninlil_parent_authority_commit(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_authority_commit_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    if (req == NULL || out == NULL) {
+    if (!owner_serial_active(owner) || req == NULL || out == NULL) {
         parent_result_fill(out, NINLIL_PARENT_INVALID_ARGUMENT);
         return NINLIL_PARENT_INVALID_ARGUMENT;
     }
@@ -6596,8 +6603,8 @@ ninlil_parent_status_u32 ninlil_parent_authority_commit(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -6838,10 +6845,11 @@ static void no_old_authority_proof_digest(
 }
 
 ninlil_parent_status_u32 ninlil_parent_owner_prepare_v2(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_prepare_req_v2_t *req,
     ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     ninlil_rrmp_noa1_fields_t noa;
     ninlil_rrmp_authority_tuple_v2_t current;
     ninlil_rrmp_authority_tuple_v2_t proposed;
@@ -6859,8 +6867,8 @@ ninlil_parent_status_u32 ninlil_parent_owner_prepare_v2(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -6988,10 +6996,11 @@ ninlil_parent_status_u32 ninlil_parent_owner_prepare_v2(
 }
 
 ninlil_parent_status_u32 ninlil_parent_owner_fence_proof_v2(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_fence_proof_req_v2_t *req,
     ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     rrmp_scope_t *sc;
     uint8_t tuple_bytes[104];
     uint8_t preimage[256];
@@ -7007,8 +7016,8 @@ ninlil_parent_status_u32 ninlil_parent_owner_fence_proof_v2(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -7149,10 +7158,11 @@ static void bundle_witness_encode(
 }
 
 ninlil_parent_status_u32 ninlil_parent_authority_commit_v2(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_authority_commit_req_v2_t *req,
     ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     rrmp_scope_t *sc;
     ninlil_rrmp_bundle_witness_v2_t current_bundle;
     uint8_t preimage[640];
@@ -7172,8 +7182,8 @@ ninlil_parent_status_u32 ninlil_parent_authority_commit_v2(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -7320,9 +7330,10 @@ ninlil_parent_status_u32 ninlil_parent_authority_commit_v2(
 }
 
 ninlil_parent_status_u32 ninlil_parent_owner_activate(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_activate_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     rrmp_scope_t *sc;
     uint8_t flags[22];
     uint32_t st;
@@ -7338,8 +7349,8 @@ ninlil_parent_status_u32 ninlil_parent_owner_activate(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -7399,9 +7410,10 @@ ninlil_parent_status_u32 ninlil_parent_owner_activate(
 }
 
 ninlil_parent_status_u32 ninlil_parent_endpoint_observe(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_endpoint_observe_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     rrmp_scope_t *sc;
     uint8_t flags[22];
     uint32_t st;
@@ -7414,8 +7426,8 @@ ninlil_parent_status_u32 ninlil_parent_endpoint_observe(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -7451,9 +7463,10 @@ ninlil_parent_status_u32 ninlil_parent_endpoint_observe(
 }
 
 ninlil_parent_status_u32 ninlil_parent_owner_retire(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_retire_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     rrmp_scope_t *sc;
     uint8_t flags[22];
     uint32_t st;
@@ -7466,8 +7479,8 @@ ninlil_parent_status_u32 ninlil_parent_owner_retire(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -7510,9 +7523,10 @@ ninlil_parent_status_u32 ninlil_parent_owner_retire(
 }
 
 ninlil_parent_status_u32 ninlil_parent_query(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_query_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     rrmp_scope_t *sc;
     uint8_t flags[22];
     uint32_t st;
@@ -7525,8 +7539,8 @@ ninlil_parent_status_u32 ninlil_parent_query(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -7550,9 +7564,10 @@ ninlil_parent_status_u32 ninlil_parent_query(
 }
 
 ninlil_parent_status_u32 ninlil_parent_recover_commit_unknown(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_recover_cu_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     rrmp_scope_t *sc;
     uint8_t flags[22];
     uint32_t st;
@@ -7581,8 +7596,8 @@ ninlil_parent_status_u32 ninlil_parent_recover_commit_unknown(
         parent_result_fill(out, NINLIL_PARENT_INVALID_ARGUMENT);
         return NINLIL_PARENT_INVALID_ARGUMENT;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }
@@ -7644,9 +7659,10 @@ ninlil_parent_status_u32 ninlil_parent_recover_commit_unknown(
 }
 
 ninlil_parent_status_u32 ninlil_parent_diagnostics_snapshot(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_diagnostics_req_v1_t *req, ninlil_parent_result_v1_t *out)
 {
-    ninlil_rrmp_owner_t *o = g_bound;
+    ninlil_rrmp_owner_t *o = owner;
     uint8_t flags[22];
     uint32_t st;
     if (req == NULL || out == NULL) {
@@ -7658,8 +7674,8 @@ ninlil_parent_status_u32 ninlil_parent_diagnostics_snapshot(
         parent_result_fill(out, st);
         return st;
     }
-    if (o == NULL || !o->cfg.feature_multi_parent) {
-        parent_result_fill(out, o == NULL ? NINLIL_PARENT_INVALID_ARGUMENT
+    if (!owner_serial_active(o) || !o->cfg.feature_multi_parent) {
+        parent_result_fill(out, !owner_serial_active(o) ? NINLIL_PARENT_INVALID_ARGUMENT
                                   : NINLIL_PARENT_FEATURE_OFF);
         return out->status;
     }

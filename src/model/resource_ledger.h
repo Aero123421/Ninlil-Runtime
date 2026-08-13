@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_MODEL_RESOURCE_LEDGER_H
 #define NINLIL_MODEL_RESOURCE_LEDGER_H
 

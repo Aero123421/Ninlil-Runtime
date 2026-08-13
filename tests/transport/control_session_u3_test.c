@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * U3 host tests: C3 control session + C4 pump over fake C1 stream.
  * Deterministic; no timing sleeps; no physical USB.

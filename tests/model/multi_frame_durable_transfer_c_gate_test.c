@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Independent C11 gate for the ADR-0021 application-handoff review candidate.
  *

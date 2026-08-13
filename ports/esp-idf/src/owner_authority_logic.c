@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "owner_authority_logic.h"
 
 #include <string.h>

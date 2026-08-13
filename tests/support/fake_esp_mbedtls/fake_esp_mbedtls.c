@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "fake_esp_mbedtls.h"
 
 #include "esp_heap_caps.h"

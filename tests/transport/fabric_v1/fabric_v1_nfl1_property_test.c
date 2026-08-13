@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Property / light fuzz: NFL1 encode→decode for all 6 kinds (deterministic PRNG).
  * CRC bit-flip fail-closed. Private only.

@@ -23,10 +23,24 @@ bounded resource、独立reviewを閉じ、後者はさらに実装、故障試�
 - [06章](06-versioning-and-compatibility.md)の独立version domain原則
 
 本章またはADR-0017〜0021と上記Accepted contractが矛盾する場合、既存Accepted contractを
-優先し、本章側を修正する。本Proposed文書だけを実装開始の根拠にしない。各関連ADRが
-`SPEC_ACCEPTED`になった後は、そのexact specに対するprivate/feature-gated implementationを
-開始できるが、public support、production wire/storage、完成claimは
-`RELEASE_SUPPORTED`まで行わない。
+優先し、本章側を修正する。本Proposed文書だけをacceptance candidate実装の根拠にしない。
+§1.1の限定prototypeを除き、各関連ADRが`SPEC_ACCEPTED`になった後にだけ、そのexact specに
+対するprivate/feature-gated implementationを開始できる。public support、production
+wire/storage、完成claimは`RELEASE_SUPPORTED`まで行わない。
+
+### 1.1 Proposed中の限定prototype境界
+
+`PROPOSED`の間も、設計の実現可能性を調べるためのprototypeは、**default-OFF**、
+**非install / 非export**、かつprivateなsource・testだけに閉じる場合に限り許可する。
+prototypeであることをsourceとtest名に明示し、通常build、package consumer、公開header、
+production wire/storage、実機・release経路から到達できてはならない。
+
+この例外は新しいcompletion stateではなく、`PROPOSED`を一段も昇格しない。prototype結果は
+ABI/wire/storage/profile IDを予約せず、S1〜S6、C5〜C10、Host/Target候補、HIL、互換性、
+supportのevidenceにならない。実装結果から仕様値をsilentに固定・変更してはならず、採用時は
+通常どおりProposed文書を修正し、独立reviewを含むS1〜S6を閉じて`SPEC_ACCEPTED`へ進む。
+default-ON、installed/public API、永続dataの移行・自動open、interoperability authority、
+実機・release claimはこの例外の対象外である。
 
 ## 2. 二段階gate
 
@@ -89,7 +103,8 @@ RELEASE_SUPPORTED
 
 状態の飛び越しは禁止する。`RELEASE_SUPPORTED`だけを100%完成と表示できる。
 `PROPOSED -> SPEC_ACCEPTED`は§2 S1〜S6だけで判定し、C5〜C10、target、HILを前提にしない。
-`SPEC_ACCEPTED`後にだけprivate/feature-gated implementationへ進み、C5/C6を閉じた
+§1.1の限定prototypeは状態判定から除外する。acceptance candidateは`SPEC_ACCEPTED`後にだけ
+private/feature-gated implementationへ進み、C5/C6を閉じた
 `HOST_CANDIDATE`、C7を閉じた`TARGET_CANDIDATE`、C8を閉じた`HIL_VERIFIED`を経る。
 Normative変更が必要になった時点で対象sliceを`PROPOSED`へ戻し、re-`SPEC_ACCEPTED`前の
 新しい値をimplementationへ入れない。
@@ -98,7 +113,8 @@ Normative変更が必要になった時点で対象sliceを`PROPOSED`へ戻し�
 
 ## 4. Version domain allocation
 
-以下はV2 trancheの候補割当である。対応ADRの`SPEC_ACCEPTED`前は実装根拠にしない。
+以下はV2 trancheの候補割当である。対応ADRの`SPEC_ACCEPTED`前は予約採番または
+acceptance candidate実装の根拠にしない。§1.1のprototype内でも候補値はdraftに留まる。
 `SPEC_ACCEPTED`後はreserved値としてprivate/feature-gated header、codec、schemaへ実装できる。
 `RELEASE_SUPPORTED`前にstable public headerとしてinstall、production on-air emit、既存durable
 storeを自動migration/open、またはsupport済みと広告してはならない。
@@ -516,7 +532,8 @@ re-`SPEC_ACCEPTED`する。runtime fallbackやsilent relaxationを行わない�
 
 ## 11. RELEASE_SUPPORTED acceptance matrix
 
-本表は`SPEC_ACCEPTED`条件ではない。各sliceのS1〜S6完了後にprivate/feature-gated実装を行い、
+本表は`SPEC_ACCEPTED`条件ではない。§1.1の限定prototypeをevidenceに数えず、各sliceの
+S1〜S6完了後にacceptance candidateのprivate/feature-gated実装を行い、
 本表、C5〜C10、依存sliceのgateをすべて閉じた時だけ`RELEASE_SUPPORTED`へ進める。
 
 | Slice | Portable/Host必須 | Fault/compatibility必須 | ESP/HIL必須 |

@@ -21,6 +21,7 @@ import sys
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 AUTHORITY = REPO_ROOT / "cmake" / "ninlil_r7_frag_sources.cmake"
 CTEST = REPO_ROOT / "cmake" / "ninlil_r7_frag_ctest.cmake"
+HOST_CTEST = REPO_ROOT / "cmake" / "ninlil_ctest.cmake"
 COMPONENT = REPO_ROOT / "ports" / "esp-idf" / "components" / "ninlil" / "CMakeLists.txt"
 KCONFIG = REPO_ROOT / "ports" / "esp-idf" / "components" / "ninlil" / "Kconfig"
 SMOKE_DEFAULTS = REPO_ROOT / "ports" / "esp-idf" / "smoke_app" / "sdkconfig.defaults"
@@ -52,6 +53,45 @@ def fail(msg: str) -> None:
 
 def read(p: pathlib.Path) -> str:
     return p.read_text(encoding="utf-8")
+
+
+def strip_cmake_comments(text: str) -> str:
+    """Remove CMake bracket and line comments before structural matching."""
+    text = re.sub(r"#\[(=*)\[.*?\]\1\]", "", text, flags=re.DOTALL)
+    out: list[str] = []
+    for line in text.splitlines(keepends=True):
+        in_quote: str | None = None
+        escaped = False
+        for index, char in enumerate(line):
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\" and in_quote is not None:
+                escaped = True
+                continue
+            if char in ('"', "'"):
+                if in_quote is None:
+                    in_quote = char
+                elif in_quote == char:
+                    in_quote = None
+                continue
+            if char == "#" and in_quote is None:
+                line = line[:index] + ("\n" if line.endswith("\n") else "")
+                break
+        out.append(line)
+    return "".join(out)
+
+
+def exact_source_include_count(text: str, relative_path: str) -> int:
+    code = strip_cmake_comments(text)
+    pattern = re.compile(
+        r"^[ \t]*include[ \t]*\([ \t]*"
+        r"\$\{CMAKE_CURRENT_SOURCE_DIR\}/"
+        + re.escape(relative_path)
+        + r"[ \t]*\)[ \t]*$",
+        flags=re.MULTILINE | re.IGNORECASE,
+    )
+    return len(pattern.findall(code))
 
 
 def authority_sources(text: str) -> list[str]:
@@ -192,8 +232,13 @@ def check() -> None:
     host = read(HOST_CMAKE)
     if "NINLIL_ENABLE_R7_FRAG_PRIVATE" not in host:
         fail("host CMake missing NINLIL_ENABLE_R7_FRAG_PRIVATE option")
-    if "ninlil_r7_frag_ctest.cmake" not in host:
-        fail("host CMake must include r7_frag ctest when option set")
+    if exact_source_include_count(host, "cmake/ninlil_ctest.cmake") != 1:
+        fail("host CMake must actively include the central CTest authority once")
+    host_ctest = read(HOST_CTEST)
+    if exact_source_include_count(
+        host_ctest, "cmake/ninlil_r7_frag_ctest.cmake"
+    ) != 1:
+        fail("central CTest authority must actively include r7_frag ctest once")
 
     for hdr in PUBLIC_HEADERS:
         text = read(hdr)
@@ -207,23 +252,60 @@ def check() -> None:
 
 
 def self_test() -> None:
+    def require_rejected(label: str) -> None:
+        rejected = False
+        try:
+            check()
+        except SystemExit:
+            rejected = True
+        if not rejected:
+            fail(f"self-test accepted {label}")
+
     check()
     # Mutation: authority without smoke TU must fail.
     original = read(AUTHORITY)
     try:
-        AUTHORITY.write_text(
-            original.replace(
-                "src/radio/r7_frag/r7_frag_target_smoke.c\n", ""
-            ),
-            encoding="utf-8",
+        mutated = original.replace(
+            "src/radio/r7_frag/r7_frag_target_smoke.c\n", "", 1
         )
-        try:
-            check()
-            fail("self-test accepted authority without target_smoke")
-        except SystemExit:
-            pass
+        if mutated == original:
+            fail("self-test could not remove target_smoke authority row")
+        AUTHORITY.write_text(mutated, encoding="utf-8")
+        require_rejected("authority without target_smoke")
     finally:
         AUTHORITY.write_text(original, encoding="utf-8")
+
+    # Mutations: comments, deletion, and duplication must not fake CTest wiring.
+    host_ctest = read(HOST_CTEST)
+    frag_include = (
+        "    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/"
+        "ninlil_r7_frag_ctest.cmake)\n"
+    )
+    try:
+        mutated = host_ctest.replace(frag_include, "# " + frag_include, 1)
+        if mutated == host_ctest:
+            fail("self-test could not comment the central FRAG include")
+        HOST_CTEST.write_text(mutated, encoding="utf-8")
+        require_rejected("comment-only central FRAG include")
+
+        HOST_CTEST.write_text(host_ctest + frag_include, encoding="utf-8")
+        require_rejected("duplicate central FRAG includes")
+    finally:
+        HOST_CTEST.write_text(host_ctest, encoding="utf-8")
+
+    host = read(HOST_CMAKE)
+    central_include = (
+        "    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninlil_ctest.cmake)\n"
+    )
+    try:
+        mutated = host.replace(central_include, "# " + central_include, 1)
+        if mutated == host:
+            fail("self-test could not comment the root central CTest include")
+        HOST_CMAKE.write_text(mutated, encoding="utf-8")
+        require_rejected("comment-only root central CTest include")
+    finally:
+        HOST_CMAKE.write_text(host, encoding="utf-8")
+
     check()
     print("esp_idf_r7_frag_packaging_gate self-test OK")
 

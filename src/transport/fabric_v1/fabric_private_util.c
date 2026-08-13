@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "fabric_private_util.h"
 
 void ninlil_fabric_private_put_u16_be(uint8_t *out, uint16_t value)
@@ -139,8 +140,16 @@ static uint32_t fabric_rotr32(uint32_t value, unsigned bits)
     return (value >> bits) | (value << (32u - bits));
 }
 
-void ninlil_fabric_private_sha256(
-    const uint8_t *data, size_t length, uint8_t out[32])
+typedef struct fabric_sha256_context {
+    uint32_t h[8];
+    uint8_t block[64];
+    size_t block_used;
+    uint64_t total_bytes;
+    uint8_t failed;
+} fabric_sha256_context_t;
+
+static void fabric_sha256_transform(
+    fabric_sha256_context_t *context, const uint8_t block[64])
 {
     static const uint32_t k[64] = {
         0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu,
@@ -157,101 +166,178 @@ void ninlil_fabric_private_sha256(
         0x682e6ff3u, 0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
         0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u
     };
-    uint32_t h[8] = {
+    uint32_t w[64];
+    uint32_t a, b, c, d, e, f, g, hh;
+    size_t i;
+
+    for (i = 0u; i < 16u; ++i) {
+        w[i] = ((uint32_t)block[i * 4u] << 24)
+            | ((uint32_t)block[i * 4u + 1u] << 16)
+            | ((uint32_t)block[i * 4u + 2u] << 8)
+            | (uint32_t)block[i * 4u + 3u];
+    }
+    for (i = 16u; i < 64u; ++i) {
+        uint32_t s0 = fabric_rotr32(w[i - 15u], 7u)
+            ^ fabric_rotr32(w[i - 15u], 18u) ^ (w[i - 15u] >> 3);
+        uint32_t s1 = fabric_rotr32(w[i - 2u], 17u)
+            ^ fabric_rotr32(w[i - 2u], 19u) ^ (w[i - 2u] >> 10);
+        w[i] = w[i - 16u] + s0 + w[i - 7u] + s1;
+    }
+    a = context->h[0];
+    b = context->h[1];
+    c = context->h[2];
+    d = context->h[3];
+    e = context->h[4];
+    f = context->h[5];
+    g = context->h[6];
+    hh = context->h[7];
+    for (i = 0u; i < 64u; ++i) {
+        uint32_t s1 = fabric_rotr32(e, 6u) ^ fabric_rotr32(e, 11u)
+            ^ fabric_rotr32(e, 25u);
+        uint32_t ch = (e & f) ^ ((~e) & g);
+        uint32_t temp1 = hh + s1 + ch + k[i] + w[i];
+        uint32_t s0 = fabric_rotr32(a, 2u) ^ fabric_rotr32(a, 13u)
+            ^ fabric_rotr32(a, 22u);
+        uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+        uint32_t temp2 = s0 + maj;
+        hh = g;
+        g = f;
+        f = e;
+        e = d + temp1;
+        d = c;
+        c = b;
+        b = a;
+        a = temp1 + temp2;
+    }
+    context->h[0] += a;
+    context->h[1] += b;
+    context->h[2] += c;
+    context->h[3] += d;
+    context->h[4] += e;
+    context->h[5] += f;
+    context->h[6] += g;
+    context->h[7] += hh;
+    ninlil_fabric_private_memzero(w, sizeof(w));
+}
+
+static void fabric_sha256_init(fabric_sha256_context_t *context)
+{
+    static const uint32_t initial[8] = {
         0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
         0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u
     };
-    uint8_t block[64];
-    uint64_t bit_len = (uint64_t)length * 8u;
-    size_t offset = 0u;
-    size_t remain = length;
-    int done = 0;
+
+    ninlil_fabric_private_memzero(context, sizeof(*context));
+    (void)memcpy(context->h, initial, sizeof(initial));
+}
+
+static void fabric_sha256_update(
+    fabric_sha256_context_t *context, const uint8_t *data, size_t length)
+{
+    size_t take;
+
+    if (context == NULL || context->failed != 0u || length == 0u) {
+        return;
+    }
+    if (data == NULL
+        || (uint64_t)length > UINT64_MAX - context->total_bytes) {
+        context->failed = 1u;
+        return;
+    }
+    context->total_bytes += (uint64_t)length;
+    while (length > 0u) {
+        take = sizeof(context->block) - context->block_used;
+        if (take > length) {
+            take = length;
+        }
+        (void)memcpy(context->block + context->block_used, data, take);
+        context->block_used += take;
+        data += take;
+        length -= take;
+        if (context->block_used == sizeof(context->block)) {
+            fabric_sha256_transform(context, context->block);
+            context->block_used = 0u;
+        }
+    }
+}
+
+static void fabric_sha256_final(
+    fabric_sha256_context_t *context, uint8_t out[32])
+{
+    uint64_t bit_length;
+    size_t i;
+
+    if (context == NULL || out == NULL) {
+        return;
+    }
+    if (context->failed != 0u || context->total_bytes > UINT64_MAX / 8u) {
+        ninlil_fabric_private_memzero(out, 32u);
+        ninlil_fabric_private_memzero(context, sizeof(*context));
+        return;
+    }
+    bit_length = context->total_bytes * 8u;
+    context->block[context->block_used++] = 0x80u;
+    if (context->block_used > 56u) {
+        ninlil_fabric_private_memzero(
+            context->block + context->block_used,
+            sizeof(context->block) - context->block_used);
+        fabric_sha256_transform(context, context->block);
+        context->block_used = 0u;
+    }
+    ninlil_fabric_private_memzero(
+        context->block + context->block_used, 56u - context->block_used);
+    for (i = 0u; i < 8u; ++i) {
+        context->block[63u - i] = (uint8_t)(bit_length >> (8u * i));
+    }
+    fabric_sha256_transform(context, context->block);
+    for (i = 0u; i < 8u; ++i) {
+        out[i * 4u] = (uint8_t)(context->h[i] >> 24);
+        out[i * 4u + 1u] = (uint8_t)(context->h[i] >> 16);
+        out[i * 4u + 2u] = (uint8_t)(context->h[i] >> 8);
+        out[i * 4u + 3u] = (uint8_t)context->h[i];
+    }
+    ninlil_fabric_private_memzero(context, sizeof(*context));
+}
+
+void ninlil_fabric_private_sha256(
+    const uint8_t *data, size_t length, uint8_t out[32])
+{
+    fabric_sha256_context_t context;
+
+    if (out == NULL) {
+        return;
+    }
+    fabric_sha256_init(&context);
+    fabric_sha256_update(&context, data, length);
+    fabric_sha256_final(&context, out);
+}
+
+void ninlil_fabric_private_tagged_sha256_parts(
+    const char *tag_ascii,
+    const uint8_t *const *values,
+    const size_t *value_lengths,
+    size_t value_count,
+    uint8_t out[32])
+{
+    fabric_sha256_context_t context;
+    size_t tag_len;
     size_t i;
 
     if (out == NULL) {
         return;
     }
-    if (data == NULL && length != 0u) {
+    if (tag_ascii == NULL
+        || (value_count != 0u && (values == NULL || value_lengths == NULL))) {
         ninlil_fabric_private_memzero(out, 32u);
         return;
     }
-
-    while (!done) {
-        uint32_t w[64];
-        uint32_t a, b, c, d, e, f, g, hh;
-        size_t take = remain > 64u ? 64u : remain;
-        ninlil_fabric_private_memzero(block, sizeof(block));
-        if (take > 0u) {
-            (void)memcpy(block, data + offset, take);
-            offset += take;
-            remain -= take;
-        }
-        if (take < 64u) {
-            block[take] = 0x80u;
-            if (take < 56u) {
-                for (i = 0u; i < 8u; ++i) {
-                    block[63u - i] = (uint8_t)(bit_len >> (8u * i));
-                }
-                done = 1;
-            }
-        }
-        for (i = 0u; i < 16u; ++i) {
-            w[i] = ((uint32_t)block[i * 4u] << 24)
-                | ((uint32_t)block[i * 4u + 1u] << 16)
-                | ((uint32_t)block[i * 4u + 2u] << 8)
-                | (uint32_t)block[i * 4u + 3u];
-        }
-        for (i = 16u; i < 64u; ++i) {
-            uint32_t s0 = fabric_rotr32(w[i - 15u], 7u)
-                ^ fabric_rotr32(w[i - 15u], 18u) ^ (w[i - 15u] >> 3);
-            uint32_t s1 = fabric_rotr32(w[i - 2u], 17u)
-                ^ fabric_rotr32(w[i - 2u], 19u) ^ (w[i - 2u] >> 10);
-            w[i] = w[i - 16u] + s0 + w[i - 7u] + s1;
-        }
-        a = h[0];
-        b = h[1];
-        c = h[2];
-        d = h[3];
-        e = h[4];
-        f = h[5];
-        g = h[6];
-        hh = h[7];
-        for (i = 0u; i < 64u; ++i) {
-            uint32_t S1 = fabric_rotr32(e, 6u) ^ fabric_rotr32(e, 11u)
-                ^ fabric_rotr32(e, 25u);
-            uint32_t ch = (e & f) ^ ((~e) & g);
-            uint32_t temp1 = hh + S1 + ch + k[i] + w[i];
-            uint32_t S0 = fabric_rotr32(a, 2u) ^ fabric_rotr32(a, 13u)
-                ^ fabric_rotr32(a, 22u);
-            uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
-            uint32_t temp2 = S0 + maj;
-            hh = g;
-            g = f;
-            f = e;
-            e = d + temp1;
-            d = c;
-            c = b;
-            b = a;
-            a = temp1 + temp2;
-        }
-        h[0] += a;
-        h[1] += b;
-        h[2] += c;
-        h[3] += d;
-        h[4] += e;
-        h[5] += f;
-        h[6] += g;
-        h[7] += hh;
-        if (!done && take == 64u && remain == 0u) {
-            /* fall through to final padding block next loop */
-        }
+    tag_len = strlen(tag_ascii);
+    fabric_sha256_init(&context);
+    fabric_sha256_update(&context, (const uint8_t *)tag_ascii, tag_len);
+    for (i = 0u; i < value_count; ++i) {
+        fabric_sha256_update(&context, values[i], value_lengths[i]);
     }
-    for (i = 0u; i < 8u; ++i) {
-        out[i * 4u] = (uint8_t)(h[i] >> 24);
-        out[i * 4u + 1u] = (uint8_t)(h[i] >> 16);
-        out[i * 4u + 2u] = (uint8_t)(h[i] >> 8);
-        out[i * 4u + 3u] = (uint8_t)h[i];
-    }
+    fabric_sha256_final(&context, out);
 }
 
 void ninlil_fabric_private_tagged_sha256(
@@ -260,24 +346,11 @@ void ninlil_fabric_private_tagged_sha256(
     size_t value_len,
     uint8_t out[32])
 {
-    uint8_t buffer[4096];
-    size_t tag_len;
-    size_t total;
+    const uint8_t *values[1];
+    size_t lengths[1];
 
-    if (out == NULL || tag_ascii == NULL) {
-        return;
-    }
-    tag_len = strlen(tag_ascii);
-    total = tag_len + value_len;
-    if (total > sizeof(buffer)) {
-        /* Fixed-capacity only; oversized inputs are fail-closed zero. */
-        ninlil_fabric_private_memzero(out, 32u);
-        return;
-    }
-    (void)memcpy(buffer, tag_ascii, tag_len);
-    if (value_len > 0u && value != NULL) {
-        (void)memcpy(buffer + tag_len, value, value_len);
-    }
-    ninlil_fabric_private_sha256(buffer, total, out);
-    ninlil_fabric_private_memzero(buffer, total);
+    values[0] = value;
+    lengths[0] = value_len;
+    ninlil_fabric_private_tagged_sha256_parts(
+        tag_ascii, values, lengths, 1u, out);
 }

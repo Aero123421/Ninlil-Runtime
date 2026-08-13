@@ -355,19 +355,40 @@ Host APIはcontrol route sentinel `0xff`を`slot_out`へ返し、同sentinelを
 `host_take_outbound_ncl1`へ渡してdrainする。snapshotはterminal countとcontrol-outbox
 pendingを公開する。
 
-Allocation ownership boundary is closed as follows. The 65536-byte transfer
-workspace is caller-owned **per single-transfer engine**; the Host coordinator
-therefore owns four distinct workspaces and never aliases them. Private
-record/NRC1 assembly scratch, the ESP durable read-back/staging buffers, and
-the ESP spine context are fixed startup bulk rather than part of that
-caller-owned workspace. `engine_init` / explicit spine preallocation /
-ESP-store bind must allocate every such required buffer before publishing a
-usable handle. After that startup boundary, request handling, retry, restart,
-terminalization, and GC perform **zero allocation attempts** and only reuse the
-fixed bulk under the serialized FULL owner. Startup allocation failure returns
-STORAGE with no usable handle, no durable mutation, and no wire ownership.
-An allocation-counter plus fail-after-initialization test is the required
-portable/target residual; “allocate on first request” is forbidden.
+Allocation ownership boundary is closed as follows. The exact 65536-byte
+transfer workspace is caller-owned **per single-transfer engine**; the Host
+coordinator therefore owns four distinct workspaces and never aliases them.
+Canonical active-record and NRC1 assembly scratch are fixed subregions inside
+each such workspace, not process-global or separately allocated bulk. The ESP
+durable read-back/staging pools and explicit spine context remain caller-owner
+startup bulk outside the transfer workspace. ESP-store bind and spine init must
+obtain every buffer they actually own before publishing a usable handle. After
+that startup boundary, request handling, retry, restart, terminalization, and
+GC perform **zero allocation attempts** and only reuse fixed owner-local bulk
+under the serialized FULL owner. Startup allocation failure in an actual
+allocator returns STORAGE with no usable handle, no durable mutation, and no
+wire ownership. This review has no target-allocator fault-injection result:
+target OOM evidence is **LOCAL_NOT_RUN** and remains required before any
+release-support promotion. “Allocate on first request” remains forbidden. No
+process-global allocation counter or lazy allocation seam is part of the
+accepted engine contract.
+
+The private ESP durable-store adapter state is owned by the exact
+`ninlil_mfdt_v1_lab_store_t` passed to every store operation. Its Storage Port
+binding/handle, current transaction handle, OLD snapshot metadata, read-back
+buffer and OLD-pool pointers are never process-global. `esp_store_bind` and
+`esp_store_unbind` therefore take that store owner explicitly. Rebinding or
+beginning another FULL while the same owner is bound/active returns `ERR_BUSY`
+before mutation; a distinct owner remains independent. Unbind rolls back an
+owned open transaction and clears transaction/binding metadata while retaining
+its startup bulk for an explicit rebind. Finalization zeroizes and releases the
+bulk, then leaves every byte of the caller-owned store zero. Initialization is
+only valid for fresh/zero or already-finalized storage; it never guesses whether
+arbitrary caller bytes contain live allocation pointers. The raw last-CU class
+is owner-local diagnostics, while the unavailable HIL-promotion authority is a
+constant OFF result rather than mutable process state. These are source-private
+lifecycle changes only: public/installed ABI, wire values, durable keys and
+durable encodings remain byte-exact unchanged.
 
 Host storage profileはESPの69632-byte ceilingを流用しない。改訂OPENの1 active groupは
 active row 35247 + NRC1 row 15056 = **50303** logical bytes、1 retained terminal groupは
@@ -937,6 +958,10 @@ non-final page entry countは22、finalは残数exactとする。
 manifest_digest || page_index_u16_be || page_count_u16_be || first_chunk_index_u16_be ||
 entry_count_u16_be || entry bytes)`である。pageを全部FULL保持して全entryをcanonical順に再構成し、
 manifest digestが一致した後だけ最後のMANIFEST_PAGE_ACCEPTで`manifest_complete=1`を送る。
+Private encoderはcallerのexact final `page_out`（最大972 bytes）をdigest preimage
+scratchとして再利用し、process-global mutable scratchを持たない。`entries`はoutとdisjoint、
+またはexact `page_out + 92`だけを許し、他の入力/output overlapと全semantic invalid inputは
+output mutation前にrejectする。
 
 ### Other body layouts
 
@@ -1683,7 +1708,7 @@ Public ABI / installed header採番はしない。source-only private candidate:
 
 | symbol prefix | `ninlil_mfdt_v1_` |
 | --- | --- |
-| ownership | caller-owned workspace + Runtime private owner objects; no heap growth |
+| ownership | caller-owned workspace + Runtime private owner objects; ESP durable-store binding/transaction/read-back state belongs to its explicit lab-store owner; no request-time heap growth |
 | workspace | per active slot exact 65536 bytes、8-byte aligned。Host owner aggregate 280064 bytes（4 active arena + 17920-byte control arena） |
 | zero-copy rules | offer path may borrow caller chunk bytes until the corresponding FULL returns; after FULL, store is copy-owned. Accept path never borrows peer wire buffer beyond the call. |
 | concurrent transfers | ESP 1 / Host 4 as above |

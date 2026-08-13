@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Port-owned FreeRTOS owner-task API (experimental).
  * Storage: owner_task_storage.h

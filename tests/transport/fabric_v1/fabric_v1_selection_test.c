@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Deterministic path selection: same-kind 2-instance, hard filters, tie-break.
  */

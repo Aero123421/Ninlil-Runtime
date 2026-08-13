@@ -1530,7 +1530,7 @@
         {
           "path": "tools/domain_store_vector_gen.py",
           "representation": "QUOTED",
-          "count": 4
+          "count": 5
         },
         {
           "path": "tools/production_attachment_edhoc_gate.mjs",
@@ -1803,6 +1803,11 @@
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
           "representation": "QUOTED",
           "count": 5
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_slot_contract_test.c",
+          "representation": "QUOTED",
+          "count": 1
         },
         {
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_sqlite_restart_test.c",
@@ -2257,6 +2262,11 @@
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_coordinator_acceptance_test.c",
           "representation": "QUOTED",
           "count": 6
+        },
+        {
+          "path": "tests/runtime/mfdt_v1/mfdt_v1_host_slot_contract_test.c",
+          "representation": "QUOTED",
+          "count": 1
         },
         {
           "path": "tests/runtime/mfdt_v1/mfdt_v1_host_store_mutation_test.c",
@@ -5010,7 +5020,7 @@
         {
           "path": "tests/host/host_completion_all_private_coexistence_probe.c",
           "representation": "QUOTED",
-          "count": 9
+          "count": 7
         }
       ]
     },
@@ -5232,6 +5242,16 @@
       "token": "TRUE",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
+        {
+          "path": "cmake/ninlil_ctest.cmake",
+          "representation": "QUOTED",
+          "count": 3
+        },
+        {
+          "path": "tools/layering_invariant_gate.py",
+          "representation": "QUOTED",
+          "count": 1
+        },
         {
           "path": "tools/nrw1_t1_ctest_gate.py",
           "representation": "QUOTED",
@@ -5515,6 +5535,11 @@
       "token": "WRAP",
       "reason": "NON_MAGIC_ENUM_OR_LABEL",
       "occurrences": [
+        {
+          "path": "cmake/ninlil_ctest.cmake",
+          "representation": "QUOTED",
+          "count": 1
+        },
         {
           "path": "cmake/ninlil_posix_sqlite_sqlite3.cmake",
           "representation": "QUOTED",

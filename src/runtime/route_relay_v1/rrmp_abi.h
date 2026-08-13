@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Exact private C ABI for ADR-0019 / ADR-0020 (Proposed).
  * Not installed. Layouts are compile-time static-asserted.
@@ -516,63 +517,90 @@ _Static_assert(sizeof(ninlil_parent_diagnostics_req_v1_t) == 32u, "pdiag 32");
 #define NINLIL_RRMP_LIFE_EXPIRED 4u
 #define NINLIL_RRMP_LIFE_RETIRED 5u
 
-/* Catalog signatures: req + out only (serial domain via bound owner). */
+/*
+ * Private catalog serial domain. The caller-owned owner workspace is passed
+ * explicitly; no process-global current-owner authority exists.
+ */
+typedef struct ninlil_rrmp_owner ninlil_rrmp_owner_t;
+
 ninlil_route_status_u32 ninlil_route_install_batch(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_install_batch_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_activate(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_activate_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_begin_drain(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_begin_drain_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_retire(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_retire_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_query(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_query_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_forward_admit(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_forward_admit_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_forward_complete(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_forward_complete_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_cancel_drain(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_cancel_drain_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_recover_commit_unknown(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_recover_cu_req_v1_t *req, ninlil_route_result_v1_t *out);
 ninlil_route_status_u32 ninlil_route_diagnostics_snapshot(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_route_diagnostics_req_v1_t *req, ninlil_route_result_v1_t *out);
 
 ninlil_parent_status_u32 ninlil_parent_set_install(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_set_install_req_v1_t *req, ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_owner_prepare(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_prepare_req_v1_t *req, ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_owner_fence_proof(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_fence_proof_req_v1_t *req,
     ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_authority_commit(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_authority_commit_req_v1_t *req,
     ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_owner_prepare_v2(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_prepare_req_v2_t *req,
     ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_owner_fence_proof_v2(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_fence_proof_req_v2_t *req,
     ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_authority_commit_v2(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_authority_commit_req_v2_t *req,
     ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_owner_activate(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_activate_req_v1_t *req, ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_endpoint_observe(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_endpoint_observe_req_v1_t *req,
     ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_owner_retire(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_owner_retire_req_v1_t *req, ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_query(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_query_req_v1_t *req, ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_recover_commit_unknown(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_recover_cu_req_v1_t *req, ninlil_parent_result_v1_t *out);
 ninlil_parent_status_u32 ninlil_parent_diagnostics_snapshot(
+    ninlil_rrmp_owner_t *owner,
     const ninlil_parent_diagnostics_req_v1_t *req, ninlil_parent_result_v1_t *out);
 
-/* Owner bind (not public ABI; required before catalog ops). */
-typedef struct ninlil_rrmp_owner ninlil_rrmp_owner_t;
+/* Owner authorization bind (not public ABI; required before catalog ops). */
 
 typedef struct ninlil_rrmp_owner_config_v1 {
     ninlil_rrmp_preamble_v1_t preamble;
@@ -626,8 +654,7 @@ int ninlil_rrmp_owner_bind_authorized(
     ninlil_rrmp_owner_t *owner,
     const ninlil_rrmp_caller_auth_v1_t *auth,
     const ninlil_rrmp_authorizer_v1_t *authorizer);
-void ninlil_rrmp_owner_unbind(void);
-ninlil_rrmp_owner_t *ninlil_rrmp_owner_current(void);
+void ninlil_rrmp_owner_unbind(ninlil_rrmp_owner_t *owner);
 
 /* Fabric select pin (private dispatch seam). */
 void ninlil_rrmp_core_set_fabric_path(

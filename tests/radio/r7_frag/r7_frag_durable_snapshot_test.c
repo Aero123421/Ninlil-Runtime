@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * P0 durable snapshot decoder fail-closed tests (docs/30 lab simulator).
  * Bounds: klen 47/48/49/255, truncation all offsets, dup/out-of-order,

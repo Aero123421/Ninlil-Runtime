@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ADR-0021 Multi-frame Durable Transfer — source-only private API candidate.
  *
  * SEMANTIC: MFDT_V1_PRIVATE_DEFAULT_OFF
@@ -12,7 +13,10 @@
  * Prefix: ninlil_mfdt_v1_
  * Default policy OFF.  Admission requires a completed private MFN1
  * transcript; it never uses HELLO selected_control_version=3.
- * Heap-free, no VLA, C11. Does not alter public/installed ABI.
+ * After startup/bind, the engine's operational paths are allocation-free and
+ * use caller-owned fixed workspaces. Target adapters may allocate owner bulk
+ * only at startup/bind and release it at finalization. No VLA; C11. Does not
+ * alter public/installed ABI.
  */
 #ifndef NINLIL_MFDT_V1_H
 #define NINLIL_MFDT_V1_H
@@ -235,6 +239,30 @@ typedef struct ninlil_mfdt_v1_lab_op {
     uint32_t pool_off;
 } ninlil_mfdt_v1_lab_op_t;
 
+struct ninlil_storage_ops;
+
+/*
+ * Source-private ESP durable-store state. It is embedded in the exact
+ * caller-owned lab store so binding, transaction and read-back state cannot
+ * cross Runtime/prototype owners. Bulk buffers are allocated only by bind and
+ * released by lab_store_fini.
+ */
+typedef struct ninlil_mfdt_v1_esp_store_owner {
+    const struct ninlil_storage_ops *ops;
+    void *handle;
+    void *txn;
+    uint8_t *readback;
+    uint8_t *old_pool;
+    uint32_t old_pool_cap;
+    uint32_t old_len[NINLIL_MFDT_V1_LAB_MAX_OPS];
+    uint32_t old_off[NINLIL_MFDT_V1_LAB_MAX_OPS];
+    uint32_t old_used;
+    int32_t last_cu_class;
+    uint8_t old_present[NINLIL_MFDT_V1_LAB_MAX_OPS];
+    uint8_t bound;
+    uint8_t active;
+} ninlil_mfdt_v1_esp_store_owner_t;
+
 typedef struct ninlil_mfdt_v1_lab_store {
     ninlil_mfdt_v1_kv_row_t rows[NINLIL_MFDT_V1_LAB_MAX_ROWS];
     uint8_t value_pool[NINLIL_MFDT_V1_LAB_VALUE_POOL_BYTES];
@@ -254,6 +282,7 @@ typedef struct ninlil_mfdt_v1_lab_store {
     ninlil_mfdt_v1_lab_op_t ops[NINLIL_MFDT_V1_LAB_MAX_OPS];
     uint8_t staging_pool[NINLIL_MFDT_V1_LAB_STAGING_POOL_BYTES];
     uint32_t staging_pool_used;
+    ninlil_mfdt_v1_esp_store_owner_t esp;
 } ninlil_mfdt_v1_lab_store_t;
 
 typedef struct ninlil_mfdt_v1_config {
@@ -324,13 +353,9 @@ typedef struct ninlil_mfdt_v1_open_metadata {
  * Fixed per-transfer workspace: exactly 65536 bytes, caller-owned, 8-byte
  * aligned, and never shared between simultaneously active Host slots.
  *
- * In the legacy single-engine/ESP layout this is distinct from private
- * process/target bulk used to assemble one active record and one NRC1 row.
- * Those buffers are prepared only by engine_init()/engine_preallocate().
- *
- * The Host coordinator does not use that external bulk: its canonical active
- * record, NRC1, engine, pipeline, and temporary projection all live inside
- * each exact 65536-byte slot arena bound by engine_init_slot().
+ * The single-engine and Host coordinator layouts both keep the canonical
+ * active record, NRC1, and temporary projection inside this exact arena.
+ * No record/NRC1 process-global scratch is shared between owners.
  */
 typedef struct ninlil_mfdt_v1_workspace {
     uint8_t bytes[NINLIL_MFDT_V1_WORKSPACE_BYTES];
@@ -371,6 +396,11 @@ typedef struct ninlil_mfdt_v1_engine {
     uint8_t *slot_xfer_memory;
     uint8_t *slot_open_staging;
     uint8_t *slot_entries_staging;
+    uint32_t slot_record_memory_bytes;
+    uint32_t slot_nrc1_memory_bytes;
+    uint32_t slot_xfer_memory_bytes;
+    uint32_t slot_open_staging_bytes;
+    uint32_t slot_entries_staging_bytes;
     uint32_t *host_committed_keys;
     uint64_t *host_committed_logical_bytes;
     uint8_t *host_full_locked;
@@ -440,6 +470,7 @@ void ninlil_mfdt_v1_publication_token(const uint8_t transfer_id[16],
 
 /* Lab store */
 void ninlil_mfdt_v1_lab_store_init(ninlil_mfdt_v1_lab_store_t *st);
+void ninlil_mfdt_v1_lab_store_fini(ninlil_mfdt_v1_lab_store_t *st);
 int ninlil_mfdt_v1_lab_put(ninlil_mfdt_v1_lab_store_t *st, const uint8_t key[20],
                            const uint8_t *value, uint32_t value_len);
 /*
@@ -475,8 +506,8 @@ int ninlil_mfdt_v1_hil_full_promotion_apply_target_attestation(
  * Returns -1 when unset (host lab / before commit); else ninlil_mfdt_v1_cu_class_t.
  * For raw NEW proof without release promotion. Portable setter is port-hook only.
  */
-int ninlil_mfdt_v1_esp_last_cu_class(void);
-void ninlil_mfdt_v1_esp_last_cu_class_set(int cu_class_or_neg1);
+int ninlil_mfdt_v1_esp_last_cu_class(
+    const ninlil_mfdt_v1_lab_store_t *st);
 int ninlil_mfdt_v1_on_reservation_expired(ninlil_mfdt_v1_engine_t *eng);
 
 /* Engine lifecycle */
@@ -484,6 +515,8 @@ int ninlil_mfdt_v1_engine_init(ninlil_mfdt_v1_engine_t *eng,
                                ninlil_mfdt_v1_workspace_t *ws,
                                ninlil_mfdt_v1_lab_store_t *store,
                                const ninlil_mfdt_v1_config_t *cfg);
+/* Zero every engine-owned scratch byte and invalidate the private handle. */
+void ninlil_mfdt_v1_engine_fini(ninlil_mfdt_v1_engine_t *eng);
 /*
  * Host-only fixed arena initializer. It never calls the target allocator.
  * Shared inventory and FULL-lock pointers remain owned by the coordinator.
@@ -508,10 +541,7 @@ int ninlil_mfdt_v1_engine_rehydrate_captured(
     const uint8_t *nrc1_record,
     uint32_t nrc1_record_len,
     const ninlil_mfdt_v1_config_t *cfg);
-/*
- * Startup-only fixed-bulk preparation. A successful engine_init calls this
- * automatically; transfer operations never allocate afterward.
- */
+/* Compatibility no-op: operational scratch is caller-owned by engine_init. */
 int ninlil_mfdt_v1_engine_preallocate(void);
 void ninlil_mfdt_v1_engine_set_now(ninlil_mfdt_v1_engine_t *eng, uint64_t now_ms);
 int ninlil_mfdt_v1_engine_observe_time(
@@ -716,13 +746,16 @@ int ninlil_mfdt_v1_admission_check(const ninlil_mfdt_v1_config_t *cfg);
 
 /* CU on a durable store key against intended old/new images. */
 ninlil_mfdt_v1_cu_class_t ninlil_mfdt_v1_cu_observe_key(
-    const ninlil_mfdt_v1_lab_store_t *st, const uint8_t key[20],
+    const ninlil_mfdt_v1_lab_store_t *st, uint8_t *scratch,
+    uint32_t scratch_bytes, const uint8_t key[20],
     const uint8_t *old_bytes, uint32_t old_len, int has_old,
     const uint8_t *new_bytes, uint32_t new_len, int has_new);
 
-/* ESP storage_ops bind (store_esp.c). Host lab store ignores. */
-int ninlil_mfdt_v1_esp_store_bind(const void *storage_ops, void *storage_handle);
-void ninlil_mfdt_v1_esp_store_unbind(void);
+/* ESP storage_ops bind (store_esp.c). Host lab store ignores the binding. */
+int ninlil_mfdt_v1_esp_store_bind(ninlil_mfdt_v1_lab_store_t *st,
+                                  const void *storage_ops,
+                                  void *storage_handle);
+void ninlil_mfdt_v1_esp_store_unbind(ninlil_mfdt_v1_lab_store_t *st);
 
 /* NRC1 late-duplicate (active or post-terminal pre-GC) */
 int ninlil_mfdt_v1_nrc1_lookup(ninlil_mfdt_v1_engine_t *eng,
@@ -751,6 +784,11 @@ int ninlil_mfdt_v1_validate_open(const uint8_t *open, uint16_t open_len,
                                  const uint8_t *content,
                                  uint32_t content_len,
                                  uint8_t require_manifest);
+/*
+ * page_out provides the exact final body capacity (max 972 bytes) and is also
+ * the encoder scratch. entries may be disjoint or exactly page_out + 92;
+ * every other input/output overlap is rejected before output mutation.
+ */
 int ninlil_mfdt_v1_encode_page(const uint8_t transfer_id[16], uint32_t revision,
                                const uint8_t manifest_digest[32],
                                uint16_t page_index, uint16_t page_count,

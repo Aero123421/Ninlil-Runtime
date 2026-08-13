@@ -521,8 +521,9 @@ typedef struct ninlil_entropy_ops {
 - `current_context_id`はnon-zeroで、同一execution context中は同値です。値の意味は比較以外に使用しません。
 - Runtime create時のcontext IDをownerとして固定します。
 - Clockの`now_ms`は同じ`clock_epoch_id`内で減少してはいけません。
+- 同一live Runtimeへ一度別のepoch IDを返した後、過去のepoch IDを再利用してはいけません（`A -> B -> A`は禁止）。Runtimeのcurrent baselineは直前にacceptedとなったsampleであり、unboundedな過去epoch表を保持しません。
 - Runtime再作成後も継続するtimelineを提供できる場合は同じepoch IDを返します。
-- epoch変更または時刻後退を検出したRuntimeは、Commandの新規admissionを`CLOCK_UNCERTAIN`で拒否します。
+- Clock PortがUNCERTAIN、sampleがinvalid、または同一epoch内で時刻後退した間は、RuntimeはCommandの新規admissionを`CLOCK_UNCERTAIN`または`DEGRADED`で拒否します。Portが明示的にtrustedなfresh epochへ回復した後の新規admissionは、そのnew-epoch quota windowで通常どおり評価できます。旧epoch ownerの未処理timerをdurable Recovery Fenceへ収束させる一般処理は別の未完了境界です。
 - EventFactはno-deadlineですが、audit時刻を確定できない場合はdiscardを拒否します。
 - Entropy `fill`は全byteを書けた場合だけOKです。partial fillはfailureです。
 
@@ -1413,9 +1414,11 @@ Service registrationはdurable semantic registryとRuntime-lifetime attachment�
 
 Attempt Receipt timeoutは両familyへ適用し、Bearer sendがaccepted/custody/LOST_UNKNOWNまたはCORRUPT/invalid possible-deliveryとなったobservation logical timeから`checked(send_observed_at_ms + attempt_receipt_timeout_ms)`で生成して同じattempt IDへbindします。Definitive no-sendでは生成しません。Timeoutと同じlogical timeですでにdurable ingressしたvalid Receipt/Dispositionを先にreduceします。
 
+- Outbound origin ownerのlive current attemptがclosed possible-send tupleを保持する場合、non-zero `attempt_receipt_timeout_ms`と上記checked additionが必ず成立しなければなりません。Persisted tupleのtimeout欠落または加算overflowは、`runtime_step`および新規targeted managementがBearer/transaction/ordered-input/Storage mutationより前に`NINLIL_E_DEGRADED`でfail closedし、healthへ`CLOCK_UNCERTAIN`をaddしてwakeをzeroにします。Receiverが送るcached reverse Receiptのretry tupleはこのforward attempt timeoutではありません。
 - Bearerがmessageを受理していないことを確定したstatusは12章5.5 closed matrixへ従います。WOULD_BLOCK/UNAVAILABLEは`NO_EFFECT_PROVEN`で、Commandだけfixed-backoff retry候補、EventはBEARER_UNAVAILABLE early parkです。DENIEDは`NO_EFFECT_PROVEN`ですがautomatic retryせず、CommandはFAILED_DEFINITIVE、EventはAPPLICATION_REMEDIATION parkです。いずれもReceipt timeoutを作りません。
 - ACCEPTED、DURABLE_CUSTODY、`LOST_UNKNOWN`、CORRUPT/invalid possible-delivery後にevidence未達でtimeoutしたattemptは`EFFECT_POSSIBLE`です。DesiredStateはno-effect failureへ落とさずevidence/deadlineを保持し、apply contract、deadline、retry budgetがsafe retryを許す場合だけnew attemptを作ります。evidence closeまで不明ならOUTCOME_UNKNOWNです。
 - EventFactは`EFFECT_POSSIBLE`でもevent ID dedup/custodyを維持してfixed backoff後に次attemptへ進み、cycle内`NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE` attempts後は`PARKED_RETRY`です。
+- EventFactの8th accepted-send Receipt timeoutで`PARKED_RETRY / CYCLE_EXHAUSTED_TRANSIENT`へ進むFULL commitは、closed send tupleを次のresumeまで保持します。このcycleのlogical endはprocessing sampleではなくchecked `send_observed_at_ms + attempt_receipt_timeout_ms` exactです。resume/discardのsame-epoch owner chronology guardはこのendより前を拒否し、explicit/availability resumeは同じendをcompleted retry summaryへ移してからlive send tupleをclearします。checked加算不能なpersisted tupleはclock-uncertain fail-closedでmanagement mutation 0です。
 - DesiredState effect deadline、EventFact retry cycle、evidence grace、application completion timeoutをattempt timeoutで代用しません。
 - Current DesiredStateCommand attemptのReceipt timeout reducerがstate/effect certainty/timerを変更するFULL commitは`controller.before_command_attempt_timeout_commit` / `controller.after_command_attempt_timeout_commit`を通ります。stale old-attempt timeout、既にdurable ingress済みReceipt/Dispositionへ負けたtimeout、EventFact timeoutはこのpairを通りません。EventFactは§17の`endpoint.before_event_attempt_timeout_commit` / `after_event_attempt_timeout_commit`です。
 - DesiredStateCommandの`evidence_close_at`でrequired evidence未達を`OUTCOME_UNKNOWN / EFFECT_POSSIBLE_EVIDENCE_MISSING`へterminalizeするFULL commitは`controller.before_evidence_close_commit` / `controller.after_evidence_close_commit`を通ります。EventFactにはevidence-close timerもこのhookも発生しません。
@@ -2009,6 +2012,7 @@ Event rules:
 - attempt detailはcycleごと`NINLIL_M1A_ATTEMPTS_PER_RETRY_CYCLE`件です。直近`NINLIL_M1A_EVENT_RETRY_SUMMARY_SLOTS` cycleをsummaryとして保持し、それ以前はfixed cumulative summaryへ集約します。event record自体は削除しません。
 - `PARKED_RETRY`はperiodic retry timerを持たず、通常のstepだけで新attemptを作りません。
 - Namespaceのlatest Bearer stateが`available=1`、そのepochがEventのpersist済み`last_seen_availability_epoch`と`last_consumed_availability_epoch`の両方よりstrictly大きく、park causeが`CYCLE_EXHAUSTED_TRANSIENT`、`BEARER_UNAVAILABLE`、`CAPACITY_UNAVAILABLE`のいずれかなら、そのEvent ownerはcompleted summary、新retry cycle、attempt count=0、seen/consumed epoch、spool revisionを1つのFULL transactionでcommitしREADYへ戻せます。同じ/古いepochで2回resetしません。複数Eventのfan-outは11.0 schedulerでEventごとに分割し、namespace observationと全Eventを巨大な1 transactionへまとめません。
+- `AVAILABILITY_CONSUME`は同じ`runtime_step` entryでacceptedとなったtrusted sample `T`を使います。consume対象のpersist済み`BEARER_STATE.observation_clock_epoch/observed_at_ms`を`A`とし、8th accepted-send Receipt timeoutでparkしたcycleでは上記logical endを`V = checked(send_observed_at_ms + attempt_receipt_timeout_ms)`とすると、各tupleは`T`と同じepochであり、かつ`T >= A`および`T >= V`でなければなりません。異なるepochは数値比較せず`NINLIL_E_CLOCK_UNCERTAIN`、same-epochで`T < A`または`T < V`、tuple欠落、checked加算不能は`NINLIL_E_DEGRADED`とし、healthへ`CLOCK_UNCERTAIN`をaddしてEvent state/retry summary/spool revision/availability consume markerのmutationを0にします。Exact `T=A` / `T=V`は許可し、summaryのcycle endは`T`やlate processing timeへ置換せず`V` exactです。
 - `APPLICATION_REMEDIATION`と`COUNTER_EXHAUSTED`はavailability epochだけでresumeしません。前者はexplicit resume、後者はrequired Receiptまたはdiscardだけを許します。Known `resume_reason` 5値はaudit分類だけでpark causeとのmatching guardに使いません。`CONNECTIVITY_REMEDIATED`、`CAPACITY_REMEDIATED`、`APPLICATION_REMEDIATED`、`OPERATOR_OVERRIDE`、`TEST`のいずれも、`COUNTER_EXHAUSTED`以外の4 resumable causeを手動resumeできます。
 - `ninlil_event_resume()`はPARKED_RETRYだけを手動再開します。well-formed requestに対するactive/terminal/wrong-family/stale/conflictはAPI errorではなく`NINLIL_OK`とexact result kindです。
 - `ninlil_event_discard()`はENDPOINT owner threadだけで使用します。新しいdiscard mutationが可能なのはnon-terminal EventFactだけですが、retained terminal/released/discarded EventFactへのwell-formed callもledger replayまたは`ALREADY_RELEASED` / `ALREADY_DISCARDED` semantic resultとして受理します。
@@ -2031,6 +2035,10 @@ Management guard precedence:
 5. Storage commit unknown後のsame operation retryも2〜3の規則で、0回またはexactly 1回のmutationへ収束します。
 
 Unseen operationは4のcurrent state/revision判定前にTargeted management linearizationのtrusted clock/catch-upを実行します。Catch-upでEventがPARKED/RELEASED/terminalへ進んだ場合、その新state/revisionに対してresume/discard guardを評価します。Ledger replay/conflictはclock call 0のままです。
+
+成功したresume/discardの新規ledgerは、Targeted management linearizationでacceptedとなった同じsampleを既存internal audit tuple（non-zero clock epoch + `audit_committed_at_ms`、time 0可）へFULL mutationの一部としてpersistします。保持中の全canonical resume/discard ledger audit tupleは、retry recent/cumulative historyと同様に再起動後もEvent ownerのchronology baselineです。新しいledger-miss management sampleがそのいずれかとsame epochで小さければ、resultを成功にせず`CLOCK_UNCERTAIN` healthをaddし、management/ordered input/ledger/state mutation 0でfail closedします。異なるepochの数値比較はしません。
+
+Upgrade互換として、旧V1 writerが作成したresume ledgerのaudit tuple `epoch=zero,time=0`はdecodeとledger-first replay/conflictに限り受理します。`epoch=zero,time!=0`はcorruptです。Ledger-miss management時にlegacy zero/zero resume ledgerが1件でも保持されていればowner chronologyは不明なので、trusted clockをexactly once sampleした後、catch-up/new mutation前に`NINLIL_E_CLOCK_UNCERTAIN`、health `CLOCK_UNCERTAIN`、management/ordered input/ledger/state mutation 0でfail closedします。このtrancheはlegacy rowのdurable healing/convergenceを主張しません。Public resume resultはaudit tupleを露出せず、既存のresume result field規則を変えません。
 
 Result field rules:
 
@@ -2326,6 +2334,7 @@ External side effect前のbudget preflightは次のworst-case reservationです�
 - `more_work`は同じvirtual timeで処理可能なworkが残る場合1です。
 - `more_work == 1`はcurrent logical timeで直ちにもう一度stepすべきworkがあることを示します。`has_next_wake == 1`はdurable pending timerのうちcurrent trusted clock epochと一致する最早の**future** pointを`next_wake_clock_epoch_id/next_wake_at_ms`で返します。両flagは同時に1でもよく、callerはまずimmediate stepを行い結果を再取得します。
 - correctness timerにはattempt Receipt timeout、internal retry-not-before、Command effect deadline/evidence close、delivery token expiry、reconcile retry、retention/cleanup dueを含みます。EventFact `PARKED_RETRY`だけではtimer wakeを生成しません。
+- Business outcomeがterminalでも、fresh duplicate Applicationに対するreceiverのcached reverse Receiptが`WAITING_RETRY`なら、そのdurable fixed-backoff pointはinternal retry-not-beforeとしてnext wakeへ含めます。Restart後も同じfuture pointをprojectし、due-nowでは`more_work`としてcached replyを再送可能にします。Terminal outcomeやapplication callbackは再openしません。
 - `has_next_wake == 0`ではepoch ID/timeをともにzero、1ではepoch ID non-zeroかつ`next_wake_at_ms > current now_ms`です。due-now timerはfuture wakeでなく`more_work`へ入れます。
 - Caller/harnessは同じepochのabsolute pointへwakeをscheduleします。早くstepしてもよく、Runtimeは未到達timerを発火しません。clock uncertain、timer epoch mismatch、clock port failureではwake時刻を推測せず`has_next_wake = 0`、health/reasonへ`CLOCK_UNCERTAIN`を公開します。Platformはclock state/epoch変化自体でもRuntimeをwakeします。
 - Capacity snapshot callerは`entry_capacity == 0`なら`entries == NULL`、non-zeroならpointer non-NULLかつ提供した**全entry_capacity要素**のABI headerを初期化します。Coreはsnapshot header/pointer/capacity、各provided entryのheaderをこの順で検証してからrequired count 11と比較します。1要素でもABI version/required struct sizeが不正なら`NINLIL_E_ABI_MISMATCH`、`entry_count = 0`で全entryを変更しません。

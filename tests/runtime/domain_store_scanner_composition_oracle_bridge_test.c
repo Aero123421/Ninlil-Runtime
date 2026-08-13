@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D2-S5 production profiled-begin composition bridge: executes each
  * domain-scan-composition-v1 vector through ninlil_domain_scan_begin_profiled

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0022 kind-1 M=5 SERVICE_REGISTER encode + full-namespace FULL commit.
  * Feature-gated HOST_CANDIDATE. Production encoders only.
@@ -56,6 +57,18 @@ static ninlil_status_t map_storage(ninlil_storage_status_t st)
         return NINLIL_E_CAPACITY_EXHAUSTED;
     }
     return NINLIL_E_STORAGE;
+}
+
+static int clock_epoch_nonzero(const ninlil_id128_t *id)
+{
+    uint32_t index;
+
+    for (index = 0u; index < (uint32_t)sizeof(id->bytes); ++index) {
+        if (id->bytes[index] != 0u) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static ninlil_status_t pack_text(
@@ -1244,10 +1257,30 @@ ninlil_status_t ninlil_domain_schema1_service_register(
 
     /* Trusted clock sample for quota window. */
     {
+        (void)memset(&sample, 0, sizeof(sample));
         ninlil_port_status_t pst = runtime->platform->clock->now(
             runtime->platform->clock->user, &sample);
-        if (pst != NINLIL_PORT_OK || sample.trust != NINLIL_CLOCK_TRUSTED) {
+        if (pst == NINLIL_PORT_TEMPORARY_FAILURE
+            || (pst == NINLIL_PORT_OK
+                && sample.abi_version == NINLIL_ABI_VERSION
+                && sample.struct_size == sizeof(sample)
+                && sample.trust == NINLIL_CLOCK_UNCERTAIN
+                && clock_epoch_nonzero(&sample.clock_epoch_id)
+                && sample.reserved_zero == 0u)) {
             st = NINLIL_E_CLOCK_UNCERTAIN;
+            goto out;
+        }
+        if (pst != NINLIL_PORT_OK
+            || sample.abi_version != NINLIL_ABI_VERSION
+            || sample.struct_size != sizeof(sample)
+            || sample.trust != NINLIL_CLOCK_TRUSTED
+            || !clock_epoch_nonzero(&sample.clock_epoch_id)
+            || sample.reserved_zero != 0u) {
+            st = NINLIL_E_DEGRADED;
+            goto out;
+        }
+        st = ninlil_rt_accept_trusted_clock_sample(runtime, &sample);
+        if (st != NINLIL_OK) {
             goto out;
         }
     }

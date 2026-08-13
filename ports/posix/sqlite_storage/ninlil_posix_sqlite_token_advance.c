@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil_posix_sqlite_token_advance.h"
 
 uint64_t ninlil_posix_sqlite_generation_advance(

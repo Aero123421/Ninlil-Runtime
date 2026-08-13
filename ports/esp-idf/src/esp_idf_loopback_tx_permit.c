@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil_esp_idf/loopback_tx_permit.h"
 
 #include "loopback_tx_permit_logic.h"

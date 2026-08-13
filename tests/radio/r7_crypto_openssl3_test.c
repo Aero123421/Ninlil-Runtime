@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* OpenSSL 3 adapter KAT and portable-boundary integration tests. */
 
 #include "../../src/radio/r7_crypto_openssl3.h"

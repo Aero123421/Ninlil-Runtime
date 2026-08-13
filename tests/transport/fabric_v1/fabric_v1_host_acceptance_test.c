@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Host acceptance: registry → selection → reservation → dispatch →
  * provider completion → ingress projection; restart + every CU class;

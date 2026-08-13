@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "n6_context_store.h"
 #include "n6_crypto_provider.h"
 #include "n6_local_identity_fixture.h"

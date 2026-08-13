@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB unit 7: M4 Join/Attachment handshake + membership + install token mint.
  */

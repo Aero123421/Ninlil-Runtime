@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * FRAG_ACK reverse-burn ledger (docs/30 §15.3.7). Heap-free fixed-cap.
  */

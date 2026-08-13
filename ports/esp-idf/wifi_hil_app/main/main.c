@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Final ESP32-S3 Wi-Fi bearer composition application.
  *

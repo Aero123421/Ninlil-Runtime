@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Capacity pins, hop-only LINK_ACK regen, FRAG_ACK identity ledger budgets,
  * orch spy unbound fail-closed, sender attempt caps.

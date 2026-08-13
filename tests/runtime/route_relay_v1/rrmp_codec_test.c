@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_test_common.h"
 #include "rrmp_store.h"
 
@@ -92,7 +93,7 @@ static int test_static_abi(void)
     RRMP_CHECK(
         ninlil_rrmp_owner_workspace_bytes() <=
         NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES);
-    /* Encode scratch is inside owner; exact size must fit the 384 KiB gate. */
+    /* Durable scratch is inside owner; exact size must fit the 768 KiB gate. */
     return 0;
 }
 

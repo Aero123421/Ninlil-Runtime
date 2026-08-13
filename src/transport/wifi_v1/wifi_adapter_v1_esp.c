@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "wifi_adapter_v1.h"
 
 #if (defined(ESP_PLATFORM) || defined(NINLIL_WIFI_ESP_ADAPTER_HOST_TEST))    \

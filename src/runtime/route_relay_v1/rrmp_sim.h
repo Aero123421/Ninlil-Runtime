@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Simulator is a *driver only* for production private core SMs.
  * No fake forward/parent/split-brain outside core.

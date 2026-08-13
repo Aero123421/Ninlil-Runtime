@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ADR-0022 private format-2 Domain schema1 binding + T0/T1a bootstrap.
  * Foundation SMALL-1 role-aware validation (docs/12). No heap/VLA. No public ABI.

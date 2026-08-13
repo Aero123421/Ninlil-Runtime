@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ESP MFDT feature-ON target smoke (not map-symbol-only completion).
  *
  * Required PASS (return 0):
@@ -29,7 +30,16 @@ size_t ninlil_mfdt_v1_target_smoke_rx_workspace_bytes(void)
     return (size_t)NINLIL_MFDT_V1_WORKSPACE_BYTES;
 }
 
-int32_t ninlil_mfdt_v1_target_smoke_run(void)
+static int32_t target_smoke_finish(
+    ninlil_mfdt_v1_spine_ctx_t *spine, int32_t result)
+{
+    ninlil_mfdt_v1_spine_fini(spine);
+    ninlil_mfdt_v1_target_free(spine);
+    return result;
+}
+
+int32_t ninlil_mfdt_v1_target_smoke_run(const void *storage_ops,
+                                        void *storage_handle)
 {
     ninlil_mfdt_v1_session_t sess;
     ninlil_mfdt_v1_session_t peer;
@@ -53,10 +63,13 @@ int32_t ninlil_mfdt_v1_target_smoke_run(void)
     size_t offer_len = 0u;
     size_t accept_len = 0u;
     uint32_t len = 0u;
-    uint64_t allocations_after_startup;
     int rc;
     int cu;
     int arm_rc;
+
+    if (storage_ops == NULL) {
+        return -18;
+    }
 
     /* Production bearer worker TU is live and its invalid seam fails closed. */
     if (ninlil_mfdt_v1_bearer_worker_init(
@@ -120,13 +133,19 @@ int32_t ninlil_mfdt_v1_target_smoke_run(void)
     }
 
     /* 2) Raw store NEW classification on bound ESP media (small key). */
-    sp = ninlil_mfdt_v1_spine_ctx();
+    sp = (ninlil_mfdt_v1_spine_ctx_t *)ninlil_mfdt_v1_target_zalloc(
+        sizeof(*sp));
     if (sp == NULL) {
         return -5;
     }
-    allocations_after_startup =
-        ninlil_mfdt_v1_target_zalloc_call_count();
+    if (ninlil_mfdt_v1_spine_init(sp) != NINLIL_MFDT_V1_OK) {
+        return target_smoke_finish(sp, -5);
+    }
     st = &sp->store;
+    if (ninlil_mfdt_v1_esp_store_bind(
+            st, storage_ops, storage_handle) != NINLIL_MFDT_V1_OK) {
+        return target_smoke_finish(sp, -6);
+    }
     (void)memset(&sc, 0, sizeof(sc));
     sc.policy_on = 1u;
     sc.capability = 2u;
@@ -137,10 +156,11 @@ int32_t ninlil_mfdt_v1_target_smoke_run(void)
     sc.now_ms = 1000u;
     (void)memset(sc.local_clock_epoch, 0xc0,
                  sizeof(sc.local_clock_epoch));
-    ninlil_mfdt_v1_seam_set_config(&sc);
-    sp->seam = sc;
+    if (ninlil_mfdt_v1_spine_set_config(sp, &sc) !=
+        NINLIL_MFDT_V1_OK) {
+        return target_smoke_finish(sp, -5);
+    }
 
-    ninlil_mfdt_v1_lab_store_init(st);
     (void)memset(key, 0x4d, sizeof(key));
     (void)memcpy(key, "NM3S", 4u);
     (void)memset(newv, 0xCE, sizeof(newv));
@@ -149,11 +169,11 @@ int32_t ninlil_mfdt_v1_target_smoke_run(void)
     newv[2] = 0x57u; /* 'W' */
 
     if (ninlil_mfdt_v1_lab_full_begin(st) != 0) {
-        return -6;
+        return target_smoke_finish(sp, -6);
     }
     if (ninlil_mfdt_v1_lab_put(st, key, newv, (uint32_t)sizeof(newv)) != 0) {
         (void)ninlil_mfdt_v1_lab_full_rollback(st);
-        return -7;
+        return target_smoke_finish(sp, -7);
     }
     rc = ninlil_mfdt_v1_lab_full_commit(st);
     /*
@@ -162,35 +182,37 @@ int32_t ninlil_mfdt_v1_target_smoke_run(void)
      */
     if (rc != NINLIL_MFDT_V1_OK &&
         rc != NINLIL_MFDT_V1_ERR_CU_NEW_NOT_PROMOTED) {
-        return -8; /* OLD/fence/storage — not a residual pass */
+        return target_smoke_finish(
+            sp, -8); /* OLD/fence/storage — not a residual pass */
     }
     if (rc == NINLIL_MFDT_V1_ERR_CU_NEW_NOT_PROMOTED) {
-        cu = ninlil_mfdt_v1_esp_last_cu_class();
+        cu = ninlil_mfdt_v1_esp_last_cu_class(st);
         if (cu != (int)NINLIL_MFDT_V1_CU_NEW) {
-            return -8;
+            return target_smoke_finish(sp, -8);
         }
     }
     len = 0u;
     if (ninlil_mfdt_v1_lab_get(st, key, out, (uint32_t)sizeof(out), &len) != 0 ||
         len != (uint32_t)sizeof(newv) ||
         !ninlil_mfdt_v1_memeq(out, newv, sizeof(newv))) {
-        return -9; /* durable NEW read-back failed */
+        return target_smoke_finish(sp, -9); /* durable NEW read-back failed */
     }
     /* Length-probe ABI (engine restart path). */
     len = 0u;
     if (ninlil_mfdt_v1_lab_get(st, key, NULL, 0u, &len) != 0 ||
         len != (uint32_t)sizeof(newv)) {
-        return -10;
+        return target_smoke_finish(sp, -10);
     }
 
     /* 3) Release path NOT_PROMOTED: gate OFF; engine arm must not claim success
      * solely from unattested CU-NEW (may still fail for other reasons). */
     if (ninlil_mfdt_v1_hil_full_promotion_enabled() != 0) {
-        return -11;
+        return target_smoke_finish(sp, -11);
     }
     (void)memset(tid, 0x42, sizeof(tid));
     tid[0] = 0xA1;
-    arm_rc = ninlil_mfdt_v1_spine_arm_sender(tid, newv, (uint32_t)sizeof(newv));
+    arm_rc = ninlil_mfdt_v1_spine_arm_sender(
+        sp, tid, newv, (uint32_t)sizeof(newv));
     /*
      * With gate OFF, CU-NEW becomes ERR_COMMIT_UNKNOWN at engine boundary.
      * True STORAGE_OK media might still arm; either way we require gate OFF
@@ -198,38 +220,35 @@ int32_t ninlil_mfdt_v1_target_smoke_run(void)
      * "complete" from self-loop.
      */
     if (arm_rc == 0) {
-        if (ninlil_mfdt_v1_spine_transfer_complete() != 0) {
-            return -12;
+        if (ninlil_mfdt_v1_spine_transfer_complete(sp) != 0) {
+            return target_smoke_finish(sp, -12);
         }
-        (void)ninlil_mfdt_v1_spine_disarm(tid);
+        (void)ninlil_mfdt_v1_spine_disarm(sp, tid);
     } else if (arm_rc != NINLIL_MFDT_V1_ERR_COMMIT_UNKNOWN &&
                arm_rc != NINLIL_MFDT_V1_ERR_STORAGE &&
                arm_rc != NINLIL_MFDT_V1_ERR_CU_NEW_NOT_PROMOTED) {
-        return -13;
+        return target_smoke_finish(sp, -13);
     }
 
     if (ninlil_mfdt_v1_hil_full_promotion_enabled() != 0) {
-        return -14;
+        return target_smoke_finish(sp, -14);
     }
     if (ncl1_probe[0] == 0u && ncl1_len == 0u) {
-        return -15;
+        return target_smoke_finish(sp, -15);
     }
     /*
      * Keep live wire ownership symbols reachable from smoke (map proof):
      * take_outbound / on_ncl1_data must not be GC'd from the final ELF.
      */
-    if (ninlil_mfdt_v1_spine_outbox_pending() != 0) {
+    if (ninlil_mfdt_v1_spine_outbox_pending(sp) != 0) {
         size_t out_len = 0u;
         uint8_t out_frame[64];
-        (void)ninlil_mfdt_v1_spine_take_outbound_ncl1(out_frame, sizeof(out_frame),
-                                                      &out_len);
+        (void)ninlil_mfdt_v1_spine_take_outbound_ncl1(
+            sp, out_frame, sizeof(out_frame), &out_len);
         (void)out_len;
     }
     /* Reject empty ingress (symbol pin); no self-loop complete. */
-    (void)ninlil_mfdt_v1_spine_on_ncl1_data(NULL, 0u);
-    if (ninlil_mfdt_v1_target_zalloc_call_count() !=
-        allocations_after_startup) {
-        return -18; /* post-start heap growth is forbidden */
-    }
-    return 0; /* raw NEW PASS + release NOT_PROMOTED */
+    (void)ninlil_mfdt_v1_spine_on_ncl1_data(sp, NULL, 0u);
+    return target_smoke_finish(
+        sp, 0); /* raw NEW PASS + release NOT_PROMOTED */
 }

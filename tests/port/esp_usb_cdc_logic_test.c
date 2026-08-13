@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * U2 host pure tests: A2 CDC state/ring/ownership/teardown/callback fence.
  * Deterministic interleaving — no FreeRTOS/TinyUSB, no timing sleeps.

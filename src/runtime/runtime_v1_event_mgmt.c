@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_v1_event_mgmt.h"
 
 #include "domain_store_codec.h"
@@ -554,6 +555,43 @@ static ninlil_status_t lookup_operation(
     return NINLIL_OK;
 }
 
+#define NINLIL_RT_V1_MAX_MANAGEMENT_AUDIT_SAMPLES                          \
+    (NINLIL_M1A_MAX_EVENT_RESUME_OPERATIONS + 1u)
+
+typedef struct management_chronology {
+    ninlil_id128_t epochs[NINLIL_RT_V1_MAX_MANAGEMENT_AUDIT_SAMPLES];
+    uint64_t times_ms[NINLIL_RT_V1_MAX_MANAGEMENT_AUDIT_SAMPLES];
+    uint32_t count;
+    uint32_t legacy_resume_present;
+} management_chronology_t;
+
+static ninlil_status_t append_management_audit(
+    management_chronology_t *chronology,
+    const ninlil_rt_v1_event_ledger_record_t *record)
+{
+    if (chronology == NULL) {
+        return NINLIL_OK;
+    }
+    if (!id_nonzero(&record->audit_clock_epoch_id)) {
+        if (record->operation_kind
+                != NINLIL_RT_V1_EVENT_LEDGER_KIND_RESUME
+            || record->audit_committed_at_ms != 0u) {
+            return NINLIL_E_STORAGE_CORRUPT;
+        }
+        chronology->legacy_resume_present = 1u;
+        return NINLIL_OK;
+    }
+    if (chronology->count >= NINLIL_RT_V1_MAX_MANAGEMENT_AUDIT_SAMPLES) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    chronology->epochs[chronology->count] =
+        record->audit_clock_epoch_id;
+    chronology->times_ms[chronology->count] =
+        record->audit_committed_at_ms;
+    chronology->count += 1u;
+    return NINLIL_OK;
+}
+
 static ninlil_status_t count_resume_operations(
     ninlil_runtime_t *runtime,
     const ninlil_rt_transaction_slot_t *transaction,
@@ -561,7 +599,8 @@ static ninlil_status_t count_resume_operations(
     ninlil_id128_t *out_latest_operation_id,
     uint64_t *out_latest_ordered_sequence,
     uint64_t *out_ordered_sequences,
-    uint32_t ordered_sequence_capacity)
+    uint32_t ordered_sequence_capacity,
+    management_chronology_t *chronology)
 {
     const ninlil_storage_ops_t *storage = runtime->platform->storage;
     ninlil_storage_txn_t storage_txn = NULL;
@@ -677,6 +716,10 @@ static ninlil_status_t count_resume_operations(
             status = NINLIL_E_STORAGE_CORRUPT;
             break;
         }
+        status = append_management_audit(chronology, &record);
+        if (status != NINLIL_OK) {
+            break;
+        }
         if (out_ordered_sequences != NULL
             && count >= ordered_sequence_capacity) {
             status = NINLIL_E_STORAGE_CORRUPT;
@@ -733,7 +776,8 @@ static ninlil_status_t count_discard_operations(
     ninlil_runtime_t *runtime,
     const ninlil_rt_transaction_slot_t *transaction,
     uint32_t *out_count,
-    uint64_t *out_ordered_sequence)
+    uint64_t *out_ordered_sequence,
+    management_chronology_t *chronology)
 {
     const ninlil_storage_ops_t *storage = runtime->platform->storage;
     ninlil_storage_txn_t storage_txn = NULL;
@@ -840,6 +884,10 @@ static ninlil_status_t count_discard_operations(
             status = NINLIL_E_STORAGE_CORRUPT;
             break;
         }
+        status = append_management_audit(chronology, &record);
+        if (status != NINLIL_OK) {
+            break;
+        }
         count = 1u;
         *out_ordered_sequence = record.ordered_sequence;
     }
@@ -849,6 +897,47 @@ static ninlil_status_t count_discard_operations(
         *out_count = count;
     }
     return status;
+}
+
+static ninlil_status_t collect_management_chronology(
+    ninlil_runtime_t *runtime,
+    const ninlil_rt_transaction_slot_t *transaction,
+    management_chronology_t *out_chronology)
+{
+    ninlil_id128_t latest_resume_operation_id;
+    uint64_t latest_resume_ordered_sequence;
+    uint64_t discard_ordered_sequence;
+    uint32_t resume_count;
+    uint32_t discard_count;
+    ninlil_status_t status;
+
+    (void)memset(out_chronology, 0, sizeof(*out_chronology));
+    status = count_resume_operations(
+        runtime,
+        transaction,
+        &resume_count,
+        &latest_resume_operation_id,
+        &latest_resume_ordered_sequence,
+        NULL,
+        0u,
+        out_chronology);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    status = count_discard_operations(
+        runtime,
+        transaction,
+        &discard_count,
+        &discard_ordered_sequence,
+        out_chronology);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (resume_count != transaction->resume_op_count
+        || discard_count != transaction->event_discarded) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    return NINLIL_OK;
 }
 
 #define NINLIL_RT_V1_MAX_MANAGEMENT_ORDERED_SEQUENCES                       \
@@ -878,7 +967,8 @@ static ninlil_status_t collect_management_ordered_sequences(
         &latest_resume_operation_id,
         &latest_resume_ordered_sequence,
         out_sequences,
-        NINLIL_M1A_MAX_EVENT_RESUME_OPERATIONS);
+        NINLIL_M1A_MAX_EVENT_RESUME_OPERATIONS,
+        NULL);
     if (status != NINLIL_OK) {
         return status;
     }
@@ -886,7 +976,8 @@ static ninlil_status_t collect_management_ordered_sequences(
         runtime,
         transaction,
         &discard_count,
-        &discard_ordered_sequence);
+        &discard_ordered_sequence,
+        NULL);
     if (status != NINLIL_OK) {
         return status;
     }
@@ -1182,7 +1273,8 @@ ninlil_status_t ninlil_rt_v1_event_ledger_boot_validate(
             &latest_resume_operation_id,
             &latest_resume_ordered_sequence,
             NULL,
-            0u);
+            0u,
+            NULL);
         if (status != NINLIL_OK) {
             return status;
         }
@@ -1199,7 +1291,8 @@ ninlil_status_t ninlil_rt_v1_event_ledger_boot_validate(
             runtime,
             transaction,
             &discard_count,
-            &discard_ordered_sequence);
+            &discard_ordered_sequence,
+            NULL);
         if (status != NINLIL_OK) {
             return status;
         }
@@ -1622,7 +1715,13 @@ static ninlil_status_t read_trusted_clock(
         runtime->platform->clock->user, out_sample);
     if (port_status == NINLIL_PORT_TEMPORARY_FAILURE
         || (port_status == NINLIL_PORT_OK
-            && out_sample->trust == NINLIL_CLOCK_UNCERTAIN)) {
+            && out_sample->abi_version == NINLIL_ABI_VERSION
+            && out_sample->struct_size == sizeof(*out_sample)
+            && out_sample->trust == NINLIL_CLOCK_UNCERTAIN
+            && id_nonzero(&out_sample->clock_epoch_id)
+            && out_sample->reserved_zero == 0u)) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
         return NINLIL_E_CLOCK_UNCERTAIN;
     }
     if (port_status != NINLIL_PORT_OK
@@ -1631,7 +1730,172 @@ static ninlil_status_t read_trusted_clock(
         || out_sample->trust != NINLIL_CLOCK_TRUSTED
         || !id_nonzero(&out_sample->clock_epoch_id)
         || out_sample->reserved_zero != 0u) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
         return NINLIL_E_DEGRADED;
+    }
+    return ninlil_rt_accept_trusted_clock_sample(runtime, out_sample);
+}
+
+static int same_epoch_before(
+    const ninlil_time_sample_t *sample,
+    const ninlil_id128_t *epoch,
+    uint64_t baseline_ms)
+{
+    return id_equal(&sample->clock_epoch_id, epoch)
+        && sample->now_ms < baseline_ms;
+}
+
+static ninlil_status_t guard_event_owner_chronology(
+    ninlil_runtime_t *runtime,
+    const ninlil_rt_transaction_slot_t *transaction,
+    const ninlil_time_sample_t *sample,
+    const management_chronology_t *management_chronology)
+{
+    uint64_t parked_cycle_ended_at_ms;
+    uint64_t retry_scheduled_at_ms;
+    uint32_t index;
+
+    if (same_epoch_before(
+            sample,
+            &transaction->admission_clock_epoch_id,
+            transaction->admitted_at_ms)
+        || (transaction->send_observation_closed != 0u
+            && same_epoch_before(
+                sample,
+                &transaction->send_observed_clock_epoch_id,
+                transaction->send_observed_at_ms))) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    if (transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED
+        && transaction->event_park_cause
+            == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT
+        && transaction->send_observation_closed != 0u) {
+        if (transaction->attempt_receipt_timeout_ms == 0u
+            || transaction->send_observed_at_ms
+                > UINT64_MAX - transaction->attempt_receipt_timeout_ms) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+        parked_cycle_ended_at_ms = transaction->send_observed_at_ms
+            + transaction->attempt_receipt_timeout_ms;
+        if (same_epoch_before(
+                sample,
+                &transaction->send_observed_clock_epoch_id,
+                parked_cycle_ended_at_ms)) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+    }
+    if (transaction->token_state == NINLIL_RT_TOKEN_ACTIVE
+        && same_epoch_before(
+            sample,
+            &transaction->token_clock_epoch_id,
+            transaction->delivery_started_at_ms)) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    if (transaction->next_retry_ms != 0u) {
+        if (!id_nonzero(&transaction->next_retry_clock_epoch_id)
+            || transaction->retry_backoff_ms == 0u
+            || transaction->next_retry_ms < transaction->retry_backoff_ms) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+        retry_scheduled_at_ms =
+            transaction->next_retry_ms - transaction->retry_backoff_ms;
+        if (same_epoch_before(
+                sample,
+                &transaction->next_retry_clock_epoch_id,
+                retry_scheduled_at_ms)) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+    }
+    for (index = 0u; index < transaction->bound_target_count; ++index) {
+        const ninlil_rt_target_slot_t *target =
+            &transaction->bound_targets[index];
+
+        if (target->in_use == 0u) {
+            continue;
+        }
+        if ((target->send_observation_closed != 0u
+                && same_epoch_before(
+                    sample,
+                    &target->send_observed_clock_epoch_id,
+                    target->send_observed_at_ms))) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+        if (target->terminal == 0u && target->next_retry_ms != 0u) {
+            if (!id_nonzero(&target->next_retry_clock_epoch_id)
+                || transaction->retry_backoff_ms == 0u
+                || target->next_retry_ms < transaction->retry_backoff_ms) {
+                runtime->health = NINLIL_HEALTH_DEGRADED;
+                runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+                return NINLIL_E_DEGRADED;
+            }
+            retry_scheduled_at_ms =
+                target->next_retry_ms - transaction->retry_backoff_ms;
+            if (same_epoch_before(
+                    sample,
+                    &target->next_retry_clock_epoch_id,
+                    retry_scheduled_at_ms)) {
+                runtime->health = NINLIL_HEALTH_DEGRADED;
+                runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+                return NINLIL_E_DEGRADED;
+            }
+        }
+    }
+    for (index = 0u; index < transaction->retry_summary_count; ++index) {
+        const ninlil_rt_event_retry_summary_t *summary =
+            &transaction->retry_summaries[index];
+
+        if ((!id_nonzero(&summary->last_observed_clock_epoch_id)
+                && summary->last_observed_at_ms != 0u)
+            || same_epoch_before(
+                sample,
+                &summary->last_observed_clock_epoch_id,
+                summary->last_observed_at_ms)) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+    }
+    if (transaction->older_retry_cycle_count != 0u
+        && ((!id_nonzero(
+                &transaction->older_retry_last_observed_clock_epoch_id)
+                && transaction->older_retry_last_observed_at_ms != 0u)
+            || same_epoch_before(
+                sample,
+                &transaction->older_retry_last_observed_clock_epoch_id,
+                transaction->older_retry_last_observed_at_ms))) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    if (management_chronology->legacy_resume_present != 0u) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_CLOCK_UNCERTAIN;
+    }
+    for (index = 0u; index < management_chronology->count; ++index) {
+        if (same_epoch_before(
+                sample,
+                &management_chronology->epochs[index],
+                management_chronology->times_ms[index])) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
     }
     return NINLIL_OK;
 }
@@ -1639,7 +1903,8 @@ static ninlil_status_t read_trusted_clock(
 static ninlil_status_t catch_up_targeted_management(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *transaction,
-    const ninlil_time_sample_t *sample)
+    const ninlil_time_sample_t *sample,
+    uint32_t management_priority)
 {
     ninlil_rt_v1_step_delivery_result_t catch_up_result;
     uint32_t changed = 0u;
@@ -1651,7 +1916,8 @@ static ninlil_status_t catch_up_targeted_management(
         sample,
         UINT32_MAX,
         &catch_up_result,
-        &changed);
+        &changed,
+        management_priority);
 }
 
 static uint64_t current_retry_cycle(
@@ -1733,6 +1999,12 @@ static void clear_resume_cycle_state(
         &candidate->next_retry_clock_epoch_id,
         0,
         sizeof(candidate->next_retry_clock_epoch_id));
+    candidate->send_observation_closed = 0u;
+    candidate->send_observed_at_ms = 0u;
+    (void)memset(
+        &candidate->send_observed_clock_epoch_id,
+        0,
+        sizeof(candidate->send_observed_clock_epoch_id));
     candidate->token_state = NINLIL_RT_TOKEN_NONE;
     candidate->deferred_wait = 0u;
     (void)memset(
@@ -1752,6 +2024,7 @@ static void fill_resume_ledger(
     const ninlil_rt_transaction_slot_t *transaction,
     const ninlil_event_resume_request_t *request,
     const uint8_t request_digest[NINLIL_SHA256_BYTES],
+    const ninlil_time_sample_t *sample,
     uint64_t ordered_input_sequence,
     uint64_t next_retry_cycle_id,
     ninlil_rt_v1_event_ledger_record_t *out_record)
@@ -1777,6 +2050,8 @@ static void fill_resume_ledger(
         out_record->metadata,
         request->audit_metadata.data,
         request->audit_metadata.length);
+    out_record->audit_clock_epoch_id = sample->clock_epoch_id;
+    out_record->audit_committed_at_ms = sample->now_ms;
     out_record->replay_result_kind =
         NINLIL_EVENT_RESUME_ALREADY_RESUMED;
     out_record->replay_result_reason = NINLIL_REASON_NONE;
@@ -1841,6 +2116,7 @@ ninlil_status_t ninlil_rt_v1_event_resume(
     ninlil_rt_transaction_slot_t *transaction;
     ninlil_rt_transaction_slot_t *candidate;
     ninlil_rt_v1_event_ledger_record_t ledger_record;
+    management_chronology_t management_chronology;
     ninlil_time_sample_t sample;
     operation_lookup_kind_t lookup;
     uint8_t request_digest[NINLIL_SHA256_BYTES];
@@ -1913,12 +2189,25 @@ ninlil_status_t ninlil_rt_v1_event_resume(
             NINLIL_REASON_RESUME_CONFLICT);
         return NINLIL_OK;
     }
+    status = collect_management_chronology(
+        runtime, transaction, &management_chronology);
+    if (status != NINLIL_OK) {
+        return status;
+    }
     status = read_trusted_clock(runtime, &sample);
     if (status != NINLIL_OK) {
         return status;
     }
+    status = guard_event_owner_chronology(
+        runtime, transaction, &sample, &management_chronology);
+    if (status != NINLIL_OK) {
+        return status;
+    }
     status = catch_up_targeted_management(
-        runtime, transaction, &sample);
+        runtime,
+        transaction,
+        &sample,
+        NINLIL_RT_V1_INPUT_PRIORITY_EVENT_RESUME);
     if (status != NINLIL_OK) {
         zero_resume_result(out_result);
         return status;
@@ -1977,7 +2266,8 @@ ninlil_status_t ninlil_rt_v1_event_resume(
         &latest_resume_operation_id,
         &latest_resume_ordered_sequence,
         NULL,
-        0u);
+        0u,
+        NULL);
     if (status != NINLIL_OK) {
         return status;
     }
@@ -2025,6 +2315,7 @@ ninlil_status_t ninlil_rt_v1_event_resume(
         transaction,
         request,
         request_digest,
+        &sample,
         next_ordered_input_sequence,
         candidate->retry_cycle_id,
         &ledger_record);
@@ -2068,6 +2359,7 @@ ninlil_status_t ninlil_rt_v1_event_discard(
     ninlil_rt_transaction_slot_t *transaction;
     ninlil_rt_transaction_slot_t *candidate;
     ninlil_rt_v1_event_ledger_record_t ledger_record;
+    management_chronology_t management_chronology;
     ninlil_time_sample_t sample;
     operation_lookup_kind_t lookup;
     uint8_t request_digest[NINLIL_SHA256_BYTES];
@@ -2138,12 +2430,25 @@ ninlil_status_t ninlil_rt_v1_event_discard(
             NINLIL_REASON_DISCARD_CONFLICT);
         return NINLIL_OK;
     }
+    status = collect_management_chronology(
+        runtime, transaction, &management_chronology);
+    if (status != NINLIL_OK) {
+        return status;
+    }
     status = read_trusted_clock(runtime, &sample);
     if (status != NINLIL_OK) {
         return status;
     }
+    status = guard_event_owner_chronology(
+        runtime, transaction, &sample, &management_chronology);
+    if (status != NINLIL_OK) {
+        return status;
+    }
     status = catch_up_targeted_management(
-        runtime, transaction, &sample);
+        runtime,
+        transaction,
+        &sample,
+        NINLIL_RT_V1_INPUT_PRIORITY_CANCEL_OR_DISCARD);
     if (status != NINLIL_OK) {
         zero_discard_result(out_result);
         return status;

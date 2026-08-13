@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP-IDF SX1262 bus — R4 control-plane.
  * Finite SPI via queue_trans + get_trans_result (ESP-IDF v5.5.3).

@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Real outbound ownership + inbound-driven progress. No local echo.
  */
 #include "mfdt_v1_pipeline.h"

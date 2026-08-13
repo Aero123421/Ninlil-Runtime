@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * LAB session durable ledger for R2 PCP (production-private composition).
  * No heap/VLA. Session-scoped durability only — not power-cut HIL.

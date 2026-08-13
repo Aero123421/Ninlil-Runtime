@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* D3-S3 R18 typed authority bridge. Generated fields are compared, never parsed.
  * Two-lane: rep1_l2 production (real API vs typed actual) and formal_precheck
  * (independent typed-row validator; no production API; zero Port). */

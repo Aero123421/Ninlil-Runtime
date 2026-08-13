@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RUNTIME_V1_DELIVERY_DURABLE_H
 #define NINLIL_RUNTIME_V1_DELIVERY_DURABLE_H
 
@@ -17,6 +18,11 @@ typedef struct ninlil_rt_v1_step_delivery_result {
     uint32_t work_remaining;
 } ninlil_rt_v1_step_delivery_result_t;
 
+#define NINLIL_RT_V1_INPUT_PRIORITY_CANCEL_OR_DISCARD 3u
+#define NINLIL_RT_V1_INPUT_PRIORITY_EVENT_RESUME 8u
+/* Internal sentinel: ordinary step drains every ready priority 1..10. */
+#define NINLIL_RT_V1_INPUT_PRIORITY_SCHEDULER_AFTER_READY 11u
+
 ninlil_status_t ninlil_rt_v1_delivery_step(
     ninlil_runtime_t *runtime,
     const ninlil_time_sample_t *clock_sample,
@@ -25,6 +31,14 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
     uint32_t transition_budget,
     uint32_t send_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result);
+
+/*
+ * A closed live send owns a Receipt timeout.  This private predicate rejects
+ * timer tuples whose configured timeout is absent or whose deadline cannot be
+ * represented, so step/projector and targeted management share one boundary.
+ */
+int ninlil_rt_v1_transaction_has_invalid_active_receipt_timer(
+    const ninlil_rt_transaction_slot_t *transaction);
 
 ninlil_status_t ninlil_rt_v1_prepare_callback_start(
     ninlil_runtime_t *runtime,
@@ -138,9 +152,11 @@ ninlil_status_t ninlil_rt_v1_commit_ordered_input_snapshot(
     ninlil_v1_durable_operation_t operation);
 
 /*
- * Applies correctness-closing work for one transaction before an Event
- * management mutation is evaluated.  Receipt ingress wins first, followed by
- * delivery-token timeout and the current Event attempt receipt timeout.
+ * Applies all currently-ready correctness-closing work for one transaction
+ * before a public management mutation is evaluated. Receipt ingress wins
+ * first when its already-persisted ingress is representable, followed by all
+ * timestamped timers in logical-time order. `management_priority` is the
+ * Normative same-time priority of the management input.
  */
 ninlil_status_t ninlil_rt_v1_targeted_management_catch_up(
     ninlil_runtime_t *runtime,
@@ -148,7 +164,8 @@ ninlil_status_t ninlil_rt_v1_targeted_management_catch_up(
     const ninlil_time_sample_t *clock_sample,
     uint32_t transition_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result,
-    uint32_t *out_changed);
+    uint32_t *out_changed,
+    uint32_t management_priority);
 
 #ifdef __cplusplus
 }

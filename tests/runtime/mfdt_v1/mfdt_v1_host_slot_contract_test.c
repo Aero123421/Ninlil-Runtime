@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Independent Host slot-memory contract acceptance.
  * Source-private, default-OFF, software-only; this is not HIL evidence.
@@ -38,10 +39,28 @@
 #define OPEN_OFFSET (XFER_OFFSET + XFER_BYTES)
 #define ENTRIES_OFFSET (OPEN_OFFSET + OPEN_BYTES)
 
+#define OVERSIZE_PAD ((size_t)8u)
+#define OVERSIZED_RECORD_OFFSET ((size_t)0u)
+#define OVERSIZED_NRC1_OFFSET \
+    (OVERSIZED_RECORD_OFFSET + RECORD_BYTES + OVERSIZE_PAD)
+#define OVERSIZED_XFER_OFFSET \
+    (OVERSIZED_NRC1_OFFSET + NRC1_BYTES + OVERSIZE_PAD)
+#define OVERSIZED_OPEN_OFFSET \
+    (OVERSIZED_XFER_OFFSET + XFER_BYTES + OVERSIZE_PAD)
+#define OVERSIZED_ENTRIES_OFFSET \
+    (OVERSIZED_OPEN_OFFSET + OPEN_BYTES + OVERSIZE_PAD)
+#define OVERSIZED_ARENA_BYTES \
+    (OVERSIZED_ENTRIES_OFFSET + ENTRIES_BYTES + OVERSIZE_PAD)
+
 typedef union aligned_bytes {
     uint64_t align8;
     uint8_t bytes[ARENA_BYTES + 8u];
 } aligned_bytes_t;
+
+typedef union oversized_aligned_bytes {
+    uint64_t align8;
+    uint8_t bytes[OVERSIZED_ARENA_BYTES];
+} oversized_aligned_bytes_t;
 
 typedef union aligned_controls {
     uint64_t align8;
@@ -80,6 +99,8 @@ static ninlil_mfdt_v1_config_t valid_config(void)
     config.mfdt_capability = 1u;
     config.host_mode = 1u;
     config.retention_ms = NINLIL_MFDT_V1_RETENTION_MS_DEFAULT;
+    config.now_ms = 1000u;
+    (void)memset(config.local_clock_epoch.bytes, 0xc0, 16u);
     return config;
 }
 
@@ -147,6 +168,18 @@ static int bytes_equal(
     size_t length)
 {
     return memcmp(left, right, length) == 0;
+}
+
+static int bytes_are_zero(const uint8_t *bytes, size_t length)
+{
+    size_t index;
+
+    for (index = 0u; index < length; ++index) {
+        if (bytes[index] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int invoke_invalid_and_require_no_mutation(
@@ -347,6 +380,144 @@ static int test_valid_disjoint_layout(void)
     REQUIRE(engine.slot_open_staging == memory.open_staging);
     REQUIRE(engine.slot_entries_staging == memory.entries_staging);
     (void)printf("WITNESS_PASS valid_disjoint_slot_layout\n");
+    fixture_close(&fixture);
+    return 0;
+}
+
+static int test_oversized_disjoint_layout_fini_zeroizes_full_ranges(void)
+{
+    oversized_aligned_bytes_t arena;
+    ninlil_mfdt_v1_engine_slot_memory_t memory;
+    ninlil_mfdt_v1_engine_t engine;
+    ninlil_mfdt_v1_config_t config = valid_config();
+    store_fixture_t fixture;
+    uint32_t committed_keys = 0u;
+    uint64_t committed_logical_bytes = 0u;
+    uint8_t full_locked = 0u;
+    uint8_t inventory_uncertain = 0u;
+    uint8_t transfer_id[16] = {1u};
+    uint8_t active_key[NINLIL_MFDT_V1_KEY_BYTES];
+    uint8_t nrc1_key[NINLIL_MFDT_V1_KEY_BYTES];
+    uint8_t active_record[NINLIL_MFDT_V1_ACTIVE_VALUE_MAX];
+    uint8_t nrc1_record[NINLIL_MFDT_V1_NRC1_VALUE_BYTES];
+    uint8_t open[NINLIL_MFDT_V1_OPEN_BODY_MAX];
+    uint32_t active_record_len = 0u;
+    uint32_t nrc1_record_len = 0u;
+    uint16_t open_len = 0u;
+    int present = 0;
+
+    REQUIRE(fixture_open(&fixture));
+    (void)memset(&arena, 0xa5, sizeof(arena));
+    (void)memset(&engine, 0x5a, sizeof(engine));
+    (void)memset(&memory, 0, sizeof(memory));
+    memory.record_memory = arena.bytes + OVERSIZED_RECORD_OFFSET;
+    memory.record_memory_bytes = RECORD_BYTES + (uint32_t)OVERSIZE_PAD;
+    memory.nrc1_memory = arena.bytes + OVERSIZED_NRC1_OFFSET;
+    memory.nrc1_memory_bytes = NRC1_BYTES + (uint32_t)OVERSIZE_PAD;
+    memory.xfer_memory = arena.bytes + OVERSIZED_XFER_OFFSET;
+    memory.xfer_memory_bytes = XFER_BYTES + (uint32_t)OVERSIZE_PAD;
+    memory.open_staging = arena.bytes + OVERSIZED_OPEN_OFFSET;
+    memory.open_staging_bytes = OPEN_BYTES + (uint32_t)OVERSIZE_PAD;
+    memory.entries_staging = arena.bytes + OVERSIZED_ENTRIES_OFFSET;
+    memory.entries_staging_bytes = ENTRIES_BYTES + (uint32_t)OVERSIZE_PAD;
+
+    REQUIRE(ninlil_mfdt_v1_engine_init_slot(
+        &engine,
+        &memory,
+        &fixture.port,
+        &committed_keys,
+        &committed_logical_bytes,
+        &full_locked,
+        &inventory_uncertain,
+        &config) == NINLIL_MFDT_V1_OK);
+    REQUIRE(engine.slot_record_memory_bytes == memory.record_memory_bytes);
+    REQUIRE(engine.slot_nrc1_memory_bytes == memory.nrc1_memory_bytes);
+    REQUIRE(engine.slot_xfer_memory_bytes == memory.xfer_memory_bytes);
+    REQUIRE(engine.slot_open_staging_bytes == memory.open_staging_bytes);
+    REQUIRE(engine.slot_entries_staging_bytes == memory.entries_staging_bytes);
+
+    REQUIRE(ninlil_mfdt_v1_sender_open(
+        &engine,
+        transfer_id,
+        NULL,
+        0u,
+        open,
+        &open_len,
+        1u) == NINLIL_MFDT_V1_OK);
+    (void)memcpy(active_key, "NM3S", 4u);
+    (void)memcpy(active_key + 4u, transfer_id, 16u);
+    REQUIRE(ninlil_mfdt_v1_store_read(
+        &fixture.port,
+        active_key,
+        active_record,
+        sizeof(active_record),
+        &active_record_len,
+        &present) == NINLIL_MFDT_V1_OK);
+    REQUIRE(present == 1);
+    (void)memcpy(nrc1_key, "NRC1", 4u);
+    (void)memcpy(nrc1_key + 4u, transfer_id, 16u);
+    REQUIRE(ninlil_mfdt_v1_store_read(
+        &fixture.port,
+        nrc1_key,
+        nrc1_record,
+        sizeof(nrc1_record),
+        &nrc1_record_len,
+        &present) == NINLIL_MFDT_V1_OK);
+    REQUIRE(present == 1);
+    REQUIRE(nrc1_record_len == NINLIL_MFDT_V1_NRC1_VALUE_BYTES);
+
+    (void)memset(
+        memory.record_memory + active_record_len,
+        0x61,
+        memory.record_memory_bytes - active_record_len);
+    (void)memset(
+        memory.nrc1_memory + nrc1_record_len,
+        0x62,
+        memory.nrc1_memory_bytes - nrc1_record_len);
+    (void)memset(memory.xfer_memory, 0x63, memory.xfer_memory_bytes);
+    (void)memset(memory.open_staging, 0x64, memory.open_staging_bytes);
+    (void)memset(
+        memory.entries_staging, 0x65, memory.entries_staging_bytes);
+    REQUIRE(ninlil_mfdt_v1_engine_rehydrate_captured(
+        &engine,
+        active_record,
+        active_record_len,
+        nrc1_record,
+        nrc1_record_len,
+        &config) == NINLIL_MFDT_V1_OK);
+    REQUIRE(engine.slot_record_memory_bytes == memory.record_memory_bytes);
+    REQUIRE(engine.slot_nrc1_memory_bytes == memory.nrc1_memory_bytes);
+    REQUIRE(engine.slot_xfer_memory_bytes == memory.xfer_memory_bytes);
+    REQUIRE(engine.slot_open_staging_bytes == memory.open_staging_bytes);
+    REQUIRE(engine.slot_entries_staging_bytes == memory.entries_staging_bytes);
+    REQUIRE(bytes_are_zero(
+        memory.record_memory + active_record_len,
+        memory.record_memory_bytes - active_record_len));
+    REQUIRE(bytes_are_zero(
+        memory.nrc1_memory + nrc1_record_len,
+        memory.nrc1_memory_bytes - nrc1_record_len));
+    REQUIRE(bytes_are_zero(
+        memory.xfer_memory + XFER_BYTES,
+        memory.xfer_memory_bytes - XFER_BYTES));
+    REQUIRE(bytes_are_zero(
+        memory.open_staging, memory.open_staging_bytes));
+    REQUIRE(bytes_are_zero(
+        memory.entries_staging, memory.entries_staging_bytes));
+
+    (void)memset(memory.record_memory, 0x11, memory.record_memory_bytes);
+    (void)memset(memory.nrc1_memory, 0x22, memory.nrc1_memory_bytes);
+    (void)memset(memory.xfer_memory, 0x33, memory.xfer_memory_bytes);
+    (void)memset(memory.open_staging, 0x44, memory.open_staging_bytes);
+    (void)memset(memory.entries_staging, 0x55, memory.entries_staging_bytes);
+    ninlil_mfdt_v1_engine_fini(&engine);
+
+    REQUIRE(bytes_are_zero((const uint8_t *)&engine, sizeof(engine)));
+    REQUIRE(bytes_are_zero(memory.record_memory, memory.record_memory_bytes));
+    REQUIRE(bytes_are_zero(memory.nrc1_memory, memory.nrc1_memory_bytes));
+    REQUIRE(bytes_are_zero(memory.xfer_memory, memory.xfer_memory_bytes));
+    REQUIRE(bytes_are_zero(memory.open_staging, memory.open_staging_bytes));
+    REQUIRE(bytes_are_zero(memory.entries_staging, memory.entries_staging_bytes));
+    (void)printf("WITNESS_PASS oversized_slot_fini_full_range_zeroization\n");
     fixture_close(&fixture);
     return 0;
 }
@@ -647,6 +818,9 @@ int main(void)
     failures += run_test(
         "valid_disjoint_layout",
         test_valid_disjoint_layout);
+    failures += run_test(
+        "oversized_disjoint_layout_fini_zeroizes_full_ranges",
+        test_oversized_disjoint_layout_fini_zeroizes_full_ranges);
     failures += run_test(
         "unaligned_region_rejected",
         test_unaligned_region_rejected);

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "wifi_esp_fabric_link_ops.h"
 
 #include "wifi_nwb1.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 T1 NRW1 SINGLE pure wire codec (docs/32, ADR-0012).
  *

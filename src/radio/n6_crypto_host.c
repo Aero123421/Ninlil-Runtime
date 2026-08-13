@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * N6 host crypto ops: domain_store SHA-256 + HMAC/HKDF-SHA-256 (RFC 5869).
  *

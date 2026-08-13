@@ -1,16 +1,54 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Media FULL COMMIT_UNKNOWN / read-classify / restart (software, host lab).
  * Not physical power-cut HIL.
  */
 #include "mfdt_v1.h"
 #include "mfdt_v1_session.h"
 #include "mfdt_v1_spine.h"
-#include "mfdt_v1_target_alloc.h"
 
 #include <stdio.h>
 #include <string.h>
 
 static int g_fail;
+static ninlil_mfdt_v1_spine_ctx_t g_spine;
+static ninlil_mfdt_v1_spine_ctx_t g_spine_peer;
+static ninlil_mfdt_v1_workspace_t g_cu_scratch;
+
+/* Keep the test cases terse while the production API remains explicit-owner. */
+#define ninlil_mfdt_v1_spine_should_use_mfdt(payload_) \
+    ninlil_mfdt_v1_spine_should_use_mfdt(&g_spine, (payload_))
+#define ninlil_mfdt_v1_spine_arm_sender(...) \
+    ninlil_mfdt_v1_spine_arm_sender(&g_spine, __VA_ARGS__)
+#define ninlil_mfdt_v1_spine_disarm(...) \
+    ninlil_mfdt_v1_spine_disarm(&g_spine, __VA_ARGS__)
+#define ninlil_mfdt_v1_spine_outcome_unknown() \
+    ninlil_mfdt_v1_spine_outcome_unknown(&g_spine)
+#define ninlil_mfdt_v1_spine_is_armed(...) \
+    ninlil_mfdt_v1_spine_is_armed(&g_spine, __VA_ARGS__)
+#define ninlil_mfdt_v1_spine_recover_transaction(...) \
+    ninlil_mfdt_v1_spine_recover_transaction(&g_spine, __VA_ARGS__)
+#define ninlil_mfdt_v1_spine_recover() \
+    ninlil_mfdt_v1_spine_recover(&g_spine)
+#define ninlil_mfdt_v1_spine_restart_scan() \
+    ninlil_mfdt_v1_spine_restart_scan(&g_spine)
+#define ninlil_mfdt_v1_spine_transfer_complete() \
+    ninlil_mfdt_v1_spine_transfer_complete(&g_spine)
+#define ninlil_mfdt_v1_spine_outbox_pending() \
+    ninlil_mfdt_v1_spine_outbox_pending(&g_spine)
+
+static int bytes_are_zero(const void *memory, size_t length)
+{
+    const uint8_t *bytes = (const uint8_t *)memory;
+    size_t index;
+    for (index = 0u; index < length; ++index) {
+        if (bytes[index] != 0u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void expect(int c, const char *m)
 {
     if (!c) {
@@ -19,14 +57,16 @@ static void expect(int c, const char *m)
     }
 }
 
-/* Isolate global spine BSS between cases (host lab store is process-local). */
+/* Reset one caller-owned spine between cases. */
 static void spine_test_reset(ninlil_mfdt_v1_seam_config_t *sc)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp = ninlil_mfdt_v1_spine_ctx();
-    memset(sp, 0, sizeof(*sp));
+    ninlil_mfdt_v1_spine_fini(&g_spine);
+    expect(ninlil_mfdt_v1_spine_init(&g_spine) == NINLIL_MFDT_V1_OK,
+           "spine owner init");
     if (sc != NULL) {
-        ninlil_mfdt_v1_seam_set_config(sc);
-        sp->seam = *sc;
+        expect(ninlil_mfdt_v1_spine_set_config(&g_spine, sc) ==
+                   NINLIL_MFDT_V1_OK,
+               "spine owner config");
     }
 }
 
@@ -157,7 +197,9 @@ static void test_full_crash_cu_restart(void)
     /* OLD still visible */
     expect(ninlil_mfdt_v1_lab_get(&st, key, out, 64, &len) == 0 && len == 64, "get");
     expect(ninlil_mfdt_v1_memeq(out, oldv, 64), "old retained");
-    c = ninlil_mfdt_v1_cu_observe_key(&st, key, oldv, 64, 1, newv, 64, 1);
+    c = ninlil_mfdt_v1_cu_observe_key(
+        &st, g_cu_scratch.bytes, sizeof(g_cu_scratch.bytes), key,
+        oldv, 64, 1, newv, 64, 1);
     expect(c == NINLIL_MFDT_V1_CU_OLD, "cu old after crash");
     /* successful multi-key FULL */
     ninlil_mfdt_v1_lab_store_init(&st);
@@ -167,7 +209,9 @@ static void test_full_crash_cu_restart(void)
     expect(ninlil_mfdt_v1_lab_full_begin(&st) == 0, "b4");
     expect(ninlil_mfdt_v1_lab_put(&st, key, newv, 64) == 0, "p4");
     expect(ninlil_mfdt_v1_lab_full_commit(&st) == 0, "c4");
-    c = ninlil_mfdt_v1_cu_observe_key(&st, key, oldv, 64, 1, newv, 64, 1);
+    c = ninlil_mfdt_v1_cu_observe_key(
+        &st, g_cu_scratch.bytes, sizeof(g_cu_scratch.bytes), key,
+        oldv, 64, 1, newv, 64, 1);
     expect(c == NINLIL_MFDT_V1_CU_NEW, "cu new");
 }
 
@@ -291,7 +335,7 @@ static void test_post_commit_recover_resume_no_duplicate(void)
     sc.now_ms = 200;
     memset(sc.local_clock_epoch, 0xc0, 16u);
     spine_test_reset(&sc);
-    sp = ninlil_mfdt_v1_spine_ctx();
+    sp = &g_spine;
 
     memset(tid, 3, 16);
     tid[0] = 0xa1;
@@ -345,7 +389,7 @@ static void test_commit_fail_disarm_then_terminalize(void)
     sc.now_ms = 300;
     memset(sc.local_clock_epoch, 0xc0, 16u);
     spine_test_reset(&sc);
-    sp = ninlil_mfdt_v1_spine_ctx();
+    sp = &g_spine;
 
     memset(tid, 4, 16);
     tid[0] = 0xb2;
@@ -405,7 +449,7 @@ static void test_arm_disarm_four_keys_absent(void)
     sc.now_ms = 400;
     memset(sc.local_clock_epoch, 0xc0, 16u);
     spine_test_reset(&sc);
-    sp = ninlil_mfdt_v1_spine_ctx();
+    sp = &g_spine;
     memset(tid, 0x51, 16);
     tid[0] = 0xc1;
 
@@ -448,7 +492,7 @@ static void test_admission_fault_cold_restart_no_recover(void)
     sc.now_ms = 500;
     memset(sc.local_clock_epoch, 0xc0, 16u);
     spine_test_reset(&sc);
-    sp = ninlil_mfdt_v1_spine_ctx();
+    sp = &g_spine;
     memset(tid, 0x62, 16);
     tid[0] = 0xd2;
 
@@ -460,11 +504,14 @@ static void test_admission_fault_cold_restart_no_recover(void)
     /* Cold restart: durable store image survives; process BSS rehydrated. */
     saved = sp->store;
     store_inited = 1u;
-    memset(sp, 0, sizeof(*sp));
+    ninlil_mfdt_v1_spine_fini(sp);
+    expect(ninlil_mfdt_v1_spine_init(sp) == NINLIL_MFDT_V1_OK,
+           "cold process spine init");
+    expect(ninlil_mfdt_v1_spine_set_config(sp, &sc) ==
+               NINLIL_MFDT_V1_OK,
+           "cold process spine config");
     sp->store = saved;
     sp->store_inited = store_inited;
-    sp->seam = sc;
-    ninlil_mfdt_v1_seam_set_config(&sc);
 
     expect(ninlil_mfdt_v1_spine_recover_transaction(tid) == 0, "recover cold");
     expect(ninlil_mfdt_v1_spine_is_armed(tid) == 0, "no recover re-arm");
@@ -494,7 +541,7 @@ static void test_cu_new_not_promoted_arm_fail_orphan_zero(void)
     sc.now_ms = 600;
     memset(sc.local_clock_epoch, 0xc0, 16u);
     spine_test_reset(&sc);
-    sp = ninlil_mfdt_v1_spine_ctx();
+    sp = &g_spine;
     memset(tid, 0x73, 16);
     tid[0] = 0xe3;
 
@@ -541,7 +588,7 @@ static void test_arm_cleanup_old_outcome_unknown(void)
     sc.now_ms = 700;
     memset(sc.local_clock_epoch, 0xc0, 16u);
     spine_test_reset(&sc);
-    sp = ninlil_mfdt_v1_spine_ctx();
+    sp = &g_spine;
     memset(tid, 0x84, 16);
     tid[0] = 0xf4;
 
@@ -563,12 +610,15 @@ static void test_arm_cleanup_old_outcome_unknown(void)
            "custody residual or orphan requires reconcile");
 }
 
-/* After successful startup, transfer operations perform zero allocations. */
-static void test_no_post_start_allocation(void)
+/* Each engine binds scratch to its own exact 64 KiB owner workspace. */
+static void test_engine_owner_isolation_and_fini(void)
 {
-    ninlil_mfdt_v1_engine_t eng;
-    ninlil_mfdt_v1_workspace_t ws;
-    ninlil_mfdt_v1_lab_store_t store;
+    static ninlil_mfdt_v1_engine_t eng;
+    static ninlil_mfdt_v1_engine_t peer;
+    static ninlil_mfdt_v1_workspace_t ws;
+    static ninlil_mfdt_v1_workspace_t peer_ws;
+    static ninlil_mfdt_v1_lab_store_t store;
+    static ninlil_mfdt_v1_lab_store_t peer_store;
     ninlil_mfdt_v1_config_t cfg;
     uint8_t tid[16];
     uint8_t content[4] = {1, 2, 3, 4};
@@ -576,7 +626,6 @@ static void test_no_post_start_allocation(void)
     uint8_t key[20];
     uint16_t open_len = 0u;
     uint32_t len = 0;
-    uint64_t allocation_count;
 
     memset(&cfg, 0, sizeof(cfg));
     cfg.policy = NINLIL_MFDT_V1_POLICY_ON;
@@ -588,35 +637,43 @@ static void test_no_post_start_allocation(void)
     cfg.retention_ms = NINLIL_MFDT_V1_RETENTION_MS_DEFAULT;
     memset(cfg.local_clock_epoch.bytes, 0xc0, 16u);
     ninlil_mfdt_v1_lab_store_init(&store);
+    ninlil_mfdt_v1_lab_store_init(&peer_store);
     expect(ninlil_mfdt_v1_engine_init(&eng, &ws, &store, &cfg) == 0,
-           "allocation startup engine init");
+           "owner A engine init");
+    expect(ninlil_mfdt_v1_engine_init(
+               &peer, &peer_ws, &peer_store, &cfg) == 0,
+           "owner B engine init");
+    expect(eng.slot_record_memory != peer.slot_record_memory &&
+               eng.slot_nrc1_memory != peer.slot_nrc1_memory,
+           "engine owners have disjoint scratch");
     memset(tid, 0x91, 16);
-    allocation_count = ninlil_mfdt_v1_target_zalloc_call_count();
-    /*
-     * If an operation tried lazy allocation this injection would fail it.
-     * The already initialized engine must instead complete with no new call.
-     */
-    ninlil_mfdt_v1_target_zalloc_force_fail(1);
     expect(ninlil_mfdt_v1_sender_open(
                &eng, tid, content, sizeof(content), open, &open_len, 1ull) == 0,
-           "allocation-free sender open after startup");
-    ninlil_mfdt_v1_target_zalloc_force_fail(0);
-    expect(ninlil_mfdt_v1_target_zalloc_call_count() == allocation_count,
-           "allocation count unchanged after transfer operation");
+           "owner A sender open");
+    expect(bytes_are_zero(&peer_ws, sizeof(peer_ws)),
+           "owner A cannot mutate owner B workspace");
     memcpy(key, "NM3S", 4u);
     memcpy(key + 4u, tid, 16u);
     expect(ninlil_mfdt_v1_lab_get(&store, key, NULL, 0u, &len) == 0 &&
                len > 0u,
-           "allocation-free operation committed durable custody");
+           "owner A committed durable custody");
+    ninlil_mfdt_v1_engine_fini(&eng);
+    expect(bytes_are_zero(&eng, sizeof(eng)) && bytes_are_zero(&ws, sizeof(ws)),
+           "engine A fini zeroizes handle and workspace");
+    ninlil_mfdt_v1_engine_fini(&peer);
+    expect(bytes_are_zero(&peer, sizeof(peer)) &&
+               bytes_are_zero(&peer_ws, sizeof(peer_ws)),
+           "engine B fini zeroizes handle and workspace");
 }
 
-/* Root spine allocation failure: every public seam entry fails closed. */
-static void test_spine_root_oom_fail_closed(void)
+/* Two caller-owned spines are isolated; same-owner reentry fails closed. */
+static void test_spine_owner_isolation_reentry_and_fini(void)
 {
     ninlil_mfdt_v1_seam_config_t sc;
+    ninlil_mfdt_v1_seam_config_t peer_sc;
     ninlil_mfdt_v1_session_t session;
-    ninlil_mfdt_v1_spine_ctx_t *sp;
     uint8_t tid[16];
+    uint8_t peer_tid[16];
     uint8_t local_id[16];
     uint8_t peer_id[16];
     uint8_t content[4] = {4, 3, 2, 1};
@@ -631,42 +688,64 @@ static void test_spine_root_oom_fail_closed(void)
     sc.now_ms = 900u;
     memset(sc.local_clock_epoch, 0xc0, 16u);
     memset(tid, 0xa5, sizeof(tid));
+    memset(peer_tid, 0xb6, sizeof(peer_tid));
     memset(local_id, 0x71, sizeof(local_id));
     memset(peer_id, 0x82, sizeof(peer_id));
 
-    ninlil_mfdt_v1_target_zalloc_force_fail(1);
-    expect(ninlil_mfdt_v1_spine_ctx() == NULL, "root OOM spine NULL");
-    expect(ninlil_mfdt_v1_spine_should_use_mfdt(sizeof(content)) == 0,
-           "root OOM no admission");
+    expect(ninlil_mfdt_v1_spine_init(&g_spine) == NINLIL_MFDT_V1_OK,
+           "owner A spine init");
+    expect(ninlil_mfdt_v1_spine_init(&g_spine_peer) == NINLIL_MFDT_V1_OK,
+           "owner B spine init");
+    peer_sc = sc;
+    peer_sc.session_cookie += 1ull;
+    expect(ninlil_mfdt_v1_spine_set_config(&g_spine, &sc) ==
+               NINLIL_MFDT_V1_OK,
+           "owner A spine config");
+    expect(ninlil_mfdt_v1_spine_set_config(&g_spine_peer, &peer_sc) ==
+               NINLIL_MFDT_V1_OK,
+           "owner B spine config");
+    g_spine.busy = 1u;
+    expect((ninlil_mfdt_v1_spine_arm_sender)(
+               &g_spine_peer, peer_tid, content, sizeof(content)) ==
+               NINLIL_MFDT_V1_OK,
+           "owner B remains usable while owner A is busy");
+    expect((ninlil_mfdt_v1_spine_is_armed)(&g_spine_peer, peer_tid) == 1 &&
+               g_spine.armed == 0u && g_spine.engines_ready == 0u,
+           "owner B cannot mutate busy owner A");
     expect(ninlil_mfdt_v1_spine_arm_sender(tid, content, sizeof(content)) ==
-               NINLIL_MFDT_V1_ERR_STORAGE,
-           "root OOM arm fail closed");
+               NINLIL_MFDT_V1_ERR_BUSY,
+           "same-owner reentry rejected");
+    g_spine.busy = 0u;
     expect(ninlil_mfdt_v1_spine_outbox_pending() == 0,
-           "root OOM no wire ownership");
+           "reentry creates no wire ownership");
     expect(ninlil_mfdt_v1_spine_outcome_unknown() == 0,
-           "root OOM no invented CU outcome");
+           "reentry invents no CU outcome");
+    expect(ninlil_mfdt_v1_spine_arm_sender(
+               tid, content, sizeof(content)) == NINLIL_MFDT_V1_OK,
+           "owner A arm");
+    expect((ninlil_mfdt_v1_spine_is_armed)(&g_spine_peer, peer_tid) == 1 &&
+               (ninlil_mfdt_v1_spine_is_armed)(&g_spine_peer, tid) == 0,
+           "owner A cannot mutate owner B spine");
     ninlil_mfdt_v1_session_init(
         &session, 1u, NINLIL_MFDT_V1_CAP_REQUIRED);
     expect(ninlil_mfdt_v1_session_bind(
                &session, 2u, 1u, 0x4d464454ull, 1u, local_id,
                peer_id) == 0,
-           "root OOM session bind/apply no crash");
-    ninlil_mfdt_v1_target_zalloc_force_fail(0);
-
-    sp = ninlil_mfdt_v1_spine_ctx();
-    expect(sp != NULL, "root spine restored");
-    if (sp != NULL) {
-        sp->seam = sc;
-        ninlil_mfdt_v1_seam_set_config(&sc);
-    }
-    expect(sp != NULL && sp->armed == 0u && sp->pipe.outbox_valid == 0u,
-           "root OOM left no partial arm");
+           "session mutation has no implicit global apply");
+    expect(g_spine_peer.seam.session_cookie == peer_sc.session_cookie,
+           "session cannot mutate unrelated spine config");
+    ninlil_mfdt_v1_spine_fini(&g_spine_peer);
+    expect(bytes_are_zero(&g_spine_peer, sizeof(g_spine_peer)),
+           "owner B fini zeroizes complete spine");
+    ninlil_mfdt_v1_spine_fini(&g_spine);
+    expect(bytes_are_zero(&g_spine, sizeof(g_spine)),
+           "owner A fini zeroizes complete spine");
 }
 
 int main(void)
 {
     g_fail = 0;
-    test_spine_root_oom_fail_closed();
+    test_spine_owner_isolation_reentry_and_fini();
     test_session_mfn1_negotiation();
     test_full_crash_cu_restart();
     test_delete_group_exact_classification();
@@ -678,7 +757,7 @@ int main(void)
     test_admission_fault_cold_restart_no_recover();
     test_cu_new_not_promoted_arm_fail_orphan_zero();
     test_arm_cleanup_old_outcome_unknown();
-    test_no_post_start_allocation();
+    test_engine_owner_isolation_and_fini();
     if (g_fail) {
         fprintf(stderr, "mfdt_v1_media_cu_test FAILED\n");
         return 1;

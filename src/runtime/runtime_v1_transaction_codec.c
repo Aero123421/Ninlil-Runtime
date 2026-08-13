@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_v1_transaction_codec.h"
 
 #include "domain_store_codec.h"
@@ -815,8 +816,13 @@ static int event_retry_history_valid(
             || transaction->older_retry_last_observed_at_ms != 0u) {
             return 0;
         }
-    } else if (transaction->older_retry_cycle_count > UINT64_MAX - 1u) {
-        return 0;
+    } else {
+        if (transaction->older_retry_cycle_count > UINT64_MAX - 1u
+            || (!id_nonzero(
+                    &transaction->older_retry_last_observed_clock_epoch_id)
+                && transaction->older_retry_last_observed_at_ms != 0u)) {
+            return 0;
+        }
     }
     expected_cycle_id = transaction->older_retry_cycle_count + 1u;
     represented_attempts += transaction->older_retry_attempt_count;
@@ -842,6 +848,8 @@ static int event_retry_history_valid(
             || summary->delivery_possible_any > 1u
             || !reason_valid(summary->last_reason)
             || summary->reserved_zero != 0u
+            || (!id_nonzero(&summary->last_observed_clock_epoch_id)
+                && summary->last_observed_at_ms != 0u)
             || represented_attempts
                 > UINT64_MAX - summary->attempt_count) {
             return 0;
@@ -894,6 +902,25 @@ static int family_retry_history_valid(
             &transaction->older_retry_last_observed_clock_epoch_id)
         && transaction->older_retry_last_observed_at_ms == 0u
         && transaction->cumulative_attempts == transaction->attempt_count;
+}
+
+static int event_root_timer_tuples_valid(
+    const ninlil_rt_transaction_slot_t *transaction)
+{
+    int retry_timer_shape;
+    int send_observation_shape;
+
+    if (transaction->family != NINLIL_FAMILY_EVENT_FACT) {
+        return 1;
+    }
+    retry_timer_shape = transaction->next_retry_ms != 0u
+        ? id_nonzero(&transaction->next_retry_clock_epoch_id)
+        : id_zero(&transaction->next_retry_clock_epoch_id);
+    send_observation_shape = transaction->send_observation_closed != 0u
+        ? id_nonzero(&transaction->send_observed_clock_epoch_id)
+        : transaction->send_observed_at_ms == 0u
+            && id_zero(&transaction->send_observed_clock_epoch_id);
+    return retry_timer_shape && send_observation_shape;
 }
 
 static int header_current(uint16_t abi_version, uint16_t struct_size, size_t size)
@@ -1595,6 +1622,7 @@ static int transaction_valid(const ninlil_rt_transaction_slot_t *transaction)
         || !service_valid(&transaction->service)
         || transaction->service.family != transaction->family
         || !family_semantics_valid(transaction)
+        || !event_root_timer_tuples_valid(transaction)
         || !digest_valid(&transaction->content_digest)
         || !assurance_valid(&transaction->assurance)
         || !application_result_tuple_valid(transaction)

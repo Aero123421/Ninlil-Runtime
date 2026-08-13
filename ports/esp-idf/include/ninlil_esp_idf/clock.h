@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Port-owned ESP-IDF clock factory (M3-basic).
  *

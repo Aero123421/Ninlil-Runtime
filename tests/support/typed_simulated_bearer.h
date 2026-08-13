@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TEST_TYPED_SIMULATED_BEARER_H
 #define NINLIL_TEST_TYPED_SIMULATED_BEARER_H
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TRANSPORT_WIFI_V1_WIFI_ESP_TCP_H
 #define NINLIL_TRANSPORT_WIFI_V1_WIFI_ESP_TCP_H
 

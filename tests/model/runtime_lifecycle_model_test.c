@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_lifecycle_model.h"
 
 #include <stdint.h>
@@ -1039,12 +1040,17 @@ static void preserve_cross_fields(
 
 static int test_rl1_to_rl7_matrix(void)
 {
+#if defined(NINLIL_MFDT_V1_PRIVATE)
+#define TEST_LOGICAL_PAYLOAD_PROFILE_MAX 32768u
+#else
+#define TEST_LOGICAL_PAYLOAD_PROFILE_MAX 1024u
+#endif
     static const uint64_t CONTROLLER_MIN[19] = {
         1u, 1u, 1u, 1u, 1u, 8u, 1u, 1u, 1u, 1u,
         0u, 0u, 1u, 1u, 1u, 1u, 2u, 1u, 1u
     };
     static const uint64_t CONTROLLER_MAX[19] = {
-        16u, 256u, 4u, 1024u, 262144u, 8u, 1u, 8u, 2048u, 32u,
+        16u, 256u, 4u, TEST_LOGICAL_PAYLOAD_PROFILE_MAX, 262144u, 8u, 1u, 8u, 2048u, 32u,
         0u, 0u, 64u, 64u, 64u, 64u, 64u, 64u, 32u
     };
     static const uint64_t ENDPOINT_MIN[19] = {
@@ -1052,7 +1058,7 @@ static int test_rl1_to_rl7_matrix(void)
         0u, 0u, 1u, 1u, 1u, 1u, 2u, 1u, 1u
     };
     static const uint64_t ENDPOINT_MAX[19] = {
-        8u, 32u, 4u, 1024u, 0u, 8u, 1u, 8u, 64u, 32u,
+        8u, 32u, 4u, TEST_LOGICAL_PAYLOAD_PROFILE_MAX, 0u, 8u, 1u, 8u, 64u, 32u,
         32u, 32768u, 64u, 64u, 64u, 64u, 64u, 64u, 32u
     };
     platform_fixture_t fixture = make_platform();
@@ -1107,6 +1113,7 @@ static int test_rl1_to_rl7_matrix(void)
             NINLIL_MODEL_RUNTIME_VALIDATION_LIMIT_LOWER_OR_CONDITIONAL,
             &config, &fixture.platform));
     }
+#undef TEST_LOGICAL_PAYLOAD_PROFILE_MAX
     return 0;
 }
 

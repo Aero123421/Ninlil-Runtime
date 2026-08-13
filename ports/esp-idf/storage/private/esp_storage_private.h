@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_PORT_ESP_STORAGE_PRIVATE_H
 #define NINLIL_PORT_ESP_STORAGE_PRIVATE_H
 

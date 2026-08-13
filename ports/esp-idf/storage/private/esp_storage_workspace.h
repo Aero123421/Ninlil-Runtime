@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Binder-owned PSRAM workspace. Views hold the large value blobs; namespaces
  * do not embed full committed images (directory + media are durable authority).

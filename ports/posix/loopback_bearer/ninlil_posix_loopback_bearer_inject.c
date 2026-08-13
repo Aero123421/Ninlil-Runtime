@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil_posix_loopback_bearer_inject.h"
 
 #include <stdlib.h>

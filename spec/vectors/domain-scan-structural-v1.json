@@ -101,7 +101,7 @@
     "composition": "Independent authority: selected typed_record vectors supply literal key/value hex + expected_status/op/subtype. S3 does not reimplement D1 same-record; oracle composes scan framing expectations from authority status and independent envelope/witness/future derivation.",
     "format": "ninlil-domain-store-v1-d1b3o",
     "path": "spec/vectors/domain-store-v1.json",
-    "sha256": "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4",
+    "sha256": "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502",
     "vector_count": 1549
   },
   "format": "ninlil-domain-scan-structural-v1-d2s3",

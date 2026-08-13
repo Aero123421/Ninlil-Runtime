@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * M4 LAB Join/Attachment handshake state machine.
  */

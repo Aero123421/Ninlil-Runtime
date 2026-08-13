@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "desired_deadline_transition.h"
 
 #include "desired_target_snapshot_internal.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R2 PCP authority host vector families (docs/24 §14.1).
  *

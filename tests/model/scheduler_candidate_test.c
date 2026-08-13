@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "scheduler_candidate.h"
 
 #include <stdint.h>

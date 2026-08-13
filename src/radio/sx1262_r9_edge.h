@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RADIO_SX1262_R9_EDGE_H
 #define NINLIL_RADIO_SX1262_R9_EDGE_H
 

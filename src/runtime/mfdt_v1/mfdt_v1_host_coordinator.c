@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * ADR-0021 exact four-slot Host coordinator.
  */
 #include "mfdt_v1_host_coordinator.h"
@@ -1485,6 +1486,13 @@ static void bind_slot_engine_for_recovery(
     engine->slot_entries_staging =
         arena->f.temporary + MFDT_HOST_XFER_REGION_BYTES +
         MFDT_HOST_OPEN_REGION_BYTES;
+    engine->slot_record_memory_bytes =
+        (uint32_t)sizeof(arena->f.active_record);
+    engine->slot_nrc1_memory_bytes = (uint32_t)sizeof(arena->f.nrc1);
+    engine->slot_xfer_memory_bytes = (uint32_t)MFDT_HOST_XFER_REGION_BYTES;
+    engine->slot_open_staging_bytes = (uint32_t)MFDT_HOST_OPEN_REGION_BYTES;
+    engine->slot_entries_staging_bytes =
+        (uint32_t)MFDT_HOST_ENTRIES_REGION_BYTES;
     engine->host_committed_keys =
         &layout->header.f.committed_keys;
     engine->host_committed_logical_bytes =

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R9 SX1262 + R1 sole-edge host tests (Proposed ADR-0025).
  * Fake-bus only. Not RF HIL.

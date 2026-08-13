@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "domain_store_d3s1.h"
 
 #include "domain_store_body_codec.h"

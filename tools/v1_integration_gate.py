@@ -41,6 +41,12 @@ def strip_c_comments(text: str) -> str:
     return text
 
 
+def strip_cmake_comments(text: str) -> str:
+    """Remove CMake bracket and line comments before structural matching."""
+    text = re.sub(r"#\[(=*)\[.*?\]\1\]", "", text, flags=re.S)
+    return re.sub(r"#[^\r\n]*", "", text)
+
+
 def count_calls(code: str, symbol: str) -> int:
     return len(re.findall(r"\b" + re.escape(symbol) + r"\s*\(", code))
 
@@ -74,12 +80,31 @@ def check_integration_test_absent_bypass() -> None:
 
 
 def check_ctest_registration() -> None:
-    cmake = read(REPO / "cmake" / "ninlil_v1_integration_gate_ctest.cmake")
-    root = read(REPO / "CMakeLists.txt")
+    cmake = strip_cmake_comments(
+        read(REPO / "cmake" / "ninlil_v1_integration_gate_ctest.cmake")
+    )
+    tests = strip_cmake_comments(read(REPO / "cmake" / "ninlil_ctest.cmake"))
     if "v1_integration_gate_e2e" not in cmake:
         fail("missing v1_integration_gate_e2e test registration")
-    if "ninlil_v1_integration_gate_register_tests" not in root:
-        fail("CMakeLists must call ninlil_v1_integration_gate_register_tests")
+    workdir_binding = re.findall(
+        r"set_tests_properties\s*\(\s*v1_integration_gate_e2e\s+PROPERTIES\s+"
+        r"WORKING_DIRECTORY\s+\"\$\{_ninlil_v1_integration_gate_workdir\}\"\s*\)",
+        cmake,
+        re.S,
+    )
+    if len(workdir_binding) != 1:
+        fail("integration E2E must have one exact build-local WORKING_DIRECTORY")
+    if not re.search(
+        r"set\s*\(\s*_ninlil_v1_integration_gate_workdir\s+"
+        r"\"\$\{CMAKE_CURRENT_BINARY_DIR\}/v1-integration-gate-work\"\s*\)",
+        cmake,
+        re.S,
+    ):
+        fail("integration E2E working directory must be build-tree local")
+    if cmake.count('file(MAKE_DIRECTORY "${_ninlil_v1_integration_gate_workdir}")') != 1:
+        fail("integration E2E working directory creation drift")
+    if "ninlil_v1_integration_gate_register_tests" not in tests:
+        fail("test CMake authority must call ninlil_v1_integration_gate_register_tests")
 
 
 def check() -> None:

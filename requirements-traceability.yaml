@@ -94,12 +94,12 @@ requirements:
     tests: [operator_projection_check, operator_projection_negative]
     gap: ""
   - id: NIN-PR1-TRACE-COVERAGE-001
-    title: "Complete normative requirement and invariant coverage"
+    title: "Normative requirement and invariant registration coverage"
     source: docs/07-testing-and-quality.md
     heading: "## Quality model"
     owner: PR1
     profile: FOUNDATION_M1A_TEST
     gate: PR1
     status: verified
-    tests: [traceability_check, traceability_complete_coverage_v2_check, traceability_complete_coverage_v2_self_test]
+    tests: [traceability_check, traceability_registration_coverage_v2_check, traceability_registration_coverage_v2_self_test]
     gap: ""

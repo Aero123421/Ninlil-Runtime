@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R1 ninlil_radio_hal (H1) production implementation.
  * Sole physical TX entry: ninlil_radio_hal_transmit_with_permit.

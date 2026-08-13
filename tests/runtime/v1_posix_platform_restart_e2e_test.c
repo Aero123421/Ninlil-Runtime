@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB unit 3: POSIX LAB platform + runtime full restart E2E.
  * create→run→shutdown→platform restart→re-create cycle with durable storage.

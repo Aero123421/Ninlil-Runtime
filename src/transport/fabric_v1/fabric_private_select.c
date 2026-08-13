@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "fabric_private_select.h"
 
 static int dig_eq(const uint8_t a[32], const uint8_t b[32])

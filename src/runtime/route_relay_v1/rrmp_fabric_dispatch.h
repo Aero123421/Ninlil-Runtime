@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Fabric → RRMP select-path dispatch (compile-time seam).
- * Fabric remains independently buildable: when RRMP is OFF, fabric uses the
- * stub in fabric_rrmp_select_hook.h. When ON, this strong implementation
- * records the selected path and may service one custody queue item.
+ * Runtime-owned adapter for Fabric's opaque path-selected callback.
+ * Fabric never imports this header or any RRMP type.
  *
  * No product vocabulary. Private candidate only.
  */
@@ -36,6 +35,15 @@ ninlil_route_status_u32 ninlil_rrmp_fabric_on_path_selected(
     ninlil_rrmp_owner_t *owner,
     const ninlil_rrmp_fabric_select_view_t *view,
     ninlil_route_result_v1_t *out_opt);
+
+/* Exact callback shape declared privately by fabric_private_api.h. */
+void ninlil_rrmp_fabric_path_selected_hook_v1(
+    void *user,
+    const uint8_t selected_instance_id[16],
+    uint32_t has_selection,
+    uint32_t requires_custody,
+    uint64_t path_selection_epoch,
+    uint64_t now_ms);
 
 /* Read last fabric path pin (test/diagnostic). */
 int ninlil_rrmp_fabric_last_path(

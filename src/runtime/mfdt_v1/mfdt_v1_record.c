@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Durable NM3S/NM3R record pack/unpack (ADR-0021 308-byte header + body + CRC).
  */
 #include "mfdt_v1.h"

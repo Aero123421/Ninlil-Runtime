@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_STAGE5_EMPTY_METADATA_H
 #define NINLIL_STAGE5_EMPTY_METADATA_H
 

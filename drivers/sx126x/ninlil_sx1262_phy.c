@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R9 SX1262 physical TX/RX (Proposed ADR-0025).
  * Portable C11. No heap/VLA. ESP types forbidden.

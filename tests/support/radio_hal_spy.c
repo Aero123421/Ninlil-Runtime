@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "radio_hal_spy.h"
 
 #include <string.h>

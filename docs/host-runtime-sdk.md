@@ -169,11 +169,11 @@ Packet-link provider実装チェックリスト:
 分割することは将来のpackage granularity設計であり、現行packageの保証では
 ありません。OpenSSLやSQLite本体はNinlilのinstall treeへ同梱しません。
 
-Runtime archiveのsource authorityには、host simulationで利用する一部の
-C4/C5/C6内部software-path実装も含まれます。ただし、C4/C5/C6を独立した
-public module、物理USB/RF実装、またはproduction-ready bearerとしてexportする
-ものではありません。個別private target / headerは非exportで、物理HILも未完了
-です。
+Runtime archiveは専用の明示source authorityから生成し、LAB、simulator、
+`pcp_lab_session_ledger`、SX1262 physical edge、default-OFF private candidateを
+含めません。これらは必要に応じて非installの`ninlil_runtime_private`または個別の
+opt-in targetでだけbuildします。Composition v1は公開Fabric targetが有効な場合に
+限り、Acceptedな公開SDK実装としてRuntimeへ追加されます。
 
 ## 5. Package verification
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "platform_availability_logic.h"
 
 ninlil_esp_idf_provider_lab_status_t ninlil_esp_idf_provider_catalog_status(

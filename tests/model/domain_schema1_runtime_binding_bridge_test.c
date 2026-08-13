@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Independent C KAT bridge for Domain schema1 T1a snapshot digests/transcripts.
  * Does not import Python generator/gate. Rebuilds bootstrap via production APIs

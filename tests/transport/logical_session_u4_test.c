@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * U4 scenario bridge: drives production logical_session from generated fixture.
  * Every action checks exact status, snapshot fields, counter abs/delta, TX summary.

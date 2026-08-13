@@ -1,0 +1,414 @@
+Project Review · 2026-08-11
+Ninlil Runtime 徹底レビュー
+思想・UX・OSS完成度・整合性・設計完成度・検証機構・セキュリティの7軸を、5名の独立レビュアーで並行監査。全ての指摘は実ファイル・実行結果に照合済み。
+
+対象 9cc907f
+規模 C/H 529,016行 · テスト 253,878行 · ツール 255,789行
+実行 configure + build + ctest 431件 完走
+総括
+このプロジェクトは、「過大主張していないことを証明する」ための装置を異常な精度で作り込み、そのほぼ全てを監査人に向けて配置している。一方で、ソフトウェアが実際に正しいか・使えるかを決める事柄は、ほとんど計測されていない。
+
+言い換えると、「これは誇張ではないと証明できますか？」という問いには、私が見た組込みプロジェクトの中でも上位に入る厳密さで答えられる。「これで何が作れて、どう始めますか？」という問いには、ほぼ何も答えていない。
+
+そしてこの非対称性は、工学の問題ではなくドキュメント・パッケージング・設定の問題です。7つの致命的な障壁は全て、数週間の作業で解消できる範囲にあります。
+
+0
+untrusted入力から到達可能な
+メモリ安全性欠陥
+0
+ビルド警告
+（-Wall -Wextra -Werror）
+0
+リンク切れ
+（md 260ファイル）
+0
+ファジング
+ハーネス
+0
+カバレッジ計測
+・静的解析
+0
+著作権者の記載
+（799ファイル中）
+27,736
+削除してもgateが
+greenのままのassertion
+13
+READMEクイックスタートの
+失敗テスト（40分後）
+最重要の7指摘
+いずれも実験・再現・根本原因特定まで完了しています。CORROBORATED は独立した2名以上のレビュアーが個別に到達した指摘です。
+
+Critical
+「Coverage V2」gate は、assertion を全削除してもgreenのまま
+プロジェクトが完成度の根拠として掲げる中心的成果物が、検証の強度ではなく登録簿の整合性しか測っていません。tools/traceability_complete_coverage_gate.py が行うのは「テスト名がCTestに登録され、DISABLEDでないこと」「anchor文字列がテストソース中にちょうど1回現れること」「doc の sha256 が一致すること」だけで、テストを一度も実行せず、結果も読みません。
+
+実験: 156ファイルの REQUIRE( / CHECK( / FABRIC_REQUIRE( / QCHECK( を GUTTED*( に置換
+      gutted assertion lines: 27736 across 156 files
+
+$ python3 tools/traceability_complete_coverage_gate.py --check --root $SCRATCH/fakeroot
+traceability complete coverage V2 ok: sources=3 headings=256 requirements=40
+vectors=303 invariants=14 subclaims=21 test_links=807 profiles=baseline
+assertion を抜いたテストは ctest でも 0 を返すため、このリポジトリの全 assertion が削除されても、それを検出する自動機構は存在しません。gate 自体は「引用されたテストを黙って消す」失敗モードを正しく防いでおり無価値ではありませんが、名前が振る舞いを追い越しています。
+
+修正: ① 名前を traceability_registration_gate 等の実態に合うものへ改称し、README と manifest に「linkage と登録の検証であり assertion 強度ではない」と明記 ② ctest --output-junit を食わせ、引用テストが合格したことを要求 ③ anchor を関数シグネチャから assertion を含む領域へ強化（この変更だけで上記実験は RED になる）
+Critical
+README の 5分クイックスタートが動かない
+README.md:150-155 をそのまま実行すると、40分09秒待たされた末に 427件中13件が失敗します（Ubuntu 24.04 / GCC 13.3.0 で再現、CTEST_EXIT=8）。しかも失敗は4つの無関係な原因にまたがり、切り分けの手掛かりは一切与えられません。
+
+最も重いのは #5〜#9 の5件です。これは host_runtime_tests_off_installed_consumer{,_sqlite,_domain_on} / fabric_v1_tests_off_installed_consumer / posix_tls_v1_tests_off_installed_runtime_e2e — すなわちREADME が「linkしてください」と案内する全公開ターゲット（README.md:206-210）の、installed-package 検証そのものです。クイックスタートは単に失敗するのではなく、「installしろと言われたものが本当に動くか」という一点で失敗します。連鎖は特定済みです。
+
+CMakeLists.txt:1365            -DNINLIL_SMOKE_ENABLE_SANITIZERS=${NINLIL_ENABLE_SANITIZERS}
+  ↓ 入れ子ビルドへ伝播
+installed_host_runtime_tests_off_smoke.cmake:184-191
+  → Release + ASan/UBSan + -Werror を強制
+  ↓ 既定コンパイラ = GCC
+string_fortified.h:29  error: '__builtin_memcpy' ... [-Werror=array-bounds=]
+pcp_authority.c:2135,2151,2154  error: [-Werror=stringop-overflow=]
+CI が検出できない理由は明快です。.github/workflows/ci.yml:873-899 の唯一のサニタイザージョブは clang 固定で、GCC × サニタイザーを走らせるジョブが存在しません — READMEが全新規ユーザーに指示している、まさにその構成です。しかも README.md:278 と CONTRIBUTING.md:46 は正しく CC=clang を前置しており、5分クイックスタートだけが抜けています。
+
+残る8件の内訳は下表のとおりで、うち4件は「テストがリポジトリ自身へ書き込む」問題（後述）、2件は未宣言のサニタイザーランタイム依存、2件はビルドパス長依存です。どれがプロジェクトの落ち度かは初見の利用者には判別不能で、分かるのは「正面玄関が開かない」ことだけです。
+
+区分	テスト	件数	原因	実欠陥か
+A	5, 6, 7, 8, 9	5	入れ子 Release+ASan+-Werror が GCC で破綻	はい
+C	57, 58, 59, 60	4	gate 自己テストが tools/ へ変異 .c を実書き込み	はい
+B	268, 269	2	clang の compiler-rt 不在（未宣言の前提条件）	一部
+D	324, 325	2	getcwd() 由来のソケットパスが sun_path 108B 超過	軽微
+修正: クイックスタートから -DNINLIL_ENABLE_SANITIZERS=ON を削除（実質1行）。初回スモークがサニタイザービルドである必要はありません。加えて GCC×サニタイザーのCIジョブを追加するか、当該オプションを Clang 限定として FATAL_ERROR で明示。-DNINLIL_ENABLE_SANITIZERS=ON が clang の compiler-rt（Ubuntu では libclang-rt-18-dev）を要求することも前提条件へ明記が必要です — clang が PATH にあるだけでは足りません。
+Critical
+ファジングが皆無 — かつ Charter 自身の品質基準に違反
+LLVMFuzzerTestOneInput / libFuzzer / AFL / OSS-Fuzz がリポジトリ全体で0件。中核リスクが「無線リンクから来る untrusted フレームの復号」であるスタックとしては、これが最大の欠落です。対象は nfl1_codec.c、r7_frag_wire.c(1,435行)、rrmp_codec.c、r7_wire_codec.c、n6_record_codec.c、domain_store_body_codec.c(12,173行)。
+
+そしてこれは、プロジェクト自身が定めた基準の未達です。docs/00-project-charter.md:101「unit test だけでなく、golden vector、property test、fuzz、simulator、HIL、RF soak を用意する」。
+
+部分的な緩和は存在し、評価に値します。n6_record_codec_test.c:1174 の test_value_crc_all_bits は対象ワイヤ領域の全ビットを反転し、拒否されることに加えて出力構造体が呼び出し前とバイト単位で同一（部分書き込みなし）であることまで検証しています。ただしこの網羅ビットスイープは主要6パーサ中2つのみで、そもそもビット反転は長さ・構造の空間を一切探索しません。
+
+修正: デコーダは既に (bytes, len, out, out_status) 形をしているため、ハーネスは各20行程度。シードコーパスは spec/vectors の既存有効フレームから生成でき、ブートストラップの最も高価な部分が既に完了しています。CIで各5分実行し、クラッシュ入力を回帰ベクタとして凍結カタログへ投入すれば、既存の凍結規律にそのまま乗ります。
+High
+Corroborated
+ABIドリフト gate が、実際に出荷するターゲットで無効
+セキュリティ担当とビルド担当が独立に同一の結論へ到達しました。cmake/abi_manifest_golden.cmake:27-30 は golden 不在時に return()、すなわち PASS を返します。
+
+if(NOT EXISTS "${GOLDEN}")
+    message(STATUS "abi manifest golden skipped: no golden for target ${TARGET_ID}")
+    return()          # ← これは PASS
+endif()
+
+存在する golden:  tests/abi/golden/LP64-le-64.manifest  （1件のみ）
+ESP32-S3 の target.id:  ILP32-le-32                     （golden なし = 無条件PASS）
+ABIドリフトを検出する唯一の機構が、組込み本番ターゲット上で不活性です。関連して、公開ヘッダ10本のうち byte_stream.h（完全定義structを公開）と posix_usb_serial_v1.h が drift gate の対象リストに存在せず、この2本の公開structだけ NINLIL_STRUCT_HEADER を持たないためバージョニング自体が不可能です。
+
+同種の問題が3件あります。mfdt_v1_esp_dram_budget_gate.py はCIで self-test と dry-run しか走らず、実mapに対する check --map を一度も実行しません（実mapはCIで生成済みなのに）。r7_frag_esp_dram_budget_gate.py（142行）はどこからも参照されていません。
+
+修正: golden 不在を FATAL_ERROR に反転し、明示的な -DNINLIL_ABI_GOLDEN_ALLOW_MISSING=ON でのみ許可。ESP-IDFコンテナ内で ILP32-le-32.manifest を生成・コミット。2本のヘッダを drift リストへ追加。
+High
+Node.js が未宣言・未固定の必須依存 — configure 自体が失敗する
+CMakeLists.txt:2058 の find_program(NINLIL_NODE_EXECUTABLE NAMES node nodejs REQUIRED) は if(NINLIL_BUILD_TESTS) 直下にあり、テストはトップレベルで既定ONです。
+
+$ cmake -S . -B build "-DCMAKE_IGNORE_PATH=/usr/local/bin;/usr/bin;/bin"
+CMake Error at CMakeLists.txt:2058 (find_program):
+  Could not find NINLIL_NODE_EXECUTABLE using the following names: node, nodejs
+CONFIGURE_EXIT=1
+しかし Node は README:146 / README:280 / CONTRIBUTING:31 の前提条件リストのいずれにも無く、setup-node を使うCIジョブも無く、dependency-inventory.json にも SBOM にも不在です。GitHub Runner にプリインストールされているという偶然だけで動いています。
+
+供給網の観点ではさらに重要です。OpenSSL 3.5.7（アーカイブSHA + peeled commit + configure引数 + 共有ライブラリ不在まで検証）、PyYAML（ツリーSHA-256を再計算して照合）、ESP-IDFコンテナ（digest固定）、actionlint / ShellCheck / CMake 3.20.6 / Syft（チェックサム固定）— この完全に固定された供給網の中で、7本の .mjs 権威gate を動かす Node だけが唯一の未固定リンクです。
+
+修正: ① README/CONTRIBUTING の前提条件に Node ≥ 18 を追加 ② 素の REQUIRED を、対処法を含む明示的 FATAL_ERROR へ ③ バージョン固定した actions/setup-node をCIへ追加 ④ dependency-inventory.json と THIRD-PARTY-NOTICES に host_tooling として記載
+High
+著作権者がどこにも記載されていない — インバウンド／アウトバウンド両方のライセンス機構が不在
+検査項目	結果
+LICENSE:190	Copyright [yyyy] [name of copyright owner] ← 未記入テンプレート
+NOTICE	著作権行なし
+C/Hファイル中の Copyright	0 / 799
+SPDX ヘッダ	58 / 799 (7.3%)
+公開ヘッダ include/ninlil/ の SPDX	0 / 10
+DCO / CLA	該当記述なし（CONTRIBUTING・GOVERNANCE・.github 全て）
+結果として、Apache-2.0 の §4(c) 帰属機構に帰属させる対象が存在せず、外部貢献を受け入れる法的経路もありません。外部貢献に対する最も具体的な障壁です。
+
+これは意図的な判断ではあります — docs/00-project-charter.md:118「Copyright ownerやyearは、確認できない情報を推測して追加しません」。ただしリポジトリオーナーは特定可能であり、これは「確認できない情報の推測」には当たりません。
+
+修正: NOTICE に著作権行を1行追加。799ファイルへの SPDX 付与は機械的作業で、58ファイルに既存パターンがあり、強制する gate 基盤も既にあります。DCO は1段落と GitHub App 1つ。
+High
+出荷中の公開パッケージ3件が、完成判定の正本に存在しない
+README は compatibility-matrix.json を完成判定の machine-readable 正本と宣言し（README.md:16, 304）、リリース手順もこれを gate します。しかし README の15行に対しmatrixは12 feature しかなく、差分3件は全て実際に install される公開CMakeターゲットです。
+
+README行	出荷物	matrix
+POSIX TCP/TLS reference (:77)	Ninlil::posix_tls_v1 — CMakeLists.txt:620	不在
+POSIX USB serial reference (:78)	Ninlil::posix_usb_serial_v1 — :1144	不在
+V1 composition (:84)	composition_v1.h（ADR-0032 Accepted）	不在
+この3件は RELEASE_SUPPORTED への昇格を、gate の対象外であるという理由だけで素通りできます。加えて matrix 側では fabric-bearer-nfl1-path-registry など3件に state_ceiling: SPEC_ACCEPTED が設定されており、README がそれらを「experimental public package」「target build合格」と記述している内容と天井が矛盾しています。
+
+修正: 3 feature を depends_on 込みで matrix へ追加。その上で README の表を matrix から生成すれば、この種のドリフトは構造的に発生しなくなります。
+思想と方針
+中核テーゼは明確で、差別化されており、そしてABIまで生き残っています — これは稀です。
+
+README.md:3「『送信した』ではなく届いた・保存された・適用されたを分けて追跡する」。これはマーケティング文ではなく、構造的に強制されています。docs/15-glossary.md:14-23 は Submission → Admission → Transaction → Target → Attempt → Observation → Delivery Disposition → Receipt → Outcome → Late evidence の10段梯子を定義し、各行に「まだ意味しないこと」列を持ちます。:98 は混同を名指しで禁じます（「ADMITTED を『届いた』、radio TX を『反映済み』と表現してはいけません」）。そして include/ninlil/runtime.h:133-197 の14関数がそのモデルと正確に対応します。
+
+Critical
+存在理由を一度も説明していない
+260個のmdファイル全体で、MQTT-SN / LoRaWAN / CoAP / OSCORE / Zenoh / DDS への実質的な言及が0件です（唯一の該当は docs/00:57-68 の非目標で LoRaWAN を「全面代替しない」と否定する形）。
+
+READMEに到達した読者は即座に「これは MQTT-SN の QoS 2 では？ LoRaWAN confirmed uplink + アプリACKでは？」と考えます。プロジェクトには強い答えが用意されているのに、一度も提示していません — MQTT-SN/LoRaWAN のACKが確認するのはトランスポートであって耐久保存でもアプリ適用でもないこと、CoAP/OSCORE には耐久トランザクション台帳も受付時容量検査も運用者向け「なぜ届かないか」モデルも無いこと、いずれもTX端に法規ハードgateを持たないこと、いずれも期限達成不能を送信前に受付拒否しないこと。
+
+修正: README に15行程度の「Why not X?」表。リポジトリ全体で最もレバレッジの高いドキュメント変更であり、「またIoTプロトコルが1つ」を「自分の問題を解くもの」へ変えます。
+Charter に対する自己整合性
+このプロジェクトは自らの品質基準を明文化しているため、最も公正で有用な批評はプロジェクト自身の基準に照らすことです。
+
+Charter の規定	実測	判定
+00:101 golden vector、property test、fuzz、simulator、HIL、RF soak を用意する	fuzz 0件	未達
+00:102 README、concept、tutorial、how-to、reference、explanation を分ける	番号付き仕様章 + ADR + 作業記録	未達
+00:104 generic example を product-specific より先に説明する	example は全て v1_lab 系	未達
+00:110 public alpha までに normative 文書の英語版を正本として整備	prerelease 公開済み・英語文書0	未達
+00:112 normative source と translation status を各文書に明記	2 / 47	未達
+34:45 SPEC_ACCEPTED 後にだけ実装へ進む	Proposed ADR 9件中7件に実装あり	未達
+00:98 Public API と内部実装を分離する	公開アーカイブに LAB/simulator 混入	未達
+00:105 実測していない performance や compliance を宣伝しない	機械強制 gate まで実装	達成
+00:103 再現可能な build と dependency lock	Node のみ未固定、他は完全固定	ほぼ達成
+ADR-0035 の位置づけが象徴的です。README は Proposed と記載しつつ「private codec・mapping・packet-link・exact airtime gateまで実装されています」と続けます。ただしこれは規律の失敗ではなく分類の失敗だと考えます。既定OFF・非install・feature-gated の試作で仕様を凍結前に検証するのは正しい工学です。docs/34 の梯子に、その状態を表す段が無いだけです。
+
+推奨: 梯子に1段（SPEC_DRAFT_PROTOTYPED）を追加するか、PROPOSED の定義に「既定OFF・非install・feature-gated 実装を明示的に許可する」と追記する。これだけで7件のADRが「文書化された規則違反」から「準拠」に変わり、正直なラベルが壊れた規則に見えなくなります。
+
+開発者UX
+Critical
+READMEの第2セクションが、39行途切れないジャーゴンの壁
+README.md:24-62 は39行連続・空行0・小見出し0・箇条書き0・2,257文字・22文（平均102文字/文）の単一段落で、内部コードネームを16種類使用します（NRA1, NVB1, NLB1, NCG1, NFL1, NRW1, N6, R7, R9, MFDT, SX1262, DRBG, COMMIT_UNKNOWN, M4, M5, M1a）。
+
+3行目のテーゼ文は約8秒で価値を伝えます。7〜116行がそれを取り消します。初見の訪問者は「何をするものか」「使えるか」「どう始めるか」のいずれにも答えられません。
+
+進捗表も同様で、15行のうち「次の必須gate」セルは最大1,089文字（:85）。:114 の検証区分セルは591文字。1,089文字のテーブルセルは GitHub 上で折り返し不能な横方向の染みとしてレンダリングされます — これは表ではなく、表構文で書かれた散文です。
+
+Critical
+C SDK なのに、READMEにCコードが1行も無い
+README のfenced block 6個（:120, 150, 167, 198, 204, 230）は ASCII図1・bash 4・cmake 1。```c ブロックは0。ninlil_submit() は散文中で4回言及されるだけで、一度も提示されません。
+
+「現行SDKの詳細」として案内される docs/host-runtime-sdk.md（README.md:194）も、14個のfenced blockが全て bash/cmake で Cコード0。
+
+一方で実際のAPIは小さく、清潔で、即座にプロジェクトを売り込めます — include/ninlil/runtime.h は全205行・公開14関数です。
+
+修正: テーゼ文直後に25行程度のCブロック（service登録 → submit → step → Receipt → 再起動 → query）。このリポジトリに追加できる25行として最も価値が高い。
+公開ヘッダの記述密度
+SDK利用者が最初に開くヘッダに、所有権・生存期間・スレッド親和性の記述がありません。
+
+ヘッダ	行数	コメント行	評価
+byte_stream.h	332	160	参照実装級（リンク状態機械・単一所有者契約・LINK_DOWN後の排出規則まで）
+fabric_v1.h	418	69	優秀（packet-link provider契約・exactly-once release・借用期間）
+version.h	325	7	—
+posix_usb_serial_v1.h	99	12	—
+posix_tls_v1.h	181	8	—
+composition_v1.h	79	6	—
+platform.h	387	0	—
+transaction.h	238	0	—
+runtime.h	205	0	SDKの主ヘッダ
+service.h	104	0	—
+アプリケーションが実際に使う中核4本、計934行にコメントが1文字もありません。利用者はヘッダだけからは次を判断できません:
+
+ninlil_runtime_create は *config をコピーするのか、呼び出し側が生存させるのか（コピーします — どこにも書かれていません）
+ninlil_platform_ops_t とその指す先は Runtime より長生きすべきか（そうです — fabric_v1.h:336-340 は Fabric について明記、platform.h:371-381 は無言）
+ninlil_capacity_snapshot_t.entries の所有者と必要サイズ（NINLIL_MODEL_RESOURCE_KIND_COUNT 以上。この定数は公開ヘッダに存在しません）
+どのスレッドから何を呼べるか（Runtime は runtime_public.c:287-307 で単一所有コンテキストを実行時強制し NINLIL_E_WRONG_THREAD を返しますが、runtime.h は一言も触れません）
+byte_stream.h と fabric_v1.h がこれを完璧にやっているため、これは能力ではなく一貫性の問題です。
+
+その他のUX障壁
+「5分quickstart」は5分ではない。 8コアでビルドのみ2分29秒、テスト #5〜#8 が各々完全な入れ子 configure+build+install（104秒・141秒・182秒）を行うため、正常完走でも30分超
+日本語のみ。 47文書中46が日本語、英語READMEなし。ただし README は既にLatin文字が85%（CJK 3,168 / 全20,354文字）で、実質は英語技術語彙を日本語助詞で繋いだ文書。英語版追加は翻訳プロジェクトではなく小さな差分です
+README が作らせるディレクトリのうち3つが .gitignore 未登録 — tmp-controller / tmp-install / tmp-all-private。手順に従うと git status が汚れます
+21個のビルドオプション中11個がREADMEに不在、NINLIL_ENABLE_TSAN と NINLIL_WIFI_OPENSSL_AUTHORITY_ROOT は docs/ にも無し。ビルドオプション一覧文書自体が存在しません
+examples が3,504行に対しdocsが約70,000行（1:20）。 主力2例の controller_submit.c は25行、leak_measurement.c は37行
+設計の完成度
+src/model/ はレイヤ違反ゼロ・プラットフォーム結合ゼロ・アプリ語彙ゼロで、include閉包が {ninlil/*.h, src/model/*.h, 標準ヘッダ} のみ。境界が明示されていればチームが線を守れることを証明しています。エラーモデル（単一 ninlil_status_t + 境界での網羅的switch変換 + 13箇所で一貫した順序付き入口検証 + reserved_zero を71箇所で実強制）とメモリ規律（呼び出し側workspace + _Static_assert 領域予算 + ヒープは3サブシステムのみ + VLAゼロ）は本番グレードです。
+
+High
+レイヤリングを強制する仕組みだけが存在しない
+docs/01-architecture.md:280 は「portable Core はdirectory名に関係なく ESP-IDF、TinyUSB、termios、RadioLib、SX1262、SQLite を直接参照しない」と規定します。実態:
+
+rrmp_core.c:18              #include "esp_heap_caps.h"
+mfdt_v1_target_alloc.c:11   #include "esp_heap_caps.h"
+rrmp_util.c:10-19           OpenSSL / mbedTLS を ESP_PLATFORM マクロで分岐
+composition_v1.c:4          #include "fabric_private_api.h"   (runtime → transport)
+fabric_rrmp_select_hook.h:28 → rrmp_fabric_dispatch.h         (transport → runtime)
+                                                    ↑ 循環依存が閉じる
+sx1262_r9_edge.h:20         #include "ninlil_sx1262_phy.h"    (core → drivers)
+根本原因はビルド構成です。CMakeLists.txt:1083-1092 は model + runtime + transport + fabric_v1 + radio + drivers/sx126x をフラットなinclude pathで1アーカイブにコンパイルします。レイヤ毎のCMakeターゲットが無いため、違反する境界自体が存在しません。
+
+そして決定的なのは次です。このプロジェクトは148本のツールを持ち、うち96本が *gate*、126本がCMake/CIに結線されています。 ESP private symbol、MFDT install境界、byte-stream include閉包、protocol magic の出現回数、スタックフレームサイズ、ABIドリフト、トレーサビリティ — 全てにgateがあります。レイヤ方向のgateだけがありません。 96本の強制スクリプトが向けられているプロジェクトで、唯一チェックされていないアーキテクチャ不変条件が、唯一浸食されている不変条件です。
+
+修正（本レポート中で最も費用対効果が高い）: tools/layering_gate.py 約60行 — src/** の #include "…" を宣言済みレイヤマップに照合し、上向き辺とプラットフォームSDK辺で失敗。意図的なseamは明示allowlist。まずgateを入れてから、レイヤを実CMakeターゲット化すれば安全に refactor できます。
+High
+Corroborated
+プロセスグローバル可変状態が、公開APIのインスタンス毎モデルと矛盾
+アーキテクチャ担当とセキュリティ担当が独立に指摘。公開APIは ninlil_runtime_t * / ninlil_fabric_v1_t * という毎インスタンスハンドルを配り、workspace_required → create(workspace) という形で複数インスタンスを示唆します。しかし:
+
+mfdt_v1_engine.c:83-84      g_mfdt_record_scratch[] / g_mfdt_nrc1_scratch[]
+                              slot_layout == 0 の全インスタンスで共有
+mfdt_v1_spine.c:18-19       g_spine_storage / g_spine_preallocated （プロセス唯一）
+mfdt_v1_runtime_seam.c:29-37 g_seam_a / g_seam_b + 非アトミックな uint8_t g_seam_busy
+r7_frag_issue_coordinator.c:21-22  g_slots[] + g_in_api
+r7_frag_checked_issue.c:19-20     グローバルレジストリ + g_r5_in_api
+rrmp_core.c:3079-3082       s_rrmp_storage_export / s_rrmp_storage_piece
+プロジェクト自身がテストしている「1プロセス2 Runtime」構成がまさに該当します（rrmp_fabric_two_instance_isolation_test.c が存在することが、隔離が要件だと認識されている証拠です）。g_in_api / g_seam_busy は素の uint8_t による再入ガードで、毎Runtimeガードを所有コンテキスト検査抜きで模倣しています。slot_layout != 0 経路が毎インスタンス格納の実現可能性を既に証明しています。
+
+High
+bounded-step 保証が、7箇所で手動クリアされるフラグに依存
+runtime_public.c:2293 が runtime->in_step = 1u を設定し、:2300, 2320, 2330, 2344, 2361, 2395, 2413 の7箇所で個別にクリアされます。goto out も単一出口もスコープガードもありません。
+
+現状は正しく釣り合っています（7箇所全て検証済み）。しかし失敗モードが深刻かつ静かです — 将来の早期returnが1つクリアを忘れると in_step が永久に1のままになり、その Runtime への以降の全公開API呼び出しが恒久的に NINLIL_E_REENTRANT を返します。診断は出ず、原因となった差分からは不可視です。SDKの中心的実行契約が、コンパイラによる強制がゼロの手動不変条件に載っています。
+
+修正: status = runtime_step_inner(...) に7つのreturnを移し、設定とクリアを1組にする。2行で不変条件が構造的になります。
+その他の設計指摘（8件）
+評価
+7,685行の CMakeLists は「ビルドの怪物」ではなく「テスト登録の怪物」
+実測: 6,425行 / 7,685行（83.6%）が単一の if(NINLIL_BUILD_TESTS) ブロックの中にあり、その中に add_executable 157個、add_test 372個、同一4行プロパティブロックの逐語コピー150個。最大ネスト深度は7だが深度5以上はわずか14行 — つまり読みにくいのではなく、20倍長すぎるだけです。
+
+方針コード（1〜1,260行）は良質で、ほぼ全ての非自明な判断に ADR や docs 章を引用した根拠コメントが付いています。正しい抽象化（ninlil_add_rrmp_test()）も既に存在し、157個中7個で使われています。
+
+修正: ブロック全体を add_subdirectory(tests) に置換し、既存のディレクトリ境界で分割。消費する変数は全て1,261行より前で設定済みのため機械的な移動です。汎用ヘルパの導入で保守的に見積もって約1,800行削減。
+検証機構は本物か
+これがこのプロジェクトのアイデンティティそのものであるため、最も重要な問いです。3つの方法で壊しにかかり、2つで持ち堪えました。
+
+検証済
+ベクタは真に凍結されている — 最も懸念された失敗モードは存在しない
+完全な configure + build（838 ninjaエッジ）+ 427テストの ctest 完走後:
+
+$ git status --porcelain | wc -l
+0
+46MBの spec/vectors/ と3本の .gen.h を含め、ソースツリーはバイト単位で無変更です。全 add_custom_command OUTPUT が ${CMAKE_CURRENT_BINARY_DIR} を指し、ソースツリーへ解決される出力パスは1つもありません。鮮度gateは比較のみで書き込みません — airtime_r3_gate.py:204-251 は独立tempディレクトリでオラクルを2回走らせ、run1 == run2（決定性）かつ run1 == コミット済みバイト列（鮮度）を要求します。「バグが自らの期待値を静かに更新する」失敗モードは、ここには存在しません。
+
+検証済
+オラクル独立性は階層化されており、共謀変異を実際に捕捉した
+Tier 1（真の外部権威）: r7_crypto_vectors.json は NIST FIPS 180-4 ×3、RFC 5869 ×2、NIST SP 800-38D ×4 を出典とし、独立に再計算して全一致を確認（SHA256 3件、HKDF PRK/OKM 2組、GCM タグ 58e2fcce…）。さらに r7_radio_wire_oracle.py はAES-128 と AES-128-GCM を Python でゼロから実装（C側は OpenSSL 3 / mbedTLS）— 外部KATに対する2実装の真の差分テストです。
+
+決定的な実験 — オラクルとCを同一に共謀変異させる:
+
+C側のみ変異 3種:
+  explicit-header bonus 20→8              → 捕捉 (rc=5)
+  SF5/6 が DE を分母に誤適用              → 捕捉 (rc=6)
+  ceil off-by-one (+den-1 → +den)         → 捕捉 (rc=11)
+
+オラクルとCを同一変異させ、ベクタを再生成:
+$ python3 tools/airtime_r3_oracle.py self-check
+hv_sf7_p0 fail Result(airtime_ms_ceil=26) exp_ms=21        → 捕捉
+アンカーは high_value_ms_vectors() — アルゴリズムからではなく LoRa データシートから導いた手検算の定数表（21, 26, 31, 17, 34, 578, 660 ms）です。hv_sf7_p0 を Semtech 式で手計算し 20.736 ms → ceil 21 ms を確認しました。
+
+High
+Tier 3 — 最大のオラクルには独立アンカーが無い
+tools/domain_store_vector_gen.py（11,200行）は、12,173行の domain_store_body_codec.c を支える 2.8MB / 1,549ベクタのカタログの唯一のオラクルですが、self-test も外部KAT も手検算定数表も持ちません。その check の意味は「オラクルがファイルを再現する」だけです。
+
+実際に守っているのは不変性の連鎖で、これは本物です。domain_scan_crossrow_d3s4_vector_gen.py:7251-7265 の SHA-256 ピンが生きていることを実測確認しました（b809c223…92b4 一致、vector_count 1549 一致）。domain-scan-crossrow-v1.json はさらに18段の append-only prefix freeze を各々の content_sha256 付きで持ちます。
+
+しかし不変性の連鎖が証明するのは「凍結後に何も変わっていない」であって、「凍結したものが正しかった」ではありません。 airtime と crypto には外部アンカーがあります。最大かつ最も安全性に関わる domain-store には、ありません。
+
+修正: airtime のパターンを移植 — docs/17 から手で導いた符号化済みボディ十数件の定数表（エンコーダ関数とは独立）＋ RED変異スイート。手検算KAT 10件でこのモジュールの証拠的地位が Tier 3 から Tier 2 へ変わります。
+High
+構造的な盲点 — 「どれだけ検証したか」だけが検証されていない
+gcov / lcov / llvm-cov / --coverage / -fprofile がリポジトリ全体で0件。clang-tidy / CodeQL / cppcheck / scan-build も0件（compile_commands.json はCIで既に生成済みなのに）。ミューテーションテストによるテスト強度測定もありません。
+
+結果として、プロジェクトは自分自身に対してすら「どの行が実行されるか」「どの分岐が一度も走らないか」「コードを壊したときそのテストは本当に落ちるか」を答えられません。構造的推定では、エクスポート済み ninlil_* シンボル2,135個中、テストから参照されるのは1,537個（71%）。
+
+モジュール	行数	参照シンボル
+runtime_v1_bearer_wire.c	4,334	1 / 10 (10%)
+runtime_v1_spine_durable.c	3,889	2 / 11 (18%)
+runtime_v1_delivery_durable.c	3,804	6 / 18 (33%)
+domain_schema1_kind1_register.c	2,056	0 / 6
+wifi_tls_host.c	931	1 / 13 (7%)
+上位4モジュールは公開API経由で間接的に網羅されますが、その4つのテストはまさに NINLIL_ENABLE_DOMAIN_SCHEMA1_RUNTIME_BINDING=ON 構成で DISABLED にされるものです（CMakeLists.txt:7639-7666）。すなわちその構成では約13,100行の耐久状態ロジックが実質無検証になり、gcovが無いため誰にも見えません。
+
+皮肉なことに、airtime モジュールの gate は run_self_test で本番Cソースを変異させてREDを要求します。この規律が約200モジュール中1つに存在します。
+
+修正: 非gatingの NINLIL_ENABLE_COVERAGE ジョブを1つ追加し、モジュール別 llvm-cov サマリを公開。閾値より地図に価値があります。CodeQL for C は公開リポジトリでは無料、約15行のワークフローです。
+High
+Corroborated
+テストがリポジトリ自身へ書き込み、並行実行で競合する
+2名が独立に到達し、片方は素のREADMEクイックスタート実行中に遭遇しました（上記カテゴリC・4件）。tools/protocol_magic_registry_gate.py:566-584 が dir=ROOT / "tools" で変異 .c を生成し、同ツールの validate()（:211）が tools を含む SCAN_ROOTS を ドットファイル除外なしで rglob するため、植えられたファイルがその窓の間、tools/ を走査する他の全gateから見えます。
+
+$ ctest -j4
+Test #57: production_attachment_edhoc_python_gate_self_test  ***Failed
+  undeclared scanned candidate(s):
+    ZZ92@('tools/.magic_registry_mutant_moa1p7s2.c', 'QUOTED', 1)
+Test #58,59,60                                               ***Failed
+
+$ ctest -j1 -R '^production_attachment_...$'
+100% tests passed, 0 tests failed out of 4
+危険は認識されており CMakeLists.txt:2270-2280 に RESOURCE_LOCK が6テストに設定されていますが、DEPENDS には含まれる3テストが lock 群から漏れています。全ワークフローが ctest を -j 無しで呼ぶためCIは一度も遭遇していません。
+
+影響は2つあります。① 並行実行が壊れる。 CONTRIBUTING.md:35-51 は build と build-sanitize を並置するよう貢献者に指示しており、1つのチェックアウトに対し両方でCTestを走らせるとこれを踏みます。② 中断すればリポジトリが恒久的に壊れる。 生成と finally の間でプロセスが死ぬと変異ファイルが残留し、手動削除するまで以降の全実行でgateが失敗し続けます。他が徹底している「ソースツリーへ書かない」規律の唯一の破れ目です。
+
+HIL証拠の規律 — 4層で強制されており、プロジェクト中最も強固
+セキュリティ
+結論: 無線 / USB / TCP の untrusted 入力から到達可能な、悪用可能なメモリ安全性欠陥は発見されませんでした。 追跡した全デコーダが read 前に長さを検証し、合計長を等値で検査し、offset ≤ length 不変条件を維持しています。
+
+特に nfl1_codec.c:628 の HEADER + body_need != total_length という等値検査は、「フィールド合計 ≠ 宣言長」という古典的な穴を閉じています。nra1_codec.c:10-14 の _Static_assert は body_length - HEADER_BYTES のアンダーフローを構造的に不可能にしています。
+
+正しく設計されていることを確認した項目
+電源断を跨ぐ nonce 再利用 — 正しい。 n6_context_store.c:4452-4522 は write-ahead reservation を実装し、[c0, c1) のカウンタを配布する前に reserved_exclusive = c1 を耐久コミットします。ブロック途中で電源断が起きても、起動時にコミット済み値から復元するため未使用の末尾はスキップされ、再生されません。:4553-4559 と :4763-4766 のコメントは「counter を iv12 に事前XORすると全カウンタが1つのnonceに潰れる」という正しい危険を正しく記録しています
+リプレイ保護は restart-safe。 64エントリのスライディング窓 + 耐久 accept_reserved_through を受理カウンタより先行してブロック単位で進め、admit が返る前にコミット
+AEAD タグ検証は平文使用前。 非OK時は出力バッファを OPENSSL_cleanse（r7_crypto_openssl3.c:382-384）
+秘密の比較は定数時間。 rrmp_util.c:77-90 / mfdt_v1_crypto.c:63-76 は分岐なしXOR累積。秘密に対する memcmp は0件
+TLS 検証は有効。 TLS1.3単一suite・P-256のみ・チケット/early-data/再ネゴ全無効・セッション再利用拒否。mbedtls_ssl_set_hostname(NULL) は SAN-DNS 照合を無効化しますが、leaf pinning（SPKI-SHA256 + OID SAN role + authority_id/term照合）が必須で未設定時はハンドシェイクが fail-closed するため、機器フリートに対する健全な代替です
+binding ファイル検査は教科書通り。 v1_lab_controller.c:282-291 は open(O_RDONLY|O_CLOEXEC|O_NOFOLLOW) してから fd に fstat し、S_ISREG / st_nlink == 1 / st_uid == geteuid() / group·other権限ゼロを検査。TOCTOU なし。SQLite portはさらに、flock 取得後に path↔fd の同一性・所有権・モードを再検証（:1288-1307）
+危険関数ゼロ。 strcpy/strcat/sprintf/alloca/gets が src/ports/include/drivers/examples で0件。VLA 0件。SQLは全てbind。秘密のログ出力0件。コミットされた鍵0件
+-Wno-* と #pragma diagnostic がリポジトリ全体で0件 — -Wall -Wextra -Werror -Wpedantic -pedantic-errors 下で。これは稀です
+Medium
+無線受信経路のスタック深度が、プロジェクト自身の frame-size gate の対象外
+唯一、ESP32-S3 上でメモリ破壊へ至る現実的な経路を持つ指摘です。
+
+v1_lab_radio_mapping.c:846-848   workspace 2052B + envelope   （スタック）
+  ↓ :882
+nfl1_codec.c:505-506             scratch[2048] + 第2 envelope （スタック）
+nfl1_codec.c:755                 normalized[2048]              （第3の2KB）
+                                 → 単一チェーンで 4.5KB 超
+
+到達経路: 認証済みLoRa receipt フレーム
+  → admit_rx → ninlil_v1_lab_radio_mapper_decode (v1_lab_radio_packet_link.c:786)
+
+-Wframe-larger-than の適用範囲: N6(:987) / R7(:1004,1019,1037) / RRMP(:745) / ESP storage(:6905)
+未適用: nfl1_codec.c, v1_lab_radio_mapping.c, control_frame_codec.c, ncl1_codec.c, MFDT
+FreeRTOS タスクの 4〜8KB スタックでは現実的なオーバーフローです。そしてプロジェクト自身のgateが適用範囲を広げるだけで捕捉できたはずのものです。修正はCMake 2行、あるいは既に fabric_workspace.h:26 に予約されている codec_scratch 領域へ移すこと。
+
+その他のセキュリティ指摘（5件・いずれも Low〜Medium）
+環境依存でCIが構造的に見落とすテスト失敗
+標準的な Ubuntu 24.04 コンテナで全プロファイルを実行した結果です。いずれも GitHub Runner では発生しえず、CI は一度も遭遇していません。
+
+プロファイル	結果	失敗の原因
+default（tests ON, strict）	426 / 431 pass	下記5件
+tests-OFF Release	成功・0警告	—
+install → 別ツリー consumer	3/3 pass	アーカイブ5本に絶対パス混入0件
+README quickstart（+sanitizers）	414 / 427 pass
+40分09秒	4つの無関係な原因にまたがる13件失敗
+失敗テスト	根本原因
+v1_lab_display_latest_state_example
+v1_lab_leak_measurement_example	AF_UNIX sun_path(108)オーバーフロー（2名が独立に到達）。v1_lab_loopback_uplink.c:811-816 がソケットパスを getcwd() から char[512] へ組み立て、長さ検査なし。ライブラリ側 ninlil_posix_loopback_bearer.c:756-758 は正しく拒否しており、テストハーネスが短いパスを前提している。88文字のcwdで失敗、/tmp/nl（7文字）で成功することを実証済み。
+診断も誤導的です — :873 は WEXITSTATUS() の値を status=%d と表示しますが、このコードベースで status はほぼ常に ninlil_status_t を意味します。exit_code へ改称すべきです
+#269 r7_kat_pin
+#270 r7_kat_pin_self_test	r7_kat_pin.py:143 が CMAKE_C_COMPILER を無視して clang 決め打ちし、無条件に -fsanitize=address,undefined でブリッジをコンパイル。compiler-rt 不在で不透明なリンカエラー。暗号ベクタを固定する最重要gateがこれです
+#177 domain_scan_crossrow_d3s4_
+vector_oracle_self_test	4コアで180.09秒 vs TIMEOUT 180（マージン0.05%）。GitHub標準Runnerも4コア。直近コミットが「サニタイザーCIの実測時間に余裕を持たせる」であることが、この種の調整が反復的な保守負担になっていることを示しています
+加えて posix_sqlite_storage_test.c:2277-2278 は busy_timeout_ms = 120 に対し実測 >= 70.0 && < 1500.0 を表明します。下限には意味がありますが（タイムアウトが実際に尊重されたことの証明）、上限は本質的に負荷依存で、共有2コアRunner上でASan下・並列実行という条件では「CIの時間を伸ばす」コミットを生み続けます。上限の目的は無限ハングの検出だけであり、それは TIMEOUT が既に担っています。
+
+優先順位付き推奨アクション
+第1週 — 正面玄関を開ける
+quickstart から -DNINLIL_ENABLE_SANITIZERS=ON を削除（1行）。加えて GCC×サニタイザーのCIジョブ追加、または当該オプションのClang限定化
+Cコードサンプル25行を README へ — 追加できる25行として最も価値が高い
+「Why not MQTT-SN / LoRaWAN / CoAP / Zenoh?」表15行 — 最もレバレッジの高いドキュメント変更
+docs/status.md を分離し、README の39行の壁と1,089文字セルを移す。「今日動くこと」を1段落、「証明されていないこと」を1段落
+tools/layering_gate.py 60行 — 浸食を即座に止め、以降の refactor を安全にする
+リポジトリ description / topics / badge を設定、Discussions を有効化（CoCが対象と明記しているため）。24個のCIジョブを持ちながらCIバッジが無いのは、維持されている最強の証拠を隠している状態です
+第2週 — 貢献を可能にする
+NOTICE に著作権行1行 + 799ファイルへの機械的SPDX付与 + DCO 採用
+README.en.md 約120行（「非規範的概観・正本は日本語」と明記すれば Charter 方針に完全準拠）
+ninlil_runtime_step の単一出口化（2行）と MFDT/R7-frag グローバルの所有構造体への移動
+runtime.h/platform.h/service.h/transaction.h の文書化 — byte_stream.h:189-296 が写すべき手本。ポインタ引数ごとの所有権、ヘッダごとのスレッド親和性、関数ごとの到達可能statusコード
+compatibility-matrix.json に3 feature 追加し、README表をそこから生成
+ABI golden: 不在をFATALへ反転 + ILP32-le-32.manifest 生成 + 未登録の公開ヘッダ2本を drift リストへ
+Node を宣言・固定・SBOM記載
+3つの「履歴」文書に HISTORICAL 明示（うち1つは自らを 正本 と称し、CMake下限を 3.16 と誤記して現行の 3.20 と矛盾）
+その後 — 計測を始める
+ワイヤデコーダ6本へファジングハーネス（各20行）+ spec/vectors からのシードコーパス + CI で各5分。Charter 自身の基準を満たす
+非gating のカバレッジジョブ1つ — 閾値より地図に価値がある
+CodeQL for C（公開リポジトリは無料・約15行）
+「Coverage V2」の改称と強化 — ctest --output-junit を消費し、引用テストの合格を要求
+domain_store_vector_gen.py に手検算KAT 10件 — 最大かつ最も安全性に関わるモジュールの証拠的地位を1段引き上げる
+ADR状態の分類法を修正 — 梯子に1段追加し、7件のADRを「規則違反」から「準拠」へ
+公開アーカイブから LAB/simulator を分離し、約6,000行の到達不能ブランチを有効化するか削除する
+方法論。 7軸を5名の独立レビュアーで並行監査し、各指摘は実ファイル・実行結果・再現実験に照合しました。ビルドとテストは実際に完走させ、4つの制御実験（assertion全削除、オラクル共謀変異、C側3種の単独変異、並列実行競合）を行っています。Corroborated の指摘は、担当領域の異なる2名以上が個別に到達したものです。
+
+リポジトリのファイルは一切変更していません。全実験はセッション作業領域で実施し、git status --porcelain は空のままです。

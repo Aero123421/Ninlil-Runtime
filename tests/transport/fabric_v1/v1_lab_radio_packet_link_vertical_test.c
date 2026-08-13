@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "deterministic_entropy.h"
 #include "fake_byte_stream.h"
 #include "in_memory_storage.h"
@@ -832,9 +833,17 @@ static int send_frame(
         == NINLIL_FABRIC_LINK_RETAINED);
     REQUIRE(token != NULL);
     if (release_sequence != 0u) {
+        ninlil_r7_frag_prod_bind_t *r7;
         REQUIRE(node->packet_link.tx.r7_held != 0u);
+        REQUIRE(node->packet_link.tx.r7_route_index
+            < node->packet_link.route_count);
+        r7 = node->packet_link
+                 .routes[node->packet_link.tx.r7_route_index]
+                 .r7;
+        REQUIRE(r7 != NULL);
         REQUIRE(ninlil_r7_frag_issue_coordinator_complete(
-                    release_authority, release_sequence, NULL)
+                    &r7->issue_coordinator, release_authority,
+                    release_sequence, NULL)
             == NINLIL_R7_COORD_OK);
     }
     for (i = 0u; i < TEST_POLL_LIMIT; ++i) {
@@ -2385,7 +2394,8 @@ int main(int argc, char **argv)
     blocker.outer_len = 1u;
     blocker.outer_digest[0] = 0xa5u;
     blocker.issue_now_ms = 1000u;
-    REQUIRE(ninlil_r7_frag_issue_coordinator_admit(&blocker)
+    REQUIRE(ninlil_r7_frag_issue_coordinator_admit(
+                &g_node_a.a_to_b.issue_coordinator, &blocker)
         == NINLIL_R7_COORD_OK);
     REQUIRE(send_frame(&g_node_a, ops_a, handle_a, application,
                 application_length, path_a, 77u, 0x52u, blocker_authority,

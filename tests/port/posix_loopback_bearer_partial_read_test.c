@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Regression: a nonblocking SOCK_STREAM receiver must preserve a partially
  * consumed frame across EAGAIN boundaries.

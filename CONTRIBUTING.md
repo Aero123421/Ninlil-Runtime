@@ -31,6 +31,9 @@ Foundation M1aの正本は次のNormative文書です。
 - **Building and running the test suite** requires a **Python 3** interpreter on
   `PATH`（independent vector oracle、compatibility/dependency authority、
   package/source gateに使用）。Production libraryはPythonをlink・invokeしません。
+- **Building and running the test suite** requires **Node.js 18 or newer** on
+  `PATH`（independent specification gatesに使用）。Node/npm packageをinstallする
+  必要はなく、Production libraryはNodeをlink・invokeしません。
 
 通常buildとtest:
 
@@ -40,7 +43,8 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-ASan / UBSan:
+ASan / UBSan（Clang本体と対応するcompiler-rtが必要。Ubuntuの例:
+`libclang-rt-dev`またはversion固定の`libclang-rt-18-dev`）:
 
 ```sh
 CC=clang CXX=clang++ cmake -S . -B build-sanitize \
@@ -50,7 +54,29 @@ cmake --build build-sanitize --parallel
 ctest --test-dir build-sanitize --output-on-failure
 ```
 
-PRを提出する前に、変更範囲に応じたtargeted testに加えて、通常suiteとsanitizer suiteを実行してください。CTest件数は増減するため、件数ではなく全test成功をgateにします。
+PRを提出する前に、変更範囲に応じたtargeted testに加えて、通常suiteとsanitizer suiteを実行してください。CIのsanitizer profileはClangです。CTest件数は増減するため、件数ではなく全test成功をgateにします。
+
+## DCO 1.1 sign-off
+
+全commitを [Developer Certificate of Origin 1.1](https://developercertificate.org/)
+に基づいてsign-offしてください。sign-offはDCO 1.1のcertificationを記録するものであり、
+CLAやcopyright譲渡ではありません。
+
+```sh
+git commit -s
+```
+
+これによりcommit message末尾へ`Signed-off-by: Name <email>`が追加されます。sign-offの
+emailはcommit author emailと一致させてください。直前のcommitは
+`git commit --amend --no-edit -s`、複数commitは次のように補正できます。
+
+```sh
+git rebase --signoff "$(git merge-base origin/main HEAD)"
+python3 tools/dco_signoff_gate.py check-range \
+  "$(git merge-base origin/main HEAD)" HEAD
+```
+
+Pull Requestでは同じ検査を`DCO sign-off / Sign-off trailers` workflowが実行します。
 
 ## Public ABI changes
 

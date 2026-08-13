@@ -7,8 +7,8 @@ Fresh OFF Release subbuild:
   - ar member r7_wire_codec.c.o exact once
   - nm: no test/oracle/fixture wire symbols in OFF archive
   - install tree and public export surface: no T1 private artifact leakage
-  - exact Host Runtime archive: production object/API exact once, no test seams
-  - every other installed public lib: no ninlil_r7_wire_* defined symbols
+  - installed Host Runtime archive: production-private object/API absent
+  - every installed public lib: no ninlil_r7_wire_* defined symbols
 
 PASS ≠ T1 Accepted / R7 full / HIL.
 """
@@ -100,12 +100,6 @@ LEGACY_BANNED_INSTALL_NEEDLES = (
 )
 PRIVATE_ARCHIVE_RE = re.compile(r"libninlil_runtime_private\.(a|lib)$")
 INSTALLED_LIB_RE = re.compile(r".*\.(a|lib|so|dylib)$|.*\.so\.\d+(\.\d+)*$")
-# CMake uses ``libninlil_runtime.a`` on Unix and normally
-# ``ninlil_runtime.lib`` on Windows.  Keep the accepted set literal: a
-# similarly named archive must not inherit the production-private exception.
-HOST_RUNTIME_ARCHIVE_NAMES = frozenset(
-    {"libninlil_runtime.a", "libninlil_runtime.lib", "ninlil_runtime.lib"}
-)
 _NM_TYPE_RE = re.compile(r"^[A-Za-z]$")
 PrivateArtifactAuthority = dict[str, tuple[int, str]]
 
@@ -299,40 +293,20 @@ def inspect_public_members(members: list[str]) -> list[str]:
     return errors
 
 
-def is_host_runtime_archive(path: Path) -> bool:
-    """True only for an exact, supported installed Host Runtime archive name."""
-    return path.name.lower() in HOST_RUNTIME_ARCHIVE_NAMES
-
-
 def inspect_installed_library(path: Path) -> list[str]:
-    """Inspect one installed library under the narrow Host Runtime exception.
-
-    The static Host Runtime may carry the production-private codec internally,
-    but its object and wire-family symbols remain exact.  No other installed
-    library receives that exception.
-    """
+    """Reject the production-private codec from every installed library."""
     errors: list[str] = []
     is_archive = path.suffix.lower() in {".a", ".lib"}
-    runtime_archive = is_archive and is_host_runtime_archive(path)
-    members: list[str] = []
     if is_archive:
         try:
             members = ar_members(path)
         except subprocess.CalledProcessError as exc:
             return [f"ar failed on installed archive {path}: {exc}"]
-        if runtime_archive:
-            errors.extend(inspect_members(members))
-            errors.extend(inspect_private_wire_member_symbols(path, members))
-        else:
-            errors.extend(inspect_public_members(members))
+        errors.extend(inspect_public_members(members))
 
     defined, nm_errs = run_nm_defined(path)
     if defined is None:
         errors.extend(nm_errs)
-    elif runtime_archive:
-        # Whole-archive family authority catches an extra family symbol in a
-        # second, deceptively named object as well as in the production member.
-        errors.extend(inspect_off_symbols(defined))
     else:
         errors.extend(inspect_public_symbols(defined))
     return errors
@@ -610,7 +584,7 @@ def run_check(src_root: Path, generator: str) -> int:
             return 1
         ok(
             f"PASS member={WIRE_MEMBER} once; bare-all archive=0; "
-            f"Host Runtime wire production set exact; ordinary public libs clean"
+            f"installed Host Runtime wire object/API absent; public libs clean"
         )
         return 0
 
@@ -758,9 +732,9 @@ def run_self_test(src_root: Path) -> int:
         ):
             failures.append("missing exact codec API escaped member check")
 
-    # Installed Host Runtime is the sole archive allowed to carry the production
-    # codec.  Prove the exact-name GREEN and controlled RED cases against real
-    # archives, including an extra family symbol in a different member.
+    # OR-20 keeps the production codec in the explicitly built private archive,
+    # never in the installed Host Runtime.  Prove the empty installed boundary
+    # and controlled object/symbol reintroduction against real archives.
     with tempfile.TemporaryDirectory(prefix="r7-t1-host-runtime-mut-") as td:
         root = Path(td)
         install = root / "install"
@@ -771,12 +745,13 @@ def run_self_test(src_root: Path) -> int:
             archive_name: str,
             functions: set[str],
             *,
+            private_member: bool = False,
             extra_family_member: bool = False,
             banned_member: bool = False,
         ) -> Path | None:
             for old in lib.iterdir():
                 old.unlink()
-            source = root / "r7_wire_codec.c"
+            source = root / ("r7_wire_codec.c" if private_member else "public_core.c")
             source.write_text(
                 "\n".join(
                     f"void {function}(void) {{ }}"
@@ -785,7 +760,7 @@ def run_self_test(src_root: Path) -> int:
                 + "\n",
                 encoding="utf-8",
             )
-            member = root / WIRE_MEMBER
+            member = root / (WIRE_MEMBER if private_member else "public_core.c.o")
             archive = lib / archive_name
             command = ["ar", "rcs", str(archive), str(member)]
             try:
@@ -818,37 +793,36 @@ def run_self_test(src_root: Path) -> int:
                 return None
             return archive
 
-        runtime = build_installed_wire_archive(
-            "libninlil_runtime.a", set(EXACT_WIRE_DEFINED_APIS)
-        )
+        runtime = build_installed_wire_archive("libninlil_runtime.a", set())
         if runtime is not None:
             runtime_errors = inspect_install_tree(install, private_authority)
             if runtime_errors:
                 failures.append(f"exact Host Runtime archive baseline red: {runtime_errors}")
 
+        reintroduced = build_installed_wire_archive(
+            "libninlil_runtime.a",
+            set(EXACT_WIRE_DEFINED_APIS),
+            private_member=True,
+        )
+        if reintroduced is not None:
+            reintroduced_errors = inspect_install_tree(install, private_authority)
+            if not any(WIRE_MEMBER in err for err in reintroduced_errors):
+                failures.append("Host Runtime wire object reintroduction escaped")
+            if not any(
+                "ninlil_r7_wire_pack_outer_data_aad" in err
+                for err in reintroduced_errors
+            ):
+                failures.append("Host Runtime wire API reintroduction escaped")
+
         ordinary = build_installed_wire_archive(
-            "libordinary.a", set(EXACT_WIRE_DEFINED_APIS)
+            "libordinary.a", set(EXACT_WIRE_DEFINED_APIS), private_member=True
         )
         if ordinary is not None and not inspect_install_tree(install, private_authority):
-            failures.append("ordinary public archive inherited Host Runtime exception")
-
-        deceptive = build_installed_wire_archive(
-            "libninlil_runtime_extra.a", set(EXACT_WIRE_DEFINED_APIS)
-        )
-        if deceptive is not None and not inspect_install_tree(install, private_authority):
-            failures.append("deceptive Host Runtime archive name inherited exception")
-
-        missing = build_installed_wire_archive(
-            "libninlil_runtime.a",
-            set(EXACT_WIRE_DEFINED_APIS)
-            - {"ninlil_r7_wire_open_outer_single"},
-        )
-        if missing is not None and not inspect_install_tree(install, private_authority):
-            failures.append("Host Runtime missing production API did not go red")
+            failures.append("ordinary public archive accepted private wire content")
 
         extra = build_installed_wire_archive(
             "libninlil_runtime.a",
-            set(EXACT_WIRE_DEFINED_APIS),
+            set(),
             extra_family_member=True,
         )
         if extra is not None and not any(
@@ -859,7 +833,7 @@ def run_self_test(src_root: Path) -> int:
 
         with_test_member = build_installed_wire_archive(
             "libninlil_runtime.a",
-            set(EXACT_WIRE_DEFINED_APIS),
+            set(),
             banned_member=True,
         )
         if with_test_member is not None and not any(

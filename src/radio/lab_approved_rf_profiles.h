@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RADIO_LAB_APPROVED_RF_PROFILES_H
 #define NINLIL_RADIO_LAB_APPROVED_RF_PROFILES_H
 

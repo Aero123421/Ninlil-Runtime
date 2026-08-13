@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Ninlil POSIX USB/serial byte-stream reference port.
  *

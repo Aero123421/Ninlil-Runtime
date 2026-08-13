@@ -5,12 +5,12 @@
 ESP32-S3 cannot host dual 64KB workspaces + dual lab stores + 120KB engine
 scratch. After redesign:
   - single spine engine + workspace + lab store
-  - engine scratch ≈ ACTIVE + NRC1 (~50KB)
+  - record + NRC1 regions live inside the caller-owned workspace (~50KB)
   - no dual cu_old/cu_new
 
 This gate compiles a tiny size probe and checks hard upper bounds.
-Physical map/stack .su evidence on real ESP remains residual when no ELF.
-ADR-0021 stays Proposed / PROPOSED compatibility — no status promotion.
+Physical map/stack evidence requires a separate real ESP ELF proof.
+ADR-0021 is Accepted specification; this gate does not promote release support.
 """
 from __future__ import annotations
 
@@ -23,10 +23,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # Hard budgets (bytes) for host static layout after redesign.
-# ESP moves workspace-class giants to SPIRAM/heap (see mfdt_v1_target_alloc.c);
+# ESP adapter moves workspace-class giants to SPIRAM/heap
+# (ports/esp-idf/src/mfdt_v1_target_alloc.c);
 # this gate still measures portable sizeof() for host struct layout.
 MAX_SPINE_CTX = 220_000  # single ws+store+eng+pipe (was ~365KB dual)
-MAX_ENGINE_SCRATCH = 55_000  # ACTIVE+NRC1 only (was ~120KB)
+# Compatibility label below is retained for evidence readers. This is now the
+# record+NRC1 region budget inside one owner workspace, not external scratch.
+MAX_ENGINE_SCRATCH = 55_000  # ACTIVE+NRC1 owner regions (was ~120KB external)
 MAX_LAB_STORE = 130_000  # one host lab store pool
 MAX_WORKSPACE = 65_536 + 64
 
@@ -94,8 +97,8 @@ int main(void) {
                 print(f"FAIL: {f}", file=sys.stderr)
             return 1
         print("mfdt_v1_footprint_gate OK")
-        print("NOTE: ESP .su/map stack evidence remains residual without device ELF")
-        print("NOTE: physical power-cut HIL NOT_RUN; ADR-0021 stays Proposed")
+        print("NOTE: host-size evidence does not substitute for ESP .su/map proof")
+        print("NOTE: physical power-cut HIL NOT_RUN; RELEASE_SUPPORTED absent")
         return 0
 
 

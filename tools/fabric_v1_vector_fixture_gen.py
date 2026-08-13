@@ -28,6 +28,7 @@ def c_array(name: str, hexstr: str) -> tuple[str, int]:
 def render() -> str:
     d = json.loads(VECTOR.read_text())
     parts: list[str] = [
+        "/* SPDX-License-Identifier: Apache-2.0 */",
         "/*",
         " * AUTO-GENERATED from spec/vectors/fabric-bearer-spec-v1.json",
         " * by tools/fabric_v1_vector_fixture_gen.py — do not hand-edit.",

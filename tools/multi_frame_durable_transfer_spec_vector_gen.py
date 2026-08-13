@@ -46,7 +46,7 @@ PINNED_SOURCES: tuple[str, ...] = (
     "tools/multi_frame_durable_transfer_spec_vector_gen.py",
 )
 PINNED_ADR_SHA256_HEX = (
-    "39e010f2e31b13fffd198af39ac993a1a4a4173c68fbe99c5d6e409684a74049"
+    "15bd999eb3240672f65089aa2ba12ba481c552688fda262aa221ebf4f2ed4ac9"
 )
 
 # Fixed limits (ADR-0021 candidate).

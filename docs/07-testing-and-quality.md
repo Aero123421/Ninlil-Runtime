@@ -19,7 +19,7 @@ requirement ID
 
 Requirementを削除・弱化する変更は、testだけを削除して通してはいけません。仕様変更理由とcompatibility impactを必要とします。
 
-### Complete coverage V2 authority
+### Traceability registration coverage V2 authority
 
 `requirements-traceability-coverage.json`は12〜14章と本章invariantのcomplete coverage正本です。coverage unitは次のとおりです。
 
@@ -30,9 +30,26 @@ Requirementを削除・弱化する変更は、testだけを削除して通し�
 
 各見出しIDは明示値であり、現在の文書順序や行番号から再生成しません。見出しの並べ替えでは同じ完全pathと同じIDを維持します。rename、split、mergeではID/path対応をreviewし、仕様変更理由とcompatibility impactを記録します。source SHA-256はdrift検出であり、変更後の文章を既存testが証明するという意味ではありません。
 
-test evidenceはconfigured CTestの`--show-only=json-v1`に存在し、かつ`DISABLED`でないtestだけを有効とします。CMake source中に`add_test`文字列があるだけ、`if(FALSE)`内だけ、または別profileでだけ有効なtestはevidenceに数えません。baselineとall-privateはprofile別に検査し、あるfeature構成で意図的に非適用となるunitはmanifestの`profiles`で明示します。
+登録evidenceはconfigured CTestの`--show-only=json-v1`に存在し、かつ`DISABLED`でないtestだけを有効とします。CMake source中に`add_test`文字列があるだけ、`if(FALSE)`内だけ、または別profileでだけ有効なtestはevidenceに数えません。baselineとall-privateはprofile別に検査し、あるfeature構成で意図的に非適用となるunitはmanifestの`profiles`で明示します。
 
-`NIN-PR1-TRACE-COVERAGE-001`を`verified`へ昇格できるのは、V2 self-test、baseline、all-private、303-vector authority、および対応するfocused invariant testがすべてgreenになった後だけです。それまでは`partial`を維持します。自己検査は最低でもomission、duplicate、reorder、disabled/`if(FALSE)`、fenced heading、source byte hash、invariant section外移動を拒否します。
+このgate自身はCTestを実行しません。通常のconfigured-profile検査は登録対応だけを確認し、
+CIではbaselineとall-privateの各profileで別途実行した`ctest --output-junit`を
+`--junit`入力として渡して、引用CTestが
+PASSしたことも補助証拠として要求します。source anchorは対応箇所が消えたことを検出する
+静的drift fenceです。invariant subclaimの各anchorは、active C source上の完全な
+`REQUIRE` / `CHECK` / `expect_*`呼出しを少なくとも1つ含み、コメント内だけ、不完全な
+呼出し、conditional preprocessor内、または`REQUIRE(1)`等の明白な常時真条件を拒否します。これは現在選んだ
+assertion-bearing領域の存在だけを固定するlexical floorです。JUnit入力があっても、
+条件の十分性・assertion強度、全assertionの実行、行・分岐coverageを証明するものでは
+ありません。
+
+`tools/traceability_coverage_v2_materialize.py --write`は、review済みheading ID対応を
+保持しつつ、同tool内のassertion-bearing anchor authorityからmanifestを決定的に生成する
+唯一の更新経路です。`--check`は生成bytesとchecked manifestの完全一致、および生成値が
+本gateを通ることを要求します。V2 self-testはmaterializerの`--check` / `--self-test`も
+必須実行し、旧function/`TRACE-*` anchorへ戻る生成器driftを拒否します。
+
+`NIN-PR1-TRACE-COVERAGE-001`の`verified`は、V2 self-test、baseline、all-private、303-vector authorityとfocused invariant testの**登録対応が完全**であることだけを表します。testの実行・成功やassertion強度へ読み替えてはいけません。自己検査は最低でもomission、duplicate、reorder、disabled/`if(FALSE)`、fenced heading、source byte hash、invariant section外移動、assertion削除・コメント化・conditional preprocessor化・明白な常時真化へのcoherent anchor更新を拒否します。
 
 ## Test layers
 
@@ -345,9 +362,9 @@ Do not treat its result as GO.
 
 | Path | SHA-256 |
 | --- | --- |
-| `src/radio/n6_context_store.c` | `45680af9b40c229a82a42ce69d8f0840c0d8b05ffb0b948868bde8f8cefa8632` |
-| `src/radio/n6_context_store.h` | `87609b009c957d3b063c736fc24012df54a4bc9f894ba167d106d612263c7699` |
-| `src/radio/n6_crypto_host.c` | `bdbb9a2bf2cc860101da41d2425192904c12c7f42fd2fcf77b3c42716bdc71b2` |
+| `src/radio/n6_context_store.c` | `863cd6d3995c6908f55c09e7aeb940ea373d5d4ba41b55b2f17696ba4822c633` |
+| `src/radio/n6_context_store.h` | `7d020dd3edf6da830663040dd77940e9c09a92d404dac376464dae000a317ad6` |
+| `src/radio/n6_crypto_host.c` | `a0a97b465c230000ff1de83e7dec5d126331878e205530782e870e2b057b91bd` |
 
 <!-- n6-storage-accepted-manifest:end -->
 

@@ -54,7 +54,7 @@
         "snapshot_recovery_toctou",
         "recovery_semantic_and_active_ceiling",
         "gc_concurrent_row_mutation_fail_closed",
-        "post_start_allocator_trap_end_to_end",
+        "post_start_fixed_arena_end_to_end",
         "host_semantic_reject_outbox_contract",
         "active_finalize_reject_matrix",
         "active_resume_reject_matrix",

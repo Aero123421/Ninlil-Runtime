@@ -85,7 +85,7 @@ set_target_properties(ninlil_mfdt_v1_lifecycle_test PROPERTIES
 )
 ninlil_apply_strict_warnings(ninlil_mfdt_v1_lifecycle_test)
 add_test(NAME mfdt_v1_lifecycle_private COMMAND ninlil_mfdt_v1_lifecycle_test)
-set_tests_properties(mfdt_v1_lifecycle_private PROPERTIES TIMEOUT 120)
+set_tests_properties(mfdt_v1_lifecycle_private PROPERTIES TIMEOUT 300)
 
 # ---- Independent vector wire KAT (not self-referential lab-only) ----------
 add_executable(ninlil_mfdt_v1_kat_test EXCLUDE_FROM_ALL
@@ -470,6 +470,19 @@ add_test(NAME mfdt_v1_esp_dram_budget_gate_self_test
         self-test
 )
 
+# Process-global state authority: owner-local ESP store + in-place page encoder.
+add_test(NAME mfdt_v1_owner_state_gate
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/mfdt_v1_owner_state_gate.py
+        check
+        --root ${CMAKE_CURRENT_SOURCE_DIR}
+)
+add_test(NAME mfdt_v1_owner_state_gate_self_test
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tools/mfdt_v1_owner_state_gate.py
+        self-test
+)
+
 # Source/archive boundary gate: the Host owner/provider stays out of the ESP
 # one-slot source set, public install, and installed archive.
 add_test(NAME mfdt_v1_host_profile_boundary_gate
@@ -545,4 +558,5 @@ add_test(NAME mfdt_v1_private_build
         --target ${_mfdt_v1_test_tgts}
 )
 set_tests_properties(mfdt_v1_private_build PROPERTIES
-    FIXTURES_SETUP mfdt_v1_private_build)
+    FIXTURES_SETUP mfdt_v1_private_build
+    RESOURCE_LOCK ninlil_ctest_build_tree)

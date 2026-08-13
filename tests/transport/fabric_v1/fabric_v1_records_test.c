@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * FBM1/FBR1/FBP1/FBC1/FBA1/FBT1 codecs, keys, digests, CRC, COMMIT_UNKNOWN.
  */

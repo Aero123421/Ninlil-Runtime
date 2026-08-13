@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private route-relay / multi-parent utilities (ADR-0019 / ADR-0020).
  * Default-OFF, not installed, not public ABI.

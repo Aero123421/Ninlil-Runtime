@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure fixed ring helpers for A2 ESP CDC (and host tests).
  * Allocation-free, no platform types, no heap, no logging.

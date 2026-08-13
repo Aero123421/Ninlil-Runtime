@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_MODEL_NCL1_CODEC_H
 #define NINLIL_MODEL_NCL1_CODEC_H
 

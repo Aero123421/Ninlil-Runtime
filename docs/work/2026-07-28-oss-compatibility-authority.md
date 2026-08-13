@@ -118,9 +118,10 @@ and wrapper/separator extra docker invocations.
 **SPDX / SBOM determinism**
 - Closed inventory packages + canonical relationships only (includes vendored
   `tools/_vendor` PyYAML 6.0.2 MIT with tree SHA-256).
-- Syft packages are reconciled: in-scope discoveries (inventory names / vendored
-  paths) cannot be dropped without inventory entry or machine-readable
-  `syft_reconciliation.justified_exclusions`.
+- Syft packages are reconciled as a closed world: every discovery must map to
+  the inventory or an exact machine-readable
+  `syft_reconciliation.justified_exclusions` entry; unknown packages cannot be
+  classified as noise and silently dropped.
 - Global SPDXID uniqueness; all relationship endpoints resolve; no dangling
   refs; no extra random packages; no `builtDate` / volatile fields.
 - Two-run self-test with mutated timestamp/namespace is byte-identical.

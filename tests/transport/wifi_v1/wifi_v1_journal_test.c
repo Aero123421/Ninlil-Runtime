@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Durable attempt journal: CU put/get, cold restart, crash write-point.
  */

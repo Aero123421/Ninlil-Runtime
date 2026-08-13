@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Backend-independent entropy config / ready / fill rules.
  * Host unit tests compile this without ESP-IDF headers.

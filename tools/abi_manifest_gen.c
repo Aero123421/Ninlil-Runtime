@@ -1,7 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <ninlil/runtime.h>
 #include <ninlil/fabric_v1.h>
 #include <ninlil/composition_v1.h>
 #include <ninlil/posix_tls_v1.h>
+#include <ninlil/byte_stream.h>
+#include <ninlil/posix_usb_serial_v1.h>
 
 #include <inttypes.h>
 #include <stddef.h>
@@ -10,9 +13,9 @@
 #include <string.h>
 
 #define MANIFEST_FORMAT_VERSION 1u
-#define NINLIL_ABI_MANIFEST_EXPECTED_CONSTANTS 385u
-#define NINLIL_ABI_MANIFEST_EXPECTED_STRUCTS 71u
-#define NINLIL_ABI_MANIFEST_EXPECTED_FIELDS 731u
+#define NINLIL_ABI_MANIFEST_EXPECTED_CONSTANTS 433u
+#define NINLIL_ABI_MANIFEST_EXPECTED_STRUCTS 76u
+#define NINLIL_ABI_MANIFEST_EXPECTED_FIELDS 765u
 
 static size_t g_manifest_constant_count;
 static size_t g_manifest_struct_count;

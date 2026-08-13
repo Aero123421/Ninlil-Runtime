@@ -49,7 +49,7 @@ S1_VECTORS = REPO_ROOT / "spec" / "vectors" / "domain-scan-v1.json"
 D1_FORMAT = "ninlil-domain-store-v1-d1b3o"
 D1_VECTOR_COUNT = 1549
 D1_SHA256 = (
-    "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4"
+    "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502"
 )
 
 # S1 transport body-nonvalidation regression authority (sibling frozen).

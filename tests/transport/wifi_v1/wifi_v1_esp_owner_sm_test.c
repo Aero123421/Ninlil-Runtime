@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP owner SM (host): STA enqueue, GOT_IP gate, RX capacity, M4 incomplete
  * evidence. LAB path uses host TLS loopback; not physical AP HIL.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * C3-LAB context lifecycle + T1c token consume install (V1 item 8).
  */

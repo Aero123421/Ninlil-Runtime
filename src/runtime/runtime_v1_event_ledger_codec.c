@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_v1_event_ledger_codec.h"
 
 #include "domain_store_codec.h"
@@ -140,7 +141,8 @@ static int record_digest_matches(
     const ninlil_rt_v1_event_ledger_record_t *record);
 
 static int record_fields_valid(
-    const ninlil_rt_v1_event_ledger_record_t *record)
+    const ninlil_rt_v1_event_ledger_record_t *record,
+    int allow_legacy_resume_audit)
 {
     if (record == NULL
         || record->record_revision != 1u
@@ -168,8 +170,9 @@ static int record_fields_valid(
                 record->expected_content_digest, NINLIL_SHA256_BYTES)
             && resume_reason_valid(record->request_reason)
             && record->acknowledge_flag == 0u
-            && !id_nonzero(&record->audit_clock_epoch_id)
-            && record->audit_committed_at_ms == 0u
+            && (id_nonzero(&record->audit_clock_epoch_id)
+                || (allow_legacy_resume_audit != 0
+                    && record->audit_committed_at_ms == 0u))
             && resume_result_valid(record);
     }
     if (record->operation_kind == NINLIL_RT_V1_EVENT_LEDGER_KIND_DISCARD) {
@@ -451,7 +454,7 @@ ninlil_status_t ninlil_rt_v1_event_ledger_encode(
     }
     *out_length = 0u;
     if (record == NULL || out_value == NULL
-        || !record_fields_valid(record)) {
+        || !record_fields_valid(record, 0)) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     length = EVENT_LEDGER_FIXED_BYTES
@@ -670,7 +673,7 @@ ninlil_status_t ninlil_rt_v1_event_ledger_decode(
         decoded.metadata, &value.data[offset], decoded.metadata_length);
     offset += decoded.metadata_length;
     if (offset + EVENT_LEDGER_CRC_BYTES != value.length
-        || !record_fields_valid(&decoded)) {
+        || !record_fields_valid(&decoded, 1)) {
         return NINLIL_E_STORAGE_CORRUPT;
     }
     *out_record = decoded;

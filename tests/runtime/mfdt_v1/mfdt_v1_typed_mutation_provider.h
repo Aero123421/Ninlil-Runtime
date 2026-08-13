@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Test-only typed storage provider that materializes post-COMMIT_UNKNOWN
  * durable views. Never compile this fixture into production or ESP packages.

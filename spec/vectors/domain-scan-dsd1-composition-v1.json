@@ -7,13 +7,13 @@
   "d1_authority": {
     "path": "spec/vectors/domain-store-v1.json",
     "format": "ninlil-domain-store-v1-d1b3o",
-    "sha256": "b809c223f8208111fb4271cdceed031193e32e0f118e019d404ac538c89792b4",
+    "sha256": "e7d2a7229b26fccd6f7cf821c779077fa449a03551d8ab7cda88998b6abe9502",
     "vector_count": 1549
   },
   "crossrow_authority": {
     "path": "spec/vectors/domain-scan-crossrow-v1.json",
     "format": "ninlil-domain-scan-crossrow-v1-d3s2",
-    "sha256": "e270743e99189a830b1b39d6c4b464fc3d2eb63ff8fe2b20dcfa7ae0f91d01ec",
+    "sha256": "0429bc8174210fbb824940d0cfcfadd8ad3e8f1f74dee2b5ec507e9ea113c4d2",
     "vector_count": 144,
     "note": "Frozen sibling authority; this composition oracle does not append to or rewrite crossrow vectors."
   },

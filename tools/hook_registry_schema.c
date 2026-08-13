@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "hook_registry_schema.h"
 
 #include <ctype.h>

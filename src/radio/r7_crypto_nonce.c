@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R7 sole nonce helper: static_iv12 XOR counter_u64_be (docs/31 §8).
  * Private C11. No provider, heap, VLA, OS, or crypto headers.

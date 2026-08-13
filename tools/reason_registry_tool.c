@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "yaml_reason_schema.h"
 
 #include <stdio.h>

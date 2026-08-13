@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB example: Cell Agent USB custody + radio TX (host simulation).
  */

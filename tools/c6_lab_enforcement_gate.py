@@ -24,6 +24,7 @@ DOC05 = REPO / "docs" / "05-security-and-compliance.md"
 DOC09 = REPO / "docs" / "09-roadmap.md"
 CMAKE = REPO / "cmake" / "ninlil_c6_lab_ctest.cmake"
 CMAKELISTS = REPO / "CMakeLists.txt"
+CTEST = REPO / "cmake" / "ninlil_ctest.cmake"
 PRIVATE = REPO / "cmake" / "ninlil_runtime_private_sources.cmake"
 
 BYPASS_SYMBOL = "ninlil_c6_lab_spi_tx_bypass_direct"
@@ -180,17 +181,18 @@ def check_docs() -> None:
 def check_cmake() -> None:
     cmake = read(CMAKE)
     lists = read(CMAKELISTS)
+    tests = read(CTEST)
     if "c6_lab_enforcement" not in cmake:
         fail("c6 cmake must register enforcement test")
     if "ninlil_c6_lab_ctest.cmake" not in lists:
         fail("CMakeLists must include c6_lab cmake")
-    if "c6_lab_enforcement_gate" not in lists:
-        fail("CMakeLists must register c6_lab_enforcement_gate")
+    if "c6_lab_enforcement_gate" not in tests:
+        fail("test CMake authority must register c6_lab_enforcement_gate")
 
 
 def check(root: pathlib.Path | None = None) -> None:
     global MANIFEST_H, MANIFEST_C, ENF_H, ENF_C, SPI_C, TEST_C
-    global DOC_MANIFEST, DOC05, DOC09, CMAKE, CMAKELISTS, PRIVATE
+    global DOC_MANIFEST, DOC05, DOC09, CMAKE, CMAKELISTS, CTEST, PRIVATE
     if root is not None:
         MANIFEST_H = root / "src" / "radio" / "v1_frame_manifest.h"
         MANIFEST_C = root / "src" / "radio" / "v1_frame_manifest.c"
@@ -203,6 +205,7 @@ def check(root: pathlib.Path | None = None) -> None:
         DOC09 = root / "docs" / "09-roadmap.md"
         CMAKE = root / "cmake" / "ninlil_c6_lab_ctest.cmake"
         CMAKELISTS = root / "CMakeLists.txt"
+        CTEST = root / "cmake" / "ninlil_ctest.cmake"
         PRIVATE = root / "cmake" / "ninlil_runtime_private_sources.cmake"
     check_manifest()
     check_enforcement()

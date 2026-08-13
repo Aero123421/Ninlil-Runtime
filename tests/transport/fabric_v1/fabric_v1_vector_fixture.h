@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * AUTO-GENERATED from spec/vectors/fabric-bearer-spec-v1.json
  * by tools/fabric_v1_vector_fixture_gen.py — do not hand-edit.

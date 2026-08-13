@@ -15,9 +15,145 @@ Usage:
   python3 tools/domain_store_vector_gen.py generate <path>
   python3 tools/domain_store_vector_gen.py check <path>
   python3 tools/domain_store_vector_gen.py <path>   # legacy generate alias
+  python3 tools/domain_store_vector_gen.py self-test
 """
 import hashlib, json, struct, binascii, sys
 from pathlib import Path
+
+# docs/17 §7: BLOB (30) and REVERSE_REPLY (42) have a 3264-byte maximum.
+# This manual SHA-256 KAT is independent of catalog count/fingerprint pins.
+DOC17_MAX_BODY_BYTES = 3264
+DOC17_MAX_BODY_SHA256 = "2d17c1ec6504d6a4c530bfb6e0fd7487c4733046ad3421bc1ffc0e412e57ed94"
+
+# Fixed D1-A encoded-envelope answers. These literals do not use enc_env(),
+# crc32c(), or sha256() to construct their expected results. Tuple fields are:
+# id, first 24 encoded bytes, encoded length, body length, head byte, PVD byte,
+# full encoded SHA-256, encoded CRC32C.
+DOC17_ENCODED_KATS = (
+    ("DSV1_BODY_01_EXACT", "4e4c523100050001000000c0000101000000000000000001", 208, 96, 0x00, 0x00,
+     "d155c7354d87242dbdc18b3978e7ca6a9cd9c552b2f5f0ab78c05c348629b2a1", "42302d23"),
+    ("DSV1_BODY_10_EXACT", "4e4c52310006000100000360000110000000000000000001", 880, 768, 0x11, 0x00,
+     "d2c8f1286a189cc9a532e1310b28bff82ac200cf55152ff20208064685cca1a0", "fd047db9"),
+    ("DSV1_BODY_27_EXACT", "4e4c52310006000100000660000127000000000000000001", 1648, 1536, 0x11, 0x00,
+     "a574b3ac224ed893218b7a2252f05a4a0a9646ae6a114697044836c8bc1a7bbc", "d1c42249"),
+    ("DSV1_BODY_30_EXACT", "4e4c52310006000100000d20000130010000000000000001", 3376, 3264, 0x11, 0x22,
+     "bceeb32255f82bec056fdb2d58e0ad73adecad8be15d4c9b5c72da88cc405ad8", "790dbcc9"),
+    ("DSV1_BODY_40_EXACT", "4e4c52310006000100000460000140000000000000000001", 1136, 1024, 0x11, 0x00,
+     "f9c2a8ca1a191199ed531c983358782b0bba4daf695317ee32923ac4384e6f96", "ab47e8b1"),
+    ("DSV1_BODY_42_EXACT", "4e4c52310006000100000d20000142000000000000000001", 3376, 3264, 0x11, 0x22,
+     "5dc13402a144a515dbf46f68cf94baeb000e28489ac6e1103b934f29fca89dff", "0b424c74"),
+    ("DSV1_BODY_50_EXACT", "4e4c52310006000100000660000150000000000000000001", 1648, 1536, 0x11, 0x22,
+     "40b39e0666f46833655408fa0fde21e251e7b910b6f8f16b9a0842098c76a1e5", "99d9d909"),
+    ("DSV1_BODY_60_EXACT", "4e4c523100060001000000a0000160000000000000000001", 176, 64, 0x11, 0x00,
+     "6e25a68b261c71bb5baed07d105ad9e74bd7ef84dfa1a6357869064bbb9d735b", "0ed95e0c"),
+    ("DSV1_BODY_62_EXACT", "4e4c523100060001000000a0000162000000000000000001", 176, 64, 0x00, 0x00,
+     "1f5d8adf819cde35bc0c41022381128f49e058185ff2b872ae880225b0cbb70a", "95143a66"),
+    ("DSV1_BODY_7E_EXACT", "4e4c52310006000100000c1800017e000000000000000001", 3112, 3000, 0x00, 0x00,
+     "171ec874f2b10e753b314aff3e33e42071db20cf14708a260adaa0f4f81f9104", "c5bd6c7a"),
+)
+
+# Fixed answers for ten distinct typed-body encoders. The expected bodies are
+# complete literals: they are not assembled with the encoder, hashlib, or the
+# generated catalog. ``field_inputs`` names the exact call site whose fields
+# feed the encoder; keeping it here makes the KAT reviewable without inventing
+# a second field schema in this already-large oracle.
+# Tuple fields: id, encoder, field_inputs, family, subtype, complete body hex.
+DOC17_BODY_ENCODER_KATS = (
+    (
+        "DSB1_INV_ENCODE_DECODE", "enc_body_invariant",
+        "reason=0x81, subject_kind=0x0622, fixture subject/epoch/detail, at_ms=1000",
+        5, 0x01,
+        "0000008106220000fa86a067e34ce65ff3fa15a29d9c0446ba4acf0c7ed51742"
+        "db34f3a82879e985a000000000000000000000000000000100000000000003e8"
+        "9c0211c51d04574fdaee6d51f53f41952570b0bf68a7219aaae01ce00fa6b8dd",
+    ),
+    (
+        "DSB1_BEARER_ENCODE_DECODE", "enc_body_bearer",
+        "bearer_epoch=1, available=1, clock_epoch=b0..02, at_ms=5000",
+        6, 0x60,
+        "000000000000000100000001b000000000000000000000000000000200000000"
+        "00001388",
+    ),
+    (
+        "DSB1_CLOCK_UNINIT_POSITIVE", "enc_body_clock",
+        "state=UNINITIALIZED, epoch=zero16, now_ms=0, generation=0",
+        6, 0x62,
+        "0000000100000000000000000000000000000000000000000000000000000000"
+        "0000000000000000",
+    ),
+    (
+        "DSB1_FENCE_MIN_POSITIVE", "enc_body_fence",
+        "count=1, generation=1", 6, 0x64,
+        "00000001000000000000000000000001",
+    ),
+    (
+        "DSB1_HEAD_BASELINE_POSITIVE", "enc_body_head_index",
+        "state=BASELINE, family3 member key, fixture value digest, zero head",
+        6, 0x7D,
+        "00010000aa5cad6746b1685f22eb0dd28e3179e93c9c52c39ca30743ccc2bf93"
+        "f3e3d52e000a00004e494e4c494c000103016edf3581771b1f1679f1382d23d9"
+        "fcab72a9fc9247b66f858615072b8e0d13b20000000000000000000000000000"
+        "000000000000000000000000000000000000",
+    ),
+    (
+        "DSB2_SERVICE_DS_POSITIVE", "enc_body_service",
+        "DesiredState defaults with fixture service identity/quota/reservation digests",
+        6, 0x10,
+        "0045a10000000000000000000000000000010761636d652e6e7304737663310000"
+        "0000000000016b3b1d947b3866b04caed9038fd7195d11181982bac1fcf97f690"
+        "af6e0b559ae00000000000000016b3b1d947b3866b04caed9038fd7195d111819"
+        "82bac1fcf97f690af6e0b559aea10000000000000000000000000000010761636d"
+        "652e6e73047376633107736368656d613100010000000900000002000000020000"
+        "000100000001000000010000001e000004000000000100000004000000080000ea"
+        "600000000a0000040000000000000003e800000000000013880000000000000064"
+        "00000000000003e800000000000001f400000000000003e8000000000036ee803d"
+        "97a5813c137a285513065cade140cca91fe535a76d2b0aed8c4eb80b49cda2960a"
+        "bfb2555e4115daca5dc93e07061088c0a51527029a78b317cf8be0f806c0",
+    ),
+    (
+        "DSB2_STATE_POSITIVE", "enc_state",
+        "state=ACCEPTED and all optional outcomes/counters zero for fixture transaction/target",
+        6, 0x22,
+        "71000000000000000000000000000099e2f5297860548d76d4d2c9e64ecebb53"
+        "3f29e54b1df763abd98227e034b4065f00000001000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "00000000000000000000000000000005c1000000000000000000000000000003"
+        "d1000000000000000000000000000004e1000000000000000000000000000005"
+        "00000000000000000000000000000000f1000000000000000000000000000006"
+        "0000000000000001000000000000000200000001000000000000000000000000",
+    ),
+    (
+        "DSB2_RES_TX_POSITIVE", "enc_res_body",
+        "owner=TRANSACTION fixture txn, inflight=0, zero resource vector",
+        6, 0x23,
+        "00020000001071000000000000000000000000000099d05fc7817bcdf05671ef"
+        "b65f43e54e5ae96a5809067d9974accee2d5e3894cfb00000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000",
+    ),
+    (
+        "DSB3_SCHED_TX_POSITIVE", "enc_sched_body",
+        "seq=1, owner=TRANSACTION, work_class=1, state_rev=5, ready=0",
+        6, 0x26,
+        "000000000000000100010001001071000000000000000000000000000099d05f"
+        "c7817bcdf05671efb65f43e54e5ae96a5809067d9974accee2d5e3894cfb0000"
+        "000000000005c1c2c2c2c2c2c2c2c2c2c2c2c2c2c2c200000000000000000000"
+        "0000000000000000000000000000000000000000000000000000",
+    ),
+    (
+        "DSB3_AII_CMD_BODY", "enc_attempt_id_index_body",
+        "fixture attempt_id/transaction_id, kind=COMMAND, reserved=0",
+        6, 0x34,
+        "a1a2a3a4a5a6a7a8a9aaabacadaeafb071000000000000000000000000000099"
+        "000100007bd209c92755a650841d4d9bdb1c05ba012ff05f2d6469db3a55a60d"
+        "095f0c5e5152535455565758595a5b5c5d5e5f606162636465666768696a6b6c"
+        "6d6e6f70",
+    ),
+)
 
 def be16(v): return struct.pack(">H", v)
 def be32(v): return struct.pack(">I", v)
@@ -135,6 +271,20 @@ def enc_env(rtype, st, flags, rev, head, pvd, body: bytes) -> bytes:
 
 def hx(b: bytes) -> str:
     return binascii.hexlify(b).decode()
+
+
+def pin_docs17_body_encoder_kat(identity, encoder, family, subtype, body):
+    """Compare one field-fed body encoder result with its fixed full literal."""
+    matches = [case for case in DOC17_BODY_ENCODER_KATS if case[0] == identity]
+    if len(matches) != 1:
+        raise AssertionError(f"{identity}: body encoder KAT inventory drift")
+    _, fixed_encoder, field_inputs, fixed_family, fixed_subtype, body_hex = matches[0]
+    if not field_inputs:
+        raise AssertionError(f"{identity}: body encoder KAT field inputs missing")
+    if (encoder, family, subtype) != (fixed_encoder, fixed_family, fixed_subtype):
+        raise AssertionError(f"{identity}: body encoder KAT identity drift")
+    if body.hex() != body_hex:
+        raise AssertionError(f"{identity}: body encoder fixed literal drift")
 
 def subject_prefix_from_key(complete_key: bytes) -> bytes:
     return key_digest(complete_key)[:16]
@@ -949,6 +1099,8 @@ def build_document():
     epoch16 = bytes([0xA0] + [0] * 14 + [0x01])
     detail = sha256(b"detail")
     body_inv = enc_body_invariant(reason, subj_kind, subj_dig, epoch16, 1000, detail)
+    pin_docs17_body_encoder_kat(
+        "DSB1_INV_ENCODE_DECODE", "enc_body_invariant", 5, 0x01, body_inv)
     assert len(body_inv) == 96
     marker = invariant_marker_id(reason, subj_kind, subj_dig)
     key_inv = bkey(5, 0x01, 2, marker)
@@ -1062,6 +1214,8 @@ def build_document():
     br_pos = br_neg = br_mut = br_rt = 0
     clock_ep = bytes([0xB0] + [0] * 14 + [0x02])
     body_br = enc_body_bearer(1, 1, clock_ep, 5000)
+    pin_docs17_body_encoder_kat(
+        "DSB1_BEARER_ENCODE_DECODE", "enc_body_bearer", 6, 0x60, body_br)
     assert len(body_br) == 36
     key_br = bearer_state_key()
     head_br = bytes([0x11] * 32)
@@ -1119,6 +1273,8 @@ def build_document():
     # --- CLOCK_BASELINE (62), exact body 40 ---
     ck_pos = ck_neg = ck_mut = ck_rt = 0
     body_ck_u = enc_body_clock(1, bytes(16), 0, 0)  # UNINITIALIZED
+    pin_docs17_body_encoder_kat(
+        "DSB1_CLOCK_UNINIT_POSITIVE", "enc_body_clock", 6, 0x62, body_ck_u)
     body_ck_t = enc_body_clock(2, epoch16, 9000, 1)  # TRUSTED
     assert len(body_ck_u) == 40 and len(body_ck_t) == 40
     key_ck = clock_baseline_key()
@@ -1203,6 +1359,8 @@ def build_document():
     # --- ATTEMPT_REUSE_FENCE (64), exact body 16 ---
     fn_pos = fn_neg = fn_mut = fn_rt = 0
     body_fn = enc_body_fence(1, 1)
+    pin_docs17_body_encoder_kat(
+        "DSB1_FENCE_MIN_POSITIVE", "enc_body_fence", 6, 0x64, body_fn)
     assert len(body_fn) == 16
     key_fn = fence_key()
     head_fn = bytes([0x22] * 32)
@@ -1268,6 +1426,9 @@ def build_document():
     val_dig = sha256(b"member-value")
     head_w = bytes([0x33] * 32)
     body_hi_b = enc_body_head_index(1, mk_f3, val_dig, bytes(32))  # BASELINE
+    pin_docs17_body_encoder_kat(
+        "DSB1_HEAD_BASELINE_POSITIVE", "enc_body_head_index",
+        6, 0x7D, body_hi_b)
     body_hi_w = enc_body_head_index(2, mk_f4, val_dig, head_w)  # WITNESSED
     assert len(body_hi_b) == 114 and len(body_hi_w) == 114
     id_hi_b = composite(0x7D, key_digest(mk_f3))
@@ -1465,6 +1626,8 @@ def build_document():
         )
 
     body_svc = enc_body_service()
+    pin_docs17_body_encoder_kat(
+        "DSB2_SERVICE_DS_POSITIVE", "enc_body_service", 6, 0x10, body_svc)
     assert len(body_svc) <= 768
     val_svc = enc_env_full(
         6, 0x10, 0, 1, svc_comp[:16], F["head_nz"], bytes(32), body_svc
@@ -1790,6 +1953,8 @@ def build_document():
         b += be32(tstate) + be32(outcome) + be32(reason) + be32(lev)
         return bytes(b)
     body_st = enc_state()
+    pin_docs17_body_encoder_kat(
+        "DSB2_STATE_POSITIVE", "enc_state", 6, 0x22, body_st)
     assert len(body_st) == 224
     st_key = bkey(6, 0x22, 2, txn)
     # primary_id = body transaction_id (coincides with ID128 key form).
@@ -1879,6 +2044,8 @@ def build_document():
     r_pos = r_neg = r_mut = r_rt = 0
     # TRANSACTION owner
     body_r = enc_res_body(2, txn)
+    pin_docs17_body_encoder_kat(
+        "DSB2_RES_TX_POSITIVE", "enc_res_body", 6, 0x23, body_r)
     r_comp = composite(0x23, be16(2) + raw16(txn))
     r_key = bkey(6, 0x23, 5, r_comp)
     r_primary = res_owner_primary(2, txn)
@@ -2203,6 +2370,8 @@ def build_document():
     # TRANSACTION: ready=0, no wake; state_revision != common revision
     body_stx = enc_sched_body(
         owner_seq_tx, 1, txn, work_class=1, state_rev=5, ready=0, logical_ms=0)
+    pin_docs17_body_encoder_kat(
+        "DSB3_SCHED_TX_POSITIVE", "enc_sched_body", 6, 0x26, body_stx)
     assert len(body_stx) == 122
     assert scheduler_primary_key_digest(1, txn) == complete_key_digest_id128(0x20, txn)
     # identity-digest confusion: sha256(txn) != KEY_DIGEST(complete key)
@@ -4641,6 +4810,9 @@ def build_document():
     # --- positives: COMMAND / EVENT / CANCEL body + typed ---
     body_aii_cmd = enc_attempt_id_index_body(
         attempt_id=aii_id_cmd, attempt_kind=AK_CMD)
+    pin_docs17_body_encoder_kat(
+        "DSB3_AII_CMD_BODY", "enc_attempt_id_index_body",
+        6, 0x34, body_aii_cmd)
     body_aii_evt = enc_attempt_id_index_body(
         attempt_id=aii_id_evt, attempt_kind=AK_EVT)
     body_aii_can = enc_attempt_id_index_body(
@@ -9080,7 +9252,7 @@ def build_document():
             notes=notes)
         ml_neg += 1
 
-    # --- RESUME positives: every reason 1..5, audit 1/128, rev bounds ---
+    # --- RESUME positives: legacy zero/zero + canonical epoch/time shapes ---
     for reason in range(1, 6):
         b = enc_ml(kind=ML_KIND_RESUME, reason=reason, audit_len=1)
         add_ml_pos(f"DSB3_ML_R_RSN{reason}", b, f"RESUME reason={reason}")
@@ -9105,6 +9277,12 @@ def build_document():
     b_r_cycle_max = enc_ml(
         kind=ML_KIND_RESUME, replay_cycle=(1 << 64) - 1, reason=3)
     add_ml_pos("DSB3_ML_R_CYCLE_MAX", b_r_cycle_max, "RESUME cycle UINT64_MAX")
+
+    b_r_canonical_time0 = enc_ml(
+        kind=ML_KIND_RESUME, audit_epoch=ml_audit_epoch, audit_at=0)
+    add_ml_pos(
+        "DSB3_ML_R_CANON_TIME0", b_r_canonical_time0,
+        "RESUME canonical audit epoch NZ, committed time 0")
 
     # --- DISCARD positives: every reason 1..4, audit time0, bounds ---
     for reason in range(1, 5):
@@ -9286,14 +9464,12 @@ def build_document():
         enc_ml(kind=ML_KIND_DISCARD, ack=2), "DISCARD ack 2")
 
     # --- audit epoch/time matrix ---
-    add_ml_neg(
-        "DSB3_ML_R_EPOCH_NZ",
-        enc_ml(kind=ML_KIND_RESUME, audit_epoch=ml_audit_epoch),
-        "RESUME audit_clock_epoch must be zero")
+    # Legacy resume zero/zero remains decodable; new canonical is epoch NZ.
+    # Only the mixed zero-epoch/nonzero-time tuple is corrupt.
     add_ml_neg(
         "DSB3_ML_R_TIME_NZ",
         enc_ml(kind=ML_KIND_RESUME, audit_at=1),
-        "RESUME audit_committed_at_ms must be zero")
+        "RESUME zero audit epoch with nonzero committed time is mixed")
     add_ml_neg(
         "DSB3_ML_D_EPOCH_Z",
         enc_ml(kind=ML_KIND_DISCARD, audit_epoch=bytes(16)),
@@ -9554,7 +9730,7 @@ def build_document():
     assert all(not v["id"].startswith("DSB3_RB_") for v in vectors)
     PRE_B3N_FULL_FINGERPRINT = vectors_fingerprint(vectors)
     PRE_B3N_FULL_FINGERPRINT_PIN = (
-        "44c809f186530d2d0a9ff5360aa949c926ae712a4e6a1f193145bc9428ab3315"
+        "cb9f48709eb0845997580ccb097eef7717f2d1d02f659c9bf4a627218c66c789"
     )
     assert PRE_B3N_FULL_FINGERPRINT == PRE_B3N_FULL_FINGERPRINT_PIN, (
         f"pre-B3n full fingerprint drift: got {PRE_B3N_FULL_FINGERPRINT}"
@@ -10016,7 +10192,7 @@ def build_document():
     # coverage appends only; object identity of this prefix must not drift.
     PRE_B3N_BASE_VECTOR_COUNT = 1456
     PRE_B3N_BASE_FINGERPRINT_PIN = (
-        "2928fae7d7a285484ca4d6cef8b0c79081bc19a3e206da1be1767ce9f6936ec7"
+        "bc0e760dbdf8cd1be3372b18cd7d6e3c212f7730e5619b2c1bb8960e36882307"
     )
     assert len(vectors) == PRE_B3N_BASE_VECTOR_COUNT, len(vectors)
     assert vectors[-1]["id"] == "DSB3_RB_EMPTY"
@@ -10135,7 +10311,7 @@ def build_document():
     assert all(not v["id"].startswith("DSB3_CP_") for v in vectors)
     PRE_B3O_FULL_FINGERPRINT = vectors_fingerprint(vectors)
     PRE_B3O_FULL_FINGERPRINT_PIN = (
-        "6aba67e63084c97a857e6d574955a7341a2c73960f8dbe58e52e151442508552"
+        "4ae9aa7c7bd6f9cb07ada97616c963c8bc5bdd6af13d340f0a68ddf6498ca12f"
     )
     assert PRE_B3O_FULL_FINGERPRINT == PRE_B3O_FULL_FINGERPRINT_PIN, (
         f"pre-B3o full fingerprint drift: got {PRE_B3O_FULL_FINGERPRINT}"
@@ -10658,7 +10834,7 @@ def build_document():
     assert vectors[-1]["id"] == "DSB3_CP_KEY_COMP_SUBTYPE"
     B3O_BASELINE_FULL_FINGERPRINT = vectors_fingerprint(vectors)
     B3O_BASELINE_FULL_FINGERPRINT_PIN = (
-        "7830b9ee70adaa5855da811fc1ca3dda7acc67f3835d211bc9eef7cf57ce6dd0"
+        "744d2a73b0714e0e8414e6d58a6d9868382c13968ec32e1d27c395a3bd8b2a68"
     )
     assert B3O_BASELINE_FULL_FINGERPRINT == B3O_BASELINE_FULL_FINGERPRINT_PIN, (
         f"B3o baseline-1537 fingerprint drift: got {B3O_BASELINE_FULL_FINGERPRINT}"
@@ -11157,24 +11333,232 @@ def document_bytes():
     return (json.dumps(doc, indent=2) + "\n").encode("utf-8")
 
 
+def docs17_max_body_kat(doc):
+    """Check docs/17's two largest D1 body fixtures against fixed values."""
+    expected = {"DSV1_BODY_30_EXACT", "DSV1_BODY_42_EXACT"}
+    rows = {row["id"]: row for row in doc["vectors"] if row.get("id") in expected}
+    if set(rows) != expected:
+        raise AssertionError(f"docs/17 maximum body vectors missing: {set(rows)}")
+    for identity, row in rows.items():
+        body = bytes.fromhex(row["body_hex"])
+        if row.get("body_length") != DOC17_MAX_BODY_BYTES or len(body) != DOC17_MAX_BODY_BYTES:
+            raise AssertionError(f"{identity}: docs/17 maximum body length drift")
+        if body != b"Z" * DOC17_MAX_BODY_BYTES:
+            raise AssertionError(f"{identity}: docs/17 manual maximum body bytes drift")
+        if sha256(body).hex() != DOC17_MAX_BODY_SHA256:
+            raise AssertionError(f"{identity}: docs/17 manual maximum body KAT digest drift")
+
+
+def docs17_body_encoder_catalog_kat(doc):
+    """Keep all ten field-fed encoder KATs present in the shipped catalog."""
+    expected_ids = {case[0] for case in DOC17_BODY_ENCODER_KATS}
+    encoders = {case[1] for case in DOC17_BODY_ENCODER_KATS}
+    subtypes = {case[4] for case in DOC17_BODY_ENCODER_KATS}
+    if not (len(DOC17_BODY_ENCODER_KATS) == len(expected_ids)
+            == len(encoders) == len(subtypes) == 10):
+        raise AssertionError(
+            "docs/17 body encoder KAT inventory must contain "
+            "10 unique encoders/subtypes")
+    selected = [row for row in doc["vectors"] if row.get("id") in expected_ids]
+    rows = {row["id"]: row for row in selected}
+    if len(selected) != 10 or set(rows) != expected_ids:
+        raise AssertionError(
+            f"docs/17 body encoder KAT vectors missing: {set(rows)}")
+    for identity, _, _, family, subtype, body_hex in DOC17_BODY_ENCODER_KATS:
+        row = rows[identity]
+        body = bytes.fromhex(body_hex)
+        if (row.get("op"), row.get("expected_status"), row.get("family"),
+                row.get("subtype"), row.get("body_length"), row.get("body_hex")) != (
+                "body_roundtrip", "OK", family, subtype, len(body), body_hex):
+            raise AssertionError(f"{identity}: body encoder catalog KAT drift")
+
+
+def docs17_encoded_envelope_kat(doc):
+    """Check 10 D1-A envelopes against fixed header/SHA/CRC answers."""
+    expected_ids = {case[0] for case in DOC17_ENCODED_KATS}
+    if len(DOC17_ENCODED_KATS) != 10 or len(expected_ids) != 10:
+        raise AssertionError("docs/17 encoded KAT inventory must contain 10 unique cases")
+    selected = [row for row in doc["vectors"] if row.get("id") in expected_ids]
+    rows = {row["id"]: row for row in selected}
+    if len(selected) != 10 or set(rows) != expected_ids:
+        raise AssertionError(
+            f"docs/17 encoded KAT vectors missing: {set(rows)}")
+
+    for (identity, header_hex, value_length, body_length, head_byte,
+         pvd_byte, digest_hex, crc_hex) in DOC17_ENCODED_KATS:
+        row = rows[identity]
+        value = bytes.fromhex(row["value_hex"])
+        header = bytes.fromhex(header_hex)
+        body = value[108:-4]
+        record_type = int.from_bytes(header[4:6], "big")
+        subtype = header[14]
+        flags = header[15]
+        revision = int.from_bytes(header[16:24], "big")
+        expected_head = bytes([head_byte]) * 32
+        expected_pvd = bytes([pvd_byte]) * 32
+
+        if row.get("op") != "envelope_encode" or row.get("expected_status") != "OK":
+            raise AssertionError(f"{identity}: encoded KAT operation/status drift")
+        if len(value) != value_length or value[:24] != header:
+            raise AssertionError(f"{identity}: encoded KAT header/length drift")
+        if value[:4] != b"NLR1" or int.from_bytes(value[6:8], "big") != 1:
+            raise AssertionError(f"{identity}: encoded KAT magic/version drift")
+        if int.from_bytes(value[8:12], "big") != 96 + body_length:
+            raise AssertionError(f"{identity}: encoded KAT payload length drift")
+        if int.from_bytes(value[12:14], "big") != 1:
+            raise AssertionError(f"{identity}: encoded KAT format drift")
+        if value[24:40] != bytes(16):
+            raise AssertionError(f"{identity}: encoded KAT primary id drift")
+        if value[40:72] != expected_head or value[72:104] != expected_pvd:
+            raise AssertionError(f"{identity}: encoded KAT head/PVD drift")
+        if int.from_bytes(value[104:108], "big") != body_length:
+            raise AssertionError(f"{identity}: encoded KAT body length field drift")
+        if (len(body) != body_length or body != b"Z" * body_length
+                or row.get("body_hex") != body.hex()):
+            raise AssertionError(f"{identity}: encoded KAT body bytes drift")
+        if (row.get("record_type"), row.get("subtype"), row.get("flags"),
+                row.get("revision"), row.get("body_length")) != (
+                record_type, subtype, flags, revision, body_length):
+            raise AssertionError(f"{identity}: encoded KAT metadata drift")
+        if row.get("head_hex") != expected_head.hex() or row.get("pvd_hex") != expected_pvd.hex():
+            raise AssertionError(f"{identity}: encoded KAT head/PVD metadata drift")
+        if value[-4:].hex() != crc_hex or row.get("crc_hex") != crc_hex:
+            raise AssertionError(f"{identity}: encoded KAT fixed CRC drift")
+        if f"{crc32c(value[:-4]):08x}" != crc_hex:
+            raise AssertionError(f"{identity}: encoded KAT recomputed CRC drift")
+        if row.get("digest_hex") != digest_hex or sha256(value).hex() != digest_hex:
+            raise AssertionError(f"{identity}: encoded KAT fixed SHA-256 drift")
+
+
+def coherent_encoded_mutant(
+        doc, identity, offset, row_field=None, recompute_crc=True):
+    """Mutate value plus generated metadata/digests without changing fixed KATs."""
+    mutant = {"vectors": list(doc["vectors"])}
+    for index, original in enumerate(mutant["vectors"]):
+        if original.get("id") != identity:
+            continue
+        row = dict(original)
+        value = bytearray.fromhex(row["value_hex"])
+        value[offset] ^= 1
+        if recompute_crc:
+            value[-4:] = be32(crc32c(bytes(value[:-4])))
+        row["value_hex"] = value.hex()
+        row["crc_hex"] = value[-4:].hex()
+        row["digest_hex"] = sha256(bytes(value)).hex()
+        if row_field is not None:
+            row[row_field] = value[offset]
+        if 108 <= offset < len(value) - 4:
+            row["body_hex"] = value[108:-4].hex()
+        mutant["vectors"][index] = row
+        return mutant
+    raise AssertionError(f"encoded KAT mutation target missing: {identity}")
+
+
+def assert_encoded_kat_rejects(mutant, label):
+    try:
+        docs17_encoded_envelope_kat(mutant)
+    except AssertionError:
+        return
+    raise AssertionError(f"docs/17 encoded KAT accepted coherent {label} mutation")
+
+
+def coherent_body_catalog_mutant(doc, identity):
+    """Change a fixed body and its generated length after prefix checks passed."""
+    mutant = json.loads(json.dumps(doc))
+    for row in mutant["vectors"]:
+        if row.get("id") != identity:
+            continue
+        body = bytes.fromhex(row["body_hex"]) + b"\x00"
+        row["body_hex"] = body.hex()
+        row["body_length"] = len(body)
+        return mutant
+    raise AssertionError(f"body encoder catalog mutation target missing: {identity}")
+
+
+def assert_body_catalog_kat_rejects(mutant, label):
+    try:
+        docs17_body_encoder_catalog_kat(mutant)
+    except AssertionError:
+        return
+    raise AssertionError(
+        f"docs/17 body encoder KAT accepted coherent {label} mutation")
+
+
+def self_test():
+    doc = build_document()
+    docs17_max_body_kat(doc)
+    docs17_body_encoder_catalog_kat(doc)
+    docs17_encoded_envelope_kat(doc)
+    # Mutate catalog-facing bytes and length together. The manual digest is
+    # intentionally outside that generated expectation and must reject it.
+    mutant = json.loads(json.dumps(doc))
+    for row in mutant["vectors"]:
+        if row.get("id") in {"DSV1_BODY_30_EXACT", "DSV1_BODY_42_EXACT"}:
+            row["body_hex"] = hx(b"Y" * (DOC17_MAX_BODY_BYTES - 1))
+            row["body_length"] = DOC17_MAX_BODY_BYTES - 1
+    try:
+        docs17_max_body_kat(mutant)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("docs/17 maximum body co-mutation was accepted")
+
+    # Exercise every fixed encoder pin directly, then mutate the already-built
+    # catalog after all internal prefix assertions have passed. Thus updating
+    # generated rows/lengths or historical prefix pins cannot satisfy the KAT.
+    for identity, encoder, _, family, subtype, body_hex in DOC17_BODY_ENCODER_KATS:
+        body = bytearray.fromhex(body_hex)
+        body[-1] ^= 1
+        try:
+            pin_docs17_body_encoder_kat(
+                identity, encoder, family, subtype, bytes(body))
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError(
+                f"{identity}: body encoder mutation matched fixed literal")
+        assert_body_catalog_kat_rejects(
+            coherent_body_catalog_mutant(doc, identity), identity)
+
+    # Each mutant updates the encoded value and its catalog-facing metadata,
+    # CRC, and SHA together. Only the fixed answers can still make it RED.
+    assert_encoded_kat_rejects(
+        coherent_encoded_mutant(doc, "DSV1_BODY_30_EXACT", 14, "subtype"),
+        "subtype")
+    assert_encoded_kat_rejects(
+        coherent_encoded_mutant(doc, "DSV1_BODY_42_EXACT", 15, "flags"),
+        "flags")
+    assert_encoded_kat_rejects(
+        coherent_encoded_mutant(doc, "DSV1_BODY_30_EXACT", 108),
+        "body")
+    assert_encoded_kat_rejects(
+        coherent_encoded_mutant(
+            doc, "DSV1_BODY_42_EXACT", -1, recompute_crc=False),
+        "CRC/SHA")
+
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
     if not argv:
-        print("usage: domain_store_vector_gen.py generate|check <path>", file=sys.stderr)
+        print("usage: domain_store_vector_gen.py generate|check <path> | self-test", file=sys.stderr)
         return 2
     mode = argv[0]
+    if mode == "self-test" and len(argv) == 1:
+        self_test()
+        print("domain_store_vector_gen self-test ok")
+        return 0
     if mode not in ("generate", "check") and len(argv) == 1:
         # Legacy: single path argument means generate
         mode = "generate"
         path = Path(argv[0])
     elif mode in ("generate", "check"):
         if len(argv) < 2:
-            print("usage: domain_store_vector_gen.py generate|check <path>", file=sys.stderr)
+            print("usage: domain_store_vector_gen.py generate|check <path> | self-test", file=sys.stderr)
             return 2
         path = Path(argv[1])
     else:
-        print("usage: domain_store_vector_gen.py generate|check <path>", file=sys.stderr)
+        print("usage: domain_store_vector_gen.py generate|check <path> | self-test", file=sys.stderr)
         return 2
 
     payload = document_bytes()

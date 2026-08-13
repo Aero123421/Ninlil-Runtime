@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * TEST_ONLY LAB credential fixtures.
  */

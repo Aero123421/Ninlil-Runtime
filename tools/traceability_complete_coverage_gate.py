@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Fail-closed V2 traceability coverage authority.
+"""Fail-closed V2 traceability registration coverage authority.
+
+The historical filename remains stable for existing automation; the emitted
+gate and CTest names describe the narrower registration claim.
 
 V2 deliberately separates three claims:
 
@@ -11,8 +14,10 @@ V2 deliberately separates three claims:
   registry for the profile being checked.
 
 Source hashes are drift fences only.  They are not treated as evidence that a
-test proves newly-added prose.  Focused invariant evidence therefore also
-pins reader-reviewable assertion anchors in test sources.
+test proves newly-added prose. Focused invariant evidence pins static,
+reader-reviewable, assertion-bearing anchors in test sources. The lexical
+floor rejects commented-out, incomplete, and obviously vacuous assertions;
+it does not establish semantic sufficiency or measure assertion strength.
 """
 
 from __future__ import annotations
@@ -24,6 +29,8 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +53,18 @@ ATX_RE = re.compile(r"^(#{2,4}) ([^#].*?)\s*$")
 FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 FND_RE = re.compile(r"`(NIN-FND-[A-Z0-9-]+)`")
 INVARIANT_RE = re.compile(r"^- `(NIN-INV-[0-9]{3})`: .+$")
+ASSERTION_REGION_RE = re.compile(
+    r"\b(?:REQUIRE|CHECK|expect_(?:t|i|st|u64))\s*\([^;]*\)\s*;",
+    re.DOTALL,
+)
+VACUOUS_ASSERTION_RE = re.compile(
+    r"\s*(?:(?:REQUIRE|CHECK)\s*\(\s*"
+    r"(?:1[uUlL]*|true|TRUE|!\s*0[uUlL]*)\s*\)"
+    r"|expect_t\s*\(\s*,\s*"
+    r"(?:1[uUlL]*|true|TRUE|!\s*0[uUlL]*)\s*\))\s*;\s*",
+    re.DOTALL,
+)
+CPP_CONDITIONAL_RE = re.compile(r"^\s*#\s*(if|ifdef|ifndef|endif)\b")
 
 
 class CoverageError(ValueError):
@@ -106,6 +125,104 @@ def _safe_path(root: Path, relative: Any, context: str) -> tuple[str, Path]:
     except ValueError as exc:
         raise CoverageError(f"{context} escapes repository root") from exc
     return relative, path
+
+
+def _c_code_projection(text: str) -> str:
+    """Blank C comments and literals while preserving offsets and newlines."""
+    projected = list(text)
+    state = "code"
+    index = 0
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+        if state == "code":
+            if char == "/" and next_char == "/":
+                projected[index] = projected[index + 1] = " "
+                index += 2
+                state = "line-comment"
+                continue
+            if char == "/" and next_char == "*":
+                projected[index] = projected[index + 1] = " "
+                index += 2
+                state = "block-comment"
+                continue
+            if char == '"':
+                projected[index] = " "
+                state = "string"
+                index += 1
+                continue
+            if char == "'":
+                projected[index] = " "
+                state = "character"
+                index += 1
+                continue
+            index += 1
+            continue
+        if state == "line-comment":
+            if char == "\n":
+                state = "code"
+            else:
+                projected[index] = " "
+            index += 1
+            continue
+        if state == "block-comment":
+            if char == "*" and next_char == "/":
+                projected[index] = projected[index + 1] = " "
+                index += 2
+                state = "code"
+            else:
+                if char != "\n":
+                    projected[index] = " "
+                index += 1
+            continue
+        if char == "\\":
+            projected[index] = " "
+            if index + 1 < len(text) and next_char != "\n":
+                projected[index + 1] = " "
+            index += 2
+            continue
+        if (state == "string" and char == '"') or (
+            state == "character" and char == "'"
+        ):
+            state = "code"
+        if char != "\n":
+            projected[index] = " "
+        index += 1
+    return "".join(projected)
+
+
+def _preprocessor_conditional_depth(text: str, offset: int) -> int:
+    depth = 0
+    for line in _c_code_projection(text[:offset]).splitlines():
+        match = CPP_CONDITIONAL_RE.match(line)
+        if match is None:
+            continue
+        if match.group(1) == "endif":
+            depth = max(0, depth - 1)
+        else:
+            depth += 1
+    return depth
+
+
+def _require_assertion_bearing_anchor(
+    anchor: str,
+    source_text: str,
+    source_offset: int,
+    context: str,
+) -> None:
+    """Require at least one active, complete, non-obviously-vacuous assertion."""
+    if _preprocessor_conditional_depth(source_text, source_offset) != 0:
+        raise CoverageError(
+            f"{context} is inside a conditional-preprocessor region"
+        )
+    projected = _c_code_projection(source_text)[
+        source_offset : source_offset + len(anchor)
+    ]
+    assertions = ASSERTION_REGION_RE.findall(projected)
+    if not assertions:
+        raise CoverageError(f"{context} is not an active assertion-bearing anchor")
+    if all(VACUOUS_ASSERTION_RE.fullmatch(item) for item in assertions):
+        raise CoverageError(f"{context} has only obviously vacuous assertions")
 
 
 def _outside_fence_lines(text: str) -> list[tuple[int, str]]:
@@ -284,6 +401,29 @@ def _ctest_registry(path: Path) -> set[str]:
     return _ctest_json_registry(value)
 
 
+def _junit_passed(path: Path) -> set[str]:
+    """Return passed CTest names from an externally-produced JUnit report."""
+    try:
+        root = ET.fromstring(path.read_bytes())
+    except (OSError, ET.ParseError) as exc:
+        raise CoverageError(f"cannot read JUnit XML {path}: {exc}") from exc
+    passed: set[str] = set()
+    seen: set[str] = set()
+    for case in root.iter("testcase"):
+        name = case.get("name")
+        if not isinstance(name, str) or TEST_ID_RE.fullmatch(name) is None:
+            raise CoverageError("JUnit testcase has invalid/missing CTest name")
+        if name in seen:
+            raise CoverageError(f"duplicate JUnit testcase name: {name}")
+        seen.add(name)
+        if any(child.tag in {"failure", "error", "skipped"} for child in case):
+            continue
+        passed.add(name)
+    if not seen:
+        raise CoverageError("JUnit XML has no testcase entries")
+    return passed
+
+
 def _require_enabled(
     mapping: dict[str, list[str]],
     context: str,
@@ -296,6 +436,20 @@ def _require_enabled(
                 raise CoverageError(
                     f"{context} references disabled/unregistered "
                     f"{profile} CTest: {test}"
+                )
+            links += 1
+    return links
+
+
+def _require_junit_passed(
+    mapping: dict[str, list[str]], context: str, junit: dict[str, set[str]]
+) -> int:
+    links = 0
+    for profile, passed in junit.items():
+        for test in mapping[profile]:
+            if test not in passed:
+                raise CoverageError(
+                    f"{context} has no passing JUnit evidence for {profile} CTest: {test}"
                 )
             links += 1
     return links
@@ -321,14 +475,20 @@ def _validate_anchor_evidence(
     seen: set[str] = set()
     for anchor in anchors:
         if not isinstance(anchor, str) or not anchor:
-            raise CoverageError(f"{context} invalid assertion anchor")
+            raise CoverageError(f"{context} invalid source anchor")
         if anchor in seen:
-            raise CoverageError(f"{context} duplicate assertion anchor")
+            raise CoverageError(f"{context} duplicate source anchor")
         if text.count(anchor) != 1:
             raise CoverageError(
-                f"{context} assertion anchor must occur exactly once in {relative}: "
+                f"{context} source anchor must occur exactly once in {relative}: "
                 f"{anchor!r}"
             )
+        _require_assertion_bearing_anchor(
+            anchor,
+            text,
+            text.find(anchor),
+            context,
+        )
         seen.add(anchor)
     tests = _profile_tests(
         evidence["tests_by_profile"], f"{context}.tests_by_profile"
@@ -340,6 +500,7 @@ def validate(
     root: Path,
     manifest: dict[str, Any],
     registries: dict[str, set[str]],
+    junit: dict[str, set[str]] | None = None,
 ) -> dict[str, int]:
     root = root.resolve()
     if not registries or set(registries) - set(EXPECTED_PROFILES):
@@ -367,6 +528,7 @@ def validate(
     actual_fnd: set[str] = set()
     heading_count = 0
     test_links = 0
+    junit_links = 0
     for source_index, raw_source in enumerate(sources):
         source = _object(
             raw_source,
@@ -435,6 +597,8 @@ def validate(
                         f"{profile}"
                     )
             test_links += _require_enabled(tests, unit["id"], registries)
+            if junit:
+                junit_links += _require_junit_passed(tests, unit["id"], junit)
         if set(listed) != set(actual_units):
             raise CoverageError(
                 f"{relative} heading coverage mismatch: "
@@ -477,6 +641,8 @@ def validate(
             require_each=True,
         )
         test_links += _require_enabled(tests, identity, registries)
+        if junit:
+            junit_links += _require_junit_passed(tests, identity, junit)
     if listed_fnd != actual_fnd:
         raise CoverageError(
             "explicit NIN-FND requirement coverage mismatch: "
@@ -510,6 +676,8 @@ def validate(
         }:
             raise CoverageError("vector delegated authority test set mismatch")
     test_links += _require_enabled(tests, authority["id"], registries)
+    if junit:
+        junit_links += _require_junit_passed(tests, authority["id"], junit)
 
     invariant_source = _object(
         top["invariant_source"],
@@ -588,6 +756,15 @@ def validate(
                     f"{identity}.{claim_id}.evidence[{evidence_index}]",
                     registries,
                 )
+                if junit:
+                    junit_links += _require_junit_passed(
+                        _profile_tests(
+                            raw_evidence["tests_by_profile"],
+                            f"{identity}.{claim_id}.evidence[{evidence_index}].tests_by_profile",
+                        ),
+                        f"{identity}.{claim_id}.evidence[{evidence_index}]",
+                        junit,
+                    )
                 evidence_profiles = raw_evidence["tests_by_profile"]
                 for profile in profiles:
                     if evidence_profiles[profile]:
@@ -627,6 +804,7 @@ def validate(
         "invariants": len(rows),
         "subclaims": subclaim_count,
         "test_links": test_links,
+        "junit_pass_links": junit_links,
     }
 
 
@@ -672,6 +850,91 @@ def self_test(root: Path, manifest: dict[str, Any]) -> None:
     all_tests = _all_manifest_tests(manifest)
     registries = {profile: set(all_tests) for profile in EXPECTED_PROFILES}
     validate(root, manifest, registries)
+    junit = {profile: set(all_tests) for profile in EXPECTED_PROFILES}
+    validate(root, manifest, registries, junit)
+    junit["baseline"].remove(
+        manifest["normative_sources"][0]["heading_units"][0]["tests_by_profile"]["baseline"][0]
+    )
+    try:
+        validate(root, manifest, registries, junit)
+    except CoverageError as exc:
+        if "no passing JUnit evidence" not in str(exc):
+            raise
+    else:
+        raise CoverageError("self-test missing JUnit result was accepted")
+
+    evidence = manifest["invariant_source"]["invariants"][0]["subclaims"][0]["evidence"][0]
+    anchor = evidence["anchors"][0]
+    source = (root / evidence["source"]).read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory() as raw_temp:
+        temp = Path(raw_temp)
+        (temp / "anchor.c").write_text(source.replace(anchor, "", 1), encoding="utf-8")
+        mutated_evidence = copy.deepcopy(evidence)
+        mutated_evidence["source"] = "anchor.c"
+        try:
+            _validate_anchor_evidence(temp, mutated_evidence, "anchor-deletion", registries)
+        except CoverageError as exc:
+            if "must occur exactly once" not in str(exc):
+                raise
+        else:
+            raise CoverageError("self-test source-anchor deletion was accepted")
+
+        coherent_mutations = (
+            (
+                "coherent-assertion-deletion",
+                "(void)result.next.state;",
+                "not an active assertion-bearing anchor",
+            ),
+            (
+                "coherent-assertion-comment-out",
+                f"/* {anchor} */",
+                "not an active assertion-bearing anchor",
+            ),
+            (
+                "coherent-vacuous-assertion",
+                "REQUIRE(1);",
+                "only obviously vacuous assertions",
+            ),
+        )
+        for mutation_name, replacement, expected in coherent_mutations:
+            (temp / "anchor.c").write_text(
+                source.replace(anchor, replacement, 1), encoding="utf-8"
+            )
+            mutated_evidence = copy.deepcopy(evidence)
+            mutated_evidence["source"] = "anchor.c"
+            mutated_evidence["anchors"][0] = replacement
+            try:
+                _validate_anchor_evidence(
+                    temp, mutated_evidence, mutation_name, registries
+                )
+            except CoverageError as exc:
+                if expected not in str(exc):
+                    raise
+            else:
+                raise CoverageError(
+                    f"self-test {mutation_name} was accepted"
+                )
+
+        (temp / "anchor.c").write_text(
+            source.replace(anchor, f"#if 0\n{anchor}\n#endif", 1),
+            encoding="utf-8",
+        )
+        mutated_evidence = copy.deepcopy(evidence)
+        mutated_evidence["source"] = "anchor.c"
+        try:
+            _validate_anchor_evidence(
+                temp,
+                mutated_evidence,
+                "coherent-preprocessor-noop",
+                registries,
+            )
+        except CoverageError as exc:
+            if "conditional-preprocessor region" not in str(exc):
+                raise
+        else:
+            raise CoverageError(
+                "self-test coherent-preprocessor-noop was accepted"
+            )
 
     mutated = copy.deepcopy(manifest)
     mutated["normative_sources"][0]["heading_units"].pop()
@@ -749,6 +1012,23 @@ def self_test(root: Path, manifest: dict[str, Any]) -> None:
     else:
         raise CoverageError("self-test moved invariant was accepted")
 
+    materializer = root / "tools/traceability_coverage_v2_materialize.py"
+    for mode, marker in (
+        ("--check", "traceability coverage V2 freshness ok:"),
+        ("--self-test", "traceability coverage V2 materializer self-test ok"),
+    ):
+        completed = subprocess.run(
+            [sys.executable, str(materializer), mode],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0 or marker not in completed.stdout:
+            raise CoverageError(
+                f"materializer {mode} failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+
 
 def _parse_profiles(values: list[str]) -> dict[str, set[str]]:
     registries: dict[str, set[str]] = {}
@@ -760,6 +1040,18 @@ def _parse_profiles(values: list[str]) -> dict[str, set[str]]:
             raise CoverageError(f"invalid/duplicate configured profile: {name!r}")
         registries[name] = _ctest_registry(Path(raw_path))
     return registries
+
+
+def _parse_junit(values: list[str]) -> dict[str, set[str]]:
+    results: dict[str, set[str]] = {}
+    for value in values:
+        if "=" not in value:
+            raise CoverageError("--junit requires NAME=JUnitXML")
+        name, raw_path = value.split("=", 1)
+        if name not in EXPECTED_PROFILES or name in results or not raw_path:
+            raise CoverageError(f"invalid/duplicate JUnit profile: {name!r}")
+        results[name] = _junit_passed(Path(raw_path))
+    return results
 
 
 def main(argv: list[str]) -> int:
@@ -775,22 +1067,32 @@ def main(argv: list[str]) -> int:
         metavar="NAME=PATH",
         help="configured baseline/all-private CTest JSON file or build directory",
     )
+    parser.add_argument(
+        "--junit",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="optional CTest --output-junit XML; checks cited CTests passed, not assertion strength",
+    )
     args = parser.parse_args(argv)
     try:
         manifest = _json_load(args.root / MANIFEST)
         if args.self_test:
             self_test(args.root, manifest)
-            print("traceability complete coverage V2 self-test ok")
+            print("traceability registration coverage V2 self-test ok")
         else:
             registries = _parse_profiles(args.profile)
-            result = validate(args.root, manifest, registries)
+            junit = _parse_junit(args.junit)
+            if junit and set(junit) != set(registries):
+                raise CoverageError("JUnit profiles must exactly match configured CTest profiles")
+            result = validate(args.root, manifest, registries, junit)
             print(
-                "traceability complete coverage V2 ok: "
+                "traceability registration coverage V2 ok: "
                 + " ".join(f"{key}={value}" for key, value in result.items())
                 + f" profiles={','.join(sorted(registries))}"
             )
     except (CoverageError, OSError, UnicodeError) as exc:
-        print(f"traceability complete coverage V2 error: {exc}", file=sys.stderr)
+        print(f"traceability registration coverage V2 error: {exc}", file=sys.stderr)
         return 1
     return 0
 

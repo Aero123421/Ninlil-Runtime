@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D3-S2 P2-A DSD1 multi-session composition production bridge
  * (docs/17 §18.13.16).

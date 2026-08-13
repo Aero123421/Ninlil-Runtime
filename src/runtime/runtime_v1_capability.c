@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_v1_capability.h"
 
 #include "domain_store_codec.h"

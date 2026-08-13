@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RADIO_C6_LAB_SPI_TX_SIM_H
 #define NINLIL_RADIO_C6_LAB_SPI_TX_SIM_H
 

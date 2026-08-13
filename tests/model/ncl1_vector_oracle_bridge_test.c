@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production C bridge for ncl1-u4-v1.json codec cases.
  *

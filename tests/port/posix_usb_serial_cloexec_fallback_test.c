@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host-test-only: fcntl FD_CLOEXEC fallback path coverage.
  *

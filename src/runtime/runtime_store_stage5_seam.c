@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_store_stage5_seam.h"
 
 #include <stddef.h>

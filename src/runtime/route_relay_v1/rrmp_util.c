@@ -1,22 +1,7 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_util.h"
 
-/*
- * SHA-256: fail-closed provider selection.
- *  1) OpenSSL when NINLIL_RRMP_HAVE_OPENSSL=1 (host CI / production)
- *  2) mbedTLS when ESP_PLATFORM or NINLIL_RRMP_HAVE_MBEDTLS=1
- * No portable/software SHA fallback — silent weak digests are forbidden.
- */
-
-#if defined(NINLIL_RRMP_HAVE_OPENSSL) && (NINLIL_RRMP_HAVE_OPENSSL)
-#include <openssl/sha.h>
-#define NINLIL_RRMP_SHA_OPENSSL 1
-#elif defined(ESP_PLATFORM) || \
-    (defined(NINLIL_RRMP_HAVE_MBEDTLS) && (NINLIL_RRMP_HAVE_MBEDTLS))
-#include "mbedtls/sha256.h"
-#define NINLIL_RRMP_SHA_MBEDTLS 1
-#else
-#error "ninlil_rrmp_sha256 requires OpenSSL (host) or mbedTLS (ESP); no portable fallback"
-#endif
+#include "rrmp_sha256_provider.h"
 
 void ninlil_rrmp_put_u16_be(uint8_t *out, uint16_t value)
 {
@@ -147,28 +132,26 @@ static const uint8_t k_sha_abc[32] = {
 
 static void sha256_raw(const uint8_t *bytes, size_t length, uint8_t out[32])
 {
-#if defined(NINLIL_RRMP_SHA_OPENSSL)
-    SHA256(bytes == NULL ? (const uint8_t *)"" : bytes, length, out);
-#elif defined(NINLIL_RRMP_SHA_MBEDTLS)
     const uint8_t *in = (bytes == NULL) ? (const uint8_t *)"" : bytes;
-    (void)mbedtls_sha256(in, length, out, 0);
-#endif
+    if (!ninlil_rrmp_sha256_provider(in, length, out)) {
+        ninlil_rrmp_memzero(out, 32u);
+    }
+}
+
+static int sha256_kat_ok(void)
+{
+    uint8_t got[32];
+    sha256_raw((const uint8_t *)"", 0u, got);
+    if (!ninlil_rrmp_memeq(got, k_sha_empty, 32u)) {
+        return 0;
+    }
+    sha256_raw((const uint8_t *)"abc", 3u, got);
+    return ninlil_rrmp_memeq(got, k_sha_abc, 32u) ? 1 : 0;
 }
 
 void ninlil_rrmp_sha256(const uint8_t *bytes, size_t length, uint8_t out[32])
 {
-    static int kat_ok = -1;
-    uint8_t got[32];
-    if (kat_ok < 0) {
-        sha256_raw((const uint8_t *)"", 0u, got);
-        if (!ninlil_rrmp_memeq(got, k_sha_empty, 32u)) {
-            kat_ok = 0;
-        } else {
-            sha256_raw((const uint8_t *)"abc", 3u, got);
-            kat_ok = ninlil_rrmp_memeq(got, k_sha_abc, 32u) ? 1 : 0;
-        }
-    }
-    if (kat_ok != 1) {
+    if (!sha256_kat_ok()) {
         /* Fail-closed: refuse digests if provider fails KAT. */
         ninlil_rrmp_memzero(out, 32u);
         return;
@@ -178,11 +161,5 @@ void ninlil_rrmp_sha256(const uint8_t *bytes, size_t length, uint8_t out[32])
 
 int ninlil_rrmp_sha256_selftest(void)
 {
-    uint8_t got[32];
-    sha256_raw((const uint8_t *)"", 0u, got);
-    if (!ninlil_rrmp_memeq(got, k_sha_empty, 32u)) {
-        return 0;
-    }
-    sha256_raw((const uint8_t *)"abc", 3u, got);
-    return ninlil_rrmp_memeq(got, k_sha_abc, 32u) ? 1 : 0;
+    return sha256_kat_ok();
 }

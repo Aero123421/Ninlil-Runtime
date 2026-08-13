@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "fabric_private_records.h"
 #include "nfl1_codec.h"
 #include "r7_crypto_openssl3.h"

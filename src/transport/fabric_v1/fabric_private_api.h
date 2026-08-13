@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Fabric v1 implementation API.  Not installed and not public ABI.
  *
@@ -25,8 +26,17 @@ typedef ninlil_fabric_link_registration_v1_t
     ninlil_fabric_registration_private_t;
 typedef ninlil_fabric_status_t ninlil_fabric_private_status_t;
 
-/* Private composition type; Fabric remains independently buildable. */
-struct ninlil_rrmp_owner;
+/*
+ * Private, instance-local composition callback.  Fabric owns only this
+ * opaque notification seam and never imports a Runtime/RRMP type.
+ */
+typedef void (*ninlil_fabric_private_path_selected_fn_v1)(
+    void *user,
+    const uint8_t selected_instance_id[16],
+    uint32_t has_selection,
+    uint32_t requires_custody,
+    uint64_t path_selection_epoch,
+    uint64_t now_ms);
 
 #define NINLIL_FABRIC_PRIVATE_OK NINLIL_FABRIC_OK
 #define NINLIL_FABRIC_PRIVATE_INVALID_ARGUMENT NINLIL_FABRIC_INVALID_ARGUMENT
@@ -53,11 +63,14 @@ ninlil_fabric_private_status_t ninlil_fabric_private_bearer_ops_v1(
     ninlil_fabric_private_t *fabric,
     const ninlil_bearer_ops_t **out_bearer_ops);
 /*
- * Instance-local Fabric -> RRMP composition seam. NULL detaches. Binding a
- * different non-NULL owner requires an explicit detach first.
+ * Instance-local Fabric composition seam.  A NULL user/function pair
+ * detaches.  Replacing a live non-NULL pair requires an explicit detach.
  */
-ninlil_fabric_private_status_t ninlil_fabric_private_bind_rrmp_owner_v1(
-    ninlil_fabric_private_t *fabric, struct ninlil_rrmp_owner *owner);
+ninlil_fabric_private_status_t
+ninlil_fabric_private_bind_path_selected_hook_v1(
+    ninlil_fabric_private_t *fabric,
+    void *user,
+    ninlil_fabric_private_path_selected_fn_v1 function);
 ninlil_fabric_private_status_t ninlil_fabric_private_register_link_v1(
     ninlil_fabric_private_t *fabric,
     const ninlil_fabric_link_descriptor_v1_t *descriptor,

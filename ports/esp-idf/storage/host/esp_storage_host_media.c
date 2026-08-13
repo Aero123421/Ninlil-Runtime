@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host media models NOR flash constraints:
  * - erase sets 0xFF on erase-aligned regions

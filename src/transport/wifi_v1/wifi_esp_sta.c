@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP32-S3 Wi-Fi STA: sole driver owner, WIFI_STORAGE_RAM.
  * Callbacks enqueue fixed records only — no owner state mutation.

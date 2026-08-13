@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_ESP_IDF_ENTROPY_PUBLISH_LOGIC_H
 #define NINLIL_ESP_IDF_ENTROPY_PUBLISH_LOGIC_H
 

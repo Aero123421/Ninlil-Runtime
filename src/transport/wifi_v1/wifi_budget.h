@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Wi-Fi v1 resource budgets (ADR-0018).
  * Default-OFF candidate. Not installed. Not public ABI.

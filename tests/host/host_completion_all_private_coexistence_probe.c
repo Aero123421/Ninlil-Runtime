@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * One-process coexistence proof for the simultaneous all-private Host profile.
  *
@@ -36,7 +37,7 @@
         }                                                                     \
     } while (0)
 
-enum { RRMP_WORKSPACE_MAX = 512 * 1024 };
+enum { RRMP_WORKSPACE_MAX = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES };
 
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN)
 static uint8_t g_rrmp_workspace[RRMP_WORKSPACE_MAX];
@@ -217,7 +218,6 @@ static int prove_rrmp_live_path(void)
         g_rrmp_workspace, workspace_bytes, &config);
     CHECK("RRMP", owner != NULL);
     CHECK("RRMP", ninlil_rrmp_owner_bind(owner));
-    CHECK("RRMP", ninlil_rrmp_owner_current() == owner);
 
     fill_id(selected_path, 0x70u);
     ninlil_rrmp_core_set_fabric_path(owner, selected_path, 9u);
@@ -228,8 +228,7 @@ static int prove_rrmp_live_path(void)
     CHECK("RRMP", observed_epoch == 9u);
     CHECK("RRMP", memcmp(selected_path, observed_path, 16u) == 0);
 
-    ninlil_rrmp_owner_unbind();
-    CHECK("RRMP", ninlil_rrmp_owner_current() == NULL);
+    ninlil_rrmp_owner_unbind(owner);
     ninlil_rrmp_owner_fini(owner);
     (void)printf(
         "all_private_coexistence: feature=RRMP status=PASS "

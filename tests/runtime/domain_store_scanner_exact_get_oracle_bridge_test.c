@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D2-S4 production profiled-begin exact-get bridge: executes each
  * domain-scan-exact-get-v1 vector through ninlil_domain_scan_begin_profiled

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure RF bus capability + SPI length admit boundaries (host).
  */

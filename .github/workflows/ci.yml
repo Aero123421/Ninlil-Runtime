@@ -116,6 +116,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install package build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -216,6 +221,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       # OpenSSL 3 is required for R7 Host private crypto (tests-ON and tests-OFF top-level).
       - name: Install OpenSSL 3 headers and SQLite3
         run: >-
@@ -253,6 +263,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3, OpenSSL 3, and ninja
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -275,12 +290,15 @@ jobs:
             --output-on-failure --no-tests=error \
             -R '^public_module_manifest_gate(_self_test)?$'
       - name: Test full matrix
-        run: ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
-      - name: Traceability complete coverage V2 (baseline)
+        run: >-
+          ctest --test-dir build/ci-ubuntu-dyn --output-on-failure
+          --output-junit ctest-junit.xml
+      - name: Traceability registration coverage V2 (baseline)
         run: |
           python3 tools/traceability_complete_coverage_gate.py --self-test
           python3 tools/traceability_complete_coverage_gate.py --check \
-            --profile baseline=build/ci-ubuntu-dyn
+            --profile baseline=build/ci-ubuntu-dyn \
+            --junit baseline=build/ci-ubuntu-dyn/ctest-junit.xml
       - name: R7 T0 crypto + T1 private wire + T1b binding acceptance (focused, non-sanitize)
         run: >-
           python3 tools/r7_t0_ctest_gate.py run-focused
@@ -362,6 +380,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install gcc-13 g++-13 ninja OpenSSL 3 SQLite shared headers
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -627,7 +650,9 @@ jobs:
   ubuntu-clang-release-r7:
     name: Ubuntu Clang Release R7 authority
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    # Fresh hosted-runner evidence: the strict full matrix alone takes about
+    # 31 minutes; leave room for configure/build and the focused R7 gates.
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}
@@ -636,6 +661,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -678,6 +708,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 (static archive), OpenSSL 3, zlib, ninja
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -882,6 +917,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -927,6 +967,100 @@ jobs:
           grep -E 'NINLIL_ENABLE_SANITIZERS:BOOL=ON' \
             build/ci-clang-sanitize/CMakeCache.txt
 
+  decoder-fuzz:
+    name: Decoder fuzz (6 boundaries, 5 minutes each)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
+      - name: Install Clang and build dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          clang libclang-rt-dev libsqlite3-dev libssl-dev ninja-build
+      - name: Configure private libFuzzer targets
+        run: |
+          cmake -S . -B build/ci-decoder-fuzz -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DNINLIL_ENABLE_SANITIZERS=ON \
+            -DNINLIL_ENABLE_R7_FRAG_PRIVATE=ON \
+            -DNINLIL_ENABLE_PRIVATE_ROUTE_RELAY_V1=ON \
+            -DNINLIL_BUILD_DECODER_FUZZERS=ON
+      - name: Build all six harnesses
+        run: >-
+          cmake --build build/ci-decoder-fuzz --parallel 2
+          --target ninlil_decoder_fuzzers
+      - name: Generate and verify vector-derived seed corpus
+        run: |
+          python3 tools/decoder_fuzz_seed_corpus.py self-test
+          python3 tools/decoder_fuzz_seed_corpus.py generate \
+            --output build/ci-decoder-fuzz/corpus
+          python3 tools/decoder_fuzz_seed_corpus.py check \
+            --output build/ci-decoder-fuzz/corpus
+      - name: Fuzz all decoder boundaries concurrently
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          build=$PWD/build/ci-decoder-fuzz
+          mkdir -p "$build/fuzz-artifacts" "$build/fuzz-logs"
+          specs=(
+            ninlil_nfl1_codec_fuzzer:nfl1_codec
+            ninlil_rrmp_codec_fuzzer:rrmp_codec
+            ninlil_r7_wire_codec_fuzzer:r7_wire_codec
+            ninlil_r7_frag_wire_fuzzer:r7_frag_wire
+            ninlil_n6_record_codec_fuzzer:n6_record_codec
+            ninlil_domain_store_body_codec_fuzzer:domain_store_body_codec
+          )
+          pids=()
+          names=()
+          for spec in "${specs[@]}"; do
+            binary=${spec%%:*}
+            corpus=${spec#*:}
+            names+=("$binary")
+            "$build/$binary" "$build/corpus/$corpus" \
+              -max_total_time=300 -max_len=4096 -timeout=10 \
+              -rss_limit_mb=2048 \
+              -artifact_prefix="$build/fuzz-artifacts/$corpus-" \
+              >"$build/fuzz-logs/$corpus.log" 2>&1 &
+            pids+=("$!")
+          done
+          failed=0
+          for i in "${!pids[@]}"; do
+            if wait "${pids[$i]}"; then
+              tail -n 8 "$build/fuzz-logs/${specs[$i]#*:}.log"
+            else
+              echo "fuzzer failed: ${names[$i]}" >&2
+              cat "$build/fuzz-logs/${specs[$i]#*:}.log" >&2
+              failed=1
+            fi
+          done
+          exit "$failed"
+      # actions/upload-artifact v4.6.2
+      - name: Upload crash inputs and logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: decoder-fuzz-failure-${{ github.run_id }}
+          path: |
+            build/ci-decoder-fuzz/fuzz-artifacts
+            build/ci-decoder-fuzz/fuzz-logs
+            build/ci-decoder-fuzz/corpus/manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
   # ADR-0021 private MFDT: default-OFF residual + feature-ON private suite.
   # Actual ESP compile/link/map is tools/esp_idf_ci_docker_run.sh (official amd64).
   # Does not promote SPEC_ACCEPTED. Physical HIL remains NOT_RUN via runner.
@@ -942,6 +1076,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1126,6 +1265,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1315,6 +1459,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install Host build dependencies (Linux)
         if: runner.os == 'Linux'
         run: >-
@@ -1394,6 +1543,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1421,6 +1575,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps (+ arm-none-eabi for ILP32)
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1443,6 +1602,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1472,6 +1636,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1502,6 +1671,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install build deps
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1538,7 +1712,7 @@ jobs:
             | grep -F 'host_completion_transport_fixture_e2e' \
             || { echo "false-green: transport fixture not registered under all-features-ON" >&2; exit 1; }
           ctest --test-dir build/host-completion-allfeat -N \
-            | grep -F 'traceability_complete_coverage_v2_check' \
+            | grep -F 'traceability_registration_coverage_v2_check' \
             || { echo "false-green: all-private traceability gate not registered" >&2; exit 1; }
           ctest --test-dir build/host-completion-allfeat \
             --show-only=json-v1 \
@@ -1611,7 +1785,7 @@ jobs:
             -DNINLIL_ENABLE_MFDT_V1_PRIVATE=OFF \
             -DNINLIL_WIFI_ALLOW_UNPINNED_OPENSSL=ON
           if ctest --test-dir build/traceability-not-all-private -N \
-            | grep -F 'traceability_complete_coverage_v2_check'; then
+            | grep -F 'traceability_registration_coverage_v2_check'; then
             echo "false-green: partial private tree received a complete profile" >&2
             exit 1
           fi
@@ -1620,12 +1794,51 @@ jobs:
             echo "false-green: partial private tree registered all-private Host tests" >&2
             exit 1
           fi
-      - name: Traceability complete coverage V2 (all-private)
+      - name: Prepare traceability registration coverage V2 (all-private)
         run: |
           set -euo pipefail
+          # The aggregate above proves the six-feature integration surface,
+          # but the traceability manifest cites additional focused CTests.
+          # Build the configured tree and materialize the exact cited set.
+          cmake --build build/host-completion-allfeat --parallel 2
+          python3 - <<'PY' \
+            > build/host-completion-allfeat/traceability-cited.regex
+          import json
+          import re
+
+          manifest = json.load(open(
+              "requirements-traceability-coverage.json",
+              encoding="utf-8"))
+          tests = set()
+          for source in manifest["normative_sources"]:
+              for unit in source["heading_units"]:
+                  tests.update(unit["tests_by_profile"]["all-private"])
+          for row in manifest["explicit_requirement_sets"]:
+              tests.update(row["tests_by_profile"]["all-private"])
+          for authority in manifest["delegated_authorities"]:
+              tests.update(authority["tests_by_profile"]["all-private"])
+          for invariant in manifest["invariant_source"]["invariants"]:
+              for claim in invariant["subclaims"]:
+                  for evidence in claim["evidence"]:
+                      tests.update(
+                          evidence["tests_by_profile"]["all-private"])
+          if not tests:
+              raise SystemExit("all-private traceability cited set is empty")
+          print("^(" + "|".join(re.escape(name) for name in sorted(tests)) + ")$")
+          PY
+      - name: Produce traceability JUnit V2 (all-private)
+        run: >-
+          ctest --test-dir build/host-completion-allfeat \
+            --output-on-failure --no-tests=error \
+            --output-junit traceability-cited-junit.xml \
+            -R "$(cat build/host-completion-allfeat/traceability-cited.regex)"
+      - name: Verify traceability registration coverage V2 (all-private)
+        run: |
           python3 tools/traceability_complete_coverage_gate.py --self-test
           python3 tools/traceability_complete_coverage_gate.py --check \
-            --profile all-private=build/host-completion-allfeat
+            --profile all-private=build/host-completion-allfeat \
+            --junit \
+              all-private=build/host-completion-allfeat/traceability-cited-junit.xml
       - name: Canonical Foundation/Fabric/MFDT actual E2E (normal companion)
         env:
           ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:detect_stack_use_after_return=1
@@ -1803,6 +2016,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3, OpenSSL 3, ninja, binutils
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1891,6 +2109,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install clean-room build dependencies
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -1928,6 +2151,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Assert supported macOS arm64 runner
         run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
@@ -1971,6 +2199,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Assert supported macOS arm64 runner
         run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
@@ -2063,6 +2296,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Assert supported macOS arm64 runner
         run: test "$(uname -m)" = "arm64"
       - name: Install OpenSSL 3 (Homebrew)
@@ -2132,6 +2370,11 @@ jobs:
         with:
           ref: ${{ inputs.source-ref || github.sha }}
           persist-credentials: false
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
       - name: Install SQLite3 and OpenSSL 3
         run: >-
           sudo apt-get update && sudo apt-get install -y

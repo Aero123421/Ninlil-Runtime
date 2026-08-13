@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * POSIX USB/serial reference-port implementation.
  * Public surface: <ninlil/posix_usb_serial_v1.h> (ADR-0031).

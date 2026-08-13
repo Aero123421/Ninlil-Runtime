@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * N6 durable record pure BE codec (docs/30 §5.3).
  *

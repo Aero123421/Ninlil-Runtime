@@ -27,6 +27,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 AUTHORITY = "cmake/ninlil_r7_wire_sources.cmake"
 RUNTIME_AUTHORITY = "cmake/ninlil_runtime_private_sources.cmake"
 HOST_CMAKE = "CMakeLists.txt"
+HOST_CTEST = "cmake/ninlil_ctest.cmake"
 ESP_CMAKE = "ports/esp-idf/components/ninlil/CMakeLists.txt"
 WIRE_C = "src/radio/r7_wire_codec.c"
 WIRE_H = "src/radio/r7_wire_codec.h"
@@ -37,6 +38,7 @@ READ_PATHS = (
     AUTHORITY,
     RUNTIME_AUTHORITY,
     HOST_CMAKE,
+    HOST_CTEST,
     ESP_CMAKE,
     WIRE_C,
     WIRE_H,
@@ -444,8 +446,9 @@ def validate_texts(texts: Mapping[str, str]) -> list[str]:
         errors.append("dedicated T1 wire runtime append block missing")
 
     host = texts[HOST_CMAKE]
-    if "ninlil_r7_wire_ctest.cmake" not in host:
-        errors.append("Host CMake missing T1 ctest include")
+    host_tests = texts[HOST_CTEST]
+    if "ninlil_r7_wire_ctest.cmake" not in host_tests:
+        errors.append("Host test CMake authority missing T1 ctest include")
     for body in cmake_install_call_bodies(host):
         lower = body.lower()
         for needle in ("r7_wire_codec", "r7_wire_single_t1", "nrw1_t1"):

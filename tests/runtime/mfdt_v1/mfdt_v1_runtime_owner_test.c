@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Private Runtime-owner acceptance. This proves instance ownership, exact
  * Host slot cardinality, and use of the Runtime's existing Storage Port.

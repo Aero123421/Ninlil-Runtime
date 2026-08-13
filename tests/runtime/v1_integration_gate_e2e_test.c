@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB item 10b: integration E2E gate (single topology, single execution).
  */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_ABI_CONTRACT_H
 #define NINLIL_ABI_CONTRACT_H
 

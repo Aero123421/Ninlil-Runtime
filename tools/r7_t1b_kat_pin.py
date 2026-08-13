@@ -64,13 +64,13 @@ MANDATORY_IDS: tuple[str, ...] = (
 # Domain-separated pin over committed JSON + generated header bytes.
 # Refresh only with intentional vector review (docs/33 §9).
 PINNED_ARTIFACT_SHA256 = (
-    "b47b39b1a81b68982564276d0a76d178cc595777dbafdf694f299787045dc30b"
+    "d1d2d56267fa6b37bcfc03b11d977278577e53898159676a02ef0a762d7c1729"
 )
 PINNED_JSON_SHA256 = (
     "977f0911a5cb825dc860f1388fac602b223ed3ccbb4635ce4881696b94e892fe"
 )
 PINNED_HEADER_SHA256 = (
-    "b9b37cf250c67a583f09f05b18c6d60caf0962e301537abd6a1e9987800b48a2"
+    "7623d9664c4c5e26606395ca7b0d799ae7da74d1a43fca8da1940469b75bf70b"
 )
 
 LABELS = (

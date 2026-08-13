@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  *
  * Runtime-owned MFDT sidecar fault acceptance.  This is a Host software
  * witness for the NMS1 bootstrap/reopen classifier and exact close order; it

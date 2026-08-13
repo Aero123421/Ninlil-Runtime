@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * ESP mbedTLS SHA-256 backend for private wifi_v1.
  * Compiled only under ESP_PLATFORM (no OpenSSL).

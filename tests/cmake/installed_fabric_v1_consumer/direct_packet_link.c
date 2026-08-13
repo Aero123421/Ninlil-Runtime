@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "direct_packet_link.h"
 
 #include <stdint.h>

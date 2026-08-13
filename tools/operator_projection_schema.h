@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_OPERATOR_PROJECTION_SCHEMA_H
 #define NINLIL_OPERATOR_PROJECTION_SCHEMA_H
 

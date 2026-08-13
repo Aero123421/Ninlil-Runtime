@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "control_frame_codec.h"
 
 #include <stdint.h>

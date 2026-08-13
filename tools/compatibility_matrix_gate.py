@@ -116,9 +116,23 @@ ADR_STATUS_LINE_RE = re.compile(
     r"^[ \t]*状態:\s*\*\*(?P<body>.+?)\*\*(?P<after>.*)$",
     re.MULTILINE,
 )
+ADR_ENGLISH_STATUS_LINE_RE = re.compile(
+    r"^[ \t]*-[ \t]+Status:\s*(?P<body>[^\r\n]+?)\s*$",
+    re.MULTILINE,
+)
+REVIEW_ENGLISH_STATUS_LINE_RE = re.compile(
+    r"^[ \t]*(?:-[ \t]+)?(?:Final verdict|Result|Decision):\s*"
+    r"\*\*(?P<body>.+?)\*\*(?P<after>.*)$",
+    re.MULTILINE,
+)
 # Claim-like status smuggling in blockquotes / callouts (not authority, but reject).
 BLOCKQUOTE_STATUS_SMUGGLE_RE = re.compile(
     r"^[ \t]*>[ \t]*状態\s*:",
+    re.MULTILINE,
+)
+BLOCKQUOTE_ENGLISH_STATUS_SMUGGLE_RE = re.compile(
+    r"^[ \t]*>[ \t]*(?:-[ \t]+)?"
+    r"(?:Status|Final verdict|Result|Decision)\s*:",
     re.MULTILINE,
 )
 # HTML comments are not live rendered authority (multiline inclusive).
@@ -167,7 +181,7 @@ REVIEW_COUNT_SMUGGLE_RE = re.compile(
     r"P0=(?:0|[1-9]\d*)\s*/\s*P1=(?:0|[1-9]\d*)\s*/\s*P2=(?:0|[1-9]\d*)"
 )
 INDEPENDENT_REVIEW_STATUS_RE = re.compile(
-    r"^(?P<label>(?:(?!\b(?:NO-GO|GO)\b).)+?)\s+"
+    r"^(?:(?P<label>(?:(?!\b(?:NO-GO|GO)\b).)+?)\s+)?"
     r"(?P<verdict>NO-GO|GO)\s*"
     r"[—\-]\s*"
     r"P0=(?P<p0>0|[1-9]\d*)\s*/\s*"
@@ -181,6 +195,20 @@ REVIEW_COUNTS_TOKEN_RE = re.compile(
 # In-memory file overlays for self-tests (never write ROOT sources).
 _FILE_TEXT_OVERRIDES: dict[str, str] = {}
 
+PROPOSED_PROTOTYPE_BOUNDARY_PATH = "docs/34-v2-runtime-fabric-completion.md"
+PROPOSED_PROTOTYPE_BOUNDARY_REQUIRED = (
+    "**default-OFF**",
+    "**非install / 非export**",
+    "privateなsource・testだけに閉じる",
+    "通常build、package consumer、公開header、\n"
+    "production wire/storage、実機・release経路から到達できてはならない",
+    "`PROPOSED`を一段も昇格しない",
+    "S1〜S6、C5〜C10、Host/Target候補、HIL、互換性、\n"
+    "supportのevidenceにならない",
+    "default-ON、installed/public API",
+    "実機・release claimはこの例外の対象外",
+)
+
 # README feature ledger row → matrix feature id (exact table row name).
 FEATURE_README_ROWS: dict[str, str] = {
     "portable-core-host-runtime": "Portable Core / Host Runtime",
@@ -188,11 +216,14 @@ FEATURE_README_ROWS: dict[str, str] = {
     "identity-attachment-session-install": "Identity / Attachment / session install",
     "fabric-bearer-nfl1-path-registry": "Fabric Bearer / NFL1 / path registry",
     "posix-tcp-tls-wifi-reference": "POSIX TCP/TLS Wi-Fi reference",
+    "posix-tcp-tls-reference": "POSIX TCP/TLS reference",
+    "posix-usb-serial-reference": "POSIX USB serial reference",
     "esp32s3-wifi-sta-tcp-tls": "ESP32-S3 Wi-Fi STA/TCP/TLS",
     "nrw1-link-frag-reassembly": "NRW1 LINK / FRAG / reassembly",
     "relay": "Relay",
     "multi-parent-multi-controller": "Multi-parent / multi-Controller",
     "multi-frame-durable-transfer": "Multi-frame durable transfer",
+    "v1-composition": "V1 composition",
     "v1-functional-lab-vertical-slice": "V1 functional LAB vertical slice",
     "oss-package-docs-release-ci": "OSS package / docs / release CI",
 }
@@ -362,6 +393,40 @@ FEATURE_AUTHORITY = {
             )
         ],
     },
+    "posix-tcp-tls-reference": {
+        "required_hil": True,
+        "state_ceiling": "SPEC_ACCEPTED",
+        "depends_on": ["fabric-bearer-nfl1-path-registry"],
+        "evidence": [
+            ev(
+                "accepted-adr",
+                "docs/adr/0030-posix-tls-fabric-reference-port.md",
+                "Accepted",
+            ),
+            ev(
+                "independent-review",
+                "docs/reviews/2026-08-02-posix-tls-reference-port-spec-review.md",
+                "P0=0 / P1=0 / P2=0",
+            ),
+        ],
+    },
+    "posix-usb-serial-reference": {
+        "required_hil": True,
+        "state_ceiling": "SPEC_ACCEPTED",
+        "depends_on": [],
+        "evidence": [
+            ev(
+                "accepted-adr",
+                "docs/adr/0031-posix-usb-serial-reference-port.md",
+                "Accepted",
+            ),
+            ev(
+                "independent-review",
+                "docs/reviews/2026-08-01-posix-usb-serial-reference-port-review.md",
+                "P0=0 / P1=0 / P2=0",
+            ),
+        ],
+    },
     "esp32s3-wifi-sta-tcp-tls": {
         "required_hil": True,
         "state_ceiling": "PROPOSED",
@@ -449,6 +514,34 @@ FEATURE_AUTHORITY = {
             ev(
                 "work-record",
                 "docs/work/2026-08-01-mfdt-spec-accepted-promotion.md",
+                "P0=0 / P1=0 / P2=0",
+            ),
+        ],
+    },
+    "v1-composition": {
+        "required_hil": True,
+        "state_ceiling": "SPEC_ACCEPTED",
+        "depends_on": [
+            "portable-core-host-runtime",
+            "fabric-bearer-nfl1-path-registry",
+            "relay",
+            "multi-parent-multi-controller",
+            "multi-frame-durable-transfer",
+        ],
+        "evidence": [
+            ev(
+                "accepted-adr",
+                "docs/adr/0032-runtime-composition-v1.md",
+                "Accepted",
+            ),
+            ev(
+                "independent-review",
+                "docs/reviews/2026-08-01-runtime-composition-v1-spec-review.md",
+                "P0=0 / P1=0 / P2=0",
+            ),
+            ev(
+                "independent-review",
+                "docs/reviews/2026-08-01-runtime-composition-v1-base-owner-review.md",
                 "P0=0 / P1=0 / P2=0",
             ),
         ],
@@ -559,6 +652,24 @@ def load_matrix() -> dict[str, Any]:
     return value
 
 
+def check_proposed_prototype_boundary() -> None:
+    """Pin the narrow Proposed/private prototype exception in docs/34 §1.1."""
+    text = read_text(ROOT / PROPOSED_PROTOTYPE_BOUNDARY_PATH)
+    heading = "### 1.1 Proposed中の限定prototype境界"
+    if text.count(heading) != 1:
+        raise GateError("Proposed prototype boundary heading must occur exactly once")
+    try:
+        section = text.split(heading, 1)[1].split("\n## 2. ", 1)[0]
+    except IndexError as exc:
+        raise GateError("Proposed prototype boundary section is not closed by §2") from exc
+    for required in PROPOSED_PROTOTYPE_BOUNDARY_REQUIRED:
+        if section.count(required) != 1:
+            raise GateError(
+                "Proposed prototype boundary authority drift: "
+                f"expected exactly one {required!r}"
+            )
+
+
 def exact_regex(text: str, pattern: str, label: str) -> str:
     matches = re.findall(pattern, text, flags=re.MULTILINE)
     if len(matches) != 1:
@@ -616,31 +727,17 @@ def reject_blockquote_status_smuggling(live: str, label: str) -> None:
             f"{label}: blockquote 状態: is not an authoritative status location "
             f"(line={line!r})"
         )
-
-
-def exact_adr_status_body(text: str, label: str) -> str:
-    """Return the unique live ADR/review 状態 bold body; reject line conflicts.
-
-    Contract:
-    - Strip HTML comments, then require exactly one live `状態:` line in
-      authoritative locations (column-0 or indented; **not** blockquotes).
-    - Blockquote `> 状態:` claim-like lines are rejected as smuggling.
-    - Authoritative state is the first bold token body on that line.
-    - Text after the closing `**` on the same line must not carry completion
-      states, GO/NO-GO verdicts, or P0/P1/P2 counts (rejects
-      `**SPEC_ACCEPTED** — RELEASE_SUPPORTED` and GO-bold + trailing NO-GO).
-    """
-    live = live_status_markdown_text(text)
-    reject_blockquote_status_smuggling(live, label)
-    matches = live_status_matches(live)
-    if len(matches) != 1:
+    if BLOCKQUOTE_ENGLISH_STATUS_SMUGGLE_RE.search(live):
         raise GateError(
-            f"{label}: expected exactly one live 状態 status line "
-            f"(including indented), got {len(matches)}"
+            f"{label}: blockquote English status is not an authoritative "
+            "status location"
         )
-    match = matches[0]
+
+
+def validated_status_match_body(match: re.Match[str], label: str) -> str:
+    """Return one status body after rejecting same-line contradictory tails."""
     body = match.group("body")
-    after = match.group("after") or ""
+    after = match.groupdict().get("after") or ""
     after_states = completion_state_tokens(after)
     if after_states:
         raise GateError(
@@ -659,6 +756,44 @@ def exact_adr_status_body(text: str, label: str) -> str:
             f"closing bold (after={after!r})"
         )
     return body
+
+
+def exact_adr_status_body(text: str, label: str) -> str:
+    """Return the unique live Japanese or English ADR status body.
+
+    Contract:
+    - Strip comments/fences, then require exactly one live `状態: **...**` or
+      `- Status: ...` line (column-0 or indented; never a blockquote).
+    - Text after the closing `**` on the same line must not carry completion
+      states, GO/NO-GO verdicts, or P0/P1/P2 counts (rejects
+      `**SPEC_ACCEPTED** — RELEASE_SUPPORTED` and GO-bold + trailing NO-GO).
+    """
+    live = live_status_markdown_text(text)
+    reject_blockquote_status_smuggling(live, label)
+    matches = live_status_matches(live) + list(
+        ADR_ENGLISH_STATUS_LINE_RE.finditer(live)
+    )
+    if len(matches) != 1:
+        raise GateError(
+            f"{label}: expected exactly one live ADR status line "
+            f"(including indented), got {len(matches)}"
+        )
+    return validated_status_match_body(matches[0], label)
+
+
+def exact_review_status_body(text: str, label: str) -> str:
+    """Return the unique live Japanese or English independent-review body."""
+    live = live_status_markdown_text(text)
+    reject_blockquote_status_smuggling(live, label)
+    matches = live_status_matches(live) + list(
+        REVIEW_ENGLISH_STATUS_LINE_RE.finditer(live)
+    )
+    if len(matches) != 1:
+        raise GateError(
+            f"{label}: expected exactly one live review verdict line, "
+            f"got {len(matches)}"
+        )
+    return validated_status_match_body(matches[0], label)
 
 
 def completion_state_tokens(text: str) -> list[str]:
@@ -930,7 +1065,7 @@ def check_evidence_content(
         return
 
     if evidence_class == "independent-review":
-        body = exact_adr_status_body(text, label)
+        body = exact_review_status_body(text, label)
         parsed = parse_independent_review_status(body, label)
         expected_p0, expected_p1, expected_p2 = parse_review_counts_token(token, label)
         if parsed["verdict"] != "GO":
@@ -1370,6 +1505,7 @@ def check(matrix: dict[str, Any]) -> None:
         raise GateError("hardware regulatory claim exceeds accepted scope")
     if matrix.get("legacy_adapters") != LEGACY_ADAPTER_AUTHORITY:
         raise GateError("legacy adapter authority drift")
+    check_proposed_prototype_boundary()
     check_versions(matrix)
     check_platforms(matrix)
     check_features(matrix)
@@ -1394,11 +1530,23 @@ def self_test() -> None:
     # Self-tests never write ROOT sources — only in-memory overlays + matrix copies.
     watched = [
         ROOT / "README.md",
+        ROOT / PROPOSED_PROTOTYPE_BOUNDARY_PATH,
         ROOT / "docs/adr/0017-bearer-registry-path-selection.md",
         ROOT / "docs/adr/0018-wifi-bearer.md",
         ROOT / "docs/adr/0022-domain-store-schema1-runtime-binding.md",
+        ROOT / "docs/adr/0030-posix-tls-fabric-reference-port.md",
+        ROOT / "docs/adr/0031-posix-usb-serial-reference-port.md",
+        ROOT / "docs/adr/0032-runtime-composition-v1.md",
         ROOT
         / "docs/reviews/2026-07-29-domain-store-schema1-spec-accepted.md",
+        ROOT
+        / "docs/reviews/2026-08-02-posix-tls-reference-port-spec-review.md",
+        ROOT
+        / "docs/reviews/2026-08-01-posix-usb-serial-reference-port-review.md",
+        ROOT
+        / "docs/reviews/2026-08-01-runtime-composition-v1-spec-review.md",
+        ROOT
+        / "docs/reviews/2026-08-01-runtime-composition-v1-base-owner-review.md",
         ROOT / ".github/workflows/esp-idf.yml",
         ROOT / "compatibility-matrix.json",
         ROOT / "LICENSE",
@@ -1411,6 +1559,10 @@ def self_test() -> None:
 
     baseline = load_matrix()
     check(baseline)
+
+    def feature(matrix: dict[str, Any], feature_id: str) -> dict[str, Any]:
+        return next(item for item in matrix["features"] if item["id"] == feature_id)
+
     valid_record = {
         "schema": "ninlil-verification-evidence-v1",
         "commit": "a" * 40,
@@ -1475,6 +1627,24 @@ def self_test() -> None:
             raise GateError("self-test could not rewrite ADR status line")
         return replaced
 
+    def rewrite_english_adr_status(text: str, new_body: str) -> str:
+        replaced, count = ADR_ENGLISH_STATUS_LINE_RE.subn(
+            f"- Status: {new_body}", text, count=1
+        )
+        if count != 1:
+            raise GateError("self-test could not rewrite English ADR status line")
+        return replaced
+
+    def rewrite_english_review_status(text: str, new_body: str) -> str:
+        def _sub(m: re.Match[str]) -> str:
+            line_prefix = text[m.start() : m.start("body")]
+            return f"{line_prefix}{new_body}**"
+
+        replaced, count = REVIEW_ENGLISH_STATUS_LINE_RE.subn(_sub, text, count=1)
+        if count != 1:
+            raise GateError("self-test could not rewrite English review status line")
+        return replaced
+
     def append_after_bold(text: str, suffix: str) -> str:
         """Append live contradictory text after the closing ** on the status line."""
 
@@ -1496,8 +1666,29 @@ def self_test() -> None:
             raise GateError(f"self-test could not rewrite README cell for {row_name}")
         return replaced
 
+    prototype_contract = ROOT / PROPOSED_PROTOTYPE_BOUNDARY_PATH
+    reject_file_mutation(
+        "Proposed prototype default-ON source mutation",
+        prototype_contract,
+        lambda text: text.replace("**default-OFF**", "**default-ON**", 1),
+    )
+    reject_file_mutation(
+        "Proposed prototype install/export source mutation",
+        prototype_contract,
+        lambda text: text.replace(
+            "**非install / 非export**", "**install / export**", 1
+        ),
+    )
+    reject_file_mutation(
+        "Proposed prototype evidence-promotion source mutation",
+        prototype_contract,
+        lambda text: text.replace(
+            "supportのevidenceにならない", "supportのevidenceになる", 1
+        ),
+    )
+
     state = copy.deepcopy(baseline)
-    state["features"][0]["state"] = "RELEASE_SUPPORTED"
+    feature(state, "portable-core-host-runtime")["state"] = "RELEASE_SUPPORTED"
     reject("state above accepted ceiling", state)
 
     numeric_bool = copy.deepcopy(baseline)
@@ -1505,28 +1696,56 @@ def self_test() -> None:
     reject("bool substituted for numeric schema version", numeric_bool)
 
     hil = copy.deepcopy(baseline)
-    hil["features"][5]["required_hil"] = False
-    hil["features"][5]["state"] = "RELEASE_SUPPORTED"
-    hil["features"][5].pop("hil_verified")
+    feature(hil, "esp32s3-wifi-sta-tcp-tls")["required_hil"] = False
+    feature(hil, "esp32s3-wifi-sta-tcp-tls")["state"] = "RELEASE_SUPPORTED"
+    feature(hil, "esp32s3-wifi-sta-tcp-tls").pop("hil_verified")
     reject("required_hil boolean bypass", hil)
 
     evidence = copy.deepcopy(baseline)
-    evidence["features"][0]["evidence"] = [
+    feature(evidence, "portable-core-host-runtime")["evidence"] = [
         ev("status", "LICENSE", "Apache License")
     ]
     reject("arbitrary existing evidence", evidence)
 
     false_hil_field = copy.deepcopy(baseline)
-    false_hil_field["features"][0]["hil_verified"] = True
+    feature(false_hil_field, "portable-core-host-runtime")["hil_verified"] = True
     reject("HIL field on non-HIL feature", false_hil_field)
 
     premature_release_evidence = copy.deepcopy(baseline)
-    premature_release_evidence["features"][0]["release_evidence"] = []
+    feature(premature_release_evidence, "portable-core-host-runtime")[
+        "release_evidence"
+    ] = []
     reject("release evidence before release state", premature_release_evidence)
 
     ceiling = copy.deepcopy(baseline)
-    ceiling["features"][5]["state_ceiling"] = "RELEASE_SUPPORTED"
+    feature(ceiling, "esp32s3-wifi-sta-tcp-tls")[
+        "state_ceiling"
+    ] = "RELEASE_SUPPORTED"
     reject("editable state ceiling", ceiling)
+
+    for public_feature in (
+        "posix-tcp-tls-reference",
+        "posix-usb-serial-reference",
+        "v1-composition",
+    ):
+        missing_public_feature = copy.deepcopy(baseline)
+        missing_public_feature["features"] = [
+            item
+            for item in missing_public_feature["features"]
+            if item["id"] != public_feature
+        ]
+        reject(f"missing public feature {public_feature}", missing_public_feature)
+
+        dependency_drift = copy.deepcopy(baseline)
+        live_dependencies = feature(dependency_drift, public_feature)["depends_on"]
+        feature(dependency_drift, public_feature)["depends_on"] = (
+            [] if live_dependencies else ["portable-core-host-runtime"]
+        )
+        reject(f"{public_feature} dependency authority drift", dependency_drift)
+
+        false_hil_promotion = copy.deepcopy(baseline)
+        feature(false_hil_promotion, public_feature)["hil_verified"] = True
+        reject(f"{public_feature} false HIL promotion", false_hil_promotion)
 
     transitions = copy.deepcopy(baseline)
     transitions["allowed_transitions"]["UNALLOCATED"].append("RELEASE_SUPPORTED")
@@ -1632,6 +1851,28 @@ def self_test() -> None:
             path,
             lambda text, body=new_body: rewrite_adr_status(text, body),
         )
+
+    tls_adr = ROOT / "docs/adr/0030-posix-tls-fabric-reference-port.md"
+    reject_file_mutation(
+        "ADR-0030 Accepted underclaim",
+        tls_adr,
+        lambda text: rewrite_english_adr_status(text, "Proposed"),
+    )
+    reject_file_mutation(
+        "ADR-0030 conflicting second English status",
+        tls_adr,
+        lambda text: text + "\n- Status: RELEASE_SUPPORTED\n",
+    )
+    tls_review = (
+        ROOT / "docs/reviews/2026-08-02-posix-tls-reference-port-spec-review.md"
+    )
+    reject_file_mutation(
+        "POSIX TLS English review NO-GO",
+        tls_review,
+        lambda text: rewrite_english_review_status(
+            text, "NO-GO — P0=1 / P1=0 / P2=0"
+        ),
+    )
 
     readme_path = ROOT / "README.md"
     feature_state = {

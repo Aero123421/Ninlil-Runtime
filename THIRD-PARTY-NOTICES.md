@@ -37,6 +37,18 @@ per-file notices.
 - **License:** `Apache-2.0` (OpenSSL 3.x). See the
   [OpenSSL license](https://github.com/openssl/openssl/blob/master/LICENSE.txt).
 
+## Node.js >=18 (host tooling)
+
+- **Machine ID:** `nodejs`
+- **Version:** `>=18` (`>=18.0.0`)
+- **Use:** Runs independent specification gates during configure and CTest.
+  CI pins Node 22.18.0 in every tests-enabled or Node-authority job and in
+  release verification.
+- **Linkage:** Host build tool only. Ninlil does not bundle Node, install npm
+  packages, or link Node into the production library or SDK archives.
+- **License:** `MIT`
+  ([Node.js license](https://github.com/nodejs/node/blob/main/LICENSE)).
+
 ## ESP-IDF 5.5.3 / mbedTLS (target-only)
 
 - **Machine ID:** `idf`

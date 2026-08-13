@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * NWB1 private framing (ADR-0018). Payload = exact 1 structural NFL1.
  */

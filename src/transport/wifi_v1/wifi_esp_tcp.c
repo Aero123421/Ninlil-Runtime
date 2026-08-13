@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "wifi_esp_tcp.h"
 
 #include <errno.h>

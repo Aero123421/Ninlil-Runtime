@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "typed_simulated_bearer.h"
 
 #include <limits.h>

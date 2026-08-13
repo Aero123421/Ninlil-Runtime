@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Entropy exclusive ownership SM + ACQUIRING cancel linearization.
  * FREE → ACQUIRING → OWNED → RELEASING → DISABLING → RETIRED

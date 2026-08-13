@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "resource_ledger_batch.h"
 
 #include <stddef.h>

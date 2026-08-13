@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "desired_target_snapshot_internal.h"
 
 static int reason_is_known(ninlil_reason_t reason)

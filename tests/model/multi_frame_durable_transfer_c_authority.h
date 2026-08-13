@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Independent C11 authority for ADR-0021 multi-frame durable transfer SPEC-ONLY.
  * Literal fixed KAT bytes and per-ID expected semantics. Not generated at runtime
  * from the Python generator or vector expected fields. Gates must not import
@@ -123,9 +124,9 @@ static const char k_mfdt_vector_relpath[] =
     "spec/vectors/multi-frame-durable-transfer-spec-v1.json";
 /* Filled at authoring time; C gate rejects vector SHA drift. */
 static const char k_mfdt_vector_sha256_hex[] =
-    "a3e3c70e02abe20f8c8a2083b8fc5c1a3ef897d0b84928111212a65c26d6a118";
+    "7e8b84159481c458ed441c0c9fc50ac0da6336cf93f471d8550a31bbb2d291c0";
 static const char k_mfdt_authority_map_sha256_hex[] =
-    "169ca9605a46222fd582bee3207f5c223dccb9400cf6e1fb52923276ef23a48f";
+    "e691f98d786708a981234f4c3f77c50d8cc4a6f968585f39204acb6a3f309c8f";
 
 static const mfdt_id_authority_t k_mfdt_authority[MFDT_ID_COUNT] = {
     { "MF-CONSTANTS-PINNED", (enum mfdt_family)0, "OK", "", -1, -1, -1 },

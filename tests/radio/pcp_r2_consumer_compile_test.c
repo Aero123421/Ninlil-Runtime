@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Independent consumer compile test for R2 pcp_authority.h complete type.
  * Verifies C11 can compile against the private header without public ABI.

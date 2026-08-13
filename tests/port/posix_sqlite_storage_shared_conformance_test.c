@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil_posix_sqlite_storage.h"
 #include "storage_conformance.h"
 

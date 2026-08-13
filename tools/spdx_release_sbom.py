@@ -62,9 +62,21 @@ def inventory_packages(inventory: dict[str, Any]) -> list[dict[str, Any]]:
         vendored = inventory.get("vendored_dependencies", [])
         if not isinstance(vendored, list):
             raise SbomError("vendored_dependencies must be an array")
+        project = inventory["project"]
+        source_scope = inventory["source_license_scope"]
+        if not isinstance(project, dict) or not isinstance(source_scope, dict):
+            raise SbomError("project and source_license_scope must be objects")
+        if source_scope.get("license_expression") != project.get("spdx_license"):
+            raise SbomError("source license scope/project SPDX license mismatch")
+        copyright_text = source_scope.get("copyright_text")
+        if not isinstance(copyright_text, str) or not copyright_text:
+            raise SbomError("source license scope copyright_text must be explicit")
+        project_package = dict(project)
+        project_package["copyright_text"] = copyright_text
         packages = [
-            inventory["project"],
+            project_package,
             *inventory["host_dependencies"],
+            *inventory.get("host_tooling", []),
             *vendored,
             *inventory["esp_idf"]["lock_components"],
             *inventory["esp_idf"]["bundled_dependencies"],
@@ -90,6 +102,12 @@ def inventory_name_index(inventory: dict[str, Any]) -> dict[str, str]:
     for item in inventory_packages(inventory):
         package_id = str(item["id"])
         for name in _casefold_names(item):
+            prior = index.get(name)
+            if prior is not None and prior != package_id:
+                raise SbomError(
+                    "ambiguous Syft package alias in dependency inventory: "
+                    f"{name!r} maps to both {prior!r} and {package_id!r}"
+                )
             index[name] = package_id
     return index
 
@@ -119,85 +137,92 @@ def justified_exclusion_names(inventory: dict[str, Any]) -> dict[str, str]:
     return out
 
 
-def _syft_package_identity_blob(package: dict[str, Any]) -> str:
-    parts = [
-        str(package.get("name", "")),
-        str(package.get("versionInfo", "")),
-        str(package.get("downloadLocation", "")),
-        str(package.get("sourceInfo", "")),
-        str(package.get("packageFileName", "")),
-        str(package.get("comment", "")),
-    ]
-    # externalRefs may carry purl/path hints.
-    refs = package.get("externalRefs")
-    if isinstance(refs, list):
-        for ref in refs:
-            if isinstance(ref, dict):
-                parts.append(str(ref.get("referenceLocator", "")))
-                parts.append(str(ref.get("comment", "")))
-    return " ".join(parts).casefold()
-
-
-def syft_package_is_in_scope(
-    package: dict[str, Any],
-    name_index: dict[str, str],
-) -> bool:
-    """True when a Syft package is inventory-relevant (must not be silently dropped)."""
-    name = str(package.get("name", "")).casefold()
-    if name in name_index:
-        return True
-    blob = _syft_package_identity_blob(package)
-    if "tools/_vendor" in blob or "pyyaml" in blob:
-        return True
-    # Common Syft spellings for the vendored wheel.
-    if name in {"yaml", "pyyaml"}:
-        return True
-    return False
-
-
 def reconcile_syft_packages(
     raw_packages: list[Any],
     inventory: dict[str, Any],
+    source_version: str,
 ) -> None:
-    """Fail closed if an in-scope Syft package is dropped without inventory/exclusion."""
+    """Fail closed unless every Syft source discovery has an exact identity."""
     name_index = inventory_name_index(inventory)
+    packages_by_id = {
+        str(item["id"]): item for item in inventory_packages(inventory)
+    }
     exclusions = justified_exclusion_names(inventory)
-    inventory_ids = {str(item["id"]) for item in inventory_packages(inventory)}
-    matched_inventory: set[str] = set()
+    project_id = str(inventory["project"]["id"])
+    expected_project_spdx_id = "SPDXRef-DocumentRoot-Directory-ninlil-runtime"
+    project_roots = 0
 
     for index, package in enumerate(raw_packages):
         if not isinstance(package, dict):
             raise SbomError(f"Syft packages[{index}] must be an object")
         name = str(package.get("name", "")).strip()
+        if not name:
+            raise SbomError(f"Syft packages[{index}].name must be a non-empty string")
         name_key = name.casefold()
         inventory_id = name_index.get(name_key)
-        in_scope = syft_package_is_in_scope(package, name_index)
         if inventory_id is not None:
-            matched_inventory.add(inventory_id)
-            continue
-        if not in_scope:
-            # Out-of-scope Syft noise (OS packages, etc.) may be dropped.
+            item = packages_by_id[inventory_id]
+            if inventory_id == project_id:
+                # The pinned directory scan emits one synthetic source root.
+                # A package manager may also discover a dependency with the
+                # project name, so name equality alone is never sufficient.
+                raw_spdx_id = str(package.get("SPDXID", ""))
+                raw_version = str(package.get("versionInfo", "")).strip()
+                raw_source = str(package.get("sourceInfo") or "").strip()
+                raw_refs = package.get("externalRefs")
+                if (
+                    raw_spdx_id != expected_project_spdx_id
+                    or raw_version != source_version
+                    or raw_source
+                    or raw_refs not in (None, [])
+                ):
+                    raise SbomError(
+                        "Syft package collides with project name without the "
+                        "exact synthetic source-root identity: "
+                        f"name={name!r} SPDXID={raw_spdx_id!r} "
+                        f"version={raw_version!r} sourceInfo={raw_source!r}"
+                    )
+                project_roots += 1
+                continue
+
+            source_path = item.get("source_path")
+            if not isinstance(source_path, str) or not source_path.strip():
+                raise SbomError(
+                    "Syft source discovery matched a non-vendored inventory "
+                    f"package: name={name!r} inventory_id={inventory_id!r}"
+                )
+            raw_version = str(package.get("versionInfo", "")).strip()
+            expected_version = str(item.get("version", "")).strip()
+            if raw_version != expected_version:
+                raise SbomError(
+                    "Syft vendored package version does not match inventory: "
+                    f"name={name!r} raw={raw_version!r} "
+                    f"expected={expected_version!r}"
+                )
+            raw_source = str(package.get("sourceInfo", "")).strip().replace("\\", "/")
+            expected_source = source_path.strip().replace("\\", "/").rstrip("/")
+            source_root_pattern = re.compile(
+                rf"(?:^|[\s,:])/?{re.escape(expected_source)}(?:/|$)"
+            )
+            if not raw_source or source_root_pattern.search(raw_source) is None:
+                raise SbomError(
+                    "Syft vendored package source path does not match inventory: "
+                    f"name={name!r} raw={raw_source!r} "
+                    f"expected_root={expected_source!r}"
+                )
             continue
         if name_key in exclusions:
             continue
-        # Also allow exclusion match via blob aliases.
-        if any(key in _syft_package_identity_blob(package) for key in exclusions):
-            continue
         raise SbomError(
-            "in-scope Syft package discarded without inventory entry or "
+            "Syft package discarded without inventory entry or exact "
             f"justified exclusion: name={name!r} version="
             f"{package.get('versionInfo')!r}"
         )
-
-    # Vendored inventory packages must either be observed in Syft or still be
-    # emitted from inventory; observation is required when Syft lists them.
-    # (Coverage of "discard Syft package" is the raise above.)
-    for item in inventory.get("vendored_dependencies", []) or []:
-        if not isinstance(item, dict):
-            continue
-        package_id = str(item.get("id", ""))
-        if package_id and package_id not in inventory_ids:
-            raise SbomError(f"vendored package id missing from inventory set: {package_id}")
+    if project_roots != 1:
+        raise SbomError(
+            "Syft source scan must contain exactly one synthetic project root: "
+            f"got {project_roots}"
+        )
 
 
 def spdx_id(package_id: str) -> str:
@@ -209,6 +234,7 @@ def spdx_id(package_id: str) -> str:
 
 def canonical_package(item: dict[str, Any]) -> dict[str, Any]:
     package_id = str(item["id"])
+    relationship = str(item.get("relationship", "PROJECT"))
     package = {
         "SPDXID": spdx_id(package_id),
         "name": str(item["name"]),
@@ -219,14 +245,18 @@ def canonical_package(item: dict[str, Any]) -> dict[str, Any]:
         "filesAnalyzed": False,
         "licenseConcluded": str(item["spdx_license"]),
         "licenseDeclared": str(item["spdx_license"]),
-        "copyrightText": "NOASSERTION",
+        "copyrightText": str(item.get("copyright_text", "NOASSERTION")),
         "supplier": str(item.get("supplier", "NOASSERTION")),
         "primaryPackagePurpose": (
-            "SOURCE" if package_id == "ninlil-runtime" else "LIBRARY"
+            "SOURCE"
+            if package_id == "ninlil-runtime"
+            else "APPLICATION"
+            if relationship == "BUILD_TOOL"
+            else "LIBRARY"
         ),
         "comment": (
             f"Ninlil dependency inventory ID: {package_id}; "
-            f"relationship: {item.get('relationship', 'PROJECT')}"
+            f"relationship: {relationship}"
         ),
     }
     component_hash = item.get("component_hash")
@@ -260,13 +290,23 @@ def canonical_relationships(
         package_id = str(item["id"])
         if package_id == str(inventory["project"]["id"]):
             continue
-        relationships.append(
-            {
-                "spdxElementId": project_id,
-                "relationshipType": "DEPENDS_ON",
-                "relatedSpdxElement": spdx_id(package_id),
-            }
-        )
+        package_spdx_id = spdx_id(package_id)
+        if str(item.get("relationship", "")) == "BUILD_TOOL":
+            relationships.append(
+                {
+                    "spdxElementId": package_spdx_id,
+                    "relationshipType": "BUILD_TOOL_OF",
+                    "relatedSpdxElement": project_id,
+                }
+            )
+        else:
+            relationships.append(
+                {
+                    "spdxElementId": project_id,
+                    "relationshipType": "DEPENDS_ON",
+                    "relatedSpdxElement": package_spdx_id,
+                }
+            )
     relationships.sort(
         key=lambda item: (
             item["spdxElementId"],
@@ -342,13 +382,16 @@ def enrich(
     # Preserve Syft --source-version (tag or commit) when provided; otherwise
     # fall back to project core so identity is never empty.
     if source_version is None or not str(source_version).strip():
-        # Prefer Syft document name/version hints when present.
+        # Prefer the pinned Syft synthetic directory-root identity. A package
+        # manager discovery with the project name must not select the source
+        # version used for reconciliation.
         syft_source = None
         for pkg in raw_packages:
-            if isinstance(pkg, dict) and str(pkg.get("name", "")).casefold() in {
-                "ninlil runtime",
-                "ninlil-runtime",
-            }:
+            if (
+                isinstance(pkg, dict)
+                and pkg.get("SPDXID")
+                == "SPDXRef-DocumentRoot-Directory-ninlil-runtime"
+            ):
                 syft_source = pkg.get("versionInfo")
                 break
         source_version = (
@@ -360,10 +403,10 @@ def enrich(
     if not source_version:
         raise SbomError("source_version must be non-empty")
 
-    # Reconcile Syft discoveries against inventory before emitting the closed set.
-    # In-scope Syft packages (inventory names / vendored paths) may not be dropped
-    # without an inventory entry or machine-readable justified exclusion.
-    reconcile_syft_packages(raw_packages, inventory)
+    # Reconcile every Syft discovery before emitting the closed inventory set.
+    # No discovery may be dropped without an inventory entry or an exact,
+    # machine-readable justified exclusion.
+    reconcile_syft_packages(raw_packages, inventory, source_version)
 
     # Emit canonical inventory packages only (deterministic; includes vendored).
     packages = [
@@ -552,6 +595,8 @@ def validate(
             "downloadLocation",
             "licenseDeclared",
             "licenseConcluded",
+            "filesAnalyzed",
+            "copyrightText",
             "supplier",
             "primaryPackagePurpose",
         ):
@@ -636,9 +681,9 @@ def self_test(inventory: dict[str, Any]) -> None:
         },
         "packages": [
             {
-                "SPDXID": "SPDXRef-raw-project",
-                "name": "Ninlil Runtime",
-                "versionInfo": "UNKNOWN",
+                "SPDXID": "SPDXRef-DocumentRoot-Directory-ninlil-runtime",
+                "name": "ninlil-runtime",
+                "versionInfo": str(inventory["project"]["version"]),
                 "licenseDeclared": "NOASSERTION",
             },
             {
@@ -647,14 +692,17 @@ def self_test(inventory: dict[str, Any]) -> None:
                 "versionInfo": "6.0.2",
                 "licenseDeclared": "MIT",
                 "downloadLocation": "https://pypi.org/project/PyYAML/6.0.2/",
-                "sourceInfo": "tools/_vendor/pyyaml",
+                "sourceInfo": (
+                    "acquired package info from installed python package manifest "
+                    "file: /tools/_vendor/pyyaml-6.0.2.dist-info/METADATA"
+                ),
             },
         ],
         "relationships": [
             {
                 "spdxElementId": "SPDXRef-DOCUMENT",
                 "relationshipType": "DESCRIBES",
-                "relatedSpdxElement": "SPDXRef-raw-project",
+                "relatedSpdxElement": "SPDXRef-DocumentRoot-Directory-ninlil-runtime",
             }
         ],
     }
@@ -665,6 +713,20 @@ def self_test(inventory: dict[str, Any]) -> None:
     ]
     if pyyaml_ids != ["SPDXRef-Ninlil-pyyaml"]:
         raise SbomError(f"enriched SBOM missing vendored PyYAML package: {pyyaml_ids!r}")
+    node_build_relationship = {
+        "spdxElementId": "SPDXRef-Ninlil-nodejs",
+        "relationshipType": "BUILD_TOOL_OF",
+        "relatedSpdxElement": "SPDXRef-Ninlil-ninlil-runtime",
+    }
+    node = next(
+        package
+        for package in baseline["packages"]
+        if package.get("SPDXID") == "SPDXRef-Ninlil-nodejs"
+    )
+    if node.get("primaryPackagePurpose") != "APPLICATION":
+        raise SbomError("Node.js host tooling is not classified as an APPLICATION")
+    if node_build_relationship not in baseline["relationships"]:
+        raise SbomError("Node.js BUILD_TOOL_OF project relationship is absent")
 
     # Two-run determinism: mutated Syft timestamp/namespace must yield byte-identical
     # enriched SPDX JSON for identical source inventory.
@@ -708,6 +770,15 @@ def self_test(inventory: dict[str, Any]) -> None:
     project["licenseDeclared"] = "NOASSERTION"
     expect_failure("project license NOASSERTION", noassertion)
 
+    guessed_holder = copy.deepcopy(baseline)
+    guessed_project = next(
+        item
+        for item in guessed_holder["packages"]
+        if item["SPDXID"] == "SPDXRef-Ninlil-ninlil-runtime"
+    )
+    guessed_project["copyrightText"] = "Copyright guessed-holder"
+    expect_failure("project copyright differs from source inventory", guessed_holder)
+
     version = copy.deepcopy(baseline)
     sqlite = next(
         item
@@ -716,6 +787,35 @@ def self_test(inventory: dict[str, Any]) -> None:
     )
     sqlite["versionInfo"] = "UNKNOWN"
     expect_failure("dependency version drift", version)
+
+    node_purpose = copy.deepcopy(baseline)
+    node_package = next(
+        item
+        for item in node_purpose["packages"]
+        if item["SPDXID"] == "SPDXRef-Ninlil-nodejs"
+    )
+    node_package["primaryPackagePurpose"] = "LIBRARY"
+    expect_failure("Node.js build tool misclassified as library", node_purpose)
+
+    node_relation = copy.deepcopy(baseline)
+    node_relation["relationships"] = [
+        {
+            "spdxElementId": "SPDXRef-Ninlil-ninlil-runtime",
+            "relationshipType": "DEPENDS_ON",
+            "relatedSpdxElement": "SPDXRef-Ninlil-nodejs",
+        }
+        if item == node_build_relationship
+        else item
+        for item in node_relation["relationships"]
+    ]
+    node_relation["relationships"].sort(
+        key=lambda item: (
+            item["spdxElementId"],
+            item["relationshipType"],
+            item["relatedSpdxElement"],
+        )
+    )
+    expect_failure("Node.js dependency relation is not BUILD_TOOL_OF", node_relation)
 
     duplicate = copy.deepcopy(baseline)
     duplicate["packages"].append(
@@ -791,15 +891,9 @@ def self_test(inventory: dict[str, Any]) -> None:
     built["builtDate"] = "2026-07-29T00:00:00Z"
     expect_failure("builtDate nondeterminism field", built)
 
-    # Enrich must drop dangling/dup/builtDate from raw Syft input.
+    # Enrich must drop dangling relationships and volatile builtDate metadata.
     raw_noise = copy.deepcopy(raw)
     raw_noise["builtDate"] = "2026-07-29T00:00:00Z"
-    raw_noise["packages"].append(
-        {"SPDXID": "SPDXRef-dup", "name": "junk", "versionInfo": "1", "licenseDeclared": "MIT"}
-    )
-    raw_noise["packages"].append(
-        {"SPDXID": "SPDXRef-dup", "name": "junk2", "versionInfo": "1", "licenseDeclared": "MIT"}
-    )
     raw_noise["relationships"].append(
         {
             "spdxElementId": "SPDXRef-missing",
@@ -811,8 +905,114 @@ def self_test(inventory: dict[str, Any]) -> None:
     validate(cleaned, inventory)
     if "builtDate" in cleaned:
         raise SbomError("enrich left builtDate")
-    if any(p.get("SPDXID") == "SPDXRef-dup" for p in cleaned["packages"]):
-        raise SbomError("enrich left duplicate random package")
+
+    # Every newly discovered package is closed-world: unknown packages may not
+    # be silently classified as noise and omitted from the release SBOM.
+    raw_unknown = copy.deepcopy(raw)
+    raw_unknown["packages"].append(
+        {
+            "SPDXID": "SPDXRef-surprise-vendored-library",
+            "name": "surprise-vendored-library",
+            "versionInfo": "9.8.7",
+            "licenseDeclared": "MIT",
+            "sourceInfo": "vendor/surprise/package.json",
+            "externalRefs": [
+                {
+                    "referenceCategory": "PACKAGE-MANAGER",
+                    "referenceType": "purl",
+                    "referenceLocator": "pkg:npm/surprise-vendored-library@9.8.7",
+                }
+            ],
+        }
+    )
+    try:
+        enrich(raw_unknown, inventory)
+    except SbomError:
+        pass
+    else:
+        raise SbomError("self-test silently dropped an unknown Syft package")
+
+    # A familiar name may not launder a different version or source identity.
+    raw_wrong_pyyaml_version = copy.deepcopy(raw)
+    raw_wrong_pyyaml_version["packages"][1]["versionInfo"] = "999.0.0"
+    raw_wrong_pyyaml_version["packages"][1]["sourceInfo"] = (
+        "tools/_vendor/pyyaml-999.0.0.dist-info"
+    )
+    try:
+        enrich(raw_wrong_pyyaml_version, inventory)
+    except SbomError:
+        pass
+    else:
+        raise SbomError("self-test accepted mismatched vendored PyYAML version")
+
+    raw_wrong_pyyaml_source = copy.deepcopy(raw)
+    raw_wrong_pyyaml_source["packages"][1]["sourceInfo"] = (
+        "vendor/unrelated/pyyaml/package.json"
+    )
+    try:
+        enrich(raw_wrong_pyyaml_source, inventory)
+    except SbomError:
+        pass
+    else:
+        raise SbomError("self-test accepted mismatched vendored PyYAML source path")
+
+    raw_source_openssl = copy.deepcopy(raw)
+    raw_source_openssl["packages"].append(
+        {
+            "SPDXID": "SPDXRef-source-openssl",
+            "name": "OpenSSL",
+            "versionInfo": "evil-9",
+            "licenseDeclared": "Apache-2.0",
+            "sourceInfo": "vendor/unrelated/package.json",
+        }
+    )
+    try:
+        enrich(raw_source_openssl, inventory)
+    except SbomError:
+        pass
+    else:
+        raise SbomError("self-test accepted source package posing as host OpenSSL")
+
+    raw_project_collision = copy.deepcopy(raw)
+    raw_project_collision["packages"].insert(
+        0,
+        {
+            "SPDXID": "SPDXRef-Package-npm-ninlil-runtime-collision",
+            "name": "ninlil-runtime",
+            "versionInfo": "99.9.9",
+            "licenseDeclared": "MIT",
+            "sourceInfo": (
+                "acquired package info from installed node module manifest "
+                "file: /package-lock.json"
+            ),
+            "externalRefs": [
+                {
+                    "referenceCategory": "PACKAGE-MANAGER",
+                    "referenceType": "purl",
+                    "referenceLocator": "pkg:npm/ninlil-runtime@99.9.9",
+                }
+            ],
+        },
+    )
+    try:
+        enrich(raw_project_collision, inventory)
+    except SbomError:
+        pass
+    else:
+        raise SbomError("self-test accepted npm package posing as project root")
+
+    raw_project_version = copy.deepcopy(raw)
+    raw_project_version["packages"][0]["versionInfo"] = "wrong-source-version"
+    try:
+        enrich(
+            raw_project_version,
+            inventory,
+            source_version=str(inventory["project"]["version"]),
+        )
+    except SbomError:
+        pass
+    else:
+        raise SbomError("self-test accepted project root source-version drift")
 
     # In-scope Syft PyYAML without inventory entry must fail (no silent drop).
     inv_no_pyyaml = copy.deepcopy(inventory)
@@ -866,10 +1066,19 @@ def self_test(inventory: dict[str, Any]) -> None:
 
     # Release identity: wrong project core must fail; source_version must be kept.
     core = str(inventory["project"]["version"])
-    bound = enrich(raw, inventory, project_version=core, source_version=f"v{core}-rc.1")
+    raw_bound = copy.deepcopy(raw)
+    raw_bound["packages"][0]["versionInfo"] = f"v{core}-rc.1"
+    bound = enrich(
+        raw_bound,
+        inventory,
+        project_version=core,
+        source_version=f"v{core}-rc.1",
+    )
     validate(bound, inventory, project_version=core, source_version=f"v{core}-rc.1")
+    raw_bound_other = copy.deepcopy(raw)
+    raw_bound_other["packages"][0]["versionInfo"] = f"v{core}-rc.2"
     bound_other_source = enrich(
-        raw,
+        raw_bound_other,
         inventory,
         project_version=core,
         source_version=f"v{core}-rc.2",

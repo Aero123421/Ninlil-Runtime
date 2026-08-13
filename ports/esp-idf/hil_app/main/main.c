@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Executable power-cut HIL firmware. Hardware evidence is intentionally not claimed. */
 
 #include "ninlil/platform.h"

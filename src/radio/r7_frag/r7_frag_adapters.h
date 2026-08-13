@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_R7_FRAG_ADAPTERS_H
 #define NINLIL_R7_FRAG_ADAPTERS_H
 
@@ -11,6 +12,8 @@
 #include "n6_context_store.h"
 #include "pcp_authority.h"
 #include "r7_crypto_provider.h"
+#include "r7_frag_checked_issue.h"
+#include "r7_frag_issue_coordinator.h"
 #include "radio_hal.h"
 
 #include <stddef.h>
@@ -93,6 +96,9 @@ typedef struct ninlil_r7_frag_orch {
     const ninlil_r7_crypto_provider *crypto;
     ninlil_r7_frag_spy_t *spy;
     ninlil_r7_frag_l1w1_bus_t *bus;
+    /* Owner-local issue state; no process-global mutable fallback. */
+    ninlil_r7_frag_issue_coordinator_t issue_coordinator;
+    ninlil_r7_r5_issue_registry_t issue_registry;
     /*
      * Coordinator-owned held/queued issued Permit (same identity as prod_orch).
      * Resume via orch_outer_tx with identical outer bytes; never re-issue.

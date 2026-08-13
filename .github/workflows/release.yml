@@ -77,7 +77,7 @@ jobs:
     name: Full host verification
     needs: resolve-source
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: read
     outputs:
@@ -93,6 +93,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.resolve-source.outputs.commit }}
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          check-latest: false
 
       - name: Pin verified source commit
         id: source
@@ -257,9 +262,13 @@ jobs:
           test -x "${SYFT_CMD}"
           test -n "${PROJECT_VERSION}"
           test -n "${SOURCE_VERSION}"
+          # Keep every directory package cataloger so a new npm/Cargo/Go/etc.
+          # manifest reaches closed-world inventory reconciliation. CI Actions
+          # are not source-release dependencies and have a separate SHA gate.
           "${SYFT_CMD}" scan dir:. \
             --source-name ninlil-runtime \
             --source-version "${SOURCE_VERSION}" \
+            --select-catalogers=-github-actions-usage-cataloger,-github-action-workflow-usage-cataloger \
             --output "spdx-json=${RAW_SBOM}"
           test -s "${RAW_SBOM}"
           python3 tools/spdx_release_sbom.py enrich \

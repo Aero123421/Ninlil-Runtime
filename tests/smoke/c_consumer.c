@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <ninlil/runtime.h>
 #include <ninlil/service.h>
 #include <ninlil/transaction.h>

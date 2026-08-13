@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * R3 airtime C bridge vs independent oracle (formula_version 1).
  * Host candidate — not RF/HIL/Japan complete.

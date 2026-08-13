@@ -43,6 +43,7 @@ COMPONENT_CMAKE = (
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "esp-idf.yml"
 ESP_CI_DOCKER_LAUNCHER = REPO_ROOT / "tools" / "esp_idf_ci_docker_run.sh"
 HOST_CMAKE = REPO_ROOT / "CMakeLists.txt"
+HOST_CTEST = REPO_ROOT / "cmake" / "ninlil_ctest.cmake"
 PRIVATE_AUTH = REPO_ROOT / "cmake" / "ninlil_runtime_private_sources.cmake"
 
 
@@ -1793,6 +1794,7 @@ def check_structure(
     private_auth: Path | None = None,
 ) -> list[str]:
     errs: list[str] = []
+    explicit_host_cmake = host_cmake is not None
     component_cmake = component_cmake or COMPONENT_CMAKE
     workflow = workflow or WORKFLOW
     host_cmake = host_cmake or HOST_CMAKE
@@ -1905,9 +1907,13 @@ def check_structure(
 
     if host_cmake.is_file():
         host = host_cmake.read_text(encoding="utf-8", errors="replace")
+        if not explicit_host_cmake and HOST_CTEST.is_file():
+            host += "\n" + HOST_CTEST.read_text(
+                encoding="utf-8", errors="replace"
+            )
         host_code = _cmake_structure_code_local(host)
         if "n6_frame_stack_gate" not in host_code:
-            errs.append("host CMakeLists missing n6_frame_stack_gate registration")
+            errs.append("host CMake graph missing n6_frame_stack_gate registration")
         if (
             "ninlil_runtime_private.dir" not in host_code
             and "n6_frame_stack_gate" in host_code

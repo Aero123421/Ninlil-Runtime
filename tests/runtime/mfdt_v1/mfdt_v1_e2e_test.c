@@ -1,4 +1,5 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Host E2E for private MFDT v1: min/max transfer, chunk boundaries, NRC1,
  * terminal retain+GC, abort/denied, crash inject, CU classifier pins.
  * Lab FULL store only — not power-cut HIL, not RF HIL.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "c6_lab_spi_tx_sim.h"
 
 #include <string.h>

@@ -1,9 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_TRANSPORT_FABRIC_V1_V1_LAB_RADIO_MAPPING_H
 #define NINLIL_TRANSPORT_FABRIC_V1_V1_LAB_RADIO_MAPPING_H
 
 /* Private fixed-capacity NFL1 <-> NRA1 mapping from ADR-0035/0036. */
 
 #include "nra1_codec.h"
+#include "nfl1_codec.h"
 #include "v1_lab_binding.h"
 
 #include "ninlil/platform.h"
@@ -74,6 +76,11 @@ typedef struct ninlil_v1_lab_radio_mapper {
     ninlil_v1_lab_radio_pair_slot_t pairs[NINLIL_V1_LAB_RADIO_PAIR_MAX];
     ninlil_v1_lab_radio_correlation_t
         correlations[NINLIL_V1_LAB_RADIO_CORRELATION_MAX];
+    /* Owner-serialized scratch: never placed on the ESP task stack. */
+    ninlil_v1_lab_binding_t binding_scratch;
+    ninlil_fabric_private_nfl1_workspace_t nfl1_workspace;
+    ninlil_fabric_private_nfl1_envelope_t nfl1_envelope;
+    uint8_t nra1_candidate[NINLIL_NRA1_APPLICATION_BODY_MAX];
 } ninlil_v1_lab_radio_mapper_t;
 
 ninlil_v1_lab_radio_mapping_status_t ninlil_v1_lab_radio_mapper_init(

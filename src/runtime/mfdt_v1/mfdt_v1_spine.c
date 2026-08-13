@@ -1,75 +1,82 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * Spine-bound MFDT: durable arm + real outbound ownership. No self-loop.
- * ESP: spine ctx via SPIRAM/heap. Every entry: spine_mut() once + NULL check.
+ * The caller owns one context per Runtime/prototype instance.
  */
 #include "mfdt_v1_spine.h"
-#include "mfdt_v1_target_alloc.h"
 
 #include <string.h>
 
-#if defined(ESP_PLATFORM)
-static ninlil_mfdt_v1_spine_ctx_t *g_spine_p;
+/* Private in-memory context tag; not a wire/storage protocol magic. */
+#define MFDT_SPINE_MAGIC ((uint32_t)0x4d535081u)
 
-static ninlil_mfdt_v1_spine_ctx_t *spine_mut(void)
+static int spine_valid(const ninlil_mfdt_v1_spine_ctx_t *sp)
 {
-    return g_spine_p;
+    return sp != NULL && sp->magic == MFDT_SPINE_MAGIC;
 }
-#else
-static ninlil_mfdt_v1_spine_ctx_t g_spine_storage;
-static uint8_t g_spine_preallocated;
 
-static ninlil_mfdt_v1_spine_ctx_t *spine_mut(void)
+static int spine_enter(ninlil_mfdt_v1_spine_ctx_t *sp)
 {
-    return g_spine_preallocated != 0u ? &g_spine_storage : NULL;
-}
-#endif
-
-int ninlil_mfdt_v1_spine_preallocate(void)
-{
-#if defined(ESP_PLATFORM)
-    ninlil_mfdt_v1_spine_ctx_t *fresh = NULL;
-    if (g_spine_p == NULL) {
-        fresh = (ninlil_mfdt_v1_spine_ctx_t *)ninlil_mfdt_v1_target_zalloc(
-            sizeof(*fresh));
-        if (fresh == NULL) {
-            return NINLIL_MFDT_V1_ERR_STORAGE;
-        }
-        g_spine_p = fresh;
+    if (!spine_valid(sp)) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
     }
-    if (ninlil_mfdt_v1_engine_preallocate() != NINLIL_MFDT_V1_OK) {
-        if (fresh != NULL) {
-            ninlil_mfdt_v1_target_free(fresh);
-            g_spine_p = NULL;
-        }
-        return NINLIL_MFDT_V1_ERR_STORAGE;
+    if (sp->busy != 0u) {
+        return NINLIL_MFDT_V1_ERR_BUSY;
     }
-#else
-    if (g_spine_preallocated != 0u) {
-        return NINLIL_MFDT_V1_OK;
-    }
-    if (ninlil_mfdt_v1_engine_preallocate() != NINLIL_MFDT_V1_OK) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
-    }
-    g_spine_preallocated = 1u;
-#endif
+    sp->busy = 1u;
     return NINLIL_MFDT_V1_OK;
 }
 
-ninlil_mfdt_v1_spine_ctx_t *ninlil_mfdt_v1_spine_ctx(void)
+static void spine_leave(ninlil_mfdt_v1_spine_ctx_t *sp)
 {
-    if (ninlil_mfdt_v1_spine_preallocate() != NINLIL_MFDT_V1_OK) {
-        return NULL;
+    if (sp != NULL) {
+        sp->busy = 0u;
     }
-    return spine_mut();
 }
 
-int ninlil_mfdt_v1_spine_should_use_mfdt(uint32_t payload_length)
+int ninlil_mfdt_v1_spine_init(ninlil_mfdt_v1_spine_ctx_t *sp)
+{
+    if (sp == NULL) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
+    }
+    ninlil_mfdt_v1_memzero(sp, sizeof(*sp));
+    sp->magic = MFDT_SPINE_MAGIC;
+    ninlil_mfdt_v1_lab_store_init(&sp->store);
+    sp->store_inited = 1u;
+    return NINLIL_MFDT_V1_OK;
+}
+
+void ninlil_mfdt_v1_spine_fini(ninlil_mfdt_v1_spine_ctx_t *sp)
+{
+    if (sp != NULL) {
+        ninlil_mfdt_v1_lab_store_fini(&sp->store);
+        ninlil_mfdt_v1_memzero(sp, sizeof(*sp));
+    }
+}
+
+int ninlil_mfdt_v1_spine_set_config(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const ninlil_mfdt_v1_seam_config_t *config)
+{
+    if (!spine_valid(sp) || config == NULL) {
+        return NINLIL_MFDT_V1_ERR_PARAM;
+    }
+    if (sp->busy != 0u) {
+        return NINLIL_MFDT_V1_ERR_BUSY;
+    }
+    if (sp->armed != 0u || sp->engines_ready != 0u) {
+        return NINLIL_MFDT_V1_ERR_STATE;
+    }
+    sp->seam = *config;
+    return NINLIL_MFDT_V1_OK;
+}
+
+int ninlil_mfdt_v1_spine_should_use_mfdt(
+    const ninlil_mfdt_v1_spine_ctx_t *sp, uint32_t payload_length)
 {
     ninlil_mfdt_v1_config_t cfg;
-    ninlil_mfdt_v1_spine_ctx_t *sp;
 
-    sp = spine_mut();
-    if (sp == NULL) {
+    if (!spine_valid(sp)) {
         return 0;
     }
     ninlil_mfdt_v1_memzero(&cfg, sizeof(cfg));
@@ -307,17 +314,14 @@ static void spine_clear_outcome_unknown(ninlil_mfdt_v1_spine_ctx_t *sp)
     ninlil_mfdt_v1_memzero(sp->outcome_tid, 16u);
 }
 
-int ninlil_mfdt_v1_spine_arm_sender(const uint8_t transaction_id[16],
-                                    const uint8_t *payload, uint32_t payload_len)
+static int spine_arm_sender_impl(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t transaction_id[16],
+    const uint8_t *payload, uint32_t payload_len)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
     int rc;
     int clean_rc;
 
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
-    }
     if (transaction_id == NULL) {
         return NINLIL_MFDT_V1_ERR_PARAM;
     }
@@ -375,15 +379,26 @@ int ninlil_mfdt_v1_spine_arm_sender(const uint8_t transaction_id[16],
     return NINLIL_MFDT_V1_OK;
 }
 
-int ninlil_mfdt_v1_spine_disarm(const uint8_t transaction_id[16])
+int ninlil_mfdt_v1_spine_arm_sender(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t transaction_id[16],
+    const uint8_t *payload, uint32_t payload_len)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
+    }
+    rc = spine_arm_sender_impl(sp, transaction_id, payload, payload_len);
+    spine_leave(sp);
+    return rc;
+}
+
+static int spine_disarm_impl(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t transaction_id[16])
+{
     int rc;
 
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
-    }
     if (transaction_id == NULL) {
         return NINLIL_MFDT_V1_ERR_PARAM;
     }
@@ -419,39 +434,46 @@ int ninlil_mfdt_v1_spine_disarm(const uint8_t transaction_id[16])
     return NINLIL_MFDT_V1_OK;
 }
 
-int ninlil_mfdt_v1_spine_outcome_unknown(void)
+int ninlil_mfdt_v1_spine_disarm(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t transaction_id[16])
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
+    }
+    rc = spine_disarm_impl(sp, transaction_id);
+    spine_leave(sp);
+    return rc;
+}
 
-    sp = spine_mut();
-    if (sp == NULL) {
+int ninlil_mfdt_v1_spine_outcome_unknown(
+    const ninlil_mfdt_v1_spine_ctx_t *sp)
+{
+    if (!spine_valid(sp)) {
         return 0;
     }
     return sp->outcome_unknown != 0u ? 1 : 0;
 }
 
-int ninlil_mfdt_v1_spine_is_armed(const uint8_t transaction_id[16])
+int ninlil_mfdt_v1_spine_is_armed(
+    const ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t transaction_id[16])
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-
-    sp = spine_mut();
-    if (sp == NULL || transaction_id == NULL || sp->armed == 0u) {
+    if (!spine_valid(sp) || transaction_id == NULL || sp->armed == 0u) {
         return 0;
     }
     return ninlil_mfdt_v1_memeq(sp->transfer_id, transaction_id, 16u) ? 1 : 0;
 }
 
-int ninlil_mfdt_v1_spine_recover_transaction(const uint8_t transaction_id[16])
+static int spine_recover_transaction_impl(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t transaction_id[16])
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
     uint8_t key[20];
     uint32_t len;
     int rc;
 
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
-    }
     if (transaction_id == NULL) {
         return NINLIL_MFDT_V1_ERR_PARAM;
     }
@@ -487,29 +509,41 @@ int ninlil_mfdt_v1_spine_recover_transaction(const uint8_t transaction_id[16])
                                         : 0x4d464454ull);
 }
 
-int ninlil_mfdt_v1_spine_recover(void)
+int ninlil_mfdt_v1_spine_recover_transaction(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t transaction_id[16])
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
     }
+    rc = spine_recover_transaction_impl(sp, transaction_id);
+    spine_leave(sp);
+    return rc;
+}
+
+static int spine_recover_impl(ninlil_mfdt_v1_spine_ctx_t *sp)
+{
     if (sp->armed == 0u) {
         return NINLIL_MFDT_V1_OK;
     }
-    return ninlil_mfdt_v1_spine_recover_transaction(sp->transfer_id);
+    return spine_recover_transaction_impl(sp, sp->transfer_id);
 }
 
-int ninlil_mfdt_v1_spine_arm_receiver(void)
+int ninlil_mfdt_v1_spine_recover(ninlil_mfdt_v1_spine_ctx_t *sp)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-    int rc;
-
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
     }
+    rc = spine_recover_impl(sp);
+    spine_leave(sp);
+    return rc;
+}
+
+static int spine_arm_receiver_impl(ninlil_mfdt_v1_spine_ctx_t *sp)
+{
+    int rc;
     rc = ensure_engines(sp);
     if (rc != NINLIL_MFDT_V1_OK) {
         return rc;
@@ -524,52 +558,70 @@ int ninlil_mfdt_v1_spine_arm_receiver(void)
     return NINLIL_MFDT_V1_OK;
 }
 
-int ninlil_mfdt_v1_spine_sender_pump(void)
+int ninlil_mfdt_v1_spine_arm_receiver(ninlil_mfdt_v1_spine_ctx_t *sp)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
     }
+    rc = spine_arm_receiver_impl(sp);
+    spine_leave(sp);
+    return rc;
+}
+
+static int spine_sender_pump_impl(ninlil_mfdt_v1_spine_ctx_t *sp)
+{
     if (sp->engines_ready == 0u || sp->role != 1u) {
         return NINLIL_MFDT_V1_ERR_STATE;
     }
     return ninlil_mfdt_v1_pipeline_sender_pump(&sp->pipe);
 }
 
-int ninlil_mfdt_v1_spine_outbox_pending(void)
+int ninlil_mfdt_v1_spine_sender_pump(ninlil_mfdt_v1_spine_ctx_t *sp)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
+    }
+    rc = spine_sender_pump_impl(sp);
+    spine_leave(sp);
+    return rc;
+}
 
-    sp = spine_mut();
-    if (sp == NULL) {
+int ninlil_mfdt_v1_spine_outbox_pending(
+    const ninlil_mfdt_v1_spine_ctx_t *sp)
+{
+    if (!spine_valid(sp)) {
         return 0;
     }
     return ninlil_mfdt_v1_pipeline_outbox_pending(&sp->pipe);
 }
 
-int ninlil_mfdt_v1_spine_take_outbound_ncl1(uint8_t *out, size_t cap,
-                                            size_t *out_len)
+static int spine_take_outbound_ncl1_impl(
+    ninlil_mfdt_v1_spine_ctx_t *sp, uint8_t *out, size_t cap,
+    size_t *out_len)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
-    }
     return ninlil_mfdt_v1_pipeline_take_outbound(&sp->pipe, out, cap, out_len);
 }
 
-int ninlil_mfdt_v1_spine_on_ncl1_data(const uint8_t *ncl1, size_t ncl1_len)
+int ninlil_mfdt_v1_spine_take_outbound_ncl1(
+    ninlil_mfdt_v1_spine_ctx_t *sp, uint8_t *out, size_t cap,
+    size_t *out_len)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-    int rc;
-
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
     }
+    rc = spine_take_outbound_ncl1_impl(sp, out, cap, out_len);
+    spine_leave(sp);
+    return rc;
+}
+
+static int spine_on_ncl1_data_impl(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t *ncl1, size_t ncl1_len)
+{
+    int rc;
     if (ncl1 == NULL || ncl1_len == 0u) {
         return NINLIL_MFDT_V1_ERR_PARAM;
     }
@@ -590,41 +642,58 @@ int ninlil_mfdt_v1_spine_on_ncl1_data(const uint8_t *ncl1, size_t ncl1_len)
     return ninlil_mfdt_v1_pipeline_on_ncl1_ingress(&sp->pipe, ncl1, ncl1_len);
 }
 
-int ninlil_mfdt_v1_spine_restart_scan(void)
+int ninlil_mfdt_v1_spine_on_ncl1_data(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
+    const uint8_t *ncl1, size_t ncl1_len)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-
-    sp = spine_mut();
-    if (sp == NULL) {
-        return NINLIL_MFDT_V1_ERR_STORAGE;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
     }
+    rc = spine_on_ncl1_data_impl(sp, ncl1, ncl1_len);
+    spine_leave(sp);
+    return rc;
+}
+
+static int spine_restart_scan_impl(ninlil_mfdt_v1_spine_ctx_t *sp)
+{
     if (sp->engines_ready == 0u) {
         return NINLIL_MFDT_V1_OK;
     }
     return ninlil_mfdt_v1_restart_scan(&sp->eng);
 }
 
-int ninlil_mfdt_v1_spine_transfer_complete(void)
+int ninlil_mfdt_v1_spine_restart_scan(ninlil_mfdt_v1_spine_ctx_t *sp)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
+    int rc = spine_enter(sp);
+    if (rc != NINLIL_MFDT_V1_OK) {
+        return rc;
+    }
+    rc = spine_restart_scan_impl(sp);
+    spine_leave(sp);
+    return rc;
+}
 
-    sp = spine_mut();
-    if (sp == NULL) {
+int ninlil_mfdt_v1_spine_transfer_complete(
+    const ninlil_mfdt_v1_spine_ctx_t *sp)
+{
+    if (!spine_valid(sp)) {
         return 0;
     }
     return sp->pipe.complete != 0u ? 1 : 0;
 }
 
 ninlil_mfdt_v1_cu_class_t ninlil_mfdt_v1_spine_cu_key(
+    ninlil_mfdt_v1_spine_ctx_t *sp,
     const uint8_t key[20], const uint8_t *oldb, uint32_t oldn, int has_old,
     const uint8_t *newb, uint32_t newn, int has_new)
 {
-    ninlil_mfdt_v1_spine_ctx_t *sp;
-
-    sp = spine_mut();
-    if (sp == NULL || sp->engines_ready == 0u) {
+    if (!spine_valid(sp) || sp->engines_ready == 0u ||
+        sp->busy != 0u || sp->store.txn_open != 0u) {
         return NINLIL_MFDT_V1_CU_ABSENT;
     }
-    return ninlil_mfdt_v1_cu_observe_key(&sp->store, key, oldb, oldn, has_old,
-                                         newb, newn, has_new);
+    return ninlil_mfdt_v1_cu_observe_key(
+        &sp->store, sp->store.staging_pool,
+        (uint32_t)sizeof(sp->store.staging_pool), key,
+        oldb, oldn, has_old, newb, newn, has_new);
 }

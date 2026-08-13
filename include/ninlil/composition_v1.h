@@ -1,8 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Ninlil Runtime composition v1.
  *
  * Applications use the borrowed Runtime handle. Reference transport ports use
  * the borrowed Fabric handle. Internal reliability engines remain private.
+ * Normative ownership and shutdown details are in ADR-0032.
+ *
+ * The caller owns the fixed workspace from create through successful destroy.
+ * create copies the outer configuration and platform vtable values; function
+ * code and non-NULL user pointees remain caller-owned through destroy. Runtime
+ * and Fabric accessors return borrows that expire at an accepted close_begin.
+ * Except for pure workspace_required, calls are owner-context-only and reject
+ * re-entry. ninlil_status_t is invocation/mapped component status; it does not
+ * turn transport completion into Application success or mask COMMIT_UNKNOWN.
  */
 #ifndef NINLIL_COMPOSITION_V1_H
 #define NINLIL_COMPOSITION_V1_H

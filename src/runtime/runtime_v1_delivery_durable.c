@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_v1_delivery_durable.h"
 #include "runtime_v1_bearer_wire.h"
 #include "runtime_v1_capability.h"
@@ -34,6 +35,16 @@ static ninlil_status_t handle_delivery_token_timeout(
     ninlil_rt_transaction_slot_t *txn,
     const ninlil_time_sample_t *clock_sample,
     ninlil_rt_v1_step_delivery_result_t *out_result);
+
+static int checked_evidence_close(
+    const ninlil_rt_transaction_slot_t *txn,
+    uint64_t *out_close_at_ms);
+
+static int desired_effect_deadline_needs_reduction(
+    const ninlil_rt_transaction_slot_t *txn);
+
+static int desired_evidence_close_needs_reduction(
+    const ninlil_rt_transaction_slot_t *txn);
 
 static void set_header(uint16_t *abi_version, uint16_t *struct_size, size_t size)
 {
@@ -102,17 +113,20 @@ static ninlil_status_t map_storage_mutation_status(
         return NINLIL_E_CAPACITY_EXHAUSTED;
     case NINLIL_STORAGE_IO_ERROR:
         return NINLIL_E_STORAGE;
-    case NINLIL_STORAGE_UNSUPPORTED_SCHEMA:
-        return NINLIL_E_UNSUPPORTED;
     case NINLIL_STORAGE_COMMIT_UNKNOWN:
         runtime->commit_unknown_fence = 1u;
         return NINLIL_E_STORAGE_COMMIT_UNKNOWN;
     case NINLIL_STORAGE_CORRUPT:
+    case NINLIL_STORAGE_UNSUPPORTED_SCHEMA:
     case NINLIL_STORAGE_NOT_FOUND:
     case NINLIL_STORAGE_BUFFER_TOO_SMALL:
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_STORAGE_IO;
         return NINLIL_E_STORAGE_CORRUPT;
     default:
         runtime->commit_unknown_fence = 1u;
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_STORAGE_IO;
         return NINLIL_E_STORAGE_CORRUPT;
     }
 }
@@ -145,6 +159,28 @@ static void note_terminal_outcome(
     }
 }
 
+static int event_cycle_summary_time(
+    const ninlil_rt_transaction_slot_t *current,
+    ninlil_id128_t *out_epoch,
+    uint64_t *out_ended_at_ms)
+{
+    *out_epoch = current->send_observed_clock_epoch_id;
+    *out_ended_at_ms = current->send_observed_at_ms;
+    if (current->delivery_phase == NINLIL_RT_DELIVERY_PARKED
+        && current->event_park_cause
+            == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT
+        && current->send_observation_closed != 0u) {
+        if (current->attempt_receipt_timeout_ms == 0u
+            || current->send_observed_at_ms
+                > UINT64_MAX - current->attempt_receipt_timeout_ms) {
+            return 0;
+        }
+        *out_ended_at_ms = current->send_observed_at_ms
+            + current->attempt_receipt_timeout_ms;
+    }
+    return 1;
+}
+
 ninlil_status_t ninlil_rt_v1_begin_event_retry_cycle(
     const ninlil_rt_transaction_slot_t *current,
     ninlil_rt_transaction_slot_t *candidate)
@@ -171,9 +207,12 @@ ninlil_status_t ninlil_rt_v1_begin_event_retry_cycle(
         current->send_observation_closed != 0u
             || current->delivery_count != 0u;
     completed.last_reason = current->reason;
-    completed.last_observed_clock_epoch_id =
-        current->send_observed_clock_epoch_id;
-    completed.last_observed_at_ms = current->send_observed_at_ms;
+    if (!event_cycle_summary_time(
+            current,
+            &completed.last_observed_clock_epoch_id,
+            &completed.last_observed_at_ms)) {
+        return NINLIL_E_DEGRADED;
+    }
 
     if (candidate->retry_summary_count
         == NINLIL_M1A_EVENT_RETRY_SUMMARY_SLOTS) {
@@ -1019,6 +1058,16 @@ ninlil_status_t ninlil_rt_v1_callback_preflight(
         runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
         return NINLIL_E_DEGRADED;
     }
+    status = ninlil_rt_accept_trusted_clock_sample(runtime, &fresh_sample);
+    if (status != NINLIL_OK) {
+        status = commit_callback_recovery_fence(
+            runtime,
+            transaction,
+            NINLIL_RT_TOKEN_RECOVERY_REQUIRED,
+            NINLIL_REASON_OUTCOME_UNKNOWN,
+            out_result);
+        return status != NINLIL_OK ? status : NINLIL_E_DEGRADED;
+    }
     if (!id_equal(
             &fresh_sample.clock_epoch_id, &step_sample->clock_epoch_id)
         || !id_equal(
@@ -1161,6 +1210,10 @@ ninlil_status_t ninlil_rt_v1_callback_complete_postflight(
         fence_state = NINLIL_RT_TOKEN_RECOVERY_REQUIRED;
     } else if (clock_status != NINLIL_PORT_OK
         || !trusted_time_sample_is_valid(&fresh_sample)) {
+        result_status = NINLIL_E_DEGRADED;
+        fence_state = NINLIL_RT_TOKEN_RECOVERY_REQUIRED;
+    } else if (ninlil_rt_accept_trusted_clock_sample(
+            runtime, &fresh_sample) != NINLIL_OK) {
         result_status = NINLIL_E_DEGRADED;
         fence_state = NINLIL_RT_TOKEN_RECOVERY_REQUIRED;
     } else if (!id_equal(
@@ -1404,15 +1457,22 @@ ninlil_status_t ninlil_rt_v1_complete_deferred_delivery(
         return NINLIL_E_CLOCK_UNCERTAIN;
     }
     if (clock_status != NINLIL_PORT_OK
-        || sample.trust != NINLIL_CLOCK_TRUSTED) {
+        || !trusted_time_sample_is_valid(&sample)) {
         runtime->health = NINLIL_HEALTH_DEGRADED;
         runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
         return NINLIL_E_DEGRADED;
+    }
+    status = ninlil_rt_accept_trusted_clock_sample(runtime, &sample);
+    if (status != NINLIL_OK) {
+        return status;
     }
     if (memcmp(
             sample.clock_epoch_id.bytes,
             token->clock_epoch_id.bytes,
             sizeof(token->clock_epoch_id.bytes)) != 0) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        runtime->pending_work = 1u;
         return NINLIL_E_CLOCK_UNCERTAIN;
     }
     if (sample.now_ms < transaction->delivery_started_at_ms) {
@@ -1813,6 +1873,11 @@ static ninlil_status_t dispatch_event_fact_receiver(
         runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
         return NINLIL_E_DEGRADED;
     }
+    status = ninlil_rt_accept_trusted_clock_sample(
+        runtime, &callback_start_sample);
+    if (status != NINLIL_OK) {
+        return status;
+    }
     status = ninlil_rt_v1_prepare_callback_start(
         runtime,
         txn,
@@ -1973,6 +2038,53 @@ static int checked_receipt_deadline(
     return 1;
 }
 
+int ninlil_rt_v1_transaction_has_invalid_active_receipt_timer(
+    const ninlil_rt_transaction_slot_t *transaction)
+{
+    uint64_t ignored_deadline;
+    uint32_t index;
+    int root_started_timer;
+    int parked_cycle_timer;
+
+    if (transaction == NULL || transaction->in_use == 0u
+        || transaction->terminal != 0u
+        || transaction->origin_admission == 0u) {
+        return 0;
+    }
+    root_started_timer =
+        transaction->delivery_phase == NINLIL_RT_DELIVERY_STARTED
+        && transaction->evidence_recorded == 0u
+        && transaction->pending_dispatch == 0u
+        && transaction->send_observation_closed != 0u;
+    parked_cycle_timer =
+        transaction->family == NINLIL_FAMILY_EVENT_FACT
+        && transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED
+        && transaction->event_park_cause
+            == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT
+        && transaction->send_observation_closed != 0u;
+    if ((root_started_timer || parked_cycle_timer)
+        && !checked_receipt_deadline(transaction, &ignored_deadline)) {
+        return 1;
+    }
+    for (index = 0u; index < transaction->bound_target_count; ++index) {
+        const ninlil_rt_target_slot_t *target =
+            &transaction->bound_targets[index];
+
+        if (target->in_use != 0u && target->terminal == 0u
+            && target->delivery_phase == NINLIL_RT_DELIVERY_STARTED
+            && target->evidence_recorded == 0u
+            && target->pending_dispatch == 0u
+            && target->send_observation_closed != 0u
+            && (transaction->attempt_receipt_timeout_ms == 0u
+                || target->send_observed_at_ms
+                    > UINT64_MAX
+                        - transaction->attempt_receipt_timeout_ms)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int timer_is_due(
     const ninlil_time_sample_t *sample,
     const ninlil_id128_t *epoch,
@@ -1999,6 +2111,7 @@ static int txn_needs_work(
     const ninlil_rt_transaction_slot_t *txn,
     const ninlil_time_sample_t *clock_sample)
 {
+    uint64_t evidence_close_at_ms;
     uint64_t receipt_deadline;
     uint32_t target_index;
 
@@ -2087,10 +2200,19 @@ static int txn_needs_work(
     }
     if (txn->effect_deadline_ms != 0u
         && txn->effect_deadline_ms < NINLIL_NO_DEADLINE
+        && desired_effect_deadline_needs_reduction(txn)
         && timer_is_due(
             clock_sample,
             &txn->deadline_clock_epoch_id,
             txn->effect_deadline_ms)) {
+        return 1;
+    }
+    if (checked_evidence_close(txn, &evidence_close_at_ms)
+        && desired_evidence_close_needs_reduction(txn)
+        && timer_is_due(
+            clock_sample,
+            &txn->deadline_clock_epoch_id,
+            evidence_close_at_ms)) {
         return 1;
     }
     return 0;
@@ -2138,7 +2260,9 @@ static ninlil_status_t handle_delivery_token_timeout(
             &runtime->metrics.delivery_token_timeouts);
     }
     runtime->health = NINLIL_HEALTH_DEGRADED;
-    runtime->degraded_reason = reason;
+    runtime->degraded_reason = same_epoch
+        ? NINLIL_REASON_APPLICATION_COMPLETION_TIMEOUT
+        : NINLIL_REASON_CLOCK_UNCERTAIN;
     return NINLIL_OK;
 }
 
@@ -2292,8 +2416,71 @@ static void clear_automatic_resume_cycle_state(
     }
 }
 
+static ninlil_status_t fail_automatic_resume_clock_guard(
+    ninlil_runtime_t *runtime,
+    ninlil_status_t status)
+{
+    runtime->health = NINLIL_HEALTH_DEGRADED;
+    runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+    return status;
+}
+
+static ninlil_status_t guard_automatic_resume_chronology(
+    ninlil_runtime_t *runtime,
+    const ninlil_rt_transaction_slot_t *transaction,
+    const ninlil_time_sample_t *clock_sample)
+{
+    uint64_t cycle_ended_at_ms;
+
+    if (!trusted_time_sample_is_valid(clock_sample)
+        || runtime->bearer_state_present == 0u
+        || runtime->step_bearer_availability_epoch == 0u
+        || runtime->step_bearer_availability_epoch
+            != runtime->bearer_availability_epoch
+        || !id_nonzero(&runtime->bearer_observed_clock_epoch_id)) {
+        return fail_automatic_resume_clock_guard(
+            runtime, NINLIL_E_DEGRADED);
+    }
+    if (!id_equal(
+            &clock_sample->clock_epoch_id,
+            &runtime->bearer_observed_clock_epoch_id)) {
+        return fail_automatic_resume_clock_guard(
+            runtime, NINLIL_E_CLOCK_UNCERTAIN);
+    }
+    if (clock_sample->now_ms < runtime->bearer_observed_at_ms) {
+        return fail_automatic_resume_clock_guard(
+            runtime, NINLIL_E_DEGRADED);
+    }
+
+    if (transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED
+        && transaction->event_park_cause
+            == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT
+        && transaction->send_observation_closed != 0u) {
+        if (transaction->attempt_receipt_timeout_ms == 0u
+            || transaction->send_observed_at_ms
+                > UINT64_MAX - transaction->attempt_receipt_timeout_ms) {
+            return fail_automatic_resume_clock_guard(
+                runtime, NINLIL_E_DEGRADED);
+        }
+        if (!id_equal(
+                &clock_sample->clock_epoch_id,
+                &transaction->send_observed_clock_epoch_id)) {
+            return fail_automatic_resume_clock_guard(
+                runtime, NINLIL_E_CLOCK_UNCERTAIN);
+        }
+        cycle_ended_at_ms = transaction->send_observed_at_ms
+            + transaction->attempt_receipt_timeout_ms;
+        if (clock_sample->now_ms < cycle_ended_at_ms) {
+            return fail_automatic_resume_clock_guard(
+                runtime, NINLIL_E_DEGRADED);
+        }
+    }
+    return NINLIL_OK;
+}
+
 static ninlil_status_t automatic_availability_resume_one(
     ninlil_runtime_t *runtime,
+    const ninlil_time_sample_t *clock_sample,
     uint32_t transition_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result,
     uint32_t *out_resumed)
@@ -2328,6 +2515,11 @@ static ninlil_status_t automatic_availability_resume_one(
         out_result->work_remaining = 1u;
         runtime->pending_work = 1u;
         return NINLIL_OK;
+    }
+    status = guard_automatic_resume_chronology(
+        runtime, transaction, clock_sample);
+    if (status != NINLIL_OK) {
+        return status;
     }
     if (transaction->spool_revision == UINT64_MAX) {
         runtime->health = NINLIL_HEALTH_DEGRADED;
@@ -2520,6 +2712,33 @@ static int attempt_id_is_in_use(
     return 0;
 }
 
+static int desired_retry_apply_contract_is_safe(
+    const ninlil_runtime_t *runtime,
+    const ninlil_rt_transaction_slot_t *transaction)
+{
+    const ninlil_rt_service_slot_t *matched = NULL;
+    uint32_t index;
+
+    for (index = 0u; index < runtime->service_capacity; ++index) {
+        const ninlil_rt_service_slot_t *slot =
+            &runtime->services[index];
+
+        if (slot->in_use == 0u
+            || !ninlil_rt_service_descriptor_matches_transaction(
+                &slot->descriptor, transaction)) {
+            continue;
+        }
+        if (matched != NULL) {
+            return 0;
+        }
+        matched = slot;
+    }
+    return matched != NULL
+        && (matched->descriptor.apply_contract == NINLIL_APPLY_IDEMPOTENT
+            || matched->descriptor.apply_contract
+                == NINLIL_APPLY_APPLICATION_DEDUP);
+}
+
 static ninlil_status_t prepare_application_attempt(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *txn,
@@ -2671,6 +2890,126 @@ static ninlil_status_t handle_bearer_receipt_timeout(
             receipt_deadline_ms)) {
         return NINLIL_OK;
     }
+    if (txn->family == NINLIL_FAMILY_DESIRED_STATE
+        && txn->origin_admission != 0u) {
+        ninlil_rt_transaction_slot_t *candidate =
+            &runtime->transaction_scratch;
+        ninlil_rt_target_slot_t *target;
+        uint32_t scan;
+        int activated = 0;
+        int retry_is_safe;
+        uint64_t retry_not_before_ms = 0u;
+
+        *candidate = *txn;
+        target = &candidate->bound_targets[target_index];
+        retry_is_safe = txn->retry_backoff_ms != 0u
+            && clock_sample->now_ms
+                <= UINT64_MAX - txn->retry_backoff_ms;
+        if (retry_is_safe) {
+            retry_not_before_ms =
+                clock_sample->now_ms + txn->retry_backoff_ms;
+        }
+        retry_is_safe = retry_is_safe
+            && target->retry_budget != 0u
+            && desired_retry_apply_contract_is_safe(runtime, txn)
+            && target->deadline_verdict == NINLIL_DEADLINE_PENDING
+            && id_equal(
+                &txn->send_observed_clock_epoch_id,
+                &txn->deadline_clock_epoch_id)
+            && retry_not_before_ms < txn->effect_deadline_ms;
+        target->delivery_phase = retry_is_safe
+            ? NINLIL_RT_DELIVERY_QUEUED
+            : NINLIL_RT_DELIVERY_STARTED;
+        target->pending_dispatch = retry_is_safe ? 1u : 0u;
+        target->attempt_prepared = 0u;
+        (void)memset(
+            &target->active_attempt_id,
+            0,
+            sizeof(target->active_attempt_id));
+        target->send_observation_closed = 0u;
+        target->send_observed_at_ms = 0u;
+        (void)memset(
+            &target->send_observed_clock_epoch_id,
+            0,
+            sizeof(target->send_observed_clock_epoch_id));
+        if (retry_is_safe) {
+            target->next_retry_ms = retry_not_before_ms;
+            target->next_retry_clock_epoch_id =
+                clock_sample->clock_epoch_id;
+        } else {
+            target->next_retry_ms = 0u;
+            (void)memset(
+                &target->next_retry_clock_epoch_id,
+                0,
+                sizeof(target->next_retry_clock_epoch_id));
+        }
+        /*
+         * ACCEPTED/possible delivery timeout is not no-effect proof.  The
+         * existing durable target reason is the current NTS3 authority for
+         * EFFECT_POSSIBLE while deadline_verdict correctly remains PENDING
+         * until the separate effect-deadline reducer runs.
+         */
+        target->reason =
+            NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING;
+
+        candidate->active_target_index =
+            NINLIL_RT_V1_NO_ACTIVE_TARGET;
+        candidate->attempt_prepared = 0u;
+        (void)memset(
+            &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
+        candidate->send_observation_closed = 0u;
+        candidate->send_observed_at_ms = 0u;
+        (void)memset(
+            &candidate->send_observed_clock_epoch_id,
+            0,
+            sizeof(candidate->send_observed_clock_epoch_id));
+        candidate->next_retry_ms = 0u;
+        (void)memset(
+            &candidate->next_retry_clock_epoch_id,
+            0,
+            sizeof(candidate->next_retry_clock_epoch_id));
+
+        /* Other exact targets may still be dispatched before the deadline. */
+        for (scan = 1u;
+             scan < candidate->bound_target_count;
+             ++scan) {
+            uint32_t next =
+                (target_index + scan) % candidate->bound_target_count;
+            ninlil_rt_target_slot_t *next_target =
+                &candidate->bound_targets[next];
+
+            if (next_target->in_use != 0u
+                && next_target->terminal == 0u
+                && next_target->pending_dispatch != 0u) {
+                ninlil_rt_v1_activate_target(candidate, next);
+                activated = 1;
+                break;
+            }
+        }
+        if (!activated) {
+            ninlil_rt_v1_activate_target(candidate, target_index);
+        }
+        ninlil_rt_v1_refresh_target_aggregate(candidate);
+        if (candidate->active_target_index == target_index) {
+            candidate->reason =
+                NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING;
+            candidate->deadline_verdict = target->deadline_verdict;
+        }
+        status = commit_transaction_snapshot_internal(
+            runtime,
+            txn,
+            candidate,
+            NINLIL_RT_V1_MARKER_RT,
+            NINLIL_V1_DURABLE_OP_RETRY_STATE_COMMIT,
+            0,
+            "controller.before_command_attempt_timeout_commit",
+            "controller.after_command_attempt_timeout_commit");
+        if (status != NINLIL_OK) {
+            return status;
+        }
+        out_result->transitions_consumed += 1u;
+        return NINLIL_OK;
+    }
     if (txn->retry_budget == 0u) {
         return commit_terminal_outcome(
             runtime,
@@ -2682,6 +3021,17 @@ static ninlil_status_t handle_bearer_receipt_timeout(
     {
         ninlil_rt_transaction_slot_t *candidate =
             &runtime->transaction_scratch;
+        uint64_t retry_not_before_ms;
+
+        if (txn->retry_backoff_ms == 0u
+            || clock_sample->now_ms
+                > UINT64_MAX - txn->retry_backoff_ms) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_COUNTER_EXHAUSTED;
+            return NINLIL_E_DEGRADED;
+        }
+        retry_not_before_ms =
+            clock_sample->now_ms + txn->retry_backoff_ms;
 
         *candidate = *txn;
         candidate->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
@@ -2695,7 +3045,7 @@ static ninlil_status_t handle_bearer_receipt_timeout(
             &candidate->send_observed_clock_epoch_id,
             0,
             sizeof(candidate->send_observed_clock_epoch_id));
-        candidate->next_retry_ms = clock_sample->now_ms;
+        candidate->next_retry_ms = retry_not_before_ms;
         candidate->next_retry_clock_epoch_id =
             clock_sample->clock_epoch_id;
         if (candidate->family == NINLIL_FAMILY_DESIRED_STATE
@@ -2717,7 +3067,7 @@ static ninlil_status_t handle_bearer_receipt_timeout(
                 &target->send_observed_clock_epoch_id,
                 0,
                 sizeof(target->send_observed_clock_epoch_id));
-            target->next_retry_ms = clock_sample->now_ms;
+            target->next_retry_ms = retry_not_before_ms;
             target->next_retry_clock_epoch_id =
                 clock_sample->clock_epoch_id;
             target->reason = NINLIL_REASON_TRANSPORT_RETRY;
@@ -2762,6 +3112,7 @@ static ninlil_status_t handle_event_endpoint_receipt_timeout(
     ninlil_rt_transaction_slot_t *candidate;
     ninlil_status_t status;
     uint64_t receipt_deadline_ms;
+    uint64_t retry_not_before_ms = 0u;
     int parks_cycle;
 
     if (runtime->config.role != NINLIL_ROLE_ENDPOINT
@@ -2790,23 +3141,33 @@ static ninlil_status_t handle_event_endpoint_receipt_timeout(
         runtime->degraded_reason = NINLIL_REASON_COUNTER_EXHAUSTED;
         return NINLIL_E_DEGRADED;
     }
+    if (!parks_cycle) {
+        if (txn->retry_backoff_ms == 0u
+            || clock_sample->now_ms
+                > UINT64_MAX - txn->retry_backoff_ms) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_COUNTER_EXHAUSTED;
+            return NINLIL_E_DEGRADED;
+        }
+        retry_not_before_ms =
+            clock_sample->now_ms + txn->retry_backoff_ms;
+    }
     candidate = &runtime->transaction_scratch;
     *candidate = *txn;
     candidate->attempt_prepared = 0u;
     (void)memset(
         &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
-    candidate->send_observation_closed = 0u;
-    candidate->send_observed_at_ms = 0u;
-    (void)memset(
-        &candidate->send_observed_clock_epoch_id,
-        0,
-        sizeof(candidate->send_observed_clock_epoch_id));
     candidate->next_retry_ms = 0u;
     (void)memset(
         &candidate->next_retry_clock_epoch_id,
         0,
         sizeof(candidate->next_retry_clock_epoch_id));
     if (parks_cycle) {
+        /*
+         * Keep the accepted send chronology durable while the exhausted
+         * cycle is parked.  The next resume first transfers this tuple into
+         * retry history, then clears the live-cycle observation.
+         */
         candidate->delivery_phase = NINLIL_RT_DELIVERY_PARKED;
         candidate->pending_dispatch = 0u;
         candidate->event_park_cause =
@@ -2814,6 +3175,17 @@ static ninlil_status_t handle_event_endpoint_receipt_timeout(
         candidate->reason =
             NINLIL_REASON_RETRY_BUDGET_EXHAUSTED_NO_EFFECT;
         candidate->spool_revision += 1u;
+        if (runtime->bearer_state_present != 0u
+            && runtime->bearer_availability_epoch
+                > candidate->last_bearer_availability_epoch) {
+            candidate->last_bearer_availability_epoch =
+                runtime->bearer_availability_epoch;
+        }
+        if (candidate->last_bearer_availability_epoch
+            > candidate->last_consumed_bearer_availability_epoch) {
+            candidate->last_consumed_bearer_availability_epoch =
+                candidate->last_bearer_availability_epoch;
+        }
         status = ninlil_rt_v1_commit_transaction_snapshot(
             runtime,
             txn,
@@ -2821,10 +3193,16 @@ static ninlil_status_t handle_event_endpoint_receipt_timeout(
             NINLIL_RT_V1_MARKER_ES,
             NINLIL_V1_DURABLE_OP_EVENT_SPOOL_COMMIT);
     } else {
+        candidate->send_observation_closed = 0u;
+        candidate->send_observed_at_ms = 0u;
+        (void)memset(
+            &candidate->send_observed_clock_epoch_id,
+            0,
+            sizeof(candidate->send_observed_clock_epoch_id));
         candidate->delivery_phase = NINLIL_RT_DELIVERY_QUEUED;
         candidate->pending_dispatch = 1u;
         candidate->reason = NINLIL_REASON_TRANSPORT_RETRY;
-        candidate->next_retry_ms = clock_sample->now_ms;
+        candidate->next_retry_ms = retry_not_before_ms;
         candidate->next_retry_clock_epoch_id =
             clock_sample->clock_epoch_id;
         status = ninlil_rt_v1_commit_transaction_snapshot(
@@ -2846,70 +3224,418 @@ static ninlil_status_t handle_event_endpoint_receipt_timeout(
     return NINLIL_OK;
 }
 
+static ninlil_status_t handle_timeout_retry(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    const ninlil_time_sample_t *clock_sample,
+    ninlil_rt_v1_step_delivery_result_t *out_result);
+
+static ninlil_status_t handle_evidence_close(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    const ninlil_time_sample_t *clock_sample,
+    ninlil_rt_v1_step_delivery_result_t *out_result);
+
+static int checked_evidence_close(
+    const ninlil_rt_transaction_slot_t *txn,
+    uint64_t *out_close_at_ms)
+{
+    if (txn->effect_deadline_ms == 0u
+        || txn->effect_deadline_ms >= NINLIL_NO_DEADLINE
+        || txn->effect_deadline_ms
+            > UINT64_MAX - txn->evidence_grace_ms) {
+        return 0;
+    }
+    *out_close_at_ms =
+        txn->effect_deadline_ms + txn->evidence_grace_ms;
+    return 1;
+}
+
+static int desired_effect_deadline_needs_reduction(
+    const ninlil_rt_transaction_slot_t *txn)
+{
+    uint32_t index;
+
+    if (txn->family != NINLIL_FAMILY_DESIRED_STATE
+        || txn->origin_admission == 0u) {
+        return 1;
+    }
+    for (index = 0u; index < txn->bound_target_count; ++index) {
+        const ninlil_rt_target_slot_t *target =
+            &txn->bound_targets[index];
+
+        if (target->in_use != 0u && target->terminal == 0u
+            && (target->deadline_verdict
+                    != NINLIL_DEADLINE_INDETERMINATE
+                || target->reason
+                    != NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int desired_evidence_close_needs_reduction(
+    const ninlil_rt_transaction_slot_t *txn)
+{
+    uint32_t index;
+
+    if (txn->family != NINLIL_FAMILY_DESIRED_STATE
+        || txn->origin_admission == 0u) {
+        return 0;
+    }
+    for (index = 0u; index < txn->bound_target_count; ++index) {
+        const ninlil_rt_target_slot_t *target =
+            &txn->bound_targets[index];
+
+        if (target->in_use != 0u && target->terminal == 0u
+            && target->deadline_verdict
+                == NINLIL_DEADLINE_INDETERMINATE
+            && target->reason
+                == NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int timer_precedes_management(
+    const ninlil_time_sample_t *sample,
+    const ninlil_id128_t *epoch,
+    uint64_t deadline,
+    uint32_t timer_priority,
+    uint32_t management_priority)
+{
+    return id_equal(&sample->clock_epoch_id, epoch)
+        && (deadline < sample->now_ms
+            || (deadline == sample->now_ms
+                && timer_priority < management_priority));
+}
+
+static int epoch_differs_from_sample(
+    const ninlil_time_sample_t *sample,
+    const ninlil_id128_t *epoch)
+{
+    return id_nonzero(epoch)
+        && !id_equal(&sample->clock_epoch_id, epoch);
+}
+
+static int targeted_management_has_cross_epoch_correctness_timer(
+    const ninlil_rt_transaction_slot_t *transaction,
+    const ninlil_time_sample_t *sample)
+{
+    uint64_t ignored_deadline;
+    uint32_t index;
+
+    if (transaction->token_state == NINLIL_RT_TOKEN_ACTIVE
+        && epoch_differs_from_sample(
+            sample, &transaction->token_clock_epoch_id)) {
+        return 1;
+    }
+    if (transaction->terminal == 0u
+        && transaction->next_retry_ms != 0u
+        && epoch_differs_from_sample(
+            sample, &transaction->next_retry_clock_epoch_id)) {
+        return 1;
+    }
+    if (transaction->terminal == 0u
+        && transaction->effect_deadline_ms != 0u
+        && transaction->effect_deadline_ms < NINLIL_NO_DEADLINE
+        && (desired_effect_deadline_needs_reduction(transaction)
+            || (checked_evidence_close(transaction, &ignored_deadline)
+                && desired_evidence_close_needs_reduction(transaction)))
+        && epoch_differs_from_sample(
+            sample, &transaction->deadline_clock_epoch_id)) {
+        return 1;
+    }
+    if (transaction->terminal == 0u
+        && transaction->delivery_phase == NINLIL_RT_DELIVERY_STARTED
+        && transaction->evidence_recorded == 0u
+        && transaction->pending_dispatch == 0u
+        && checked_receipt_deadline(transaction, &ignored_deadline)
+        && epoch_differs_from_sample(
+            sample, &transaction->send_observed_clock_epoch_id)) {
+        return 1;
+    }
+    if (transaction->terminal == 0u
+        && transaction->delivery_phase == NINLIL_RT_DELIVERY_PARKED
+        && transaction->event_park_cause
+            == NINLIL_EVENT_PARK_CAUSE_CYCLE_EXHAUSTED_TRANSIENT
+        && transaction->send_observation_closed != 0u
+        && checked_receipt_deadline(transaction, &ignored_deadline)
+        && epoch_differs_from_sample(
+            sample, &transaction->send_observed_clock_epoch_id)) {
+        return 1;
+    }
+    if (transaction->terminal != 0u) {
+        return 0;
+    }
+    for (index = 0u; index < transaction->bound_target_count; ++index) {
+        const ninlil_rt_target_slot_t *target =
+            &transaction->bound_targets[index];
+
+        if (target->in_use != 0u && target->terminal == 0u
+            && target->next_retry_ms != 0u
+            && epoch_differs_from_sample(
+                sample, &target->next_retry_clock_epoch_id)) {
+            return 1;
+        }
+        if (transaction->attempt_receipt_timeout_ms != 0u
+            && target->in_use != 0u && target->terminal == 0u
+            && target->delivery_phase == NINLIL_RT_DELIVERY_STARTED
+            && target->evidence_recorded == 0u
+            && target->pending_dispatch == 0u
+            && target->send_observation_closed != 0u
+            && target->send_observed_at_ms
+                <= UINT64_MAX - transaction->attempt_receipt_timeout_ms
+            && epoch_differs_from_sample(
+                sample, &target->send_observed_clock_epoch_id)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+typedef enum targeted_timer_kind {
+    TARGETED_TIMER_NONE = 0,
+    TARGETED_TIMER_TOKEN = 1,
+    TARGETED_TIMER_EFFECT_DEADLINE = 2,
+    TARGETED_TIMER_EVIDENCE_CLOSE = 3,
+    TARGETED_TIMER_CONTROLLER_RECEIPT = 4,
+    TARGETED_TIMER_EVENT_RECEIPT = 5
+} targeted_timer_kind_t;
+
+typedef struct targeted_timer_candidate {
+    targeted_timer_kind_t kind;
+    uint64_t logical_time_ms;
+    uint32_t priority;
+} targeted_timer_candidate_t;
+
+static void consider_targeted_timer(
+    targeted_timer_candidate_t *best,
+    targeted_timer_kind_t kind,
+    uint64_t logical_time_ms,
+    uint32_t priority)
+{
+    if (best->kind == TARGETED_TIMER_NONE
+        || logical_time_ms < best->logical_time_ms
+        || (logical_time_ms == best->logical_time_ms
+            && priority < best->priority)) {
+        best->kind = kind;
+        best->logical_time_ms = logical_time_ms;
+        best->priority = priority;
+    }
+}
+
 ninlil_status_t ninlil_rt_v1_targeted_management_catch_up(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *transaction,
     const ninlil_time_sample_t *clock_sample,
     uint32_t transition_budget,
     ninlil_rt_v1_step_delivery_result_t *out_result,
-    uint32_t *out_changed)
+    uint32_t *out_changed,
+    uint32_t management_priority)
 {
-    uint32_t transitions_before;
+    uint32_t transitions_at_entry;
     ninlil_status_t status;
 
     if (runtime == NULL || transaction == NULL || clock_sample == NULL
         || out_result == NULL || out_changed == NULL
-        || transaction->in_use == 0u) {
+        || transaction->in_use == 0u
+        || (management_priority
+                != NINLIL_RT_V1_INPUT_PRIORITY_CANCEL_OR_DISCARD
+            && management_priority
+                != NINLIL_RT_V1_INPUT_PRIORITY_EVENT_RESUME
+            && management_priority
+                != NINLIL_RT_V1_INPUT_PRIORITY_SCHEDULER_AFTER_READY)) {
         return NINLIL_E_INVALID_ARGUMENT;
     }
     *out_changed = 0u;
-    transitions_before = out_result->transitions_consumed;
-    if (transaction->receipt_pending != 0u) {
-        status = ninlil_rt_v1_bearer_reduce_pending_ingress(
-            runtime,
-            transaction,
-            clock_sample,
-            0u,
-            transition_budget,
-            0u,
-            out_result);
+    if (ninlil_rt_v1_transaction_has_invalid_active_receipt_timer(
+            transaction)) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    /*
+     * Different clock epochs are not numerically comparable.  The current
+     * public/storage tranche has no canonical durable Recovery Fence state,
+     * so targeted management must fail closed before any ordered or ledger
+     * mutation instead of silently stepping past an old-epoch timer.
+     */
+    if (management_priority
+            != NINLIL_RT_V1_INPUT_PRIORITY_SCHEDULER_AFTER_READY
+        && targeted_management_has_cross_epoch_correctness_timer(
+            transaction, clock_sample)) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_CLOCK_UNCERTAIN;
+    }
+    transitions_at_entry = out_result->transitions_consumed;
+    for (;;) {
+        uint32_t transitions_before = out_result->transitions_consumed;
+        targeted_timer_candidate_t candidate;
+        uint64_t receipt_deadline_ms = 0u;
+        uint64_t evidence_close_at_ms = 0u;
+
+        /*
+         * NTS3 represents an already-persisted Receipt but not its durable
+         * ingress logical time. It is the current priority-1 authority and
+         * is reduced first. Disposition/CancelResult/Delivery/reconcile stay
+         * OPEN until their canonical ingress/state exists; no state is
+         * synthesized here.
+         */
+        if (transaction->receipt_pending != 0u) {
+            status = ninlil_rt_v1_bearer_reduce_pending_ingress(
+                runtime,
+                transaction,
+                clock_sample,
+                0u,
+                transition_budget,
+                0u,
+                out_result);
+            if (status != NINLIL_OK) {
+                return status;
+            }
+        }
+        if (out_result->transitions_consumed != transitions_before) {
+            continue;
+        }
+        if (out_result->transitions_consumed >= transition_budget) {
+            out_result->work_remaining = 1u;
+            break;
+        }
+
+        (void)memset(&candidate, 0, sizeof(candidate));
+        if (transaction->token_state == NINLIL_RT_TOKEN_ACTIVE
+            && id_equal(
+                &clock_sample->clock_epoch_id,
+                &transaction->token_clock_epoch_id)
+            && clock_sample->now_ms
+                > transaction->token_expires_at_ms
+            && timer_precedes_management(
+                clock_sample,
+                &transaction->token_clock_epoch_id,
+                transaction->token_expires_at_ms,
+                4u,
+                management_priority)) {
+            consider_targeted_timer(
+                &candidate,
+                TARGETED_TIMER_TOKEN,
+                transaction->token_expires_at_ms,
+                4u);
+        }
+        if (transaction->terminal == 0u
+            && transaction->effect_deadline_ms != 0u
+            && transaction->effect_deadline_ms < NINLIL_NO_DEADLINE
+            && desired_effect_deadline_needs_reduction(transaction)
+            && timer_precedes_management(
+                clock_sample,
+                &transaction->deadline_clock_epoch_id,
+                transaction->effect_deadline_ms,
+                5u,
+                management_priority)) {
+            consider_targeted_timer(
+                &candidate,
+                TARGETED_TIMER_EFFECT_DEADLINE,
+                transaction->effect_deadline_ms,
+                5u);
+        }
+        if (transaction->terminal == 0u
+            && checked_evidence_close(
+                transaction, &evidence_close_at_ms)
+            && desired_evidence_close_needs_reduction(transaction)
+            && timer_precedes_management(
+                clock_sample,
+                &transaction->deadline_clock_epoch_id,
+                evidence_close_at_ms,
+                6u,
+                management_priority)) {
+            consider_targeted_timer(
+                &candidate,
+                TARGETED_TIMER_EVIDENCE_CLOSE,
+                evidence_close_at_ms,
+                6u);
+        }
+        if (runtime->config.role == NINLIL_ROLE_CONTROLLER
+            && transaction->delivery_phase
+                == NINLIL_RT_DELIVERY_STARTED
+            && transaction->evidence_recorded == 0u
+            && transaction->pending_dispatch == 0u
+            && checked_receipt_deadline(
+                transaction, &receipt_deadline_ms)
+            && timer_precedes_management(
+                clock_sample,
+                &transaction->send_observed_clock_epoch_id,
+                receipt_deadline_ms,
+                7u,
+                management_priority)) {
+            consider_targeted_timer(
+                &candidate,
+                TARGETED_TIMER_CONTROLLER_RECEIPT,
+                receipt_deadline_ms,
+                7u);
+        }
+        if (runtime->config.role == NINLIL_ROLE_ENDPOINT
+            && transaction->family == NINLIL_FAMILY_EVENT_FACT
+            && transaction->origin_admission != 0u
+            && transaction->delivery_phase
+                == NINLIL_RT_DELIVERY_STARTED
+            && transaction->evidence_recorded == 0u
+            && transaction->pending_dispatch == 0u
+            && checked_receipt_deadline(
+                transaction, &receipt_deadline_ms)
+            && timer_precedes_management(
+                clock_sample,
+                &transaction->send_observed_clock_epoch_id,
+                receipt_deadline_ms,
+                7u,
+                management_priority)) {
+            consider_targeted_timer(
+                &candidate,
+                TARGETED_TIMER_EVENT_RECEIPT,
+                receipt_deadline_ms,
+                7u);
+        }
+
+        switch (candidate.kind) {
+        case TARGETED_TIMER_TOKEN:
+            status = handle_delivery_token_timeout(
+                runtime, transaction, clock_sample, out_result);
+            break;
+        case TARGETED_TIMER_EFFECT_DEADLINE:
+            status = handle_timeout_retry(
+                runtime, transaction, clock_sample, out_result);
+            break;
+        case TARGETED_TIMER_EVIDENCE_CLOSE:
+            status = handle_evidence_close(
+                runtime, transaction, clock_sample, out_result);
+            break;
+        case TARGETED_TIMER_CONTROLLER_RECEIPT:
+            status = handle_bearer_receipt_timeout(
+                runtime, transaction, clock_sample, out_result);
+            break;
+        case TARGETED_TIMER_EVENT_RECEIPT:
+            status = handle_event_endpoint_receipt_timeout(
+                runtime, transaction, clock_sample, out_result);
+            break;
+        case TARGETED_TIMER_NONE:
+        default:
+            status = NINLIL_OK;
+            break;
+        }
         if (status != NINLIL_OK) {
             return status;
         }
-        if (out_result->transitions_consumed != transitions_before) {
-            *out_changed = 1u;
-            return NINLIL_OK;
+        if (out_result->transitions_consumed == transitions_before) {
+            break;
         }
     }
-    if (out_result->transitions_consumed >= transition_budget) {
-        out_result->work_remaining = 1u;
-        return NINLIL_OK;
-    }
-    status = handle_delivery_token_timeout(
-        runtime, transaction, clock_sample, out_result);
-    if (status != NINLIL_OK) {
-        return status;
-    }
-    if (out_result->transitions_consumed != transitions_before) {
-        *out_changed = 1u;
-        return NINLIL_OK;
-    }
-    if (out_result->transitions_consumed >= transition_budget) {
-        out_result->work_remaining = 1u;
-        return NINLIL_OK;
-    }
-    status = handle_event_endpoint_receipt_timeout(
-        runtime, transaction, clock_sample, out_result);
-    if (status != NINLIL_OK) {
-        return status;
-    }
-    if (out_result->transitions_consumed != transitions_before) {
-        *out_changed = 1u;
-    }
+    *out_changed = out_result->transitions_consumed != transitions_at_entry;
     return NINLIL_OK;
 }
 
-static ninlil_status_t expire_unfinished_desired_targets(
+static ninlil_status_t reduce_desired_effect_deadline(
     ninlil_runtime_t *runtime,
     ninlil_rt_transaction_slot_t *txn,
     ninlil_rt_v1_step_delivery_result_t *out_result)
@@ -2918,6 +3644,7 @@ static ninlil_status_t expire_unfinished_desired_targets(
         &runtime->transaction_scratch;
     ninlil_status_t status;
     uint32_t index;
+    uint32_t effect_possible_count = 0u;
 
     *candidate = *txn;
     for (index = 0u; index < candidate->bound_target_count; ++index) {
@@ -2925,6 +3652,23 @@ static ninlil_status_t expire_unfinished_desired_targets(
             &candidate->bound_targets[index];
 
         if (target->in_use == 0u || target->terminal != 0u) {
+            continue;
+        }
+        if (target->attempt_prepared != 0u
+            || target->send_observation_closed != 0u
+            || target->reason
+                == NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING) {
+            target->deadline_verdict =
+                NINLIL_DEADLINE_INDETERMINATE;
+            target->reason =
+                NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING;
+            target->pending_dispatch = 0u;
+            target->next_retry_ms = 0u;
+            (void)memset(
+                &target->next_retry_clock_epoch_id,
+                0,
+                sizeof(target->next_retry_clock_epoch_id));
+            effect_possible_count += 1u;
             continue;
         }
         target->terminal = 1u;
@@ -2951,14 +3695,40 @@ static ninlil_status_t expire_unfinished_desired_targets(
         target->reason =
             NINLIL_REASON_DEADLINE_ELAPSED_BEFORE_DISPATCH;
     }
-    candidate->active_target_index = NINLIL_RT_V1_NO_ACTIVE_TARGET;
-    candidate->attempt_prepared = 0u;
-    (void)memset(
-        &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
-    candidate->deadline_verdict = NINLIL_DEADLINE_MISSED;
+    if (effect_possible_count != 0u) {
+        uint32_t active = NINLIL_RT_V1_NO_ACTIVE_TARGET;
+
+        for (index = 0u; index < candidate->bound_target_count; ++index) {
+            const ninlil_rt_target_slot_t *target =
+                &candidate->bound_targets[index];
+
+            if (target->in_use != 0u && target->terminal == 0u
+                && target->deadline_verdict
+                    == NINLIL_DEADLINE_INDETERMINATE) {
+                active = index;
+                break;
+            }
+        }
+        candidate->active_target_index = active;
+        if (active != NINLIL_RT_V1_NO_ACTIVE_TARGET) {
+            ninlil_rt_v1_activate_target(candidate, active);
+        }
+        candidate->deadline_verdict =
+            NINLIL_DEADLINE_INDETERMINATE;
+    } else {
+        candidate->active_target_index =
+            NINLIL_RT_V1_NO_ACTIVE_TARGET;
+        candidate->attempt_prepared = 0u;
+        (void)memset(
+            &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
+        candidate->deadline_verdict = NINLIL_DEADLINE_MISSED;
+    }
     ninlil_rt_v1_refresh_target_aggregate(candidate);
-    if (candidate->terminal == 0u) {
-        return NINLIL_E_STORAGE_CORRUPT;
+    if (effect_possible_count != 0u) {
+        candidate->deadline_verdict =
+            NINLIL_DEADLINE_INDETERMINATE;
+        candidate->reason =
+            NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING;
     }
     status = ninlil_rt_v1_commit_transaction_snapshot(
         runtime,
@@ -2969,12 +3739,109 @@ static ninlil_status_t expire_unfinished_desired_targets(
     if (status != NINLIL_OK) {
         return status;
     }
+    out_result->transitions_consumed += 1u;
+    if (candidate->terminal != 0u) {
+        if (runtime->nonterminal_transaction_count > 0u) {
+            runtime->nonterminal_transaction_count -= 1u;
+        }
+        note_terminal_outcome(runtime, candidate->outcome, out_result);
+    }
+    return NINLIL_OK;
+}
+
+static ninlil_status_t handle_evidence_close(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *txn,
+    const ninlil_time_sample_t *clock_sample,
+    ninlil_rt_v1_step_delivery_result_t *out_result)
+{
+    ninlil_rt_transaction_slot_t *candidate =
+        &runtime->transaction_scratch;
+    uint64_t evidence_close_at_ms;
+    ninlil_status_t status;
+    uint32_t index;
+    uint32_t closed_count = 0u;
+
+    if (txn->terminal != 0u
+        || txn->family != NINLIL_FAMILY_DESIRED_STATE
+        || txn->origin_admission == 0u
+        || !checked_evidence_close(txn, &evidence_close_at_ms)
+        || !timer_is_due(
+            clock_sample,
+            &txn->deadline_clock_epoch_id,
+            evidence_close_at_ms)) {
+        return NINLIL_OK;
+    }
+    *candidate = *txn;
+    for (index = 0u; index < candidate->bound_target_count; ++index) {
+        ninlil_rt_target_slot_t *target =
+            &candidate->bound_targets[index];
+
+        if (target->in_use == 0u || target->terminal != 0u
+            || target->deadline_verdict
+                != NINLIL_DEADLINE_INDETERMINATE
+            || target->reason
+                != NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_PENDING) {
+            continue;
+        }
+        target->terminal = 1u;
+        target->pending_dispatch = 0u;
+        target->attempt_prepared = 0u;
+        (void)memset(
+            &target->active_attempt_id,
+            0,
+            sizeof(target->active_attempt_id));
+        target->send_observation_closed = 0u;
+        target->send_observed_at_ms = 0u;
+        (void)memset(
+            &target->send_observed_clock_epoch_id,
+            0,
+            sizeof(target->send_observed_clock_epoch_id));
+        target->next_retry_ms = 0u;
+        (void)memset(
+            &target->next_retry_clock_epoch_id,
+            0,
+            sizeof(target->next_retry_clock_epoch_id));
+        target->delivery_phase = NINLIL_RT_DELIVERY_OUTCOME;
+        target->outcome = NINLIL_OUTCOME_UNKNOWN;
+        target->reason =
+            NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_MISSING;
+        closed_count += 1u;
+    }
+    if (closed_count == 0u) {
+        return NINLIL_OK;
+    }
+    candidate->active_target_index =
+        NINLIL_RT_V1_NO_ACTIVE_TARGET;
+    candidate->attempt_prepared = 0u;
+    (void)memset(
+        &candidate->attempt_id, 0, sizeof(candidate->attempt_id));
+    ninlil_rt_v1_refresh_target_aggregate(candidate);
+    if (candidate->terminal == 0u) {
+        return NINLIL_E_STORAGE_CORRUPT;
+    }
+    candidate->deadline_verdict =
+        NINLIL_DEADLINE_INDETERMINATE;
+    candidate->reason =
+        NINLIL_REASON_EFFECT_POSSIBLE_EVIDENCE_MISSING;
+    status = commit_transaction_snapshot_internal(
+        runtime,
+        txn,
+        candidate,
+        NINLIL_RT_V1_MARKER_OC,
+        NINLIL_V1_DURABLE_OP_DELIVERY_OUTCOME_COMMIT,
+        0,
+        "controller.before_evidence_close_commit",
+        "controller.after_evidence_close_commit");
+    if (status != NINLIL_OK) {
+        return status;
+    }
     if (runtime->nonterminal_transaction_count > 0u) {
         runtime->nonterminal_transaction_count -= 1u;
     }
     out_result->transitions_consumed += 1u;
     note_terminal_outcome(runtime, candidate->outcome, out_result);
-    return ninlil_rt_v1_release_transaction_reservation(runtime, txn);
+    return NINLIL_OK;
 }
 
 static ninlil_status_t handle_timeout_retry(
@@ -2996,7 +3863,10 @@ static ninlil_status_t handle_timeout_retry(
     }
     if (txn->family == NINLIL_FAMILY_DESIRED_STATE
         && txn->origin_admission != 0u) {
-        return expire_unfinished_desired_targets(
+        if (!desired_effect_deadline_needs_reduction(txn)) {
+            return NINLIL_OK;
+        }
+        return reduce_desired_effect_deadline(
             runtime, txn, out_result);
     }
     if ((txn->delivery_phase == NINLIL_RT_DELIVERY_NONE
@@ -3081,8 +3951,18 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
     }
     (void)memset(out_result, 0, sizeof(*out_result));
 
+    for (index = 0u; index < runtime->transaction_capacity; ++index) {
+        if (ninlil_rt_v1_transaction_has_invalid_active_receipt_timer(
+                &runtime->transactions[index])) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+    }
+
     status = automatic_availability_resume_one(
         runtime,
+        clock_sample,
         transition_budget,
         out_result,
         &availability_resumed);
@@ -3137,6 +4017,7 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
             ninlil_rt_service_slot_t *receiver;
             uint32_t required_transitions;
             uint32_t transitions_before;
+            uint32_t catch_up_changed = 0u;
 
             if (out_result->transitions_consumed >= transition_budget) {
                 out_result->work_remaining = 1u;
@@ -3154,24 +4035,58 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
                 runtime->pending_work = 1u;
                 continue;
             }
-            if (txn->receipt_pending != 0u) {
-                status = ninlil_rt_v1_bearer_reduce_pending_ingress(
-                    runtime,
-                    txn,
-                    clock_sample,
-                    callback_budget,
-                    transition_budget,
-                    send_budget,
-                    out_result);
-                if (status != NINLIL_OK) {
-                    return status;
+            status = ninlil_rt_v1_targeted_management_catch_up(
+                runtime,
+                txn,
+                clock_sample,
+                transition_budget,
+                out_result,
+                &catch_up_changed,
+                NINLIL_RT_V1_INPUT_PRIORITY_SCHEDULER_AFTER_READY);
+            if (status != NINLIL_OK) {
+                return status;
+            }
+            if (txn->terminal != 0u) {
+                /*
+                 * A receiver-side transaction becomes terminal once its
+                 * Receipt send is durably observed.  A later APPLICATION
+                 * attempt may reopen only that cached reverse Receipt.  Keep
+                 * terminal outcome authority intact while allowing the
+                 * requeued ingress work to send the Receipt for the fresh
+                 * attempt id.
+                 */
+                if (txn->origin_admission == 0u
+                    && txn->evidence_recorded != 0u
+                    && txn->ingress_pending != 0u
+                    && txn->reverse_receipt_closed == 0u) {
+                    status = ninlil_rt_v1_bearer_reduce_pending_ingress(
+                        runtime,
+                        txn,
+                        clock_sample,
+                        callback_budget,
+                        transition_budget,
+                        send_budget,
+                        out_result);
+                    if (status != NINLIL_OK) {
+                        return status;
+                    }
                 }
                 continue;
             }
+            if (catch_up_changed != 0u
+                && txn->family == NINLIL_FAMILY_EVENT_FACT) {
+                continue;
+            }
+            if (out_result->transitions_consumed >= transition_budget) {
+                out_result->work_remaining = 1u;
+                return NINLIL_OK;
+            }
             if (txn->family == NINLIL_FAMILY_DESIRED_STATE
                 && txn->origin_admission != 0u) {
-                (void)ninlil_rt_v1_select_dispatch_target(
-                    txn, clock_sample, NULL);
+                if (!ninlil_rt_v1_select_dispatch_target(
+                        txn, clock_sample, NULL)) {
+                    continue;
+                }
             }
             status = handle_delivery_token_timeout(
                 runtime, txn, clock_sample, out_result);
@@ -3205,6 +4120,20 @@ ninlil_status_t ninlil_rt_v1_delivery_step(
                 return status;
             }
             if (txn->terminal != 0u) {
+                continue;
+            }
+            if (out_result->transitions_consumed >= transition_budget) {
+                out_result->work_remaining = 1u;
+                return NINLIL_OK;
+            }
+            transitions_before = out_result->transitions_consumed;
+            status = handle_evidence_close(
+                runtime, txn, clock_sample, out_result);
+            if (status != NINLIL_OK) {
+                return status;
+            }
+            if (out_result->transitions_consumed != transitions_before
+                || txn->terminal != 0u) {
                 continue;
             }
             if (out_result->transitions_consumed >= transition_budget) {

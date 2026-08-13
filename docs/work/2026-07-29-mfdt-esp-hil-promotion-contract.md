@@ -14,7 +14,7 @@ Split:
 
 | Layer | Allowed | Forbidden before physical HIL |
 | --- | --- | --- |
-| **Raw ESP adapter** (`mfdt_v1_store_esp.c`) | Read-back classify OLD / NEW / CORRUPT; report raw NEW via `ERR_CU_NEW_NOT_PROMOTED` + `ninlil_mfdt_v1_esp_last_cu_class()`; length-probe `lab_get(NULL,…)` | Claiming wire/engine external success |
+| **Raw ESP adapter** (`mfdt_v1_store_esp.c`) | Read-back classify OLD / NEW / CORRUPT; report raw NEW via `ERR_CU_NEW_NOT_PROMOTED` + owner-local `ninlil_mfdt_v1_esp_last_cu_class(store)`; length-probe `lab_get(NULL,…)` | Claiming wire/engine external success |
 | **Engine release path** (`full_commit` in engine) | Keep `S_COMMIT_UNKNOWN` / `ERR_COMMIT_UNKNOWN` when gate OFF | Promoting CU-NEW read-back to FULL OK / wire accept |
 | **HIL attestation gate** | Default **OFF** (`hil_full_promotion_enabled()==0`) | Hard-coding ON in CI / release builds |
 
@@ -31,7 +31,7 @@ with engine; not ESP-store-only — unit/host link must not depend on
   fails closed. A future implementation needs platform-rooted signature,
   device/build/profile binding, anti-rollback, expiry/revocation, and accepted
   physical-HIL matrix verification. Magic/non-zero bytes are not evidence.
-- `ninlil_mfdt_v1_esp_last_cu_class()` / `_set(int)` — raw CU latch port hook
+- `ninlil_mfdt_v1_esp_last_cu_class(store)` — owner-local raw CU diagnostic
 - Physical power-cut HIL success is the intended production enablement trigger
 - This document does **not** claim that HIL has been run
 

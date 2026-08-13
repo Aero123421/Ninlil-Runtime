@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * U4 NCL1 pure codec host tests.
  * §8.1 steps 2–5; reserved is NOT rejected by pure decode.

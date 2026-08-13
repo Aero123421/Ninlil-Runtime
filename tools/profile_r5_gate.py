@@ -22,7 +22,7 @@ SRC = "src/radio/profile_loader.c"
 PRIVATE = "cmake/ninlil_runtime_private_sources.cmake"
 TEST = "tests/radio/profile_r5_test.c"
 PUBLIC_RUNTIME = "include/ninlil/runtime.h"
-CMAKELISTS = "CMakeLists.txt"
+CMAKELISTS = "cmake/ninlil_ctest.cmake"
 
 
 class GateFailure(Exception):

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_POSIX_LOOPBACK_BEARER_H
 #define NINLIL_POSIX_LOOPBACK_BEARER_H
 

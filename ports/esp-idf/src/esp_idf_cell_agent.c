@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "ninlil_esp_idf/cell_agent_storage.h"
 
 #include "abi_header_stage_logic.h"

@@ -1,10 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define EXPECTED_CONSTANTS 385u
-#define EXPECTED_STRUCTS 71u
-#define EXPECTED_FIELDS 731u
+#define EXPECTED_CONSTANTS 433u
+#define EXPECTED_STRUCTS 76u
+#define EXPECTED_FIELDS 765u
 
 static int parse_coverage_file(const char *path)
 {

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Dual-slot + durable directory storage model (format 4).
  * C11, no heap/VLA. Fixed-endian codec for all persistent bytes.

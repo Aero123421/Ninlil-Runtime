@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production composition surface for private RRMP (ADR-0019/0020).
  *

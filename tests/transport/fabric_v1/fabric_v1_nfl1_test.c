@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * NFL1 v1 codec KATs, matrix, CRC/mutation, borrow/copy-own, endian independence.
  */

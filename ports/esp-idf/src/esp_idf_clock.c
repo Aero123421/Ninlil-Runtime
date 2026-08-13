@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* ESP-IDF clock: one-shot caller-owned state with immutable embedded ops. */
 
 #include "ninlil_esp_idf/clock.h"

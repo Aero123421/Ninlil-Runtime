@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host-only RRMP software lifecycle fixture.
  * Synthetic FULL store + outbound are host KAT doubles — not carrier/HIL proof.
@@ -328,6 +329,7 @@ static void fill_id(uint8_t id[16], uint8_t seed)
 }
 
 static int host_parent_bootstrap_assignment(
+    ninlil_rrmp_owner_t *owner,
     const uint8_t scope[16],
     const uint8_t path_policy[16],
     const uint8_t parent_digest[32],
@@ -379,9 +381,11 @@ static int host_parent_bootstrap_assignment(
     memcpy(prep.handoff_token_digest32, token, 32u);
     ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
     if (rrmp_test_owner_prepare_v2(
+            owner,
             &prep, &old_tuple, 1u, &new_tuple, &out) !=
             NINLIL_PARENT_OK ||
         rrmp_test_owner_fence_v2(
+            owner,
             scope, token, &old_tuple, proof, &out) !=
             NINLIL_PARENT_OK) {
         return 0;
@@ -399,6 +403,7 @@ static int host_parent_bootstrap_assignment(
         g_host_store.value[0] + 24u,
         32u);
     if (rrmp_test_authority_commit_v2(
+            owner,
             scope,
             &old_tuple,
             &new_tuple,
@@ -417,7 +422,7 @@ static int host_parent_bootstrap_assignment(
     memcpy(
         activate.commit_receipt_digest32, commit_digest, 32u);
     activate.now_ms = 1000000u;
-    return ninlil_parent_owner_activate(&activate, &out) ==
+    return ninlil_parent_owner_activate(owner, &activate, &out) ==
         NINLIL_PARENT_OK;
 }
 
@@ -594,7 +599,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
         return NINLIL_RRMP_HOST_LIFE_E_ROUTE;
     }
     memcpy(s_install.entries, s_raw, sizeof(s_raw));
-    if (ninlil_route_install_batch(&s_install, &s_rout) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_install_batch(o, &s_install, &s_rout) != NINLIL_ROUTE_OK) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_ROUTE;
     }
@@ -605,7 +610,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     s_act.route_handle = 1u;
     s_act.route_generation = 1u;
     s_act.now_ms = 1000000u;
-    if (ninlil_route_activate(&s_act, &s_rout) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_activate(o, &s_act, &s_rout) != NINLIL_ROUTE_OK) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_ROUTE;
     }
@@ -641,11 +646,12 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
         return NINLIL_RRMP_HOST_LIFE_E_PARENT;
     }
     memcpy(s_pset.parent_set_digest32, dig.bytes, 32u);
-    if (ninlil_parent_set_install(&s_pset, &s_pout) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(o, &s_pset, &s_pout) != NINLIL_PARENT_OK) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_PARENT;
     }
     if (!host_parent_bootstrap_assignment(
+            o,
             scope,
             path_policy,
             dig.bytes,
@@ -694,7 +700,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     s_rq.ingress_hop_context_id = 0x1001u;
     s_rq.route_handle = 1u;
     s_rq.route_generation = 1u;
-    if (ninlil_route_query(&s_rq, &s_rout) != NINLIL_ROUTE_OK ||
+    if (ninlil_route_query(o, &s_rq, &s_rout) != NINLIL_ROUTE_OK ||
         s_rout.lifecycle_state != NINLIL_RRMP_LIFE_ACTIVE) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
@@ -703,7 +709,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     s_pq.preamble.api_version = 1u;
     s_pq.preamble.struct_size = 48u;
     memcpy(s_pq.owner_scope_id, scope, 16u);
-    if (ninlil_parent_query(&s_pq, &s_pout) != NINLIL_PARENT_OK ||
+    if (ninlil_parent_query(o, &s_pq, &s_pout) != NINLIL_PARENT_OK ||
         s_pout.seal_allowed != 1u) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
@@ -752,7 +758,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     s_admit.caller_item_token = 7u;
     s_admit.outer_rx_counter = 11u;
     memcpy(s_admit.e2e_header_digest32, e2e, 32u);
-    if (ninlil_route_forward_admit(&s_admit, &s_rout) != NINLIL_ROUTE_OK ||
+    if (ninlil_route_forward_admit(o, &s_admit, &s_rout) != NINLIL_ROUTE_OK ||
         s_rout.opaque_local_handle == 0u) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_ROUTE;
@@ -774,12 +780,12 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     if (o == NULL) {
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
     }
-    if (ninlil_route_query(&s_rq, &s_rout) != NINLIL_ROUTE_OK ||
+    if (ninlil_route_query(o, &s_rq, &s_rout) != NINLIL_ROUTE_OK ||
         s_rout.lifecycle_state != NINLIL_RRMP_LIFE_ACTIVE) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
     }
-    if (ninlil_parent_query(&s_pq, &s_pout) != NINLIL_PARENT_OK ||
+    if (ninlil_parent_query(o, &s_pq, &s_pout) != NINLIL_PARENT_OK ||
         s_pout.seal_allowed != 1u) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
@@ -790,7 +796,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
     }
-    if (ninlil_route_forward_admit(&s_admit, &s_rout) != NINLIL_ROUTE_REPLAY) {
+    if (ninlil_route_forward_admit(o, &s_admit, &s_rout) != NINLIL_ROUTE_REPLAY) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
     }
@@ -805,7 +811,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
      * ordinal-1 identity and binds it to parent[0].
      */
     s_pset.assignment_epoch = 2u;
-    if (ninlil_parent_set_install(&s_pset, &s_pout) != NINLIL_PARENT_OK) {
+    if (ninlil_parent_set_install(o, &s_pset, &s_pout) != NINLIL_PARENT_OK) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_PARENT;
     }
@@ -851,7 +857,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     s_complete.outcome = 1u;
     s_complete.completion_now_ms = 1000000u;
     /* ACK lost */
-    if (ninlil_route_forward_complete(&s_complete, &s_rout) !=
+    if (ninlil_route_forward_complete(o, &s_complete, &s_rout) !=
         NINLIL_ROUTE_AUTHORITY_CONFLICT) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_ACK;
@@ -884,7 +890,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     }
     if (auth_ack(o, oh, ack_outer_tx, pids[0].bytes, &s_rout) !=
             (int32_t)NINLIL_ROUTE_OK ||
-        ninlil_route_forward_complete(&s_complete, &s_rout) != NINLIL_ROUTE_OK) {
+        ninlil_route_forward_complete(o, &s_complete, &s_rout) != NINLIL_ROUTE_OK) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_ACK;
     }
@@ -914,7 +920,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     s_retire.route_handle = 1u;
     s_retire.route_generation = 1u;
     s_retire.force = 1u;
-    if (ninlil_route_retire(&s_retire, &s_rout) != NINLIL_ROUTE_OK) {
+    if (ninlil_route_retire(o, &s_retire, &s_rout) != NINLIL_ROUTE_OK) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_ROUTE;
     }
@@ -923,7 +929,7 @@ int32_t ninlil_rrmp_host_lifecycle_run(void *workspace, size_t workspace_bytes)
     if (o == NULL) {
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;
     }
-    if (ninlil_route_query(&s_rq, &s_rout) == NINLIL_ROUTE_OK &&
+    if (ninlil_route_query(o, &s_rq, &s_rout) == NINLIL_ROUTE_OK &&
         s_rout.lifecycle_state == NINLIL_RRMP_LIFE_ACTIVE) {
         ninlil_rrmp_owner_fini(o);
         return NINLIL_RRMP_HOST_LIFE_E_RESTART;

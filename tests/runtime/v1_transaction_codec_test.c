@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "domain_store_codec.h"
 #include "runtime_internal.h"
 #include "runtime_v1_capability.h"
@@ -1342,6 +1343,202 @@ static int test_event_fact_receiver_ingress_encode_requires_deadline_na(void)
     return 0;
 }
 
+static int test_nts3_event_root_timer_tuples_reject_zero_epoch(void)
+{
+    ninlil_rt_transaction_slot_t source;
+    uint8_t encoded[NINLIL_RT_V1_TRANSACTION_RECORD_MAX_BYTES];
+    uint8_t mutated[NINLIL_RT_V1_TRANSACTION_RECORD_MAX_BYTES];
+    uint32_t encoded_length = 0u;
+    uint32_t epoch_offset;
+
+    fill_event_fact_receiver_first_ingress(&source);
+    source.next_retry_ms = 300u;
+    set_id(&source.next_retry_clock_epoch_id, 0xf0u);
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+    epoch_offset = find_unique_bytes(
+        encoded,
+        encoded_length,
+        source.next_retry_clock_epoch_id.bytes,
+        (uint32_t)sizeof(source.next_retry_clock_epoch_id.bytes));
+    REQUIRE(epoch_offset != UINT32_MAX);
+    (void)memcpy(mutated, encoded, encoded_length);
+    (void)memset(&mutated[epoch_offset], 0, 16u);
+    refresh_crc(mutated, encoded_length);
+    REQUIRE(output_unchanged_after_failure(
+        (ninlil_bytes_view_t){mutated, encoded_length},
+        NINLIL_E_STORAGE_CORRUPT));
+    (void)memset(
+        &source.next_retry_clock_epoch_id,
+        0,
+        sizeof(source.next_retry_clock_epoch_id));
+    encoded_length = UINT32_MAX;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(encoded_length == 0u);
+
+    fill_event_fact_receiver_first_ingress(&source);
+    source.send_observation_closed = 1u;
+    source.send_observed_at_ms = 250u;
+    set_id(&source.send_observed_clock_epoch_id, 0xd1u);
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+    epoch_offset = find_unique_bytes(
+        encoded,
+        encoded_length,
+        source.send_observed_clock_epoch_id.bytes,
+        (uint32_t)sizeof(source.send_observed_clock_epoch_id.bytes));
+    REQUIRE(epoch_offset != UINT32_MAX);
+    (void)memcpy(mutated, encoded, encoded_length);
+    (void)memset(&mutated[epoch_offset], 0, 16u);
+    refresh_crc(mutated, encoded_length);
+    REQUIRE(output_unchanged_after_failure(
+        (ninlil_bytes_view_t){mutated, encoded_length},
+        NINLIL_E_STORAGE_CORRUPT));
+    (void)memset(
+        &source.send_observed_clock_epoch_id,
+        0,
+        sizeof(source.send_observed_clock_epoch_id));
+    encoded_length = UINT32_MAX;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(encoded_length == 0u);
+    return 0;
+}
+
+static int test_nts3_event_retry_history_observation_tuple_shapes(void)
+{
+    ninlil_rt_transaction_slot_t source;
+    uint8_t encoded[NINLIL_RT_V1_TRANSACTION_RECORD_MAX_BYTES];
+    uint8_t mutated[NINLIL_RT_V1_TRANSACTION_RECORD_MAX_BYTES];
+    uint32_t encoded_length = 0u;
+    uint32_t epoch_offset;
+
+    /* Populated recent summaries allow zero/zero and epoch-NZ/time-zero. */
+    fill_event_fact_receiver_first_ingress(&source);
+    source.retry_cycle_id = 2u;
+    source.retry_summary_count = 1u;
+    source.retry_summaries[0].retry_cycle_id = 1u;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+    set_id(
+        &source.retry_summaries[0].last_observed_clock_epoch_id,
+        0xf2u);
+    source.retry_summaries[0].last_observed_at_ms = 0u;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+
+    /* Mixed recent epoch-zero/time-NZ is rejected by writer and reader. */
+    source.retry_summaries[0].last_observed_at_ms = 444u;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+    epoch_offset = find_unique_bytes(
+        encoded,
+        encoded_length,
+        source.retry_summaries[0].last_observed_clock_epoch_id.bytes,
+        (uint32_t)sizeof(
+            source.retry_summaries[0].last_observed_clock_epoch_id.bytes));
+    REQUIRE(epoch_offset != UINT32_MAX);
+    (void)memcpy(mutated, encoded, encoded_length);
+    (void)memset(&mutated[epoch_offset], 0, 16u);
+    refresh_crc(mutated, encoded_length);
+    REQUIRE(output_unchanged_after_failure(
+        (ninlil_bytes_view_t){mutated, encoded_length},
+        NINLIL_E_STORAGE_CORRUPT));
+    (void)memset(
+        &source.retry_summaries[0].last_observed_clock_epoch_id,
+        0,
+        sizeof(source.retry_summaries[0].last_observed_clock_epoch_id));
+    encoded_length = UINT32_MAX;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(encoded_length == 0u);
+
+    /* The cumulative older tuple has the same canonical shape. */
+    fill_event_fact_receiver_first_ingress(&source);
+    source.older_retry_cycle_count = 1u;
+    source.retry_cycle_id = 2u;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+    set_id(&source.older_retry_last_observed_clock_epoch_id, 0xe2u);
+    source.older_retry_last_observed_at_ms = 0u;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+    source.older_retry_last_observed_at_ms = 555u;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_OK);
+    epoch_offset = find_unique_bytes(
+        encoded,
+        encoded_length,
+        source.older_retry_last_observed_clock_epoch_id.bytes,
+        (uint32_t)sizeof(
+            source.older_retry_last_observed_clock_epoch_id.bytes));
+    REQUIRE(epoch_offset != UINT32_MAX);
+    (void)memcpy(mutated, encoded, encoded_length);
+    (void)memset(&mutated[epoch_offset], 0, 16u);
+    refresh_crc(mutated, encoded_length);
+    REQUIRE(output_unchanged_after_failure(
+        (ninlil_bytes_view_t){mutated, encoded_length},
+        NINLIL_E_STORAGE_CORRUPT));
+    (void)memset(
+        &source.older_retry_last_observed_clock_epoch_id,
+        0,
+        sizeof(source.older_retry_last_observed_clock_epoch_id));
+    encoded_length = UINT32_MAX;
+    REQUIRE(ninlil_rt_v1_transaction_record_encode(
+                &source,
+                encoded,
+                (uint32_t)sizeof(encoded),
+                &encoded_length)
+        == NINLIL_E_INVALID_ARGUMENT);
+    REQUIRE(encoded_length == 0u);
+    return 0;
+}
+
 static int test_nts3_schema12_mfdt_target_correlation(void)
 {
     enum {
@@ -1720,6 +1917,9 @@ int main(void)
     REQUIRE(test_mfdt_logical_length_is_not_inline_length() == 0);
     REQUIRE(
         test_event_fact_receiver_ingress_encode_requires_deadline_na() == 0);
+    REQUIRE(test_nts3_event_root_timer_tuples_reject_zero_epoch() == 0);
+    REQUIRE(
+        test_nts3_event_retry_history_observation_tuple_shapes() == 0);
     REQUIRE(test_nts3_schema12_mfdt_target_correlation() == 0);
     REQUIRE(test_nts3_mfdt_initial_multi_target_attempt_history() == 0);
     REQUIRE(test_small_marker_codecs() == 0);

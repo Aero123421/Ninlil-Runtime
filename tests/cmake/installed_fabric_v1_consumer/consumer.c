@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* Clean installed-package proof: Composition -> Runtime/Fabric -> Receipt. */
 #include <ninlil/composition_v1.h>
 #include <ninlil/fabric_v1.h>

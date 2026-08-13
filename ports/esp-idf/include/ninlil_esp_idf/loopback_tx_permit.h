@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Port-owned virtual/loopback TxPermit (experimental).
  * Deny-by-default; TEST + explicit enable only.

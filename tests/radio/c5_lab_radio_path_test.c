@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * V1-LAB item 9: C5-LAB SX1262 software path tests (R1..R9 closure).
  */

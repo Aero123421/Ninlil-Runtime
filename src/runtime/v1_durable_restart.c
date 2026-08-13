@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "v1_durable_restart.h"
 
 #include <stddef.h>

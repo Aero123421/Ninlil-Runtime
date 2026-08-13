@@ -34,19 +34,52 @@ def fail(msg: str) -> None:
 
 
 def parse_frag_bss(map_text: str) -> list[tuple[int, str, str]]:
-    """Return (size, object, line) for FRAG .bss contributions."""
+    """Return live internal-DRAM (size, object, row) contributions.
+
+    GNU ld wraps long input-section names onto the line before address/size.
+    Only rows inside the final `.dram0.bss` output section are live evidence;
+    discarded input sections elsewhere in the map must not count.
+    """
     rows: list[tuple[int, str, str]] = []
-    # .bss.*  addr  size  path(r7_frag_....c.obj)
-    pat = re.compile(
-        r"^\s*\.bss[^\s]*\s+0x[0-9a-fA-F]+\s+(0x[0-9a-fA-F]+)\s+(\S*r7_frag\S*)\s*$"
+    same_line = re.compile(
+        r"^\s+(\.bss\S*)\s+0x[0-9a-fA-F]+\s+"
+        r"(0x[0-9a-fA-F]+)\s+(\S*r7_frag\S*)\s*$"
     )
+    section_only = re.compile(r"^\s+(\.bss\S*)\s*$")
+    continuation = re.compile(
+        r"^\s+0x[0-9a-fA-F]+\s+(0x[0-9a-fA-F]+)\s+"
+        r"(\S*r7_frag\S*)\s*$"
+    )
+    output_section = re.compile(r"^(\.\S+)\s+0x[0-9a-fA-F]+\s+0x[0-9a-fA-F]+")
+    in_dram_bss = False
+    pending: str | None = None
     for line in map_text.splitlines():
-        m = pat.match(line)
-        if not m:
+        output = output_section.match(line)
+        if output is not None:
+            in_dram_bss = output.group(1) == ".dram0.bss"
+            pending = None
             continue
-        size = int(m.group(1), 16)
-        obj = m.group(2)
-        rows.append((size, obj, line.strip()))
+        if not in_dram_bss:
+            continue
+        match = same_line.match(line)
+        if match is not None:
+            rows.append((int(match.group(2), 16), match.group(3), line.strip()))
+            pending = None
+            continue
+        split = section_only.match(line)
+        if split is not None:
+            pending = split.group(1)
+            continue
+        match = continuation.match(line)
+        if pending is not None and match is not None:
+            rows.append(
+                (
+                    int(match.group(1), 16),
+                    match.group(2),
+                    f"{pending} {line.strip()}",
+                )
+            )
+        pending = None
     return rows
 
 
@@ -71,6 +104,13 @@ def check_map(map_path: pathlib.Path, budget: int) -> None:
                 fail(f"lab TU live in production map: {lab} via {hit.strip()[:120]}")
 
     rows = parse_frag_bss(text)
+    if not rows:
+        fail(
+            "zero live FRAG .dram0.bss rows parsed (map format mismatch or "
+            "FRAG owner not linked)"
+        )
+    if not any("r7_frag_target_smoke.c.obj" in obj for _, obj, _ in rows):
+        fail("live FRAG target-smoke BSS owner missing from .dram0.bss")
     total = sum(s for s, _, _ in rows)
     if total > budget:
         fail(
@@ -101,12 +141,24 @@ def check_map(map_path: pathlib.Path, budget: int) -> None:
 
 def self_test() -> None:
     good = """
+.dram0.bss 0x3fc9db68 0x24c8
  .bss.g_reasm   0x3fc9db68    0x24c8 esp-idf/ninlil/libninlil.a(r7_frag_target_smoke.c.obj)
  .text          0x4200fab4     0x123 esp-idf/ninlil/libninlil.a(r7_frag_target_smoke.c.obj)
+.flash.text 0x4200fab4 0x123
 """
     bad_multi = """
+.dram0.bss 0x3fc9db68 0x2cb50
  .bss.rx$0      0x3fc9db68    0x165a8 esp-idf/ninlil/libninlil.a(r7_frag_target_smoke.c.obj)
  .bss.tx$1      0x3fcb4110    0x165a8 esp-idf/ninlil/libninlil.a(r7_frag_target_smoke.c.obj)
+"""
+    bad_split = """
+.dram0.bss 0x3fc9db68 0x20000
+ .bss.r7_frag_enormous_workspace_with_long_symbol_name
+                0x3fc9db68 0x20000 esp-idf/ninlil/libninlil.a(r7_frag_target_smoke.c.obj)
+"""
+    bad_zero = """
+.dram0.bss 0x3fc9db68 0x10
+ .bss.unrelated 0x3fc9db68 0x10 esp-idf/ninlil/libninlil.a(other.c.obj)
 """
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
@@ -121,6 +173,15 @@ def self_test() -> None:
         except SystemExit as e:
             if e.code == 0:
                 raise
+        for name, sample in (("split", bad_split), ("zero", bad_zero)):
+            path = root / f"{name}.map"
+            path.write_text(sample, encoding="utf-8")
+            try:
+                check_map(path, DEFAULT_BSS_BUDGET)
+                fail(f"expected {name} map to fail")
+            except SystemExit as e:
+                if e.code == 0:
+                    raise
     print("r7_frag_esp_dram_budget_gate self-test OK")
 
 

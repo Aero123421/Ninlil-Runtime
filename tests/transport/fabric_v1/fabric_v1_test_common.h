@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Shared test helpers for private Fabric v1 direct-compile tests.
  * Caller-owned fixed buffers only. No heap in production path under test.

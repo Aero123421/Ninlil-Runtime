@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private NFL1 v1 codec — Fabric Logical Envelope only.
  * Authority: docs/34-v2-runtime-fabric-completion.md §5.1–§5.2,

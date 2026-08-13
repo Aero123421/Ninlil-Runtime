@@ -189,6 +189,10 @@ def check_canonical_sources(root: Path) -> list[str]:
     cl = root / "CMakeLists.txt"
     if cl.is_file():
         ct = _read(cl)
+        ctest_path = root / "cmake" / "ninlil_ctest.cmake"
+        # Real tree keeps tests-only registration in the dedicated authority.
+        # Synthetic self-test trees may still provide a flattened CMakeLists.
+        test_ct = _read(ctest_path) if ctest_path.is_file() else ct
         if re.search(
             r"target_sources\s*\(\s*ninlil_runtime_private[^)]*n6_context_store\.c",
             ct,
@@ -205,10 +209,10 @@ def check_canonical_sources(root: Path) -> list[str]:
                 "CMakeLists.txt: ninlil_runtime_private must be "
                 "STATIC EXCLUDE_FROM_ALL"
             )
-        if "n6_tests_off_packaging.cmake" not in ct and "NINLIL_BUILD_TESTS" in ct:
-            if "n6_chunk_d_leakage_gate" in ct or "n6_frame_stack_gate" in ct:
+        if "n6_tests_off_packaging.cmake" not in test_ct:
+            if "n6_chunk_d_leakage_gate" in test_ct or "n6_frame_stack_gate" in test_ct:
                 errs.append(
-                    "CMakeLists.txt: missing n6_tests_off_packaging.cmake "
+                    "test CMake authority: missing n6_tests_off_packaging.cmake "
                     "registration for fresh OFF Release packaging"
                 )
     pack = root / "cmake" / "n6_tests_off_packaging.cmake"

@@ -10,6 +10,54 @@ target.id=LP64-le-64
 
 [constants]
 constant NINLIL_ABI_VERSION 0x0000000000000001
+constant NINLIL_BYTE_STREAM_RING_BYTES 0x0000000000001000
+constant NINLIL_BYTE_STREAM_ENDPOINT_BYTES 0x0000000000000100
+constant NINLIL_BYTE_STREAM_PATH_BYTES 0x0000000000000100
+constant NINLIL_BYTE_STREAM_HINT_BYTES 0x00000000000000a0
+constant NINLIL_BYTE_STREAM_OK 0x0000000000000000
+constant NINLIL_BYTE_STREAM_WOULD_BLOCK 0x0000000000000001
+constant NINLIL_BYTE_STREAM_ERR_LINK_DOWN 0x0000000000000002
+constant NINLIL_BYTE_STREAM_INVALID_ARGUMENT 0x0000000000000003
+constant NINLIL_BYTE_STREAM_INVALID_STATE 0x0000000000000004
+constant NINLIL_BYTE_STREAM_BUSY 0x0000000000000005
+constant NINLIL_BYTE_STREAM_NOT_FOUND 0x0000000000000006
+constant NINLIL_BYTE_STREAM_PERMISSION 0x0000000000000007
+constant NINLIL_BYTE_STREAM_UNSUPPORTED 0x0000000000000008
+constant NINLIL_BYTE_STREAM_IO_ERROR 0x0000000000000009
+constant NINLIL_BYTE_STREAM_WRONG_OWNER 0x000000000000000a
+constant NINLIL_BYTE_STREAM_RX_OVERFLOW 0x000000000000000b
+constant NINLIL_BYTE_STREAM_CLOSED 0x000000000000000c
+constant NINLIL_BYTE_STREAM_LINK_CLOSED 0x0000000000000000
+constant NINLIL_BYTE_STREAM_LINK_UP 0x0000000000000001
+constant NINLIL_BYTE_STREAM_LINK_DOWN 0x0000000000000002
+constant NINLIL_BYTE_STREAM_LINK_LISTENING 0x0000000000000003
+constant NINLIL_BYTE_STREAM_STAGE_NONE 0x0000000000000000
+constant NINLIL_BYTE_STREAM_STAGE_ENDPOINT 0x0000000000000001
+constant NINLIL_BYTE_STREAM_STAGE_PATH 0x0000000000000001
+constant NINLIL_BYTE_STREAM_STAGE_OPEN 0x0000000000000002
+constant NINLIL_BYTE_STREAM_STAGE_EXCLUSIVE 0x0000000000000003
+constant NINLIL_BYTE_STREAM_STAGE_TERMIOS 0x0000000000000004
+constant NINLIL_BYTE_STREAM_STAGE_DTR 0x0000000000000005
+constant NINLIL_BYTE_STREAM_STAGE_POLL 0x0000000000000006
+constant NINLIL_BYTE_STREAM_STAGE_READ 0x0000000000000007
+constant NINLIL_BYTE_STREAM_STAGE_WRITE 0x0000000000000008
+constant NINLIL_BYTE_STREAM_STAGE_CLOSE 0x0000000000000009
+constant NINLIL_BYTE_STREAM_STAGE_OWNER 0x000000000000000a
+constant NINLIL_BYTE_STREAM_STAGE_RX_RING 0x000000000000000b
+constant NINLIL_BYTE_STREAM_STAGE_TX_RING 0x000000000000000c
+constant NINLIL_BYTE_STREAM_STAGE_USB_STACK 0x000000000000000d
+constant NINLIL_BYTE_STREAM_STAGE_USB_LINK 0x000000000000000e
+constant NINLIL_BYTE_STREAM_EVENT_NONE 0x0000000000000000
+constant NINLIL_BYTE_STREAM_EVENT_READABLE 0x0000000000000001
+constant NINLIL_BYTE_STREAM_EVENT_WRITABLE 0x0000000000000002
+constant NINLIL_BYTE_STREAM_EVENT_LINK_DOWN 0x0000000000000004
+constant NINLIL_BYTE_STREAM_EVENT_RX_OVERFLOW 0x0000000000000008
+constant NINLIL_BYTE_STREAM_EVENT_TIMEOUT 0x0000000000000010
+constant NINLIL_BYTE_STREAM_EVENT_TX_DRAINED 0x0000000000000020
+constant NINLIL_BYTE_STREAM_EVENT_LINK_UP 0x0000000000000040
+constant NINLIL_POSIX_USB_SERIAL_OBJECT_BYTES 0x0000000000002400
+constant NINLIL_POSIX_USB_SERIAL_OBJECT_ALIGN 0x0000000000000008
+constant NINLIL_POSIX_USB_SERIAL_EINTR_RETRY_MAX 0x0000000000000040
 constant NINLIL_APPLY_APPLICATION_DEDUP 0x0000000000000002
 constant NINLIL_APPLY_ATOMIC_PARTICIPANT_RESERVED 0x0000000000000003
 constant NINLIL_APPLY_IDEMPOTENT 0x0000000000000001
@@ -1150,6 +1198,50 @@ field release_send offset=56
 field receive_next offset=64
 field release_received offset=72
 field state offset=80
+struct ninlil_byte_stream_error_t size=432
+align ninlil_byte_stream_error_t value=4
+field status offset=0
+field stage offset=4
+field sys_errno offset=8
+field reserved_zero offset=12
+field path offset=16
+field hint offset=272
+struct ninlil_byte_stream_stats_t size=112
+align ninlil_byte_stream_stats_t value=8
+field bytes_read offset=0
+field bytes_written offset=8
+field would_block_count offset=16
+field poll_timeout_count offset=24
+field eintr_count offset=32
+field rx_overflow_count offset=40
+field link_down_count offset=48
+field link_up_count offset=56
+field open_count offset=64
+field close_count offset=72
+field generation_rx_discard_bytes offset=80
+field tx_driver_stale_accepted offset=88
+field rx_high_watermark offset=96
+field tx_high_watermark offset=100
+field rx_ring_bytes offset=104
+field tx_ring_bytes offset=108
+struct ninlil_byte_stream_ops_t size=72
+align ninlil_byte_stream_ops_t value=8
+field open offset=0
+field close offset=8
+field write offset=16
+field read offset=24
+field poll offset=32
+field link offset=40
+field link_generation offset=48
+field stats offset=56
+field last_error offset=64
+struct struct ninlil_byte_stream size=16
+align struct ninlil_byte_stream value=8
+field ops offset=0
+field self offset=8
+struct ninlil_posix_usb_serial_object_t size=9216
+align ninlil_posix_usb_serial_object_t value=8
+field bytes offset=0
 struct ninlil_posix_tls_endpoint_v1_t size=32
 align ninlil_posix_tls_endpoint_v1_t value=4
 field api_version offset=0
@@ -1218,6 +1310,6 @@ field accepted_send_count offset=32
 field accepted_receive_count offset=40
 
 [coverage]
-coverage.constants=385
-coverage.structs=71
-coverage.fields=731
+coverage.constants=433
+coverage.structs=76
+coverage.fields=765

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "rrmp_test_common.h"
 
 #include "ninlil/platform.h"
@@ -358,7 +359,7 @@ static int ram_store_witness(
     return 1;
 }
 
-enum { RRMP_WS_MAX = 512 * 1024 };
+enum { RRMP_WS_MAX = NINLIL_RRMP_OWNER_WORKSPACE_BUDGET_BYTES };
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_ws1[RRMP_WS_MAX];
 _Alignas(NINLIL_RRMP_OWNER_WORKSPACE_ALIGN) static uint8_t g_ws2[RRMP_WS_MAX];
 static uint8_t g_attack_base[256 * 1024];
@@ -570,7 +571,7 @@ static int setup(ninlil_rrmp_owner_t *o)
     for (i = 0u; i < 32u; ++i) {
         admit.e2e_header_digest32[i] = (uint8_t)(0x33u + i);
     }
-    RRMP_CHECK_EQ(ninlil_route_forward_admit(&admit, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_forward_admit(o, &admit, &out), NINLIL_ROUTE_OK);
     return 0;
 }
 
@@ -600,7 +601,7 @@ static int test_restart_rehydrate(void)
     q.ingress_hop_context_id = 0x1001u;
     q.route_handle = 1u;
     q.route_generation = 1u;
-    RRMP_CHECK_EQ(ninlil_route_query(&q, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_query(o2, &q, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(out.lifecycle_state, NINLIL_RRMP_LIFE_ACTIVE);
     free(snap);
     ninlil_rrmp_owner_fini(o);
@@ -637,7 +638,7 @@ static int test_cu_classes(void)
     out.opaque_local_handle = 0xDEADBEEFu;
     out_before = out;
     RRMP_CHECK_EQ(
-        ninlil_route_recover_commit_unknown(&req, &out), NINLIL_ROUTE_CORRUPT);
+        ninlil_route_recover_commit_unknown(o2, &req, &out), NINLIL_ROUTE_CORRUPT);
     RRMP_CHECK_EQ(out.lifecycle_state, 0u);
     RRMP_CHECK_EQ(out.opaque_local_handle, 0u);
     RRMP_CHECK(out.status == NINLIL_ROUTE_CORRUPT);
@@ -659,7 +660,7 @@ static int test_cu_classes(void)
     out.lifecycle_state = 0x55u;
     out.opaque_local_handle = 99u;
     RRMP_CHECK_EQ(
-        ninlil_route_recover_commit_unknown(&req, &out), NINLIL_ROUTE_CORRUPT);
+        ninlil_route_recover_commit_unknown(o2, &req, &out), NINLIL_ROUTE_CORRUPT);
     RRMP_CHECK_EQ(out.cu_class, NINLIL_RRMP_CU_EXTRA);
     RRMP_CHECK_EQ(out.lifecycle_state, 0u);
     RRMP_CHECK_EQ(out.opaque_local_handle, 0u);
@@ -711,7 +712,7 @@ static int test_dual_inject(void)
     out.lifecycle_state = 0xFFu;
     out.opaque_local_handle = 0x1111u;
     RRMP_CHECK_EQ(
-        ninlil_route_recover_commit_unknown(&req, &out), NINLIL_ROUTE_CORRUPT);
+        ninlil_route_recover_commit_unknown(o, &req, &out), NINLIL_ROUTE_CORRUPT);
     RRMP_CHECK_EQ(out.cu_class, NINLIL_RRMP_CU_THIRD);
     RRMP_CHECK_EQ(out.lifecycle_state, 0u);
     RRMP_CHECK_EQ(out.opaque_local_handle, 0u);
@@ -723,7 +724,7 @@ static int test_dual_inject(void)
     out.lifecycle_state = 0x77u;
     out.opaque_local_handle = 0x22u;
     RRMP_CHECK_EQ(
-        ninlil_route_recover_commit_unknown(&req, &out), NINLIL_ROUTE_CORRUPT);
+        ninlil_route_recover_commit_unknown(o, &req, &out), NINLIL_ROUTE_CORRUPT);
     RRMP_CHECK(out.cu_class == NINLIL_RRMP_CU_PARTIAL
         || out.cu_class == NINLIL_RRMP_CU_THIRD);
     RRMP_CHECK_EQ(out.lifecycle_state, 0u);
@@ -750,7 +751,7 @@ static int test_owner_cu_old_recover(void)
     req.preamble.api_version = 1u;
     req.preamble.struct_size = 80u;
     RRMP_CHECK_EQ(
-        ninlil_route_recover_commit_unknown(&req, &out), NINLIL_ROUTE_COMMIT_UNKNOWN);
+        ninlil_route_recover_commit_unknown(o, &req, &out), NINLIL_ROUTE_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(out.cu_class, NINLIL_RRMP_CU_OLD);
 
     ninlil_rrmp_owner_fault_inject_parent_cu_old(o, NINLIL_RRMP_PKEY_NPH1);
@@ -760,7 +761,7 @@ static int test_owner_cu_old_recover(void)
     rrmp_fill_id(preq.owner_scope_id, 0x5Cu);
     preq.expected_class = 0u; /* probe */
     RRMP_CHECK_EQ(
-        ninlil_parent_recover_commit_unknown(&preq, &pout), NINLIL_PARENT_COMMIT_UNKNOWN);
+        ninlil_parent_recover_commit_unknown(o, &preq, &pout), NINLIL_PARENT_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(pout.cu_class, NINLIL_RRMP_CU_OLD);
 
     ninlil_rrmp_owner_fini(o);
@@ -1324,9 +1325,9 @@ static int test_handoff_durable_restart(void)
     memcpy(set.parent_runtime_id[0], ids[0].bytes, 16u);
     RRMP_CHECK(ninlil_rrmp_parent_set_digest(ids, 1u, &dig));
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
 
-    RRMP_CHECK(rrmp_test_bootstrap_assignment_v2(
+    RRMP_CHECK(rrmp_test_bootstrap_assignment_v2(o,
         scope,
         set.path_policy_id,
         dig.bytes,
@@ -1338,7 +1339,7 @@ static int test_handoff_durable_restart(void)
     query.preamble.api_version = 1u;
     query.preamble.struct_size = 48u;
     memcpy(query.owner_scope_id, scope, 16u);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_NEW_OWNER_ACTIVATED);
 
     RRMP_CHECK(ninlil_rrmp_owner_export_namespace(o, NULL, 0u, &need));
@@ -1354,7 +1355,7 @@ static int test_handoff_durable_restart(void)
     query.preamble.api_version = 1u;
     query.preamble.struct_size = 48u;
     memcpy(query.owner_scope_id, scope, 16u);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o2, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_NEW_OWNER_ACTIVATED);
     RRMP_CHECK_EQ(out.seal_allowed, 1u);
     /* token consumed: activate again must TOKEN_REPLAY after rehydrate */
@@ -1364,7 +1365,9 @@ static int test_handoff_durable_restart(void)
     memcpy(act.owner_scope_id, scope, 16u);
     memcpy(act.commit_receipt_digest32, cdig.bytes, 32u);
     act.now_ms = 1000000u;
-    RRMP_CHECK_EQ(ninlil_parent_owner_activate(&act, &out), NINLIL_PARENT_TOKEN_REPLAY);
+    RRMP_CHECK_EQ(
+        ninlil_parent_owner_activate(o2, &act, &out),
+        NINLIL_PARENT_TOKEN_REPLAY);
 
     free(snap);
     ninlil_rrmp_owner_fini(o);
@@ -1432,7 +1435,7 @@ static int test_handoff_every_state_power_cycle(void)
     set.controller_term = 5u;
     set.assignment_epoch = 1u;
     RRMP_CHECK_EQ(
-        ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+        ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
 
     ninlil_rrmp_memzero(&noa, sizeof(noa));
     memcpy(noa.owner_scope_id.bytes, scope, 16u);
@@ -1463,7 +1466,7 @@ static int test_handoff_every_state_power_cycle(void)
     memcpy(prep.handoff_token_digest32, token, 32u);
     ninlil_rrmp_memzero(&old_tuple, sizeof(old_tuple));
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(o,
             &prep, &old_tuple, 1u, &new_tuple, &out),
         NINLIL_PARENT_OK);
 
@@ -1473,7 +1476,7 @@ static int test_handoff_every_state_power_cycle(void)
     memcpy(query.owner_scope_id, scope, 16u);
     o = restart_parent_owner(o, g_ws2, &store, handle);
     RRMP_CHECK(o != NULL);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step, NINLIL_RRMP_HANDOFF_PREPARED_NEW);
 
@@ -1483,12 +1486,12 @@ static int test_handoff_every_state_power_cycle(void)
      * exercised by the second handoff below.
      */
     RRMP_CHECK_EQ(
-        rrmp_test_owner_fence_v2(
+        rrmp_test_owner_fence_v2(o,
             scope, token, &old_tuple, proof, &out),
         NINLIL_PARENT_OK);
     RRMP_CHECK(ram_store_witness(&store, &bundle));
     RRMP_CHECK_EQ(
-        rrmp_test_authority_commit_v2(
+        rrmp_test_authority_commit_v2(o,
             scope,
             &old_tuple,
             &new_tuple,
@@ -1503,7 +1506,7 @@ static int test_handoff_every_state_power_cycle(void)
     /* Critical S3 -> cold restart -> S4 with the same exact receipt. */
     o = restart_parent_owner(o, g_ws2, &store, handle);
     RRMP_CHECK(o != NULL);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step, NINLIL_RRMP_HANDOFF_AUTHORITY_COMMITTED);
     RRMP_CHECK_EQ(out.seal_allowed, 0u);
@@ -1515,15 +1518,15 @@ static int test_handoff_every_state_power_cycle(void)
     memcpy(act.commit_receipt_digest32, commit_digest.bytes, 32u);
     act.now_ms = 1000000u;
     RRMP_CHECK_EQ(
-        ninlil_parent_owner_activate(&act, &out), NINLIL_PARENT_OK);
+        ninlil_parent_owner_activate(o, &act, &out), NINLIL_PARENT_OK);
 
     o = restart_parent_owner(o, g_ws1, &store, handle);
     RRMP_CHECK(o != NULL);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step, NINLIL_RRMP_HANDOFF_NEW_OWNER_ACTIVATED);
     RRMP_CHECK_EQ(
-        ninlil_parent_owner_activate(&act, &out),
+        ninlil_parent_owner_activate(o, &act, &out),
         NINLIL_PARENT_TOKEN_REPLAY);
 
     ninlil_rrmp_memzero(&obs, sizeof(obs));
@@ -1534,10 +1537,10 @@ static int test_handoff_every_state_power_cycle(void)
         obs.observed_parent_set_digest32, parent_digest.bytes, 32u);
     obs.now_ms = 1000001u;
     RRMP_CHECK_EQ(
-        ninlil_parent_endpoint_observe(&obs, &out), NINLIL_PARENT_OK);
+        ninlil_parent_endpoint_observe(o, &obs, &out), NINLIL_PARENT_OK);
     o = restart_parent_owner(o, g_ws2, &store, handle);
     RRMP_CHECK(o != NULL);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step, NINLIL_RRMP_HANDOFF_ENDPOINT_OBSERVED);
 
@@ -1548,10 +1551,10 @@ static int test_handoff_every_state_power_cycle(void)
     memcpy(ret.tombstone_digest32, token, 32u);
     ret.now_ms = 1000002u;
     RRMP_CHECK_EQ(
-        ninlil_parent_owner_retire(&ret, &out), NINLIL_PARENT_OK);
+        ninlil_parent_owner_retire(o, &ret, &out), NINLIL_PARENT_OK);
     o = restart_parent_owner(o, g_ws1, &store, handle);
     RRMP_CHECK(o != NULL);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step, NINLIL_RRMP_HANDOFF_OLD_RETIRED);
 
@@ -1565,21 +1568,21 @@ static int test_handoff_every_state_power_cycle(void)
     RRMP_CHECK(ninlil_rrmp_encode_noa1(&noa, prep.new_assignment_noa1));
     memcpy(prep.handoff_token_digest32, token2, sizeof(token2));
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(o,
             &prep, &new_tuple, 2u, &next_tuple, &out),
         NINLIL_PARENT_OK);
     o = restart_parent_owner(o, g_ws2, &store, handle);
     RRMP_CHECK(o != NULL);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step, NINLIL_RRMP_HANDOFF_PREPARED_NEW);
     RRMP_CHECK_EQ(
-        rrmp_test_owner_fence_v2(
+        rrmp_test_owner_fence_v2(o,
             scope, token2, &new_tuple, proof, &out),
         NINLIL_PARENT_OK);
     o = restart_parent_owner(o, g_ws1, &store, handle);
     RRMP_CHECK(o != NULL);
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(
         out.handoff_step, NINLIL_RRMP_HANDOFF_OLD_FENCED_PROOF);
 
@@ -1592,7 +1595,7 @@ static int test_handoff_every_state_power_cycle(void)
     rrmp_fill_id(set.path_policy_id, 0x63u);
     set.assignment_epoch = 1u;
     RRMP_CHECK_EQ(
-        ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+        ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
     {
         size_t attack_base_len = 0u;
         RRMP_CHECK(ram_store_logical_copy(
@@ -1832,12 +1835,12 @@ static int test_handoff_every_state_power_cycle(void)
         RRMP_CHECK(ninlil_rrmp_owner_bind(probe));
         memcpy(query.owner_scope_id, scope, 16u);
         RRMP_CHECK_EQ(
-            ninlil_parent_query(&query, &out),
+            ninlil_parent_query(probe, &query, &out),
             NINLIL_PARENT_SPLIT_BRAIN);
         RRMP_CHECK_EQ(out.seal_allowed, 0u);
         memcpy(query.owner_scope_id, scope2, 16u);
         RRMP_CHECK_EQ(
-            ninlil_parent_query(&query, &out),
+            ninlil_parent_query(probe, &query, &out),
             NINLIL_PARENT_SPLIT_BRAIN);
         RRMP_CHECK_EQ(out.seal_allowed, 0u);
         ninlil_rrmp_owner_fini(probe);
@@ -1892,7 +1895,7 @@ static int test_parent_prepare_platform_full_restart(void)
     memcpy(set.parent_runtime_id[0], ids[0].bytes, 16u);
     RRMP_CHECK(ninlil_rrmp_parent_set_digest(ids, 1u, &dig));
     memcpy(set.parent_set_digest32, dig.bytes, 32u);
-    RRMP_CHECK_EQ(ninlil_parent_set_install(&set, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_set_install(o, &set, &out), NINLIL_PARENT_OK);
 
     ninlil_rrmp_memzero(&noa, sizeof(noa));
     memcpy(noa.owner_scope_id.bytes, scope, 16u);
@@ -1926,7 +1929,7 @@ static int test_parent_prepare_platform_full_restart(void)
     /* OLD: mutation is fenced and must not appear after cold recovery. */
     store.force_cu = 1;
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(o,
             &prep, &old_tuple, 1u, &new_tuple, &out),
         NINLIL_PARENT_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(ninlil_rrmp_owner_downlink_tx_allowed(o), 0u);
@@ -1939,7 +1942,7 @@ static int test_parent_prepare_platform_full_restart(void)
     query.preamble.struct_size = 48u;
     memcpy(query.owner_scope_id, scope, 16u);
     RRMP_CHECK_EQ(
-        ninlil_parent_query(&query, &out),
+        ninlil_parent_query(o, &query, &out),
         NINLIL_PARENT_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(out.handoff_step, 0u);
     RRMP_CHECK_EQ(out.seal_allowed, 0u);
@@ -1950,12 +1953,12 @@ static int test_parent_prepare_platform_full_restart(void)
     RRMP_CHECK(ninlil_rrmp_owner_bind_storage(o2, &store.ops, handle));
     RRMP_CHECK(ninlil_rrmp_owner_storage_recover(o2));
     RRMP_CHECK(ninlil_rrmp_owner_bind(o2));
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o2, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(out.handoff_step, 0u);
 
     /* Successful retry publishes PREPARED_NEW through platform FULL. */
     RRMP_CHECK_EQ(
-        rrmp_test_owner_prepare_v2(
+        rrmp_test_owner_prepare_v2(o2,
             &prep, &old_tuple, 1u, &new_tuple, &out),
         NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_PREPARED_NEW);
@@ -1966,7 +1969,7 @@ static int test_parent_prepare_platform_full_restart(void)
     RRMP_CHECK(ninlil_rrmp_owner_bind_storage(o, &store.ops, handle));
     RRMP_CHECK(ninlil_rrmp_owner_storage_recover(o));
     RRMP_CHECK(ninlil_rrmp_owner_bind(o));
-    RRMP_CHECK_EQ(ninlil_parent_query(&query, &out), NINLIL_PARENT_OK);
+    RRMP_CHECK_EQ(ninlil_parent_query(o, &query, &out), NINLIL_PARENT_OK);
     RRMP_CHECK_EQ(out.handoff_step, NINLIL_RRMP_HANDOFF_PREPARED_NEW);
 
     ninlil_rrmp_owner_fini(o);
@@ -2004,7 +2007,7 @@ static int test_storage_full_restart(void)
     q.ingress_hop_context_id = 0x1001u;
     q.route_handle = 1u;
     q.route_generation = 1u;
-    RRMP_CHECK_EQ(ninlil_route_query(&q, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_query(o2, &q, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(out.lifecycle_state, NINLIL_RRMP_LIFE_ACTIVE);
 
     /* COMMIT_UNKNOWN fences downlink. */
@@ -2057,7 +2060,7 @@ static int test_lease_expiry_platform_full_restart(void)
     /* OLD: do not report LEASE_EXPIRED when its durable write is unknown. */
     store.force_cu = 1;
     RRMP_CHECK_EQ(
-        ninlil_route_forward_admit(&admit, &out),
+        ninlil_route_forward_admit(o, &admit, &out),
         NINLIL_ROUTE_COMMIT_UNKNOWN);
     RRMP_CHECK_EQ(ninlil_rrmp_owner_downlink_tx_allowed(o), 0u);
     ninlil_rrmp_owner_fini(o);
@@ -2073,11 +2076,11 @@ static int test_lease_expiry_platform_full_restart(void)
     query.ingress_hop_context_id = 0x1001u;
     query.route_handle = 1u;
     query.route_generation = 1u;
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_query(o2, &query, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(out.lifecycle_state, NINLIL_RRMP_LIFE_ACTIVE);
 
     RRMP_CHECK_EQ(
-        ninlil_route_forward_admit(&admit, &out),
+        ninlil_route_forward_admit(o2, &admit, &out),
         NINLIL_ROUTE_LEASE_EXPIRED);
     ninlil_rrmp_owner_fini(o2);
 
@@ -2086,7 +2089,7 @@ static int test_lease_expiry_platform_full_restart(void)
     RRMP_CHECK(ninlil_rrmp_owner_bind_storage(o, &store.ops, handle));
     RRMP_CHECK(ninlil_rrmp_owner_storage_recover(o));
     RRMP_CHECK(ninlil_rrmp_owner_bind(o));
-    RRMP_CHECK_EQ(ninlil_route_query(&query, &out), NINLIL_ROUTE_OK);
+    RRMP_CHECK_EQ(ninlil_route_query(o, &query, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(out.lifecycle_state, NINLIL_RRMP_LIFE_EXPIRED);
     ninlil_rrmp_owner_fini(o);
     return 0;
@@ -2170,7 +2173,7 @@ static int test_tx_and_ack_commit_unknown_windows(void)
     complete.outcome = 1u;
     complete.completion_now_ms = 1000000u;
     RRMP_CHECK_EQ(
-        ninlil_route_forward_complete(&complete, &out),
+        ninlil_route_forward_complete(o2, &complete, &out),
         NINLIL_ROUTE_AUTHORITY_CONFLICT);
 
     /* At-least-once semantic retransmission carries identical copy-owned bytes. */
@@ -2195,7 +2198,7 @@ static int test_tx_and_ack_commit_unknown_windows(void)
     RRMP_CHECK(ninlil_rrmp_owner_storage_recover(o));
     RRMP_CHECK(ninlil_rrmp_owner_bind(o));
     RRMP_CHECK_EQ(
-        ninlil_route_forward_complete(&complete, &out),
+        ninlil_route_forward_complete(o, &complete, &out),
         NINLIL_ROUTE_AUTHORITY_CONFLICT);
 
     /* ACK mutation is durable but return is unknown: duplicate ACK is idempotent. */
@@ -2213,7 +2216,7 @@ static int test_tx_and_ack_commit_unknown_windows(void)
     RRMP_CHECK_EQ(
         rrmp_auth_link_ack(o2, opaque, outer_tx, &out), NINLIL_ROUTE_OK);
     RRMP_CHECK_EQ(
-        ninlil_route_forward_complete(&complete, &out), NINLIL_ROUTE_OK);
+        ninlil_route_forward_complete(o2, &complete, &out), NINLIL_ROUTE_OK);
 
     ninlil_rrmp_owner_fini(o2);
     return 0;

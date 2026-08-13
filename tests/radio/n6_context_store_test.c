@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * N6 context store host tests (Chunk D).
  * Links NINLIL_N6_TEST_BUILD store variant + scripted mem storage.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "stage5_empty_metadata.h"
 
 #include "runtime_store_bootstrap.h"

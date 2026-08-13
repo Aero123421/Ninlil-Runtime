@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * D3-S2 core private unit tests (docs/17 §18.13 vertical slice).
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_RADIO_V1_FRAME_MANIFEST_H
 #define NINLIL_RADIO_V1_FRAME_MANIFEST_H
 

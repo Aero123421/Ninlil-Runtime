@@ -412,6 +412,9 @@ r7_frag_on_normal() {
     nrw1_frag_durable_snapshot_private \
     nrw1_frag_session_private \
     nrw1_frag_completion_private \
+    nrw1_r7_issue_owner_state_private \
+    nrw1_frag_false_green_gate \
+    nrw1_frag_false_green_gate_self_test \
     nrw1_frag_target_smoke_private \
     nrw1_frag_private_build
   build_targets_or_fail "${b}" \
@@ -421,13 +424,15 @@ r7_frag_on_normal() {
     ninlil_r7_frag_durable_snapshot_test \
     ninlil_r7_frag_session_test \
     ninlil_r7_frag_completion_test \
+    ninlil_r7_issue_owner_state_test \
     ninlil_r7_frag_target_smoke_test
   # prod_integration is optional on target graph when n6 testbuild exists.
   if ninja -C "${b}" -t targets 2>/dev/null | grep -E '^ninlil_r7_frag_prod_integration_test:' >/dev/null \
     || cmake --build "${b}" --target help 2>/dev/null | grep -E 'ninlil_r7_frag_prod_integration_test' >/dev/null; then
     build_targets_or_fail "${b}" ninlil_r7_frag_prod_integration_test
   fi
-  run_ctest_regex "${b}" 'nrw1_frag_'
+  run_ctest_regex "${b}" \
+    '^(nrw1_frag_.*|nrw1_r7_issue_owner_state_private)$'
   python3 tools/r7_frag_false_green_gate.py
   # Direct non-CMake path (also ASan inside script).
   CC=clang bash tools/run_r7_frag_direct_tests.sh
@@ -446,6 +451,9 @@ r7_frag_on_asan() {
   require_tests_present "${b}" \
     nrw1_frag_state_private \
     nrw1_frag_session_private \
+    nrw1_r7_issue_owner_state_private \
+    nrw1_frag_false_green_gate \
+    nrw1_frag_false_green_gate_self_test \
     nrw1_frag_target_smoke_private
   build_targets_or_fail "${b}" \
     ninlil_r7_frag_state_test \
@@ -453,11 +461,13 @@ r7_frag_on_asan() {
     ninlil_r7_frag_durable_snapshot_test \
     ninlil_r7_frag_session_test \
     ninlil_r7_frag_completion_test \
+    ninlil_r7_issue_owner_state_test \
     ninlil_r7_frag_target_smoke_test
   ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0:halt_on_error=1}" \
   UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1}" \
     run_ctest_regex "${b}" \
-      '^(nrw1_frag_state_private|nrw1_frag_ack_ledger_private|nrw1_frag_durable_snapshot_private|nrw1_frag_session_private|nrw1_frag_completion_private|nrw1_frag_target_smoke_private|nrw1_frag_prod_integration_private|nrw1_frag_stack_gate_host_su)$'
+      '^(nrw1_frag_state_private|nrw1_frag_ack_ledger_private|nrw1_frag_durable_snapshot_private|nrw1_frag_session_private|nrw1_frag_completion_private|nrw1_r7_issue_owner_state_private|nrw1_frag_false_green_gate|nrw1_frag_false_green_gate_self_test|nrw1_frag_target_smoke_private|nrw1_frag_prod_integration_private|nrw1_frag_stack_gate_host_su)$'
+  python3 tools/r7_frag_false_green_gate.py check
   log "r7_frag ON ASan/UBSan OK"
 }
 
@@ -506,6 +516,7 @@ rrmp_off_residual() {
     ninlil_runtime_private \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -516,6 +527,7 @@ rrmp_off_residual() {
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -544,6 +556,7 @@ rrmp_on_normal() {
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -556,6 +569,7 @@ rrmp_on_normal() {
     ninlil_runtime_private \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -585,6 +599,7 @@ rrmp_on_asan() {
   build_targets_or_fail "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -594,6 +609,7 @@ rrmp_on_asan() {
   require_tests_present "${b}" \
     ninlil_rrmp_codec_test \
     ninlil_rrmp_sm_test \
+    ninlil_rrmp_serial_owner_state_test \
     ninlil_rrmp_crash_corrupt_test \
     ninlil_rrmp_storage_atomicity_test \
     ninlil_rrmp_token_ledger_test \
@@ -663,6 +679,13 @@ run_family_profile() {
     rrmp:on_normal) rrmp_on_normal ;;
     rrmp:on_asan) rrmp_on_asan ;;
     rrmp:tests_off_boundary) rrmp_tests_off_boundary ;;
+    r7_frag:all_profiles)
+      python3 tools/r7_frag_false_green_gate.py self-test
+      run_family_profile "${family}" off_residual
+      run_family_profile "${family}" on_normal
+      run_family_profile "${family}" on_asan
+      run_family_profile "${family}" tests_off_boundary
+      ;;
     *:all_profiles)
       run_family_profile "${family}" off_residual
       run_family_profile "${family}" on_normal

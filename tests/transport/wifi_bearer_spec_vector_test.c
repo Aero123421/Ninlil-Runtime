@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Independent C11 semantic gate for ADR-0018 Wi-Fi bearer candidate.
  * Every acceptance ID has a distinct substantive assertion; the executed

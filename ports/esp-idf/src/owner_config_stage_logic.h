@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Owner-task config pure staging used by owner_task_init (docs/22).
  * Host tests share this exact helper — not a generic abi_stage proxy alone.

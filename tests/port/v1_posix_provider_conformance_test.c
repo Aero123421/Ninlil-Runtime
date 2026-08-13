@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /* V1-LAB unit 3: POSIX platform provider set conformance. */
 
 #include "ninlil_posix_lab_platform_test.h"

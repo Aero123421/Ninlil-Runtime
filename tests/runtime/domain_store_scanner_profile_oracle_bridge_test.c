@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Production profiled-begin bridge: executes each domain-scan-profile-v1
  * vector through ninlil_domain_scan_begin_profiled + scripted spy and

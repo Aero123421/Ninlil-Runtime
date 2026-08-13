@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Private Stage 5 empty-domain metadata-init orchestrator tests.
  *

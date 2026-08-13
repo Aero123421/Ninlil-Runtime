@@ -1,18 +1,21 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef NINLIL_R7_FRAG_ISSUE_COORDINATOR_H
 #define NINLIL_R7_FRAG_ISSUE_COORDINATOR_H
 
 /*
  * Production L1 issued-Permit global coordinator (docs/30 §15.3).
  *
- * Authority-scoped: one process-local queue per authority_token (pcp identity).
- * Max 8 issued permits globally per authority. Admission registers pre-TX with
- * full identity (permit_sequence + outer digest + bind). Non-head work stays
- * queued (QUEUED) until head; TX only at head. Complete cleanup releases
- * coordinator + R5 registry rows together.
+ * Authority-scoped: one caller-owned coordinator domain contains at most eight
+ * issued permits and may contain multiple authority_token values (pcp
+ * identities). Admission registers pre-TX with full identity (permit_sequence
+ * + outer digest + bind). Non-head work stays queued (QUEUED) until head; TX
+ * only at head. Complete cleanup releases coordinator + R5 registry rows
+ * together. Related candidate owners MUST share the same coordinator object.
  *
  * Sole production API: admit / begin_tx / hold_retry / resume_tx / complete.
  * No register/release bypass. Not public ABI. Not installed.
- * Single-threaded host model uses reentry guard as concurrency fence.
+ * Single-threaded host model uses an owner-local reentry guard as concurrency
+ * fence. Zero initialization is valid; init/reset/fini wipe every owner byte.
  */
 
 #include <stddef.h>
@@ -49,7 +52,27 @@ typedef struct ninlil_r7_coord_admit {
     uint64_t issue_now_ms;
 } ninlil_r7_coord_admit_t;
 
-void ninlil_r7_frag_issue_coordinator_reset(void);
+typedef struct ninlil_r7_coord_slot {
+    uint8_t state;
+    uint64_t authority_token;
+    uint64_t permit_sequence;
+    uintptr_t bind_token;
+    uint8_t outer_digest[32];
+    uint32_t outer_len;
+    uint64_t issue_now_ms;
+} ninlil_r7_coord_slot_t;
+
+typedef struct ninlil_r7_frag_issue_coordinator {
+    ninlil_r7_coord_slot_t slots[NINLIL_R7_GLOBAL_ISSUED_FIFO_CAP];
+    uint8_t in_api;
+} ninlil_r7_frag_issue_coordinator_t;
+
+void ninlil_r7_frag_issue_coordinator_init(
+    ninlil_r7_frag_issue_coordinator_t *owner);
+void ninlil_r7_frag_issue_coordinator_reset(
+    ninlil_r7_frag_issue_coordinator_t *owner);
+void ninlil_r7_frag_issue_coordinator_fini(
+    ninlil_r7_frag_issue_coordinator_t *owner);
 
 /*
  * Admit issued permit into global queue. Returns:
@@ -58,10 +81,12 @@ void ninlil_r7_frag_issue_coordinator_reset(void);
  *   CAPACITY / DUPLICATE / INVALID / BUSY
  */
 int32_t ninlil_r7_frag_issue_coordinator_admit(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     const ninlil_r7_coord_admit_t *in);
 
 /* Mark head as IN_TX. Only HEAD (or resume of HELD) may call. */
 int32_t ninlil_r7_frag_issue_coordinator_begin_tx(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token,
     uint64_t permit_sequence);
 
@@ -70,22 +95,26 @@ int32_t ninlil_r7_frag_issue_coordinator_begin_tx(
  * *out_promoted_seq = new head sequence or 0.
  */
 int32_t ninlil_r7_frag_issue_coordinator_complete(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token,
     uint64_t permit_sequence,
     uint64_t *out_promoted_seq);
 
 /* Hold issued permit for same-object R1 retry (NOT_BEFORE / EXPIRED). */
 int32_t ninlil_r7_frag_issue_coordinator_hold_retry(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token,
     uint64_t permit_sequence);
 
 /* Re-enter TX for HELD head only (same permit_sequence + outer). */
 int32_t ninlil_r7_frag_issue_coordinator_resume_tx(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token,
     uint64_t permit_sequence);
 
 /* Exact outer digest match for admitted identity (1 = match). */
 int ninlil_r7_frag_issue_coordinator_outer_matches(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token,
     uint64_t permit_sequence,
     const uint8_t outer_digest[32],
@@ -93,17 +122,23 @@ int ninlil_r7_frag_issue_coordinator_outer_matches(
 
 /* Slot state query (EMPTY if not found). */
 uint8_t ninlil_r7_frag_issue_coordinator_slot_state(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token,
     uint64_t permit_sequence);
 
-size_t ninlil_r7_frag_issue_coordinator_count(void);
-uint64_t ninlil_r7_frag_issue_coordinator_head(uint64_t authority_token);
+size_t ninlil_r7_frag_issue_coordinator_count(
+    const ninlil_r7_frag_issue_coordinator_t *owner);
+uint64_t ninlil_r7_frag_issue_coordinator_head(
+    const ninlil_r7_frag_issue_coordinator_t *owner,
+    uint64_t authority_token);
 int ninlil_r7_frag_issue_coordinator_is_head(
+    const ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token,
     uint64_t permit_sequence);
 
 /* Complete all live rows for one authority (cleanup / reinit drain). */
 void ninlil_r7_frag_issue_coordinator_complete_all_authority(
+    ninlil_r7_frag_issue_coordinator_t *owner,
     uint64_t authority_token);
 
 #ifdef __cplusplus

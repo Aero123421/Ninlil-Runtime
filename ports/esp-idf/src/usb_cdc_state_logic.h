@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Pure A2 CDC adapter state machine (host-testable).
  *

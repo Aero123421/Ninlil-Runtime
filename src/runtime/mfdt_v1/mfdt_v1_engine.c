@@ -1,24 +1,28 @@
-/* SPDX-License-Identifier: Apache-2.0
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
  * MFDT v1 private engine: default-OFF, fixed workspace, durable multi-key FULL.
  * ADR-0021 production state machine (host lab store adapter; not ESP flash).
  */
 #include "mfdt_v1.h"
 #include "mfdt_v1_store_port.h"
-#include "mfdt_v1_target_alloc.h"
-
 #include <string.h>
 #if defined(NINLIL_MFDT_V1_HOST_DIAGNOSTICS)
 #include <stdio.h>
 #endif
 
-/* ---- Workspace layout: scratch only; custody lives in durable store ----- */
-#define MFDT_WS_META_OFF     ((size_t)0u)
-#define MFDT_WS_CONTENT_OFF  ((size_t)512u)
-#define MFDT_WS_ENTRIES_OFF  ((size_t)512u + 32768u)
-#define MFDT_WS_OPEN_OFF     ((size_t)512u + 32768u + 40u * 37u)
+/* ---- Caller-owned 64 KiB arena; custody lives in durable store ---------- */
+#define MFDT_WS_RECORD_BYTES ((size_t)35216u)
+#define MFDT_WS_NRC1_BYTES   ((size_t)15024u)
+#define MFDT_WS_XFER_BYTES   ((size_t)512u)
 #define MFDT_WS_OPEN_MAX     ((size_t)656u)
-#define MFDT_WS_NRC1_OFF     ((size_t)512u + 32768u + 40u * 37u + \
-                              MFDT_WS_OPEN_MAX)
+#define MFDT_WS_ENTRIES_BYTES \
+    ((size_t)NINLIL_MFDT_V1_MAX_CHUNKS * \
+     (size_t)NINLIL_MFDT_V1_ENTRY_BYTES)
+#define MFDT_WS_RECORD_OFF   ((size_t)0u)
+#define MFDT_WS_NRC1_OFF     (MFDT_WS_RECORD_OFF + MFDT_WS_RECORD_BYTES)
+#define MFDT_WS_XFER_OFF     (MFDT_WS_NRC1_OFF + MFDT_WS_NRC1_BYTES)
+#define MFDT_WS_OPEN_OFF     (MFDT_WS_XFER_OFF + MFDT_WS_XFER_BYTES)
+#define MFDT_WS_ENTRIES_OFF  (MFDT_WS_OPEN_OFF + MFDT_WS_OPEN_MAX)
 
 typedef struct mfdt_xfer {
     uint8_t transfer_id[16];
@@ -55,50 +59,24 @@ typedef struct mfdt_xfer {
     uint8_t unpaid_chunk; /* fairness */
 } mfdt_xfer_t;
 
-_Static_assert(sizeof(mfdt_xfer_t) <= 512u, "xfer meta must fit WS meta region");
-
-/*
- * Single-active engine: one record scratch + one NRC1 scratch.
- * CU classify reuses record scratch sequentially (no dual 35KB copies).
- * Host: static. ESP: SPIRAM/heap (not .dram0.bss) — ~50KB off internal DRAM.
- */
-#if defined(ESP_PLATFORM)
-static uint8_t *g_mfdt_record_scratch;
-static uint8_t *g_mfdt_nrc1_scratch;
-
-static int ensure_engine_scratch(void)
-{
-    if (g_mfdt_record_scratch == NULL) {
-        g_mfdt_record_scratch = (uint8_t *)ninlil_mfdt_v1_target_zalloc(
-            (size_t)NINLIL_MFDT_V1_ACTIVE_VALUE_MAX);
-    }
-    if (g_mfdt_nrc1_scratch == NULL) {
-        g_mfdt_nrc1_scratch = (uint8_t *)ninlil_mfdt_v1_target_zalloc(
-            (size_t)NINLIL_MFDT_V1_NRC1_VALUE_BYTES);
-    }
-    return (g_mfdt_record_scratch != NULL && g_mfdt_nrc1_scratch != NULL) ? 1
-                                                                         : 0;
-}
-#else
-static uint8_t g_mfdt_record_scratch[NINLIL_MFDT_V1_ACTIVE_VALUE_MAX];
-static uint8_t g_mfdt_nrc1_scratch[NINLIL_MFDT_V1_NRC1_VALUE_BYTES];
-
-static int ensure_engine_scratch(void)
-{
-    /* Host lab OOM inject: deterministic fail without moving statics to heap. */
-    if (ninlil_mfdt_v1_target_zalloc_force_fail_get() != 0) {
-        return 0;
-    }
-    return 1;
-}
-#endif
+_Static_assert(sizeof(mfdt_xfer_t) <= MFDT_WS_XFER_BYTES,
+               "xfer meta must fit owner arena");
+_Static_assert(MFDT_WS_ENTRIES_OFF + MFDT_WS_ENTRIES_BYTES <=
+                   NINLIL_MFDT_V1_WORKSPACE_BYTES,
+               "owner scratch must fit exact 64 KiB workspace");
+_Static_assert(MFDT_WS_RECORD_BYTES >=
+                   (size_t)NINLIL_MFDT_V1_ACTIVE_VALUE_MAX + 1u,
+               "record region capacity");
+_Static_assert(MFDT_WS_NRC1_BYTES >=
+                   (size_t)NINLIL_MFDT_V1_NRC1_VALUE_BYTES,
+               "NRC1 region capacity");
 
 static mfdt_xfer_t *xfer_ptr(ninlil_mfdt_v1_engine_t *eng)
 {
     if (eng != NULL && eng->slot_layout != 0u) {
         return (mfdt_xfer_t *)(void *)eng->slot_xfer_memory;
     }
-    return (mfdt_xfer_t *)(void *)eng->ws->bytes;
+    return NULL;
 }
 
 static uint8_t *content_ptr(ninlil_mfdt_v1_engine_t *eng)
@@ -114,7 +92,7 @@ static uint8_t *content_ptr(ninlil_mfdt_v1_engine_t *eng)
         }
         return eng->slot_record_memory;
     }
-    return eng->ws->bytes + MFDT_WS_CONTENT_OFF;
+    return NULL;
 }
 
 static uint8_t *entries_ptr(ninlil_mfdt_v1_engine_t *eng)
@@ -127,7 +105,7 @@ static uint8_t *entries_ptr(ninlil_mfdt_v1_engine_t *eng)
         }
         return eng->slot_entries_staging;
     }
-    return eng->ws->bytes + MFDT_WS_ENTRIES_OFF;
+    return NULL;
 }
 
 static uint8_t *open_ptr(ninlil_mfdt_v1_engine_t *eng)
@@ -139,45 +117,19 @@ static uint8_t *open_ptr(ninlil_mfdt_v1_engine_t *eng)
         }
         return eng->slot_open_staging;
     }
-    return eng->ws->bytes + MFDT_WS_OPEN_OFF;
-}
-
-static uint8_t *record_scratch(void)
-{
-#if defined(ESP_PLATFORM)
-    /* Allocated only by engine_preallocate()/engine_init startup. */
-    if (g_mfdt_record_scratch == NULL) {
-        return NULL;
-    }
-#endif
-    return g_mfdt_record_scratch;
-}
-
-static uint8_t *nrc1_scratch(void)
-{
-#if defined(ESP_PLATFORM)
-    /* Allocated only by engine_preallocate()/engine_init startup. */
-    if (g_mfdt_nrc1_scratch == NULL) {
-        return NULL;
-    }
-#endif
-    return g_mfdt_nrc1_scratch;
+    return NULL;
 }
 
 static uint8_t *engine_record_scratch(ninlil_mfdt_v1_engine_t *eng)
 {
-    if (eng != NULL && eng->slot_layout != 0u) {
-        return eng->slot_record_memory;
-    }
-    return record_scratch();
+    return eng != NULL && eng->slot_layout != 0u
+               ? eng->slot_record_memory : NULL;
 }
 
 static uint8_t *engine_nrc1_scratch(ninlil_mfdt_v1_engine_t *eng)
 {
-    if (eng != NULL && eng->slot_layout != 0u) {
-        return eng->slot_nrc1_memory;
-    }
-    return nrc1_scratch();
+    return eng != NULL && eng->slot_layout != 0u
+               ? eng->slot_nrc1_memory : NULL;
 }
 
 static void make_key(uint8_t key[20], const char magic[4], const uint8_t tid[16])
@@ -1368,6 +1320,9 @@ static int project_active_record(
     if (eng == NULL || x == NULL || rec == NULL) {
         return NINLIL_MFDT_V1_ERR_STORAGE;
     }
+    if (eng->slot_layout == 0u) {
+        return NINLIL_MFDT_V1_ERR_STATE;
+    }
     rc = ninlil_mfdt_v1_record_unpack(rec, len, &owner, &state, tid, &rev, md,
                                       &openb, &openl, &ents, &eb, &cont, &cl,
                                       &rgen, &pb, &cb, &rb, &pub, &ho);
@@ -1395,20 +1350,10 @@ static int project_active_record(
     x->open_len = openl;
     (void)memcpy(x->manifest_digest, md, 32u);
     if (openb != NULL && openl > 0u && openl <= MFDT_WS_OPEN_MAX) {
-        if (eng->slot_layout == 0u) {
-            (void)memcpy(open_ptr(eng), openb, openl);
-        }
         (void)memcpy(x->whole_digest, openb + 32, 32u);
         x->total_length = ninlil_mfdt_v1_get_u32(openb + 20);
         x->chunk_count = ninlil_mfdt_v1_get_u16(openb + 26);
         x->page_count = ninlil_mfdt_v1_get_u16(openb + 28);
-    }
-    if (eng->slot_layout == 0u && ents != NULL && eb > 0u) {
-        (void)memcpy(entries_ptr(eng), ents, eb);
-    }
-    if (eng->slot_layout == 0u &&
-        cont != NULL && cl > 0u && cl <= NINLIL_MFDT_V1_MAX_CONTENT) {
-        (void)memcpy(content_ptr(eng), cont, cl);
     }
     /* header reservation fields */
     (void)memcpy(x->reservation_id, rec + 112, 16u);
@@ -2339,20 +2284,60 @@ int ninlil_mfdt_v1_engine_init(ninlil_mfdt_v1_engine_t *eng,
     if (eng == NULL || ws == NULL || store == NULL || cfg == NULL) {
         return NINLIL_MFDT_V1_ERR_PARAM;
     }
-    if (ninlil_mfdt_v1_engine_preallocate() != NINLIL_MFDT_V1_OK) {
-        /* No usable handle and no durable mutation escape a failed startup. */
-        ninlil_mfdt_v1_memzero(eng, sizeof(*eng));
-        ninlil_mfdt_v1_memzero(ws, sizeof(*ws));
-        return NINLIL_MFDT_V1_ERR_STORAGE;
-    }
     ninlil_mfdt_v1_memzero(eng, sizeof(*eng));
     ninlil_mfdt_v1_memzero(ws, sizeof(*ws));
     eng->ws = ws;
     eng->store = store;
     eng->cfg = *cfg;
+    eng->slot_record_memory = ws->bytes + MFDT_WS_RECORD_OFF;
+    eng->slot_nrc1_memory = ws->bytes + MFDT_WS_NRC1_OFF;
+    eng->slot_xfer_memory = ws->bytes + MFDT_WS_XFER_OFF;
+    eng->slot_open_staging = ws->bytes + MFDT_WS_OPEN_OFF;
+    eng->slot_entries_staging = ws->bytes + MFDT_WS_ENTRIES_OFF;
+    eng->slot_record_memory_bytes = (uint32_t)MFDT_WS_RECORD_BYTES;
+    eng->slot_nrc1_memory_bytes = (uint32_t)MFDT_WS_NRC1_BYTES;
+    eng->slot_xfer_memory_bytes = (uint32_t)MFDT_WS_XFER_BYTES;
+    eng->slot_open_staging_bytes = (uint32_t)MFDT_WS_OPEN_MAX;
+    eng->slot_entries_staging_bytes = (uint32_t)MFDT_WS_ENTRIES_BYTES;
+    eng->slot_layout = 1u;
     eng->active_count = 0u;
     eng->fulls_this_transfer = 0u;
     return NINLIL_MFDT_V1_OK;
+}
+
+void ninlil_mfdt_v1_engine_fini(ninlil_mfdt_v1_engine_t *eng)
+{
+    ninlil_mfdt_v1_workspace_t *workspace;
+
+    if (eng == NULL) {
+        return;
+    }
+    workspace = eng->ws;
+    if (workspace != NULL) {
+        ninlil_mfdt_v1_memzero(workspace, sizeof(*workspace));
+    } else if (eng->slot_layout != 0u) {
+        if (eng->slot_record_memory != NULL) {
+            ninlil_mfdt_v1_memzero(
+                eng->slot_record_memory, eng->slot_record_memory_bytes);
+        }
+        if (eng->slot_nrc1_memory != NULL) {
+            ninlil_mfdt_v1_memzero(
+                eng->slot_nrc1_memory, eng->slot_nrc1_memory_bytes);
+        }
+        if (eng->slot_xfer_memory != NULL) {
+            ninlil_mfdt_v1_memzero(
+                eng->slot_xfer_memory, eng->slot_xfer_memory_bytes);
+        }
+        if (eng->slot_open_staging != NULL) {
+            ninlil_mfdt_v1_memzero(
+                eng->slot_open_staging, eng->slot_open_staging_bytes);
+        }
+        if (eng->slot_entries_staging != NULL) {
+            ninlil_mfdt_v1_memzero(
+                eng->slot_entries_staging, eng->slot_entries_staging_bytes);
+        }
+    }
+    ninlil_mfdt_v1_memzero(eng, sizeof(*eng));
 }
 
 typedef struct mfdt_memory_range {
@@ -2501,6 +2486,11 @@ int ninlil_mfdt_v1_engine_init_slot(
     eng->slot_xfer_memory = memory->xfer_memory;
     eng->slot_open_staging = memory->open_staging;
     eng->slot_entries_staging = memory->entries_staging;
+    eng->slot_record_memory_bytes = memory->record_memory_bytes;
+    eng->slot_nrc1_memory_bytes = memory->nrc1_memory_bytes;
+    eng->slot_xfer_memory_bytes = memory->xfer_memory_bytes;
+    eng->slot_open_staging_bytes = memory->open_staging_bytes;
+    eng->slot_entries_staging_bytes = memory->entries_staging_bytes;
     eng->host_committed_keys = committed_keys;
     eng->host_committed_logical_bytes = committed_logical_bytes;
     eng->host_full_locked = full_locked;
@@ -2523,6 +2513,11 @@ int ninlil_mfdt_v1_engine_rehydrate_captured(
     uint8_t *xfer_memory;
     uint8_t *open_staging;
     uint8_t *entries_staging;
+    uint32_t record_memory_bytes;
+    uint32_t nrc1_memory_bytes;
+    uint32_t xfer_memory_bytes;
+    uint32_t open_staging_bytes;
+    uint32_t entries_staging_bytes;
     uint32_t *committed_keys;
     uint64_t *committed_bytes;
     uint8_t *full_locked;
@@ -2566,6 +2561,11 @@ int ninlil_mfdt_v1_engine_rehydrate_captured(
     xfer_memory = eng->slot_xfer_memory;
     open_staging = eng->slot_open_staging;
     entries_staging = eng->slot_entries_staging;
+    record_memory_bytes = eng->slot_record_memory_bytes;
+    nrc1_memory_bytes = eng->slot_nrc1_memory_bytes;
+    xfer_memory_bytes = eng->slot_xfer_memory_bytes;
+    open_staging_bytes = eng->slot_open_staging_bytes;
+    entries_staging_bytes = eng->slot_entries_staging_bytes;
     committed_keys = eng->host_committed_keys;
     committed_bytes = eng->host_committed_logical_bytes;
     full_locked = eng->host_full_locked;
@@ -2574,7 +2574,14 @@ int ninlil_mfdt_v1_engine_rehydrate_captured(
         xfer_memory == NULL || open_staging == NULL ||
         entries_staging == NULL || committed_keys == NULL ||
         committed_bytes == NULL || full_locked == NULL ||
-        inventory_uncertain == NULL) {
+        inventory_uncertain == NULL ||
+        record_memory_bytes < NINLIL_MFDT_V1_ACTIVE_VALUE_MAX + 1u ||
+        nrc1_memory_bytes < NINLIL_MFDT_V1_NRC1_VALUE_BYTES ||
+        xfer_memory_bytes < sizeof(mfdt_xfer_t) ||
+        open_staging_bytes < MFDT_WS_OPEN_MAX ||
+        entries_staging_bytes <
+            (uint32_t)NINLIL_MFDT_V1_MAX_CHUNKS *
+                NINLIL_MFDT_V1_ENTRY_BYTES) {
         return NINLIL_MFDT_V1_ERR_STATE;
     }
     if (active_record != record_memory) {
@@ -2583,13 +2590,16 @@ int ninlil_mfdt_v1_engine_rehydrate_captured(
     if (nrc1_record != nrc1_memory) {
         (void)memmove(nrc1_memory, nrc1_record, nrc1_record_len);
     }
-    ninlil_mfdt_v1_memzero(eng, sizeof(*eng));
-    ninlil_mfdt_v1_memzero(xfer_memory, sizeof(mfdt_xfer_t));
-    ninlil_mfdt_v1_memzero(open_staging, MFDT_WS_OPEN_MAX);
     ninlil_mfdt_v1_memzero(
-        entries_staging,
-        (size_t)NINLIL_MFDT_V1_MAX_CHUNKS *
-            NINLIL_MFDT_V1_ENTRY_BYTES);
+        record_memory + active_record_len,
+        (size_t)record_memory_bytes - active_record_len);
+    ninlil_mfdt_v1_memzero(
+        nrc1_memory + nrc1_record_len,
+        (size_t)nrc1_memory_bytes - nrc1_record_len);
+    ninlil_mfdt_v1_memzero(eng, sizeof(*eng));
+    ninlil_mfdt_v1_memzero(xfer_memory, xfer_memory_bytes);
+    ninlil_mfdt_v1_memzero(open_staging, open_staging_bytes);
+    ninlil_mfdt_v1_memzero(entries_staging, entries_staging_bytes);
     eng->cfg = *cfg;
     eng->cfg.host_mode = 1u;
     eng->store_port = store_port;
@@ -2598,6 +2608,11 @@ int ninlil_mfdt_v1_engine_rehydrate_captured(
     eng->slot_xfer_memory = xfer_memory;
     eng->slot_open_staging = open_staging;
     eng->slot_entries_staging = entries_staging;
+    eng->slot_record_memory_bytes = record_memory_bytes;
+    eng->slot_nrc1_memory_bytes = nrc1_memory_bytes;
+    eng->slot_xfer_memory_bytes = xfer_memory_bytes;
+    eng->slot_open_staging_bytes = open_staging_bytes;
+    eng->slot_entries_staging_bytes = entries_staging_bytes;
     eng->host_committed_keys = committed_keys;
     eng->host_committed_logical_bytes = committed_bytes;
     eng->host_full_locked = full_locked;
@@ -2622,8 +2637,8 @@ int ninlil_mfdt_v1_engine_rehydrate_captured(
 
 int ninlil_mfdt_v1_engine_preallocate(void)
 {
-    return ensure_engine_scratch() != 0 ? NINLIL_MFDT_V1_OK
-                                        : NINLIL_MFDT_V1_ERR_STORAGE;
+    /* Compatibility no-op: all operational scratch is caller-owned now. */
+    return NINLIL_MFDT_V1_OK;
 }
 
 void ninlil_mfdt_v1_engine_set_now(ninlil_mfdt_v1_engine_t *eng, uint64_t now_ms)
@@ -4766,20 +4781,23 @@ int ninlil_mfdt_v1_advance_session_generation(ninlil_mfdt_v1_engine_t *eng)
 }
 
 ninlil_mfdt_v1_cu_class_t ninlil_mfdt_v1_cu_observe_key(
-    const ninlil_mfdt_v1_lab_store_t *st, const uint8_t key[20],
+    const ninlil_mfdt_v1_lab_store_t *st, uint8_t *scratch,
+    uint32_t scratch_bytes, const uint8_t key[20],
     const uint8_t *old_bytes, uint32_t old_len, int has_old,
     const uint8_t *new_bytes, uint32_t new_len, int has_new)
 {
-    uint8_t *obs = record_scratch();
     uint32_t olen = 0u;
     int present;
-    if (st == NULL || key == NULL || obs == NULL) {
+    if (st == NULL || scratch == NULL ||
+        scratch_bytes < NINLIL_MFDT_V1_ACTIVE_VALUE_MAX || key == NULL) {
         return NINLIL_MFDT_V1_CU_ABSENT;
     }
-    present = ninlil_mfdt_v1_lab_get(st, key, obs, NINLIL_MFDT_V1_ACTIVE_VALUE_MAX,
-                                     &olen) == NINLIL_MFDT_V1_OK;
-    return ninlil_mfdt_v1_classify_cu_bytes(obs, olen, present, old_bytes, old_len,
-                                            has_old, new_bytes, new_len, has_new);
+    present = ninlil_mfdt_v1_lab_get(
+                  st, key, scratch, scratch_bytes, &olen) ==
+              NINLIL_MFDT_V1_OK;
+    return ninlil_mfdt_v1_classify_cu_bytes(
+        scratch, olen, present, old_bytes, old_len, has_old,
+        new_bytes, new_len, has_new);
 }
 
 int ninlil_mfdt_v1_on_reservation_expired(ninlil_mfdt_v1_engine_t *eng)

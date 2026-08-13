@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Exact profile-1 198,656-byte workspace partition (ADR-0017).
  * Region budgets are the real live object sizes (sizeof/offsetof), not

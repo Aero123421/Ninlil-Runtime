@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "runtime_v1_spine_durable.h"
 
 #include "domain_store_body_codec.h"
@@ -2909,7 +2910,159 @@ static ninlil_status_t read_admission_clock(
         || out_sample->reserved_zero != 0u) {
         return NINLIL_E_DEGRADED;
     }
+    return ninlil_rt_accept_trusted_clock_sample(runtime, out_sample);
+}
+
+static ninlil_status_t guard_cancel_retry_chronology(
+    ninlil_runtime_t *runtime,
+    const ninlil_time_sample_t *sample,
+    uint64_t next_retry_ms,
+    const ninlil_id128_t *next_retry_epoch,
+    uint64_t retry_backoff_ms)
+{
+    uint64_t scheduled_at_ms;
+
+    if (next_retry_ms == 0u) {
+        return NINLIL_OK;
+    }
+    if (id_is_zero(next_retry_epoch)
+        || retry_backoff_ms == 0u
+        || next_retry_ms < retry_backoff_ms) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    scheduled_at_ms = next_retry_ms - retry_backoff_ms;
+    if (memcmp(
+            sample->clock_epoch_id.bytes,
+            next_retry_epoch->bytes,
+            sizeof(sample->clock_epoch_id.bytes)) == 0
+        && sample->now_ms < scheduled_at_ms) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
     return NINLIL_OK;
+}
+
+static ninlil_status_t linearize_targeted_cancel(
+    ninlil_runtime_t *runtime,
+    ninlil_rt_transaction_slot_t *transaction)
+{
+    ninlil_rt_v1_step_delivery_result_t catch_up_result;
+    ninlil_time_sample_t sample;
+    ninlil_port_status_t port_status;
+    ninlil_status_t status;
+    uint32_t changed;
+    uint32_t target_index;
+
+    (void)memset(&sample, 0, sizeof(sample));
+    port_status = runtime->platform->clock->now(
+        runtime->platform->clock->user, &sample);
+    if (port_status == NINLIL_PORT_TEMPORARY_FAILURE
+        || (port_status == NINLIL_PORT_OK
+            && sample.abi_version == NINLIL_ABI_VERSION
+            && sample.struct_size == sizeof(sample)
+            && sample.trust == NINLIL_CLOCK_UNCERTAIN
+            && !id_is_zero(&sample.clock_epoch_id)
+            && sample.reserved_zero == 0u)) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_CLOCK_UNCERTAIN;
+    }
+    if (port_status != NINLIL_PORT_OK
+        || sample.abi_version != NINLIL_ABI_VERSION
+        || sample.struct_size != sizeof(sample)
+        || sample.trust != NINLIL_CLOCK_TRUSTED
+        || id_is_zero(&sample.clock_epoch_id)
+        || sample.reserved_zero != 0u) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    status = ninlil_rt_accept_trusted_clock_sample(runtime, &sample);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (memcmp(
+            sample.clock_epoch_id.bytes,
+            transaction->admission_clock_epoch_id.bytes,
+            sizeof(sample.clock_epoch_id.bytes)) == 0
+        && sample.now_ms < transaction->admitted_at_ms) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    if (transaction->send_observation_closed != 0u
+        && memcmp(
+            sample.clock_epoch_id.bytes,
+            transaction->send_observed_clock_epoch_id.bytes,
+            sizeof(sample.clock_epoch_id.bytes)) == 0
+        && sample.now_ms < transaction->send_observed_at_ms) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    if (transaction->token_state == NINLIL_RT_TOKEN_ACTIVE
+        && memcmp(
+            sample.clock_epoch_id.bytes,
+            transaction->token_clock_epoch_id.bytes,
+            sizeof(sample.clock_epoch_id.bytes)) == 0
+        && sample.now_ms < transaction->delivery_started_at_ms) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+        return NINLIL_E_DEGRADED;
+    }
+    status = guard_cancel_retry_chronology(
+        runtime,
+        &sample,
+        transaction->next_retry_ms,
+        &transaction->next_retry_clock_epoch_id,
+        transaction->retry_backoff_ms);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    for (target_index = 0u;
+         target_index < transaction->bound_target_count;
+         ++target_index) {
+        const ninlil_rt_target_slot_t *target =
+            &transaction->bound_targets[target_index];
+
+        if (target->in_use != 0u
+            && target->send_observation_closed != 0u
+            && memcmp(
+                sample.clock_epoch_id.bytes,
+                target->send_observed_clock_epoch_id.bytes,
+                sizeof(sample.clock_epoch_id.bytes)) == 0
+            && sample.now_ms < target->send_observed_at_ms) {
+            runtime->health = NINLIL_HEALTH_DEGRADED;
+            runtime->degraded_reason = NINLIL_REASON_CLOCK_UNCERTAIN;
+            return NINLIL_E_DEGRADED;
+        }
+        if (target->in_use != 0u && target->terminal == 0u) {
+            status = guard_cancel_retry_chronology(
+                runtime,
+                &sample,
+                target->next_retry_ms,
+                &target->next_retry_clock_epoch_id,
+                transaction->retry_backoff_ms);
+            if (status != NINLIL_OK) {
+                return status;
+            }
+        }
+    }
+
+    (void)memset(&catch_up_result, 0, sizeof(catch_up_result));
+    changed = 0u;
+    status = ninlil_rt_v1_targeted_management_catch_up(
+        runtime,
+        transaction,
+        &sample,
+        UINT32_MAX,
+        &catch_up_result,
+        &changed,
+        NINLIL_RT_V1_INPUT_PRIORITY_CANCEL_OR_DISCARD);
+    return status;
 }
 
 static ninlil_status_t fill_transaction_id_draws(
@@ -3664,6 +3817,21 @@ ninlil_status_t ninlil_rt_v1_spine_submit_admission(
     return NINLIL_OK;
 }
 
+static void set_persisted_cancel_result(
+    const ninlil_rt_transaction_slot_t *transaction,
+    ninlil_cancel_result_t *result)
+{
+    result->kind = transaction->cancel_kind;
+    result->reason = transaction->cancel_kind
+            == NINLIL_CANCEL_FENCED_BEFORE_DISPATCH
+        ? NINLIL_REASON_CANCEL_FENCED_BEFORE_DISPATCH
+        : transaction->cancel_kind
+                == NINLIL_CANCEL_PENDING_REMOTE_FENCE
+            ? NINLIL_REASON_CANCEL_PENDING_REMOTE_FENCE
+            : NINLIL_REASON_CANCEL_AFTER_EFFECT_POSSIBLE;
+    result->current_outcome = transaction->outcome;
+}
+
 ninlil_status_t ninlil_rt_v1_spine_cancel_admission(
     ninlil_runtime_t *runtime,
     const ninlil_id128_t *transaction_id,
@@ -3686,9 +3854,27 @@ ninlil_status_t ninlil_rt_v1_spine_cancel_admission(
         return NINLIL_E_UNSUPPORTED;
     }
     if (txn->cancel_kind != 0u) {
-        out_result->kind = txn->cancel_kind;
+        set_persisted_cancel_result(txn, out_result);
+        return NINLIL_OK;
+    }
+    if (txn->terminal != 0u) {
+        out_result->kind = NINLIL_CANCEL_ALREADY_TERMINAL;
         out_result->reason = txn->reason;
         out_result->current_outcome = txn->outcome;
+        return NINLIL_OK;
+    }
+    if (runtime->last_assigned_ordered_input_sequence == UINT64_MAX) {
+        runtime->health = NINLIL_HEALTH_DEGRADED;
+        runtime->degraded_reason = NINLIL_REASON_COUNTER_EXHAUSTED;
+        return NINLIL_E_DEGRADED;
+    }
+
+    status = linearize_targeted_cancel(runtime, txn);
+    if (status != NINLIL_OK) {
+        return status;
+    }
+    if (txn->cancel_kind != 0u) {
+        set_persisted_cancel_result(txn, out_result);
         return NINLIL_OK;
     }
     if (txn->terminal != 0u) {
@@ -3700,6 +3886,8 @@ ninlil_status_t ninlil_rt_v1_spine_cancel_admission(
 
     candidate = &runtime->transaction_scratch;
     *candidate = *txn;
+    candidate->ordered_input_sequence =
+        runtime->last_assigned_ordered_input_sequence + 1u;
     terminalized = 1;
     for (target_index = 0u;
          target_index < candidate->bound_target_count;
@@ -3763,7 +3951,7 @@ ninlil_status_t ninlil_rt_v1_spine_cancel_admission(
         candidate->outcome = NINLIL_OUTCOME_NONE;
     }
 
-    status = ninlil_rt_v1_commit_transaction_snapshot(
+    status = ninlil_rt_v1_commit_ordered_input_snapshot(
         runtime,
         txn,
         candidate,

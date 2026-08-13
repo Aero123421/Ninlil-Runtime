@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * C3-LAB secure wire seal/open (W1/L1 basic; r7_wire_codec).
  */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Host conformance for dual-slot + durable directory storage (format 4).
  * Does not claim power-cut HIL or M3 complete.
