@@ -765,6 +765,25 @@ def validate_clang_release_r7_job(ci: str) -> None:
         )
 
 
+def validate_macos_dynamic_job(ci: str) -> None:
+    """Keep the full macOS matrix inside a measured, executable time budget."""
+    doc = parse_workflow(ci, "CI macOS dynamic")
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict):
+        raise GateError("CI macOS dynamic: jobs are absent")
+    job = jobs.get("macos-dynamic")
+    if not isinstance(job, dict):
+        raise GateError("CI macOS dynamic: owner job is absent")
+    if (
+        job.get("name") != "macOS dynamic SQLite full"
+        or job.get("runs-on") != "macos-15"
+        or job.get("timeout-minutes") != 50
+    ):
+        raise GateError(
+            "CI macOS dynamic: runner/name/50-minute budget authority drift"
+        )
+
+
 def job_body(workflow: str, job_id: str) -> str:
     match = re.search(
         rf"(?ms)^  {re.escape(job_id)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
@@ -1893,6 +1912,7 @@ def validate(inputs: Inputs) -> None:
     validate_all_private_traceability_job(inputs.ci)
     validate_baseline_traceability_job(inputs.ci)
     validate_clang_release_r7_job(inputs.ci)
+    validate_macos_dynamic_job(inputs.ci)
     validate_linter(inputs.ci)
     validate_decoder_fuzz_job(inputs.ci)
     validate_release(inputs.release)
@@ -2176,6 +2196,17 @@ def self_test() -> None:
         1,
     )
     reject("Clang Release R7 measured budget shortened", short_clang_release)
+
+    short_macos_dynamic = copy.deepcopy(baseline)
+    macos_dynamic_body = job_body(short_macos_dynamic.ci, "macos-dynamic")
+    if macos_dynamic_body.count("    timeout-minutes: 50\n") != 1:
+        raise GateError("self-test fixture missing macOS dynamic budget")
+    short_macos_dynamic.ci = short_macos_dynamic.ci.replace(
+        macos_dynamic_body,
+        macos_dynamic_body.replace("timeout-minutes: 50", "timeout-minutes: 35"),
+        1,
+    )
+    reject("macOS dynamic measured budget shortened", short_macos_dynamic)
 
     floating_dco_checkout = copy.deepcopy(baseline)
     floating_dco_checkout.dco = floating_dco_checkout.dco.replace(
