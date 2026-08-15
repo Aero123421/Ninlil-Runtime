@@ -66,9 +66,10 @@
 | コア (`src/`) | 5,000 行 |
 | 公開ヘッダ | 1 ファイル・400 行 |
 | ports（POSIX 参照実装） | 1,500 行 |
-| tests | 5,000 行 |
+| relay / multi-frame / 法規（後段レイヤー、§5） | 8,000 行 |
+| tests | 8,000 行 |
 | docs | README + 3 ページ |
-| リポジトリ合計 | **15,000 行以内**（現行の約 1/50） |
+| リポジトリ合計 | **25,000 行以内**（現行の約 1/30） |
 
 ### 公開 API 案（関数 10 個）
 
@@ -121,31 +122,36 @@ ninlil/
   docs/design.md          # 状態機械とワイヤ形式、各 1 ページ
 ```
 
-## 5. 捨てるもの（明示）
+## 5. 残すが後段に回すもの
 
-以下は新リポジトリに**持ち込まない**。必要になったら「動くデモが先」の条件付きで別レイヤーとして検討する。
+以下は製品要件として必要なため捨てないが、**最小コアの垂直スライスが動いた後**に、コアの外側の独立レイヤーとして順に再実装する。各レイヤーとも動くデモ付きでのみ追加し、上の LOC 予算（合計 8,000 行）に収める。
 
-- relay tree / multi-parent / multi-controller
-- multi-frame durable transfer（まず単一フレームに収まるサイズ上限で運用）
-- 暗号層・EDHOC・HKDF（機密性は bearer 側の TLS / 既存 link 暗号に委譲）
-- 法規 permit authority・airtime 計算・SX1262 制御（bearer 実装側の責務）
-- ABI manifest / drift gate / struct header / ILP32 golden
+1. **法規（airtime 計算・duty cycle・送信許可）**: 920MHz 運用の前提条件。bearer の直上に「送信してよいか」を判定する小さな gate として実装する。現行の permit authority のような独立 authority 機構ではなく、LoRa bearer に付属する 1 モジュールに畳む。
+2. **multi-frame transfer**: 単一フレームに収まらない payload の分割・再組立・途中再開。コアの transaction 1 件の内部実装として扱い、公開 API は増やさない（現行 `mfdt_v1` の独立 pipeline / owner / seam 構造は持ち込まない）。
+3. **relay（中継 / multi-parent）**: 直接届かないノードへの多段配送。コアは「bearer の向こうに誰がいるか」を知らない設計を保ち、relay は bearer の一実装（store-and-forward bearer）として載せる。現行 `route_relay_v1` のような fabric dispatch 層は作らない。
+
+## 6. 捨てるもの（明示）
+
+以下は機能ではなくプロセス・検証の重装備であり、新リポジトリに**持ち込まない**。
+
+- 暗号層・EDHOC・HKDF（Wi-Fi/USB は bearer 側の TLS に委譲。TLS のない LoRa 区間が必要になった段階で、最小限の AEAD を法規 gate と同じレイヤー位置に追加検討する）
+- ABI manifest / drift gate / struct header / ILP32 golden（ABI 凍結は 1.0 で行う）
 - 成熟度タクソノミ、requirements-traceability、compatibility matrix、docs gate
-- golden vector 生成器と 46MB の spec vectors
+- golden vector 生成器と 46MB の spec vectors（round-trip unit test で代替）
 - コードネーム全般（`mfdt` `rrmp` `d3s*` `NRW1` 等）— 名前は平易な英語のみ
 
-## 6. 再肥大化を防ぐ運用ルール
+## 7. 再肥大化を防ぐ運用ルール
 
 1. **デモ駆動**: 動く example で示せない機能は追加しない。仕様書だけの機能を持たない。
-2. **LOC 予算を CI で強制**: `src/` 5,000 行超で CI を落とす。超えるなら何かを削る。
+2. **LOC 予算を CI で強制**: コア 5,000 行、リポジトリ合計 25,000 行超で CI を落とす。超えるなら何かを削る。
 3. **文書はコードの後**: README と design.md の 2 点以外の文書を増やさない。
 4. **status を増やさない**: 新しいエラー種別は既存 6 種に写像できないときのみ追加。
 5. **バージョンは 0.x のまま素直に壊す**: ABI 凍結・互換性契約は 1.0 まで持たない。
 
-## 7. 移行ステップ
+## 8. 移行ステップ
 
 1. 新リポジトリ（または `v2/` サブツリー）に `include/ninlil.h` の骨格と `core.c` の状態機械を書く。現行 `src/model/runtime_lifecycle_model.c` の状態遷移表は読み物として参照する（コードは移植しない）。
 2. POSIX port（ファイル storage + UDP bearer）と `examples/echo` を通す。ここまでで「submit → 再起動 → 再送 → DELIVERED → APPLIED」の垂直スライスを完成させる。
 3. 電源断を模した storage テストと dedupe テストを足す（通常の CTest、vector 基盤なし）。
 4. 現行リポジトリはアーカイブし、README から新リポジトリへ誘導する。
-5. 以後、ESP32 port → LoRa bearer の順で、各段とも動くデモ付きでのみ追加する。
+5. 以後、ESP32 port → LoRa bearer + 法規 gate → multi-frame transfer → relay bearer の順で、各段とも動くデモ付きでのみ追加する（§5 の後段レイヤー）。
